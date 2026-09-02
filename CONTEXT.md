@@ -242,10 +242,10 @@ _Avoid_: onboarding (as a phase), setup, installation wizard, first boot
 
 **Agent**:
 Something that reads the portfolio without a person watching each read. It reaches the app
-over its own interface, not the front's, and it only ever reads: the ledger has one writer
-and it is reached by a gesture, never by a tool. Two of them are in view and they are the
-same shape — the chat inside the app, and whatever the owner has already built and wants
-their own figures in.
+over its own interface, not the front's, and it only ever reads: the ledger is written by a
+person's gesture, never by a tool. Two of them are in view and they are the same shape —
+the chat inside the app, and whatever the owner has already built and wants their own
+figures in.
 _Avoid_: AI, bot, assistant, LLM
 
 **Tool**:

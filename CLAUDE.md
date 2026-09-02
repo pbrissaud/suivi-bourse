@@ -116,8 +116,8 @@ Four workloads write to the store, each owning its own tables:
 
 - **Scrape** — one self-rescheduling job per held symbol, cadenced by the
   market's `marketState`;
-- **Ingestion** — not a job: the boot or a write, and `entries.py` is its one
-  writer of the ledger (ADR-0032);
+- **Ingestion** — not a job: the boot or a write, and it reaches the ledger
+  through `entries.py` (ADR-0032);
 - **Backfill** — reconstructs history (backward, forward and lateral passes) and
   applies the retention ladder;
 - **Performance** — replays the ledger and rewrites the return series.
@@ -138,7 +138,11 @@ advisories together. There is no banner and no status dot.
   exactly one writer, and several tests assert that on the source. **`event` has
   one writer too, and it is `entries.py`** (ADR-0032): there is one population of
   rows, so a line that came out of a file is corrected and deleted like any
-  other, and no code anywhere asks a row where it came from.
+  other, and no code anywhere asks a row where it came from. **One named
+  exception apart, `reassignment.py`** (#725): it rewrites the `account` column
+  in bulk, addresses no row by its key, and is a module of its own precisely so
+  that a reader counting the writers finds it. `tests/test_entries.py` names the
+  two on the source, and there is no third.
 - **The DDL is applied with `IF NOT EXISTS` and there is no migration
   machinery.** A new column would exist on no store created before it — so derive
   at read time rather than adding one.
