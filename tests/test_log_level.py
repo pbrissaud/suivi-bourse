@@ -11,7 +11,10 @@ on an unknown level. A ``set_log_level`` that moved no handler at all would pass
 that test, which is precisely the bug the first test below exists to catch.
 """
 import logging
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -67,6 +70,35 @@ class TestLogLevel:
                                           path.read_text(encoding='utf-8'))}
 
         assert named - set(main.MANAGED_LOGGERS) == set()
+
+    def test_the_boot_turns_the_two_dependencies_to_the_environment_s_level(self):
+        """The side effect of a call whose *name* was dead (#862).
+
+        `main` used to bind `scheduler_logger` and `yfinance_logger` and read
+        neither back. Removing the assignments must not remove the calls: they
+        are what carries `LOG_LEVEL` to APScheduler's and yfinance's own
+        loggers at boot, before `MANAGED_LOGGERS` has anything to turn. Nothing
+        in the running process can answer for that — the suite has imported
+        `main` long ago and `set_log_level` has moved every one of them since —
+        so this asks a **subprocess**, on the same reasoning as
+        `test_the_pure_modules_are_pure_at_the_import`: a level nobody would
+        set by accident, read straight off `logging` after the import alone.
+        """
+        program = (
+            'import sys; sys.path.insert(0, %r)\n'
+            'import logging\n'
+            'import application.main\n'
+            'print(",".join(logging.getLevelName(logging.getLogger(n).level)\n'
+            '               for n in ("suivi_bourse", "apscheduler.scheduler",\n'
+            '                         "yfinance")))\n'
+        ) % str(Path(main.__file__).resolve().parents[1])
+
+        result = subprocess.run(
+            [sys.executable, '-c', program], capture_output=True, text=True,
+            env={**os.environ, 'LOG_LEVEL': 'CRITICAL'})
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == 'CRITICAL,CRITICAL,CRITICAL'
 
     def test_an_unknown_level_is_refused(self):
         with pytest.raises(ValueError):

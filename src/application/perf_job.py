@@ -569,7 +569,6 @@ class PerfJob:
                     last = i == len(perf.daily) - 1
                     pt = AccountMetricPoint(
                         account=account.id,
-                        account_type=account.type,
                         day=dp.date,
                         **value_kwargs(dp, last, perf),
                     )

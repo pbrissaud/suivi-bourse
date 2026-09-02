@@ -153,13 +153,11 @@ export const RANGES = ['1M', 'YTD', '1Y', 'SINCE_OPENING'] as const
 
 export type Range = (typeof RANGES)[number]
 
-/**
- * The default, and it is the one preset that does **not** depend on the data:
- * *since the opening* is a `max` over the accounts, so a page opening on it
- * would render a different window depending on how old an account happens to
- * be, before the reader has asked anything.
- */
-export const DEFAULT_RANGE: Range = '1Y'
+// There is **no default here** (#862). A `DEFAULT_RANGE` stood beside `RANGES`
+// and was read by nobody: since #838 the card has no control of its own, so the
+// preset it opens on is the page's — `DEFAULT_DASHBOARD_RANGE`, mapped through
+// `ACCOUNT_RANGE` — and a second default under this name would be a second
+// answer to a question ADR-0019 settles with one control on the surface.
 
 /** A calendar day in UTC — the shape every perf point carries. */
 function day(at: Date): string {

@@ -24,7 +24,6 @@ import {
   declaredLabel,
   declaredType,
   degradedReason,
-  DEFAULT_RANGE,
   dividendPayers,
   firstDay,
   LAST_EVENTS,
@@ -78,7 +77,6 @@ describe('the one range control', () => {
     // other curve on the plot.
     expect([...RANGES]).toEqual(['1M', 'YTD', '1Y', 'SINCE_OPENING'])
     expect(RANGES).not.toContain('MAX')
-    expect(DEFAULT_RANGE).toBe('1Y')
   })
 
   it('stops the longest window at the youngest account’s opening', () => {

@@ -313,8 +313,7 @@ def seed_account_metrics(opened, account='pea', day=date(2026, 8, 5),
     opened.execute("INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
                    "ON CONFLICT (id) DO NOTHING", [account, account])
     perf_series.write_account_metrics(opened, [AccountMetricPoint(
-        account=account, account_type='CTO',
-        day=day, **values)])
+        account=account, day=day, **values)])
 
 
 #: A declared setup — the `accounts` mode's precondition. An accounts **file**
