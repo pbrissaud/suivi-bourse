@@ -27,7 +27,7 @@ dependencies = [
     # (ADR-0033): one interface, one socket, and a dependency tree that says
     # what the application actually does.
     "urllib3==2.7.0",
-    "yfinance==1.5.2",
+    "yfinance==1.7.0",
     "pandas>=2.0.0",       # NaN-safe close prices in application/main.py (also required by yfinance)
     "openpyxl>=3.1.0",
     # `watchdog` left with the drop folder it watched (ADR-0032): a file is
