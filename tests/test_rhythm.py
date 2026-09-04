@@ -5,9 +5,11 @@ in, four numbers out. There is no store here and nothing is faked — the seam t
 suite fakes is yfinance, and this module has no edge at all. What the route and
 the tool make of these figures is asserted where they live, over a real store.
 
-The instant is fixed at 2 September 2026, so the twelve months the measure
+The instant is fixed at 20 September 2026, so the twelve months the measure
 answers for are October 2025 through September 2026 and every fixture below can
-be read against that window by eye.
+be read against that window by eye. The month of ``now`` is the one month a
+fixture can reach into the future without leaving the window, and the days after
+the 20th are what those fixtures use.
 """
 from datetime import date, datetime, timezone
 
@@ -15,7 +17,7 @@ from application import rhythm
 from application.events.schemas import Event, EventType
 
 
-NOW = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
 
 
 def buy(day, amount, *, account=None, symbol='AAPL', fee=None):
@@ -61,9 +63,10 @@ def test_a_purchase_every_month_is_that_amount_over_the_whole_window():
 def test_half_a_year_of_purchases_is_the_amount_and_not_its_average():
     """500 € in six months of twelve is **500**, six of twelve.
 
-    Not 250 — the mean over the window — and not 0 — the median over it. The
-    figure is the amount of the months that carried a purchase, and the coverage
-    beside it is what keeps it from being read as a yearly total.
+    Not 250 — the mean over the window, and the median over it too, half its
+    months being empty. The figure is the amount of the months that carried a
+    purchase, and the coverage beside it is what keeps it from being read as a
+    yearly total.
     """
     figures = rhythm.measure(months(6, 500.0), NOW).portfolio
 
@@ -231,6 +234,26 @@ def test_purchases_older_than_the_window_are_outside_it():
     assert figures.months_observed == 12
 
 
+def test_the_window_is_the_twelve_calendar_months_ending_in_the_month_of_now():
+    """October 2025 through September 2026, and the day before is outside.
+
+    The edges rather than the middle: a buy on 30 September 2025 falls in the
+    thirteenth month back and is counted nowhere, one on 1 October 2025 opens
+    the window, and one on the day of ``now`` closes it. The window is made of
+    whole calendar months, so the first of them is included entire even though
+    the ledger is thirteen months old.
+    """
+    events = [buy(date(2025, 9, 30), 900.0),
+              buy(date(2025, 10, 1), 500.0),
+              buy(date(2026, 9, 20), 500.0)]
+
+    figures = rhythm.measure(events, NOW).portfolio
+
+    assert figures.months_observed == 12
+    assert figures.months_covered == 2
+    assert figures.monthly_amount == 500.0
+
+
 def test_an_empty_ledger_has_observed_nothing():
     """Zero of zero, and two nulls — never zero of twelve.
 
@@ -255,6 +278,44 @@ def test_a_ledger_dated_entirely_in_the_future_has_observed_nothing():
     assert figures.months_observed == 0
     assert figures.months_covered == 0
     assert figures.monthly_amount is None
+
+
+def test_a_purchase_dated_later_this_month_has_not_happened_yet():
+    """A buy on the 25th is no rhythm on the 20th.
+
+    The month of ``now`` is inside the window, so a row dated ahead inside it
+    is the one future row the month index cannot catch — only the instant tells
+    them apart. Counted, it would publish planned money as money already spent,
+    and it would carry its month into the coverage besides.
+    """
+    events = [buy(date(2026, 8, 10), 500.0), buy(date(2026, 9, 25), 5000.0)]
+
+    figures = rhythm.measure(events, NOW).portfolio
+
+    assert figures.monthly_amount == 500.0
+    assert figures.months_covered == 1
+    assert figures.months_observed == 2
+
+
+def test_the_future_is_cut_at_every_grain():
+    """The portfolio and each account stop at the same instant.
+
+    An account whose every row is still ahead has observed nothing — and it is
+    still in the breakdown, a coverage of zero being a statement rather than an
+    absence.
+    """
+    events = [buy(date(2026, 7, 10), 300.0, account='pea'),
+              buy(date(2026, 9, 25), 9000.0, account='pea'),
+              buy(date(2026, 9, 28), 9000.0, account='cto')]
+
+    measured = rhythm.measure(events, NOW)
+    accounts = dict(measured.accounts)
+
+    assert measured.portfolio.monthly_amount == 300.0
+    assert accounts['pea'].monthly_amount == 300.0
+    assert accounts['pea'].months_covered == 1
+    assert accounts['cto'].monthly_amount is None
+    assert accounts['cto'].months_observed == 0
 
 
 def test_an_undated_row_is_in_no_month():

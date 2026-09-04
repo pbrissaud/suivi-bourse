@@ -4617,16 +4617,18 @@ def test_acknowledging_an_advisory_that_does_not_stand_is_a_404(tmp_path):
 # --------------------------------------------------------------------- #
 
 def _months_ago(count: int) -> date:
-    """The fifteenth of the month ``count`` whole months back from today.
+    """The first of the month ``count`` whole months back from today.
 
     The route reads the wall clock — the window is *the last twelve calendar
     months*, and a fixture that hard-coded days would answer a different
-    question every month it was left alone. The fifteenth because every month
-    has one.
+    question every month it was left alone. The **first** because every month
+    has one and it is never ahead of that clock: the measure stops at ``now``,
+    so a day later in the current month would leave this ledger a month short
+    for the first half of every month.
     """
     today = datetime.now(timezone.utc).date()
     index = today.year * 12 + (today.month - 1) - count
-    return date(index // 12, index % 12 + 1, 15)
+    return date(index // 12, index % 12 + 1, 1)
 
 
 def _monthly_buys(count: int, unit_price: float, *, account: str = '',

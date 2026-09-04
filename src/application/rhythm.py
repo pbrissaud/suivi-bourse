@@ -19,8 +19,9 @@ model reads it before quoting the figure.
 
 **The amount is a median over the months that carry a purchase, and it is
 published with its coverage or not at all.** Six months of 500 € inside a
-twelve-month window is not *250 € a month* — the mean over the window — and it
-is not *0 € a month* — the median over it. It is **500 €, six months out of
+twelve-month window is not *250 € a month* — the mean over the window, and, half
+of its months being empty, the median over the window too; four such months
+would have made that same median *0 €*. It is **500 €, six months out of
 twelve**, and that pair is the smallest honest statement available. A median
 rather than a mean because one exceptional month, a bonus or a release of
 savings, would otherwise set the figure a twenty-year projection is built on.
@@ -164,8 +165,19 @@ def measure(events: Sequence[Event], now: datetime) -> Rhythm:
 # --------------------------------------------------------------------------- #
 
 def _figures(events: Iterable[Event], now: datetime) -> Figures:
-    """The four members, over one collection of events."""
-    events = list(events)
+    """The four members, over one collection of events.
+
+    **A row dated after ``now`` has not been lived**, and it is dropped before
+    anything is counted. Only the month of ``now`` can hold one — a later month
+    falls outside the window on its own — and that is the month a reader looks
+    at first: a buy pencilled in for the 15th would otherwise be published on
+    the 2nd as money already spent, and would carry its month into the coverage
+    besides. The cut is here rather than in :func:`measure` so that the
+    portfolio and every account are cut at the same instant.
+    """
+    today = now.date()
+    events = [event for event in events
+              if event.date is None or event.date <= today]
     observed = _observed_months(events, now)
     if not observed:
         return Figures(monthly_amount=None, months_covered=0,

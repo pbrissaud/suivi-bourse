@@ -480,13 +480,16 @@ def rhythmic(count, unit_price, *, account=None, symbol='AAPL'):
 
     The tool reads the wall clock, the window being *the last twelve calendar
     months*, so the fixture is written against it rather than against fixed days
-    that would answer a different question every month.
+    that would answer a different question every month. The **first** of each
+    month, that day never being ahead of the clock: the measure stops at
+    ``now``, and a later day would leave the current month uncovered for as
+    long as it had not arrived.
     """
     today = datetime.now(timezone.utc).date()
     events = []
     for offset in reversed(range(count)):
         index = today.year * 12 + (today.month - 1) - offset
-        events.append(Event(date(index // 12, index % 12 + 1, 15),
+        events.append(Event(date(index // 12, index % 12 + 1, 1),
                             EventType.BUY, symbol, 'A share',
                             quantity=1, unit_price=unit_price, account=account))
     return events

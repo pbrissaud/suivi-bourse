@@ -28,10 +28,10 @@ description, where a model reads it before quoting the figure.
 
 ## An amount that cannot be quoted alone
 
-Six months of 500 € inside a twelve-month window is not *250 € a month*, and it is not
-*0 € a month* — the two figures a mean over the window, and a median over it, would
-produce. It is **500 €, six months out of twelve**, and that pair is the smallest honest
-statement available.
+Six months of 500 € inside a twelve-month window is not *250 € a month* — the mean over
+the window, and, half of its months being empty, the median over the window too. Four such
+months would have made that same median *0 €*. It is **500 €, six months out of twelve**,
+and that pair is the smallest honest statement available.
 
 So the amount is a **median over the months that carry a purchase**, and it is published
 **with its coverage or not at all**. A median rather than a mean, because one exceptional
@@ -58,10 +58,13 @@ the conclusion, which is what #751 wanted from them to begin with.
 
 ## Consequences
 
-- **The window is twelve rolling months and it is hard-coded**, bounded only by the age of
-  the ledger — counted from the first event of any kind, never from the first buy. Nine
-  months without a purchase is a fact *about* the rhythm, not a gap in the observation, and
-  starting the count at the first buy would erase exactly the thing a reader wants to see.
+- **The window is the twelve calendar months ending in the month of `now`, and it is
+  hard-coded**, bounded only by the age of the ledger — counted from the first event of any
+  kind, never from the first buy. The months are whole ones and the last is cut at `now`: a
+  buy dated later this month is planned rather than lived, and counting it would publish as
+  spent money that has not left. Nine months without a purchase is a fact *about* the
+  rhythm, not a gap in the observation, and starting the count at the first buy would erase
+  exactly the thing a reader wants to see.
 - **The grain is the portfolio, broken down by account, and never by symbol.** An ETF
   bought in January and bitcoin in February are one monthly habit expressed twice; per
   symbol they are two irregular ones. A rotation out of A into B would likewise break a
