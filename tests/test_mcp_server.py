@@ -11,7 +11,7 @@ the SDK's transport and nothing of ours; what is ours is the routing, and that i
 held in ``test_mcp_wiring.py``.
 """
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 from mcp import Client
@@ -114,19 +114,24 @@ LEDGER = [
 # The surface itself
 # --------------------------------------------------------------------- #
 
-def test_the_surface_is_five_tools_and_nothing_else(tmp_path):
-    """Five, named, and no sixth arriving by accident.
+def test_the_surface_is_six_tools_and_nothing_else(tmp_path):
+    """Six, named, and no seventh arriving by accident.
 
     The list is asserted **whole** rather than by membership: ADR-0040 makes
     these names a contract, so a tool appearing here is a promise made and a
     tool leaving is a promise broken. Either should fail a test rather than a
     user's setup.
+
+    The sixth is the investment rhythm (#751, ADR-0041), and it arrived with a
+    route of its own: this module's opening promise — *it computes nothing* —
+    is kept at the word rather than gaining a second exception.
     """
     runtime, _ = build_runtime(tmp_path)
 
     names = sorted(tool.name for tool in listed(runtime))
-    assert names == ['get_portfolio_history', 'get_portfolio_totals',
-                     'list_accounts', 'list_events', 'list_positions']
+    assert names == ['get_investment_rhythm', 'get_portfolio_history',
+                     'get_portfolio_totals', 'list_accounts', 'list_events',
+                     'list_positions']
 
 
 def test_every_description_states_the_absence_rule(tmp_path):
@@ -464,3 +469,108 @@ def test_a_negative_bound_is_refused_in_words(tmp_path):
 
     assert result.is_error is True
     assert 'negative' in _text(result)
+
+
+# --------------------------------------------------------------------- #
+# The investment rhythm (issue #751, ADR-0041)
+# --------------------------------------------------------------------- #
+
+def rhythmic(count, unit_price, *, account=None, symbol='AAPL'):
+    """One purchase a month for ``count`` months, ending in the current one.
+
+    The tool reads the wall clock, the window being *the last twelve calendar
+    months*, so the fixture is written against it rather than against fixed days
+    that would answer a different question every month. The **first** of each
+    month, that day never being ahead of the clock: the measure stops at
+    ``now``, and a later day would leave the current month uncovered for as
+    long as it had not arrived.
+    """
+    today = datetime.now(timezone.utc).date()
+    events = []
+    for offset in reversed(range(count)):
+        index = today.year * 12 + (today.month - 1) - offset
+        events.append(Event(date(index // 12, index % 12 + 1, 1),
+                            EventType.BUY, symbol, 'A share',
+                            quantity=1, unit_price=unit_price, account=account))
+    return events
+
+
+def test_the_rhythm_tool_answers_the_amount_with_its_coverage(tmp_path):
+    """The pair, and the breakdown beside it."""
+    runtime, _ = build_runtime(tmp_path, events=rhythmic(6, 500.0))
+
+    body = payload(call(runtime, 'get_investment_rhythm'))
+
+    assert body['monthly_amount'] == 500.0
+    assert body['months_covered'] == 6
+    assert body['months_observed'] == 6
+    assert body['base_currency'] == 'EUR'
+    assert [row['account'] for row in body['accounts']] == ['default']
+
+
+def test_the_rhythm_tool_and_the_route_answer_the_same_figures(tmp_path):
+    """One store, one primitive, two surfaces — and they cannot disagree.
+
+    ADR-0041 gives the figures a route *so that* the tool has one to mirror, and
+    this is where that holds: the same runtime is served over HTTP and over the
+    tool surface, and the two payloads are compared whole. A figure computed a
+    second way on either side fails here rather than in front of a reader.
+    """
+    from api import create_app
+
+    runtime, _ = build_runtime(tmp_path, events=rhythmic(4, 250.0))
+
+    over_http = create_app(runtime).test_client() \
+        .get('/api/investment-rhythm').get_json()
+    over_the_tool = payload(call(runtime, 'get_investment_rhythm'))
+
+    assert over_http == over_the_tool
+
+
+def test_a_portfolio_that_bought_nothing_reports_no_amount(tmp_path):
+    """A null, a null and a coverage of zero — never a rhythm of zero."""
+    runtime, _ = build_runtime(tmp_path, events=[
+        Event(date(2024, 3, 1), EventType.DIVIDEND, 'AAPL', 'Apple Inc',
+              amount=2.40)])
+
+    body = payload(call(runtime, 'get_investment_rhythm'))
+
+    assert body['monthly_amount'] is None
+    assert body['dispersion'] is None
+    assert body['months_covered'] == 0
+
+
+def test_the_rhythm_description_carries_the_three_things_it_must(tmp_path):
+    """The description is payload (ADR-0040), and this is what it has to say.
+
+    Three sentences a model gets wrong by default, and each of them produces a
+    confident-and-wrong statement about the reader's own money: quoting the
+    amount without its coverage (and so multiplying it by twelve), reading a
+    ``null`` as a zero, and treating the figure as money that entered the
+    portfolio when an arbitrage inflates it.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    described = {tool.name: tool.description or ''
+                 for tool in listed(runtime)}['get_investment_rhythm']
+
+    assert 'months_covered' in described and 'months_observed' in described
+    assert 'NOT 6000' in described
+    assert 'SELLS ARE NOT SUBTRACTED' in described
+    assert 'NO PURCHASE IN THE WINDOW' in described
+    assert 'dollar-cost averaging' in described
+
+
+def test_a_broken_store_is_a_failed_read_and_not_an_absent_rhythm(tmp_path):
+    """The currency is the one read this tool makes, and it fails in words.
+
+    An agent handed a rhythm with a null currency would report amounts in no
+    unit at all and say the app was fine.
+    """
+    runtime, opened = build_runtime(tmp_path, events=rhythmic(2, 500.0))
+    opened.execute('DROP TABLE setting')
+
+    result = call(runtime, 'get_investment_rhythm')
+
+    assert result.is_error is True
+    assert 'could not answer' in _text(result)

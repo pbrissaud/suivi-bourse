@@ -23,7 +23,7 @@ embedded DuckDB store** (ADR-0001).
 | `tests/` | The Python suite — unit and E2E, all network-mocked |
 | `website/` | The versioned Docusaurus site, bilingual by construction — `website/CLAUDE.md` |
 | `CONTEXT.md` | The domain glossary: the v5 vocabulary |
-| `docs/adr/` | The 39 structural decisions |
+| `docs/adr/` | The 41 structural decisions |
 | `docs/v5-decisions.md` | The ticket-by-ticket narrative of the rewrite (archive) |
 | `docs/agents/` | How the skills consume this repo (issues, labels, waves) |
 

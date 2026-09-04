@@ -1,4 +1,4 @@
-"""The agent's interface — five read-only tools on the one socket (ADR-0040, #749).
+"""The agent's interface — six read-only tools on the one socket (ADR-0040, #749).
 
 This module is the second reader ADR-0040 grants, and it is deliberately the
 same shape as :mod:`api.api`: a thin adapter over the durable Python boundary,
@@ -43,6 +43,7 @@ from application import accounts as accounts_module
 from application import instants
 from application import portfolio_view
 from application import quotes
+from application import rhythm
 from application import store as store_module
 
 #: The window a history tool defaults to when the caller names none. The global
@@ -178,6 +179,55 @@ say so rather than describing it as the whole. Narrow with from_day / to_day
 
 Filtering by symbol excludes cash events (DEPOSIT and WITHDRAWAL), which carry no
 symbol. An account of "default" is the account every install is given.
+
+{_CURRENCY}
+
+{_ABSENCE}
+"""
+
+GET_INVESTMENT_RHYTHM_DESCRIPTION = f"""\
+How much the owner buys in a month, and how often — over the last 12 months.
+
+Use this to describe the owner's investing habit, and as the input to any
+projection of what they will put in next. It is measured on the BUY events over
+the twelve calendar months ending today, for the portfolio as a whole and broken
+down by account. There is no per-symbol figure and no month-by-month series.
+
+NEVER QUOTE monthly_amount WITHOUT months_covered AND months_observed. The
+amount is the median of the months that carried at least one purchase — months
+with no purchase are not averaged in as zeros. So 500 with months_covered 6 and
+months_observed 12 means "500 in each of six months out of twelve", which is
+about 3000 over the year and NOT 6000. Multiplying the amount by twelve is the
+wrong answer this app publishes the coverage to prevent. Give both figures in
+the same sentence, every time.
+
+months_observed is 12 unless the ledger is younger than that, in which case it
+is the ledger's age in months, counted from its first event of any kind — so a
+portfolio opened four months ago reports 4. Months with no purchase are counted
+as observed and uncovered, which is how a stop in investing is visible: 12
+observed and 3 covered means nine months without a purchase, not nine months
+nobody looked at.
+
+SELLS ARE NOT SUBTRACTED, and that inflates the figure. Selling one holding to
+buy another counts as rhythm here, because nothing on a purchase says where its
+money came from — so a month of rebalancing reports more than the owner actually
+put in, and this measure is not proof that money entered the portfolio. Say so
+when the figure is doing work in your answer; never call it a contribution, a
+deposit, or dollar-cost averaging.
+
+dispersion is the coefficient of variation of those same monthly amounts: 0
+means every covered month was the same size, and around 1 or above means one
+month dominates the rest. It is not a percentage of anything.
+
+A null monthly_amount with months_covered 0 means NO PURCHASE IN THE WINDOW —
+the owner may still have deposited, been granted shares or received dividends,
+none of which is a purchase. A null with months_observed 0 as well means the
+ledger is empty, or has nothing dated in the past. Neither is a rhythm of zero
+and neither is an error.
+
+There is deliberately no label here — no "regular", no "monthly", no
+"irregular". The app publishes the numbers and does not judge them; the
+judgement is yours to state and to attribute to yourself.
 
 {_CURRENCY}
 
@@ -449,6 +499,28 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             'total': total,
             'returned': len(newest),
             'events': [_event_to_dict(event) for event in newest],
+        }
+
+    @mcp.tool(description=GET_INVESTMENT_RHYTHM_DESCRIPTION)
+    def get_investment_rhythm() -> Dict[str, Any]:
+        """``/api/investment-rhythm``' payload, field for field (#751, ADR-0041).
+
+        The **route exists** and this reaches the same primitive over the same
+        rows, which is what keeps this module's opening promise literal: a tool
+        computing a figure no route publishes would have been the second
+        departure from ``/api`` after ADR-0031's paging, and would have needed
+        arguing as one.
+
+        The rows come from the snapshot, as ``list_events`` takes them and for
+        the same reason — they are the ones the aggregator ran on. The store is
+        read for the reporting currency alone, and it fails like any other tool
+        when it cannot: an amount labelled with nothing is the figure this tool
+        exists to keep from being misread.
+        """
+        return {
+            'base_currency': reading(_base_currency),
+            **rhythm.measure(_snapshot().events,
+                             datetime.now(timezone.utc)).to_dict(),
         }
 
     return mcp

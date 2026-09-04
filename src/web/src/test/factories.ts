@@ -84,6 +84,7 @@ import type {
   DuplicateRow,
   ImportReceipt,
   InstallationFact,
+  InvestmentRhythmResponse,
   LedgerEvent,
   Mover,
   MoversResponse,
@@ -611,6 +612,37 @@ export function aMover(overrides: Partial<Mover> = {}): Mover {
     change_pct: 0.02,
     market_value: 1300,
     contribution: 25.5,
+    ...overrides,
+  }
+}
+
+/**
+ * THE INVESTMENT RHYTHM (#751, ADR-0041) — **six covered months of twelve**.
+ *
+ * The pair the record is about, chosen so the two wrong readings are both
+ * visible in a fixture: `500 €` a month over six months of twelve is neither
+ * `250` (the mean over the window) nor `6 000` a year (the amount quoted
+ * alone). The dispersion is deliberately not zero, a rhythm held at one exact
+ * amount for six months being the case that never occurs.
+ */
+export function aRhythm(
+  overrides: Partial<InvestmentRhythmResponse> = {},
+): InvestmentRhythmResponse {
+  return {
+    base_currency: 'EUR',
+    monthly_amount: 500,
+    months_covered: 6,
+    months_observed: 12,
+    dispersion: 0.18,
+    accounts: [
+      {
+        account: 'alpha',
+        monthly_amount: 500,
+        months_covered: 6,
+        months_observed: 12,
+        dispersion: 0.18,
+      },
+    ],
     ...overrides,
   }
 }

@@ -4612,6 +4612,126 @@ def test_acknowledging_an_advisory_that_does_not_stand_is_a_404(tmp_path):
 
 
 # --------------------------------------------------------------------- #
+# The investment rhythm (issue #751, ADR-0041)
+# --------------------------------------------------------------------- #
+
+def _months_ago(count: int) -> date:
+    """The first of the month ``count`` whole months back from today.
+
+    The route reads the wall clock — the window is *the last twelve calendar
+    months*, and a fixture that hard-coded days would answer a different
+    question every month it was left alone. The **first** because every month
+    has one and it is never ahead of that clock: the measure stops at ``now``,
+    so a day later in the current month would leave this ledger a month short
+    for the first half of every month.
+    """
+    today = datetime.now(timezone.utc).date()
+    index = today.year * 12 + (today.month - 1) - count
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def _monthly_buys(count: int, unit_price: float, *, account: str = '',
+                  symbol: str = 'AAPL') -> str:
+    """A ledger of one purchase a month, ending in the current month."""
+    header = ('date,event_type,symbol,name,quantity,unit_price,fee,amount,'
+              'notes,account\n')
+    return header + ''.join(
+        f'{_months_ago(offset).isoformat()},BUY,{symbol},A share,1,'
+        f'{unit_price:.2f},0,,,{account}\n'
+        for offset in reversed(range(count)))
+
+
+def test_the_rhythm_is_the_amount_and_the_coverage_together(tmp_path):
+    """The route publishes the pair, never the amount on its own.
+
+    The reporting currency rides with them because ``monthly_amount`` is money
+    and ADR-0002 states the unit once for the whole payload.
+    """
+    client = build_client(
+        tmp_path, events=_monthly_buys(6, 500.0),
+        seed=lambda opened: opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')"))
+
+    body = client.get('/api/investment-rhythm').get_json()
+
+    assert body['monthly_amount'] == 500.0
+    assert body['months_covered'] == 6
+    assert body['months_observed'] == 6
+    assert body['dispersion'] == 0.0
+    assert body['base_currency'] == 'EUR'
+
+
+def test_an_empty_ledger_has_a_rhythm_to_state_and_it_is_not_a_404(tmp_path):
+    """``200`` with two nulls and a coverage of zero out of zero.
+
+    A portfolio that has bought nothing is a portfolio with a rhythm to state,
+    and **no field reads** ``0`` **in place of a** ``null``: the precedent is
+    the performance writer, which keeps *no ledger* and *a ledger at zero*
+    apart.
+    """
+    response = build_client(tmp_path).get('/api/investment-rhythm')
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['monthly_amount'] is None
+    assert body['dispersion'] is None
+    assert body['months_covered'] == 0
+    assert body['months_observed'] == 0
+    assert body['accounts'] == []
+
+
+def test_a_ledger_of_no_purchases_is_observed_all_the_same(tmp_path):
+    """Deposits and dividends open the observation and cover no month of it."""
+    header = ('date,event_type,symbol,name,quantity,unit_price,fee,amount,'
+              'notes\n')
+    client = build_client(tmp_path, events=(
+        header
+        + f'{_months_ago(3).isoformat()},DEPOSIT,,,,,,1000.00,\n'
+        + f'{_months_ago(1).isoformat()},DIVIDEND,AAPL,Apple Inc,,,,12.00,\n'))
+
+    body = client.get('/api/investment-rhythm').get_json()
+
+    assert body['monthly_amount'] is None
+    assert body['months_covered'] == 0
+    assert body['months_observed'] == 4
+
+
+def test_the_breakdown_names_every_account_the_ledger_touches(tmp_path):
+    """Each account carries the same four members as the headline."""
+    client = build_client(
+        tmp_path,
+        accounts='id,type,label\ncto,CTO,Trade Republic\npea,PEA,Bourso\n',
+        events=(_monthly_buys(3, 300.0, account='pea')
+                + _monthly_buys(2, 200.0, account='cto', symbol='MSFT')
+                .split('\n', 1)[1]))
+
+    body = client.get('/api/investment-rhythm').get_json()
+
+    breakdown = {row['account']: row for row in body['accounts']}
+    assert set(breakdown) == {'cto', 'pea'}
+    assert breakdown['pea']['monthly_amount'] == 300.0
+    assert breakdown['pea']['months_covered'] == 3
+    assert breakdown['cto']['monthly_amount'] == 200.0
+    assert breakdown['cto']['months_covered'] == 2
+
+
+def test_a_sale_does_not_lower_the_month_that_holds_it(tmp_path):
+    """ADR-0041's named limitation, asserted over the real ledger."""
+    header = ('date,event_type,symbol,name,quantity,unit_price,fee,amount,'
+              'notes\n')
+    client = build_client(tmp_path, events=(
+        header
+        + f'{_months_ago(1).isoformat()},BUY,AAPL,Apple Inc,10,100.00,0,,\n'
+        + f'{_months_ago(0).isoformat()},SELL,AAPL,Apple Inc,10,120.00,0,,\n'
+        + f'{_months_ago(0).isoformat()},BUY,MSFT,Microsoft,1,500.00,0,,\n'))
+
+    body = client.get('/api/investment-rhythm').get_json()
+
+    assert body['monthly_amount'] == 750.0
+    assert body['months_covered'] == 2
+
+
+# --------------------------------------------------------------------- #
 # Declaring an account from the app (issue #698)
 # --------------------------------------------------------------------- #
 

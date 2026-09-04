@@ -32,6 +32,7 @@ import {
   aPositionsPayload,
   aPriceSeries,
   aReceipt,
+  aRhythm,
   aRuntime,
   aStore,
   aTotalsPayload,
@@ -75,6 +76,11 @@ export function defaultHandlers() {
     // series kept entire, there being no ladder on a daily one.
     http.get(ROUTES.positionsHistory, () => HttpResponse.json(aPositionsHistory())),
     http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload())),
+    // The investment rhythm (#751, ADR-0041). Derived on every read and stored
+    // nowhere, so there is nothing to vary by parameter: the handler answers the
+    // fixture's own pair — six covered months of twelve — and a test about
+    // another rhythm overrides it.
+    http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm())),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window (ADR-0010): a
     // handler serving one frozen payload would make the presets look like four
