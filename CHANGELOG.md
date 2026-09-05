@@ -1,5 +1,36 @@
 # Changelog
 
+## [5.1.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.0.0...v5.1.0) (2026-09-05)
+
+
+### Features
+
+* **app:** the investment rhythm, measured on the buys ([#751](https://github.com/pbrissaud/suivi-bourse/issues/751)) ([#896](https://github.com/pbrissaud/suivi-bourse/issues/896)) ([da52d7d](https://github.com/pbrissaud/suivi-bourse/commit/da52d7d501f69dd52cf62fb4b56e38591fd103b7))
+* **mcp:** a read-only MCP server exposing the portfolio ([#877](https://github.com/pbrissaud/suivi-bourse/issues/877)) ([90de760](https://github.com/pbrissaud/suivi-bourse/commit/90de7607cfdfd9325debe1286e8e7804a50a5219))
+
+
+### Bug Fixes
+
+* **web:** unblock the image build after a same-day lucide-react bump ([#885](https://github.com/pbrissaud/suivi-bourse/issues/885)) ([3af6af1](https://github.com/pbrissaud/suivi-bourse/commit/3af6af1f06eb24fd3880c5c5c9df1f3c4e95f1da))
+
+
+### Dependencies
+
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.8 ([#876](https://github.com/pbrissaud/suivi-bourse/issues/876)) ([a29f98d](https://github.com/pbrissaud/suivi-bourse/commit/a29f98d06b44e721f5f235f59a69bb492f5bb4d2))
+* **website:** update pnpm to v11.25.0 ([#892](https://github.com/pbrissaud/suivi-bourse/issues/892)) ([f0fb251](https://github.com/pbrissaud/suivi-bourse/commit/f0fb251dfeb9636980c8b83c0c3839dae621f79e))
+* **web:** update dependency @tanstack/react-query to v5.102.8 ([#881](https://github.com/pbrissaud/suivi-bourse/issues/881)) ([c524ce2](https://github.com/pbrissaud/suivi-bourse/commit/c524ce2eca136e81ff10e0c1216cb0ea929fcdc0))
+* **web:** update dependency @testing-library/user-event to v14.6.7 ([#900](https://github.com/pbrissaud/suivi-bourse/issues/900)) ([30cc625](https://github.com/pbrissaud/suivi-bourse/commit/30cc6258253c0f9786e7c4c80a25a9551743ed47))
+* **web:** update dependency @types/node to v26.4.0 ([#882](https://github.com/pbrissaud/suivi-bourse/issues/882)) ([6b537be](https://github.com/pbrissaud/suivi-bourse/commit/6b537be536a36122ef0a35a89f1c3bfb6c99c3c9))
+* **web:** update dependency @types/node to v26.4.1 ([#899](https://github.com/pbrissaud/suivi-bourse/issues/899)) ([0be8a5e](https://github.com/pbrissaud/suivi-bourse/commit/0be8a5e98326d9621832a50f30c249c22715480c))
+* **web:** update dependency @vitejs/plugin-react to v6.1.1 ([#883](https://github.com/pbrissaud/suivi-bourse/issues/883)) ([f9fc1fd](https://github.com/pbrissaud/suivi-bourse/commit/f9fc1fd036b39b701820e89e9d05cdfb1478fcb7))
+* **web:** update dependency intl-messageformat to v11.2.14 ([#870](https://github.com/pbrissaud/suivi-bourse/issues/870)) ([f2e11be](https://github.com/pbrissaud/suivi-bourse/commit/f2e11be35e62651e36c8c71ad3393c27b5353241))
+* **web:** update dependency lucide-react to v1.37.0 ([#891](https://github.com/pbrissaud/suivi-bourse/issues/891)) ([fe448a5](https://github.com/pbrissaud/suivi-bourse/commit/fe448a53ec262f755e26cd53978d2d79de7d6527))
+* **web:** update dependency lucide-react to v1.38.0 ([#897](https://github.com/pbrissaud/suivi-bourse/issues/897)) ([25a467a](https://github.com/pbrissaud/suivi-bourse/commit/25a467a658fbfedb4f8881ca5e6969d7902fac87))
+* **web:** update dependency lucide-react to v1.39.0 ([#884](https://github.com/pbrissaud/suivi-bourse/issues/884)) ([fe3f549](https://github.com/pbrissaud/suivi-bourse/commit/fe3f5495a68e288636730a2d3bf949bd3267d28d))
+* **web:** update dependency vite to v8.2.2 ([#871](https://github.com/pbrissaud/suivi-bourse/issues/871)) ([7b7531d](https://github.com/pbrissaud/suivi-bourse/commit/7b7531d2e3d3350f442df07634e9aec48d1a9ff6))
+* **web:** update dependency vitest to v4.1.11 ([#878](https://github.com/pbrissaud/suivi-bourse/issues/878)) ([ae54032](https://github.com/pbrissaud/suivi-bourse/commit/ae54032cf25106b11e4d9dfd6f92f1e6f497f5f0))
+* **web:** update testing-library monorepo ([#879](https://github.com/pbrissaud/suivi-bourse/issues/879)) ([0674c55](https://github.com/pbrissaud/suivi-bourse/commit/0674c553044e5c4eb2f7594917bc3fc8ee0269bd))
+
 ## [5.0.0](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.2...v5.0.0) (2026-08-31)
 
 
