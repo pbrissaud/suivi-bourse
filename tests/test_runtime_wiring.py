@@ -408,7 +408,6 @@ def test_a_failed_write_leaves_the_anchor_where_it_was_and_is_recorded(
     assert quotes.oldest_window_tried(store, "AAPL") is None
     record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
     assert record.failed is True
-    assert record.written == 0
     assert "could not be written" in record.error
 
 

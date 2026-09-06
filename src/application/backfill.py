@@ -210,8 +210,6 @@ class BackfillWorkload:
             return 0
 
         if written is None:
-            app_logger.warning(
-                f"Failed to store the history of {symbol}, will retry next cycle")
             publish(anchor=end_date, oldest=oldest_timestamp,
                     window=(start_date, end_date), failed=True,
                     error=f"the history of {symbol} over "
@@ -289,9 +287,6 @@ class BackfillWorkload:
             return 0
 
         if written is None:
-            app_logger.warning(
-                f"Failed to store the forward history of {symbol}, will retry "
-                f"next cycle")
             publish(window=(start_date, end_date), failed=True,
                     error=f"the history of {symbol} over "
                           f"{start_date.date()} → {end_date.date()} was fetched "
