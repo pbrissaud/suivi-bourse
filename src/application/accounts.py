@@ -153,6 +153,35 @@ def is_named_by_events(store, account_id: str) -> bool:
     return bool(rows and rows[0][0])
 
 
+#: The dot segments a URL resolves away before a request is even sent: `.` is
+#: removed and `..` climbs a level, so an account wearing either is reached at
+#: an address that names some other route (issue #861).
+DOT_SEGMENTS = ('.', '..')
+
+
+def refuse_unaddressable_id(account_id: str) -> None:
+    """Refuse an id the app's own ``<account_id>`` routes cannot carry (#861).
+
+    The id is the account's **address**: it is what four routes match on —
+    ``GET …/history``, ``POST …/reassignment``, ``PATCH`` and ``DELETE`` — and
+    Flask's default converter stops at a slash, while a URL resolves ``.`` and
+    ``..`` away before the request leaves the browser. An id holding one of the
+    three inserts and is then unreachable, unrenameable and **undeletable**,
+    with ADR-0013 refusing the cascade that would clean it up.
+
+    It is a function of its own, and not a line inside :func:`create_account`,
+    because the dry run has to refuse what the write would refuse: the preview
+    judges a file's declarations (:func:`entries.judge`) without going anywhere
+    near the writer.
+    """
+    account_id = _text(account_id)
+    if '/' in account_id or account_id in DOT_SEGMENTS:
+        raise AccountSourceError(
+            f"{account_id!r} cannot be an account id: it is the address the "
+            f"account is reached at in the app's own URLs, and '/', '.' and "
+            f"'..' there name a route that does not exist")
+
+
 def create_account(store, account_id: str, account_type: str,
                    label: Optional[str] = None) -> Account:
     """Declare an account. The app is where one is born, and the only place."""
@@ -160,15 +189,7 @@ def create_account(store, account_id: str, account_type: str,
     account_type = _text(account_type)
     if not account_id:
         raise AccountSourceError("id is required")
-    if '/' in account_id:
-        # The id is the account's **address**: it is what the four
-        # ``<account_id>`` routes match on, and Flask's default converter stops
-        # at a slash. An id holding one inserts and is then unreachable — no
-        # history, no reassignment, no rename and no delete — and ADR-0013
-        # refuses the cascade that would clean it up (issue #861).
-        raise AccountSourceError(
-            "id cannot contain '/': it is the account's address in the app's "
-            "own URLs, and a slash there names a route that does not exist")
+    refuse_unaddressable_id(account_id)
     if not account_type:
         raise AccountSourceError("type is required")
     if account_id in account_ids(store):
@@ -224,5 +245,6 @@ __all__ = [
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',
     'is_named_by_events',
+    'refuse_unaddressable_id', 'DOT_SEGMENTS',
     'create_account', 'update_account', 'delete_account',
 ]
