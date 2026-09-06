@@ -66,7 +66,7 @@ import {
 } from '@/lib/accounts'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
-import { problemSentence } from '@/lib/problem'
+import { entryGone, problemSentence } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
@@ -161,7 +161,26 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
       void queryClient.invalidateQueries()
       onClose()
     },
+    onError: (error) => {
+      // The row being corrected left the ledger somewhere else (#785): the
+      // panel stays open holding what was typed, and the one list that went
+      // stale is re-read so the row it is about stops being displayed.
+      if (entryGone(error)) void queryClient.invalidateQueries({ queryKey: ['events'] })
+    },
   })
+
+  /**
+   * **Every way out of the panel, and there are three**: the cancel button, the
+   * sheet's own close, and the write that succeeded. The refusal is forgotten
+   * with the gesture that carried it — the panel is mounted once for all the
+   * rows, so a sentence left standing is read as being about the next row
+   * opened, and *this event is no longer in the ledger* over a row that is
+   * perfectly alive is a precise untruth.
+   */
+  function close() {
+    write.reset()
+    onClose()
+  }
 
   const fields = type === null ? null : FIELDS[type]
   const choice = accountChoice(accounts, accountsFailed)
@@ -236,7 +255,13 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
   }
 
   return (
-    <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (next) return
+        close()
+      }}
+    >
       <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>
@@ -486,7 +511,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 <Button type="submit" disabled={write.isPending || blocked}>
                   {t('data.form.submit')}
                 </Button>
-                <Button type="button" variant="outline" onClick={onClose}>
+                <Button type="button" variant="outline" onClick={close}>
                   {t('data.form.cancel')}
                 </Button>
               </div>

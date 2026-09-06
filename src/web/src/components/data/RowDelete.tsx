@@ -36,7 +36,7 @@ import { api, type LedgerEvent } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { identityOf } from '@/lib/ledger'
-import { problemSentence } from '@/lib/problem'
+import { entryGone, problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
 interface RowDeleteProps {
@@ -60,6 +60,14 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
       // replays synchronously before answering — so what is invalidated is
       // everything rather than a list somebody has to keep in step.
       void queryClient.invalidateQueries()
+    },
+    onError: (error) => {
+      // **The row left the ledger somewhere else** (#785): nothing was written,
+      // so the whole cache is not what went stale — the list is. The phantom
+      // row goes while the reader is still looking at the box that named it,
+      // and `/health`, the accounts and the installation facts are not re-read
+      // for a row that left a page.
+      if (entryGone(error)) void queryClient.invalidateQueries({ queryKey: ['events'] })
     },
   })
 

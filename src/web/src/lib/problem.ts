@@ -19,6 +19,18 @@ import type { MessageKey, MessageValues } from '@/lib/i18n'
 export const PROBLEM_TYPES = {
   storageUnavailable: '/problems/storage-unavailable',
   notFound: '/problems/not-found',
+  /**
+   * **The event was there and is not any more** (#785, ADR-0027).
+   *
+   * Its own identifier rather than `notFound`'s, and the server is what tells
+   * the two apart: a key it issued is not handed to another row for the life of
+   * its process, so a write that misses names a row that *left*. Inferring that
+   * here from a `404` would be branching on what a status happens to mean at
+   * two routes, which is the thing this module exists not to do — and it would
+   * say *deleted elsewhere* about an account, an advisory, or a create that
+   * never had a row to miss.
+   */
+  entryGone: '/problems/entry-gone',
   badRequest: '/problems/bad-request',
   /**
    * The request is well formed and the **store's state** refuses it (#698): an
@@ -58,6 +70,7 @@ export const PROBLEM_TYPES = {
 const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.storageUnavailable]: 'problem.storageUnavailable',
   [PROBLEM_TYPES.notFound]: 'problem.notFound',
+  [PROBLEM_TYPES.entryGone]: 'problem.entryGone',
   [PROBLEM_TYPES.badRequest]: 'problem.badRequest',
   [PROBLEM_TYPES.conflict]: 'problem.conflict',
   // The sentence with **no** values in it — what is left to say when the
@@ -152,6 +165,17 @@ export function problemMessage(error: unknown): {
     }
   }
   return { message: problemMessageKey(error), values: {} }
+}
+
+/**
+ * The row this gesture addressed has left the ledger (#785).
+ *
+ * The sentence needs nothing but the table — the type is in it — so what this
+ * answers is the *other* question the two gestures ask: whether to re-read the
+ * ledger under the reader, the list they are looking at being the stale thing.
+ */
+export function entryGone(error: unknown): boolean {
+  return error instanceof ApiProblem && error.type === PROBLEM_TYPES.entryGone
 }
 
 /**

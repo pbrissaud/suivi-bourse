@@ -570,6 +570,7 @@
 
   "problem.storageUnavailable": "Vos données sont illisibles pour l’instant. L’application tourne, mais son magasin ne répond pas.",
   "problem.notFound": "L’application répond que cela n’existe pas.",
+  "problem.entryGone": "Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs, et rien n’a été modifié ici.",
   "problem.badRequest": "L’application a refusé la requête faite par cette page.",
   "problem.conflict": "Refusé : ce nom existe déjà, ou quelque chose en dépend encore.",
   "problem.unreplayableLedger": "Refusé, rien n’a changé : le grand livre vendrait des titres qu’il ne porte pas.",

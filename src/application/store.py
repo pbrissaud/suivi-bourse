@@ -4,7 +4,7 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import duckdb
 from logfmt_logger import getLogger
@@ -134,6 +134,11 @@ TABLES = (
     'setting', 'installation_fact', 'advisory_ack',
 )
 
+#: The tables whose surrogate key this store hands out — see
+#: :meth:`Store.reserve`. ``event`` is the only one, and the tuple is what says
+#: so: every other table is keyed by something the domain already names.
+KEYED_TABLES = ('event',)
+
 DEFAULT_ACCOUNT_ROW = ('default', 'OTHER', 'Default account')
 
 
@@ -144,6 +149,55 @@ class Store:
         self.path = path
         self._connection = connection
         self._lock = threading.RLock()
+        #: The high-water mark per keyed table — memory, never a row
+        #: (ADR-0027), and read **at the open**: seeded on first use instead,
+        #: a row deleted before this store had written anything would seed the
+        #: mark *below its own key* and hand it straight back — which is the
+        #: defect, inside the very window the mark exists to hold.
+        self._reserved: Dict[str, int] = {
+            table: connection.execute(
+                f'SELECT coalesce(max(id), 0) FROM {table}').fetchone()[0]
+            for table in KEYED_TABLES}
+
+    def reserve(self, table: str, count: int = 1) -> int:
+        """The first of ``count`` fresh keys for ``table`` (ADR-0027, #785).
+
+        **The one allocator, and it only ever climbs.** ``max(id) + 1`` handed
+        the highest deleted row's key straight to the next writer, so a client
+        holding a key it had just read could correct or delete *the row that
+        took its place*. The mark is read from ``max(id)`` **when the store is
+        opened** and never descends afterwards, which is what makes
+        ``UnknownEntry`` mean what it says: a write aiming at a row that has
+        gone is refused rather than landing on a stranger.
+
+        **The guarantee is scoped to the life of the process.** The mark is
+        memory: a restart re-seeds from ``max(id)`` and can reissue a key freed
+        before it. A client holding a key across a restart is holding it across
+        an app that went down, which is not the window this buys.
+
+        It takes the store's own lock — reentrant, so its callers pay nothing —
+        rather than trusting every caller to already hold one.
+        """
+        if table not in self._reserved:
+            raise KeyError(f"{table!r} is not a table this store keys")
+        if count < 1:
+            raise ValueError(f"a range of {count} keys is not a range")
+        with self._lock:
+            mark = self._reserved[table]
+            self._reserved[table] = mark + count
+            return mark + 1
+
+    def issued(self, table: str, key: int) -> bool:
+        """Whether this store has ever handed ``key`` out for ``table``.
+
+        The other half of :meth:`reserve`, and the reason a refusal can say
+        *which* refusal it is: a key at or below the mark named a row once, and
+        a key above it has never named anything. The bound is the mark's own —
+        a store reopened has forgotten the keys it retired, so an old one reads
+        as never issued, which is the window ADR-0027 declines to buy.
+        """
+        with self._lock:
+            return 0 < key <= self._reserved.get(table, 0)
 
     @contextmanager
     def transaction(self):
@@ -285,6 +339,6 @@ def open_store(path: Optional[Path] = None) -> Store:
 __all__ = [
     'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
     'file_size', 'finite',
-    'DDL', 'TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
+    'DDL', 'TABLES', 'KEYED_TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
     'DEFAULT_ACCOUNT_ROW',
 ]

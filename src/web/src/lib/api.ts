@@ -1097,9 +1097,14 @@ export interface HealthState {
 //    address is a **primary key**, which is the whole of what killed #662's
 //    apparatus: the opaque token over `(file, sheet, row)`, the content
 //    fingerprint as an `ETag` and its `409` existed because the *file* was the
-//    address and a file address goes stale between the read and the write.
-//    Absent, the editor is not offered on that row — a shape today's server
-//    never sends, and one the type has to allow all the same.
+//    address, and a file was re-read. A key is not safe because keys cannot go
+//    stale — this one went stale for a whole release, `max(id) + 1` handing a
+//    deleted row's key to the next writer. It is safe because the server's
+//    allocator only climbs (ADR-0027, #785), for the life of its process, and
+//    refuses a write aimed at a row that has gone instead of landing it on the
+//    row that took the key. Absent, the editor is not offered on that row — a
+//    shape today's server never sends, and one the type has to allow all the
+//    same.
 //
 // **And the provenance is gone** (#816, ADR-0032): the three columns and the
 // sentence composed from them described a row a *mounted* file had provisioned,

@@ -23,7 +23,16 @@ AMOUNT_PRECISION = '%.16g'
 
 
 class UnknownEntry(Exception):
-    """No event has that id."""
+    """No event has that id — and ``issued`` says whether one ever did.
+
+    *It was there* and *it never was* are opposite pieces of news, and the store
+    is the only side that can tell them apart (#785, ADR-0027): a key it handed
+    out named a row once, a key past its mark has never named anything.
+    """
+
+    def __init__(self, message: str, issued: bool = False):
+        super().__init__(message)
+        self.issued = issued
 
 
 class InvalidEntry(Exception):
@@ -49,8 +58,7 @@ def create(store, draft: Event) -> Event:
         _refuse(store, event)
         account = event.account or DEFAULT_ACCOUNT
 
-        (next_id,) = store.query(
-            'SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
+        next_id = store.reserve('event')
         _insert_symbol(store, event)
         store.execute(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
@@ -96,8 +104,7 @@ def create_many(store, drafts: Sequence[Event], *,
         if not settled:
             return []
 
-        (next_id,) = store.query(
-            'SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
+        next_id = store.reserve('event', len(settled))
         store.executemany(
             'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
             [[symbol] for symbol in sorted({event.symbol for event in settled
@@ -252,7 +259,8 @@ def _require_known(store, event_id: int) -> None:
     """Refuse an id no row answers to. **One refusal, and it is the only one.**"""
     rows = store.query('SELECT 1 FROM event WHERE id = ?', [event_id])
     if not rows:
-        raise UnknownEntry(f"No event with id {event_id}")
+        raise UnknownEntry(f"No event with id {event_id}",
+                           issued=store.issued('event', event_id))
 
 
 def _stamp_write(store) -> None:
