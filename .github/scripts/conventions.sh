@@ -24,7 +24,7 @@ grep -rnE --include='*.py' "['\"]undefined['\"]" $SRC tests && rule "the sentine
 [ "$(grep -rliE --include='*.py' '(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(position|account_state)\b' $SRC | tr '\n' ' ')" = "src/application/positions.py " ] || rule "a second writer of position/account_state"
 
 # One allocator, and it is Store.reserve (ADR-0027, #785).
-[ "$(grep -rlE --include='*.py' 'SELECT.*max\(id\)' $SRC | tr '\n' ' ')" = "src/application/store.py " ] || rule "a key allocated outside Store.reserve"
+[ "$(grep -rliE --include='*.py' 'max\(id\)' $SRC tests | sort | tr '\n' ' ')" = "src/application/store.py " ] || rule "a key allocated outside Store.reserve"
 
 # The pure modules import neither the store nor the market.
 PYTHONPATH=src uv run python -c '

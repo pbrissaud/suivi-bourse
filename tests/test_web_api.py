@@ -2506,6 +2506,32 @@ def test_an_unaddressable_event_is_a_named_404(tmp_path):
     assert 'nope' in unaddressable.get_json()['detail']
 
 
+def test_a_row_that_left_the_ledger_has_its_own_type(tmp_path):
+    """*It was there* and *it never was* are opposite news (#785, ADR-0027).
+
+    The server is the only side that can tell them apart — a key it issued is
+    not handed to another row for the life of its process — so it says which
+    one on the wire rather than leaving a client to read it off a status. Both
+    gestures that address a row by its key answer with it.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    (key,) = opened.query('SELECT id FROM event')[0]
+    assert client.delete(f'/api/events/{key}').status_code == 200
+
+    for response in (client.delete(f'/api/events/{key}'),
+                     client.patch(f'/api/events/{key}',
+                                  json={'date': '2024-01-15',
+                                        'event_type': 'DEPOSIT',
+                                        'amount': 10})):
+        assert response.status_code == 404
+        assert response.get_json()['type'] == '/problems/entry-gone'
+
+    # An address that never named a row keeps the generic one: a client reading
+    # *deleted elsewhere* there would be told about a row that never existed.
+    assert client.delete('/api/events/nope').get_json()['type'] == \
+        '/problems/not-found'
+
+
 def test_a_removal_that_would_leave_an_oversell_is_refused(tmp_path):
     """Overselling is a property of the **ledger**, never of a row.
 

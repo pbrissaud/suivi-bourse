@@ -7,6 +7,7 @@ CONTENT_TYPE = 'application/problem+json'
 
 TYPE_UNAVAILABLE = '/problems/storage-unavailable'
 TYPE_NOT_FOUND = '/problems/not-found'
+TYPE_ENTRY_GONE = '/problems/entry-gone'
 TYPE_BAD_REQUEST = '/problems/bad-request'
 TYPE_INTERNAL = '/problems/internal-error'
 TYPE_CONFLICT = '/problems/conflict'
@@ -43,6 +44,19 @@ def storage_unavailable(detail: str):
 def not_found(detail: str):
     """404 — for a resource that genuinely does not exist."""
     return problem(404, 'Not found', detail, TYPE_NOT_FOUND)
+
+
+def entry_gone(detail: str):
+    """404 — the event was there and is not any more (#785, ADR-0027).
+
+    Its own identifier because the two are opposite pieces of news and only the
+    server can tell them apart: a key it once issued is never handed to another
+    row for the life of its process, so a write that misses names a row that
+    **left**. *This does not exist* is the sentence for an address that never
+    was one, and it reads, on a row the page is still displaying, as the app
+    contradicting its reader.
+    """
+    return problem(404, 'Event no longer in the ledger', detail, TYPE_ENTRY_GONE)
 
 
 def bad_request(detail: str):

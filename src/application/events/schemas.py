@@ -42,8 +42,8 @@ class Event:
     That is why #662's apparatus — the opaque token over ``(file, sheet, row)``,
     the content fingerprint as an ``ETag`` and its ``409`` — has no successor
     here: the refusal it existed to buy is bought by the allocator, and bought
-    **for the life of the process**. A restart re-seeds from ``max(id)`` and can
-    reissue a key freed before it; a client holding a key across a restart is
+    **for the life of the process**. A restart re-seeds from the highest key the
+    table still holds and can reissue one freed before it; a client holding a key across a restart is
     holding it across an app that went down. Were that bound ever to prove too
     short, the token is what comes back.
     """

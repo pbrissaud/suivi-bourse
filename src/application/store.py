@@ -134,6 +134,11 @@ TABLES = (
     'setting', 'installation_fact', 'advisory_ack',
 )
 
+#: The tables whose surrogate key this store hands out — see
+#: :meth:`Store.reserve`. ``event`` is the only one, and the tuple is what says
+#: so: every other table is keyed by something the domain already names.
+KEYED_TABLES = ('event',)
+
 DEFAULT_ACCOUNT_ROW = ('default', 'OTHER', 'Default account')
 
 
@@ -144,8 +149,15 @@ class Store:
         self.path = path
         self._connection = connection
         self._lock = threading.RLock()
-        #: The high-water mark per table — memory, never a row (ADR-0027).
-        self._reserved: Dict[str, int] = {}
+        #: The high-water mark per keyed table — memory, never a row
+        #: (ADR-0027), and read **at the open**: seeded on first use instead,
+        #: a row deleted before this store had written anything would seed the
+        #: mark *below its own key* and hand it straight back — which is the
+        #: defect, inside the very window the mark exists to hold.
+        self._reserved: Dict[str, int] = {
+            table: connection.execute(
+                f'SELECT coalesce(max(id), 0) FROM {table}').fetchone()[0]
+            for table in KEYED_TABLES}
 
     def reserve(self, table: str, count: int = 1) -> int:
         """The first of ``count`` fresh keys for ``table`` (ADR-0027, #785).
@@ -153,10 +165,10 @@ class Store:
         **The one allocator, and it only ever climbs.** ``max(id) + 1`` handed
         the highest deleted row's key straight to the next writer, so a client
         holding a key it had just read could correct or delete *the row that
-        took its place*. This is seeded from ``max(id)`` on first use and never
-        descends afterwards, which is what makes ``UnknownEntry`` mean what it
-        says: a write aiming at a row that has gone is refused rather than
-        landing on a stranger.
+        took its place*. The mark is read from ``max(id)`` **when the store is
+        opened** and never descends afterwards, which is what makes
+        ``UnknownEntry`` mean what it says: a write aiming at a row that has
+        gone is refused rather than landing on a stranger.
 
         **The guarantee is scoped to the life of the process.** The mark is
         memory: a restart re-seeds from ``max(id)`` and can reissue a key freed
@@ -166,12 +178,12 @@ class Store:
         It takes the store's own lock — reentrant, so its callers pay nothing —
         rather than trusting every caller to already hold one.
         """
-        if table not in TABLES:
-            raise KeyError(f"no table named {table!r}")
+        if table not in self._reserved:
+            raise KeyError(f"{table!r} is not a table this store keys")
+        if count < 1:
+            raise ValueError(f"a range of {count} keys is not a range")
         with self._lock:
-            mark = self._reserved.get(table)
-            if mark is None:
-                mark = self.query(f'SELECT coalesce(max(id), 0) FROM {table}')[0][0]
+            mark = self._reserved[table]
             self._reserved[table] = mark + count
             return mark + 1
 
@@ -315,6 +327,6 @@ def open_store(path: Optional[Path] = None) -> Store:
 __all__ = [
     'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
     'file_size', 'finite',
-    'DDL', 'TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
+    'DDL', 'TABLES', 'KEYED_TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
     'DEFAULT_ACCOUNT_ROW',
 ]

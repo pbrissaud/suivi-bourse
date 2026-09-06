@@ -517,7 +517,7 @@ def test_a_deleted_key_is_not_reissued_to_the_next_row(store):
     """The defect, at the unit: the highest row's key freed nothing.
 
     Three rows, the last removed, a fourth typed — and it takes 4. Under
-    ``max(id) + 1`` it took 3, so an open tab whose *delete* still named row 3
+    the retired allocator it took 3, so an open tab whose *delete* named row 3
     deleted an event it had never displayed.
     """
     keys = [entries.create(store, _draft(notes=str(day))).id
@@ -552,12 +552,37 @@ def test_the_mark_is_the_process_and_a_reopen_re_seeds_it(store):
     """The bound ADR-0027 accepted, asserted rather than left to be assumed.
 
     The mark is memory: a second :class:`Store` over the same file starts from
-    ``max(id)``, and the key the first one retired is issued again. That is the
-    window a client loses by holding a key across a restart — which is holding
-    it across an app that went down.
+    the highest key the table still holds, and the one the first store retired
+    is issued again. That is the window a client loses by holding a key across
+    a restart — which is holding it across an app that went down.
     """
     entries.create(store, _draft())
     entries.remove(store, 1)
-    assert store.reserve('event') == 2
+    store.close()
 
-    assert store_module.open_store(store.path).reserve('event') == 1
+    reopened = store_module.open_store(store.path)
+    try:
+        assert entries.create(reopened, _draft()).id == 1
+    finally:
+        reopened.close()
+
+
+def test_a_row_deleted_before_this_store_has_written_keeps_its_key(store):
+    """**The window a mark read on first use would not have held.**
+
+    A store is opened on a ledger somebody else filled, and the first gesture of
+    its life is a removal. Read lazily, the mark would be taken *after* that
+    removal — below the key it just freed — and the very next row would take it
+    back, inside the process the guarantee is scoped to. So the mark is read at
+    the open, and this is the case that says so.
+    """
+    for day in (1, 2, 3):
+        entries.create(store, _draft(notes=str(day)))
+    store.close()
+
+    reopened = store_module.open_store(store.path)
+    try:
+        entries.remove(reopened, 3)
+        assert entries.create(reopened, _draft(notes='after')).id == 4
+    finally:
+        reopened.close()

@@ -171,8 +171,12 @@ def declare_ledger():
             opened.execute(
                 'INSERT INTO symbol (symbol) VALUES (?) '
                 'ON CONFLICT (symbol) DO NOTHING', [symbol])
-        (next_id,) = opened.query(
-            'SELECT coalesce(max(id), 0) + 1 FROM event')[0]
+        if not events:
+            return
+        # Through the store's own allocator, never beside it: a fixture that
+        # numbers its own rows writes keys `Store.reserve` does not know it
+        # gave away, and the next `entries.create` lands on a key that is taken.
+        next_id = opened.reserve('event', len(events))
         for offset, event in enumerate(events):
             opened.execute(
                 'INSERT INTO event (id, date, event_type, account, symbol, '

@@ -66,7 +66,7 @@ import {
 } from '@/lib/accounts'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
-import { entryGone, entrySentence } from '@/lib/problem'
+import { entryGone, problemSentence } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
@@ -163,9 +163,9 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
     },
     onError: (error) => {
       // The row being corrected left the ledger somewhere else (#785): the
-      // panel stays open holding what was typed, and the list behind it is
-      // re-read so the row it is about stops being displayed.
-      if (entryGone(error)) void queryClient.invalidateQueries()
+      // panel stays open holding what was typed, and the one list that went
+      // stale is re-read so the row it is about stops being displayed.
+      if (entryGone(error)) void queryClient.invalidateQueries({ queryKey: ['events'] })
     },
   })
 
@@ -242,7 +242,18 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
   }
 
   return (
-    <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (next) return
+        // The refusal is forgotten with the panel that carried it: a mutation
+        // error outlives its gesture, so reopening on another row would show a
+        // sentence about the previous one — and *this event is no longer in the
+        // ledger* over a row that is perfectly alive is a precise untruth.
+        write.reset()
+        onClose()
+      }}
+    >
       <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>
@@ -481,7 +492,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 )}
               </Field>
 
-              {write.error ? <Refusal>{entrySentence(t, write.error)}</Refusal> : null}
+              {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
               <div className="flex gap-2">
                 {/* Withheld rather than offered and refused — the same rule the

@@ -1001,7 +1001,7 @@ describe('a row is removed at the unit', () => {
       http.delete(`${ROUTES.events}/:id`, () => {
         gone = true
         return HttpResponse.json(
-          { status: 404, type: PROBLEM_TYPES.notFound, title: 'Not found' },
+          { status: 404, type: PROBLEM_TYPES.entryGone, title: 'Event no longer in the ledger' },
           { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
         )
       }),
@@ -1017,8 +1017,8 @@ describe('a row is removed at the unit', () => {
 
     const box = await screen.findByRole('dialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
-      'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs. ' +
-        'Rien n’a été modifié ici, et le grand livre vient d’être relu.',
+      'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs, ' +
+        'et rien n’a été modifié ici.',
     )
     // Not the generic sentence, which is the whole point of the second key.
     expect(within(box).queryByText(/n’existe pas/)).not.toBeInTheDocument()
@@ -1145,7 +1145,7 @@ describe('the create form, which is the onboarding', () => {
       http.patch(`${ROUTES.events}/:id`, () => {
         gone = true
         return HttpResponse.json(
-          { status: 404, type: PROBLEM_TYPES.notFound, title: 'Not found' },
+          { status: 404, type: PROBLEM_TYPES.entryGone, title: 'Event no longer in the ledger' },
           { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
         )
       }),
@@ -1157,14 +1157,24 @@ describe('the create form, which is the onboarding', () => {
 
     const panel = screen.getByRole('dialog')
     expect(await within(panel).findByRole('status')).toHaveTextContent(
-      'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs. ' +
-        'Rien n’a été modifié ici, et le grand livre vient d’être relu.',
+      'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs, ' +
+        'et rien n’a été modifié ici.',
     )
     // The panel stays open holding what was typed — the reader has not lost it.
     expect(screen.getByLabelText('Quantité')).toHaveValue('2')
 
     await user.click(within(panel).getByRole('button', { name: 'Fermer' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+
+    // **The refusal does not outlive its gesture.** The panel is mounted once
+    // for every row, so a sentence left standing would be read as being about
+    // the next row opened — and *this event is no longer in the ledger* over a
+    // row that is perfectly alive is a precise untruth, which is worse than the
+    // vague one it replaced.
+    const alive = within(ledger()).getByText('Versement programmé mensuel').closest('tr')
+    await user.click(within(alive as HTMLElement).getAllByRole('cell')[0])
+    expect(await screen.findByLabelText('Quantité')).toHaveValue('3')
+    expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()
   })
 
   it('records the event and puts it in the ledger', async () => {

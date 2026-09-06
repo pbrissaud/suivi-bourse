@@ -570,7 +570,7 @@
 
   "problem.storageUnavailable": "Your data cannot be read right now. The app is running, but its store is not answering.",
   "problem.notFound": "The app answered that this does not exist.",
-  "problem.entryGone": "This event is no longer in the ledger: it was deleted elsewhere. Nothing was changed here, and the ledger has just been re-read.",
+  "problem.entryGone": "This event is no longer in the ledger: it was deleted elsewhere, and nothing was changed here.",
   "problem.badRequest": "The app refused the request this page made.",
   "problem.conflict": "Refused: that name already exists, or something still depends on it.",
   "problem.unreplayableLedger": "Refused, and nothing changed: the ledger would end up selling shares it does not hold.",

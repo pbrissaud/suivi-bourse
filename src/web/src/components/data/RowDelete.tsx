@@ -36,7 +36,7 @@ import { api, type LedgerEvent } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { identityOf } from '@/lib/ledger'
-import { entryGone, entrySentence } from '@/lib/problem'
+import { entryGone, problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
 interface RowDeleteProps {
@@ -63,10 +63,11 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
     },
     onError: (error) => {
       // **The row left the ledger somewhere else** (#785): nothing was written,
-      // and what is stale is this page. Re-reading is what makes the sentence
-      // true — the phantom row goes while the reader is still looking at the
-      // box that named it.
-      if (entryGone(error)) void queryClient.invalidateQueries()
+      // so the whole cache is not what went stale — the list is. The phantom
+      // row goes while the reader is still looking at the box that named it,
+      // and `/health`, the accounts and the installation facts are not re-read
+      // for a row that left a page.
+      if (entryGone(error)) void queryClient.invalidateQueries({ queryKey: ['events'] })
     },
   })
 
@@ -106,7 +107,7 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
 
             {/* Rendered **here** and not on the page: the box stays open on a
                 failure, and everything behind the overlay is `aria-hidden`. */}
-            {remove.error ? <Refusal>{entrySentence(t, remove.error)}</Refusal> : null}
+            {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
 
             <div className="flex flex-wrap justify-end gap-2">
               <Button
