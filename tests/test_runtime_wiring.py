@@ -383,6 +383,36 @@ def test_an_empty_window_is_recorded_without_raising_the_counter(
     assert record.terminal is None
 
 
+def test_a_failed_write_leaves_the_anchor_where_it_was_and_is_recorded(
+        store, mocker):
+    """Issue #853: the window was fetched, not written, so it was not tried.
+
+    ``fetch_and_store`` used to return ``(prices, 0)`` on a refused write —
+    the shape of an empty but successful chunk. The backward pass moved its
+    anchor past a year it never stored, ``backward_anchor`` never goes back,
+    and the hole is permanent for the life of the store. The anchor now stays
+    put, and the pass says it failed.
+    """
+    events = [Event(datetime(2020, 1, 15).date(), EventType.BUY, "AAPL",
+                    "Apple", quantity=10, unit_price=150.0)]
+    m = _metrics([_share()], store, mocker, events=events)
+    quotes.record_history(store, "AAPL", [
+        {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
+    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+        {"timestamp": datetime(2023, 6, 1, tzinfo=UTC), "price": 90.0}])
+    mocker.patch.object(quotes, "record_history",
+                        side_effect=RuntimeError("connection refused"))
+
+    m.backfill()
+
+    assert quotes.oldest_window_tried(store, "AAPL") is None
+    # Both passes read the same return value, so both are held here.
+    for direction in (runtime_state.BACKWARD, runtime_state.FORWARD):
+        record = m.recorder.backfill_of("AAPL", direction)
+        assert record.failed is True
+        assert "could not be written" in record.error
+
+
 def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
         store, mocker):
     """Two no-ops meaning opposite things.
