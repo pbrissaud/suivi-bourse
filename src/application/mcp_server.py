@@ -140,7 +140,9 @@ How much the owner buys in a month, and how often — over the last 12 months.
 Use this to describe the owner's investing habit, and as the input to any
 projection of what they will put in next. It is measured on the BUY events over
 the twelve calendar months ending today, for the portfolio as a whole and broken
-down by account. There is no per-symbol figure and no month-by-month series.
+down by account. There is no per-symbol figure. months is the observed months
+themselves, oldest first, each with its amount — null on a month with no
+purchase — and the figures below are reductions of that series.
 
 NEVER QUOTE monthly_amount WITHOUT months_covered AND months_observed. The
 amount is the median of the months that carried at least one purchase — months

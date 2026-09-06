@@ -341,9 +341,9 @@ export default function DashboardPage() {
           {/* **A block and not a page** (ADR-0041). The sidebar's five entries
               are argued as three and two, and a sixth would open a page holding
               one block; the eventual home is a `Projections` page, created the
-              day #757 or #758 gives it a second occupant. It reads down rather
-              than being drawn, so it sits under the two lists — and it is full
-              width because what it holds is two figures, not a column.
+              day #757 or #758 gives it a second occupant. Full width under the
+              two lists, like the chart above them: what it holds is a figure
+              and twelve months drawn, and the months are what the width is for.
 
               `?? null` and never a shape assembled here: a read that has not
               answered renders nothing at all, title included (ADR-0026). */}

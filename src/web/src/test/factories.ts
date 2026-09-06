@@ -623,26 +623,27 @@ export function aMover(overrides: Partial<Mover> = {}): Mover {
  * visible in a fixture: `500 €` a month over six months of twelve is neither
  * `250` (the mean over the window) nor `6 000` a year (the amount quoted
  * alone). The dispersion is deliberately not zero, a rhythm held at one exact
- * amount for six months being the case that never occurs.
+ * amount for six months being the case that never occurs — so the six covered
+ * months are not all the same size either.
  */
 export function aRhythm(
   overrides: Partial<InvestmentRhythmResponse> = {},
 ): InvestmentRhythmResponse {
-  return {
-    base_currency: 'EUR',
+  const figures = {
     monthly_amount: 500,
     months_covered: 6,
     months_observed: 12,
     dispersion: 0.18,
-    accounts: [
-      {
-        account: 'alpha',
-        monthly_amount: 500,
-        months_covered: 6,
-        months_observed: 12,
-        dispersion: 0.18,
-      },
-    ],
+    // March 2025 to February 2026, every other month bought.
+    months: Array.from({ length: 12 }, (_, offset) => ({
+      month: new Date(Date.UTC(2025, 2 + offset)).toISOString().slice(0, 7),
+      amount: offset % 2 === 0 ? [400, 500, 500, 620, 500, 480][offset / 2] : null,
+    })),
+  }
+  return {
+    base_currency: 'EUR',
+    ...figures,
+    accounts: [{ account: 'alpha', ...figures }],
     ...overrides,
   }
 }

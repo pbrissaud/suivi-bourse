@@ -8,11 +8,18 @@
  * record: a reader handed the amount alone says `6 000 € a year` with complete
  * confidence when half of that never went in.
  *
+ * **The months are drawn, and the dispersion is not quoted.** The record's
+ * *is it held steady* used to be answered by a coefficient of variation set as
+ * a percentage — `173,30 %` — which no reader can turn back into a habit. The
+ * twelve observed months as twelve columns answer it without a figure: the
+ * gaps are the coverage, the heights are the spread, and a month with nothing
+ * bought is a tick on the baseline rather than an absence. The coefficient
+ * stays in the payload for the agent (ADR-0040); the screen shows what it
+ * reduces.
+ *
  * **No label and no verdict.** Not *monthly*, not *regular*, not *irregular*:
  * the word is a judgement, the threshold producing it is a setting nobody asked
- * for (ADR-0036), and the reading is the reader's. The block states the
- * numbers, and the dispersion beside them is what answers *is it held steady*
- * without the block answering it for anyone.
+ * for (ADR-0036), and the reading is the reader's.
  *
  * **Nothing at all while the read is in flight** (ADR-0026): `rhythm === null`
  * is *not answered yet*, and an empty state on it would be a claim about the
@@ -28,7 +35,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Stat } from '@/components/Stat'
 import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import type { InvestmentRhythmResponse } from '@/lib/api'
+import type { InvestmentRhythmResponse, RhythmMonth } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
@@ -75,11 +82,10 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
     }
 
     return (
-      <div className="flex flex-wrap items-start gap-x-12 gap-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         {/* The pair, and it is **one** group: the coverage is a child of the
             amount, so no reading of this markup detaches them. */}
         <Stat
-          size="head"
           label={t('dashboard.rhythm.amount')}
           value={f.currency(rhythm.monthly_amount, rhythm.base_currency)}
         >
@@ -90,26 +96,84 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
             })}
           </p>
         </Stat>
-
-        {/* Subordinate, and withheld on **one covered month**. The server's
-            figure is defined there — the population deviation of a single value
-            is `0` — and rendering it would say *held perfectly steady* on the
-            strength of one purchase, which is the first-run screen. That is the
-            confident-and-wrong reading the amount/coverage pair exists to
-            prevent, met one figure over; a spread needs two months to be a
-            spread. `null` is the server's own absence, on months averaging
-            nothing. */}
-        {rhythm.dispersion === null || rhythm.months_covered < 2 ? null : (
-          <Stat
-            size="term"
-            label={t('dashboard.rhythm.dispersion')}
-            // A coefficient of variation is a ratio, and it is read as a
-            // percentage of the months' own average — unsigned, a spread having
-            // no direction.
-            value={f.percentPoints(rhythm.dispersion * 100)}
-          />
-        )}
+        <MonthStrip months={rhythm.months} currency={rhythm.base_currency} />
       </div>
     )
   }
+}
+
+/**
+ * The observed months as columns, oldest on the left, **right-aligned in
+ * twelve slots**: a ledger four months old fills the last four and leaves the
+ * rest empty, so the strip says *twelve is the window* on a young ledger too.
+ * A covered month is a column in the mint — an unsigned amount, drawn in the
+ * colour every unsigned curve is — and an observed month with no purchase is a
+ * tick on the baseline, which is a fact about the rhythm and not a gap in the
+ * drawing. Each column names its month and its amount, for a pointer and for a
+ * screen reader alike.
+ */
+function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: string | null }) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const peak = Math.max(...months.map((one) => one.amount ?? 0))
+  const label = (month: string, year = true) => {
+    const [y, m] = month.split('-')
+    return year ? `${f.month(y, Number(m))} ${y}` : f.month(y, Number(m))
+  }
+
+  return (
+    <div className="min-w-48 max-w-2xl flex-1">
+      <ol
+        aria-label={t('dashboard.rhythm.months')}
+        className="grid grid-cols-12 items-end gap-1.5"
+      >
+        {months.map((one, index) => {
+          const said =
+            one.amount === null
+              ? t('dashboard.rhythm.month.none', { month: label(one.month) })
+              : t('dashboard.rhythm.month', {
+                  month: label(one.month),
+                  amount: f.currency(one.amount, currency),
+                })
+          // The year is written on the first column and on every January, so
+          // a row of twelve short names still says which year each is in.
+          const january = one.month.endsWith('-01')
+          return (
+            <li
+              key={one.month}
+              title={said}
+              className="flex flex-col items-center gap-1.5"
+              style={index === 0 ? { gridColumnStart: 13 - months.length } : undefined}
+            >
+              <span className="sr-only">{said}</span>
+              <span aria-hidden className="flex h-14 w-full max-w-10 items-end">
+                <span
+                  className={
+                    one.amount === null
+                      ? 'block h-0.5 w-full bg-muted-foreground/35'
+                      : 'block w-full rounded-t-[3px] bg-price'
+                  }
+                  style={
+                    one.amount === null
+                      ? undefined
+                      : { height: `${Math.max(6, (one.amount / peak) * 100)}%` }
+                  }
+                />
+              </span>
+              <span aria-hidden className="hidden truncate text-2xs text-muted-foreground md:block">
+                {label(one.month, index === 0 || january)}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+      {/* Under `md` the twelve names do not fit, and the two ends say the extent. */}
+      {months.length < 2 ? null : (
+        <p aria-hidden className="mt-1.5 flex justify-between text-2xs text-muted-foreground md:hidden">
+          <span>{label(months[0].month)}</span>
+          <span>{label(months.at(-1)!.month)}</span>
+        </p>
+      )}
+    </div>
+  )
 }

@@ -17,6 +17,11 @@ class Figures:
     months_covered: int
     months_observed: int
     dispersion: Optional[float]
+    # The observed months themselves, oldest first — ``amount`` is ``None`` on a
+    # month with no purchase. The four figures above are reductions of this
+    # series; it travels with them so a screen can *show* the coverage and the
+    # spread rather than quote them.
+    months: Tuple[Tuple[str, Optional[float]], ...] = ()
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -24,6 +29,8 @@ class Figures:
             'months_covered': self.months_covered,
             'months_observed': self.months_observed,
             'dispersion': self.dispersion,
+            'months': [{'month': month, 'amount': amount}
+                       for month, amount in self.months],
         }
 
 
@@ -68,18 +75,21 @@ def _figures(events: Iterable[Event], now: datetime) -> Figures:
         return Figures(monthly_amount=None, months_covered=0,
                        months_observed=0, dispersion=None)
 
-    amounts = _monthly_amounts(events, observed)
+    by_month = _monthly_amounts(events, observed)
+    months = tuple((_label(key), by_month.get(key)) for key in observed)
+    amounts = [amount for _, amount in months if amount is not None]
     return Figures(
         monthly_amount=median(amounts) if amounts else None,
         months_covered=len(amounts),
         months_observed=len(observed),
         dispersion=_dispersion(amounts),
+        months=months,
     )
 
 
 def _monthly_amounts(events: Iterable[Event],
-                     observed: Sequence[int]) -> List[float]:
-    """What each **covered** month is worth, oldest first."""
+                     observed: Sequence[int]) -> Dict[int, float]:
+    """What each **covered** month is worth, by month index."""
     window = set(observed)
     months: Dict[int, float] = {}
     for event in events:
@@ -89,7 +99,7 @@ def _monthly_amounts(events: Iterable[Event],
         if key not in window:
             continue
         months[key] = months.get(key, 0.0) + value(event)
-    return [months[key] for key in observed if key in months]
+    return months
 
 
 def _dispersion(amounts: Sequence[float]) -> Optional[float]:
@@ -126,6 +136,11 @@ def _by_account(events: Iterable[Event]) -> Mapping[str, List[Event]]:
 def _index(day: date) -> int:
     """A calendar month as one comparable integer — ``year × 12 + month``."""
     return day.year * 12 + (day.month - 1)
+
+
+def _label(index: int) -> str:
+    """The month back from its integer, as ``YYYY-MM``."""
+    return f'{index // 12:04d}-{index % 12 + 1:02d}'
 
 
 __all__ = ['WINDOW_MONTHS', 'Figures', 'Rhythm', 'measure', 'value']

@@ -4659,6 +4659,9 @@ def test_the_rhythm_is_the_amount_and_the_coverage_together(tmp_path):
     assert body['months_observed'] == 6
     assert body['dispersion'] == 0.0
     assert body['base_currency'] == 'EUR'
+    # The series the figures reduce, oldest first, one row per observed month.
+    assert [row['amount'] for row in body['months']] == [500.0] * 6
+    assert body['months'][-1]['month'] == _months_ago(0).isoformat()[:7]
 
 
 def test_an_empty_ledger_has_a_rhythm_to_state_and_it_is_not_a_404(tmp_path):
