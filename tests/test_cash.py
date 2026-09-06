@@ -19,6 +19,8 @@ from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
+from application import ledger
+from application import main
 from application import perf_series
 from application import quotes
 from application import workloads
@@ -290,7 +292,8 @@ def test_portfolio_totals_is_keyed_by_the_day_alone(store):
 # open store, and the writers' mutex.
 # --------------------------------------------------------------------------- #
 class _CashConfigManager:
-    """The two members the perf job uses: the read handle and the write mutex."""
+    """The three members the perf job uses: the read handle, the published
+    snapshot and the write mutex."""
 
     def __init__(self, opened_store):
         self._store = opened_store
@@ -302,6 +305,16 @@ class _CashConfigManager:
     @contextmanager
     def writing(self):
         yield self._store
+
+    def current(self):
+        """The published snapshot the perf pass reads its events from (#861).
+
+        It is the ledger: the pass no longer reads ``event`` itself, because a
+        write has just been ingested and published when it runs.
+        """
+        return main.ConfigSnapshot(
+            shares=[], events=ledger.read_events(self._store),
+            accounts=None, cache_key=None)
 
 
 def _metrics(store, declare_ledger, events, accounts):

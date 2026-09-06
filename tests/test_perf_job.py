@@ -28,6 +28,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from application import ledger
+from application import main
 from application import workloads
 from application.events.schemas import Event, EventType
 
@@ -46,7 +48,8 @@ _CONVERTED = date(2024, 6, 10)
 
 
 class _ConfigManager:
-    """The surface the perf pass needs: the open store and the writers' mutex."""
+    """The surface the perf pass needs: the open store, the published snapshot
+    and the writers' mutex."""
 
     def __init__(self, opened):
         self._store = opened
@@ -58,6 +61,16 @@ class _ConfigManager:
     @contextmanager
     def writing(self):
         yield self._store
+
+    def current(self):
+        """The published snapshot the perf pass reads its events from (#861).
+
+        It is the ledger: the pass no longer reads ``event`` itself, because a
+        write has just been ingested and published when it runs.
+        """
+        return main.ConfigSnapshot(
+            shares=[], events=ledger.read_events(self._store),
+            accounts=None, cache_key=None)
 
 
 def _fixed_today(mocker):

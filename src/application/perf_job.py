@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from application import accounts as accounts_module
 from application import carrying
-from application import ledger
 from application import perf_series
 from application import performance
 from application import quotes
@@ -88,7 +87,14 @@ class PerfJob:
             return {}
 
         store_handle = self.facade.config_manager.store
-        events = ledger.read_events(store_handle)
+        # **The published snapshot, not a second read of the ledger** (#861).
+        # A write reaches here through `main.replay_after_write`, which has just
+        # ingested — read, aggregated and validated the whole ledger — and
+        # published it; reading `event` again produced the same rows at the cost
+        # of a second full pass on every write. The **replay** below stays: a
+        # `position` row is a current state and performance needs every day's,
+        # which is what `Timeline` is for.
+        events = self.facade.config_manager.current().events or []
         declared = accounts_module.read_accounts(store_handle)
 
         now = datetime.now(timezone.utc)

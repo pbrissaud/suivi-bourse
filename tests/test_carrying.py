@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from application import carrying
+from application import ledger
 from application import main
 from application import performance
 from application import portfolio_view
@@ -55,8 +56,15 @@ class _FakeConfigManager:
         yield self._store
 
     def current(self):
-        return main.ConfigSnapshot(shares=[], events=[], accounts=None,
-                                   cache_key=None)
+        """The published snapshot, which is the ledger the store holds (#861).
+
+        The perf pass reads its events here rather than from ``event`` a second
+        time, so a snapshot that answered an empty list would starve a pass this
+        file drives on a seeded store.
+        """
+        return main.ConfigSnapshot(
+            shares=[], events=ledger.read_events(self._store),
+            accounts=None, cache_key=None)
 
 
 def _metrics(store):

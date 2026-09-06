@@ -28,6 +28,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from application import ledger
+from application import main
 from application import quotes
 from application import store_reads
 from application import workloads
@@ -58,6 +60,16 @@ class _ConfigManager:
     @contextmanager
     def writing(self):
         yield self._store
+
+    def current(self):
+        """The published snapshot the perf pass reads its events from (#861).
+
+        It is the ledger: the pass no longer reads ``event`` itself, because a
+        write has just been ingested and published when it runs.
+        """
+        return main.ConfigSnapshot(
+            shares=[], events=ledger.read_events(self._store),
+            accounts=None, cache_key=None)
 
 
 class _Recorder:
