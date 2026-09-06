@@ -632,7 +632,7 @@ def update_event(event_id: str):
         with runtime.config_manager.writing() as opened:
             updated = entries.update(opened, key, draft)
     except entries.UnknownEntry as exc:
-        return entry_gone(str(exc))
+        return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
     except entries.InvalidEntry as exc:
         return unprocessable_entry(str(exc), key=exc.field)
     except AggregationError as exc:
@@ -654,7 +654,7 @@ def delete_event(event_id: str):
         with runtime.config_manager.writing() as opened:
             entries.remove(opened, key)
     except entries.UnknownEntry as exc:
-        return entry_gone(str(exc))
+        return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_REMOVE)
 

@@ -2526,9 +2526,16 @@ def test_a_row_that_left_the_ledger_has_its_own_type(tmp_path):
         assert response.status_code == 404
         assert response.get_json()['type'] == '/problems/entry-gone'
 
-    # An address that never named a row keeps the generic one: a client reading
-    # *deleted elsewhere* there would be told about a row that never existed.
+    # An address that never named a row keeps the generic one — whether it is
+    # unreadable or simply past the mark. A client reading *deleted elsewhere*
+    # there would be told about a row that never existed.
     assert client.delete('/api/events/nope').get_json()['type'] == \
+        '/problems/not-found'
+    assert client.delete('/api/events/9999').get_json()['type'] == \
+        '/problems/not-found'
+    assert client.patch('/api/events/9999',
+                        json={'date': '2024-01-15', 'event_type': 'DEPOSIT',
+                              'amount': 10}).get_json()['type'] == \
         '/problems/not-found'
 
 

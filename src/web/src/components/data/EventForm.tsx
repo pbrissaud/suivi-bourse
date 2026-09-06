@@ -169,6 +169,19 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
     },
   })
 
+  /**
+   * **Every way out of the panel, and there are three**: the cancel button, the
+   * sheet's own close, and the write that succeeded. The refusal is forgotten
+   * with the gesture that carried it — the panel is mounted once for all the
+   * rows, so a sentence left standing is read as being about the next row
+   * opened, and *this event is no longer in the ledger* over a row that is
+   * perfectly alive is a precise untruth.
+   */
+  function close() {
+    write.reset()
+    onClose()
+  }
+
   const fields = type === null ? null : FIELDS[type]
   const choice = accountChoice(accounts, accountsFailed)
   // The two states nothing in this panel can repair: the declaration is not
@@ -246,12 +259,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
       open={open}
       onOpenChange={(next) => {
         if (next) return
-        // The refusal is forgotten with the panel that carried it: a mutation
-        // error outlives its gesture, so reopening on another row would show a
-        // sentence about the previous one — and *this event is no longer in the
-        // ledger* over a row that is perfectly alive is a precise untruth.
-        write.reset()
-        onClose()
+        close()
       }}
     >
       <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
@@ -503,7 +511,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 <Button type="submit" disabled={write.isPending || blocked}>
                   {t('data.form.submit')}
                 </Button>
-                <Button type="button" variant="outline" onClick={onClose}>
+                <Button type="button" variant="outline" onClick={close}>
                   {t('data.form.cancel')}
                 </Button>
               </div>

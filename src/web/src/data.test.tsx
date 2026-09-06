@@ -1163,7 +1163,11 @@ describe('the create form, which is the onboarding', () => {
     // The panel stays open holding what was typed — the reader has not lost it.
     expect(screen.getByLabelText('Quantité')).toHaveValue('2')
 
-    await user.click(within(panel).getByRole('button', { name: 'Fermer' }))
+    // **Every way out of the panel forgets it**, and the cancel button is the
+    // one a reader actually presses — it closes without going through the
+    // sheet's own close, so a reset held there alone would leave the sentence
+    // standing on exactly the commonest path.
+    await user.click(within(panel).getByRole('button', { name: 'Annuler' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
 
     // **The refusal does not outlive its gesture.** The panel is mounted once

@@ -187,6 +187,18 @@ class Store:
             self._reserved[table] = mark + count
             return mark + 1
 
+    def issued(self, table: str, key: int) -> bool:
+        """Whether this store has ever handed ``key`` out for ``table``.
+
+        The other half of :meth:`reserve`, and the reason a refusal can say
+        *which* refusal it is: a key at or below the mark named a row once, and
+        a key above it has never named anything. The bound is the mark's own —
+        a store reopened has forgotten the keys it retired, so an old one reads
+        as never issued, which is the window ADR-0027 declines to buy.
+        """
+        with self._lock:
+            return 0 < key <= self._reserved.get(table, 0)
+
     @contextmanager
     def transaction(self):
         """``BEGIN`` … ``COMMIT``, with every other thread kept outside it."""
