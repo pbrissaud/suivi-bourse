@@ -131,6 +131,10 @@ def _price(opened, symbol, day, native, converted=None):
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         [symbol, datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC),
          native, converted, 1.0 if converted is not None else None])
+    # The row goes in by hand, so the gesture that drops the oldest-per-symbol
+    # memo (issue #861) does not run: this fixture is the one place in the tree
+    # that writes ``price_point`` without going through :mod:`quotes`.
+    quotes.forget_oldest_stored()
 
 
 def _ledger(symbols):

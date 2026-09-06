@@ -968,6 +968,49 @@ def test_positions_publishes_the_terminality_of_each_symbol(tmp_path):
     assert rows['MSFT']['terminal'] is False
 
 
+def test_two_dashboard_reads_scan_the_price_table_once(tmp_path, monkeypatch):
+    """The hottest read stops re-scanning the largest table (issue #861).
+
+    `_carried()` asks `quotes.terminal_symbols` which symbols the backward pass
+    has finished with, and that used to run
+    `SELECT symbol, min(ts) FROM price_point GROUP BY symbol` on **every**
+    `/api/positions` — a full scan, `price_point` carrying no index by design
+    (ADR-0007). Its answer moves at the backfill's rhythm, never at the
+    reader's.
+
+    Asserted **on the call**, which is the suite's rule for what the app decided
+    *not* to do: a query that did not run leaves no row to look at.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+    )
+    client, opened = build_client_and_store(tmp_path, events=events)
+
+    scans = []
+    original = opened.query
+
+    def counting(sql, parameters=None):
+        if 'min(ts)' in sql and 'price_point' in sql:
+            scans.append(sql)
+        return original(sql, parameters)
+
+    monkeypatch.setattr(opened, 'query', counting)
+
+    assert client.get('/api/positions').status_code == 200
+    assert client.get('/api/positions').status_code == 200
+
+    assert len(scans) == 1
+
+    # And a written point puts it back: the memo is dropped by the writer, so
+    # the next read answers on the series that now exists rather than on the
+    # one that did.
+    quotes.record_quote(opened, 'AAPL', datetime(2024, 2, 1, tzinfo=timezone.utc), 160.0)
+    assert client.get('/api/positions').status_code == 200
+
+    assert len(scans) == 2
+
+
 def test_the_table_and_the_curve_agree_on_a_line_being_rebuilt(tmp_path):
     """The two ends, on one line of one install — the ticket's own criterion.
 

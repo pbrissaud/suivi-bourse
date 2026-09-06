@@ -1,4 +1,5 @@
 """The market's own two tables: ``symbol_quote`` and ``price_point`` (issue #700)."""
+from functools import lru_cache
 from datetime import date, datetime, timezone
 from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
                     Tuple)
@@ -73,6 +74,7 @@ def record_quote(store, symbol: str, moment: datetime,
             'VALUES (?, ?, ?, ?, ?)',
             [symbol, ts, native, converted, rate])
         _advance_latest(store, symbol, ts, native, converted, rate)
+    forget_oldest_stored()
 
 
 def record_attributes(store, symbol: str, moment: datetime,
@@ -119,6 +121,7 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
             rows)
         latest = [row for row in rows if row[1] == newest][-1]
         _advance_latest(store, symbol, newest, latest[2], latest[3], latest[4])
+    forget_oldest_stored()
 
     logger.debug(f"Wrote {len(rows)} historical price(s) for {symbol}")
     return len(rows)
@@ -151,6 +154,7 @@ def collapse_to_ladder(store, now: datetime) -> int:
             removed += int(result.fetchone()[0])
 
     if removed:
+        forget_oldest_stored()
         logger.debug(f"Aged {removed} price point(s) onto the retention ladder")
     return removed
 
@@ -238,18 +242,40 @@ def oldest_window_tried(store, symbol: str) -> Optional[date]:
     return rows[0][0] if rows and rows[0][0] is not None else None
 
 
+@lru_cache(maxsize=1)
+def oldest_stored(store) -> Dict[str, datetime]:
+    """``{symbol: oldest instant stored}`` — one full scan, memoized (issue #861).
+
+    ``price_point`` carries no index (ADR-0007), so this ``GROUP BY`` is a scan
+    of the store's largest table — and it sat on the product's **hottest** read:
+    every ``/api/positions`` and every dashboard load ran it whole. Its answer
+    only moves when a price point is written or removed, which is the backfill's
+    rhythm and not the reader's, so it is memoized on the store handle and
+    dropped by :func:`forget_oldest_stored` from every writer below.
+
+    Keyed on the handle rather than global: a suite opens one store per test,
+    and one entry is all a process with one connection ever needs.
+    """
+    return {
+        symbol: instants.utc(value)
+        for symbol, value in store.query(
+            'SELECT symbol, min(ts) FROM price_point GROUP BY symbol')
+        if value is not None
+    }
+
+
+def forget_oldest_stored() -> None:
+    """Drop the memo — called by every gesture that can move a symbol's oldest point."""
+    oldest_stored.cache_clear()
+
+
 def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
                      now: datetime) -> Set[str]:
     """Which symbols the backward pass has **finished** with — issue #706."""
     if not windows:
         return set()
 
-    oldest_stored = {
-        symbol: instants.utc(value)
-        for symbol, value in store.query(
-            'SELECT symbol, min(ts) FROM price_point GROUP BY symbol')
-        if value is not None
-    }
+    oldest = oldest_stored(store)
     oldest_tried = {
         symbol: value
         for symbol, value in store.query(
@@ -261,7 +287,7 @@ def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
     for symbol, (acquired, exited) in windows.items():
         target, ceiling = carrying.holding_bounds(acquired, exited, now)
         anchor = carrying.backward_anchor(
-            ceiling, oldest_stored.get(symbol), oldest_tried.get(symbol))
+            ceiling, oldest.get(symbol), oldest_tried.get(symbol))
         if carrying.is_terminal(anchor, target):
             finished.add(symbol)
     return finished
@@ -359,6 +385,7 @@ def forget_symbol(store, symbol: str) -> int:
         'SELECT count(*) FROM price_point WHERE symbol = ?', [symbol])[0]
     store.execute('DELETE FROM price_point WHERE symbol = ?', [symbol])
     store.execute('DELETE FROM symbol_quote WHERE symbol = ?', [symbol])
+    forget_oldest_stored()
     return int(points)
 
 
@@ -368,6 +395,7 @@ __all__ = [
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
+    'oldest_stored', 'forget_oldest_stored',
     'first_quoted_days',
     'quote_currency',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',
