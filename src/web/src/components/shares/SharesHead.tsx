@@ -43,12 +43,11 @@ import {
   securityTerms,
   sumRendering,
   termAmount,
-  termCarriesSign,
   termRendering,
+  termTone,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 /**
@@ -105,13 +104,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
                 () => f.currency(value, currency),
                 t,
               )}
-              tone={
-                value === null
-                  ? signClass(null)
-                  : termCarriesSign(term as GainTermName)
-                    ? signClass(value)
-                    : signClass(0)
-              }
+              tone={termTone(terms, term as GainTermName)}
             />
           )
         })}

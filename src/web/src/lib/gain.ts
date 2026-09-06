@@ -24,6 +24,7 @@
  */
 import { AWAITING_RATE, DASH, FIGURE, REBUILDING, absenceCase, type Rendering } from '@/lib/absence'
 import type { Position } from '@/lib/api'
+import { toneOf } from '@/lib/sign'
 
 export const GAIN_TERMS = ['unrealised', 'realised', 'dividends', 'transferFees'] as const
 
@@ -278,4 +279,13 @@ export function termRendering(terms: GainTerms, term: GainTermName): Rendering {
 export function termAmount(terms: GainTerms, term: GainTermName): number | null {
   if (term !== 'unrealised') return terms[term]
   return terms.unrealised.known ? terms.unrealised.value : null
+}
+
+/**
+ * The tone of one term: the **rendering** decides, never the amount — a known
+ * `0` still renders a dash (#860). The rationing of colour rides here so it
+ * stops being copied at the three call sites.
+ */
+export function termTone(terms: GainTerms, term: GainTermName): string {
+  return toneOf(termRendering(terms, term), termCarriesSign(term) ? termAmount(terms, term) : 0)
 }

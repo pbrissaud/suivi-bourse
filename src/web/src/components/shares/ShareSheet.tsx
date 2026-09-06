@@ -65,8 +65,8 @@ import {
   securityTerms,
   sumRendering,
   termAmount,
-  termCarriesSign,
   termRendering,
+  termTone,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
@@ -79,7 +79,7 @@ import {
   unrealised,
   type ShareRow,
 } from '@/lib/shares'
-import { signClass } from '@/lib/sign'
+import { signClass, toneOf } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 /** Three terms and not four: no security carries the fees taken from a transfer. */
@@ -253,11 +253,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                     <span
                       className={cn(
                         'tabular font-mono text-md font-semibold',
-                        amount === null
-                          ? signClass(null)
-                          : termCarriesSign(term as GainTermName)
-                            ? signClass(amount)
-                            : signClass(0),
+                        termTone(terms, term as GainTermName),
                       )}
                     >
                       {renderFigure(
@@ -389,9 +385,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                         </TableCell>
                         <TableCell
                           className={`text-right tabular ${
-                            lineRenderings.unrealised.kind === 'figure'
-                              ? signClass(lineGain)
-                              : signClass(null)
+                            toneOf(lineRenderings.unrealised, lineGain)
                           }`}
                         >
                           {renderFigure(
