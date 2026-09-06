@@ -91,6 +91,19 @@ describe('the page, and the cards it is made of', () => {
     )
   })
 
+  it('names the rebuild card too, so no region on the page is anonymous', async () => {
+    // Six cards set `role="region"` and `aria-labelledby`, and this one did
+    // not: navigating by region skipped the card carrying the page's heaviest
+    // gesture, which is the one a reader arrives at from the bell (#861).
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
+    )
+    await openSettings()
+
+    expect(await screen.findByRole('region', { name: 'Reconstruction en cours' }))
+      .toBeInTheDocument()
+  })
+
   it('says nothing about the notices, which live behind the bell', async () => {
     await openSettings([anEnvironmentFact()])
     await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })

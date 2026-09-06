@@ -61,6 +61,11 @@ interface RebuildBlockProps {
   accounts: AccountsResponse | null
 }
 
+//: The heading this card is named by, like the six other settings cards: a
+//: region navigated to by name, rather than a hole where the page's heaviest
+//: gesture lives (#861).
+const REBUILD_HEADING = 'settings-rebuild'
+
 export function RebuildBlock({ runtime, firstEvent, accounts }: RebuildBlockProps) {
   const { t } = useI18n()
 
@@ -73,9 +78,11 @@ export function RebuildBlock({ runtime, firstEvent, accounts }: RebuildBlockProp
   const percent = ratio === null ? null : Math.round(ratio * 100)
 
   return (
-    <Card>
+    <Card role="region" aria-labelledby={REBUILD_HEADING}>
       <CardHeader>
-        <h2 className="eyebrow">{t('installation.rebuild.title')}</h2>
+        <h2 id={REBUILD_HEADING} className="eyebrow">
+          {t('installation.rebuild.title')}
+        </h2>
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Named or not, it is not the same sentence: *which* account is late is
