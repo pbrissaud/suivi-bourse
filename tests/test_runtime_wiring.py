@@ -406,9 +406,11 @@ def test_a_failed_write_leaves_the_anchor_where_it_was_and_is_recorded(
     m.backfill()
 
     assert quotes.oldest_window_tried(store, "AAPL") is None
-    record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
-    assert record.failed is True
-    assert "could not be written" in record.error
+    # Both passes read the same return value, so both are held here.
+    for direction in (runtime_state.BACKWARD, runtime_state.FORWARD):
+        record = m.recorder.backfill_of("AAPL", direction)
+        assert record.failed is True
+        assert "could not be written" in record.error
 
 
 def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
