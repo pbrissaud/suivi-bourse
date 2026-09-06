@@ -34,7 +34,7 @@ import { useI18n } from '@/lib/i18n'
 /** The id the card's landmark is named by — one constant, two readers. */
 const ORPHANS_HEADING = 'settings-orphans'
 
-export interface OrphansBlockProps {
+interface OrphansBlockProps {
   /** The list, or `null` while `GET /api/store` has not answered (ADR-0026). */
   orphans: readonly OrphanSymbol[] | null
 }

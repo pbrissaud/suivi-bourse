@@ -210,14 +210,9 @@ it can open the store (ADR-0014). `boot_env.py` says them once.
 
 The path is **a directory, never a file**; the defaults describe the container;
 **blank counts as unset** (compose renders an undefined substitution as an empty
-string). Every retired `SB_*`/`INFLUXDB_*` variable still set is named at start-up
-in **one grouped notice**, and that list is *computed*, never written down.
-The two names the exporter answered for left this table with it (ADR-0033,
-#809) and `SB_IMPORT_DIR` with the drop folder (ADR-0032, #815); all three are
-in `boot_env.DELETED`, so an install that still sets one hears it in that notice
-as **removed with no successor** — the gauges became the health body and the
-runtime tab, and the folder became a gesture, never a dial to turn either back
-on.
+string). Every `SB_*`/`INFLUXDB_*` variable still set and read by nothing is named at
+start-up in **one grouped notice**, and that list is *computed* off the inventory,
+never written down.
 
 ### The dials — the store is the only source
 
@@ -423,8 +418,6 @@ src/application/
 ├── backfill.py         # the backfill workload: the cycle and the ladder's
 │                       #   application, then backward / forward / lateral —
 │                       #   three named passes over one shared memory
-├── share_info.py       # the per-symbol `info` cache: *observed* by the scrape's
-│                       #   live fetch, *learned* by the backfill, never overwritten
 ├── perf_job.py         # the performance workload: the currency guard, the pass
 │                       #   lock *borrowed from the façade*, the replay, the pure
 │                       #   call and the one transaction handed to the writer —
@@ -486,7 +479,7 @@ replacement — the observer no longer exists, so there is no absence left to
 prove (ADR-0032). It is the only place in the v5 rewrite where that is true.
 
 And **there is one clock, and it is the product's**: every read of it
-is UTC-qualified, and `test_suite_conventions.py` holds that on the source over
+is UTC-qualified, and `.github/scripts/conventions.sh` holds that on the source over
 `src/application/`, `src/api/` and `tests/` alike, because CI runs in UTC.
 
 **And one repair of what comes back from the store**, which is the other way a

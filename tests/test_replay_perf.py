@@ -29,7 +29,7 @@ from application import main
 from application import workloads
 from application import store as store_module
 import api as api_module
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from api import create_app
 
 

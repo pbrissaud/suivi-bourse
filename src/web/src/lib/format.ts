@@ -50,7 +50,7 @@ export function formatCurrency(
  * places to keep a currency's decimals in step, on a page that puts the two
  * renderings one line apart.
  */
-export function formatSignedCurrency(
+function formatSignedCurrency(
   locale: string,
   value: number | null | undefined,
   currency: string | null | undefined,
@@ -199,7 +199,7 @@ export function formatDate(
  * `formatDate` with an arrow between them; written at a call site, the year
  * would either be repeated or dropped on both ends.
  */
-export function formatDaySpan(
+function formatDaySpan(
   locale: string,
   from: string | number | Date | null | undefined,
   to: string | number | Date | null | undefined,
@@ -231,7 +231,7 @@ export function formatDaySpan(
  * the bug this module exists to prevent — the reader chooses their language,
  * and the months would stay French in English.
  */
-export function formatMonth(locale: string, year: string, month: number): string {
+function formatMonth(locale: string, year: string, month: number): string {
   const date = new Date(Date.UTC(Number(year), month - 1, 1))
   if (Number.isNaN(date.getTime())) return ABSENT
   return new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }).format(date)

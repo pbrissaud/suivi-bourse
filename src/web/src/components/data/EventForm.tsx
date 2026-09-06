@@ -119,7 +119,7 @@ function draftOf(event: LedgerEvent): Draft {
   }
 }
 
-export interface EventFormProps {
+interface EventFormProps {
   open: boolean
   /** The row being edited — `null` is a creation. */
   event: LedgerEvent | null

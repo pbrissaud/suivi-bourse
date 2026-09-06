@@ -33,7 +33,7 @@ import {
  * accounts.
  */
 export const SHARES_SHOWN = 5
-export const ACCOUNTS_SHOWN = 5
+const ACCOUNTS_SHOWN = 5
 export const EVENTS_SHOWN = 5
 
 /**
@@ -90,7 +90,7 @@ export function titlesMatching(titles: readonly Title[], query: string): Title[]
  * caller's, because the seeded row reads its name from the catalogue and a
  * catalogue is not a pure module's to hold.
  */
-export interface NamedAccountEntry {
+interface NamedAccountEntry {
   id: string
   name: string
 }

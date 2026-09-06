@@ -48,7 +48,7 @@ const CHOICES: LanguageChoice[] = ['fr', 'en', 'auto']
  * does not compile.
  */
 export type MessageKey = keyof typeof en
-export type Catalogue = Record<MessageKey, string>
+type Catalogue = Record<MessageKey, string>
 
 const CATALOGUES: Record<Language, Catalogue> = { en, fr }
 
@@ -104,7 +104,7 @@ export function formatMessage(
   return String(new IntlMessageFormat(message, LOCALES[language]).format(values))
 }
 
-export interface I18nContextValue {
+interface I18nContextValue {
   choice: LanguageChoice
   language: Language
   locale: string

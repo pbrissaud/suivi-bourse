@@ -39,7 +39,7 @@ import { identityOf } from '@/lib/ledger'
 import { problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
-export interface RowDeleteProps {
+interface RowDeleteProps {
   /** The row the reader asked to remove, or `null` while none is. */
   event: LedgerEvent | null
   onClose: () => void

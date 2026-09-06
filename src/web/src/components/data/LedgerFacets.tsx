@@ -61,7 +61,7 @@ import {
 } from '@/lib/ledger'
 import { cn } from '@/lib/utils'
 
-export interface LedgerFacetsProps {
+interface LedgerFacetsProps {
   filters: Filters
   onChange: (filters: Filters) => void
   /** The ledger entire — what the counts are taken on, never the rows on screen. */

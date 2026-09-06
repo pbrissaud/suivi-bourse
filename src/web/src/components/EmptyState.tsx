@@ -30,7 +30,7 @@
  */
 import type { ReactNode } from 'react'
 
-export interface EmptyStateProps {
+interface EmptyStateProps {
   title: string
   /** Why it is empty, when the reason is not obvious from the title. */
   description?: string

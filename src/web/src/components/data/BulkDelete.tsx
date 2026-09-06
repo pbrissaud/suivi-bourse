@@ -80,7 +80,7 @@ import {
 import { problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
-export interface BulkDeleteProps {
+interface BulkDeleteProps {
   /** The reduction in force: what the gesture consumes, and what it names. */
   selection: LedgerFilters
   /** How many rows it retains — counted on the table the reader is looking at. */

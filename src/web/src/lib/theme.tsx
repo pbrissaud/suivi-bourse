@@ -27,13 +27,13 @@ export const THEME_STORAGE_KEY = 'sb.theme'
 const CHOICES: ThemeChoice[] = ['light', 'dark', 'auto']
 
 /** Absence — and anything unrecognised — means `auto`. */
-export function readThemeChoice(storage: Pick<Storage, 'getItem'> | null | undefined): ThemeChoice {
+function readThemeChoice(storage: Pick<Storage, 'getItem'> | null | undefined): ThemeChoice {
   const stored = storage?.getItem(THEME_STORAGE_KEY)
   return CHOICES.find((choice) => choice === stored) ?? 'auto'
 }
 
 /** Pure: what the reader chose, plus what the system says, gives the ground. */
-export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Ground {
+function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Ground {
   if (choice === 'auto') return prefersDark ? 'dark' : 'light'
   return choice
 }
@@ -85,7 +85,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
  * are generated rather than declared precisely because their *direction*
  * depends on the ground (ADR-0023).
  */
-export function applyGround(element: HTMLElement, ground: Ground) {
+function applyGround(element: HTMLElement, ground: Ground) {
   element.classList.toggle('dark', ground === 'dark')
   element.style.colorScheme = ground
   const ramp = allocationRamp(ground)

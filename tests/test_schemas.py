@@ -223,7 +223,7 @@ TODAY = date(2026, 8, 12)
 
 
 def _replayed(events):
-    from application.events import EventAggregator
+    from application.events.aggregator import EventAggregator
     return EventAggregator().replay(events)
 
 

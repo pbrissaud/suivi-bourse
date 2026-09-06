@@ -1,26 +1,4 @@
-"""SuiviBourse's boot sequence and container entrypoint (issue #838, ADR-0039).
-
-One process, and therefore one file. The sequence is linear and reads top to
-bottom — the environment, the store, the application, the jobs, the socket —
-because there is no longer a ``fork()`` cutting it in half and no hook to hang
-the second half on.
-
-What that removes is not only a file. gunicorn always forks: ``workers = 1`` and
-``preload_app`` shaped the fork rather than removed it, and on macOS the worker
-segfaulted the moment a scrape job ran — measured in ADR-0039, twice per respawn
-cycle, against none here. It also removes the two guards that existed to forbid a
-second worker (``on_starting`` and ``control_socket_disable``): there is no
-arbiter left to raise a worker count against, and the ``--workers`` door is shut
-by there being no command line in the image at all. The ``ENTRYPOINT`` is
-``python boot.py``, and :func:`serve` calls ``uvicorn.run`` in process.
-
-Run it by hand, from the repository root::
-
-    PYTHONPATH=src uv run python -m application.boot
-
-``pythonpath = ["src"]`` in ``pyproject.toml`` is pytest's alone, and the project
-is not installable (``package = false``), so the import root is named here.
-"""
+"""SuiviBourse's boot sequence and container entrypoint (issue #838, ADR-0039)."""
 import contextlib
 import os
 import sys
@@ -36,108 +14,24 @@ from application import main
 from application import mcp_server
 import api
 
-#: The size of the pool the WSGI application is called in. It is the
-#: ``threads = 4`` gunicorn's ``gthread`` worker carried — the number moved, it
-#: was not re-chosen.
 WSGI_THREADS = 4
 
-#: Where the agent's interface answers, on the one socket (ADR-0040, #749).
-#:
-#: It is the SDK's own default, which is why the mounted application needs no
-#: prefix stripped: it routes on the full path it is handed.
 MCP_PATH = '/mcp'
 
-#: The agent's interface answers under **any** host name, and that is explicit.
-#:
-#: It has to be passed, and passing nothing is the one thing that does not mean
-#: *no policy*. The SDK reads its ``host`` argument — ``127.0.0.1`` by default —
-#: and, finding no settings, **substitutes its own**::
-#:
-#:     if transport_security is None and host in ("127.0.0.1", "localhost", "::1"):
-#:         transport_security = TransportSecuritySettings(
-#:             allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"], ...)
-#:
-#: which answers ``421 Invalid Host header`` to a LAN address, a container name
-#: and a reverse proxy's domain alike — every way this app is actually reached
-#: except the one a developer tests from. Handing it settings of our own is what
-#: keeps that branch from firing.
-#:
-#: **What it defends is defended anyway, and structurally.** The check exists
-#: against DNS rebinding: a page in the owner's browser resolving a name to this
-#: socket and posting to it. The SDK enforces ``Content-Type: application/json``
-#: on every POST *whatever this setting says* — the one validation that runs
-#: before the disable — and a browser cannot send that cross-origin without a
-#: preflight this app answers no CORS header to. It is the same reasoning
-#: ``api``'s own origin guard records for why the JSON routes were never
-#: reachable that way.
-#:
-#: The alternative was an allowlist, and it is not available: this app cannot
-#: know the name it is reached under, and learning one would be a fourth boot
-#: variable (ADR-0033, ADR-0040 — the boot variables stay three).
 NO_HOST_ALLOWLIST = TransportSecuritySettings(
     enable_dns_rebinding_protection=False)
 
-#: The levels uvicorn's own logger understands. ``LOG_LEVEL`` is an app-wide
-#: dial that predates any server (ADR-0014), so a value it does not recognise
-#: falls back rather than failing the boot — the application's own loggers read
-#: the variable directly and are unaffected either way.
 _UVICORN_LEVELS = ('critical', 'error', 'warning', 'info', 'debug', 'trace')
 
 
 class Serving:
-    """The ASGI application uvicorn is handed: the Flask app, the agent's, and the teardown.
-
-    The Flask application is served **unchanged**, behind a WSGI-to-ASGI adapter:
-    no route is rewritten, and ``create_app()`` stays the seam the whole Python
-    suite is written against (ADR-0039).
-
-    **Two applications on one socket since ADR-0040**, and the branch below is
-    the whole of the mount. The agent's interface is ASGI where Flask is WSGI, so
-    it cannot be a blueprint; it is not a second service either, because there is
-    no second bind, no second process and no fork. ``MCP_PATH`` reaches it and
-    every other path reaches the front's — which makes this branch **the only new
-    code on every request's path**, MCP's and the page's alike, and the reason it
-    is tested as routing in its own right rather than only through the tools.
-
-    The teardown hangs off the **lifespan shutdown**, and that is not a matter of
-    taste. uvicorn catches ``SIGTERM``, shuts down gracefully, restores the
-    handler it replaced and then re-raises the signal — so the process dies of
-    ``SIGTERM`` the instant ``uvicorn.run`` returns, and anything written after
-    that call does not run. ``docker stop`` sends exactly that signal. The
-    lifespan shutdown is the last thing uvicorn drives while the process is still
-    alive, which makes it the exact heir of gunicorn's ``worker_exit``.
-
-    **And the lifespan is now load-bearing twice.** The MCP SDK requires the
-    *host* application to enter ``session_manager.run()`` itself: a mounted
-    sub-application's own lifespan never executes, so the one
-    ``streamable_http_app()`` wires into the app it returns is dead code the
-    moment it is mounted, and the first request fails without this. The hook it
-    asks for already existed here, for the teardown — which is why ADR-0040 could
-    say the mount costs a branch and a context.
-
-    **The order on the way out is not interchangeable.** The session manager is
-    closed *before* the runtime, because the teardown closes the store and a tool
-    still in flight would meet a store that is no longer there — the shape of
-    defect #858 records, met from the other side.
-
-    a2wsgi answers the lifespan protocol itself, and correctly; it is intercepted
-    here rather than delegated to because there is something to do in it.
-    """
+    """The ASGI application uvicorn is handed: the Flask app, the agent's, and the teardown."""
 
     def __init__(self, app, on_shutdown: Callable[[], None], mcp=None):
-        """Wrap the two applications, and build the agent's one **now**.
-
-        Building it here rather than on the first request is what makes a
-        server that cannot be built a failure to *boot* — one non-zero exit,
-        which is the whole of this file's failure handling — instead of a 500
-        met by the first agent to call.
-        """
+        """Wrap the two applications, and build the agent's one **now**."""
         self.wsgi = WSGIMiddleware(app, workers=WSGI_THREADS)
         self._on_shutdown = on_shutdown
         self._mcp = mcp
-        # Built once, at construction, so a failure to build is a failure to
-        # boot rather than a 500 on the first agent that calls.
-        #
         self._mcp_app = (
             mcp.streamable_http_app(streamable_http_path=MCP_PATH,
                                     transport_security=NO_HOST_ALLOWLIST)
@@ -145,11 +39,7 @@ class Serving:
         self._sessions: Optional[contextlib.AsyncExitStack] = None
 
     async def __call__(self, scope, receive, send) -> None:
-        """Three ways out: the lifespan, the agent's interface, the front.
-
-        The order matters only in that the lifespan is not a path and has to be
-        recognised before anything looks at one.
-        """
+        """Three ways out: the lifespan, the agent's interface, the front."""
         if scope['type'] == 'lifespan':
             await self._lifespan(receive, send)
             return
@@ -161,13 +51,7 @@ class Serving:
         await self.wsgi(scope, receive, send)
 
     async def _lifespan(self, receive, send) -> None:
-        """Startup arms the session manager; shutdown disarms it, then the runtime.
-
-        A startup that raises is answered with ``lifespan.startup.failed`` rather
-        than left to hang: uvicorn exits on it, which is the one non-zero exit
-        :func:`run` owns, and a boot that cannot arm the agent's interface is a
-        boot that failed like any other.
-        """
+        """Startup arms the session manager; shutdown disarms it, then the runtime."""
         while True:
             message = await receive()
             if message['type'] == 'lifespan.startup':
@@ -201,60 +85,25 @@ class Serving:
 
 
 def _is_mcp(path: str) -> bool:
-    """Is this path the agent's interface?
-
-    ``MCP_PATH`` itself and anything under it, and **not** a path that merely
-    starts with the same letters: ``/mcpsomething`` is an ordinary unknown path
-    and belongs to the SPA's catch-all, which is what answers it today.
-    """
+    """Is this path the agent's interface?"""
     return path == MCP_PATH or path.startswith(MCP_PATH + '/')
 
 
 def serve(app, environment: boot_env.BootEnvironment,
           on_shutdown: Callable[[], None], mcp=None) -> None:
-    """Bind the one socket and serve until a signal says otherwise.
-
-    ``uvicorn.run`` and not a command line, which is the whole of how the
-    multiprocess door stays shut: there is no flag to pass because there is no
-    CLI in the image to pass it to.
-
-    **One socket still** (ADR-0033, ADR-0040): the agent's interface arrives as
-    an argument to the application uvicorn is handed, not as a second bind, so
-    ``SB_WEB_PORT`` remains the only port and the boot variables remain three.
-    """
+    """Bind the one socket and serve until a signal says otherwise."""
     level = environment.log_level.lower()
     uvicorn.run(
         Serving(app, on_shutdown, mcp),
         host='0.0.0.0',
         port=environment.web_port,
         log_level=level if level in _UVICORN_LEVELS else 'info',
-        # Off, as gunicorn's was: nothing logged a request line before, and the
-        # container's own probe would be two lines a minute of them.
         access_log=False,
     )
 
 
 def sequence(env: Mapping[str, str]) -> None:
-    """The boot, in order, raising rather than exiting — :func:`run` owns the code.
-
-    Five steps and no branch:
-
-    1. the environment, read **once** and as a whole (issue #740);
-    2. the store, opened, brought to its schema, seeded, and the ledger replayed
-       — the connection stays open for the life of the process, because nothing
-       has to survive a fork any more (ADR-0039);
-    3. the Flask application **and the agent's interface**, both built on that
-       runtime and both served from the one socket (ADR-0040);
-    4. the scheduler and its jobs;
-    5. the socket.
-
-    The teardown is named **twice**, and the two are not redundant.
-    :class:`Serving` runs it on the lifespan shutdown, which is the graceful path
-    and the only one a ``SIGTERM`` leaves time for; the ``finally`` here covers
-    the boot that never reached a lifespan at all — a port already taken, a step
-    that raised. :func:`main.shutdown_runtime` is written to be called twice and
-    the second call finds nothing left to do.
-    """
+    """The boot, in order, raising rather than exiting — :func:`run` owns the code."""
     environment = boot_env.read(env)
     runtime = main.build_runtime()
     teardown = partial(main.shutdown_runtime, runtime)
@@ -268,15 +117,7 @@ def sequence(env: Mapping[str, str]) -> None:
 
 
 def run(env: Mapping[str, str] = None) -> int:
-    """The exit code. A failure at any step is **one** exit, non-zero.
-
-    There is no arbiter to respawn anything, which is what lets this be the
-    whole of the failure handling: the process that cannot boot says why and
-    dies, the container exits, and the restart policy decides in the open
-    (ADR-0039). ``preload_app`` existed to keep an unreadable store (#696) a
-    single clean exit rather than a respawn loop — a defence against a failure
-    mode the arbiter itself introduced, and it goes with it.
-    """
+    """The exit code. A failure at any step is **one** exit, non-zero."""
     try:
         sequence(os.environ if env is None else env)
     except Exception as exc:

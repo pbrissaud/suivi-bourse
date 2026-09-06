@@ -80,7 +80,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { allocation, type AllocationSlice, type ShareRow } from '@/lib/shares'
 
-export interface AllocationProps {
+interface AllocationProps {
   rows: readonly ShareRow[]
   currency: string | null
 }

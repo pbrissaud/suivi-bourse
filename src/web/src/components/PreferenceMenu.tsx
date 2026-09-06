@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export interface PreferenceOption<T extends string> {
+interface PreferenceOption<T extends string> {
   value: T
   label: string
 }

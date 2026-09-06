@@ -30,7 +30,10 @@ import pytest
 
 from application import accounts as accounts_module
 from application import entries
-from application.events import EventAggregator, EventLoader, EventValidator, Portfolio, Account
+from application.events.aggregator import EventAggregator
+from application.events.loader import EventLoader
+from application.events.validator import EventValidator
+from application.events.schemas import Portfolio, Account
 from application.events.schemas import Event, EventType, ShareState, DEFAULT_ACCOUNT
 from application.main import ConfigurationManager
 

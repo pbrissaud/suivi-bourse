@@ -57,7 +57,7 @@ export type Sum =
   | { known: true; value: number }
   | { known: false; because: 'awaitingRate' | 'unboundedFees' | 'rebuilding' }
 
-export interface GainTerms {
+interface GainTerms {
   /**
    * Does the portfolio hold **anything at all**? (#727)
    *

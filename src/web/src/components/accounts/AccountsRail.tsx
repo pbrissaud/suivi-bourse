@@ -118,7 +118,7 @@ function cashShare(
   return share === null || !Number.isFinite(share) ? null : share
 }
 
-export interface AccountsRailProps {
+interface AccountsRailProps {
   rows: readonly AccountRow[]
   /** Which account the detail is about — the rail marks it `aria-current`. */
   selected: string

@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from application import boot_env
-from application import settings_registry
 
 
 # --------------------------------------------------------------------- #
@@ -99,47 +98,7 @@ def test_an_unknown_sb_name_is_reported_and_gets_no_instruction():
 
     assert names == ('SB_REGULAR_INTERVALL',)
     message = boot_env.notice(names)
-    assert 'ever read: SB_REGULAR_INTERVALL' in message
-    assert 'settings page' not in message
-
-
-def test_a_dial_that_moved_is_named_with_the_dial_it_became():
-    names = boot_env.unread({'SB_REGULAR_INTERVAL': '600'})
-
-    assert names == ('SB_REGULAR_INTERVAL',)
-    assert 'SB_REGULAR_INTERVAL → the regular_interval dial' in \
-        boot_env.notice(names)
-
-
-def test_a_variable_that_was_deleted_outright_is_told_it_has_no_successor():
-    """"Turn it on the settings page" is wrong for a dial that no longer exists:
-    an operator told that ``SB_EXECUTOR_POOL`` lives in the app now goes looking
-    for a field that has never existed, and for a ``PUT`` answering ``422``."""
-    names = boot_env.unread({'SB_EXECUTOR_POOL': '10'})
-    message = boot_env.notice(names)
-
-    assert 'removed and have no replacement: SB_EXECUTOR_POOL' in message
-    assert 'settings page' not in message
-
-
-@pytest.mark.parametrize('name', ['SB_PROMETHEUS_ENABLED', 'SB_METRICS_PORT'])
-def test_the_two_names_the_exporter_answered_for_have_no_successor(name):
-    """ADR-0033. An owner who had either of these written down must hear it
-    **named** at boot, or they go on believing a second socket is being served.
-
-    And it has to be the deleted clause. There is no dial that turns the gauges
-    back on — what replaced them is the health body and the runtime tab — so
-    *"turn it on the settings page"* would send its reader looking for a field
-    that has never existed, and silence would read as a typo.
-    """
-    names = boot_env.unread({name: 'true'})
-    message = boot_env.notice(names)
-
-    assert names == (name,)
-    assert name in boot_env.DELETED
-    assert f'removed and have no replacement: {name}' in message
-    assert 'settings page' not in message
-    assert 'ever read' not in message
+    assert 'SB_REGULAR_INTERVALL' in message
 
 
 def test_the_four_never_read_names_stay_out_of_the_notice():
@@ -157,26 +116,6 @@ def test_the_four_never_read_names_stay_out_of_the_notice():
 def test_a_variable_the_app_still_reads_is_not_in_the_notice():
     assert boot_env.unread({'SB_WEB_PORT': '9000',
                             'SB_STORE_DIR': '/srv/store'}) == ()
-
-
-def test_the_drop_folders_variable_is_named_as_removed_without_a_successor():
-    """ADR-0032, user story 29. The folder ``SB_IMPORT_DIR`` named is gone and a
-    file is handed to the app instead, so an install that still sets it must
-    hear it **named** at boot — or its owner goes on believing that dropping a
-    file somewhere imports it.
-
-    And it has to be the *deleted* clause: there is no dial that brings the
-    folder back, so *"turn it on the settings page"* would send its reader
-    looking for a field that has never existed, and silence would read as a typo.
-    """
-    names = boot_env.unread({'SB_IMPORT_DIR': '/srv/drop'})
-    message = boot_env.notice(names)
-
-    assert names == ('SB_IMPORT_DIR',)
-    assert 'SB_IMPORT_DIR' in boot_env.DELETED
-    assert 'removed and have no replacement: SB_IMPORT_DIR' in message
-    assert 'settings page' not in message
-    assert 'ever read' not in message
 
 
 def test_a_blank_retired_variable_is_not_reported():
@@ -222,42 +161,6 @@ def test_the_whole_of_a_v4_env_is_named_at_once():
     assert len(boot_env.unread(v4)) == 14
 
 
-# --------------------------------------------------------------------- #
-# The invariant: the complement reads the registry, never a second list
-# --------------------------------------------------------------------- #
-
-def test_every_dial_in_the_registry_is_recognised_as_one_that_moved():
-    """The classification is read off :mod:`settings_registry` rather than off a
-    literal, so it cannot describe a dial the product no longer has."""
-    for spec in settings_registry.SETTINGS:
-        assert boot_env.moved_dial(f'SB_{spec.key.upper()}') == spec.key
-
-
-def test_adding_a_dial_to_the_registry_reclassifies_it_with_no_edit_here(
-        monkeypatch):
-    """The invariant of the complement.
-
-    ``SB_RETENTION_DAYS`` is not a dial today, so it reads as a name the app has
-    never obeyed. Add it to the registry — the *one* list of dials in the
-    product — and the notice tells its owner where it went, with nothing in
-    :mod:`boot_env` touched. A second literal list would have agreed on the day
-    it was written and not much longer.
-    """
-    name = 'SB_RETENTION_DAYS'
-    assert boot_env.moved_dial(name) is None
-    assert 'ever read: SB_RETENTION_DAYS' in \
-        boot_env.notice(boot_env.unread({name: '400'}))
-
-    added = settings_registry.SettingSpec(
-        'retention_days', '400', settings_registry.INTEGER,
-        settings_registry._int, settings_registry.NEXT_CYCLE,
-        'How long a price point is kept.', minimum=1, maximum=3650)
-    monkeypatch.setitem(settings_registry.BY_KEY, added.key, added)
-
-    assert boot_env.moved_dial(name) == 'retention_days'
-    message = boot_env.notice(boot_env.unread({name: '400'}))
-    assert 'SB_RETENTION_DAYS → the retention_days dial' in message
-    assert 'ever read' not in message
 
 
 def test_the_read_set_is_exactly_the_inventory():

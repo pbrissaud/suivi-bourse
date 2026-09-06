@@ -96,7 +96,7 @@ export const DEFAULT_ACCOUNT_LABEL: MessageKey = 'accounts.default.label'
 export const DEFAULT_ACCOUNT_TYPE: MessageKey = 'accounts.default.type'
 
 /** The two members a naming rule needs — an `Account` or an {@link AccountRow}. */
-export interface NamedAccount {
+interface NamedAccount {
   id: string
   label?: string | null
   type?: string | null
@@ -249,13 +249,13 @@ export function windowStart(
 // The rebasing — the page's one arithmetic
 // ------------------------------------------------------------------------- //
 
-export interface RebasedPoint {
+interface RebasedPoint {
   t: string
   /** Base 100 at {@link RebasedSeries.from}. */
   index: number
 }
 
-export interface RebasedSeries {
+interface RebasedSeries {
   /** The account the curve belongs to. */
   key: string
   /** The day the rebasing counts from — this series' first day in the window. */
@@ -545,7 +545,7 @@ export function distinctSymbols(positions: readonly Position[]): number {
 }
 
 /** One security, and what it has paid this account since it opened. */
-export interface DividendPayer {
+interface DividendPayer {
   symbol: string
   /** Cash in hand, in the reporting currency — `position.dividends`. */
   amount: number
@@ -653,7 +653,7 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
  * declared it as much as one who renamed it, and #725's whole correctness rests
  * on *has anybody declared this* rather than on *does it have a name*.
  */
-export function isSeededOnly(account: Account): boolean {
+function isSeededOnly(account: Account): boolean {
   return (
     isDefaultAccount(account.id) &&
     declaredLabel(account) === null &&
@@ -766,7 +766,7 @@ export function reassignmentOf(
  * as a blank — the server resolves it at the write, where `ledger._insert_events`
  * resolves the file's own empty cell — so the two roads keep one rule.
  */
-export type AccountChoice =
+type AccountChoice =
   /**
    * Nothing is declared, so there is nothing to choose — but the row still has
    * a **name**, and it is the one the store holds rather than the catalogue's
@@ -797,7 +797,7 @@ export function accountChoice(
 }
 
 /** What the form sends for the account, or the sentence that refuses to. */
-export type SubmittedAccount = { account: string } | { error: MessageKey }
+type SubmittedAccount = { account: string } | { error: MessageKey }
 
 export function submittedAccount(choice: AccountChoice, typed: string): SubmittedAccount {
   switch (choice.kind) {

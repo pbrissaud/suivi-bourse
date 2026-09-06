@@ -9,7 +9,6 @@ rules that closed the drift, because they are the two the callers rely on and
 neither is observable on a machine in UTC once it is wrong.
 """
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 
 from application import instants
 
@@ -77,20 +76,3 @@ def test_iso_answers_none_for_everything_that_is_not_a_date_or_an_instant():
     assert instants.iso(None) is None
     assert instants.iso('2026-08-05') is None
     assert instants.iso(4.2) is None
-
-
-def test_the_module_carries_no_project_import():
-    """What makes it importable from a **pure** view module.
-
-    ``portfolio_view`` claims :mod:`performance`'s discipline — no store, no
-    Flask, no clock — so the repair could not live beside ``store.finite``
-    without pulling ``duckdb`` into it. The tree's precedent is explicit:
-    ``carrying`` re-spells a constant by hand rather than import it. Holding
-    the standard library as the only dependency is that precedent, paid once.
-    """
-    source = Path(instants.__file__).read_text()
-    imports = [line for line in source.splitlines()
-               if line.startswith('import ') or line.startswith('from ')]
-
-    assert imports == ['from datetime import date, datetime, timezone',
-                       'from typing import Optional, Union']

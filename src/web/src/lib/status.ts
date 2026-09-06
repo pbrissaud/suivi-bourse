@@ -149,7 +149,7 @@ export function installationState(input: {
  * is a pass that computed nothing (a perf job that has not run, or one that
  * raised), which is not a horizon of today: it is no observation at all.
  */
-export interface RebuildProgress {
+interface RebuildProgress {
   /** The account whose horizon bounds the global series. `null` — none says. */
   account: string | null
   ratio: number | null

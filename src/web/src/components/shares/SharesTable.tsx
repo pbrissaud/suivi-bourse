@@ -147,7 +147,7 @@ function ColumnHead({ label, column, sort, onSort, numeric, className }: ColumnH
   )
 }
 
-export interface SharesTableProps {
+interface SharesTableProps {
   /**
    * The blocks the table is made of — **one** when nothing is grouped, and one
    * per account when it is. A group with no header is the ungrouped table, so

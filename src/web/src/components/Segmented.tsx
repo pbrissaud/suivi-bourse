@@ -26,12 +26,12 @@
  */
 import { cn } from '@/lib/utils'
 
-export interface SegmentedOption<T extends string> {
+interface SegmentedOption<T extends string> {
   value: T
   label: string
 }
 
-export interface SegmentedProps<T extends string> {
+interface SegmentedProps<T extends string> {
   /** The accessible name of the group — what the four options are four of. */
   label: string
   options: readonly SegmentedOption<T>[]

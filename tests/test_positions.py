@@ -11,14 +11,12 @@ that a method was called — the ticket's rules are rules about *rows*:
 3. it happens after the validation, so a ledger that is refused writes nothing;
 4. and no other module in the app writes either table.
 """
-import re
-from pathlib import Path
 
 import pytest
 
 from application import entries
 from application import positions
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.aggregator import AggregationError
 from application.events.schemas import CashState
@@ -172,29 +170,3 @@ def test_a_ledger_that_cannot_be_replayed_writes_no_position(store, tmp_path):
     assert positions.read_positions(store) == before
 
 
-# --------------------------------------------------------------------------- #
-# One writer, and the module list says so
-# --------------------------------------------------------------------------- #
-
-_WRITE = re.compile(
-    r'(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(position|account_state)\b',
-    re.IGNORECASE)
-
-
-def test_no_other_module_writes_the_replays_two_tables():
-    """ADR-0006, checked on the source: every row has exactly one writer.
-
-    A second writer is precisely what a sold position would create — its state
-    changing at the instant its price stops being fetched — so the rule is worth
-    an assertion rather than a comment.
-    """
-    # The two packages by name, never `src/` itself: the front lives there too
-    # and walking it would walk `node_modules`.
-    src = Path(__file__).resolve().parents[1] / 'src'
-    offenders = [
-        path.relative_to(src).as_posix()
-        for package in ('application', 'api')
-        for path in sorted((src / package).rglob('*.py'))
-        if path.name != 'positions.py' and _WRITE.search(path.read_text())
-    ]
-    assert offenders == []

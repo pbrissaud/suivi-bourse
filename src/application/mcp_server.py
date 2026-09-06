@@ -1,36 +1,4 @@
-"""The agent's interface — six read-only tools on the one socket (ADR-0040, #749).
-
-This module is the second reader ADR-0040 grants, and it is deliberately the
-same shape as :mod:`api.api`: a thin adapter over the durable Python boundary,
-:class:`store_reads.PortfolioReader` and :mod:`portfolio_view`. **It computes
-nothing.** Every figure a tool returns is the figure a route already returns,
-reached through the same primitive, so the two interfaces cannot drift into
-disagreeing about what the portfolio is worth.
-
-**A tool has two audiences and therefore two texts.** The ``description=`` on the
-decorator is what a *model* reads before choosing to call, and ADR-0040 makes it
-payload rather than documentation: it states which of the three absences a
-``null`` is, that ``terminal`` separates *not priced yet* from *never priced*,
-that a quantity of zero is a sold position. A docstring is what the *next
-maintainer* reads, and it carries the decisions and their issue numbers, which
-mean nothing to a model. Neither text is the other's summary.
-
-**It imports no Flask and no** :mod:`api`. The blueprint reaches its runtime
-through a module global written by ``create_app``; this one is handed the runtime
-by :func:`build_server`, because :mod:`api` already imports :mod:`application`
-and the reverse would close a cycle.
-
-**It writes nothing.** ``entries.py`` remains the ledger's one writer (ADR-0032),
-reached by a person's gesture, and read-only is what makes ADR-0040's access
-model — *the socket is the authorization* — a decision rather than an oversight.
-
-**A refusal is raised as** :class:`ToolError` **and never as a bare exception**,
-and that is not decoration: the SDK reports anything else to the caller as
-*"Error executing tool <name>"* with the message dropped on the floor. An agent
-told that much cannot tell an unreadable store from a malformed date, and it is
-precisely the distinction ADR-0040 insists on — a failure to read must not reach
-a model as an empty portfolio, which means the message has to survive.
-"""
+"""The agent's interface — six read-only tools on the one socket (ADR-0040, #749)."""
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -46,33 +14,15 @@ from application import quotes
 from application import rhythm
 from application import store as store_module
 
-#: The window a history tool defaults to when the caller names none. The global
-#: series is written **one point per calendar day** (#660), so a year of it is
-#: 365 points — the same default ``/api/portfolio-totals/history`` takes, and
-#: for the same reason: the short presets that suit a per-share chart are
-#: degenerate on this series.
 DEFAULT_HISTORY_WINDOW = timedelta(days=365)
 
-#: How many ledger rows a tool returns when the caller names no bound.
-#:
-#: **This is the one place the tool surface departs from** ``/api`` (ADR-0040).
-#: ADR-0031 answers ``GET /api/events`` with the ledger entire and argues it: the
-#: forty rows the page reveals are a rendering budget, not a fetch. A browser's
-#: constraint is the pixel; a model's is the context window, and the ledger is
-#: the only resource here whose size is unbounded by what the portfolio *is* —
-#: every other tool is bounded by the holdings, the accounts, or a day.
 DEFAULT_EVENT_LIMIT = 100
 
-#: The absence rule, stated in every description that can return one.
-#:
-#: It is repeated rather than referenced because a model reads one description at
-#: a time and cannot follow a pointer to another (ADR-0026, ADR-0040).
 _ABSENCE = (
     "A null is never zero and never an error: it means this app has no figure "
     "to give for that field. Say so plainly rather than substituting a number."
 )
 
-#: The currency rule (ADR-0002).
 _CURRENCY = (
     "Every amount in this answer is in base_currency, which is stated once for "
     "the whole payload and never on a row. base_currency is null when nobody "
@@ -89,7 +39,6 @@ never a purchase price), market_value, and the unrealised gain.
 {_CURRENCY}
 
 Two things about a row will mislead you if you do not know them:
-
 - quantity 0 is a SOLD position, not a mistake and not an empty row. It stays in
   the table on purpose, because what it realised still belongs to the totals.
 - terminal tells you which kind of pricelessness a null price is. terminal=false
@@ -236,17 +185,7 @@ judgement is yours to state and to attribute to yourself.
 
 
 def build_server(runtime, name: str = "suivibourse") -> MCPServer:
-    """The MCP server for a runtime — the tools closed over it, and nothing else.
-
-    Takes the runtime rather than reaching for one, which is the seam
-    ``api.create_app(runtime)`` already established (ADR-0039) and the reason
-    this module does not import :mod:`api`.
-
-    The tool functions are defined here rather than at module level so that they
-    close over ``runtime``: that is what makes them **callable in process** by
-    the built-in chat (#750) with no HTTP hop in a loopback, which is ADR-0040's
-    one-surface-consumed-twice.
-    """
+    """The MCP server for a runtime — the tools closed over it, and nothing else."""
     mcp = MCPServer(
         name=name,
         instructions=(
@@ -264,12 +203,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     )
 
     def _store():
-        """The runtime's open store, raising when there is none.
-
-        The raise is the contract, exactly as it is on the blueprint: an absent
-        store is a **failed call**, and it must never reach a model as an empty
-        portfolio. An agent handed ``[]`` reports that the owner holds nothing.
-        """
+        """The runtime's open store, raising when there is none."""
         if runtime.store is None:
             raise ToolError(
                 "the portfolio store is not available in this process; this is "
@@ -277,22 +211,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         return runtime.store
 
     def reading(work):
-        """Run a tool body, and let a storage fault arrive **in words**.
-
-        ``_store`` raises :class:`ToolError` for the store that is not there;
-        this is the other half, and without it the half above is decorative. A
-        query that fails raises ``duckdb.Error``, which is not a
-        :class:`ToolError` — so the SDK reports it as *"Error executing tool
-        <name>"* with the cause discarded, and a model cannot tell an unreadable
-        store from a malformed date. ADR-0040 asks for exactly that distinction
-        to survive, and it is this wrapper that makes it.
-
-        The message is the exception's own text and nothing constructed: a
-        DuckDB error names the table it could not read, which is the one thing
-        that turns *something failed* into a bug report.
-
-        A ``ToolError`` travels untouched — it is already the answer.
-        """
+        """Run a tool body, and let a storage fault arrive **in words**."""
         try:
             return work()
         except ToolError:
@@ -316,26 +235,14 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         return _store().setting('base_currency')
 
     def _carried():
-        """The symbols a position may be carried at cost on (ADR-0004, #845).
-
-        Two batched queries for the whole portfolio, never one per row — the
-        same call ``/api/positions`` makes, and the reason ``terminal`` can ride
-        on every row of :func:`list_positions` without a read per holding.
-        """
+        """The symbols a position may be carried at cost on (ADR-0004, #845)."""
         return quotes.terminal_symbols(
             _store(), _snapshot().backfill_windows(),
             datetime.now(timezone.utc))
 
     @mcp.tool(description=LIST_POSITIONS_DESCRIPTION)
     def list_positions() -> Dict[str, Any]:
-        """``/api/positions``' payload, field for field.
-
-        Reached through the same primitive and the same builder, so the page and
-        the agent cannot disagree about a holding. ``terminal`` rides on the row
-        for the reason #845 put it there: without it a reader cannot tell *no
-        price yet* from *no price ever*, and the substitute it reached for was a
-        diagnostic counter.
-        """
+        """``/api/positions``' payload, field for field."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
             currency = _base_currency()
@@ -348,12 +255,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
 
     @mcp.tool(description=GET_PORTFOLIO_TOTALS_DESCRIPTION)
     def get_portfolio_totals() -> Dict[str, Any]:
-        """The newest day of the global perf series, plus its three derivations.
-
-        The three extra reads are asked only once there is a row to hang them
-        on: on an install whose perf cache is empty they would each answer
-        nothing, and asking is how a resource acquires queries it does not need.
-        """
+        """The newest day of the global perf series, plus its three derivations."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
             reader = _reader()
@@ -374,16 +276,11 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     @mcp.tool(description=GET_PORTFOLIO_HISTORY_DESCRIPTION)
     def get_portfolio_history(from_day: Optional[str] = None,
                               to_day: Optional[str] = None) -> Dict[str, Any]:
-        """The global perf series over a window — five members, as #721 defines them.
-
-        The five are the account resource's field for field, so one shape reads
-        both and a rebasing is written once (ADR-0019).
-        """
+        """The global perf series over a window — five members, as #721 defines them."""
         start, stop = _window(from_day, to_day, DEFAULT_HISTORY_WINDOW)
 
         def _body():
-            """The read itself; the window was parsed before it, so a bad day is
-            refused as a bad day and not as a storage fault."""
+            """The read itself; the window was parsed before it, so a bad day is refused as a bad day and not as a storage fault."""
             return {
                 'base_currency': _base_currency(),
                 'from': start.isoformat(),
@@ -404,13 +301,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
 
     @mcp.tool(description=LIST_ACCOUNTS_DESCRIPTION)
     def list_accounts() -> Dict[str, Any]:
-        """The declared accounts with their newest figures — ``/api/accounts``.
-
-        ``transfer_fees`` is bounded per account by the day its own row
-        describes (#765): the days differ the moment one account's series is
-        capped in the past, and ADR-0018's identity only holds between terms
-        measured at the same instant.
-        """
+        """The declared accounts with their newest figures — ``/api/accounts``."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
             accounts = _snapshot().accounts
@@ -444,33 +335,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                     from_day: Optional[str] = None,
                     to_day: Optional[str] = None,
                     limit: int = DEFAULT_EVENT_LIMIT) -> Dict[str, Any]:
-        """The ledger, **bounded**, from the published snapshot (ADR-0031, ADR-0040).
-
-        **The rows come from the snapshot and not from the store**, which is
-        ``/api/events``' contract and is inherited whole: they are the ones the
-        aggregator actually ran on, so the ledger an agent sees is the ledger
-        every other figure was computed from.
-
-        **The head is not**, and the docstring used to claim otherwise. The
-        reporting currency is a setting, the snapshot does not carry one, and
-        every amount below — a unit price, a fee, an amount — is meaningless
-        without it: this tool therefore reads the store for exactly one value
-        and fails like any other when it cannot. What `/api/events` gains from
-        opening nothing is the shares page's chart markers surviving a storage
-        fault; there is no equivalent stake here, where a broken store has
-        already taken the other four tools with it. The resilience was copied
-        along with the rule, and it never transferred.
-
-        **The bound is this surface's one departure from** ``/api`` and the
-        reason is written on :data:`DEFAULT_EVENT_LIMIT`. ``total`` travels with
-        the slice because a bounded answer without one is worse than an
-        unbounded answer: it produces a reader that states *"you have made a
-        hundred operations"* in perfect confidence.
-
-        Newest first, which the resource is not: a page reads a ledger forwards,
-        and a bound that keeps the *oldest* hundred events of a ten-year history
-        answers a question nobody asked.
-        """
+        """The ledger, **bounded**, from the published snapshot (ADR-0031, ADR-0040)."""
         events = _snapshot().events
 
         if symbol:
@@ -487,9 +352,6 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         total = len(events)
         if limit < 0:
             raise ToolError("limit must not be negative")
-        # ``date.min`` for an undated row rather than a tuple key: two of them
-        # would put ``None < None`` on the comparison path and raise, which is a
-        # crash a ledger produces and no test would think to write.
         newest = sorted(events,
                         key=lambda event: event.date or date.min,
                         reverse=True)[:limit]
@@ -503,20 +365,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
 
     @mcp.tool(description=GET_INVESTMENT_RHYTHM_DESCRIPTION)
     def get_investment_rhythm() -> Dict[str, Any]:
-        """``/api/investment-rhythm``' payload, field for field (#751, ADR-0041).
-
-        The **route exists** and this reaches the same primitive over the same
-        rows, which is what keeps this module's opening promise literal: a tool
-        computing a figure no route publishes would have been the second
-        departure from ``/api`` after ADR-0031's paging, and would have needed
-        arguing as one.
-
-        The rows come from the snapshot, as ``list_events`` takes them and for
-        the same reason — they are the ones the aggregator ran on. The store is
-        read for the reporting currency alone, and it fails like any other tool
-        when it cannot: an amount labelled with nothing is the figure this tool
-        exists to keep from being misread.
-        """
+        """``/api/investment-rhythm``' payload, field for field (#751, ADR-0041)."""
         return {
             'base_currency': reading(_base_currency),
             **rhythm.measure(_snapshot().events,
@@ -527,16 +376,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
 
 
 def _event_to_dict(event) -> Dict[str, Any]:
-    """One event, as ``/api/events`` puts it on the wire.
-
-    ``id`` is a string for the reason #764 records — a JSON number above 2^53 is
-    not the integer that was sent — and the four numbers go out through
-    :func:`store.finite`, because JSON has neither NaN nor infinity and a single
-    such value would make the whole answer unparseable.
-
-    There is no provenance here and none in the store (ADR-0032): a file is a
-    payload, so the row it wrote is a row.
-    """
+    """One event, as ``/api/events`` puts it on the wire."""
     return {key: store_module.finite(value) for key, value in {
         'id': str(event.id) if event.id is not None else None,
         'date': event.date.isoformat() if event.date else None,
@@ -553,17 +393,7 @@ def _event_to_dict(event) -> Dict[str, Any]:
 
 
 def _day(value: Optional[str], field: str) -> Optional[date]:
-    """One ISO calendar day on the way in, and only that spelling (#764).
-
-    ``date.fromisoformat`` accepts several others since 3.11 — a bare
-    ``20260210``, a whole instant — and the store's rule is that a day is a day
-    and never a midnight: a bound that arrived as an instant is what silently
-    drops the first day of every window.
-    """
-    # ``is None`` and not falsiness: the contract takes an absent argument or a
-    # calendar day, and ``''`` is neither. Read as an omission it silently
-    # widens the window a caller meant to narrow — the one wrong answer that
-    # looks like a right one.
+    """One ISO calendar day on the way in, and only that spelling (#764)."""
     if value is None:
         return None
     text = value.strip()
@@ -587,11 +417,6 @@ def _window(from_day: Optional[str], to_day: Optional[str],
     start_day = _day(from_day, 'from_day')
     start = (datetime.combine(start_day, datetime.min.time(), timezone.utc)
              if start_day is not None else stop - default)
-    # ``>`` and not ``>=``: two equal days are a **one-day window**, not an empty
-    # one. The store bounds a series inclusively at both ends
-    # (:func:`store_reads._window`), so ``from_day == to_day`` asks for exactly
-    # that day's point — and a tool that promises one point per calendar day
-    # cannot refuse to be asked for one of them (issue #877 review).
     if start > stop:
         raise ToolError("from_day must not be later than to_day")
     return start, stop

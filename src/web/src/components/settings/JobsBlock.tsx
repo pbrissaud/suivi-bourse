@@ -99,7 +99,7 @@ const JOB_NAMES: Record<JobKey, MessageKey> = {
   performance: 'settings.jobs.performance',
 }
 
-export interface JobsBlockProps {
+interface JobsBlockProps {
   /** `null` until `GET /health` has landed, refusal included (ADR-0026). */
   health: HealthState | null
   /**

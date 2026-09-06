@@ -37,7 +37,7 @@ import type { ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
 
-export interface MoversProps {
+interface MoversProps {
   movers: readonly Mover[] | null
   reference: string | null
   rows: readonly ShareRow[]

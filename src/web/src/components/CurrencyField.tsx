@@ -38,7 +38,7 @@
 import { CURRENCIES, isSupported } from '@/lib/currencies'
 import { useI18n } from '@/lib/i18n'
 
-export interface CurrencyFieldProps {
+interface CurrencyFieldProps {
   id: string
   /** The code in force in the form. The empty string is *unanswered*. */
   value: string

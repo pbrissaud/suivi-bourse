@@ -87,7 +87,7 @@ import { signClass } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
-export interface AccountsCardProps {
+interface AccountsCardProps {
   /**
    * What is declared. `null` while `/api/accounts` has not answered — in flight
    * or failed — and never `[]`, which would be an install with no account at

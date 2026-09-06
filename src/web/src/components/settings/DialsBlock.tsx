@@ -112,7 +112,7 @@ const DIAL_HINT: Record<string, MessageKey> = {
   base_currency: 'settings.base_currency.hint',
 }
 
-export interface DialsBlockProps {
+interface DialsBlockProps {
   config: ConfigResponse
   runtime: RuntimeState | undefined
 }

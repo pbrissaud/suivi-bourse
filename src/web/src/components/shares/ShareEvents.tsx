@@ -35,7 +35,7 @@ const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
   WITHDRAWAL: 'event.type.WITHDRAWAL',
 }
 
-export interface ShareEventsProps {
+interface ShareEventsProps {
   events: readonly LedgerEvent[]
   currency: string | null
   selectedDay: string | null

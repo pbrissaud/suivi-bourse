@@ -22,7 +22,7 @@ from application import accounts as accounts_module
 from application import entries
 from application import ledger
 from application import reassignment
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events.schemas import DEFAULT_ACCOUNT, Event, EventType
 
 
@@ -224,7 +224,7 @@ def test_the_ledger_it_leaves_is_replayed_before_the_commit(store, tmp_path):
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
 
-    from application.events import EventAggregator
+    from application.events.aggregator import EventAggregator
     shares = EventAggregator().aggregate(ledger.read_events(store))
     assert {share['account'] for share in shares} == {'pea'}
 

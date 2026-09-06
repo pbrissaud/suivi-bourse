@@ -54,7 +54,7 @@ import type { MessageKey, MessageValues } from '@/lib/i18n'
  * be #662's opaque token over `(file, sheet, row)` under another name, which
  * ADR-0020 removed.
  */
-export type FactGesture = { kind: 'ledger'; symbols: string[] } | null
+type FactGesture = { kind: 'ledger'; symbols: string[] } | null
 
 export function factGesture(fact: InstallationFact): FactGesture {
   if (fact.key !== 'assumed_base_currency') return null
@@ -108,7 +108,7 @@ export function factGesture(fact: InstallationFact): FactGesture {
 export type ListFormatter = (items: readonly string[]) => string
 
 /** A catalogue key and what it interpolates. The component calls `t` with it. */
-export interface FactText {
+interface FactText {
   key: MessageKey
   values?: MessageValues
 }

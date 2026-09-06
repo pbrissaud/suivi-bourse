@@ -42,7 +42,7 @@ import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 
-export interface ClosedSharesProps {
+interface ClosedSharesProps {
   rows: readonly ShareRow[]
   currency: string | null
   onSelect: (symbol: string) => void

@@ -21,7 +21,7 @@ import { useI18n } from '@/lib/i18n'
 /** The id the card's landmark is named by — one constant, two readers. */
 const ENVIRONMENT_HEADING = 'settings-environment'
 
-export interface EnvironmentBlockProps {
+interface EnvironmentBlockProps {
   config: ConfigResponse
 }
 

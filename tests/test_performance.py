@@ -13,7 +13,8 @@ import pytest
 
 from application import performance
 from application.performance import xirr, compute_account, compute_portfolio_total
-from application.events import EventAggregator, Event, EventType, Account
+from application.events.aggregator import EventAggregator
+from application.events.schemas import Event, EventType, Account
 
 
 def _price_at(prices):

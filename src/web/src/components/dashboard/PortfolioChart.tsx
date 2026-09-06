@@ -103,7 +103,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
 
-export interface PortfolioChartProps {
+interface PortfolioChartProps {
   /**
    * Whether the install has a cash ledger — which is at once the discriminant
    * of the reading and of the series that is read (`hasCashLedger`).

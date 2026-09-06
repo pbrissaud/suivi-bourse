@@ -28,7 +28,7 @@ from application import entries
 from application import ledger
 from application import store as store_module
 from application import uploads
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, EventType
 from test_web_api import (ACCOUNTS_EVENTS, ACCOUNTS_FILE, build_client,
                           build_client_and_store)

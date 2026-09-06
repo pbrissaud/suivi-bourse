@@ -169,50 +169,7 @@ export const ROUTES = {
 
 export type RouteName = keyof typeof ROUTES
 
-/**
- * The routes no page ever **reads** — every one of them is a gesture.
- *
- * The split exists for one consumer, the in-flight test (ADR-0026): it draws
- * its net from `ROUTES` rather than from a list of its own, so a fifth block
- * reading an already-served route is covered the day it is written, and a route
- * declared here that no page visits fails it. A gesture has no in-flight state
- * to hold a page hostage to — nothing is rendered on the strength of a `PUT`
- * that has not returned — so it is subtracted here rather than excused there.
- *
- * `accounts` and `events` are **not** in it: both are read and written, and the
- * read is what the net is about.
- */
-export const WRITE_ONLY_ROUTES = [
-  'settings',
-  'event',
-  // A gesture, and the plainest one on this list: nothing on any page is
-  // rendered on the strength of an upload in flight — the receipt is what the
-  // gesture answers, and it is the reader's own act rather than a read.
-  'eventsImport',
-  'account',
-  'accountReassignment',
-  'installationFactAcknowledgement',
-  'advisoryAcknowledgement',
-  'storeOrphans',
-  // The three exports are in here for what they are, not for who fetches them:
-  // **nothing on any page is rendered on the strength of one**, which is
-  // exactly the property this list names. Since #796 the client does fetch them
-  // — the receipt has to last as long as the operation, and an `href` the
-  // browser follows on its own settles at no observable moment — but a gesture
-  // in flight holds no surface hostage, so none of them is a read the net has
-  // anything to say about. The report added at #836 is one of them: it is a
-  // file the reader asked for, not a figure any block draws.
-  'exportEvents',
-  'exportEventsWorkbook',
-  'exportPortfolio',
-] as const satisfies readonly RouteName[]
-
-/** Every route a page reads — the net, computed and never written down twice. */
-export const READ_ROUTES: readonly string[] = (Object.keys(ROUTES) as RouteName[])
-  .filter((name) => !(WRITE_ONLY_ROUTES as readonly string[]).includes(name))
-  .map((name) => ROUTES[name])
-
-export function eventPath(id: string): string {
+function eventPath(id: string): string {
   return `/api/events/${encodeURIComponent(id)}`
 }
 
@@ -224,11 +181,11 @@ export function accountReassignmentPath(id: string): string {
   return `${accountPath(id)}/reassignment`
 }
 
-export function installationFactAcknowledgementPath(key: string): string {
+function installationFactAcknowledgementPath(key: string): string {
   return `/api/installation-facts/${encodeURIComponent(key)}/acknowledgement`
 }
 
-export function advisoryAcknowledgementPath(key: string): string {
+function advisoryAcknowledgementPath(key: string): string {
   return `/api/advisories/${encodeURIComponent(key)}/acknowledgement`
 }
 
@@ -242,7 +199,7 @@ export const CHART_WINDOWS = ['1M', '1Y', '2Y', 'MAX'] as const
 
 export type ChartWindow = (typeof CHART_WINDOWS)[number]
 
-export function pricesPath(symbol: string, window: ChartWindow): string {
+function pricesPath(symbol: string, window: ChartWindow): string {
   return `/api/prices/${encodeURIComponent(symbol)}?window=${window}`
 }
 
@@ -255,7 +212,7 @@ export function pricesPath(symbol: string, window: ChartWindow): string {
  * nowhere — that is what put a French title over an English sentence in the
  * prototype's most consequential alert.
  */
-export interface ProblemBody {
+interface ProblemBody {
   status: number
   type?: string | null
   title?: string | null
@@ -373,7 +330,7 @@ async function upload<T>(path: string, file: File, params: string[] = []): Promi
  * declaration file ADR-0034 retired, which nothing reads back and which
  * therefore looked like half a restore; this one the import refuses by name.
  */
-export const EXPORT_FILES = ['events', 'workbook', 'selection', 'portfolio'] as const
+const EXPORT_FILES = ['events', 'workbook', 'selection', 'portfolio'] as const
 
 export type ExportFile = (typeof EXPORT_FILES)[number]
 
@@ -588,17 +545,17 @@ export interface PortfolioTotalsHistoryResponse {
  * property that makes the chart and the table's scalar column one announcer
  * instead of two.
  */
-export const SERIES_ORIGIN = '1970-01-01'
+const SERIES_ORIGIN = '1970-01-01'
 
-export function accountHistoryPath(account: string, from: string = SERIES_ORIGIN): string {
+function accountHistoryPath(account: string, from: string = SERIES_ORIGIN): string {
   return `/api/accounts/${encodeURIComponent(account)}/history?from=${from}`
 }
 
-export function portfolioTotalsHistoryPath(from: string = SERIES_ORIGIN): string {
+function portfolioTotalsHistoryPath(from: string = SERIES_ORIGIN): string {
   return `${ROUTES.portfolioTotalsHistory}?from=${from}`
 }
 
-export function positionsHistoryPath(from: string = SERIES_ORIGIN): string {
+function positionsHistoryPath(from: string = SERIES_ORIGIN): string {
   return `${ROUTES.positionsHistory}?from=${from}`
 }
 
@@ -680,7 +637,7 @@ export interface MoversResponse {
  * has been observed at all. `dispersion` is the coefficient of variation of the
  * covered months' amounts, `null` when there is nothing to disperse.
  */
-export interface RhythmFigures {
+interface RhythmFigures {
   monthly_amount: number | null
   months_covered: number
   months_observed: number
@@ -688,7 +645,7 @@ export interface RhythmFigures {
 }
 
 /** The same four members, for one account — `default` included. */
-export interface AccountRhythm extends RhythmFigures {
+interface AccountRhythm extends RhythmFigures {
   account: string
 }
 
@@ -910,7 +867,7 @@ export interface PriceSeriesResponse {
  * riding in `/api/positions` disappears exactly when it is the only thing able
  * to explain the empty table.
  */
-export interface RuntimeSymbol {
+interface RuntimeSymbol {
   symbol: string
   next_run: string | null
   /**
@@ -966,7 +923,7 @@ export interface RuntimeAccount {
  * either of the other two. The data page's *store* block (#724) is what renders
  * the three; nothing else on the front branches on it.
  */
-export type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
+type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
 
 export interface RuntimeStore {
   persistence: StorePersistence
@@ -993,7 +950,7 @@ export interface RuntimeStore {
  * and the word is separate from `commit` on purpose: a working tree may differ
  * from the commit it names. `unknown` — nobody stamped this build.
  */
-export type BuildSource = 'release' | 'commit' | 'checkout' | 'unknown'
+type BuildSource = 'release' | 'commit' | 'checkout' | 'unknown'
 
 /**
  * Which SuiviBourse is answering — the one line a bug report has to carry.
@@ -1073,7 +1030,7 @@ export type HealthStatus = (typeof HEALTH_STATUSES)[number]
 export const BACKFILL_RUNNING = 'running'
 
 /** One job's line: what it last did, and what that is worth looking at. */
-export interface HealthJob {
+interface HealthJob {
   status: HealthStatus
   /** The instant of its last pass. `null` — this process has seen none. */
   at: string | null
@@ -1212,7 +1169,7 @@ export interface EventDraft {
  * It is spelled `events_removed`, the word the revocation this gesture replaces
  * already answered under: the unit did not change road, only the subject did.
  */
-export interface BulkRemoval {
+interface BulkRemoval {
   events_removed: number
 }
 
@@ -1357,7 +1314,7 @@ export interface InstallationFact {
   detail: Record<string, unknown> | null
 }
 
-export type InstallationFactsResponse = InstallationFact[]
+type InstallationFactsResponse = InstallationFact[]
 
 /**
  * One standing advisory (#829, ADR-0037) — what the owner's **data** says about
@@ -1390,10 +1347,10 @@ export interface Advisory {
   observed_at: string
 }
 
-export type AdvisoriesResponse = Advisory[]
+type AdvisoriesResponse = Advisory[]
 
 /** What the acknowledgement answers: the advisory, and when it wakes up. */
-export interface AcknowledgedAdvisory extends Advisory {
+interface AcknowledgedAdvisory extends Advisory {
   acknowledged_until: string
 }
 
@@ -1423,7 +1380,7 @@ export interface StoreState {
 }
 
 /** What the purge answers: rows, and never bytes. */
-export interface PurgeResult {
+interface PurgeResult {
   symbols: string[]
   points_removed: number
 }
@@ -1439,7 +1396,7 @@ export interface PurgeResult {
 // ------------------------------------------------------------------------- //
 
 /** The period an import covered — its two days, or nothing at all. */
-export interface ImportPeriod {
+interface ImportPeriod {
   from: string
   to: string
 }
@@ -1513,7 +1470,7 @@ export interface DuplicateRow extends LedgerEvent {
  * question and this gesture writes the file's answer into the dial. A file that
  * **contradicts** the dial never reaches here — that is a refusal in prose.
  */
-export interface DeclaredCurrency {
+interface DeclaredCurrency {
   declared: string
   adopting: boolean
 }

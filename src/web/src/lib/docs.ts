@@ -24,7 +24,7 @@ import type { Language } from '@/lib/i18n'
 const DOCS_ORIGIN = 'https://pbrissaud.github.io/suivi-bourse'
 
 /** Frozen at the **major**: a 5.1 install still reads `/docs/v5`. */
-export const DOCS_VERSION = 'v5'
+const DOCS_VERSION = 'v5'
 
 /**
  * **One page** — never one page per figure (ADR-0016). The count is descriptive
@@ -35,7 +35,7 @@ export const DOCS_VERSION = 'v5'
  * *Net contributed* means arrived at a section titled *Fees taken from your
  * transfers*.
  */
-export const DOCS_PAGE = 'read-your-figures'
+const DOCS_PAGE = 'read-your-figures'
 
 export const DOCS_ANCHORS = [
   'avg-cost',

@@ -45,10 +45,53 @@ import { cleanup, screen, waitFor } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { READ_ROUTES, ROUTES } from '@/lib/api'
+import { ROUTES, type RouteName } from '@/lib/api'
 import { aTotals, aTotalsPayload } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
+
+/**
+ * The routes no page ever **reads** — every one of them is a gesture.
+ *
+ * The split exists for one consumer, the in-flight test (ADR-0026): it draws
+ * its net from `ROUTES` rather than from a list of its own, so a fifth block
+ * reading an already-served route is covered the day it is written, and a route
+ * declared here that no page visits fails it. A gesture has no in-flight state
+ * to hold a page hostage to — nothing is rendered on the strength of a `PUT`
+ * that has not returned — so it is subtracted here rather than excused there.
+ *
+ * `accounts` and `events` are **not** in it: both are read and written, and the
+ * read is what the net is about.
+ */
+const WRITE_ONLY_ROUTES = [
+  'settings',
+  'event',
+  // A gesture, and the plainest one on this list: nothing on any page is
+  // rendered on the strength of an upload in flight — the receipt is what the
+  // gesture answers, and it is the reader's own act rather than a read.
+  'eventsImport',
+  'account',
+  'accountReassignment',
+  'installationFactAcknowledgement',
+  'advisoryAcknowledgement',
+  'storeOrphans',
+  // The three exports are in here for what they are, not for who fetches them:
+  // **nothing on any page is rendered on the strength of one**, which is
+  // exactly the property this list names. Since #796 the client does fetch them
+  // — the receipt has to last as long as the operation, and an `href` the
+  // browser follows on its own settles at no observable moment — but a gesture
+  // in flight holds no surface hostage, so none of them is a read the net has
+  // anything to say about. The report added at #836 is one of them: it is a
+  // file the reader asked for, not a figure any block draws.
+  'exportEvents',
+  'exportEventsWorkbook',
+  'exportPortfolio',
+] as const satisfies readonly RouteName[]
+
+/** Every route a page reads — the net, computed and never written down twice. */
+const READ_ROUTES: readonly string[] = (Object.keys(ROUTES) as RouteName[])
+  .filter((name) => !(WRITE_ONLY_ROUTES as readonly string[]).includes(name))
+  .map((name) => ROUTES[name])
 
 // ------------------------------------------------------------------------- //
 // Reading the wire

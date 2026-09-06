@@ -203,7 +203,7 @@ def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
 
     assert runtime.store_path.exists()
     assert runtime.store is not None
-    assert sorted(runtime.store.table_names()) == sorted(store.TABLES)
+    assert sorted([row[0] for row in runtime.store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store.TABLES)
     # And it is the one the ledger is read through: handed to the manager at
     # construction, and never taken back.
     assert fake_config.attached == [runtime.store]

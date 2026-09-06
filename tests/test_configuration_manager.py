@@ -4,10 +4,10 @@ Unit tests for main.ConfigurationManager.
 These tests exercise ConfigurationManager in isolation:
   * naming the two v4 files this version no longer reads — `config.yaml`
     (issue #711) and `settings.yaml` (issue #698)
-  * _compute_cache_key behaviour (the store's stamp, and no file at all)
+  * the ledger stamp the snapshot is keyed on (the store's stamp, and no file at all)
   * the caching contract of the snapshot build (identity reuse, force reload,
     invalidation on file change)
-  * get_first_acquisition_date / get_events
+  * the snapshot: first_acquisition_date / events
   * publication (issue #658): one immutable snapshot, validated before it is
     published, swapped by a single rebind — the null window and the split-brain
 
@@ -35,8 +35,9 @@ from datetime import date
 import pytest
 
 from application import entries
+from application import ledger
 from application import main
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.main import ConfigurationManager
 from application.events.validator import EventValidationError
 
@@ -109,7 +110,7 @@ def test_nothing_is_named_when_there_is_no_legacy_file(tmp_path, mocker):
 
 
 # --------------------------------------------------------------------------- #
-# _compute_cache_key
+# the cache key: ledger.stamp
 # --------------------------------------------------------------------------- #
 def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
     """The key fingerprints the **store** now (issue #697).
@@ -122,7 +123,7 @@ def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
     cm = seeded(tmp_path, events_dir)
     cm.load_shares()
 
-    key = cm._compute_cache_key()
+    key = ledger.stamp(cm.store)
     assert key is not None
     assert str(events_dir / "2024.csv") not in key
     # And no file at all is named in it since #698: settings.yaml's mtime left
@@ -140,21 +141,21 @@ def test_cache_key_follows_the_rows_and_nothing_else(tmp_path, events_dir):
     """
     cm = seeded(tmp_path, events_dir)
     cm.load_shares()
-    key_before = cm._compute_cache_key()
+    key_before = ledger.stamp(cm.store)
 
     cm.reload()
-    assert cm._compute_cache_key() == key_before
+    assert ledger.stamp(cm.store) == key_before
 
     _correct_one_row(cm)
     cm.reload()
-    assert cm._compute_cache_key() != key_before
+    assert ledger.stamp(cm.store) != key_before
 
 
 def test_cache_key_none_when_the_ledger_is_empty(tmp_path):
     """Nothing imported and no settings.yaml yields a None key."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
     # Nothing was ever written to this store, so there is nothing to fingerprint.
-    assert cm._compute_cache_key() is None
+    assert ledger.stamp(cm.store) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -211,7 +212,7 @@ def test_a_corrected_row_invalidates_the_cache(tmp_path, events_dir):
 
 
 # --------------------------------------------------------------------------- #
-# get_first_acquisition_date
+# current().first_acquisition_date
 # --------------------------------------------------------------------------- #
 def test_get_first_acquisition_date_earliest_acquisition(tmp_path, events_dir):
     """Returns the earliest acquisition date for a symbol (ignores later ones)."""
@@ -219,21 +220,15 @@ def test_get_first_acquisition_date_earliest_acquisition(tmp_path, events_dir):
     cm.load_shares()
 
     # AAPL has BUYs on 2024-01-15 and 2024-06-15 -> earliest is 2024-01-15.
-    assert cm.get_first_acquisition_date("AAPL") == date(2024, 1, 15)
-    assert cm.get_first_acquisition_date("MSFT") == date(2024, 2, 1)
-
-
-def test_get_first_acquisition_date_none_when_no_events_loaded(tmp_path):
-    """With nothing published yet, returns None."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_first_acquisition_date("AAPL") is None
+    assert cm.current().first_acquisition_date("AAPL") == date(2024, 1, 15)
+    assert cm.current().first_acquisition_date("MSFT") == date(2024, 2, 1)
 
 
 def test_get_first_acquisition_date_none_for_absent_symbol(tmp_path, events_dir):
     """A symbol the ledger never acquired returns None."""
     cm = seeded(tmp_path, events_dir)
     cm.load_shares()
-    assert cm.get_first_acquisition_date("GOOG") is None
+    assert cm.current().first_acquisition_date("GOOG") is None
 
 
 def test_a_grant_is_an_acquisition_and_opens_the_window(tmp_path):
@@ -253,16 +248,12 @@ def test_a_grant_is_an_acquisition_and_opens_the_window(tmp_path):
     cm = seeded(tmp_path, events)
     cm.load_shares()
 
-    assert cm.get_first_acquisition_date("GRT") == date(2021, 3, 4)
+    assert cm.current().first_acquisition_date("GRT") == date(2021, 3, 4)
 
 
 # --------------------------------------------------------------------------- #
-# get_events
+# current().events
 # --------------------------------------------------------------------------- #
-def test_get_events_none_before_load(tmp_path):
-    """Before any load, get_events returns None."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_events() is None
 
 
 def test_get_events_returns_cached_events(tmp_path, events_dir):
@@ -270,9 +261,7 @@ def test_get_events_returns_cached_events(tmp_path, events_dir):
     cm = seeded(tmp_path, events_dir)
     cm.load_shares()
 
-    events = cm.get_events()
-    assert events is cm.current().events
-    assert len(events) == 7  # matches the canonical events CSV in conftest
+    assert len(cm.current().events) == 7  # matches the canonical events CSV in conftest
 
 
 # --------------------------------------------------------------------------- #
@@ -386,9 +375,6 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     # Every read path — not just the one ingest() used to guard — still sees the
     # previous generation, and sees the *same* object.
     assert cm.current() is published
-    assert cm.get_events() is published.events
-    assert cm.get_first_acquisition_date("AAPL") == date(2024, 1, 15)
-    assert cm.load_accounts() is published.accounts
 
 
 def test_nothing_is_published_when_the_first_build_fails(tmp_path):
@@ -475,4 +461,4 @@ def test_touching_settings_yaml_does_not_invalidate_the_cache(tmp_path, events_d
     st = settings.stat()
     os.utime(settings, (st.st_atime, st.st_mtime + 100))
 
-    assert cm._compute_cache_key() == key_before
+    assert ledger.stamp(cm.store) == key_before

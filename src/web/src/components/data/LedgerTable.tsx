@@ -117,7 +117,7 @@ const TYPE_BADGE: Record<LedgerEventType, string> = {
   WITHDRAWAL: 'bg-muted',
 }
 
-export interface LedgerTableProps {
+interface LedgerTableProps {
   events: readonly LedgerEvent[]
   currency: string | null
   /** Opens the panel on a row. Offered for every row that has a key. */

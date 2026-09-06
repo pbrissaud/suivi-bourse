@@ -33,7 +33,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
 
-export interface InvestmentRhythmProps {
+interface InvestmentRhythmProps {
   rhythm: InvestmentRhythmResponse | null
   failure?: ReadFailure | null
 }

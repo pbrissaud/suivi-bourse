@@ -48,7 +48,7 @@ import type { AccountsResponse, RuntimeState } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { rebuildProgress } from '@/lib/status'
 
-export interface RebuildBlockProps {
+interface RebuildBlockProps {
   /** `null` — the runtime read has not landed, which is not *not rebuilding*. */
   runtime: RuntimeState | null
   /** The oldest day the ledger names: the bar's denominator, and only that. */
