@@ -642,6 +642,19 @@ interface RhythmFigures {
   months_covered: number
   months_observed: number
   dispersion: number | null
+  /**
+   * The observed months themselves, oldest first — `amount` is `null` on a
+   * month with no purchase. The four figures above are reductions of this
+   * series, and the block draws the series: the coverage and the spread are
+   * **shown**, month by month, rather than quoted as two ratios.
+   */
+  months: RhythmMonth[]
+}
+
+export interface RhythmMonth {
+  /** `YYYY-MM`. */
+  month: string
+  amount: number | null
 }
 
 /** The same four members, for one account — `default` included. */

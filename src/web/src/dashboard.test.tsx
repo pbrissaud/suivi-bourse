@@ -1208,16 +1208,24 @@ describe('the investment rhythm', () => {
     expect(amount).toHaveTextContent('Sur 6 des 12 derniers mois')
   })
 
-  it('states the dispersion without judging it', async () => {
+  it('draws the months and judges none of them', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // A coefficient of variation, read as a percentage of the months' own
-    // average. And **no label anywhere**: not *régulier*, not *mensuel* — the
-    // threshold that would produce one is a setting nobody asked for
-    // (ADR-0036), and the reading belongs to the reader.
-    expect(await screen.findByRole('group', { name: 'D’un mois à l’autre' }))
-      .toHaveTextContent(/18,00/)
+    // The twelve observed months, oldest first, each naming what was bought in
+    // it — and a month with no purchase said as such rather than left out,
+    // because a gap is a fact about the rhythm. **No label anywhere**: not
+    // *régulier*, not *mensuel* — the threshold that would produce one is a
+    // setting nobody asked for (ADR-0036), and the reading belongs to the
+    // reader. The coefficient of variation stays in the payload and is quoted
+    // nowhere: `18 %` of a month's own average is not a sentence.
+    const strip = await screen.findByRole('list', { name: 'Acheté, mois par mois' })
+    const months = within(strip).getAllByRole('listitem')
+    expect(months).toHaveLength(12)
+    expect(months[0]).toHaveTextContent(/mars 2025 : 400,00/)
+    expect(months[1]).toHaveTextContent('avr. 2025 : aucun achat')
+    expect(months[11]).toHaveTextContent('févr. 2026 : aucun achat')
+    expect(screen.queryByText(/18,00/)).not.toBeInTheDocument()
     expect(screen.queryByText(/régulier/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/irrégulier/i)).not.toBeInTheDocument()
   })
@@ -1242,7 +1250,7 @@ describe('the investment rhythm', () => {
     expect(screen.queryByRole('group', { name: 'Acheté par mois' })).not.toBeInTheDocument()
   })
 
-  it('withholds the spread when one month is all there is to spread over', async () => {
+  it('draws one month when one month is all there is', async () => {
     // The population deviation of a single value is `0`, and the server
     // publishes it: over the one month lived, the amount did not vary. Drawn on
     // screen it reads *held perfectly steady* from one purchase — a claim about
@@ -1251,7 +1259,12 @@ describe('the investment rhythm', () => {
     server.use(
       http.get(ROUTES.investmentRhythm, () =>
         HttpResponse.json(
-          aRhythm({ months_covered: 1, months_observed: 1, dispersion: 0 }),
+          aRhythm({
+            months_covered: 1,
+            months_observed: 1,
+            dispersion: 0,
+            months: [{ month: '2026-02', amount: 500 }],
+          }),
         ),
       ),
     )
@@ -1262,7 +1275,9 @@ describe('the investment rhythm', () => {
     // And the coverage says *the one month observed* rather than counting one
     // out of one, which is a sentence with the same number twice in it.
     expect(amount).toHaveTextContent('Sur le seul mois observé')
-    expect(screen.queryByRole('group', { name: 'D’un mois à l’autre' })).not.toBeInTheDocument()
+    // The strip holds that one month and nothing invented around it.
+    const strip = screen.getByRole('list', { name: 'Acheté, mois par mois' })
+    expect(within(strip).getAllByRole('listitem')).toHaveLength(1)
   })
 
   it('renders nothing at all — title included — while the read is in flight', async () => {

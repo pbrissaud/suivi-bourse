@@ -60,6 +60,23 @@ def test_a_purchase_every_month_is_that_amount_over_the_whole_window():
     assert figures.dispersion == 0.0
 
 
+def test_the_months_travel_with_their_reductions():
+    """The series the four figures reduce — every observed month, oldest first,
+    ``None`` where nothing was bought — so a screen can show the coverage rather
+    than quote it."""
+    figures = rhythm.measure(months(12, 500.0), NOW).portfolio
+    assert len(figures.months) == 12
+    assert figures.months[-1][0] == f'{NOW.year:04d}-{NOW.month:02d}'
+    assert all(amount == 500.0 for _, amount in figures.months)
+
+    start = date(2025, 10, 15)
+    gapped = rhythm.measure(
+        [buy(_step(start, offset), 500.0) for offset in (0, 2, 4)], NOW).portfolio
+    amounts = [amount for _, amount in gapped.months]
+    assert gapped.months[0][0] == '2025-10'
+    assert amounts == [500.0, None, 500.0, None, 500.0] + [None] * 7
+
+
 def test_half_a_year_of_purchases_is_the_amount_and_not_its_average():
     """500 € in six months of twelve is **500**, six of twelve.
 
@@ -406,19 +423,23 @@ def test_the_accounts_come_out_in_a_stable_order():
 # --------------------------------------------------------------------- #
 
 def test_the_payload_carries_the_amount_and_the_coverage_together():
-    """The four members, and the breakdown as a list of the same four."""
+    """The four members and their series, and the breakdown as a list of the same."""
     payload = rhythm.measure(months(3, 500.0, account='pea'), NOW).to_dict()
 
+    series = ([{'month': f'2025-{month:02d}', 'amount': 500.0} for month in (10, 11, 12)]
+              + [{'month': f'2026-{month:02d}', 'amount': None} for month in range(1, 10)])
     assert payload == {
         'monthly_amount': 500.0,
         'months_covered': 3,
         'months_observed': 12,
         'dispersion': 0.0,
+        'months': series,
         'accounts': [{
             'account': 'pea',
             'monthly_amount': 500.0,
             'months_covered': 3,
             'months_observed': 12,
             'dispersion': 0.0,
+            'months': series,
         }],
     }
