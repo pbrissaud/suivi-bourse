@@ -81,6 +81,10 @@ class _ConfigManager:
             shares=[], events=ledger.read_events(self._store),
             accounts=None, cache_key=None)
 
+    def reload(self, force: bool = False):
+        """What the perf pass reads through: the snapshot, rebuilt on demand."""
+        return self.current()
+
 
 def _fixed_today(mocker):
     """The perf pass's clock, pinned — UTC-qualified, like every read of it."""
@@ -114,6 +118,8 @@ def _price(opened, symbol, day, native, converted=None):
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         [symbol, datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC),
          native, converted, 1.0 if converted is not None else None])
+    # By hand, so the memo the market writers move on does not move (#861).
+    quotes.forget_oldest_stored()
 
 
 #: One deposit and one purchase held to this day: ten shares at 100, paid for
@@ -258,8 +264,13 @@ def test_a_terminal_line_quoted_before_it_is_converted_still_blocks_the_gap(
     days a quote **was** observed, so its absence of a converted price is
     transitory — the lateral pass is coming for it — and
     :func:`carrying.carrying_price` refuses to carry a day it knows a number
-    for. Those six days are blocked, as they were, and the clip added by #861
-    starts the blocked range at the first quote rather than at the acquisition.
+    for. Those six days go on being blocked, which is what ``settled`` was
+    protecting and what the clip of #861 must not take away.
+
+    It is the *guard* on that clip and not a demonstration of it: the clip
+    itself is only observable where ``oldest_priced`` is empty, and it is pinned
+    there — ``test_a_carried_symbol_blocks_from_its_first_quote_and_not_its_acquisition``
+    in ``tests/test_performance.py``.
     """
     declare_ledger(store, _LEDGER)
     _quote(store, 'AAPL')

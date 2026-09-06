@@ -71,6 +71,10 @@ class _ConfigManager:
             shares=[], events=ledger.read_events(self._store),
             accounts=None, cache_key=None)
 
+    def reload(self, force: bool = False):
+        """What the perf pass reads through: the snapshot, rebuilt on demand."""
+        return self.current()
+
 
 class _Recorder:
     """Every statement the store is handed during a pass, in order.
@@ -143,9 +147,11 @@ def _price(opened, symbol, day, native, converted=None):
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         [symbol, datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC),
          native, converted, 1.0 if converted is not None else None])
-    # The row goes in by hand, so the gesture that drops the oldest-per-symbol
-    # memo (issue #861) does not run: this fixture is the one place in the tree
-    # that writes ``price_point`` without going through :mod:`quotes`.
+    # The row goes in by hand, so the gesture that moves the oldest-per-symbol
+    # memo on (issue #861) does not run. Several fixtures write ``price_point``
+    # this way and are green only because each inserts before its first read on
+    # that handle; the two in this module and in ``test_perf_job`` run a pass
+    # either side of a write, so they say it themselves.
     quotes.forget_oldest_stored()
 
 

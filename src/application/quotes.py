@@ -242,7 +242,15 @@ def oldest_window_tried(store, symbol: str) -> Optional[date]:
     return rows[0][0] if rows and rows[0][0] is not None else None
 
 
-@lru_cache(maxsize=1)
+#: How many times a writer has moved a symbol's oldest point. It is part of the
+#: memo's key rather than a signal to clear it, and that is the whole of the
+#: thread safety: the web workers and the scheduler's pool share one connection,
+#: so a scan started before a write and returning after it would otherwise be
+#: stored as the current answer — ``lru_cache`` inserts when the call *returns*,
+#: and a ``cache_clear`` landing mid-scan clears nothing (issue #861).
+_generation = 0
+
+
 def oldest_stored(store) -> Dict[str, datetime]:
     """``{symbol: oldest instant stored}`` — one full scan, memoized (issue #861).
 
@@ -250,12 +258,20 @@ def oldest_stored(store) -> Dict[str, datetime]:
     of the store's largest table — and it sat on the product's **hottest** read:
     every ``/api/positions`` and every dashboard load ran it whole. Its answer
     only moves when a price point is written or removed, which is the backfill's
-    rhythm and not the reader's, so it is memoized on the store handle and
-    dropped by :func:`forget_oldest_stored` from every writer below.
+    rhythm and not the reader's.
 
-    Keyed on the handle rather than global: a suite opens one store per test,
-    and one entry is all a process with one connection ever needs.
+    Keyed on ``(store, generation)``: the handle because a suite opens one store
+    per test, and the generation because a scan is slow **by construction** —
+    being slow is why the memo exists — so the window in which a writer commits
+    under a reader is the widest in the app. A scan that started a generation ago
+    is stored under that generation and never read again.
     """
+    return _scanned(store, _generation)
+
+
+@lru_cache(maxsize=2)
+def _scanned(store, generation: int) -> Dict[str, datetime]:
+    """The scan itself, held under the generation it was started in."""
     return {
         symbol: instants.utc(value)
         for symbol, value in store.query(
@@ -265,8 +281,9 @@ def oldest_stored(store) -> Dict[str, datetime]:
 
 
 def forget_oldest_stored() -> None:
-    """Drop the memo — called by every gesture that can move a symbol's oldest point."""
-    oldest_stored.cache_clear()
+    """Move the memo on — every gesture that can move a symbol's oldest point."""
+    global _generation
+    _generation += 1
 
 
 def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],

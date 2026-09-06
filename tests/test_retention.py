@@ -233,6 +233,31 @@ def test_beyond_two_years_only_the_last_point_of_each_day_survives(store):
     assert _series(store) == [_at(1000, 16, 30), _at(999, 17, 0)]
 
 
+def test_a_writer_that_moves_the_oldest_point_moves_the_memo_with_it(store):
+    """The memo answers the store, not the store as it was (issue #861).
+
+    ``quotes.oldest_stored`` is a full scan of the largest table, memoized
+    because its answer moves at the backfill's rhythm — and it feeds
+    ``carrying.backward_anchor``, so a stale answer makes a symbol *terminal* on
+    a series it no longer has. The two writers that genuinely move a symbol's
+    oldest point are here, each in the direction it moves it: the backward pass
+    writing older history, and the ladder dropping every point of an old day but
+    the last. Frozen at either, the app carries a line at cost while real prices
+    are still landing under it, and only another write ever repairs it.
+    """
+    _seed(store, 'AAPL', [_at(400)])
+    assert quotes.oldest_stored(store)['AAPL'] == _at(400)
+
+    # Backward: the pass reaches further into the past.
+    _seed(store, 'AAPL', [_at(900, 9, 0), _at(900, 17, 0)])
+    assert quotes.oldest_stored(store)['AAPL'] == _at(900, 9, 0)
+
+    # And the ladder, forward: past two years the day keeps its last point
+    # alone, so the oldest instant the store holds is the later of the two.
+    quotes.collapse_to_ladder(store, NOW)
+    assert quotes.oldest_stored(store)['AAPL'] == _at(900, 17, 0)
+
+
 def test_the_three_bands_are_aged_in_one_pass_and_never_confused(store):
     """One call, one series, three ages — and each band gets its own rung."""
     _seed(store, 'AAPL', [
