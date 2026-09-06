@@ -101,7 +101,14 @@ class BackfillWorkload:
         return written, repaired
 
     def fetch_and_store(self, symbol, start_date, end_date):
-        """Fetch one ``[start, end]`` chunk and, if non-empty, write it."""
+        """Fetch one ``[start, end]`` chunk and, if non-empty, write it.
+
+        Four outcomes, and the caller can tell them apart (issue #853):
+        ``(None, 0)`` the fetch failed; ``([], 0)`` the window is empty;
+        ``(prices, n)`` fetched and ``n`` points written; ``(prices, None)``
+        fetched, but the **write failed** — nothing of the window reached the
+        store, so the window has not been tried and its anchor must not move.
+        """
         prices = self.facade._fetch_historical_data(symbol, start_date, end_date)
         if prices is None:
             return None, 0
@@ -116,6 +123,7 @@ class BackfillWorkload:
             with self.facade.config_manager.writing() as opened:
                 written = quotes.record_history(opened, symbol, prices)
         except Exception as e:
+            written = None
             app_logger.error(
                 f"Failed to write historical prices for {symbol}: {e}")
         time.sleep(self.facade.backfill_delay)
@@ -201,6 +209,16 @@ class BackfillWorkload:
                           f"{start_date.date()} → {end_date.date()}")
             return 0
 
+        if written is None:
+            app_logger.warning(
+                f"Failed to store the history of {symbol}, will retry next cycle")
+            publish(anchor=end_date, oldest=oldest_timestamp,
+                    window=(start_date, end_date), failed=True,
+                    error=f"the history of {symbol} over "
+                          f"{start_date.date()} → {end_date.date()} was fetched "
+                          f"but could not be written to the store")
+            return 0
+
         self.facade._record_window_tried(symbol, start_date.date())
 
         if not prices:
@@ -268,6 +286,16 @@ class BackfillWorkload:
             publish(window=(start_date, end_date), failed=True,
                     error=f"yfinance returned no history for {symbol} over "
                           f"{start_date.date()} → {end_date.date()}")
+            return 0
+
+        if written is None:
+            app_logger.warning(
+                f"Failed to store the forward history of {symbol}, will retry "
+                f"next cycle")
+            publish(window=(start_date, end_date), failed=True,
+                    error=f"the history of {symbol} over "
+                          f"{start_date.date()} → {end_date.date()} was fetched "
+                          f"but could not be written to the store")
             return 0
 
         if not prices:
