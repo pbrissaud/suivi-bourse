@@ -191,7 +191,17 @@ class Timeline:
 
     def holding_window(self, account: str, symbol: str,
                        today: date) -> Optional[Tuple[date, date]]:
-        """``(first day held, last day held)`` for one ``(account, symbol)``."""
+        """``(first day held, last day held)`` for one ``(account, symbol)``.
+
+        ``None`` says **one** thing, and it says it of every case that reaches
+        it: *this account carried no end-of-day quantity of this security on any
+        day up to* ``today``. The events that were never recorded, the
+        acquisition dated after today, and the buy sold in full on its own day
+        are three ways of arriving at that one absence, not three answers — a
+        window is made of end-of-day states, and a position whose quantity is
+        zero has fallen out of the model (``CONTEXT.md``, *Holding window*). A
+        day traded through is not a day held (issue #861).
+        """
         snaps = self.snapshots.get((account, symbol))
         if not snaps:
             return None

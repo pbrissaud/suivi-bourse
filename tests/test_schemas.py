@@ -309,6 +309,33 @@ def test_an_acquisition_dated_in_the_future_has_held_nothing_yet():
     assert tl.holding_window("PEA", "AAPL", TODAY) is None
 
 
+def test_a_line_bought_and_sold_in_full_on_one_day_was_never_held():
+    """A day traded through is not a day held — the answer, and its name (#861).
+
+    ``_snapshot`` keeps **one snapshot per change date**, so a buy and a full
+    sale on the same day leave only the final state, ``quantity = 0``. The loop
+    below therefore never sets ``acquired`` and answers ``None`` — and that is
+    the **right** answer rather than a case that slipped through: a window is
+    made of end-of-day states, and a position at zero has fallen out of the
+    model. What was missing was the docstring naming it, which is the third road
+    to the one absence the method reports.
+
+    The consequence is deliberate: ``account_holding_windows`` drops the symbol,
+    and the horizon never sees it. There is no day to price and none to block.
+    """
+    tl = _replayed([
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2024, 1, 15), EventType.SELL, "AAPL", "Apple", quantity=10,
+              unit_price=110.0, account="PEA"),
+    ])
+
+    assert tl.holding_window("PEA", "AAPL", TODAY) is None
+    # The events are not lost: the realized gain is on the position, which is
+    # what a round trip leaves behind.
+    assert tl.position_at("PEA", "AAPL", TODAY)['quantity'] == 0
+
+
 def test_a_future_acquisition_after_a_real_one_does_not_move_the_window():
     """The clamp is on the window's **end**, never on the days already held.
 
