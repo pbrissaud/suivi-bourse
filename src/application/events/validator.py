@@ -1,21 +1,4 @@
-"""
-Event validator for validating portfolio events.
-
-**One owner.** Whatever the road an event took to get here — a ``.csv`` in the
-drop folder, a sheet of a workbook, or a form somebody filled in the app (issue
-#764) — it is judged by this class and by nothing else. A second set of rules
-for the typed event is how an event created here and an event imported stop
-obeying the same product: the ledger is replayed whole on every build, so a row
-one road let through and the other would have refused fails the *boot*, in an
-app the user then cannot reach to repair it.
-
-What is **not** here is the parse. ``EventLoader`` turns a CSV cell into a typed
-value and raises its own error when it cannot; the API's write path does the
-same for a JSON member (issue #764). By the time an :class:`Event` exists its
-fields are already of the right types, so *"2026-02-31 is not a day"* is a
-refusal of the boundary and *"a BUY needs a quantity"* is a refusal of this
-module. Two questions, two owners, and the split is the loader's, not a new one.
-"""
+"""Event validator for validating portfolio events."""
 
 import math
 from dataclasses import dataclass
@@ -24,10 +7,6 @@ from typing import List, Optional, Set, Tuple
 from .schemas import CASH_EVENT_TYPES, Event, EventType
 
 
-#: Every cell of an event that holds a number, named once. What makes it a list
-#: rather than four checks spread over the per-type methods is that the rule
-#: below is about the *value* and never about the event it sits on: a ``nan``
-#: is as unusable in a ``DEPOSIT``'s amount as in a ``GRANT``'s unit price.
 NUMERIC_FIELDS = ('quantity', 'unit_price', 'fee', 'amount')
 
 
@@ -38,88 +17,34 @@ class EventValidationError(Exception):
 
 @dataclass(frozen=True)
 class ValidationIssue:
-    """One refusal, and **which field it is about** (issue #764).
-
-    The message is what it always was, word for word, because it is read by a
-    human in a log line about a file. ``field`` is what a *form* needs: a
-    ``422`` naming the input it refused marks that input, where a sentence above
-    the whole panel leaves the reader to find it — the same reason
-    :func:`api.problem.unprocessable` carries a ``key``.
-
-    ``None`` for a refusal that is about the event rather than one of its cells
-    (nothing produces one today, and the shape says so rather than promising it
-    cannot happen).
-    """
+    """One refusal, and **which field it is about** (issue #764)."""
     field: Optional[str]
     message: str
 
 
 class EventValidator:
-    """Validates portfolio events.
-
-    The account rules are issue #698's, and they are two halves of one sentence:
-
-    * **an ``account`` value must name a declared account.** The store always
-      holds at least one (``default``), so this is checked whether or not the
-      user ever declared anything — a typo'd id is refused the same way in every
-      install, and the message names the account to declare.
-    * **a blank ``account`` means ``default`` until an account is declared, and
-      is an error afterwards.** That is v4's rule minus its opt-in, which is
-      what makes a single-account v4's event files import without a single edit;
-      after a declaration, a blank cell is far likelier to be an omission than a
-      choice, and guessing would pile a second account's events onto the first.
-    """
+    """Validates portfolio events."""
 
     def __init__(self, account_ids: Optional[Set[str]] = None,
                  accounts_declared: bool = False):
-        """
-        Args:
-            account_ids: Every account id the store holds — ``default`` among
-                them. ``None`` means no store was consulted, and the account
-                column is then only checked for shape (the pure-format tests,
-                and any caller validating a file before it has a ledger).
-            accounts_declared: True once something beyond the seeded ``default``
-                account exists, which is what turns a blank ``account`` column
-                from "means default" into an error.
-        """
+        """Args: account_ids: Every account id the store holds — ``default`` among them."""
         self.account_ids = account_ids
         self.accounts_declared = accounts_declared
 
     def issues(self, events: List[Event]) -> List[ValidationIssue]:
-        """Every refusal these events earn, each naming the field it is about.
-
-        The structured form, and the one the two other entry points are built
-        out of — a validator with two implementations is a validator with two
-        answers.
-        """
+        """Every refusal these events earn, each naming the field it is about."""
         found: List[ValidationIssue] = []
         for i, event in enumerate(events):
             found.extend(self._validate_event(event, i + 1))
         return found
 
     def validate(self, events: List[Event]) -> Tuple[bool, List[str]]:
-        """
-        Validate a list of events.
-
-        Args:
-            events: List of events to validate.
-
-        Returns:
-            Tuple of (is_valid, list of error messages).
-        """
+        """Validate a list of events."""
         found = self.issues(events)
         return len(found) == 0, [issue.message for issue in found]
 
     def validate_or_raise(self, events: List[Event]) -> None:
-        """
-        Validate events and raise an exception if validation fails.
-
-        Args:
-            events: List of events to validate.
-
-        Raises:
-            EventValidationError: If validation fails.
-        """
+        """Validate events and raise an exception if validation fails."""
         is_valid, errors = self.validate(events)
         if not is_valid:
             error_list = "\n".join(f"  - {e}" for e in errors)
@@ -138,8 +63,6 @@ class EventValidator:
         if event.event_type in CASH_EVENT_TYPES:
             errors.extend(self._validate_cash(event, prefix))
         else:
-            # Share events: symbol and name are required (the loader no longer
-            # enforces them, so cash events can omit them).
             if not event.symbol:
                 errors.append(_issue('symbol', prefix, "symbol is required"))
             if not event.name:
@@ -157,27 +80,7 @@ class EventValidator:
         return errors
 
     def _validate_numbers(self, event: Event, prefix: str) -> List[ValidationIssue]:
-        """Refuse a cell holding a number JSON cannot spell — on any event.
-
-        The rule :func:`store.finite` states at the store's boundary, stated
-        here at the ledger's: **NaN and infinity are not values a portfolio can
-        hold**. Every other guard in this file is a comparison — ``<= 0``,
-        ``< 0`` — and a comparison is exactly what these two evade: ``nan``
-        answers false to all of them, ``+inf`` to the two that are asked. So a
-        ``1e400`` in a CSV cell and a bare ``NaN`` token in a JSON body were
-        both accepted, stored, and replayed into a position of ``inf`` shares at
-        a cost basis of ``inf``; ``GET /api/events`` then answered a ``200``
-        whose body a browser's ``JSON.parse`` refuses whole, so the page that
-        would have let the owner delete the row went blank instead.
-
-        It runs before the per-type methods and independently of them, because
-        the four fields are refused for the same reason wherever they appear —
-        the ``GRANT`` unit price included, which #699 leaves unjudged. That
-        exemption is about a price that *is* a number and cannot be one (zero,
-        negative), normalised to dilution where it is read; nothing normalises a
-        ``nan``, which :func:`~events.schemas.declared_value` multiplies straight
-        into the cost basis.
-        """
+        """Refuse a cell holding a number JSON cannot spell — on any event."""
         errors = []
         for name in NUMERIC_FIELDS:
             value = getattr(event, name)
@@ -187,17 +90,7 @@ class EventValidator:
         return errors
 
     def _validate_cash(self, event: Event, prefix: str) -> List[ValidationIssue]:
-        """Validate a DEPOSIT / WITHDRAWAL event.
-
-        Required: amount (> 0). Optional: fee (>= 0). Forbidden: symbol / name /
-        quantity / unit_price (cash events carry no share).
-
-        The account is **not** a per-type requirement any more (issue #698).
-        v4 demanded one here even with no account declared, which under the new
-        rule would force a single-account v4 user to write ``default`` in a
-        column that means ``default`` when blank — a required cell whose only
-        legal value is the one it already implies.
-        """
+        """Validate a DEPOSIT / WITHDRAWAL event."""
         errors = []
 
         if event.amount is None:
@@ -226,15 +119,7 @@ class EventValidator:
         return errors
 
     def _validate_account(self, event: Event, prefix: str) -> List[ValidationIssue]:
-        """Validate the ``account`` column of one event (issue #698).
-
-        The message on an unknown id **names the account to declare**, because
-        that is the whole gesture the user has left to make — and it names
-        the **one** place there is to make it, the app (ADR-0034). Naming a
-        file here would send the reader into a refusal this same app opposes
-        them a moment later: :mod:`uploads` turns back any file whose header
-        declares accounts, and names those very columns doing it.
-        """
+        """Validate the ``account`` column of one event (issue #698)."""
         if not event.account:
             if self.accounts_declared:
                 return [_issue(
@@ -291,21 +176,7 @@ class EventValidator:
         return errors
 
     def _validate_grant(self, event: Event, prefix: str) -> List[ValidationIssue]:
-        """Validate a GRANT event.
-
-        ``unit_price`` becomes **meaningful** with #699 — present it is a valued
-        award, absent it is dilution — and it is deliberately **not validated**
-        here. The column was already parsed and silently thrown away, so a
-        stored ledger may hold any value in it, and this validator runs over the
-        *whole store* on every build (``_load_from_store``), not only over a
-        file someone just dropped. A new refusal here is therefore retroactive:
-        a row that was legal when it was imported would fail the boot, with no
-        way to repair it from an app that is down. A
-        value that cannot be a price is normalised where it is read instead —
-        ``aggregator._process_grant`` and ``performance._grant_value``, together
-        — which is also the pair the spec's *"no format change is necessary"*
-        asks for.
-        """
+        """Validate a GRANT event."""
         errors = []
 
         if event.quantity is None:
@@ -334,9 +205,5 @@ class EventValidator:
 
 
 def _issue(field: Optional[str], prefix: str, message: str) -> ValidationIssue:
-    """One refusal, rendered exactly as it always was and tagged with its field.
-
-    The prefix is applied here rather than at each call site so that the
-    sentence a log line carries cannot drift between the twenty of them.
-    """
+    """One refusal, rendered exactly as it always was and tagged with its field."""
     return ValidationIssue(field=field, message=f"{prefix}: {message}")
