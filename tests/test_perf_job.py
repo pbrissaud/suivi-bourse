@@ -30,7 +30,9 @@ import pytest
 
 from application import ledger
 from application import main
+from application import perf_job
 from application import workloads
+from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
 
 UTC = timezone.utc
@@ -122,6 +124,47 @@ def _totals(opened):
     return opened.query(
         'SELECT day, holdings_value, total_value FROM portfolio_totals '
         ' ORDER BY day')
+
+
+def test_an_account_is_asked_only_about_the_symbols_it_has_touched():
+    """The windows are the same; the questions are not (issue #861).
+
+    ``account_holding_windows`` was handed ``{e.symbol for e in events}`` — the
+    **whole ledger's** set — for each declared account, and filtered correctly
+    afterwards: a symbol the account never touched answers ``None`` and drops
+    out. So the answer was right and the cost was one ``holding_window`` per
+    (account × symbol) per cycle, on a set the timeline already keys by
+    ``(account, symbol)``.
+
+    Two accounts holding disjoint securities is the shape that makes the two
+    readings differ, and the assertion is on both: the windows produced, and —
+    since a question that was not asked leaves no row — the calls made.
+    """
+    events = [
+        Event(_OPENED, EventType.DEPOSIT, amount=10000.0, account='pea'),
+        Event(_OPENED, EventType.DEPOSIT, amount=10000.0, account='cto'),
+        Event(_ACQUIRED, EventType.BUY, 'AAPL', 'Apple', quantity=10,
+              unit_price=100.0, account='pea'),
+        Event(_ACQUIRED, EventType.BUY, 'MSFT', 'Microsoft', quantity=5,
+              unit_price=300.0, account='cto'),
+    ]
+    timeline = EventAggregator().replay(events)
+
+    asked = []
+    original = timeline.holding_window
+
+    def counting(account, symbol, today):
+        asked.append((account, symbol))
+        return original(account, symbol, today)
+
+    timeline.holding_window = counting
+
+    assert perf_job.account_holding_windows(timeline, 'pea', _TODAY) == {
+        'AAPL': (_ACQUIRED, _TODAY)}
+    assert perf_job.account_holding_windows(timeline, 'cto', _TODAY) == {
+        'MSFT': (_ACQUIRED, _TODAY)}
+
+    assert asked == [('pea', 'AAPL'), ('cto', 'MSFT')]
 
 
 def test_a_line_converted_late_blocks_the_years_before_the_conversion(

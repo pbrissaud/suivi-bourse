@@ -33,11 +33,20 @@ def value_kwargs(dp, last: bool, perf) -> dict:
             for name, value in values.items()}
 
 
-def account_holding_windows(timeline, account_id: str, symbols,
+def account_holding_windows(timeline, account_id: str,
                             today: date) -> Dict[str, Tuple[date, date]]:
-    """``{symbol: (first, last) day this account held it}`` — the horizon's bound (issue #708)."""
+    """``{symbol: (first, last) day this account held it}`` — the horizon's bound (issue #708).
+
+    Over **this account's** symbols, which the timeline already knows: it was
+    handed the whole ledger's set, so a portfolio of a dozen accounts paid a
+    ``holding_window`` per (account × symbol) every cycle to be told ``None``
+    for the ones it had never touched (issue #861). Same windows, and the
+    absence a symbol is genuinely missing from is the same absence.
+    """
     windows = {}
-    for symbol in symbols:
+    for account, symbol in timeline.snapshots:
+        if account != account_id:
+            continue
         window = timeline.holding_window(account_id, symbol, today)
         if window is not None:
             windows[symbol] = window
@@ -134,7 +143,7 @@ class PerfJob:
                        if symbol not in first_quoted}
             writable = {
                 account.id: performance.account_horizon(
-                    account_holding_windows(timeline, account.id, symbols, today),
+                    account_holding_windows(timeline, account.id, today),
                     oldest_priced, settled, start=start, ceiling=today)
                 for account in declared
             }
