@@ -1,0 +1,42 @@
+# CodeRabbit — https://docs.coderabbit.ai/reference/configuration
+#
+# This file is the source of truth. `inheritance` is false, so a key absent
+# here falls back to CodeRabbit's own default and **not** to the value set in
+# the repository UI. Every key below is therefore one that differs from a
+# default: naming the defaults again would only make this file rot.
+
+reviews:
+  # Lets CodeRabbit submit a formal CHANGES_REQUESTED — and, the half that
+  # actually matters, lets `@coderabbitai approve` clear its own refusal once
+  # the findings are addressed. Without it a PR whose comments are all settled
+  # stays blocked on a stale review that nothing but a human dismissal lifts.
+  request_changes_workflow: true
+
+  # The walkthrough is the first thing worth reading on a PR. Leave it open.
+  collapse_walkthrough: false
+
+  auto_review:
+    labels:
+      - fix
+      - feat
+
+  tools:
+    # The app lints with `flake8 --ignore=E501` and the repo carries no flake8
+    # nor pylint configuration file, so both would run on their defaults and
+    # flag a line length the project has explicitly refused. The `Lint` check
+    # is the authority on this tree; these two could only contradict it.
+    flake8:
+      enabled: false
+    pylint:
+      enabled: false
+
+knowledge_base:
+  code_guidelines:
+    # The architecture is written in the nested CLAUDE.md files, the glossary
+    # and the ADRs. CodeRabbit already reaches for them — it cited "Source:
+    # Coding guidelines" on #909 — and naming them makes that deliberate.
+    filePatterns:
+      - CLAUDE.md
+      - '**/CLAUDE.md'
+      - CONTEXT.md
+      - docs/adr/*.md
