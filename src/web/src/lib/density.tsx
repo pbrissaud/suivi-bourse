@@ -30,7 +30,7 @@ export const DENSITY_STORAGE_KEY = 'sb.density'
 const CHOICES: DensityChoice[] = ['comfortable', 'compact']
 
 /** Absence — and anything unrecognised — means the roomier of the two. */
-export function readDensityChoice(
+function readDensityChoice(
   storage: Pick<Storage, 'getItem'> | null | undefined,
 ): DensityChoice {
   const stored = storage?.getItem(DENSITY_STORAGE_KEY)

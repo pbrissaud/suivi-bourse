@@ -18,7 +18,7 @@ import pytest
 from application import accounts as accounts_module
 from application import entries
 from application import ledger
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.aggregator import AggregationError
 from application.events.schemas import Event, EventType
@@ -310,44 +310,6 @@ def test_a_draft_cannot_choose_its_own_key(store):
 
     assert second.id != first.id
     assert store.query('SELECT count(*) FROM event') == [(2,)]
-
-
-def test_this_module_is_the_writer_of_the_event_table(store, tmp_path):
-    """**Criterion 4 of #816**, checked on the source rather than promised.
-
-    Every ``INSERT INTO event`` / ``UPDATE event`` / ``DELETE FROM event`` in
-    the two source packages is below, or in :mod:`reassignment` — which is the **named, bounded
-    exception** ADR-0032 keeps by name: it rewrites one column in bulk, it
-    addresses no row by its key, and it is a module of its own precisely so that
-    a reader counting the writers finds it. What is gone is the *second* writer:
-    :mod:`ledger` wrote whole files in and whole files out, and the sentence
-    *"the import path has no row-level write"* was a rule two modules had to keep
-    true between them. There is one population now, so there is nothing left for
-    it to be true about.
-
-    The surface below is the second half of the same statement: five gestures and
-    three forecasts, and **no exception among them named after where a row came
-    from**. ``ImportedEntry`` was the sixth name here and it is not one any more.
-    """
-    import re
-    from pathlib import Path
-
-    # The two packages by name, never `src/` itself: the front lives there too
-    # and walking it would walk `node_modules`.
-    src = Path(__file__).resolve().parents[1] / 'src'
-    pattern = re.compile(
-        r"(?:INSERT INTO event|UPDATE event|DELETE FROM event)\b")
-    writers = sorted(path.relative_to(src).as_posix()
-                     for package in ('application', 'api')
-                     for path in (src / package).rglob('*.py')
-                     if pattern.search(path.read_text()))
-
-    assert writers == ['application/entries.py', 'application/reassignment.py']
-    assert set(entries.__all__) == {
-        'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
-        'UnknownEntry', 'InvalidEntry', 'Duplicate',
-        'create', 'create_many', 'update', 'remove', 'remove_selection',
-        'content_key', 'split_duplicates', 'judge'}
 
 
 # --------------------------------------------------------------------------- #

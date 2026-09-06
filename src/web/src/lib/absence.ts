@@ -140,7 +140,7 @@ export type Rendering =
   | { kind: 'dash' }
   | { kind: 'named'; message: MessageKey; values?: MessageValues }
 
-export interface PositionRenderings {
+interface PositionRenderings {
   price: Rendering
   valuation: Rendering
   unrealised: Rendering
@@ -169,7 +169,7 @@ export const AWAITING_RATE: Rendering = { kind: 'named', message: 'absence.await
 export const REBUILDING: Rendering = { kind: 'named', message: 'absence.rebuilding' }
 
 /** What a component needs of `useI18n`'s `t` to name an absence. */
-export type Translate = (key: MessageKey, values?: MessageValues) => string
+type Translate = (key: MessageKey, values?: MessageValues) => string
 
 /**
  * A figure's text: the number when there is one, the em dash when there is

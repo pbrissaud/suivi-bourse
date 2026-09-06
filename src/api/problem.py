@@ -90,7 +90,7 @@ def problem(status: int, title: str, detail: Optional[str] = None,
     body: Dict[str, Any] = {'type': type_, 'title': title, 'status': status}
     if detail:
         body['detail'] = detail
-    body.update(extra)
+    body.update({k: v for k, v in extra.items() if v is not None})
 
     response = jsonify(body)
     response.status_code = status
@@ -182,19 +182,9 @@ def unreplayable(detail: str, gesture: str, symbol: Optional[str] = None,
     ``detail`` stays the exception's own message, unchanged: it is what a log
     and a ``curl`` read, and it is deliberately not what a page renders.
     """
-    extra: Dict[str, Any] = {'gesture': gesture}
-    if symbol is not None:
-        extra['symbol'] = symbol
-    if wanted is not None:
-        extra['wanted'] = wanted
-    if owned is not None:
-        extra['owned'] = owned
-    if day is not None:
-        extra['day'] = day
-    if account is not None:
-        extra['account'] = account
-    return problem(
-        409, 'Ledger does not replay', detail, TYPE_UNREPLAYABLE, **extra)
+    return problem(409, 'Ledger does not replay', detail, TYPE_UNREPLAYABLE,
+                   gesture=gesture, symbol=symbol, wanted=wanted, owned=owned,
+                   day=day, account=account)
 
 
 def unprocessable(detail: str, key: Optional[str] = None):
@@ -210,9 +200,7 @@ def unprocessable(detail: str, key: Optional[str] = None):
     rather than show a sentence above the whole page. It is an extension member
     of the problem object, which RFC 9457 explicitly allows.
     """
-    extra = {'key': key} if key else {}
-    return problem(
-        422, 'Invalid setting', detail, TYPE_INVALID_SETTING, **extra)
+    return problem(422, 'Invalid setting', detail, TYPE_INVALID_SETTING, key=key or None)
 
 
 def unprocessable_parameter(detail: str, key: Optional[str] = None):
@@ -232,8 +220,7 @@ def unprocessable_parameter(detail: str, key: Optional[str] = None):
     the syntax parsed, and it is the value that has no meaning
     (issue #763).
     """
-    extra = {'key': key} if key else {}
-    return problem(422, 'Invalid parameter', detail, TYPE_BAD_REQUEST, **extra)
+    return problem(422, 'Invalid parameter', detail, TYPE_BAD_REQUEST, key=key or None)
 
 
 def unprocessable_entry(detail: str, key: Optional[str] = None):
@@ -257,8 +244,7 @@ def unprocessable_entry(detail: str, key: Optional[str] = None):
     :class:`events.validator.ValidationIssue`, so a form marks the input it
     refused rather than printing a paragraph over the whole panel.
     """
-    extra = {'key': key} if key else {}
-    return problem(422, 'Invalid event', detail, TYPE_BAD_REQUEST, **extra)
+    return problem(422, 'Invalid event', detail, TYPE_BAD_REQUEST, key=key or None)
 
 
 def unprocessable_file(detail: str):

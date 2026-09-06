@@ -48,7 +48,7 @@ import type { ReadFailure } from '@/lib/status'
 /** The id the card's landmark is named by — one constant, two readers. */
 const STORE_HEADING = 'settings-store'
 
-export interface StoreBlockProps {
+interface StoreBlockProps {
   /**
    * The path and the persistence, from the resource that opens nothing —
    * **`null` until `GET /api/runtime` has landed** (#777, ADR-0026).

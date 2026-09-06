@@ -93,7 +93,7 @@ export interface LedgerFocus {
   named: boolean
 }
 
-export interface LedgerProps {
+interface LedgerProps {
   /**
    * A reduction asked for from elsewhere: the assumed-currency notice of the
    * other tab, which **names the events it was made about** (#724), and since

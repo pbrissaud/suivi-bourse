@@ -23,7 +23,7 @@ a switch for it would be a dial **of the store**, in a product that has just
 deleted its only restart-scoped dial. The one name that ever looked like the
 counter-example decided a **socket to bind**, and the socket is bound once, when
 the process starts — but ADR-0033 took that socket, and the flag and the port that
-described it went into :data:`DELETED` with it. There is one bind, and the whole
+described it left with it. There is one bind, and the whole
 application answers on it.
 
 One of the three is a path (#740), and three rules come with it:
@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
-from application import settings_registry
 
 # --------------------------------------------------------------------------- #
 # The three names
@@ -153,149 +152,26 @@ def directory(env: Mapping[str, str], name: str, default: str) -> Path:
 #: already get (ADR-0008, ADR-0014): name, do not read, do not decide.
 PREFIXES = ('SB_', 'INFLUXDB_')
 
-#: Carried the prefix and were **never read by Python** — they belonged to the
-#: compose file and the docker daemon (#654 trap 13). They are a *fourth*
-#: category and stay out of the notice entirely: naming them would introduce
-#: names the app has never obeyed into a sentence about names it has stopped
-#: obeying.
-#:
-#: The compose file left with #743 and this list did **not**, which is the whole
-#: point of it: the environment it guards against is not this repository's, it
-#: is the one a v4 install still sources its own ``.env`` into. Deleting the
-#: tuple would not remove the four names from the product — it would move them
-#: into the notice, which is the one place spec #730 § 3 forbids them.
+#: Carry the prefix and were never read by Python: the compose file's and the
+#: docker daemon's own (#654 trap 13).
 NEVER_READ: frozenset = frozenset({
-    'SB_VERSION', 'SB_CONFIG_DIR', 'SB_UID', 'SB_GID',
-    # v4's ``.env.example`` line 42, a port published by compose and read by
-    # the daemon. It carries the prefix, so without it here the notice tells a
-    # v4 install that ``INFLUXDB_PORT`` is *a setting this application has
-    # stopped reading* — which is the one sentence the paragraph above forbids
-    # about a name the application has never read.
-    'INFLUXDB_PORT',
+    'SB_VERSION', 'SB_CONFIG_DIR', 'SB_UID', 'SB_GID', 'INFLUXDB_PORT',
 })
-
-#: Deleted outright, with **no successor**. This one has to be written down:
-#: where a name's subject went is *history*, and nothing derives history. Its
-#: cost of being wrong is not cosmetic — an operator told that
-#: ``SB_EXECUTOR_POOL`` "lives in the app now" goes looking for a field that has
-#: never existed and for a ``PUT`` that answers ``422``.
-#:
-#: ``SB_STATIC_DIR`` is the fifteenth name and not one of the fourteen a v4
-#: ``.env`` carries: it never appeared in one. It leaves with #740 all the same,
-#: because *three* is the complete list of what the environment says and an
-#: escape hatch for serving the bundle from elsewhere has no user left — one
-#: image, one path, and a checkout resolves it from the package.
-#:
-#: The three last are the newest, and the ones an owner is likeliest to still
-#: have written down. *No successor* is the whole of what there is to say about
-#: them: the gauges did not become a dial, they became the health body and the
-#: runtime tab (ADR-0033), and ``SB_IMPORT_DIR`` did not become a dial either —
-#: the folder it named is gone and a file is **handed** to the app instead
-#: (ADR-0032). Reported as *moved* they would send their owner looking for a
-#: field to re-enable, and left out of the notice altogether they would read as a
-#: typo — which is exactly the mistake this list exists to prevent. This is the
-#: whole of the service the list renders: a variable still set is **named** as
-#: read by nothing, rather than believed to act.
-DELETED: frozenset = frozenset({
-    'SB_EXECUTOR_POOL', 'SB_DYNAMIC_EXECUTOR_POOL', 'SB_PERF_INTERVAL',
-    'SB_INGESTION_INTERVAL', 'SB_CONFIG_MODE', 'SB_STATIC_DIR',
-    'INFLUXDB_HOST', 'INFLUXDB_TOKEN', 'INFLUXDB_DATABASE',
-    'SB_PROMETHEUS_ENABLED', 'SB_METRICS_PORT', 'SB_IMPORT_DIR',
-})
-
-#: The one name whose dial is not its own name lower-cased: v4's deprecated
-#: fallback for the poll cadence. Everything else is read off the registry
-#: below, which is why this dict has exactly one entry and not six.
-MOVED_ALIASES: Dict[str, str] = {
-    'SB_SCRAPING_INTERVAL': 'regular_interval',
-}
-
-
-def moved_dial(name: str) -> Optional[str]:
-    """The dial ``name`` became, or ``None``.
-
-    **Read off :mod:`settings_registry`**, never off a second list. That is the
-    invariant the notice rests on: adding a dial to the registry takes
-    ``SB_<KEY>`` out of the *"this application has never read that"* clause and
-    into the *"it lives in the app now"* one, with nothing here edited. Two
-    lists of dials agree on the day they are written and not much longer, and
-    this one would be the copy nobody re-reads at release time.
-    """
-    if name in MOVED_ALIASES:
-        return MOVED_ALIASES[name]
-    if not name.startswith('SB_'):
-        return None
-    key = name[len('SB_'):].lower()
-    return key if key in settings_registry.BY_KEY else None
 
 
 def unread(env: Mapping[str, str]) -> Tuple[str, ...]:
-    """The ``SB_*``/``INFLUXDB_*`` names that are set and no longer read.
-
-    A **computed complement** — what is present, minus the three it reads, minus
-    the four it never read — and never a literal of fourteen, which would drift at
-    the first rename: #701 removed one from the dials while this was being
-    written. The day a name is added to :data:`INVENTORY` it leaves this list by
-    construction, and the day a dial is added to the registry it changes clause
-    by construction.
-    """
-    def is_unread(name: str, value: str) -> bool:
-        if not name.startswith(PREFIXES):
-            return False
-        if name in READ or name in NEVER_READ:
-            return False
-        # Blank counts as unset here too, or a v4 compose file left in place
-        # reports every variable it forwards as *set*.
-        return bool(str(value).strip())
-
-    return tuple(sorted(name for name, value in env.items()
-                        if is_unread(name, value)))
+    """The product-prefixed names set (non-blank) and read by nothing, sorted."""
+    set_ = (name for name, value in env.items() if str(value).strip())
+    return tuple(sorted(n for n in set_ if n.startswith(PREFIXES) and n not in READ | NEVER_READ))
 
 
 def notice(names: Tuple[str, ...]) -> Optional[str]:
-    """The **one** grouped sentence naming ``names``, or ``None`` for none.
-
-    One line per variable would put fourteen warnings in front of an operator
-    upgrading from v4 and bury the sentence that matters — which is not *which*
-    name was ignored but *where the setting went*.
-
-    And *where it went* has three answers, so the notice has three clauses. A
-    variable that became a dial is worth following up; one that was deleted
-    outright has no successor to look for; and a name the app has simply never
-    read — a typo, a leftover from another tool — deserves neither instruction.
-    """
+    """One line naming every unread variable, or ``None`` when there is none."""
     if not names:
         return None
-
-    moved = [f"{name} → the {moved_dial(name)} dial" for name in names
-             if moved_dial(name)]
-    deleted = [name for name in names
-               if name in DELETED and not moved_dial(name)]
-    unknown = [name for name in names
-               if not moved_dial(name) and name not in DELETED]
-
-    # "not read" rather than "no longer read": the header covers all three
-    # groups, and one of them is names this application has never read at all.
-    parts = [f"These environment variables are set and not read: "
-             f"{', '.join(names)}."]
-    if moved:
-        parts.append(
-            f"These settings live in the app since v5 ({', '.join(moved)}) — "
-            f"turn them on the settings page, or with one PUT /api/settings.")
-    if deleted:
-        parts.append(
-            f"These were removed and have no replacement: "
-            f"{', '.join(deleted)}.")
-    if unknown:
-        parts.append(
-            f"These are not settings this application has ever read: "
-            f"{', '.join(unknown)}.")
-    return ' '.join(parts)
-
-
-# --------------------------------------------------------------------------- #
-# The whole of it, in one read
-# --------------------------------------------------------------------------- #
+    return (f"These environment variables are set and not read: "
+            f"{', '.join(names)}. Since v5 the dials live in the app: "
+            f"the settings page, or PUT /api/settings.")
 
 
 @dataclass(frozen=True)
@@ -357,7 +233,7 @@ def effective(env: Mapping[str, str],
 __all__ = [
     'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
-    'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ', 'DELETED', 'MOVED_ALIASES',
-    'BootEnvironment', 'read', 'unread', 'notice', 'moved_dial', 'effective',
+    'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',
+    'BootEnvironment', 'read', 'unread', 'notice', 'effective',
     'text', 'integer', 'directory',
 ]

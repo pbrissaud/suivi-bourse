@@ -37,7 +37,7 @@ from application import settings_registry
 from application import store
 import api as api_module
 from application import workloads
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from api import create_app, problem

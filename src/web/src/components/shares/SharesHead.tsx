@@ -69,7 +69,7 @@ const TERM_LABELS: Record<(typeof SHARES_TERMS)[number], MessageKey> = {
 /** Identical to the dashboard head's, and for the same reason: written per site,
  *  the dash wins every time — including where the rule says *name it*. */
 
-export interface SharesHeadProps {
+interface SharesHeadProps {
   positions: readonly Position[]
   rows: readonly ShareRow[]
   currency: string | null

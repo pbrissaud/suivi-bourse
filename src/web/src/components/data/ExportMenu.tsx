@@ -79,7 +79,7 @@ import { problemMessageKey } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 import { saveFile } from '@/lib/save'
 
-export interface ExportMenuProps {
+interface ExportMenuProps {
   /** Whether this install has anything to put in a file. */
   files: { events: boolean }
   /** The reduction in force, as the table holds it at the instant of the click. */

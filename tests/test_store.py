@@ -33,7 +33,7 @@ from application import store as store_module
 # --------------------------------------------------------------------------- #
 
 def test_a_new_file_carries_the_twelve_tables(store):
-    assert sorted(store.table_names()) == sorted(store_module.TABLES)
+    assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
     assert len(store_module.TABLES) == 12
 
 
@@ -46,7 +46,7 @@ def test_a_new_file_declares_no_provenance_at_all(store):
     migration machinery, deliberately: an older store keeps them as inert
     residue that nothing reads and nothing writes.
     """
-    assert 'import_source' not in store.table_names()
+    assert 'import_source' not in [row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]
 
     columns = {row[0] for row in store.query(
         "SELECT column_name FROM information_schema.columns "
@@ -100,7 +100,7 @@ def test_a_second_boot_on_the_same_file_duplicates_nothing(store, tmp_path):
 
     reopened = store_module.open_store(tmp_path / 'store.duckdb')
     try:
-        assert sorted(reopened.table_names()) == sorted(store_module.TABLES)
+        assert sorted([row[0] for row in reopened.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
         assert reopened.query('SELECT count(*) FROM account') == [(1,)]
         assert reopened.query('SELECT count(*) FROM setting') == \
             [(len(settings_registry.seeded_defaults()),)]

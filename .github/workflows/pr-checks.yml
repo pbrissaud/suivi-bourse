@@ -40,6 +40,7 @@ jobs:
         with:
           enable-cache: true
 
+      - run: .github/scripts/conventions.sh
       - run: uv run pytest tests/
 
   web:

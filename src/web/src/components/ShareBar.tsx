@@ -54,7 +54,7 @@ const HEIGHTS: Record<'line' | 'block', string> = {
   block: 'h-2',
 }
 
-export interface ShareBarProps {
+interface ShareBarProps {
   /**
    * The share, as a fraction of the whole — `0.1599`, never `15.99`. `null` is
    * *there is no share to state*, and it draws nothing at all.

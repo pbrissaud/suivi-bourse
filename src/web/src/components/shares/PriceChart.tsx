@@ -53,7 +53,7 @@ const PLOT_INSET_LEFT = 77
 /** The `LineChart` right margin. */
 const PLOT_INSET_RIGHT = 5
 
-export interface PriceChartProps {
+interface PriceChartProps {
   symbol: string
   window: ChartWindow
   onWindowChange: (window: ChartWindow) => void

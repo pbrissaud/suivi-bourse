@@ -37,7 +37,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { docsHref, type DocsAnchor } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 
-export interface ExplainProps {
+interface ExplainProps {
   /** The figure's own name, as it is written beside it. */
   figure: string
   /** The one text: what it means, then the rule. */

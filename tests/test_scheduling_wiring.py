@@ -1014,24 +1014,6 @@ def test_nothing_is_logged_when_there_is_nothing_to_say(mocker):
     warn.assert_not_called()
 
 
-def test_the_notice_separates_what_moved_from_what_was_deleted(
-        monkeypatch, mocker):
-    """"Turn it on the settings page" is wrong for a dial that no longer exists.
-
-    An operator told that ``SB_EXECUTOR_POOL`` lives in the app now goes looking
-    for a field that has never existed, and a ``PUT`` naming it answers 422.
-    """
-    monkeypatch.setenv("SB_REGULAR_INTERVAL", "600")
-    monkeypatch.setenv("SB_EXECUTOR_POOL", "10")
-    warn = mocker.patch.object(main.app_logger, "warning")
-
-    main.report_unread_environment()
-
-    message = warn.call_args.args[0]
-    assert "SB_REGULAR_INTERVAL → the regular_interval dial" in message
-    assert "removed and have no replacement: SB_EXECUTOR_POOL" in message
-
-
 def test_a_start_up_that_kept_the_metrics_pair_names_both_of_them(
         monkeypatch, mocker):
     """ADR-0033, and the reason the pair had to reach this list rather than
@@ -1052,9 +1034,7 @@ def test_a_start_up_that_kept_the_metrics_pair_names_both_of_them(
     assert "SB_PROMETHEUS_ENABLED" in found and "SB_METRICS_PORT" in found
     warn.assert_called_once()
     message = warn.call_args.args[0]
-    assert ("removed and have no replacement: "
-            "SB_METRICS_PORT, SB_PROMETHEUS_ENABLED") in message
-    assert "settings page" not in message
+    assert "SB_METRICS_PORT" in message and "SB_PROMETHEUS_ENABLED" in message
 
 
 def test_a_name_the_app_never_read_gets_no_instruction(monkeypatch, mocker):
@@ -1065,8 +1045,7 @@ def test_a_name_the_app_never_read_gets_no_instruction(monkeypatch, mocker):
     main.report_unread_environment()
 
     message = warn.call_args.args[0]
-    assert "ever read: SB_REGULAR_INTERVALL" in message
-    assert "settings page" not in message
+    assert "SB_REGULAR_INTERVALL" in message
 
 
 # ---------------------------------------------------------------------------
@@ -1365,7 +1344,7 @@ def test_read_exchange_of_ignores_the_cache_a_fresh_boot_has_not_filled(
     process that learnt it, and it is the one this reads.
     """
     m = _metrics([_share(symbol="AAPL")], store, mocker)
-    m._share_info_cache.observed("AAPL", {"exchange": "NMS"})
+    m._share_info_cache["AAPL"] = {"exchange": "NMS"}
 
     assert m.read_exchange_of() == {"AAPL": None}
 

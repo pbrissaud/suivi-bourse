@@ -159,7 +159,7 @@ class ScrapeWorkload:
         """
         last_quote, info = market.latest_quote(symbol, max_retries)
         if info is not None:
-            self.info_cache.observed(symbol, info)
+            self.info_cache[symbol] = info
         return last_quote, info
 
     def write_quote(self, symbol: str, last_quote, info, now: datetime,

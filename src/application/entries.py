@@ -81,7 +81,8 @@ from application import accounts as accounts_module
 from application import ledger
 from application import settings_registry
 from application import store as store_module
-from application.events import EventAggregator, EventValidator
+from application.events.aggregator import EventAggregator
+from application.events.validator import EventValidator
 from application.events import export as events_export
 from application.events.schemas import DEFAULT_ACCOUNT, Event
 

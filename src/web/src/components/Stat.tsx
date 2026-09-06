@@ -23,7 +23,7 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
-export interface StatProps {
+interface StatProps {
   label: string
   /** Already formatted. This component never sees a number. */
   value: ReactNode

@@ -289,7 +289,7 @@ export const DEFAULT_SORT: ShareSort = { column: 'value', direction: 'desc' }
  * A single rule for both would make one of the two gestures cost two clicks
  * every time.
  */
-export function firstDirection(column: SortColumn): ShareSort['direction'] {
+function firstDirection(column: SortColumn): ShareSort['direction'] {
   return column === 'symbol' || column === 'account' ? 'asc' : 'desc'
 }
 
@@ -337,7 +337,7 @@ function sortKey(row: ShareRow, column: SortColumn): string | number | null {
  * for. Ties fall back on the symbol, so the order is total and a re-sort never
  * shuffles equal rows.
  */
-export function sortRows(rows: readonly ShareRow[], sort: ShareSort): ShareRow[] {
+function sortRows(rows: readonly ShareRow[], sort: ShareSort): ShareRow[] {
   const sign = sort.direction === 'asc' ? 1 : -1
   return [...rows].sort((a, b) => {
     const left = sortKey(a, sort.column)
@@ -699,7 +699,7 @@ export function shareEvents(
  * purchases as one with nothing saying so. The collision is measured, not
  * hypothetical.
  */
-export interface EventMarker {
+interface EventMarker {
   /** The calendar day, `YYYY-MM-DD` — it is what the selection is keyed on. */
   day: string
   /** How many events fall on it. Above one it is announced as `×N`. */

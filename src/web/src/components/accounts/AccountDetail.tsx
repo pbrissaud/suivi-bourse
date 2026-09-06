@@ -104,7 +104,7 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
   empty: 'accounts.reason.empty',
 }
 
-export interface AccountDetailProps {
+interface AccountDetailProps {
   row: AccountRow
   /**
    * The whole payload's rows, or **`null` while the read has not landed** —

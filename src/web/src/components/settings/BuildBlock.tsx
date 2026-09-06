@@ -32,7 +32,7 @@ const BUILD_HEADING = 'settings-build'
  */
 const SHORT = 12
 
-export interface BuildBlockProps {
+interface BuildBlockProps {
   /** **`null` until `GET /api/runtime` has landed** (#777, ADR-0026). */
   build: RuntimeBuild | null
 }

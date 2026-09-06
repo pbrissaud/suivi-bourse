@@ -35,7 +35,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ValuePoint } from '@/lib/accounts'
 
-export interface AccountCurveProps {
+interface AccountCurveProps {
   points: readonly ValuePoint[]
   currency: string | null
 }

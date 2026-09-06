@@ -55,7 +55,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from logfmt_logger import getLogger
 
 from application import accounts as accounts_module
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events.loader import EventLoaderError
 from application.events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, Event
 

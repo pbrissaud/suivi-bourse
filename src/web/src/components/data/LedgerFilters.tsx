@@ -40,7 +40,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { reduces, type LedgerFilters as Filters } from '@/lib/ledger'
 
-export interface LedgerSearchProps {
+interface LedgerSearchProps {
   filters: Filters
   onChange: (filters: Filters) => void
   /** How many rows survive the reduction, stated where the reduction is made. */
@@ -84,7 +84,7 @@ export function LedgerSearch({ filters, onChange, shown }: LedgerSearchProps) {
   )
 }
 
-export interface LedgerChipsProps {
+interface LedgerChipsProps {
   filters: Filters
   onChange: (filters: Filters) => void
 }

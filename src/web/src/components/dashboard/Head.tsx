@@ -100,7 +100,7 @@ const TERM_LABELS: Record<GainTermName, MessageKey> = {
   transferFees: 'gain.term.transferFees',
 }
 
-export interface DashboardHeadProps {
+interface DashboardHeadProps {
   /**
    * The two reads the block is **made of**, `null` while either is in flight —
    * or while one of them has failed, in which case the page renders its own

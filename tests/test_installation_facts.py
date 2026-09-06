@@ -404,7 +404,7 @@ def test_the_table_never_grows_with_the_imports(store, tmp_path):
     that replaced the folder just as it held for the folder.
     """
     from application import entries
-    from application.events import EventLoader
+    from application.events.loader import EventLoader
 
     header = ('date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n')
     for year in (2022, 2023, 2024):

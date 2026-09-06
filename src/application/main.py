@@ -33,7 +33,8 @@ from application import settings as settings_module
 from application import settings_registry
 from application import store
 from application import workloads
-from application.events import EventValidator, EventAggregator
+from application.events.validator import EventValidator
+from application.events.aggregator import EventAggregator
 from application.events.loader import EventLoaderError
 from application.events.validator import EventValidationError
 from application.events.aggregator import AggregationError
@@ -589,40 +590,6 @@ class ConfigurationManager:
 
         return named
 
-    def load_accounts(self) -> Optional[Portfolio]:
-        """The declared accounts, or ``None`` when nothing has been declared.
-
-        Served from the published snapshot once there is one, so a caller never
-        sees accounts from a different generation than the shares they were
-        aggregated with. ``None`` is ergonomics rather than a discriminant
-        (ADR-0013): the store always holds at least one account, and no write
-        path asks this question — only the pages do.
-        """
-        snap = self._config
-        if snap is not None:
-            return snap.accounts
-        return accounts_module.declared_portfolio(self._require_store())
-
-    def _compute_cache_key(self) -> Optional[str]:
-        """Fingerprint the **ledger** a snapshot is built from (issue #697).
-
-        The mtime fingerprint of #658 moved to its new subject. The files are no
-        longer the truth, so what a published snapshot has to be invalidated
-        against is the store: :func:`ledger.stamp` fingerprints the event rows
-        themselves and the declaration, so it moves on every write and on
-        nothing else.
-
-        **One part, and no file left in it** (issue #698). ``settings.yaml``'s
-        mtime used to join the key because the ``accounts:`` block was re-read
-        from it on every build; the accounts now live in the store, so the store
-        alone says whether a snapshot is stale — and a v4 file being touched can
-        no longer invalidate anything.
-
-        ``None`` when nothing has been recorded and nothing declared — a fresh
-        install with nothing to fingerprint yet.
-        """
-        return ledger.stamp(self._require_store())
-
     # ------------------------------------------------------------------ #
     # Publication (issue #658)
     # ------------------------------------------------------------------ #
@@ -698,7 +665,7 @@ class ConfigurationManager:
         # anything replays, so a build reads the store and only the store.
         accounts = accounts_module.declared_portfolio(opened)
 
-        cache_key = self._compute_cache_key()
+        cache_key = ledger.stamp(self._require_store())
         if not force and published is not None and published.cache_key == cache_key:
             app_logger.debug("Using cached configuration (the ledger is unchanged)")
             return published
@@ -781,23 +748,6 @@ class ConfigurationManager:
             List of share configurations.
         """
         return self.reload(force=force).shares
-
-    def get_first_acquisition_date(self, symbol: str) -> Optional[date]:
-        """Date of the first ``BUY`` **or ``GRANT``** for a symbol (issue #703).
-
-        From the published snapshot; ``None`` before anything is published.
-        """
-        snap = self._config
-        return snap.first_acquisition_date(symbol) if snap is not None else None
-
-    def get_events(self) -> Optional[List]:
-        """The published snapshot's events.
-
-        Returns:
-            List of events, or None if nothing has been published yet.
-        """
-        snap = self._config
-        return snap.events if snap is not None else None
 
 
 # ---------------------------------------------------------------------------

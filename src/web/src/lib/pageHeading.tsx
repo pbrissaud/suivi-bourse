@@ -18,7 +18,7 @@
 import { createContext, useContext, useLayoutEffect, useMemo, useState } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 
-export interface PageHeading {
+interface PageHeading {
   title: string
   subtitle: string | null
 }

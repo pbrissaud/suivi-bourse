@@ -182,7 +182,7 @@ function subjectOf(subject: string): Subject {
     : 'portfolio'
 }
 
-export interface NotificationsInput {
+interface NotificationsInput {
   /**
    * What the bell's colour says, or `null` while the read has not landed. A
    * card is a claim about the reader's installation and a read in flight is not

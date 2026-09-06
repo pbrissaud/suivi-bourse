@@ -15,7 +15,7 @@ from datetime import date
 
 import pytest
 
-from application.events import EventAggregator
+from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType, unit_cost
 from application.events.aggregator import AggregationError
 
@@ -159,7 +159,7 @@ def test_a_grant_price_that_cannot_be_one_reads_as_dilution(aggregator, price):
 
 
 def test_grant_flow_carries_the_declared_price(aggregator):
-    from application.events import InKindFlow
+    from application.events.schemas import InKindFlow
     events = [
         Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
               quantity=2, unit_price=50.0),

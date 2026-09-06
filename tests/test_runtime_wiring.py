@@ -140,7 +140,7 @@ def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
     record carries what this cycle read, which on a failure is nothing.
     """
     m = _metrics([_share()], store, mocker)
-    m._share_info_cache.observed("AAPL", {"marketState": "REGULAR"})
+    m._share_info_cache["AAPL"] = {"marketState": "REGULAR"}
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)

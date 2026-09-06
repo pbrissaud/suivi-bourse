@@ -855,7 +855,7 @@ class BackfillWorkload:
         # follows. *Learnt* and not *observed* (issue #847): the gesture is a
         # ``setdefault``, so a live fetch's fuller entry — market state, trading
         # period — is never overwritten by this poorer one.
-        self.info_cache.learned(symbol, info)
+        self.info_cache.setdefault(symbol, info)
         app_logger.info(f"{symbol} is quoted in {currency}")
         return currency, False
 

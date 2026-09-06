@@ -83,7 +83,7 @@ type FieldName = keyof Draft
 
 const EMPTY: Draft = { id: '', type: '', label: '' }
 
-export interface AccountFormProps {
+interface AccountFormProps {
   open: boolean
   /** The row being edited — `null` is a declaration. */
   account: Account | null

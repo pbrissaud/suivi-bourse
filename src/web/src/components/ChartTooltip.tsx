@@ -28,7 +28,7 @@ import { Tooltip } from 'recharts'
 
 import { useFormatters } from '@/lib/format'
 
-export interface ChartTooltipProps {
+interface ChartTooltipProps {
   /** How a value is written. The chart owns its unit; this owns the shape. */
   format: (value: number) => string
 }

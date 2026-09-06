@@ -84,14 +84,14 @@ import { receiptMessage } from '@/lib/receipts'
  * a flag the preview never carried would be a flag the server judges for the
  * first time under the button.
  */
-export interface Answer {
+interface Answer {
   correspondence: Correspondence
   /** *These are real orders, write them* — the rows the ledger already holds. */
   writeDuplicates: boolean
 }
 
 /** Nothing answered yet — the first preview's answer, and a reset. */
-export const NO_ANSWER: Answer = {
+const NO_ANSWER: Answer = {
   correspondence: NO_CORRESPONDENCE,
   writeDuplicates: false,
 }
@@ -115,7 +115,7 @@ export const NO_ANSWER: Answer = {
  * by it, so the reader can untick and go on instead of being left with *Annuler*
  * as their only move.
  */
-export interface Forecast {
+interface Forecast {
   /** The file read with the duplicates skipped: the census, and its figures. */
   file: ImportReceipt
   /** What the answer would write, or nothing at all where it is refused. */
@@ -337,7 +337,7 @@ export function useEventUpload(): EventUpload {
   }
 }
 
-export interface UploadZoneProps {
+interface UploadZoneProps {
   /** The gesture, from `useEventUpload` — held one level up (see above). */
   upload: EventUpload
   /**

@@ -42,7 +42,7 @@ import { EVENT_TYPES, type LedgerEvent, type LedgerEventType } from '@/lib/api'
  * bubble on this page exists to say, at the moment the reader is leaving it
  * blank.
  */
-export interface FieldSet {
+interface FieldSet {
   security: boolean
   quantity: boolean
   unitPrice: 'required' | 'optional' | 'none'
@@ -569,7 +569,7 @@ export const PAGE = 40
  * shorter than expected stays the defect it always was, which is why the count
  * is rendered beside the chips that made it.
  */
-export interface Reveal {
+interface Reveal {
   /** The rows to draw, in the order the reduction handed them over. */
   rows: readonly LedgerEvent[]
   /** How many of them are drawn — the first number of the sentence. */

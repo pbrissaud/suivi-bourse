@@ -34,7 +34,6 @@ from application import runtime_state
 from application import scheduling
 from application import scrape
 from application import settings_registry
-from application import share_info
 
 
 class Workloads:
@@ -138,7 +137,7 @@ class Workloads:
         # reference, and a later assignment to it would split the memory in two
         # — the scrape observing into one object while the backfill learns from
         # another.
-        info_cache = share_info.ShareInfoCache()
+        info_cache: Dict[str, Dict] = {}
 
         # The scrape workload (issue #847, :mod:`scrape`). The state that is
         # the scrape's alone — the #617 counters, the #628 sonde and their locks
@@ -217,11 +216,11 @@ class Workloads:
     # dictionaries they stand for.
 
     @property
-    def _share_info_cache(self) -> share_info.ShareInfoCache:
+    def _share_info_cache(self) -> Dict[str, Dict]:
         return self._scrape.info_cache
 
     @_share_info_cache.setter
-    def _share_info_cache(self, cache: share_info.ShareInfoCache) -> None:
+    def _share_info_cache(self, cache: Dict[str, Dict]) -> None:
         self._scrape.info_cache = cache
         self._backfill.info_cache = cache
 

@@ -104,7 +104,7 @@ const TERM_EXPLAIN: Record<(typeof SHEET_TERMS)[number], { body: MessageKey; anc
     dividends: { body: 'shares.dividends.explain', anchor: 'dividends' },
   }
 
-export interface ShareSheetProps {
+interface ShareSheetProps {
   row: ShareRow | null
   /**
    * The whole payload's rows — the breakdown is per `(account, symbol)` and this

@@ -17,7 +17,7 @@ from datetime import date
 import openpyxl
 import pytest
 
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events.aggregator import EventAggregator
 from application.events.loader import REPLAY_ORDER, EventLoaderError
 from application.events.schemas import EventType

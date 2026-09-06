@@ -52,7 +52,7 @@ export const ALLOCATION_SLICES = 8
 
 export type Ground = 'light' | 'dark'
 
-export interface RampEnds {
+interface RampEnds {
   /** Lightness at rank 1 → rank 12. Reversed between the two grounds. */
   lightness: [number, number]
   /** Chroma at rank 1 → rank 12. Falls with rank on both grounds. */
@@ -96,7 +96,7 @@ export interface RampEnds {
  * ADR-0029's. Every stop is asserted in sRGB in `lib/alloc.test.ts`, which is
  * what makes these four pairs measurements rather than tastes.
  */
-export const ALLOCATION_RAMP: Record<Ground, RampEnds> = {
+const ALLOCATION_RAMP: Record<Ground, RampEnds> = {
   light: { lightness: [0.48, 0.84], chroma: [0.09, 0.028], hue: 165 },
   dark: { lightness: [0.86, 0.42], chroma: [0.14, 0.03], hue: 165 },
 }

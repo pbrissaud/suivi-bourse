@@ -22,10 +22,9 @@ import pytest
 from application import perf_series
 from application import quotes
 from application import workloads
-from application.events import (
-    EventAggregator, EventValidator, Event, EventType, CashFlow, Account, Portfolio,
-    AccountMetricPoint, PortfolioTotalPoint,
-)
+from application.events.aggregator import EventAggregator
+from application.events.validator import EventValidator
+from application.events.schemas import Event, EventType, CashFlow, Account, Portfolio, AccountMetricPoint, PortfolioTotalPoint
 
 
 def _seed_price(store, symbol, day, price):
@@ -514,7 +513,7 @@ def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
     m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
                  Portfolio([Account("PEA", "PEA", "Mon PEA")]))
     m.backfill_delay = 0
-    m._share_info_cache.observed("NEW", {"currency": "EUR"})
+    m._share_info_cache["NEW"] = {"currency": "EUR"}
 
     empty_cycles = 0
 

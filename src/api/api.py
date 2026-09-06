@@ -46,7 +46,8 @@ from application import settings as settings_module
 from application import settings_registry
 from application import store as store_module
 from application import uploads
-from application.events import EventAggregator, Event, EventType
+from application.events.aggregator import EventAggregator
+from application.events.schemas import Event, EventType
 from application.events import export as events_export
 from application.events.aggregator import AggregationError
 from application.store_reads import PortfolioReader, chart_window
@@ -2465,17 +2466,12 @@ def _parse_window(default: timedelta = DEFAULT_WINDOW) -> Tuple[datetime, dateti
 def _parse_instant(value: Optional[str]) -> Optional[datetime]:
     """Parse an ISO-8601 date or datetime, always returning UTC-aware.
 
-    Accepts a bare date (``2024-01-15``) as midnight UTC, and tolerates the
-    ``Z`` suffix ``fromisoformat`` rejected before Python 3.11 — the app targets
-    3.10+, so the replacement stays.
+    Accepts a bare date (``2024-01-15``) as midnight UTC.
     """
     if not value:
         return None
-    text = value.strip()
-    if text.endswith('Z'):
-        text = text[:-1] + '+00:00'
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(value.strip())
     except ValueError:
         raise ValueError(f"Not an ISO-8601 instant: {value!r}")
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

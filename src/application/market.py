@@ -1,7 +1,7 @@
 """The market edge: the one module that talks to yfinance (issue #846).
 
 ``import yfinance`` appears here and nowhere else in the tree, and a test on the
-source holds that (``test_suite_conventions.py``). Everything the app asks of
+source holds that (``.github/scripts/conventions.sh``). Everything the app asks of
 Yahoo is one of the five gestures below; what comes back is already in the
 app's vocabulary, :mod:`market_info` having translated it — so no caller of
 this module ever sees a Yahoo key.

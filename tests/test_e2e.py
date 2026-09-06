@@ -29,7 +29,7 @@ from application import market
 from application import portfolio_view
 from application import quotes
 from application import store_reads
-from application.events import EventLoader
+from application.events.loader import EventLoader
 from application.events.aggregator import AggregationError
 from application.main import ConfigurationManager
 from application.workloads import Workloads
@@ -236,7 +236,7 @@ def test_backfill_writes_the_price_and_only_the_price(
     from application.events.aggregator import EventAggregator
     from datetime import date as _date
     held = EventAggregator().replay(
-        config_manager.get_events()
+        config_manager.current().events
     ).position_at("default", "AAPL", _date(2024, 6, 20))
     assert held["quantity"] == pytest.approx(AAPL_QUANTITY_BEFORE_SALE)
     assert held["cost_basis"] == pytest.approx(AAPL_BASIS_BEFORE_SALE)

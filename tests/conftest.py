@@ -6,7 +6,9 @@ application modules exactly like ``src/application/main.py`` does::
 
     from application import main
     from application import quotes
-    from application.events import EventLoader, EventValidator, EventAggregator
+    from application.events.loader import EventLoader
+    from application.events.validator import EventValidator
+    from application.events.aggregator import EventAggregator
     from application.events.schemas import Event, EventType, ShareState
 
 All fixtures below are project-wide (auto-discovered by any ``test_*.py`` under

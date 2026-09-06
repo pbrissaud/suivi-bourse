@@ -28,7 +28,7 @@ from application import portfolio_view
 from application import quotes
 from application import workloads
 from application.carrying import carrying_price
-from application.events import EventAggregator
+from application.events.aggregator import EventAggregator
 from application.events.schemas import Account, Event, EventType
 
 

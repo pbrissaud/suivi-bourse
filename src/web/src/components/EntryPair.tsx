@@ -49,7 +49,7 @@ export interface Entry {
   unavailable?: string
 }
 
-export interface EntryPairProps {
+interface EntryPairProps {
   /** Two, and the type says so: a pair with one entry is not this component. */
   entries: readonly [Entry, Entry]
   /**

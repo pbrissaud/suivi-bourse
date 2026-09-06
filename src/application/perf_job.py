@@ -69,7 +69,8 @@ from application import performance
 from application import quotes
 from application import runtime_state
 from application import store_reads
-from application.events import EventAggregator, AccountMetricPoint, PortfolioTotalPoint
+from application.events.aggregator import EventAggregator
+from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
 
 #: The application's own logger, by name rather than by import: :mod:`main`
 #: builds it (level, handler, formatter) and this module writes to the same

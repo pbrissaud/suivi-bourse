@@ -45,7 +45,7 @@ import { useI18n } from '@/lib/i18n'
 import { exportable } from '@/lib/imports'
 import type { LedgerFilters } from '@/lib/ledger'
 
-export interface ImportsBlockProps {
+interface ImportsBlockProps {
   /**
    * The upload gesture, held by the tab (#811). It comes down rather than being
    * made here because the zone is mounted in **two** places and the first

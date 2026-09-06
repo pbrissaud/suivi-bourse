@@ -37,7 +37,7 @@ from application import store_reads
 from application import settings as settings_module
 from application import settings_registry
 from application import workloads
-from application.events import EventAggregator
+from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
 
 
@@ -587,7 +587,7 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     each row has to be the one that row's figure came from.
     """
     metrics = _metrics(store, base_currency='EUR')
-    metrics._share_info_cache.observed('AAPL', {'currency': 'USD'})
+    metrics._share_info_cache['AAPL'] = {'currency': 'USD'}
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
@@ -630,7 +630,7 @@ def test_a_paris_bar_is_converted_at_the_rate_of_the_day_it_is_filed_under(
     was worth two different rates depending on which pass got to it.
     """
     metrics = _metrics(store, shares=[_share('AI.PA')], base_currency='USD')
-    metrics._share_info_cache.observed('AI.PA', {'currency': 'EUR'})
+    metrics._share_info_cache['AI.PA'] = {'currency': 'EUR'}
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     # The bar as yfinance hands it over: tz-aware, on the exchange's clock.
     paris = pd.DataFrame(
@@ -675,8 +675,7 @@ def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
     metrics = _metrics(store, base_currency='EUR')
     # What the translation now answers for a payload that carries no key at
     # all — the whole of the fix, read from the cache the backfill reads.
-    metrics._share_info_cache.observed(
-        'AAPL', market_info.quote_attributes({}))
+    metrics._share_info_cache['AAPL'] = market_info.quote_attributes({})
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
@@ -748,7 +747,7 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
              for call in metrics.scheduler.add_job.call_args_list}
     assert armed == {scrape._scrape_job_id('AAPL')}
     assert metrics._held_symbols() == {'AAPL'}
-    assert 'fx_rates' not in store.table_names()
+    assert 'fx_rates' not in [row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]
     assert store.query(
         "SELECT count(*) FROM symbol WHERE symbol LIKE '%=X'") == [(0,)]
 
@@ -1510,7 +1509,7 @@ def _met_with_its_market_shut(store, monkeypatch, info=None,
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
-    metrics._share_info_cache.observed('AAPL', dict(_SHUT_MARKET_INFO))
+    metrics._share_info_cache['AAPL'] = dict(_SHUT_MARKET_INFO)
     metrics._backfill_backward('AAPL', datetime(2024, 6, 1, tzinfo=UTC),
                                datetime(2024, 6, 4, tzinfo=UTC))
     return metrics, instrument
@@ -1733,7 +1732,7 @@ def test_a_failed_request_for_a_unit_alone_backs_off_and_concludes_nothing(
 # =========================================================================== #
 
 #: What a store created before #845 can hold in its currency column, spelled out
-#: of its halves rather than written: `test_suite_conventions` polices the
+#: of its halves rather than written: `.github/scripts/conventions.sh` polices the
 #: literal over `tests/` as well as over `src/`, and a fixture that names it is
 #: a fixture teaching that Yahoo answers it — the belief two comments in the
 #: product carried for six months, and the one that produced the defect.

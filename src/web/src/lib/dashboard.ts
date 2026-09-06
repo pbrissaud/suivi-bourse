@@ -74,7 +74,7 @@ import { isClosed, type ShareRow } from '@/lib/shares'
  * reads it is made of refused, so there is nothing to draw and the page says
  * why, where the figures would have been. There is no band above it.
  */
-export type DashboardState = 'pending' | 'failed' | 'empty' | 'portfolio'
+type DashboardState = 'pending' | 'failed' | 'empty' | 'portfolio'
 
 export function dashboardState(input: {
   failed: boolean
@@ -280,7 +280,7 @@ export function amountsValues(rows: readonly AmountsRow[]): (number | null)[] {
 // ------------------------------------------------------------------------- //
 
 /** Five each way. Ten lines is a block; twenty is the table one page down. */
-export const MOVERS_ROWS = 5
+const MOVERS_ROWS = 5
 
 /**
  * **One list, ordered by what moved most** (#838).
@@ -296,7 +296,7 @@ export const MOVERS_ROWS = 5
  * position sold this morning is neither in the list nor in the sentence under
  * it.
  */
-export interface MoversReading {
+interface MoversReading {
   rows: Mover[]
   others: number
   unchanged: number

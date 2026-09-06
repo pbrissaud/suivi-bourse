@@ -135,14 +135,14 @@ advisories together. There is no banner and no status dot.
 ## The rules that are expensive to break
 
 - **Declaration and derived state never share a row** (ADR-0006): every table has
-  exactly one writer, and several tests assert that on the source. **`event` has
+  exactly one writer, and `.github/scripts/conventions.sh` asserts that on the source. **`event` has
   one writer too, and it is `entries.py`** (ADR-0032): there is one population of
   rows, so a line that came out of a file is corrected and deleted like any
   other, and no code anywhere asks a row where it came from. **One named
   exception apart, `reassignment.py`** (#725): it rewrites the `account` column
   in bulk, addresses no row by its key, and is a module of its own precisely so
-  that a reader counting the writers finds it. `tests/test_entries.py` names the
-  two on the source, and there is no third.
+  that a reader counting the writers finds it. `.github/scripts/conventions.sh`
+  names the two on the source, and there is no third.
 - **The DDL is applied with `IF NOT EXISTS` and there is no migration
   machinery.** A new column would exist on no store created before it — so derive
   at read time rather than adding one.
@@ -157,12 +157,11 @@ advisories together. There is no banner and no status dot.
   fabricate appears nowhere in `src/` nor in `tests/` — a fixture naming it
   would re-teach the belief that produced the defect.
 - **There is one clock, and it is the product's**, and every read of it is
-  UTC-qualified — `test_suite_conventions.py` holds that on the source. **And
+  UTC-qualified — `.github/scripts/conventions.sh` holds that on the source. **And
   one repair of what comes back from the store**, in `instants.py` (stdlib only,
   so a pure view module can import it): `utc` normalizes an instant, `iso`
-  serializes one and leaves a calendar day a day. The same file refuses a ninth
-  private copy of it (#843) — by name for the repair, and by shape for the
-  serialization, so a copy under a new name is refused too.
+  serializes one and leaves a calendar day a day. The same script refuses a ninth
+  private copy of it (#843), by name.
 - **One faked *external* edge in the whole Python suite, and it is yfinance**; one
   on the front, and it is HTTP (MSW). The store is real, in `tmp_path`. Assertions
   about **behaviour** go on the store's contents, on the API's JSON or on the

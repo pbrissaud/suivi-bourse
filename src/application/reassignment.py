@@ -69,7 +69,7 @@ from logfmt_logger import getLogger
 
 from application import accounts as accounts_module
 from application import ledger
-from application.events import EventAggregator
+from application.events.aggregator import EventAggregator
 from application.events.schemas import DEFAULT_ACCOUNT
 
 logger = getLogger("reassignment")

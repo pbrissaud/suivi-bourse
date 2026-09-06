@@ -388,13 +388,6 @@ class Store:
     # Shape and content
     # ------------------------------------------------------------------ #
 
-    def table_names(self) -> List[str]:
-        """The tables this file actually carries, sorted."""
-        rows = self.query(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = 'main' ORDER BY table_name")
-        return [row[0] for row in rows]
-
     def setting(self, key: str):
         """The value of a dial: the stored row, or the code's default.
 
