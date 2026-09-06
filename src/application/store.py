@@ -4,7 +4,7 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import duckdb
 from logfmt_logger import getLogger
@@ -144,6 +144,36 @@ class Store:
         self.path = path
         self._connection = connection
         self._lock = threading.RLock()
+        #: The high-water mark per table — memory, never a row (ADR-0027).
+        self._reserved: Dict[str, int] = {}
+
+    def reserve(self, table: str, count: int = 1) -> int:
+        """The first of ``count`` fresh keys for ``table`` (ADR-0027, #785).
+
+        **The one allocator, and it only ever climbs.** ``max(id) + 1`` handed
+        the highest deleted row's key straight to the next writer, so a client
+        holding a key it had just read could correct or delete *the row that
+        took its place*. This is seeded from ``max(id)`` on first use and never
+        descends afterwards, which is what makes ``UnknownEntry`` mean what it
+        says: a write aiming at a row that has gone is refused rather than
+        landing on a stranger.
+
+        **The guarantee is scoped to the life of the process.** The mark is
+        memory: a restart re-seeds from ``max(id)`` and can reissue a key freed
+        before it. A client holding a key across a restart is holding it across
+        an app that went down, which is not the window this buys.
+
+        It takes the store's own lock — reentrant, so its callers pay nothing —
+        rather than trusting every caller to already hold one.
+        """
+        if table not in TABLES:
+            raise KeyError(f"no table named {table!r}")
+        with self._lock:
+            mark = self._reserved.get(table)
+            if mark is None:
+                mark = self.query(f'SELECT coalesce(max(id), 0) FROM {table}')[0][0]
+            self._reserved[table] = mark + count
+            return mark + 1
 
     @contextmanager
     def transaction(self):

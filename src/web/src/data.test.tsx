@@ -983,6 +983,52 @@ describe('a row is removed at the unit', () => {
       within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
     ).toBeInTheDocument()
   })
+
+  it('says the row left the ledger elsewhere, and re-reads it under the reader', async () => {
+    // **#785's criterion, on the reachable half.** The list is 30 s old and the
+    // row it shows was deleted in another tab; the `404` that comes back is not
+    // *this does not exist* — a sentence that contradicts what the reader is
+    // looking at — but *it was deleted elsewhere*. And the ledger is re-read on
+    // the failure, so the phantom row is gone the moment the box comes down.
+    let gone = false
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    server.use(
+      http.get(ROUTES.events, () =>
+        HttpResponse.json(aLedgerPayload(gone ? ledgerEvents().slice(0, 3) : ledgerEvents())),
+      ),
+      http.delete(`${ROUTES.events}/:id`, () => {
+        gone = true
+        return HttpResponse.json(
+          { status: 404, type: PROBLEM_TYPES.notFound, title: 'Not found' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        )
+      }),
+    )
+
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Supprimer cet événement',
+      }),
+    )
+
+    const box = await screen.findByRole('dialog')
+    expect(await within(box).findByRole('status')).toHaveTextContent(
+      'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs. ' +
+        'Rien n’a été modifié ici, et le grand livre vient d’être relu.',
+    )
+    // Not the generic sentence, which is the whole point of the second key.
+    expect(within(box).queryByText(/n’existe pas/)).not.toBeInTheDocument()
+
+    // The table is `aria-hidden` under the overlay, so what the re-read bought
+    // is read where the reader reads it: the box comes down on a ledger that
+    // no longer shows the row it was about.
+    await user.click(within(box).getByRole('button', { name: 'Le garder' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+  })
 })
 
 describe('the create form, which is the onboarding', () => {
@@ -1082,6 +1128,43 @@ describe('the create form, which is the onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire Prix unitaire' }))
     expect(await screen.findByText(/ajoute seulement des titres/)).toBeInTheDocument()
     expect(screen.getByText(/vos versements et dans votre base de coût/)).toBeInTheDocument()
+  })
+
+  it('says a corrected row left the ledger elsewhere, in the panel that holds it', async () => {
+    // The same news, on the other gesture that addresses a row by its key
+    // (#785): *corriger* rewrites what the reader was looking at, so a `404`
+    // here means the row went — not that the address was never anything.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let gone = false
+    server.use(
+      http.get(ROUTES.events, () =>
+        HttpResponse.json(aLedgerPayload(gone ? ledgerEvents().slice(0, 3) : ledgerEvents())),
+      ),
+      http.patch(`${ROUTES.events}/:id`, () => {
+        gone = true
+        return HttpResponse.json(
+          { status: 404, type: PROBLEM_TYPES.notFound, title: 'Not found' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        )
+      }),
+    )
+
+    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+    expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+
+    const panel = screen.getByRole('dialog')
+    expect(await within(panel).findByRole('status')).toHaveTextContent(
+      'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs. ' +
+        'Rien n’a été modifié ici, et le grand livre vient d’être relu.',
+    )
+    // The panel stays open holding what was typed — the reader has not lost it.
+    expect(screen.getByLabelText('Quantité')).toHaveValue('2')
+
+    await user.click(within(panel).getByRole('button', { name: 'Fermer' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
   })
 
   it('records the event and puts it in the ledger', async () => {

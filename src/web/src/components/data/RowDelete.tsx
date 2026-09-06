@@ -36,7 +36,7 @@ import { api, type LedgerEvent } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { identityOf } from '@/lib/ledger'
-import { problemSentence } from '@/lib/problem'
+import { entryGone, entrySentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
 interface RowDeleteProps {
@@ -60,6 +60,13 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
       // replays synchronously before answering — so what is invalidated is
       // everything rather than a list somebody has to keep in step.
       void queryClient.invalidateQueries()
+    },
+    onError: (error) => {
+      // **The row left the ledger somewhere else** (#785): nothing was written,
+      // and what is stale is this page. Re-reading is what makes the sentence
+      // true — the phantom row goes while the reader is still looking at the
+      // box that named it.
+      if (entryGone(error)) void queryClient.invalidateQueries()
     },
   })
 
@@ -99,7 +106,7 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
 
             {/* Rendered **here** and not on the page: the box stays open on a
                 failure, and everything behind the overlay is `aria-hidden`. */}
-            {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
+            {remove.error ? <Refusal>{entrySentence(t, remove.error)}</Refusal> : null}
 
             <div className="flex flex-wrap justify-end gap-2">
               <Button

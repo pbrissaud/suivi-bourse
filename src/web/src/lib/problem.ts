@@ -155,6 +155,37 @@ export function problemMessage(error: unknown): {
 }
 
 /**
+ * **A write aimed at a row that has gone** (#785, ADR-0027).
+ *
+ * The two gestures that address an event by its key — the delete box and the
+ * correction — are the only callers that can meet a `notFound` at all: the key
+ * they send came off a row the server itself served. So the `404` says one
+ * thing here and it is not *this does not exist*, which is the generic
+ * sentence and reads as the app contradicting what the reader is looking at.
+ * It says the row left the ledger somewhere else — another tab, another
+ * session — while this page held a list 30 s old.
+ *
+ * The server's allocator is what makes that reading safe: a key it retired is
+ * not handed to the next writer for the life of its process, so a `404` is a
+ * row that is *gone* rather than a row that has been replaced.
+ */
+export function entryGone(error: unknown): boolean {
+  return error instanceof ApiProblem && error.type === PROBLEM_TYPES.notFound
+}
+
+/**
+ * {@link problemSentence} for those same two gestures: the *gone* sentence when
+ * the row left, and the table's otherwise. Written once, because the branch is
+ * the same one in both surfaces and a second copy would drift.
+ */
+export function entrySentence(
+  t: (key: MessageKey, values?: MessageValues) => string,
+  error: unknown,
+): string {
+  return entryGone(error) ? t('problem.entryGone') : problemSentence(t, error)
+}
+
+/**
  * {@link problemMessage} rendered, for the callers that hold a `t` and want a
  * string. One line, and written once: a component doing the two steps itself is
  * a component that can forget to pass the values, and the sentence would then

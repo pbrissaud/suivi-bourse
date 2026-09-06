@@ -66,7 +66,7 @@ import {
 } from '@/lib/accounts'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
-import { problemSentence } from '@/lib/problem'
+import { entryGone, entrySentence } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
@@ -160,6 +160,12 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
       // would drift from the pages reading them.
       void queryClient.invalidateQueries()
       onClose()
+    },
+    onError: (error) => {
+      // The row being corrected left the ledger somewhere else (#785): the
+      // panel stays open holding what was typed, and the list behind it is
+      // re-read so the row it is about stops being displayed.
+      if (entryGone(error)) void queryClient.invalidateQueries()
     },
   })
 
@@ -475,7 +481,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 )}
               </Field>
 
-              {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+              {write.error ? <Refusal>{entrySentence(t, write.error)}</Refusal> : null}
 
               <div className="flex gap-2">
                 {/* Withheld rather than offered and refused — the same rule the

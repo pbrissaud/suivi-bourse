@@ -49,8 +49,7 @@ def create(store, draft: Event) -> Event:
         _refuse(store, event)
         account = event.account or DEFAULT_ACCOUNT
 
-        (next_id,) = store.query(
-            'SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
+        next_id = store.reserve('event')
         _insert_symbol(store, event)
         store.execute(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
@@ -96,8 +95,7 @@ def create_many(store, drafts: Sequence[Event], *,
         if not settled:
             return []
 
-        (next_id,) = store.query(
-            'SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
+        next_id = store.reserve('event', len(settled))
         store.executemany(
             'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
             [[symbol] for symbol in sorted({event.symbol for event in settled

@@ -27,7 +27,26 @@ CASH_EVENT_TYPES = frozenset({EventType.DEPOSIT, EventType.WITHDRAWAL})
 
 @dataclass
 class Event:
-    """Represents a single portfolio event."""
+    """One dated line of the ledger — and ``id`` is its **address** (ADR-0027).
+
+    A key names one row for as long as that row lives, and promises nothing
+    beyond it: the id is absent from the CSV export, so an event exported and
+    re-imported comes back under another one.
+
+    What makes an address safe to hold between the read and the write is not
+    the key — it is **the allocator**. :meth:`store.Store.reserve` climbs and
+    never descends, so a deleted row's key is not handed to the next writer,
+    and a write aiming at a row that has gone meets ``UnknownEntry`` rather
+    than landing on a stranger.
+
+    That is why #662's apparatus — the opaque token over ``(file, sheet, row)``,
+    the content fingerprint as an ``ETag`` and its ``409`` — has no successor
+    here: the refusal it existed to buy is bought by the allocator, and bought
+    **for the life of the process**. A restart re-seeds from ``max(id)`` and can
+    reissue a key freed before it; a client holding a key across a restart is
+    holding it across an app that went down. Were that bound ever to prove too
+    short, the token is what comes back.
+    """
     date: date
     event_type: EventType
     symbol: Optional[str] = None

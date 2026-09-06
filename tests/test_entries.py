@@ -18,6 +18,7 @@ import pytest
 from application import accounts as accounts_module
 from application import entries
 from application import ledger
+from application import store as store_module
 from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.aggregator import AggregationError
@@ -506,3 +507,57 @@ def test_the_duplicate_key_is_declared_in_no_constraint_of_the_store(store):
     assert enforced == [('PRIMARY KEY', ['id'])]
     keyed = {column for _, columns in enforced for column in columns}
     assert keyed.isdisjoint(entries.DUPLICATE_KEY_COLUMNS)
+
+
+# --------------------------------------------------------------------------- #
+# A key names a row for as long as the row lives (ADR-0027, #785)
+# --------------------------------------------------------------------------- #
+
+def test_a_deleted_key_is_not_reissued_to_the_next_row(store):
+    """The defect, at the unit: the highest row's key freed nothing.
+
+    Three rows, the last removed, a fourth typed — and it takes 4. Under
+    ``max(id) + 1`` it took 3, so an open tab whose *delete* still named row 3
+    deleted an event it had never displayed.
+    """
+    keys = [entries.create(store, _draft(notes=str(day))).id
+            for day in (1, 2, 3)]
+    assert keys == [1, 2, 3]
+
+    entries.remove(store, keys[-1])
+
+    assert entries.create(store, _draft(notes='after')).id == 4
+
+
+def test_a_deleted_key_is_not_reissued_to_the_next_file(store, tmp_path):
+    """The same, through the gesture that takes a **range** of keys.
+
+    ``create_many`` allocated its range the same way, so a file landing after a
+    removal re-used the released key and every row of the file shifted onto
+    keys the reader had just seen. The range starts past the high-water mark
+    instead.
+    """
+    _upload(store, tmp_path, body=ONE_BUY + TWO_MORE)
+    assert [event.id for event in ledger.read_events(store)] == [1, 2, 3]
+
+    entries.remove(store, 3)
+    entries.remove(store, 2)
+
+    landed = _upload(store, tmp_path, body=ONE_BUY.replace('AAPL', 'MSFT'),
+                     name='again.csv')
+    assert [event.id for event in landed] == [4]
+
+
+def test_the_mark_is_the_process_and_a_reopen_re_seeds_it(store):
+    """The bound ADR-0027 accepted, asserted rather than left to be assumed.
+
+    The mark is memory: a second :class:`Store` over the same file starts from
+    ``max(id)``, and the key the first one retired is issued again. That is the
+    window a client loses by holding a key across a restart — which is holding
+    it across an app that went down.
+    """
+    entries.create(store, _draft())
+    entries.remove(store, 1)
+    assert store.reserve('event') == 2
+
+    assert store_module.open_store(store.path).reserve('event') == 1
