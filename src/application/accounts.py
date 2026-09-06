@@ -22,7 +22,8 @@ CSV_ENCODING = 'utf-8-sig'
 
 
 class AccountSourceError(Exception):
-    """What is being declared cannot stand: no id, or no type."""
+    """What is being declared cannot stand: no id, no type, or an id no route
+    can carry."""
 
 
 class AccountInUse(Exception):
@@ -159,6 +160,15 @@ def create_account(store, account_id: str, account_type: str,
     account_type = _text(account_type)
     if not account_id:
         raise AccountSourceError("id is required")
+    if '/' in account_id:
+        # The id is the account's **address**: it is what the four
+        # ``<account_id>`` routes match on, and Flask's default converter stops
+        # at a slash. An id holding one inserts and is then unreachable — no
+        # history, no reassignment, no rename and no delete — and ADR-0013
+        # refuses the cascade that would clean it up (issue #861).
+        raise AccountSourceError(
+            "id cannot contain '/': it is the account's address in the app's "
+            "own URLs, and a slash there names a route that does not exist")
     if not account_type:
         raise AccountSourceError("type is required")
     if account_id in account_ids(store):

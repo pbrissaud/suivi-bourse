@@ -2693,6 +2693,26 @@ def test_a_declaration_conflict_keeps_the_conflict_type(tmp_path):
         assert response.get_json()['type'] == problem.TYPE_CONFLICT
 
 
+def test_an_account_id_holding_a_slash_is_refused_by_the_route(tmp_path):
+    """The id is the address, and the four ``<account_id>`` routes stop at a slash.
+
+    Inserted, ``pea/2024`` was unreachable and undeletable: its history, its
+    reassignment, its rename and its removal all name a route Flask's default
+    converter never matches (issue #861).
+    """
+    client = build_client(tmp_path, events=ACCOUNTS_EVENTS,
+                          accounts=ACCOUNTS_FILE)
+
+    refused = client.post('/api/accounts', json={'id': 'pea/2024', 'type': 'PEA'})
+
+    assert refused.status_code == 400
+    body = refused.get_json()
+    assert body['type'] == problem.TYPE_BAD_REQUEST
+    assert '/' in body['detail']
+    listed = client.get('/api/accounts').get_json()['accounts']
+    assert not any(account['id'] == 'pea/2024' for account in listed)
+
+
 def test_a_typed_event_is_exported_like_any_other_row(tmp_path):
     """Provenance is deliberately not exported (issue #710).
 
