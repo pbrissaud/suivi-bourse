@@ -19,8 +19,10 @@ import {
   termCarriesSign,
   termIsRendered,
   termRendering,
+  termTone,
   type Sum,
 } from '@/lib/gain'
+import { signClass } from '@/lib/sign'
 import { aPosition, defaultPositions } from '@/test/factories'
 
 /** A known sum, spelled once so the arithmetic below stays readable. */
@@ -244,5 +246,12 @@ describe('what the terms are allowed to do on screen', () => {
     expect(termRendering(sold, 'unrealised')).toBe(DASH)
     expect(termRendering(sold, 'realised')).toBe(FIGURE)
     expect((gainTotal(sold) as { value: number }).value).toBeCloseTo(80, 2)
+
+    // And the tone follows the **rendering** and not the amount (#860). The
+    // amount here is a known `0` — the state the two predicates diverged on —
+    // so a caller asking `amount === null ?` painted this dash in the colour of
+    // a figure, above rows painting theirs in the grey of absence.
+    expect(termAmount(sold, 'unrealised')).toBe(0)
+    expect(termTone(sold, 'unrealised')).toBe(signClass(null))
   })
 })

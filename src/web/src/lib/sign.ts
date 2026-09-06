@@ -19,6 +19,8 @@
  * colouring them is decoration that steals the signal from the two terms that
  * do carry it.
  */
+import type { Rendering } from '@/lib/absence'
+
 export type Sign = 'gain' | 'loss' | 'zero' | 'absent'
 
 export function signOf(value: number | null | undefined): Sign {
@@ -39,4 +41,9 @@ const CLASSES: Record<Sign, string> = {
 
 export function signClass(value: number | null | undefined): string {
   return CLASSES[signOf(value)]
+}
+
+/** The colour of a cell whose content is not a number at all — the one predicate (#860). */
+export function toneOf(rendering: Rendering, value: number | null): string {
+  return rendering.kind === 'figure' ? signClass(value) : signClass(null)
 }

@@ -64,7 +64,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { positionRenderings, renderFigure, type Rendering } from '@/lib/absence'
+import { positionRenderings, renderFigure } from '@/lib/absence'
 import type { DocsAnchor } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { sumRendering } from '@/lib/gain'
@@ -81,13 +81,8 @@ import {
   type ShareSort,
   type SortColumn,
 } from '@/lib/shares'
-import { signClass } from '@/lib/sign'
+import { signClass, toneOf } from '@/lib/sign'
 import { cn } from '@/lib/utils'
-
-/** The colour of a cell whose content is not a number at all. */
-function toneOf(rendering: Rendering, value: number | null): string {
-  return rendering.kind === 'figure' ? signClass(value) : signClass(null)
-}
 
 /**
  * The four column headers that rest on a convention — and only four. `Cours`

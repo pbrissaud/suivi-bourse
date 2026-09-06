@@ -83,9 +83,9 @@ import {
   portfolioTerms,
   sumRendering,
   termAmount,
-  termCarriesSign,
   termIsRendered,
   termRendering,
+  termTone,
   type GainTermName,
 } from '@/lib/gain'
 import { dayMove } from '@/lib/dashboard'
@@ -327,17 +327,10 @@ export function DashboardHead({
                     () => f.currency(value, currency),
                     t,
                   )}
-                  // Colour only where the sign can turn. A dividend received is
-                  // never negative and a transfer fee never positive; painting them
-                  // steals the signal from the red of a realised loss. An absent
-                  // value keeps the grey of absence whatever the term.
-                  valueClassName={
-                    value === null
-                      ? signClass(null)
-                      : termCarriesSign(term)
-                        ? signClass(value)
-                        : signClass(0)
-                  }
+                  // Colour only where the sign can turn, and absence wherever
+                  // the *rendering* says absence — both decided in `gain.ts`,
+                  // once for the four surfaces (#860).
+                  valueClassName={termTone(terms, term)}
                 />
               )
             })}

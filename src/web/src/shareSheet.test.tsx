@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
+  aClosedPosition,
   aPosition,
   aPositionsPayload,
   fundamentalsOf,
@@ -161,6 +162,40 @@ describe('the per-account breakdown', () => {
     expect(rows[0]).toHaveTextContent(/alpha/)
     expect(rows[0]).toHaveTextContent(/220,00/)
     expect(rows[1]).toHaveTextContent(/330,00/)
+  })
+})
+
+describe('the same dash is the same grey (#860)', () => {
+  it('paints the tile and the rows of a sold-out share alike', async () => {
+    // The state the two predicates diverged on: every line of the share is
+    // closed, so `holdsPosition` is false while `unrealised` is a **known**
+    // zero. The tile branched on the amount — `0`, the ordinary text colour —
+    // and the rows on the rendering — the em dash, the grey of absence. One
+    // dash, one column, two greys.
+    const { user } = renderShares([
+      ...sharesPortfolio(),
+      aClosedPosition({ account: 'alpha', symbol: 'ZZF', name: 'Zeta Phi', realised: 70, closed_at: '2025-06-01' }),
+      aClosedPosition({ account: 'beta', symbol: 'ZZF', name: 'Zeta Phi', realised: 30, closed_at: '2025-07-01' }),
+    ])
+    await waitFor(() =>
+      expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?300,00/),
+    )
+    // A sold-out share is reached through the fold, which is where it lives.
+    await user.click(screen.getByRole('button', { name: /position(s)? soldée(s)?/ }))
+    await user.click(screen.getByRole('button', { name: 'Zeta Phi' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Zeta Phi' })
+
+    const tile = within(sheetHead(sheet)).getByRole('group', { name: 'Latente' })
+    const cells = within(within(sheet).getByRole('table', { name: 'Ce titre, compte par compte' }))
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[4] as HTMLElement)
+
+    // Both read the em dash, and both wear the grey of absence — the class the
+    // rows already had, which is the one a dash takes.
+    const tones = [within(tile).getByText('—'), ...cells].map((node) => node.className)
+    for (const tone of tones) expect(tone).toContain('text-muted-foreground')
+    for (const cell of cells) expect(cell).toHaveTextContent('—')
   })
 })
 
