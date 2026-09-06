@@ -40,9 +40,6 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
 
-/** The window the server measures over — the strip always has this many slots. */
-const WINDOW_MONTHS = 12
-
 interface InvestmentRhythmProps {
   rhythm: InvestmentRhythmResponse | null
   failure?: ReadFailure | null
@@ -123,8 +120,6 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
     const [y, m] = month.split('-')
     return year ? `${f.month(y, Number(m))} ${y}` : f.month(y, Number(m))
   }
-  const first = months[0]
-  const last = months[months.length - 1]
 
   return (
     <div className="min-w-48 max-w-2xl flex-1">
@@ -148,7 +143,7 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
               key={one.month}
               title={said}
               className="flex flex-col items-center gap-1.5"
-              style={index === 0 ? { gridColumnStart: WINDOW_MONTHS - months.length + 1 } : undefined}
+              style={index === 0 ? { gridColumnStart: 13 - months.length } : undefined}
             >
               <span className="sr-only">{said}</span>
               <span aria-hidden className="flex h-14 w-full max-w-10 items-end">
@@ -159,7 +154,7 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
                       : 'block w-full rounded-t-[3px] bg-price'
                   }
                   style={
-                    one.amount === null || peak <= 0
+                    one.amount === null
                       ? undefined
                       : { height: `${Math.max(6, (one.amount / peak) * 100)}%` }
                   }
@@ -175,8 +170,8 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
       {/* Under `md` the twelve names do not fit, and the two ends say the extent. */}
       {months.length < 2 ? null : (
         <p aria-hidden className="mt-1.5 flex justify-between text-2xs text-muted-foreground md:hidden">
-          <span>{label(first.month)}</span>
-          <span>{label(last.month)}</span>
+          <span>{label(months[0].month)}</span>
+          <span>{label(months.at(-1)!.month)}</span>
         </p>
       )}
     </div>

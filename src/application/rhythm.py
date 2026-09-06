@@ -76,13 +76,14 @@ def _figures(events: Iterable[Event], now: datetime) -> Figures:
                        months_observed=0, dispersion=None)
 
     by_month = _monthly_amounts(events, observed)
-    amounts = [by_month[key] for key in observed if key in by_month]
+    months = tuple((_label(key), by_month.get(key)) for key in observed)
+    amounts = [amount for _, amount in months if amount is not None]
     return Figures(
         monthly_amount=median(amounts) if amounts else None,
         months_covered=len(amounts),
         months_observed=len(observed),
         dispersion=_dispersion(amounts),
-        months=tuple((_label(key), by_month.get(key)) for key in observed),
+        months=months,
     )
 
 

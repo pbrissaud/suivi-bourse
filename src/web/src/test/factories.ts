@@ -635,13 +635,10 @@ export function aRhythm(
     months_observed: 12,
     dispersion: 0.18,
     // March 2025 to February 2026, every other month bought.
-    months: Array.from({ length: 12 }, (_, offset) => {
-      const index = 2025 * 12 + 2 + offset
-      return {
-        month: `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`,
-        amount: offset % 2 === 0 ? [400, 500, 500, 620, 500, 480][offset / 2] : null,
-      }
-    }),
+    months: Array.from({ length: 12 }, (_, offset) => ({
+      month: new Date(Date.UTC(2025, 2 + offset)).toISOString().slice(0, 7),
+      amount: offset % 2 === 0 ? [400, 500, 500, 620, 500, 480][offset / 2] : null,
+    })),
   }
   return {
     base_currency: 'EUR',
