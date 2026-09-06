@@ -139,12 +139,20 @@ class PerfJob:
 
             oldest_priced = {symbol: pairs[0][0]
                              for symbol, pairs in price_pairs.items() if pairs}
+            # The two halves of ADR-0004's domain, on a **terminal** symbol:
+            # one never quoted at all, which blocks nothing; one quoted from a
+            # day later than its acquisition, which blocks nothing before that
+            # day (issue #861). `compute_account` already values both at the
+            # carrying price — the horizon is what refused them.
             settled = {symbol for symbol in carried
                        if symbol not in first_quoted}
+            carried_from = {symbol: first_quoted[symbol] for symbol in carried
+                            if symbol in first_quoted}
             writable = {
                 account.id: performance.account_horizon(
                     account_holding_windows(timeline, account.id, today),
-                    oldest_priced, settled, start=start, ceiling=today)
+                    oldest_priced, settled, carried_from=carried_from,
+                    start=start, ceiling=today)
                 for account in declared
             }
             named = {event.account for event in events if event.account}

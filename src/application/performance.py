@@ -45,19 +45,37 @@ class Horizon(NamedTuple):
 def account_horizon(windows: Mapping[str, Tuple[date, date]],
                     oldest_priced: Mapping[str, date],
                     settled: Collection[str] = (), *,
+                    carried_from: Optional[Mapping[str, date]] = None,
                     start: date, ceiling: date) -> Horizon:
-    """The days this account's figures may be written on."""
+    """The days this account's figures may be written on.
+
+    ``settled`` names the symbols that block nothing at all: their backfill is
+    terminal and no quote of them was ever observed, so every day they were held
+    is carried at cost (ADR-0004) and none of them is a hole.
+
+    ``carried_from`` is the same rule applied to the **other half** of that set
+    — a terminal symbol whose first quote is *later* than its acquisition
+    (issue #861). Those first days will never have a price either, and
+    :func:`compute_account` already values them at the carrying price; only the
+    horizon refused them, blocking from the acquisition. It now blocks from the
+    symbol's first quoted day, which leaves the *waiting* case untouched: a
+    symbol quoted from one day and converted only from a later one still blocks
+    the range between the two, because a quote was observed there and its
+    conversion is coming.
+    """
     day = timedelta(days=1)
+    quoted_from = carried_from or {}
     blocked: List[Tuple[date, date]] = []
     for symbol, (acquired, last_held) in windows.items():
         if symbol in settled:
             continue
+        first = max(acquired, quoted_from.get(symbol, acquired))
         oldest = oldest_priced.get(symbol)
         unpriced = (last_held if oldest is None
                     else min(oldest - day, last_held))
-        if unpriced < acquired:
+        if unpriced < first:
             continue
-        blocked.append((acquired, unpriced))
+        blocked.append((first, unpriced))
 
     if not blocked:
         return Horizon(None, None)

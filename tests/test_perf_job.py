@@ -24,13 +24,14 @@ Prior art: ``tests/test_perf_price_source.py``, ``tests/test_replay_perf.py``,
 ``tests/test_performance.py``.
 """
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from application import ledger
 from application import main
 from application import perf_job
+from application import quotes
 from application import workloads
 from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
@@ -47,6 +48,12 @@ _TODAY = date(2024, 6, 20)
 _OPENED = date(2024, 1, 1)
 _ACQUIRED = date(2024, 1, 2)
 _CONVERTED = date(2024, 6, 10)
+
+#: A security whose market has no session before the 16th — fourteen days after
+#: the acquisition — and whose conversion lands six days after that. The two
+#: halves of a terminal line quoted late (issue #861).
+_LISTED = date(2024, 1, 16)
+_RATED = date(2024, 1, 22)
 
 
 class _ConfigManager:
@@ -208,6 +215,66 @@ def test_a_line_converted_late_blocks_the_years_before_the_conversion(
     assert [row for row in written if row[1] == 0.0] == []
     assert dict((day, holdings) for day, holdings, _ in written)[_TODAY] \
         == pytest.approx(10 * 120.0)
+
+
+def test_a_terminal_line_quoted_late_carries_the_days_before_its_first_quote(
+        store, mocker, declare_ledger):
+    """ADR-0004 applied to its own domain: no price, and none is coming (#861).
+
+    A security bought on the 2nd whose market has no session before the 16th —
+    the backward pass has been *tried* back to the acquisition and came back
+    empty, which is what makes it terminal. Those fourteen days will **never**
+    have a price, so they are carried at the unit cost, which is exactly what
+    :func:`performance.compute_account` already does with them. Only the horizon
+    refused: ``settled`` excluded any carried symbol carrying a first quote, so
+    the days between the acquisition and that quote were written nowhere at all.
+
+    The series therefore opens on the ledger's own first day, and the days
+    before the first quote value the ten shares at what they cost.
+    """
+    declare_ledger(store, _LEDGER)
+    _quote(store, 'AAPL')
+    # The backward pass reached the acquisition and found nothing: terminal.
+    quotes.record_window_tried(store, 'AAPL', _ACQUIRED)
+    _price(store, 'AAPL', _LISTED, 120.0, 120.0)
+
+    horizons = _metrics(store, mocker).update_account_metrics()
+
+    written = dict((day, holdings) for day, holdings, _ in _totals(store))
+    assert horizons == {'default': None}, 'nothing blocks this account'
+    assert min(written) == _OPENED
+    # The fourteen days no price will ever answer for, at the carrying price.
+    assert written[_ACQUIRED] == pytest.approx(10 * 100.0)
+    assert written[_LISTED - timedelta(days=1)] == pytest.approx(10 * 100.0)
+    # And the market's own price from the day it exists.
+    assert written[_LISTED] == pytest.approx(10 * 120.0)
+
+
+def test_a_terminal_line_quoted_before_it_is_converted_still_blocks_the_gap(
+        store, mocker, declare_ledger):
+    """The half ``settled`` was protecting, and it goes on being protected.
+
+    Quoted from the 16th and converted only from the 22nd: between those two
+    days a quote **was** observed, so its absence of a converted price is
+    transitory — the lateral pass is coming for it — and
+    :func:`carrying.carrying_price` refuses to carry a day it knows a number
+    for. Those six days are blocked, as they were, and the clip added by #861
+    starts the blocked range at the first quote rather than at the acquisition.
+    """
+    declare_ledger(store, _LEDGER)
+    _quote(store, 'AAPL')
+    quotes.record_window_tried(store, 'AAPL', _ACQUIRED)
+    # A native price with no conversion beside it — the *waiting* state.
+    _price(store, 'AAPL', _LISTED, 120.0, None)
+    _price(store, 'AAPL', _RATED, 130.0, 130.0)
+
+    horizons = _metrics(store, mocker).update_account_metrics()
+
+    written = _totals(store)
+    assert horizons == {'default': _RATED}
+    assert min(day for day, _, _ in written) == _RATED
+    # Not one of the six days is written at nothing.
+    assert [row for row in written if row[1] == 0.0] == []
 
 
 def test_a_line_nobody_ever_quoted_in_a_nameable_unit_is_still_carried(
