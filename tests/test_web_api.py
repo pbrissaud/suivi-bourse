@@ -1947,6 +1947,30 @@ def test_a_bare_date_bounds_the_window_in_utc_and_keeps_its_first_day(tmp_path):
     assert [point['t'] for point in inside['points']] == ['2024-06-01', '2024-06-02']
 
 
+def test_a_window_carrying_an_offset_comes_back_in_utc(tmp_path):
+    """The three window routes echo their bounds beside points in `+00:00`.
+
+    `_parse_instant` promised *always returning UTC-aware* and handed an
+    already-aware instant straight back, so `?from=…+02:00` was echoed in
+    `+02:00` next to a `t` in `+00:00` — two clocks in one payload, and the
+    docstring's word not kept. One repair, `instants`, on both halves (#861).
+    """
+    def seed(opened):
+        seed_account_metrics(opened, day=date(2024, 6, 1), total_value=100.0)
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS, seed=seed)
+    window = 'from=2024-06-01T00:00:00%2B02:00&to=2024-06-03T00:00:00%2B02:00'
+
+    for route in ('/api/accounts/pea/history',
+                  '/api/positions/history',
+                  '/api/portfolio-totals/history'):
+        payload = client.get(f'{route}?{window}').get_json()
+
+        assert payload['from'] == '2024-05-31T22:00:00+00:00', route
+        assert payload['to'] == '2024-06-02T22:00:00+00:00', route
+
+
 def test_account_history_rejects_an_inverted_window(tmp_path):
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
