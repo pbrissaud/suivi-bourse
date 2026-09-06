@@ -580,6 +580,7 @@
   "problem.unreplayableLedger.remove.inAccount": "L’application a refusé et n’a rien retiré : une vente postérieure de {symbol} sur le compte {account} repose dessus — elle vend {wanted, plural, one {{wanted, number, ::.####} part} other {{wanted, number, ::.####} parts}}, et il n’en resterait que {owned, number, ::.####}.",
   "problem.invalidFile": "L’application a refusé ce fichier et n’a rien écrit. Vérifiez qu’il s’agit bien d’un grand livre d’événements, que les comptes qu’il nomme sont déclarés, et que ses colonnes sont celles qu’écrit l’export.",
   "problem.tooLarge": "Ce fichier dépasse ce que l’application accepte en une fois. Exportez une plage plus étroite, ou coupez-le en deux.",
+  "problem.invalidSetting": "L’application a refusé cette valeur : ce réglage ne l’accepte pas.",
   "problem.internal": "L’application a rencontré une erreur qu’elle n’attendait pas.",
   "problem.unreachable": "L’application ne répond pas. Rien de ce qui est affiché ne vient d’elle."
 }

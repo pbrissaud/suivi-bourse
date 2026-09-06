@@ -210,6 +210,20 @@ describe('the front branches on problem.type, never on status', () => {
       .toBe('problem.badRequest')
   })
 
+  it('has a sentence for a setting the registry refuses, which is not "unexpected"', () => {
+    // `PUT /api/settings` answers `/problems/invalid-setting`, and the table
+    // did not know it: a refusal **by design** fell through to *an error it did
+    // not expect*, which is the one thing that is certainly untrue of it (#861).
+    expect(problemMessageKey(new ApiProblem({ status: 422, type: PROBLEM_TYPES.invalidSetting })))
+      .toBe('problem.invalidSetting')
+  })
+
+  it('does not know foreign-origin, and that is the answer', () => {
+    // `problem.foreign_origin`'s own docstring: no page this app serves can
+    // read it. A sentence for it would be a sentence nobody meets.
+    expect(Object.values(PROBLEM_TYPES)).not.toContain('/problems/foreign-origin')
+  })
+
   it('does not read a 503 as a store failure when the type says otherwise', () => {
     // Branching on `status` is what made two unrelated failures the same
     // screen. The same status, two types, two sentences.
