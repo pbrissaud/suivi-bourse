@@ -316,6 +316,10 @@ class _CashConfigManager:
             shares=[], events=ledger.read_events(self._store),
             accounts=None, cache_key=None)
 
+    def reload(self, force: bool = False):
+        """What the perf pass reads through: the snapshot, rebuilt on demand."""
+        return self.current()
+
 
 def _metrics(store, declare_ledger, events, accounts):
     declare_ledger(store, events, accounts.accounts if accounts else None)

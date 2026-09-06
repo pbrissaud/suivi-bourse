@@ -103,7 +103,15 @@ class PerfJob:
         # of a second full pass on every write. The **replay** below stays: a
         # `position` row is a current state and performance needs every day's,
         # which is what `Timeline` is for.
-        events = self.facade.config_manager.current().events or []
+        #
+        # `reload` and not `current`: it compares the ledger's fingerprint and
+        # hands the published snapshot straight back when it matches, which on
+        # the write path it always does — so the read is still paid once. What
+        # it refuses to do is compute a whole series from a snapshot the
+        # ingestion *kept* because its own read failed: `ingest` swallows that
+        # failure by design, and this pass ends in a prune that empties a table
+        # a stale set of events leaves nothing to write to.
+        events = self.facade.config_manager.reload().events or []
         declared = accounts_module.read_accounts(store_handle)
 
         now = datetime.now(timezone.utc)

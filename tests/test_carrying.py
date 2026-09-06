@@ -66,6 +66,10 @@ class _FakeConfigManager:
             shares=[], events=ledger.read_events(self._store),
             accounts=None, cache_key=None)
 
+    def reload(self, force: bool = False):
+        """What the perf pass reads through: the snapshot, rebuilt on demand."""
+        return self.current()
+
 
 def _metrics(store):
     m = workloads.Workloads(_FakeConfigManager(store))
