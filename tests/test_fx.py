@@ -224,14 +224,20 @@ def test_a_naive_instant_from_the_fetch_is_read_as_utc(monkeypatch):
     """
     monkeypatch.setenv('TZ', 'America/New_York')
     time.tzset()
+    try:
+        def history(pair, start, end):
+            return {datetime(2024, 6, 10, 23, 30): 0.92}
 
-    def history(pair, start, end):
-        return {datetime(2024, 6, 10, 23, 30): 0.92}
+        rates = fx.Rates(_Fetch(), history, clock=_Clock())
+        rates.series('USD', 'EUR', date(2024, 6, 5), date(2024, 6, 12))
 
-    rates = fx.Rates(_Fetch(), history, clock=_Clock())
-    rates.series('USD', 'EUR', date(2024, 6, 5), date(2024, 6, 12))
-
-    assert rates.rate('USD', 'EUR', date(2024, 6, 10)) == 0.92
+        assert rates.rate('USD', 'EUR', date(2024, 6, 10)) == 0.92
+    finally:
+        # ``monkeypatch`` puts the variable back; only ``tzset`` puts the C
+        # library back, and CI runs in UTC (``tests/test_store.py`` holds the
+        # same pattern for the same reason).
+        monkeypatch.undo()
+        time.tzset()
 
 
 def test_the_forward_fill_stops_at_the_lookback_and_never_borrows_another_year():

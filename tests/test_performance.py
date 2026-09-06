@@ -541,10 +541,39 @@ LONG_HELD = (LEDGER_START, TODAY)
 BOUGHT = date(2026, 8, 10)
 
 
-def _horizon(windows, oldest_priced, settled=(), start=LEDGER_START):
+def _horizon(windows, oldest_priced, settled=(), start=LEDGER_START,
+             carried_from=None):
     """The rule, on the ordinary caller's two days: the ledger's first, today."""
     return performance.account_horizon(windows, oldest_priced, settled,
+                                       carried_from=carried_from,
                                        start=start, ceiling=TODAY)
+
+
+def test_a_carried_symbol_blocks_from_its_first_quote_and_not_its_acquisition():
+    """ADR-0004's predicate, clipped to the days it is true of (issue #861).
+
+    A terminal symbol held since 2019 and first quoted in June of that year, in
+    a unit nobody has ever converted: from the first quote on, a number *is*
+    known and its conversion is what is missing, so those days are blocked — the
+    *waiting* state :func:`carrying.carrying_price` refuses to carry. Before it
+    there is no number and none is coming, which is exactly the domain ADR-0004
+    names, and :func:`compute_account` already values those days at the unit
+    cost.
+
+    Blocking from the acquisition threw them away with the rest: the account had
+    **no writable day at all**, where the truth is that it has every day up to
+    the first quote.
+    """
+    quoted = date(2019, 6, 1)
+
+    without = _horizon({"AAPL": LONG_HELD}, {})
+    clipped = _horizon({"AAPL": LONG_HELD}, {}, carried_from={"AAPL": quoted})
+
+    # Nothing writable: the block covers the whole ledger and pushes the first
+    # day past today.
+    assert without == (TODAY + timedelta(days=1), None)
+    # And with the clip, the months before the first quote are the account's.
+    assert clipped == (None, quoted - timedelta(days=1))
 
 
 def test_the_horizon_is_the_day_after_the_last_unpriced_held_day():
