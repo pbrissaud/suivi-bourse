@@ -242,12 +242,6 @@ def oldest_window_tried(store, symbol: str) -> Optional[date]:
     return rows[0][0] if rows and rows[0][0] is not None else None
 
 
-#: How many times a writer has moved a symbol's oldest point. It is part of the
-#: memo's key rather than a signal to clear it, and that is the whole of the
-#: thread safety: the web workers and the scheduler's pool share one connection,
-#: so a scan started before a write and returning after it would otherwise be
-#: stored as the current answer — ``lru_cache`` inserts when the call *returns*,
-#: and a ``cache_clear`` landing mid-scan clears nothing (issue #861).
 _generation = 0
 
 
@@ -261,10 +255,10 @@ def oldest_stored(store) -> Dict[str, datetime]:
     rhythm and not the reader's.
 
     Keyed on ``(store, generation)``: the handle because a suite opens one store
-    per test, and the generation because a scan is slow **by construction** —
-    being slow is why the memo exists — so the window in which a writer commits
-    under a reader is the widest in the app. A scan that started a generation ago
-    is stored under that generation and never read again.
+    per test, and the generation because ``lru_cache`` inserts when the call
+    *returns* — so a ``cache_clear`` landing mid-scan would clear nothing and
+    the reader would then store its pre-write answer. A scan that started a
+    generation ago is stored under that generation and never read again.
     """
     return _scanned(store, _generation)
 
@@ -412,7 +406,7 @@ __all__ = [
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
-    'oldest_stored', 'forget_oldest_stored',
+    'forget_oldest_stored',
     'first_quoted_days',
     'quote_currency',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',

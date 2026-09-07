@@ -23,13 +23,12 @@ readable.
 Prior art: ``tests/test_perf_price_source.py``, ``tests/test_replay_perf.py``,
 ``tests/test_performance.py``.
 """
-from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from application import ledger
-from application import main
+from conftest import PerfConfigManager
+
 from application import perf_job
 from application import quotes
 from application import workloads
@@ -56,36 +55,6 @@ _LISTED = date(2024, 1, 16)
 _RATED = date(2024, 1, 22)
 
 
-class _ConfigManager:
-    """The surface the perf pass needs: the open store, the published snapshot
-    and the writers' mutex."""
-
-    def __init__(self, opened):
-        self._store = opened
-
-    @property
-    def store(self):
-        return self._store
-
-    @contextmanager
-    def writing(self):
-        yield self._store
-
-    def current(self):
-        """The published snapshot the perf pass reads its events from (#861).
-
-        It is the ledger: the pass no longer reads ``event`` itself, because a
-        write has just been ingested and published when it runs.
-        """
-        return main.ConfigSnapshot(
-            shares=[], events=ledger.read_events(self._store),
-            accounts=None, cache_key=None)
-
-    def reload(self, force: bool = False):
-        """What the perf pass reads through: the snapshot, rebuilt on demand."""
-        return self.current()
-
-
 def _fixed_today(mocker):
     """The perf pass's clock, pinned — UTC-qualified, like every read of it."""
     class _FixedDatetime(datetime):
@@ -98,7 +67,7 @@ def _fixed_today(mocker):
 def _metrics(opened, mocker):
     """A real metrics object over a real store, its reporting currency answered."""
     _fixed_today(mocker)
-    metrics = workloads.Workloads(_ConfigManager(opened))
+    metrics = workloads.Workloads(PerfConfigManager(opened))
     metrics.base_currency = 'EUR'
     return metrics
 

@@ -16,14 +16,13 @@ The store is real, as everywhere in the v5 suite: terminality is derived from
 rows, so a fake would be asserting the derivation against itself.
 """
 
-from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from conftest import PerfConfigManager
+
 from application import carrying
-from application import ledger
-from application import main
 from application import performance
 from application import portfolio_view
 from application import quotes
@@ -41,38 +40,9 @@ PEA = Account("PEA", "PEA", "Mon PEA")
 # Helpers
 # --------------------------------------------------------------------------- #
 
-class _FakeConfigManager:
-    """The surface ``Workloads`` needs from the manager, over a real store."""
-
-    def __init__(self, opened_store):
-        self._store = opened_store
-
-    @property
-    def store(self):
-        return self._store
-
-    @contextmanager
-    def writing(self):
-        yield self._store
-
-    def current(self):
-        """The published snapshot, which is the ledger the store holds (#861).
-
-        The perf pass reads its events here rather than from ``event`` a second
-        time, so a snapshot that answered an empty list would starve a pass this
-        file drives on a seeded store.
-        """
-        return main.ConfigSnapshot(
-            shares=[], events=ledger.read_events(self._store),
-            accounts=None, cache_key=None)
-
-    def reload(self, force: bool = False):
-        """What the perf pass reads through: the snapshot, rebuilt on demand."""
-        return self.current()
-
 
 def _metrics(store):
-    m = workloads.Workloads(_FakeConfigManager(store))
+    m = workloads.Workloads(PerfConfigManager(store))
     m.backfill_delay = 0
     m.backfill_chunk_days = 365
     return m

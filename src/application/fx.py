@@ -203,9 +203,8 @@ def _as_date(value) -> date:
     point: a naive instant means **UTC** here (#843), where ``astimezone``
     reads it as the machine's local time and shifts the day by its offset.
     """
-    normalised = instants.utc(value)
-    return (normalised.date() if isinstance(normalised, datetime)
-            else normalised)
+    value = instants.utc(value)
+    return value.date() if isinstance(value, datetime) else value
 
 
 __all__ = [

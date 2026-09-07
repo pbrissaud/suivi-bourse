@@ -427,17 +427,11 @@ def test_the_replay_that_follows_a_write_reads_the_ledger_once(tmp_path, mocker)
     client, opened = _build(tmp_path, mocker)
     runtime = api_module.current_runtime()
 
-    reads = []
-    original = opened.query
-
-    def counting(sql, parameters=None):
-        if sql.startswith('SELECT id, date, event_type'):
-            reads.append(sql)
-        return original(sql, parameters)
-
-    mocker.patch.object(opened, 'query', counting)
+    queried = mocker.spy(opened, 'query')
     main.replay_after_write(runtime)
 
+    reads = [call for call in queried.call_args_list
+             if call.args[0].startswith('SELECT id, date, event_type')]
     assert len(reads) == 1
     # And the series is the one the published events describe, not a stale one.
     assert _days(opened)[0] == date(2024, 1, 10)

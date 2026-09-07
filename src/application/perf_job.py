@@ -96,21 +96,11 @@ class PerfJob:
             return {}
 
         store_handle = self.facade.config_manager.store
-        # **The published snapshot, not a second read of the ledger** (#861).
-        # A write reaches here through `main.replay_after_write`, which has just
-        # ingested — read, aggregated and validated the whole ledger — and
-        # published it; reading `event` again produced the same rows at the cost
-        # of a second full pass on every write. The **replay** below stays: a
-        # `position` row is a current state and performance needs every day's,
-        # which is what `Timeline` is for.
-        #
-        # `reload` and not `current`: it compares the ledger's fingerprint and
-        # hands the published snapshot straight back when it matches, which on
-        # the write path it always does — so the read is still paid once. What
-        # it refuses to do is compute a whole series from a snapshot the
-        # ingestion *kept* because its own read failed: `ingest` swallows that
-        # failure by design, and this pass ends in a prune that empties a table
-        # a stale set of events leaves nothing to write to.
+        # **The rows the ingestion just published**, not a second read of them
+        # (#861): a write reaches here through `main.replay_after_write`, which
+        # has already read, validated and published the whole ledger. `reload`
+        # and not `current` because `ingest` keeps the previous snapshot when
+        # its own read fails, and this pass ends in a prune.
         events = self.facade.config_manager.reload().events or []
         declared = accounts_module.read_accounts(store_handle)
 

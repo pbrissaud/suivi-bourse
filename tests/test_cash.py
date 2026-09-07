@@ -13,14 +13,13 @@ Covers:
 No network, no real InfluxDB.
 """
 
-from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
-from application import ledger
-from application import main
+from conftest import PerfConfigManager
+
 from application import perf_series
 from application import quotes
 from application import workloads
@@ -291,39 +290,10 @@ def test_portfolio_totals_is_keyed_by_the_day_alone(store):
 # The configuration manager is down to what the job actually asks it for: the
 # open store, and the writers' mutex.
 # --------------------------------------------------------------------------- #
-class _CashConfigManager:
-    """The three members the perf job uses: the read handle, the published
-    snapshot and the write mutex."""
-
-    def __init__(self, opened_store):
-        self._store = opened_store
-
-    @property
-    def store(self):
-        return self._store
-
-    @contextmanager
-    def writing(self):
-        yield self._store
-
-    def current(self):
-        """The published snapshot the perf pass reads its events from (#861).
-
-        It is the ledger: the pass no longer reads ``event`` itself, because a
-        write has just been ingested and published when it runs.
-        """
-        return main.ConfigSnapshot(
-            shares=[], events=ledger.read_events(self._store),
-            accounts=None, cache_key=None)
-
-    def reload(self, force: bool = False):
-        """What the perf pass reads through: the snapshot, rebuilt on demand."""
-        return self.current()
-
 
 def _metrics(store, declare_ledger, events, accounts):
     declare_ledger(store, events, accounts.accounts if accounts else None)
-    metrics = workloads.Workloads(_CashConfigManager(store))
+    metrics = workloads.Workloads(PerfConfigManager(store))
     # The one question the app asks (#702, ADR-0021). Without an answer the perf
     # job writes **nothing at all** — not zeros, not NULLs — because every figure
     # it computes is money and an amount with no settled unit is not a figure.

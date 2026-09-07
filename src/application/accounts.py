@@ -153,12 +153,6 @@ def is_named_by_events(store, account_id: str) -> bool:
     return bool(rows and rows[0][0])
 
 
-#: The dot segments a URL resolves away before a request is even sent: `.` is
-#: removed and `..` climbs a level, so an account wearing either is reached at
-#: an address that names some other route (issue #861).
-DOT_SEGMENTS = ('.', '..')
-
-
 def refuse_unaddressable_id(account_id: str) -> None:
     """Refuse an id the app's own ``<account_id>`` routes cannot carry (#861).
 
@@ -175,7 +169,7 @@ def refuse_unaddressable_id(account_id: str) -> None:
     near the writer.
     """
     account_id = _text(account_id)
-    if '/' in account_id or account_id in DOT_SEGMENTS:
+    if '/' in account_id or account_id in ('.', '..'):
         raise AccountSourceError(
             f"{account_id!r} cannot be an account id: it is the address the "
             f"account is reached at in the app's own URLs, and '/', '.' and "
@@ -245,6 +239,6 @@ __all__ = [
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',
     'is_named_by_events',
-    'refuse_unaddressable_id', 'DOT_SEGMENTS',
+    'refuse_unaddressable_id',
     'create_account', 'update_account', 'delete_account',
 ]

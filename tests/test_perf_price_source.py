@@ -28,8 +28,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from application import ledger
-from application import main
+from conftest import PerfConfigManager
+
 from application import quotes
 from application import store_reads
 from application import workloads
@@ -40,40 +40,6 @@ UTC = timezone.utc
 #: The day every recompute below is pinned to. The series runs to *today*, so a
 #: floating one would change the shape of the assertions tomorrow.
 _TODAY = date(2024, 6, 20)
-
-
-class _ConfigManager:
-    """The surface :meth:`workloads.Workloads._rebuild_series` needs.
-
-    It reads the **store** and the clock and nothing else since #707, so the
-    manager is down to two gestures here: handing the open store out, and the
-    writers' mutex the final upsert takes.
-    """
-
-    def __init__(self, opened):
-        self._store = opened
-
-    @property
-    def store(self):
-        return self._store
-
-    @contextmanager
-    def writing(self):
-        yield self._store
-
-    def current(self):
-        """The published snapshot the perf pass reads its events from (#861).
-
-        It is the ledger: the pass no longer reads ``event`` itself, because a
-        write has just been ingested and published when it runs.
-        """
-        return main.ConfigSnapshot(
-            shares=[], events=ledger.read_events(self._store),
-            accounts=None, cache_key=None)
-
-    def reload(self, force: bool = False):
-        """What the perf pass reads through: the snapshot, rebuilt on demand."""
-        return self.current()
 
 
 class _Recorder:
@@ -127,7 +93,7 @@ def _fixed_today(mocker):
 def _metrics(opened, mocker):
     """A real metrics object over a real store, its reporting currency answered."""
     _fixed_today(mocker)
-    metrics = workloads.Workloads(_ConfigManager(opened))
+    metrics = workloads.Workloads(PerfConfigManager(opened))
     metrics.base_currency = 'EUR'
     return metrics
 
