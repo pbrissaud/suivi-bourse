@@ -119,9 +119,11 @@ terminal backfill is what makes a missing price *permanent* rather than *not yet
 arrived*, and the two are never confused.
 
 **Holding window**:
-The days, first to last, on which an account's end-of-day position in a security
-carries a quantity. A buy and a full sale on one day leave no window: a day traded
-through is not a day held.
+The two bounds of an account's position in a security: the first day it carried a
+quantity, and the day that quantity went to zero — or today, while it still stands.
+The closing day is *in* the window, being the day the sale happened. A buy and a
+full sale on one day leave no window at all, for want of an opening day: no day
+ever ends holding anything, and a day traded through is not a day held.
 _Avoid_: holding period, position span
 
 **Carrying price**:

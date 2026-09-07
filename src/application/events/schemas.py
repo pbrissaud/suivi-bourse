@@ -197,10 +197,15 @@ class Timeline:
         it: *this account carried no end-of-day quantity of this security on any
         day up to* ``today``. The events that were never recorded, the
         acquisition dated after today, and the buy sold in full on its own day
-        are three ways of arriving at that one absence, not three answers — a
-        window is made of end-of-day states, and a position whose quantity is
-        zero has fallen out of the model (``CONTEXT.md``, *Holding window*). A
-        day traded through is not a day held (issue #861).
+        are three ways of arriving at that one absence, not three answers.
+
+        The **bounds** are not read that way, and the asymmetry is deliberate:
+        the closing one is the day the quantity went to zero and it is *in* the
+        window — the day of the sale is a day of the position's life, which is
+        the reading :func:`carrying.holding_bounds` makes of an exit on the
+        backfill's side. What a same-day round trip lacks is therefore not a
+        closing day but an **opening** one (``CONTEXT.md``, *Holding window*,
+        issue #861).
         """
         snaps = self.snapshots.get((account, symbol))
         if not snaps:

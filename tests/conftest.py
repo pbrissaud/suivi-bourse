@@ -52,6 +52,13 @@ class PerfConfigManager:
     ledger the store holds, because the production pass only ever runs after an
     ingestion has read and published it.
 
+    It reads on every call **on purpose**: every module that uses it seeds the
+    store and then drives a pass, so a snapshot frozen at construction would
+    describe a ledger the test has not written yet. The *no second read* this
+    fake would seem the place to hold is held where it is true — over the real
+    :class:`main.ConfigurationManager`, in
+    ``tests/test_replay_perf.py::test_the_replay_that_follows_a_write_reads_the_ledger_once``.
+
     One class rather than the four byte-identical ones the perf modules each
     kept: they had drifted into the same shape, and a fifth copy is how a fake
     stops standing for the thing it fakes.

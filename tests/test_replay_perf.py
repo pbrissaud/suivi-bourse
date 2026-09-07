@@ -424,7 +424,7 @@ def test_the_replay_that_follows_a_write_reads_the_ledger_once(tmp_path, mocker)
     put around the replay alone, because the write itself legitimately reads the
     ledger once more, to prove the ledger it would leave still replays.
     """
-    client, opened = _build(tmp_path, mocker)
+    _, opened = _build(tmp_path, mocker)
     runtime = api_module.current_runtime()
 
     queried = mocker.spy(opened, 'query')
