@@ -64,6 +64,16 @@ export const PROBLEM_TYPES = {
   invalidFile: '/problems/invalid-file',
   /** The upload is past the bound the server states (#811). */
   tooLarge: '/problems/payload-too-large',
+  /**
+   * A value `PUT /api/settings` will not take (`problem.unprocessable`): the
+   * body parsed, and the registry refuses what is in it. A refusal **by
+   * design**, and without its own row here it fell back to *an unexpected
+   * error* — the one sentence that is certainly untrue of it (#861).
+   *
+   * `/problems/foreign-origin` deliberately stays out: its own docstring says
+   * no page this app serves can ever read it.
+   */
+  invalidSetting: '/problems/invalid-setting',
   internal: '/problems/internal-error',
 } as const
 
@@ -81,6 +91,7 @@ const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.unreplayableLedger]: 'problem.unreplayableLedger',
   [PROBLEM_TYPES.invalidFile]: 'problem.invalidFile',
   [PROBLEM_TYPES.tooLarge]: 'problem.tooLarge',
+  [PROBLEM_TYPES.invalidSetting]: 'problem.invalidSetting',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 

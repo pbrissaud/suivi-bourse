@@ -1271,6 +1271,33 @@ def test_a_correspondence_for_an_account_the_file_does_not_name_is_refused(
     assert _declared(opened) == ['default', 'pea']
 
 
+def test_a_preview_refuses_the_id_the_import_would_refuse(tmp_path):
+    """**No refusal arrives after the button** — including the id rule (#861).
+
+    A bank export's account column is free text, and ``PEA / Bourso`` is an
+    ordinary cell. The writer refuses an id no ``<account_id>`` route can carry,
+    and the preview never reached the writer: it answered a green receipt for a
+    file the confirmed import then refused, which is the one thing a dry run
+    exists not to do.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    slashed = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,PEA/Bourso\n"
+    ).encode('utf-8')
+
+    preview = _upload(client, slashed,
+                      query=_query(dry_run=1, map='{}', declare='PEA/Bourso'))
+    written = _upload(client, slashed,
+                      query=_query(map='{}', declare='PEA/Bourso'))
+
+    assert preview.status_code == 422
+    assert written.status_code == 422
+    assert "PEA/Bourso" in preview.get_json()['detail']
+    assert _declared(opened) == ['default']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
 def test_a_label_declared_between_the_forecast_and_the_button_is_not_refused(
         tmp_path):
     """**No refusal arrives after the button** — including this one.

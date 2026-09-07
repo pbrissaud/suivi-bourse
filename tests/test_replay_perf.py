@@ -410,6 +410,33 @@ def test_the_record_of_a_pass_is_published_under_the_pass_lock(
     assert seen == [False]
 
 
+def test_the_replay_that_follows_a_write_reads_the_ledger_once(tmp_path, mocker):
+    """``replay_after_write`` reads ``event`` **once** (issue #861).
+
+    Its two halves used to read the whole ledger each: ``ingest(force=True)``
+    reads, aggregates, validates and publishes it, and then the perf recompute
+    read it all over again for the same rows. The second **replay** is justified
+    and stays — a ``position`` row is a current state, performance needs every
+    day's — and it now replays the events the ingestion has just published.
+
+    Asserted **on the call**, which is the suite's rule for what the app decided
+    not to do: a query that was not run leaves no row to look at. The counter is
+    put around the replay alone, because the write itself legitimately reads the
+    ledger once more, to prove the ledger it would leave still replays.
+    """
+    _, opened = _build(tmp_path, mocker)
+    runtime = api_module.current_runtime()
+
+    queried = mocker.spy(opened, 'query')
+    main.replay_after_write(runtime)
+
+    reads = [call for call in queried.call_args_list
+             if call.args[0].startswith('SELECT id, date, event_type')]
+    assert len(reads) == 1
+    # And the series is the one the published events describe, not a stale one.
+    assert _days(opened)[0] == date(2024, 1, 10)
+
+
 def _free_from_another_thread(lock) -> bool:
     """Could a *different* thread take this lock right now?
 

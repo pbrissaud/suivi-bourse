@@ -118,6 +118,14 @@ reached the start of the holding window, or the symbol can never be converted. A
 terminal backfill is what makes a missing price *permanent* rather than *not yet
 arrived*, and the two are never confused.
 
+**Holding window**:
+The two bounds of an account's position in a security: the first day it carried a
+quantity, and the day that quantity went to zero — or today, while it still stands.
+The closing day is *in* the window, being the day the sale happened. A buy and a
+full sale on one day leave no window at all, for want of an opening day: no day
+ever ends holding anything, and a day traded through is not a day held.
+_Avoid_: holding period, position span
+
 **Carrying price**:
 What a position is valued at on a day where no price exists and none ever will: its
 own unit cost basis. Deliberately invoked, never a silent fallback — it is a
@@ -139,8 +147,8 @@ _Avoid_: account metrics, portfolio metrics (as domain terms)
 
 **Horizon**:
 The earliest day an account's performance can honestly be stated — the day from
-which every security it held has a price. It recedes as the backfill advances, so
-the series fills in leftward; nothing is written before it.
+which every security it held has a price **or is carried at cost**. It recedes as
+the backfill advances, so the series fills in leftward; nothing is written before it.
 _Avoid_: cutoff, start date, window
 
 **Latent gain**:

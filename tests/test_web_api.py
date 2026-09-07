@@ -968,6 +968,45 @@ def test_positions_publishes_the_terminality_of_each_symbol(tmp_path):
     assert rows['MSFT']['terminal'] is False
 
 
+def test_two_dashboard_reads_scan_the_price_table_once(tmp_path, mocker):
+    """The hottest read stops re-scanning the largest table (issue #861).
+
+    `_carried()` asks `quotes.terminal_symbols` which symbols the backward pass
+    has finished with, and that used to run
+    `SELECT symbol, min(ts) FROM price_point GROUP BY symbol` on **every**
+    `/api/positions` — a full scan, `price_point` carrying no index by design
+    (ADR-0007). Its answer moves at the backfill's rhythm, never at the
+    reader's.
+
+    Asserted **on the call**, which is the suite's rule for what the app decided
+    *not* to do: a query that did not run leaves no row to look at.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+    )
+    client, opened = build_client_and_store(tmp_path, events=events)
+
+    queried = mocker.spy(opened, 'query')
+
+    def scans():
+        return [call for call in queried.call_args_list
+                if 'min(ts)' in call.args[0] and 'price_point' in call.args[0]]
+
+    assert client.get('/api/positions').status_code == 200
+    assert client.get('/api/positions').status_code == 200
+
+    assert len(scans()) == 1
+
+    # And a written point puts it back: the memo is dropped by the writer, so
+    # the next read answers on the series that now exists rather than on the
+    # one that did.
+    quotes.record_quote(opened, 'AAPL', datetime(2024, 2, 1, tzinfo=timezone.utc), 160.0)
+    assert client.get('/api/positions').status_code == 200
+
+    assert len(scans()) == 2
+
+
 def test_the_table_and_the_curve_agree_on_a_line_being_rebuilt(tmp_path):
     """The two ends, on one line of one install — the ticket's own criterion.
 
@@ -1947,6 +1986,30 @@ def test_a_bare_date_bounds_the_window_in_utc_and_keeps_its_first_day(tmp_path):
     assert [point['t'] for point in inside['points']] == ['2024-06-01', '2024-06-02']
 
 
+def test_a_window_carrying_an_offset_comes_back_in_utc(tmp_path):
+    """The three window routes echo their bounds beside points in `+00:00`.
+
+    `_parse_instant` promised *always returning UTC-aware* and handed an
+    already-aware instant straight back, so `?from=…+02:00` was echoed in
+    `+02:00` next to a `t` in `+00:00` — two clocks in one payload, and the
+    docstring's word not kept. One repair, `instants`, on both halves (#861).
+    """
+    def seed(opened):
+        seed_account_metrics(opened, day=date(2024, 6, 1), total_value=100.0)
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS, seed=seed)
+    window = 'from=2024-06-01T00:00:00%2B02:00&to=2024-06-03T00:00:00%2B02:00'
+
+    for route in ('/api/accounts/pea/history',
+                  '/api/positions/history',
+                  '/api/portfolio-totals/history'):
+        payload = client.get(f'{route}?{window}').get_json()
+
+        assert payload['from'] == '2024-05-31T22:00:00+00:00', route
+        assert payload['to'] == '2024-06-02T22:00:00+00:00', route
+
+
 def test_account_history_rejects_an_inverted_window(tmp_path):
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
@@ -2691,6 +2754,26 @@ def test_a_declaration_conflict_keeps_the_conflict_type(tmp_path):
     for response in (twice, named):
         assert response.status_code == 409
         assert response.get_json()['type'] == problem.TYPE_CONFLICT
+
+
+def test_an_account_id_holding_a_slash_is_refused_by_the_route(tmp_path):
+    """The id is the address, and the four ``<account_id>`` routes stop at a slash.
+
+    Inserted, ``pea/2024`` was unreachable and undeletable: its history, its
+    reassignment, its rename and its removal all name a route Flask's default
+    converter never matches (issue #861).
+    """
+    client = build_client(tmp_path, events=ACCOUNTS_EVENTS,
+                          accounts=ACCOUNTS_FILE)
+
+    refused = client.post('/api/accounts', json={'id': 'pea/2024', 'type': 'PEA'})
+
+    assert refused.status_code == 400
+    body = refused.get_json()
+    assert body['type'] == problem.TYPE_BAD_REQUEST
+    assert '/' in body['detail']
+    listed = client.get('/api/accounts').get_json()['accounts']
+    assert not any(account['id'] == 'pea/2024' for account in listed)
 
 
 def test_a_typed_event_is_exported_like_any_other_row(tmp_path):

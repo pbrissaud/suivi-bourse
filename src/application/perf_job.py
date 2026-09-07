@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from application import accounts as accounts_module
 from application import carrying
-from application import ledger
 from application import perf_series
 from application import performance
 from application import quotes
@@ -34,11 +33,20 @@ def value_kwargs(dp, last: bool, perf) -> dict:
             for name, value in values.items()}
 
 
-def account_holding_windows(timeline, account_id: str, symbols,
+def account_holding_windows(timeline, account_id: str,
                             today: date) -> Dict[str, Tuple[date, date]]:
-    """``{symbol: (first, last) day this account held it}`` — the horizon's bound (issue #708)."""
+    """``{symbol: (first, last) day this account held it}`` — the horizon's bound (issue #708).
+
+    Over **this account's** symbols, which the timeline already knows: it was
+    handed the whole ledger's set, so a portfolio of a dozen accounts paid a
+    ``holding_window`` per (account × symbol) every cycle to be told ``None``
+    for the ones it had never touched (issue #861). Same windows, and the
+    absence a symbol is genuinely missing from is the same absence.
+    """
     windows = {}
-    for symbol in symbols:
+    for account, symbol in timeline.snapshots:
+        if account != account_id:
+            continue
         window = timeline.holding_window(account_id, symbol, today)
         if window is not None:
             windows[symbol] = window
@@ -88,7 +96,12 @@ class PerfJob:
             return {}
 
         store_handle = self.facade.config_manager.store
-        events = ledger.read_events(store_handle)
+        # **The rows the ingestion just published**, not a second read of them
+        # (#861): a write reaches here through `main.replay_after_write`, which
+        # has already read, validated and published the whole ledger. `reload`
+        # and not `current` because `ingest` keeps the previous snapshot when
+        # its own read fails, and this pass ends in a prune.
+        events = self.facade.config_manager.reload().events or []
         declared = accounts_module.read_accounts(store_handle)
 
         now = datetime.now(timezone.utc)
@@ -124,12 +137,20 @@ class PerfJob:
 
             oldest_priced = {symbol: pairs[0][0]
                              for symbol, pairs in price_pairs.items() if pairs}
+            # The two halves of ADR-0004's domain, on a **terminal** symbol:
+            # one never quoted at all, which blocks nothing; one quoted from a
+            # day later than its acquisition, which blocks nothing before that
+            # day (issue #861). `compute_account` already values both at the
+            # carrying price — the horizon is what refused them.
             settled = {symbol for symbol in carried
                        if symbol not in first_quoted}
+            carried_from = {symbol: first_quoted[symbol] for symbol in carried
+                            if symbol in first_quoted}
             writable = {
                 account.id: performance.account_horizon(
-                    account_holding_windows(timeline, account.id, symbols, today),
-                    oldest_priced, settled, start=start, ceiling=today)
+                    account_holding_windows(timeline, account.id, today),
+                    oldest_priced, settled, carried_from=carried_from,
+                    start=start, ceiling=today)
                 for account in declared
             }
             named = {event.account for event in events if event.account}

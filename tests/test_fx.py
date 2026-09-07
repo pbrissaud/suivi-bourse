@@ -14,6 +14,7 @@ that a method was called. The three cases the ticket names are here — a positi
 quoted in ``GBp``, a position whose rate cannot be had, and the passage from
 *"no reporting currency"* to *"one is answered"*.
 """
+import time
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
@@ -208,6 +209,35 @@ def test_a_day_with_no_close_of_its_own_takes_the_last_one_before_it():
     assert len(fetched) == 1
     # A day before the window is a hole, not Friday's rate reaching backwards.
     assert rates.rate('USD', 'EUR', date(2024, 5, 1)) is None
+
+
+def test_a_naive_instant_from_the_fetch_is_read_as_utc(monkeypatch):
+    """One rule for a naive instant, and it is ``instants.utc``'s (#843, #861).
+
+    The machine is put five hours west of UTC — the shape of any laptop in New
+    York — and the fetch answers a point stamped late in the day with no zone.
+    Read as **local** time, as ``astimezone`` reads it, that point lands on the
+    *next* day: the rate for the 10th is then keyed on the 11th, and the day
+    that asked for it gets nothing rather than a rate. Read as UTC, which is
+    what a naive instant means everywhere else in this tree, it stays on the
+    10th.
+    """
+    monkeypatch.setenv('TZ', 'America/New_York')
+    time.tzset()
+    try:
+        def history(pair, start, end):
+            return {datetime(2024, 6, 10, 23, 30): 0.92}
+
+        rates = fx.Rates(_Fetch(), history, clock=_Clock())
+        rates.series('USD', 'EUR', date(2024, 6, 5), date(2024, 6, 12))
+
+        assert rates.rate('USD', 'EUR', date(2024, 6, 10)) == 0.92
+    finally:
+        # ``monkeypatch`` puts the variable back; only ``tzset`` puts the C
+        # library back, and CI runs in UTC (``tests/test_store.py`` holds the
+        # same pattern for the same reason).
+        monkeypatch.undo()
+        time.tzset()
 
 
 def test_the_forward_fill_stops_at_the_lookback_and_never_borrows_another_year():

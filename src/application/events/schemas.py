@@ -191,7 +191,22 @@ class Timeline:
 
     def holding_window(self, account: str, symbol: str,
                        today: date) -> Optional[Tuple[date, date]]:
-        """``(first day held, last day held)`` for one ``(account, symbol)``."""
+        """``(first day held, last day held)`` for one ``(account, symbol)``.
+
+        ``None`` says **one** thing, and it says it of every case that reaches
+        it: *this account carried no end-of-day quantity of this security on any
+        day up to* ``today``. The events that were never recorded, the
+        acquisition dated after today, and the buy sold in full on its own day
+        are three ways of arriving at that one absence, not three answers.
+
+        The **bounds** are not read that way, and the asymmetry is deliberate:
+        the closing one is the day the quantity went to zero and it is *in* the
+        window — the day of the sale is a day of the position's life, which is
+        the reading :func:`carrying.holding_bounds` makes of an exit on the
+        backfill's side. What a same-day round trip lacks is therefore not a
+        closing day but an **opening** one (``CONTEXT.md``, *Holding window*,
+        issue #861).
+        """
         snaps = self.snapshots.get((account, symbol))
         if not snaps:
             return None

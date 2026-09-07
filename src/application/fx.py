@@ -1,10 +1,12 @@
 """The exchange rate — one pure module with a TTL cache (issue #702, ADR-0002)."""
 import bisect
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Callable, Dict, List, Optional, Tuple
 
 from logfmt_logger import getLogger
+
+from application import instants
 
 logger = getLogger("fx")
 
@@ -195,10 +197,14 @@ def _shift(day: date, days: int) -> date:
 
 
 def _as_date(value) -> date:
-    """A ``date`` out of whatever the injected fetch handed back."""
-    if isinstance(value, datetime):
-        return value.astimezone(timezone.utc).date()
-    return value
+    """A ``date`` out of whatever the injected fetch handed back.
+
+    Through :func:`instants.utc` and not ``astimezone``, which is the whole
+    point: a naive instant means **UTC** here (#843), where ``astimezone``
+    reads it as the machine's local time and shifts the day by its offset.
+    """
+    value = instants.utc(value)
+    return value.date() if isinstance(value, datetime) else value
 
 
 __all__ = [

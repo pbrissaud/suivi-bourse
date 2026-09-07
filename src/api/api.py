@@ -195,8 +195,8 @@ def get_portfolio_totals_history():
         return bad_request(str(exc))
 
     return jsonify({
-        'from': start.isoformat(),
-        'to': stop.isoformat(),
+        'from': instants.iso(start),
+        'to': instants.iso(stop),
         'points': [
             {
                 't': instants.iso(row.get('day')),
@@ -222,8 +222,8 @@ def get_positions_history():
     reader = _reader()
     timeline = EventAggregator().replay(_snapshot().events)
     return jsonify({
-        'from': start.isoformat(),
-        'to': stop.isoformat(),
+        'from': instants.iso(start),
+        'to': instants.iso(stop),
         'points': portfolio_view.valuation_series(
             reader.daily_closes(start, stop), timeline.at,
             carried_in={row['symbol']: row['price']
@@ -297,8 +297,8 @@ def get_account_history(account_id: str):
 
     return jsonify({
         'account': account_id,
-        'from': start.isoformat(),
-        'to': stop.isoformat(),
+        'from': instants.iso(start),
+        'to': instants.iso(stop),
         'points': [
             {
                 't': instants.iso(row.get('day')),
@@ -1097,14 +1097,21 @@ def _parse_window(default: timedelta = DEFAULT_WINDOW) -> Tuple[datetime, dateti
 
 
 def _parse_instant(value: Optional[str]) -> Optional[datetime]:
-    """Parse an ISO-8601 date or datetime, always returning UTC-aware."""
+    """Parse an ISO-8601 date or datetime, always returning UTC-aware.
+
+    *Always*, including the value that arrives carrying an offset of its own:
+    ``?from=2024-01-15T00:00:00+02:00`` used to come back in ``+02:00`` and be
+    echoed as such beside points whose ``t`` is in ``+00:00`` (issue #861).
+    :func:`instants.utc` is the one repair, and it holds both halves — a naive
+    instant means UTC, an aware one is converted to it.
+    """
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(value.strip())
     except ValueError:
         raise ValueError(f"Not an ISO-8601 instant: {value!r}")
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return instants.utc(parsed)
 
 
 __all__ = ['api_bp']

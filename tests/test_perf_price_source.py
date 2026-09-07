@@ -28,6 +28,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from conftest import PerfConfigManager
+
 from application import quotes
 from application import store_reads
 from application import workloads
@@ -38,26 +40,6 @@ UTC = timezone.utc
 #: The day every recompute below is pinned to. The series runs to *today*, so a
 #: floating one would change the shape of the assertions tomorrow.
 _TODAY = date(2024, 6, 20)
-
-
-class _ConfigManager:
-    """The surface :meth:`workloads.Workloads._rebuild_series` needs.
-
-    It reads the **store** and the clock and nothing else since #707, so the
-    manager is down to two gestures here: handing the open store out, and the
-    writers' mutex the final upsert takes.
-    """
-
-    def __init__(self, opened):
-        self._store = opened
-
-    @property
-    def store(self):
-        return self._store
-
-    @contextmanager
-    def writing(self):
-        yield self._store
 
 
 class _Recorder:
@@ -111,7 +93,7 @@ def _fixed_today(mocker):
 def _metrics(opened, mocker):
     """A real metrics object over a real store, its reporting currency answered."""
     _fixed_today(mocker)
-    metrics = workloads.Workloads(_ConfigManager(opened))
+    metrics = workloads.Workloads(PerfConfigManager(opened))
     metrics.base_currency = 'EUR'
     return metrics
 
@@ -131,6 +113,12 @@ def _price(opened, symbol, day, native, converted=None):
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         [symbol, datetime(day.year, day.month, day.day, 17, 0, tzinfo=UTC),
          native, converted, 1.0 if converted is not None else None])
+    # The row goes in by hand, so the gesture that moves the oldest-per-symbol
+    # memo on (issue #861) does not run. Several fixtures write ``price_point``
+    # this way and are green only because each inserts before its first read on
+    # that handle; the two in this module and in ``test_perf_job`` run a pass
+    # either side of a write, so they say it themselves.
+    quotes.forget_oldest_stored()
 
 
 def _ledger(symbols):

@@ -15,11 +15,14 @@ All fixtures below are project-wide (auto-discovered by any ``test_*.py`` under
 ``tests/``). Keep them generic; put test-specific data in the test module.
 """
 
+from contextlib import contextmanager
 from datetime import date, timezone
 
 import pandas as pd
 import pytest
 
+from application import ledger
+from application import main
 from application import positions
 from application import store as store_module
 from application.events.schemas import Event, EventType
@@ -39,6 +42,46 @@ _EXAMPLE_CSV = (
     "2024-09-15,SELL,AAPL,Apple Inc,3,190.00,2.00,,Partial sale\n"
     "2025-01-30,DIVIDEND,MSFT,Microsoft,,,,5.00,New dividend\n"
 )
+
+
+class PerfConfigManager:
+    """The manager surface the perf pass uses, over a real store (issue #861).
+
+    Three members and no more: the read handle, the writers' mutex, and the
+    published snapshot the pass takes its events from — which here *is* the
+    ledger the store holds, because the production pass only ever runs after an
+    ingestion has read and published it.
+
+    It reads on every call **on purpose**: every module that uses it seeds the
+    store and then drives a pass, so a snapshot frozen at construction would
+    describe a ledger the test has not written yet. The *no second read* this
+    fake would seem the place to hold is held where it is true — over the real
+    :class:`main.ConfigurationManager`, in
+    ``tests/test_replay_perf.py::test_the_replay_that_follows_a_write_reads_the_ledger_once``.
+
+    One class rather than the four byte-identical ones the perf modules each
+    kept: they had drifted into the same shape, and a fifth copy is how a fake
+    stops standing for the thing it fakes.
+    """
+
+    def __init__(self, opened_store):
+        self._store = opened_store
+
+    @property
+    def store(self):
+        return self._store
+
+    @contextmanager
+    def writing(self):
+        yield self._store
+
+    def current(self):
+        return main.ConfigSnapshot(
+            shares=[], events=ledger.read_events(self._store),
+            accounts=None, cache_key=None)
+
+    def reload(self, force: bool = False):
+        return self.current()
 
 
 @pytest.fixture

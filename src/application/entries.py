@@ -216,7 +216,15 @@ def split_duplicates(store, drafts: Sequence[Event]) -> Tuple[List[Event],
 def judge(store, drafts: Sequence[Event], *,
           declaring: Sequence[str] = (),
           accounts_pending: bool = False) -> None:
-    """Refuse what :func:`create_many` would refuse, **without writing a row**."""
+    """Refuse what :func:`create_many` would refuse, **without writing a row**.
+
+    Including the ids the file would declare: the writer refuses one no route
+    can carry (:func:`accounts.refuse_unaddressable_id`), and a preview that let
+    it through would answer a green receipt for a file the confirmed import then
+    refuses — which is the one thing a dry run exists not to do (issue #861).
+    """
+    for account_id in declaring:
+        accounts_module.refuse_unaddressable_id(account_id)
     settled = _settled_all(store, drafts)
     _refuse_all(store, settled, declaring=declaring,
                 accounts_pending=accounts_pending)

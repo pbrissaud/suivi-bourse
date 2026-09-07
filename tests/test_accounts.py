@@ -301,6 +301,23 @@ def test_two_accounts_cannot_share_an_id(store):
         accounts_module.create_account(store, 'pea', 'CTO')
 
 
+def test_an_id_no_route_can_carry_is_refused_before_it_is_written(store):
+    """An id is an address, and one no route matches is a row nobody can reach.
+
+    ``/api/accounts/<account_id>/…`` stops at a slash, so ``pea/2024`` inserted
+    and was then unreachable by all four of its routes — no history, no
+    reassignment, no rename, **no delete** — and ADR-0013 refuses the cascade
+    that would have cleaned it up. ``.`` and ``..`` arrive at the same place by
+    another road: a URL resolves its dot segments away before the request is
+    sent, so ``/api/accounts/../history`` asks for ``/api/history`` (#861).
+    """
+    for unaddressable in ('pea/2024', '.', '..'):
+        with pytest.raises(accounts_module.AccountSourceError):
+            accounts_module.create_account(store, unaddressable, 'PEA')
+
+    assert accounts_module.account_ids(store) == {DEFAULT_ACCOUNT}
+
+
 def test_creating_an_account_makes_a_blank_column_an_error(store, tmp_path):
     """An account created in the app declares as much as a file does.
 
