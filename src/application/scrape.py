@@ -307,7 +307,24 @@ class ScrapeWorkload:
                 error=f"{type(exc).__name__}: {exc}",
             ))
         finally:
-            if self.facade.scheduler is not None and \
-                    symbol in self.facade._held_symbols():
-                arm_now = now if injected_now else datetime.now(timezone.utc)
-                self.facade._arm_symbol(symbol, next_delay, arm_now)
+            # The only thing that puts the symbol back, so neither the read nor
+            # the arming may escape into APScheduler (issue #855). A read that
+            # fails re-arms all the same: an arming too many writes nothing, a
+            # missing arming costs the symbol.
+            if self.facade.scheduler is not None:
+                try:
+                    still_held = symbol in self.facade._held_symbols()
+                except Exception as e:
+                    app_logger.error(
+                        f"Failed to read the held symbols after the pass for "
+                        f"{symbol}: {e} — re-arming anyway")
+                    still_held = True
+                if still_held:
+                    try:
+                        self.facade._arm_symbol(
+                            symbol, next_delay,
+                            now if injected_now else datetime.now(timezone.utc))
+                    except Exception as e:
+                        app_logger.error(
+                            f"Failed to re-arm the scrape job for {symbol}: {e} "
+                            f"— it leaves the rotation until the next reconcile")

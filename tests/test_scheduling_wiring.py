@@ -333,6 +333,40 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
 
 
 # ---------------------------------------------------------------------------
+# The re-arm is the last thing that puts a symbol back (#855)
+# ---------------------------------------------------------------------------
+
+def test_scrape_symbol_rearms_although_the_held_read_raised(store, mocker):
+    """*I could not find out* is not *no longer held*, and it re-arms.
+
+    Nothing else puts the symbol back: the job is a one-shot ``date`` trigger.
+    """
+    m = _metrics([_share("AAPL")], store, mocker)
+    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m, "_held_symbols",
+                        side_effect=RuntimeError("the configuration is unreadable"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert m.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+
+
+def test_scrape_symbol_failed_rearm_does_not_escape_into_apscheduler(
+        store, fake_ticker, mocker, monkeypatch):
+    """A jobstore refusal is logged, not raised: the pass itself still stands."""
+    m = _metrics([_share()], store, mocker)
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    mocker.patch.object(m, "_arm_symbol",
+                        side_effect=RuntimeError("the jobstore refused the job"))
+
+    m._scrape_symbol("AAPL", now=NOW)   # must not raise
+
+    assert _prices(store) == [185.0]
+    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
+
+
+# ---------------------------------------------------------------------------
 # Perf recompute — its own interval job, ungated (#618, #707)
 # ---------------------------------------------------------------------------
 
