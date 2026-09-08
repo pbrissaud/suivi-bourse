@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 import duckdb
 from flask import Blueprint, Response, jsonify, request
+from werkzeug.exceptions import HTTPException
 from logfmt_logger import getLogger
 
 from application import accounts as accounts_module
@@ -38,6 +39,7 @@ from api.problem import (
     conflict,
     entry_gone,
     foreign_origin,
+    http_refusal,
     internal_error,
     not_found,
     storage_unavailable,
@@ -127,11 +129,63 @@ def _refuse_a_foreign_origin():
 
 @api_bp.errorhandler(Exception)
 def _on_error(exc: Exception):
-    """Turn anything a route raises into problem+json."""
+    """Turn anything a route raises into problem+json.
+
+    **Three answers, not two** (#856). *A fault of the store* and *a fault of
+    ours* were the whole of it, and a third thing reaches here: a refusal
+    werkzeug itself decided, which is neither. Flask looks an ``HTTPException``
+    up by code and then by MRO, so with nothing registered for ``413`` the walk
+    landed on the ``Exception`` below and answered *an unexpected error* — the
+    invitation to file a bug report — about the one bound that can stop a
+    chunked upload, whose sentence was already written
+    (:func:`uploads.too_large_detail`).
+
+    The ``HTTPException`` branch therefore comes first, and it does not log a
+    traceback: a refusal by design is not an incident.
+
+    **What werkzeug raises while *routing* cannot arrive here at all**, and that
+    is why :func:`refused` is a function rather than a branch: a routing failure
+    has no endpoint, so it has no blueprint, so a blueprint handler is
+    structurally unable to see it. ``GET /api/nothing`` is answered by the SPA
+    catch-all in :mod:`api` — ``problem.not_found``, the ``/problems/not-found``
+    the front knows — because that rule matches the path; ``POST`` on the same
+    path matches no method and is werkzeug's ``405``, which :mod:`api` hands to
+    :func:`refused` from an **app-level** handler. Every ``/api`` answer is
+    problem+json, and the two halves of that sentence are held in two places
+    because Flask's dispatch puts them there.
+    """
+    if isinstance(exc, HTTPException):
+        return refused(exc)
     logger.error(f"API error on {request.path}: {exc}", exc_info=True)
     if isinstance(exc, (store_module.StoreUnavailable, duckdb.Error)):
         return storage_unavailable(str(exc))
     return internal_error(str(exc))
+
+
+#: The one route a ``413`` is *about a file* on — ``MAX_CONTENT_LENGTH`` is
+#: app-wide and every other route it stops is carrying JSON.
+UPLOAD_ENDPOINT = 'api.import_events'
+
+
+def refused(exc: HTTPException):
+    """An ``HTTPException`` as the status it already is (#856).
+
+    ``413`` on the upload is the one this app *arranged* — ``MAX_CONTENT_LENGTH``
+    is the third of the three bounds ``uploads`` names, the only one that sees a
+    body making no length declaration — so it is answered with the same problem
+    the route's own check answers, ``limit`` member included. The bound is
+    app-wide and the *sentence* is not: **a file may carry at most 8 MiB** about
+    an oversized JSON body would name a limit that body never crossed, so
+    anywhere but the upload the generic translation answers.
+
+    Any other code keeps its status rather than being flattened to ``500``: the
+    reader gets the *unexpected error* sentence, which is true of it, over a
+    status that is not.
+    """
+    logger.warning(f"API refusal on {request.path}: {exc}")
+    if exc.code == 413 and request.endpoint == UPLOAD_ENDPOINT:
+        return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
+    return http_refusal(exc.code or 500, exc.name, exc.description or str(exc))
 
 
 @api_bp.get('/portfolio/movers')

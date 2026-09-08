@@ -114,6 +114,18 @@ def foreign_origin(detail: str):
     return problem(403, 'Foreign origin', detail, TYPE_FOREIGN_ORIGIN)
 
 
+def http_refusal(status: int, title: str, detail: str):
+    """Any ``HTTPException`` but the ``413``, kept at the status it already has.
+
+    The type is :data:`TYPE_INTERNAL` because it is the honest one: the front
+    branches on ``type`` alone (ADR-0024) and has no sentence for a refusal
+    nothing here arranged, so it says *an unexpected error* — which is what a
+    ``406`` out of a route that never meant to raise one is. The status is not
+    flattened with it: a client reading the code learns more than *500* (#856).
+    """
+    return problem(status, title, detail, TYPE_INTERNAL)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
@@ -123,6 +135,6 @@ __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
     'unreplayable', 'unprocessable', 'unprocessable_parameter',
     'unprocessable_entry', 'unprocessable_file', 'too_large', 'foreign_origin',
-    'internal_error',
+    'http_refusal', 'internal_error',
     'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE',
 ]

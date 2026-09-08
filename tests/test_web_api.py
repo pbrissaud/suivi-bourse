@@ -21,6 +21,7 @@ import json
 import openpyxl
 import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
+from werkzeug.exceptions import NotAcceptable
 
 from application import accounts as accounts_module
 from application import advisories
@@ -1945,6 +1946,63 @@ def test_a_fault_of_ours_is_a_500_and_not_a_storage_failure(tmp_path, mocker):
     assert response.status_code == 500
     assert response.mimetype == 'application/problem+json'
     assert response.get_json()['type'] == '/problems/internal-error'
+
+
+def test_a_refusal_werkzeug_decided_keeps_its_status(tmp_path, mocker):
+    """The third answer the handler owed (#856).
+
+    Flask looks an `HTTPException` up by code and *then* by MRO, so with nothing
+    registered for it the walk reached `errorhandler(Exception)` and every one
+    of them came out `500` — the status the front reads as *file a bug report*,
+    said about a refusal that was deliberate. The status is what a client
+    outside the browser has to go on, and flattening it threw away the only fact
+    the exception carried.
+
+    `406` here because nothing in this app raises one: what is asserted is the
+    generic translation, not the `413` the next test owns.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    mocker.patch.object(portfolio_view, 'build_positions',
+                        side_effect=NotAcceptable())
+
+    response = client.get('/api/positions')
+
+    assert response.status_code == 406
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == '/problems/internal-error'
+
+
+def test_every_api_answer_is_problem_json_whatever_the_verb(tmp_path):
+    """The decision #856 asked to be written down, and both halves of it.
+
+    A `GET` on an unknown `/api` path matches the SPA catch-all and gets
+    `problem.not_found` — the `/problems/not-found` the front already knows.
+    Any other verb matches that rule's **path and not its method**, so werkzeug
+    raises `405` *while routing*: no endpoint, therefore no blueprint, therefore
+    `api_bp`'s handler is structurally unable to see it, and what came back was
+    werkzeug's HTML page. The front reads a body that is not problem+json as
+    *not even the app answered* (`api.ts`), which is a false thing to say about
+    a routing mistake — hence the app-level handler, and hence the two verbs
+    below in one test: they are one decision.
+    """
+    client = build_client(tmp_path)
+
+    unknown = client.get('/api/no-such-thing')
+    assert unknown.status_code == 404
+    assert unknown.mimetype == 'application/problem+json'
+    assert unknown.get_json()['type'] == '/problems/not-found'
+
+    for response in (client.post('/api/no-such-thing'),
+                     client.post('/api/positions')):
+        assert response.status_code == 405
+        assert response.mimetype == 'application/problem+json'
+        assert response.get_json()['type'] == '/problems/internal-error'
+
+    # And the door closed to a scraper stays closed the way it was (ADR-0033):
+    # outside `/api`, werkzeug's own page is the right answer.
+    assert client.get('/metrics').status_code == 404
+    assert client.get('/metrics').mimetype == 'text/html'
 
 
 def test_a_bare_date_bounds_the_window_in_utc_and_keeps_its_first_day(tmp_path):
