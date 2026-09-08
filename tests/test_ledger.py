@@ -909,17 +909,87 @@ def test_a_security_named_once_in_a_file_is_named_on_every_row_of_it(tmp_path):
         ("Apple Inc",), ("Apple Inc",)]
 
 
+def _upload_undeclared(client, body, filename="2024.csv"):
+    """The upload a browser does not make: a body with **no ``Content-Length``**.
+
+    ``wsgi.input_terminated`` is what a WSGI server sets when it, and not a
+    header, terminates the stream — the shape a chunked request has by the time
+    werkzeug sees it, and the only shape in which ``MAX_CONTENT_LENGTH`` is the
+    bound that speaks: ``oversize`` reads a declaration this request does not
+    make, and ``uploads.read``'s own bound is past the parser that never
+    finishes.
+    """
+    boundary = b"----suivibourse"
+    envelope = (b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="file"; filename="'
+                + filename.encode('utf-8') + b'"\r\n'
+                b"Content-Type: text/csv\r\n\r\n"
+                + body + b"\r\n--" + boundary + b"--\r\n")
+    return client.post(
+        '/api/events/import',
+        data=io.BytesIO(envelope),
+        content_type='multipart/form-data; boundary=' + boundary.decode('ascii'),
+        headers={'Transfer-Encoding': 'chunked'},
+        environ_overrides={'CONTENT_LENGTH': '', 'wsgi.input_terminated': True})
+
+
 def test_a_body_that_declares_no_length_is_still_bounded(tmp_path):
     """The bound that stops bytes already in flight, and it is werkzeug's.
 
     ``oversize`` reads a *declaration*, which a chunked upload does not make;
     without ``MAX_CONTENT_LENGTH`` the whole body is spooled to disk before
     anything here can refuse it.
+
+    And the request is **issued** (#856). What stood here was an assert on the
+    config value, which is why nobody saw that the ``413`` werkzeug raises for
+    it — lazily, inside the view, while the parser reads ``request.files`` —
+    walked the MRO to ``errorhandler(Exception)`` and came back a ``500``
+    ``/problems/internal-error``: the bug-report invitation, on a refusal this
+    app arranged and had already written the sentence for.
     """
-    client = build_client(tmp_path)
+    client, opened = build_client_and_store(tmp_path)
 
     assert client.application.config['MAX_CONTENT_LENGTH'] == uploads.MAX_BODY_BYTES
     assert uploads.MAX_BODY_BYTES > uploads.MAX_UPLOAD_BYTES
+
+    response = _upload_undeclared(client, b"x" * (uploads.MAX_BODY_BYTES + 4096))
+
+    assert response.status_code == 413
+    assert response.mimetype == problem.CONTENT_TYPE
+    payload = response.get_json()
+    assert payload['type'] == problem.TYPE_TOO_LARGE
+    assert payload['limit'] == uploads.MAX_UPLOAD_BYTES
+    assert '8 MiB' in payload['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+    # The same road with a legal file, so the refusal above is the bound
+    # speaking and not a body nothing ever read.
+    assert _upload_undeclared(client, ONE_BUY.encode('utf-8')).status_code == 201
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_the_bound_is_app_wide_and_its_file_sentence_is_not(tmp_path):
+    """``MAX_CONTENT_LENGTH`` stops every route; only one of them is a file.
+
+    A ``413`` raised on ``POST /api/events`` is the same werkzeug bound, and
+    answering it with *a file may carry at most 8 MiB* — plus a ``limit`` naming
+    a file's bound the body never met — would describe a gesture the reader did
+    not make. The status is the true part and it is kept; the sentence falls
+    back to the generic one.
+    """
+    client = build_client(tmp_path)
+
+    response = client.post(
+        '/api/events',
+        data=b'{"notes": "' + b'x' * (uploads.MAX_BODY_BYTES + 1024) + b'"}',
+        content_type='application/json')
+
+    assert response.status_code == 413
+    assert response.mimetype == problem.CONTENT_TYPE
+    payload = response.get_json()
+    assert payload['type'] == problem.TYPE_INTERNAL
+    assert 'limit' not in payload
+    assert 'MiB' not in payload['detail']
 
 
 def test_a_file_of_exactly_the_bound_is_not_refused_by_its_envelope(tmp_path):

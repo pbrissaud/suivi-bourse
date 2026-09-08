@@ -2,12 +2,13 @@
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, abort, send_from_directory
+from flask import Flask, abort, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 
 from application import main
 from application import uploads
 from api import problem
-from api.api import api_bp
+from api.api import api_bp, refused
 from api.health import health_bp
 
 _runtime: Optional[main.Runtime] = None
@@ -22,6 +23,30 @@ def create_app(runtime: main.Runtime) -> Flask:
     flask_app.config['MAX_CONTENT_LENGTH'] = uploads.MAX_BODY_BYTES
     flask_app.register_blueprint(health_bp)
     flask_app.register_blueprint(api_bp)
+
+    @flask_app.errorhandler(HTTPException)
+    def _on_routing_refusal(exc: HTTPException):
+        """What werkzeug decides **before** a blueprint exists (#856).
+
+        A routing failure has no endpoint and therefore no blueprint, so
+        ``api_bp``'s own handler cannot see one: ``POST /api/anything`` matches
+        the catch-all's path and not its method, and came back as werkzeug's
+        HTML ``405`` — which the front reads as *not even the app answered*,
+        about a routing mistake the app answered perfectly well. Under ``/api``
+        it goes through the same translation as a refusal raised inside a view.
+
+        Everywhere else werkzeug's own page stands: returning ``exc`` is Flask's
+        way of saying *the default was right* — the ``404`` on ``/metrics`` is a
+        door closed to a scraper (ADR-0033), not a problem+json for a reader.
+
+        ``/api`` is read as a **path segment**, which is the whole of the test
+        below it: a prefix match claims ``/apiary`` too, and the SPA serves
+        every path this app does not know, so that is a page of the front being
+        answered in the API's vocabulary.
+        """
+        if request.path != '/api' and not request.path.startswith('/api/'):
+            return exc
+        return refused(exc)
 
     @flask_app.get('/')
     @flask_app.get('/<path:path>')
