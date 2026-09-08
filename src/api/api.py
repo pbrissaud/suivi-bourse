@@ -35,12 +35,13 @@ from application.store_reads import PortfolioReader, chart_window
 from api.problem import (
     GESTURE_REMOVE,
     GESTURE_WRITE,
+    TYPE_INTERNAL,
     bad_request,
     conflict,
     entry_gone,
     foreign_origin,
-    http_refusal,
     internal_error,
+    problem,
     not_found,
     storage_unavailable,
     too_large,
@@ -162,11 +163,6 @@ def _on_error(exc: Exception):
     return internal_error(str(exc))
 
 
-#: The one route a ``413`` is *about a file* on — ``MAX_CONTENT_LENGTH`` is
-#: app-wide and every other route it stops is carrying JSON.
-UPLOAD_ENDPOINT = 'api.import_events'
-
-
 def refused(exc: HTTPException):
     """An ``HTTPException`` as the status it already is (#856).
 
@@ -178,14 +174,19 @@ def refused(exc: HTTPException):
     an oversized JSON body would name a limit that body never crossed, so
     anywhere but the upload the generic translation answers.
 
-    Any other code keeps its status rather than being flattened to ``500``: the
-    reader gets the *unexpected error* sentence, which is true of it, over a
-    status that is not.
+    That one keeps the status rather than flattening it to ``500``, under
+    :data:`TYPE_INTERNAL`: the front branches on ``type`` alone (ADR-0024) and
+    has no sentence for a refusal nothing here arranged, so it says *an
+    unexpected error* — which is true of it — over a status that is not.
+
+    ``exc.code`` and ``exc.description`` are read straight: Flask returns an
+    ``HTTPException`` whose code is ``None`` before any handler is consulted,
+    and werkzeug carries a description on the class.
     """
     logger.warning(f"API refusal on {request.path}: {exc}")
-    if exc.code == 413 and request.endpoint == UPLOAD_ENDPOINT:
+    if exc.code == 413 and request.endpoint == 'api.import_events':
         return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
-    return http_refusal(exc.code or 500, exc.name, exc.description or str(exc))
+    return problem(exc.code, exc.name, exc.description, TYPE_INTERNAL)
 
 
 @api_bp.get('/portfolio/movers')

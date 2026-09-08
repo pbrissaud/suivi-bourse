@@ -2000,9 +2000,13 @@ def test_every_api_answer_is_problem_json_whatever_the_verb(tmp_path):
         assert response.get_json()['type'] == '/problems/internal-error'
 
     # And the door closed to a scraper stays closed the way it was (ADR-0033):
-    # outside `/api`, werkzeug's own page is the right answer.
-    assert client.get('/metrics').status_code == 404
-    assert client.get('/metrics').mimetype == 'text/html'
+    # outside `/api`, werkzeug's own page is the right answer. `/apiary` is
+    # there because `/api` is a **segment**: a prefix match would answer a page
+    # of the front in the API's vocabulary.
+    closed = client.get('/metrics')
+    assert closed.status_code == 404
+    assert closed.mimetype == 'text/html'
+    assert client.post('/apiary').mimetype == 'text/html'
 
 
 def test_a_bare_date_bounds_the_window_in_utc_and_keeps_its_first_day(tmp_path):
