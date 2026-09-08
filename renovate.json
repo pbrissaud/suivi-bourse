@@ -8,7 +8,8 @@
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "automerge": true
+      "automerge": true,
+      "autoApprove": true
     },
     {
       "matchFileNames": ["pyproject.toml", "Dockerfile"],
