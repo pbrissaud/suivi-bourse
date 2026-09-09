@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from logfmt_logger import getLogger
 
+from application import accounts
 from application import instants
+from application.events.schemas import ACCOUNT_TYPES
 
 logger = getLogger("advisories")
 
@@ -17,6 +19,7 @@ SUBJECT_PORTFOLIO = 'portfolio'
 SUBJECT_ACCOUNTS = 'accounts'
 
 CASH_SHARE = 'cash_share'
+ACCOUNT_TYPE = 'account_type'
 
 CASH_SHARE_THRESHOLD = 0.10
 
@@ -105,8 +108,42 @@ def _say_cash_share(detail: Mapping[str, Any]) -> str:
         f"uninvested cash. Nothing is wrong with that if it is deliberate.")
 
 
+def _observe_account_type(opened, now: datetime) -> List[Advisory]:
+    """The accounts filed under a type outside :data:`ACCOUNT_TYPES` (#916).
+
+    The catalogue is closed on write and the store is tolerant on read, so this
+    is the whole of what happens to a row laid down before it: the value keeps
+    rendering, verbatim, and a sentence names the account and points at the page
+    it is fixed on. Nothing is rewritten, automatically or otherwise.
+
+    One advisory per account rather than one naming a list: the card carries a
+    link to the account, and a link cannot point at three of them.
+    """
+    standing: List[Advisory] = []
+    for row in accounts.read_accounts(opened):
+        if row.type in ACCOUNT_TYPES:
+            continue
+        detail = {'account': row.id, 'label': row.label, 'type': row.type}
+        standing.append(Advisory(
+            key=f'{ACCOUNT_TYPE}:{row.id}',
+            kind=ACCOUNT_TYPE,
+            subject=SUBJECT_ACCOUNTS,
+            detail=detail,
+            message=_say_account_type(detail),
+            observed_at=now,
+        ))
+    return standing
+
+
+def _say_account_type(detail: Mapping[str, Any]) -> str:
+    return (
+        f"{detail['label']} is filed under {detail['type']!r}, which is not an "
+        f"account type this app knows. Open the account and pick one.")
+
+
 OBSERVATIONS = (
     _observe_cash_share,
+    _observe_account_type,
 )
 
 
@@ -174,7 +211,7 @@ def acknowledge(opened, key: str,
 
 __all__ = [
     'Advisory', 'Acknowledgement', 'UnknownAdvisory',
-    'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD',
+    'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD', 'ACCOUNT_TYPE',
     'SUBJECT_HEALTH', 'SUBJECT_INSTALLATION', 'SUBJECT_PORTFOLIO',
     'SUBJECT_ACCOUNTS',
     'OBSERVATIONS', 'acknowledgements', 'standing', 'listing', 'acknowledge',

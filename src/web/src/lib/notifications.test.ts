@@ -226,6 +226,52 @@ describe('the badge counts every open entry, and the control says what it clears
   })
 })
 
+describe('the account type outside the catalogue (#916)', () => {
+  const legacy = advisory({
+    key: 'account_type:bourso',
+    kind: 'account_type',
+    message: "Bourso is filed under 'Compte titres Boursorama'.",
+    detail: { account: 'bourso', label: 'Bourso', type: 'Compte titres Boursorama' },
+  })
+
+  it('says it with its own keys and never with the server’s English', () => {
+    // The fallback below is a floor, not a plan: it renders the server's
+    // `message`, which is English-only, so a new family shipped without its two
+    // keys is a family a French reader never gets a sentence for.
+    const [entry] = notifications({ ...QUIET, advisories: [legacy] })
+
+    expect(entry.title).toEqual({
+      key: 'notification.advisory.account_type',
+      values: { label: 'Bourso' },
+    })
+    // The stored word is **interpolated**, not translated: it is a member of no
+    // catalogue — that is the whole condition the card announces.
+    expect(entry.body).toEqual({
+      key: 'notification.advisory.account_type.body',
+      values: { type: 'Compte titres Boursorama' },
+    })
+  })
+
+  it('lands on the account, which is where the type is brought in', () => {
+    const [entry] = notifications({ ...QUIET, advisories: [legacy] })
+
+    expect(entry.link?.to).toEqual({ to: '/accounts', search: { account: 'bourso' } })
+    expect(entry.subject).toBe('accounts')
+    // Put to sleep like any other — thirty days, and nothing of its own.
+    expect(entry.acknowledge).toEqual({ register: 'advisory', key: 'account_type:bourso' })
+  })
+
+  it('still renders a family this front has never heard of', () => {
+    const [entry] = notifications({
+      ...QUIET,
+      advisories: [advisory({ kind: 'something_new', message: 'A sentence from the server.' })],
+    })
+
+    expect(entry.title).toEqual({ text: 'A sentence from the server.' })
+    expect(entry.link).toBeNull()
+  })
+})
+
 describe('a card’s link lands on the figure, never on the page', () => {
   it('opens the account selected', () => {
     const [entry] = notifications({ ...QUIET, advisories: [advisory()] })

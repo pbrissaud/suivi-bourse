@@ -142,7 +142,7 @@ describe('the form loses `currency`', () => {
 
     const panel = await screen.findByRole('dialog')
     await user.type(within(panel).getByLabelText('Identifiant'), 'delta')
-    await user.type(within(panel).getByLabelText('Type'), 'CTO')
+    await user.selectOptions(within(panel).getByLabelText('Type'), 'CTO')
     await user.type(within(panel).getByLabelText('Nom'), 'Delta')
 
     server.use(
@@ -159,6 +159,89 @@ describe('the form loses `currency`', () => {
     await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
     expect(await within(rail()).findByRole('link', { name: /Delta/ })).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+describe('the type is a closed catalogue, and the store is tolerant (#916)', () => {
+  /** A row a version with no catalogue laid down, and this one has to keep. */
+  const legacy = anAccount({ id: 'bourso', label: 'Bourso', type: 'Compte titres Boursorama' })
+
+  it('offers a list and no text field, in the reader’s language', async () => {
+    const { user } = renderAccounts()
+    await detail('Alpha')
+    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+
+    const panel = await screen.findByRole('dialog')
+    const type = within(panel).getByLabelText('Type')
+
+    // A default cannot be attached to a value invented in a text box, which is
+    // what a taxation model is about to ask of this column.
+    expect(type.tagName).toBe('SELECT')
+    expect(
+      within(type)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(['', 'PEA', 'PEA-PME', 'CTO', 'AV', 'PER', 'OTHER'])
+    // Named in French, and the two products keep their own names — `PEA` is not
+    // a description of anything, it is what the bank statement says.
+    expect(within(type).getByRole('option', { name: 'Compte-titres ordinaire' })).toBeInTheDocument()
+    expect(within(type).getByRole('option', { name: 'Assurance-vie' })).toBeInTheDocument()
+    expect(panel.textContent).not.toContain('Brokerage')
+  })
+
+  it('renders a stored word outside it verbatim rather than blank or *Other*', async () => {
+    // No migration machinery and no `ALTER TABLE`: the row keeps its word, and
+    // rendering it as anything else would be the app telling its owner
+    // something they never wrote.
+    renderAccounts(anAccountsPayload([legacy]))
+
+    const opened = await detail('Bourso')
+    expect(opened).toHaveTextContent('Compte titres Boursorama')
+    expect(within(rail()).getByRole('link', { name: /Compte titres Boursorama/ })).toBeInTheDocument()
+  })
+
+  it('keeps that word as the option that changes nothing, and brings it in', async () => {
+    const { user } = renderAccounts(anAccountsPayload([legacy]))
+    const panel = await openPanel(user, 'Bourso')
+    const type = within(panel).getByLabelText('Type')
+
+    // Open on **the row's own word**, not on a member of a list it is not in:
+    // the reader came to this panel to read what is there before changing it,
+    // and a blank control says the account has no type at all.
+    expect(type).toHaveValue('')
+    expect(within(type).getByRole('option', { name: 'Compte titres Boursorama' })).toBeInTheDocument()
+
+    let patched: unknown = null
+    server.use(
+      http.patch(accountPath('bourso'), async ({ request }) => {
+        patched = await request.json()
+        return HttpResponse.json({ id: 'bourso', label: 'Bourso', type: 'CTO' })
+      }),
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(anAccountsPayload([anAccount({ ...legacy, type: 'CTO' })])),
+      ),
+    )
+
+    await user.selectOptions(type, 'CTO')
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+
+    await waitFor(() => expect(patched).toMatchObject({ type: 'CTO' }))
+    expect(await within(rail()).findByRole('link', { name: /Compte-titres ordinaire/ })).toBeInTheDocument()
+  })
+
+  it('names a catalogue member from the catalogue, so the two roads agree', async () => {
+    // `Gamma` is stored `CTO`; the rail and the detail both read the same key,
+    // and neither prints the code the store holds.
+    const { user } = renderAccounts()
+    await detail('Alpha')
+
+    expect(rail()).toHaveTextContent('Compte-titres ordinaire')
+    expect(rail()).not.toHaveTextContent(/\bCTO\b/)
+
+    await user.click(within(rail()).getByRole('link', { name: /Gamma/ }))
+    const opened = await detail('Gamma')
+    expect(opened).toHaveTextContent('Compte-titres ordinaire')
+    expect(opened).not.toHaveTextContent(/\bCTO\b/)
   })
 })
 
@@ -296,7 +379,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // into `OTHER` and saving `OTHERPEA`.
     expect(within(panel).getByLabelText('Type')).toHaveValue('')
     expect(within(panel).getByLabelText('Nom')).toHaveValue('')
-    await user.type(within(panel).getByLabelText('Type'), 'PEA')
+    await user.selectOptions(within(panel).getByLabelText('Type'), 'PEA')
     await user.type(within(panel).getByLabelText('Nom'), 'Mon PEA')
 
     // **The body the server can actually produce**: `declared` stays `false` —

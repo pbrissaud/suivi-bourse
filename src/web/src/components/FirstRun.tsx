@@ -110,10 +110,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { api, type AccountDraft, type ConfigResponse } from '@/lib/api'
 import {
+  ACCOUNT_TYPES,
+  api,
+  type AccountDraft,
+  type ConfigResponse,
+} from '@/lib/api'
+import {
+  ACCOUNT_TYPE_LABEL,
   DEFAULT_ACCOUNT_LABEL,
   DEFAULT_ACCOUNT_TYPE,
+  accountTypeName,
   declaredLabel,
   declaredType,
 } from '@/lib/accounts'
@@ -368,7 +375,7 @@ export function FirstRun() {
                             {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
                           </span>
                           <span className="ml-auto shrink-0 font-mono text-2xs">
-                            {account.id} · {declaredType(account) ?? t(DEFAULT_ACCOUNT_TYPE)}
+                            {account.id} · {accountTypeName(t, declaredType(account)) ?? t(DEFAULT_ACCOUNT_TYPE)}
                           </span>
                         </li>
                       ))}
@@ -649,6 +656,9 @@ function DeclareAccount() {
             />
           )}
         </Field>
+        {/* The same closed catalogue as the accounts panel's (#916), read off
+            the same two constants — the walk and the page cannot offer two
+            different lists for one column. */}
         <Field
           name="type"
           label="accounts.form.type"
@@ -656,15 +666,23 @@ function DeclareAccount() {
           error={errors.type}
         >
           {(id, described) => (
-            <Input
+            <select
               id={id}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 dark:aria-invalid:ring-destructive/40"
               value={draft.type}
-              autoComplete="off"
-              placeholder="PEA"
               aria-invalid={errors.type !== undefined}
               aria-describedby={described}
               onChange={(changed) => set('type', changed.target.value)}
-            />
+            >
+              {draft.type === '' ? (
+                <option value="">{t('accounts.form.type.choose')}</option>
+              ) : null}
+              {ACCOUNT_TYPES.map((one) => (
+                <option key={one} value={one}>
+                  {t(ACCOUNT_TYPE_LABEL[one])}
+                </option>
+              ))}
+            </select>
           )}
         </Field>
       </div>

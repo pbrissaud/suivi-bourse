@@ -480,6 +480,23 @@ export interface AccountsResponse {
  * not offer it. Reassignment is the gesture that moves events, and it names its
  * subject.
  */
+/**
+ * The account types, and the catalogue is **closed on write** (#916).
+ *
+ * The same six as `application/events/schemas.py`'s `ACCOUNT_TYPES`, in the same
+ * order, and held here for `EVENT_TYPES`' reason: the list the two forms offer
+ * and the list the server refuses outside of have to be one list, and the way
+ * they stay one is a constant per side with the same six words in it.
+ *
+ * `Account.type` stays a plain `string` all the same, and that is not an
+ * oversight: the store is **tolerant on read** — there is no migration
+ * machinery — so a row laid down before this catalogue carries a word that is
+ * no member of anything and has to keep rendering, verbatim.
+ */
+export const ACCOUNT_TYPES = ['PEA', 'PEA-PME', 'CTO', 'AV', 'PER', 'OTHER'] as const
+
+export type AccountType = (typeof ACCOUNT_TYPES)[number]
+
 export interface AccountDraft {
   id?: string
   type: string

@@ -611,6 +611,17 @@ Five nets hold a rule nothing made true by construction:
   run yet* and never *something is wrong*. `STATE_TONE` is declared **once**, in
   `Notifications.tsx`, and it has exactly one consumer since #829: the sidebar
   card that used to be its second reader is gone.
+- **An account's type is a closed catalogue and its stored word is not** (#916).
+  `ACCOUNT_TYPES` mirrors the server's six and `ACCOUNT_TYPE_LABEL` gives each a
+  key, so both forms — the accounts panel and the first-run walk — offer one
+  `<select>` and no text field. Reading is the other half: `accountTypeName`
+  renders a member from the catalogue and **anything else verbatim**, because a
+  store laid down before the catalogue carries a word the server still serves
+  and rendering it as *Other*, or as a blank, would be the app telling its owner
+  something they never wrote. On an edit, that word is the option meaning *keep
+  it* — a blank is what `update_account` reads as *what is there stays* — so a
+  rename is never conditional on answering a second question, and the notifications
+  panel carries the advisory that names the account.
 - **The theme, the language and the table density are the reader's three
   preferences, one mechanism** (ADR-0024 decided the first two): three states each
   for theme and language (`light|dark|auto`, `fr|en|auto`), **two** for density

@@ -9,7 +9,7 @@ from logfmt_logger import getLogger
 from application import perf_series
 from application import store as store_module
 from application.events.schemas import (
-    ACCOUNT_FILE_COLUMNS, Account, DEFAULT_ACCOUNT, Portfolio)
+    ACCOUNT_FILE_COLUMNS, ACCOUNT_TYPES, Account, DEFAULT_ACCOUNT, Portfolio)
 
 logger = getLogger("accounts")
 
@@ -176,6 +176,31 @@ def refuse_unaddressable_id(account_id: str) -> None:
             f"'..' there name a route that does not exist")
 
 
+def refuse_unknown_type(account_type: str) -> None:
+    """Refuse a type outside the catalogue (#916).
+
+    **Closed on write, tolerant on read**: this stands on the two gestures a
+    reader has — the declaration and the retype. The seed writes the third row
+    (``store.DEFAULT_ACCOUNT_ROW``) and does not pass through here; it carries
+    ``OTHER``, and a test holds that on the source rather than a guard holding
+    it at runtime, the seed being the app's own row and not an owner's. A row
+    already carrying
+    ``Compte titres Boursorama`` reads, renders and is edited exactly as it
+    was — there is no migration machinery, and breaking those installs is not
+    available. What names them instead is an advisory
+    (:func:`advisories._observe_account_type`), which is a sentence rather than
+    a refusal.
+
+    A function of its own for :func:`refuse_unaddressable_id`'s reason: the two
+    writers have to refuse the same thing, and a reader counting the places a
+    type is judged must find one.
+    """
+    if account_type not in ACCOUNT_TYPES:
+        raise AccountSourceError(
+            f"{account_type!r} is not an account type this app knows; it is "
+            f"one of {', '.join(ACCOUNT_TYPES)}")
+
+
 def create_account(store, account_id: str, account_type: str,
                    label: Optional[str] = None) -> Account:
     """Declare an account. The app is where one is born, and the only place."""
@@ -186,6 +211,7 @@ def create_account(store, account_id: str, account_type: str,
     refuse_unaddressable_id(account_id)
     if not account_type:
         raise AccountSourceError("type is required")
+    refuse_unknown_type(account_type)
     if account_id in account_ids(store):
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 
@@ -201,7 +227,13 @@ def update_account(store, account_id: str, *, account_type: Optional[str] = None
                    label: Optional[str] = None) -> Account:
     """Relabel or retype an account created in the app."""
     current = _require(store, account_id)
-    new_type = _text(account_type) or current.type
+    # A blank keeps what is there — the label's own rule, and the one that lets
+    # a row wearing a legacy type be **relabelled** without being retyped. Only
+    # a type actually given is judged.
+    given = _text(account_type)
+    if given:
+        refuse_unknown_type(given)
+    new_type = given or current.type
     new_label = _text(label) or current.label
     store.execute('UPDATE account SET type = ?, label = ? WHERE id = ?',
                   [new_type, new_label, account_id])
@@ -239,6 +271,6 @@ __all__ = [
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',
     'is_named_by_events',
-    'refuse_unaddressable_id',
+    'refuse_unaddressable_id', 'refuse_unknown_type',
     'create_account', 'update_account', 'delete_account',
 ]

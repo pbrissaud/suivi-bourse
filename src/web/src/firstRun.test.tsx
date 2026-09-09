@@ -694,7 +694,7 @@ describe('an account can be declared from inside the walk', () => {
 
     await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'pea')
-    await user.type(within(modal()).getByLabelText('Type'), 'PEA')
+    await user.selectOptions(within(modal()).getByLabelText('Type'), 'PEA')
     await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
 
     // Declared, and read back: the list is the installation's own accounts, so
@@ -704,6 +704,27 @@ describe('an account can be declared from inside the walk', () => {
     await waitFor(() =>
       expect(within(modal()).queryByLabelText('Identifiant')).not.toBeInTheDocument(),
     )
+  })
+
+  it('offers the same closed catalogue the accounts panel does (#916)', async () => {
+    // The walk and the page cannot offer two different lists for one column:
+    // both read `ACCOUNT_TYPES` and `ACCOUNT_TYPE_LABEL`, and what this asserts
+    // is that the walk's field is a `<select>` at all — it was a text box, and a
+    // taxation default cannot be attached to a word typed into one.
+    withAccounts()
+    const { user } = await firstRun()
+    await walk(user)
+
+    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    const type = within(modal()).getByLabelText('Type')
+
+    expect(type.tagName).toBe('SELECT')
+    expect(
+      within(type)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(['', 'PEA', 'PEA-PME', 'CTO', 'AV', 'PER', 'OTHER'])
+    expect(within(type).getByRole('option', { name: 'Assurance-vie' })).toBeInTheDocument()
   })
 
   it('does not ask the server for a row it can see is incomplete', async () => {
@@ -736,7 +757,7 @@ describe('an account can be declared from inside the walk', () => {
 
     await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'default')
-    await user.type(within(modal()).getByLabelText('Type'), 'PEA')
+    await user.selectOptions(within(modal()).getByLabelText('Type'), 'PEA')
     await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
 
     // The refusal is in the form, and the form stays open on what was typed:

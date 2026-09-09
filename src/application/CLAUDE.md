@@ -86,6 +86,15 @@ name: `/healthz` was examined and declined.
 - **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
   instant, `DATE` for a calendar day. A bound on a `DATE` column is **cast**, or
   DuckDB widens it to midnight and the first day of every window is dropped.
+- **`account.type` is a closed catalogue on write, tolerant on read** (#916).
+  The six live in `schemas.ACCOUNT_TYPES` and the two gestures a reader has
+  refuse anything else (`accounts.refuse_unknown_type`, on the declaration and
+  on the retype). The seed writes its row without passing through the guard, and
+  what holds it to a member is a test rather than a check at runtime.
+  They are **not** seeded rows and not an `Enum`: a word of the product follows
+  the version and is translated, and a store laid down before the catalogue
+  carries a word that is a member of nothing and must keep reading, rendering
+  and being editable. What names those rows is an advisory, never a refusal.
 - **The seed has two halves**: the `default` account row is written at creation
   only and never removed; the `setting` defaults are inserted at every start with
   `ON CONFLICT DO NOTHING`. `base_currency` has no default and is therefore never
@@ -188,12 +197,16 @@ true of the install (`installation_facts.py`) or of the app (`/health`).
   `IF NOT EXISTS` with no migration machinery, so a column added there would
   exist on no store created before it. `advisory_ack` is the twelfth table, and
   it carries the expiry the fact's own row deliberately does not.
-- **One family today** — the cash share of an account, over a constant
-  threshold (`CASH_SHARE_THRESHOLD`, ADR-0036: *"a setting nobody has ever
-  turned is a setting that should not have been written"*). The four **subjects**
-  the panel groups by are declared all the same, `portfolio` included: a front
-  inventing a heading for a key it does not know would be a second authority on
-  the grouping.
+- **Two families**, both on the `accounts` subject: the **cash share** of an
+  account over a constant threshold (`CASH_SHARE_THRESHOLD`, ADR-0036: *"a
+  setting nobody has ever turned is a setting that should not have been
+  written"*), and an **account type outside the catalogue** (#916). The four
+  **subjects** the panel groups by are declared all the same, `portfolio`
+  included: a front inventing a heading for a key it does not know would be a
+  second authority on the grouping.
+- **A family the front does not know renders the server's `message`**, which is
+  English. That is a floor and not a plan: a new family ships with its two keys
+  in both catalogues, or a French reader never gets a sentence for it.
 
 ## Configuration
 

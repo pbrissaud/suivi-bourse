@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from application import accounts
 from application import advisories
 from application import store as store_module
 
@@ -126,6 +127,85 @@ def test_it_reads_the_newest_day_and_not_the_series(store):
     _metrics(store, 'cto', date(2026, 8, 26), cash=10.0, total=5000.0)
 
     assert advisories.listing(store, NOW) == []
+
+
+# --------------------------------------------------------------------------- #
+# The account type: what the closed catalogue leaves behind (#916)
+# --------------------------------------------------------------------------- #
+
+def _typed(opened, identifier: str, account_type: str, label: str) -> None:
+    """A row written **straight to the table**, which is the whole point.
+
+    ``accounts.create_account`` refuses this type; a store laid down before the
+    catalogue existed holds it all the same, and that install is what the
+    advisory is about.
+    """
+    opened.execute('INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
+                   [identifier, account_type, label])
+
+
+def test_an_account_outside_the_catalogue_raises_one_naming_it(store):
+    _typed(store, 'bourso', 'Compte titres Boursorama', 'Bourso')
+
+    found = advisories.listing(store, NOW)
+
+    assert _keys(found) == ['account_type:bourso']
+    one = found[0]
+    assert one.kind == advisories.ACCOUNT_TYPE
+    assert one.subject == advisories.SUBJECT_ACCOUNTS
+    # The three the card renders a sentence from — the front parses no prose.
+    assert one.detail == {'account': 'bourso', 'label': 'Bourso',
+                          'type': 'Compte titres Boursorama'}
+    assert one.observed_at == NOW
+
+
+def test_the_seeded_row_every_install_owns_raises_nothing(store):
+    """``OTHER`` is a catalogue member, and it has to be.
+
+    A fresh store holds exactly one account, the app wrote its type, and an
+    advisory about it would be the app reporting itself on every install that
+    has declared nothing.
+    """
+    assert store.query('SELECT type FROM account') == [
+        (store_module.DEFAULT_ACCOUNT_ROW[1],)]
+    assert advisories.listing(store, NOW) == []
+
+
+def test_it_goes_when_the_type_is_brought_in_and_comes_back_if_one_returns(store):
+    """Derived at read time, like every other one — nothing about it is stored.
+
+    So it needs no clearing: the retype is the whole repair, and a row written
+    outside the app tomorrow raises it again on its own.
+    """
+    _typed(store, 'bourso', 'Compte titres Boursorama', 'Bourso')
+    accounts.update_account(store, 'bourso', account_type='CTO')
+
+    assert advisories.listing(store, NOW) == []
+
+    _typed(store, 'legacy', 'pea', 'Ancien PEA')
+    assert _keys(advisories.listing(store, NOW)) == ['account_type:legacy']
+
+
+def test_the_catalogue_is_case_sensitive_and_that_is_the_point(store):
+    """``pea`` is not ``PEA``.
+
+    The value is what #752 attaches a taxation default to, so *a word that looks
+    right* is exactly the class of value the catalogue exists to stop being
+    silently accepted.
+    """
+    _typed(store, 'lower', 'pea', 'PEA')
+
+    assert _keys(advisories.listing(store, NOW)) == ['account_type:lower']
+
+
+def test_it_is_put_to_sleep_like_any_other(store):
+    """One acknowledgement mechanism, keyed the same way — nothing of its own."""
+    _typed(store, 'bourso', 'Compte titres Boursorama', 'Bourso')
+
+    advisories.acknowledge(store, 'account_type:bourso', NOW)
+
+    assert advisories.listing(store, NOW) == []
+    assert _keys(advisories.standing(store, NOW)) == ['account_type:bourso']
 
 
 # --------------------------------------------------------------------------- #

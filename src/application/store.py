@@ -27,7 +27,7 @@ class StoreUnavailable(Exception):
 _DDL_DECLARED = """
 CREATE TABLE IF NOT EXISTS account (
     id         VARCHAR PRIMARY KEY,
-    type       VARCHAR NOT NULL,                    -- PEA | CTO | …
+    type       VARCHAR NOT NULL,        -- schemas.ACCOUNT_TYPES, or a legacy word
     label      VARCHAR NOT NULL);
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);

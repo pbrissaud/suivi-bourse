@@ -58,6 +58,7 @@ import {
   accountColour,
   accountEvents,
   accountPositions,
+  accountTypeName,
   declaredLabel,
   declaredType,
   degradedReason,
@@ -180,7 +181,9 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-  const type = declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
+  const type =
+    accountTypeName(t, declaredType(row)) ??
+    (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
   const reason = degradedReason(row, rebuilding)
 
   // **Every derivation below is memoised, and against the reads themselves.**

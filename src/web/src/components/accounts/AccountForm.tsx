@@ -50,13 +50,15 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import {
+  ACCOUNT_TYPE_LABEL,
   declaredLabel,
   declaredType,
   DEFAULT_ACCOUNT_LABEL,
+  isAccountType,
   type Reassignment,
   type Removal,
 } from '@/lib/accounts'
-import { api, type Account, type AccountDraft } from '@/lib/api'
+import { ACCOUNT_TYPES, api, type Account, type AccountDraft } from '@/lib/api'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey, problemSentence } from '@/lib/problem'
 
@@ -168,6 +170,7 @@ export function AccountForm({
     // attributing one account's failure to another.
     write.reset()
     remove.reset()
+    const declared = account === null ? null : declaredType(account)
     setDraft(
       account === null
         ? EMPTY
@@ -178,7 +181,12 @@ export function AccountForm({
             // neither is a value the reader typed — and handing one back had
             // them typing `PEA` into `OTHER` and saving `OTHERPEA`, the form
             // giving them a value they never gave.
-            type: declaredType(account) ?? '',
+            //
+            // A **legacy** type opens empty for the same reason one step along
+            // (#916): it is no member of the select's list, so there is no
+            // option to sit on, and a blank is what `update_account` reads as
+            // *keep what is there*. The option below says which word that is.
+            type: isAccountType(declared) ? declared : '',
             label: declaredLabel(account) ?? '',
           },
     )
@@ -278,15 +286,49 @@ export function AccountForm({
             </div>
           )}
 
+          {/* **A select, and the catalogue is closed on write** (#916). A
+              default cannot be attached to a value typed in a text box, which
+              is what a taxation model is about to ask of this column.
+
+              The first option is the one decision worth reading twice. It
+              means **keep what is there** — `update_account` reads a blank as
+              *what is there stays* — so a reader who came to rename the account
+              is not made to answer a second question. On a row wearing a legacy
+              type it *is* that word, on screen rather than implied by an empty
+              control; everywhere else it is *Choose a type*. */}
           <Field name="type" label="accounts.form.type" error={errors.type}>
             {(id, described) => (
-              <Input
+              <select
                 id={id}
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 dark:aria-invalid:ring-destructive/40"
                 value={draft.type}
                 aria-invalid={errors.type !== undefined}
                 aria-describedby={described}
                 onChange={(changed) => set('type', changed.target.value)}
-              />
+              >
+                {account !== null && !isAccountType(declaredType(account)) ? (
+                  /* Kept in the list **after** a member is picked, so the
+                     gesture is reversible: a reader who chose one by mistake
+                     goes back to the word the row wears rather than having to
+                     shut the panel.
+
+                     The seeded row lands here too, and it reads *Choose a
+                     type* rather than the catalogue's name for `OTHER`: that
+                     word is what the *server* wrote about a row nobody
+                     declared, and printing it beside the `OTHER` option below
+                     would offer one answer twice. */
+                  <option value="">
+                    {declaredType(account) ?? t('accounts.form.type.choose')}
+                  </option>
+                ) : draft.type === '' ? (
+                  <option value="">{t('accounts.form.type.choose')}</option>
+                ) : null}
+                {ACCOUNT_TYPES.map((one) => (
+                  <option key={one} value={one}>
+                    {t(ACCOUNT_TYPE_LABEL[one])}
+                  </option>
+                ))}
+              </select>
             )}
           </Field>
 

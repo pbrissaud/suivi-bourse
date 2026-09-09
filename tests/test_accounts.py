@@ -33,7 +33,8 @@ from application import entries
 from application.events.aggregator import EventAggregator
 from application.events.loader import EventLoader
 from application.events.validator import EventValidator
-from application.events.schemas import Portfolio, Account
+from application import store as store_module
+from application.events.schemas import ACCOUNT_TYPES, Portfolio, Account
 from application.events.schemas import Event, EventType, ShareState, DEFAULT_ACCOUNT
 from application.main import ConfigurationManager
 
@@ -316,6 +317,70 @@ def test_an_id_no_route_can_carry_is_refused_before_it_is_written(store):
             accounts_module.create_account(store, unaddressable, 'PEA')
 
     assert accounts_module.account_ids(store) == {DEFAULT_ACCOUNT}
+
+
+def test_a_type_outside_the_catalogue_is_refused_on_both_writers(store):
+    """Closed on write (#916), and closed at **both** doors.
+
+    A default cannot be attached to a value the owner invented in a text box,
+    which is what #752 is about to ask of this column. So the two gestures that
+    put a type in the store — the declaration and the retype — refuse the same
+    thing with the same exception, and the API turns both into one refusal.
+    """
+    with pytest.raises(accounts_module.AccountSourceError) as refusal:
+        accounts_module.create_account(store, 'pea', 'Compte titres Boursorama')
+    assert 'PEA' in str(refusal.value)
+    assert accounts_module.account_ids(store) == {DEFAULT_ACCOUNT}
+
+    accounts_module.create_account(store, 'pea', 'PEA')
+    with pytest.raises(accounts_module.AccountSourceError):
+        accounts_module.update_account(store, 'pea', account_type='pea')
+
+    assert next(a for a in accounts_module.read_accounts(store)
+                if a.id == 'pea').type == 'PEA'
+
+
+def test_the_five_wrappers_and_the_seeded_row_are_all_catalogue_members(store):
+    """Every member is writable, and ``OTHER`` is the one the seed already wears.
+
+    The seeded row is the install every owner starts on, so a catalogue that did
+    not hold its type would raise an advisory about the app's own row on a store
+    where nobody had declared anything.
+    """
+    for account_type in ACCOUNT_TYPES:
+        created = accounts_module.create_account(
+            store, account_type.lower(), account_type)
+        assert created.type == account_type
+
+    assert store_module.DEFAULT_ACCOUNT_ROW[1] in ACCOUNT_TYPES
+
+
+def test_a_legacy_type_reads_renders_and_is_edited_into_the_catalogue(store):
+    """Tolerant on read, and repairable — the whole of what happens to an
+    install laid down before the catalogue.
+
+    There is no migration machinery and no ``ALTER TABLE``: the row keeps its
+    word, ``read_accounts`` hands it back verbatim, and the retype the API
+    already offers is what brings it in. Rewriting it under its owner is not
+    available, and would not be desirable if it were.
+    """
+    store.execute('INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
+                  ['bourso', 'Compte titres Boursorama', 'Bourso'])
+
+    read = next(a for a in accounts_module.read_accounts(store)
+                if a.id == 'bourso')
+    assert read.type == 'Compte titres Boursorama'
+
+    # And the label alone can still be changed without answering the type: a
+    # blank keeps what is there, so a rename is not conditional on a retype.
+    accounts_module.update_account(store, 'bourso', label='Bourso CTO')
+    assert next(a for a in accounts_module.read_accounts(store)
+                if a.id == 'bourso').type == 'Compte titres Boursorama'
+
+    brought_in = accounts_module.update_account(
+        store, 'bourso', account_type='CTO')
+    assert brought_in.type == 'CTO'
+    assert brought_in.label == 'Bourso CTO'
 
 
 def test_creating_an_account_makes_a_blank_column_an_error(store, tmp_path):

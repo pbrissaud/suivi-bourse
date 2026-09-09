@@ -11,6 +11,25 @@ DEFAULT_ACCOUNT = "default"
 
 ACCOUNT_FILE_COLUMNS = ('id', 'type', 'label')
 
+# The account types, and the catalogue is **closed on write** (#916).
+#
+# A word of the product rather than the owner's data — it is translated, it
+# follows the version, it is fixed in a release — so it lives here and not in
+# seeded rows: a row could never be corrected afterwards, `ON CONFLICT DO
+# NOTHING` skipping the correction and `DO UPDATE` overwriting whatever its
+# owner had done to it. `EventType` is the shape this copies.
+#
+# A tuple and not an `Enum`, and that is the one departure: the store is
+# **tolerant on read** — no migration machinery, no `ALTER TABLE` — so a row
+# laid down before this catalogue existed carries a word that is no member of
+# anything, and it has to keep reading and keep rendering. An enum would refuse
+# it at the boundary the app promises not to refuse it at.
+#
+# `OTHER` is what the seeded row wears (`store.DEFAULT_ACCOUNT_ROW`), and it is
+# last for the reason it is: it is the answer for a wrapper the five above do
+# not name, not the one to reach for first.
+ACCOUNT_TYPES = ('PEA', 'PEA-PME', 'CTO', 'AV', 'PER', 'OTHER')
+
 
 class EventType(Enum):
     """Types of portfolio events."""

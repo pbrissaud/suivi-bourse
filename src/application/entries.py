@@ -84,6 +84,13 @@ def create_many(store, drafts: Sequence[Event], *,
 
     with store.transaction():
         for account_id in declare_accounts:
+            # **The one road into the store a file has**, and the type it lays
+            # down is the seed's — a member of `schemas.ACCOUNT_TYPES` (#916).
+            # A file never names a type: since ADR-0034 an accounts file is
+            # refused whole (`uploads._parse`), and what an *event* file can
+            # declare is an id. So the catalogue's clause about a file import is
+            # kept by construction rather than by a second guard, and this call
+            # goes through `create_account`, which refuses anything else anyway.
             accounts_module.create_account(
                 store, account_id, store_module.DEFAULT_ACCOUNT_ROW[1])
             logger.info(f"The file names {account_id} and nobody had declared "

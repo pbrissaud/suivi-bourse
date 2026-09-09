@@ -428,6 +428,10 @@ def update_account(account_id: str):
                 account_type=body.get('type'), label=body.get('label'))
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
+    except accounts_module.AccountSourceError as exc:
+        # A type outside the catalogue (#916) — `POST`'s refusal, at the gesture
+        # that can also *repair* a legacy one, so the two answer alike.
+        return bad_request(str(exc))
 
     main.replay_after_write(runtime)
     return jsonify(_account_to_dict(account))

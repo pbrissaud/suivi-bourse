@@ -81,7 +81,7 @@ describe('the first declaration carries the reassignment', () => {
     expect(box).toBeChecked()
 
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.type(within(panel).getByLabelText('Type'), 'PEA')
+    await user.selectOptions(within(panel).getByLabelText('Type'), 'PEA')
     await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
 
     // **One request**, which is what *dans le même geste* means: the declaration
@@ -108,7 +108,7 @@ describe('the first declaration carries the reassignment', () => {
     const panel = await screen.findByRole('dialog')
     await user.click(within(panel).getByRole('checkbox'))
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.type(within(panel).getByLabelText('Type'), 'PEA')
+    await user.selectOptions(within(panel).getByLabelText('Type'), 'PEA')
     await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
 
     await waitFor(() => expect(sent).toEqual({ id: 'pea', type: 'PEA', label: 'pea' }))

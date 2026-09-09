@@ -147,32 +147,63 @@ const FACT_TITLES: Record<string, MessageKey> = {
  * A family this front does not know still renders: the title falls back to the
  * server's own English `message`, and the card offers the acknowledgement all
  * the same. An entry counted by the badge that renders as nothing is the one
- * outcome a panel cannot afford.
+ * outcome a panel cannot afford. That fallback is a floor and never a plan: it
+ * is English-only, so a family shipped without its two keys here is a family
+ * whose sentence a French reader never gets.
+ *
+ * Both families the app raises are about **one account**, so both carry the
+ * same link — the accounts page, opened on it, which is where the condition is
+ * acted on: the cash is invested, the type is brought into the catalogue (#916).
  */
 function advisoryEntry(advisory: Advisory): Entry {
   const account = String(advisory.detail.account ?? '')
-  const known = advisory.kind === 'cash_share' && account !== ''
+  const label = String(advisory.detail.label ?? account)
+  // No account named is no card this front can write: both families are about
+  // one, and the link has nowhere to go without it.
+  const said = account === '' ? null : sentenceOf(advisory, label)
   return {
     id: advisory.key,
     register: 'advisory',
     subject: subjectOf(advisory.subject),
     pinned: false,
-    title: known
-      ? {
-          key: 'notification.advisory.cash_share',
-          values: {
-            label: String(advisory.detail.label ?? account),
-            share: Number(advisory.detail.share ?? 0),
-          },
-        }
-      : { text: advisory.message },
-    body: known ? { key: 'notification.advisory.cash_share.body' } : { text: '' },
+    title: said?.title ?? { text: advisory.message },
+    body: said?.body ?? { text: '' },
     at: advisory.observed_at,
-    link: known
-      ? { label: 'notification.link.account', to: { to: '/accounts', search: { account } } }
-      : null,
+    link:
+      said !== null
+        ? { label: 'notification.link.account', to: { to: '/accounts', search: { account } } }
+        : null,
     acknowledge: { register: 'advisory', key: advisory.key },
   }
+}
+
+/** The two sentences of a family this front knows, or `null` for one it does not. */
+function sentenceOf(
+  advisory: Advisory,
+  label: string,
+): { title: Said; body: Said } | null {
+  if (advisory.kind === 'cash_share') {
+    return {
+      title: {
+        key: 'notification.advisory.cash_share',
+        values: { label, share: Number(advisory.detail.share ?? 0) },
+      },
+      body: { key: 'notification.advisory.cash_share.body' },
+    }
+  }
+  if (advisory.kind === 'account_type') {
+    // The stored word is **interpolated rather than translated**: it is no
+    // member of the catalogue — that is the whole condition — so there is no key
+    // for it, and what the card shows is what the row says (#916).
+    return {
+      title: { key: 'notification.advisory.account_type', values: { label } },
+      body: {
+        key: 'notification.advisory.account_type.body',
+        values: { type: String(advisory.detail.type ?? '') },
+      },
+    }
+  }
+  return null
 }
 
 /** A subject this front knows, or the portfolio — the server decides, we render. */

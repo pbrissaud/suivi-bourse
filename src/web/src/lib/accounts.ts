@@ -65,6 +65,7 @@
 import type {
   Account,
   AccountsResponse,
+  AccountType,
   LedgerEvent,
   PerfPoint,
   Position,
@@ -130,6 +131,51 @@ export function declaredLabel(account: NamedAccount): string | null {
 /** The same clause on the other seeded column. `null` — nothing was declared. */
 export function declaredType(account: NamedAccount): string | null {
   return account.type?.trim() || null
+}
+
+/**
+ * The catalogue's six, named in the reader's language (#916) — `TYPE_LABEL`'s
+ * shape one table over, for the same reason: a key and not a string, so a member
+ * added on one side and forgotten here does not compile.
+ *
+ * `PEA` and `PEA-PME` are the same word in both catalogues, and deliberately:
+ * they are the products' own names, not descriptions of them, and an English
+ * expansion would name a thing no bank statement calls that.
+ */
+export const ACCOUNT_TYPE_LABEL: Record<AccountType, MessageKey> = {
+  PEA: 'account.type.PEA',
+  'PEA-PME': 'account.type.PEA-PME',
+  CTO: 'account.type.CTO',
+  AV: 'account.type.AV',
+  PER: 'account.type.PER',
+  OTHER: 'account.type.OTHER',
+}
+
+/** Is this stored word a member of the catalogue, or one a legacy row wears? */
+export function isAccountType(type: string | null): type is AccountType {
+  return type !== null && type in ACCOUNT_TYPE_LABEL
+}
+
+/**
+ * A stored type as the reader reads it: the catalogue's sentence for a member,
+ * **the stored word verbatim for anything else** (#916).
+ *
+ * The fallback is the feature and not a defensive clause. The catalogue is
+ * closed on write and the store is tolerant on read — no migration machinery,
+ * no `ALTER TABLE` — so a row laid down before it carries `Compte titres
+ * Boursorama`, and rendering that as a blank, or as *Other*, would be the app
+ * telling its owner something they never wrote. It renders as itself, and an
+ * advisory names the account so it can be brought in.
+ *
+ * `null` passes through so a caller can chain its own fallback for the seeded
+ * row, which declares no type at all.
+ */
+export function accountTypeName(
+  t: (key: MessageKey) => string,
+  type: string | null,
+): string | null {
+  if (type === null) return null
+  return isAccountType(type) ? t(ACCOUNT_TYPE_LABEL[type]) : type
 }
 
 // ------------------------------------------------------------------------- //

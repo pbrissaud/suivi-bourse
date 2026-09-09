@@ -66,6 +66,7 @@ import {
   accountColour as segmentColour,
   accountWeights,
   accountWorth,
+  accountTypeName,
   declaredLabel,
   declaredType,
   degradedReason,
@@ -249,7 +250,8 @@ export function AccountsRail({
           const cash = cashShare(advisories, row.id)
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
           const type =
-            declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
+            accountTypeName(t, declaredType(row)) ??
+            (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
           // `null` where there is no ratio to state — nothing written about this
           // account yet, nothing ever paid in, or more taken out than put in.
           const performance = onContributed(row.gain_absolu, row.net_contributed)

@@ -252,6 +252,33 @@ describe('nothing to report is said of the panel, or it is not said', () => {
   })
 })
 
+describe('an account type outside the catalogue is named here (#916)', () => {
+  const legacy = anAdvisory({
+    key: 'account_type:bourso',
+    kind: 'account_type',
+    message: "Bourso is filed under 'Compte titres Boursorama'.",
+    detail: { account: 'bourso', label: 'Bourso', type: 'Compte titres Boursorama' },
+  })
+
+  it('renders its sentence in the reader’s language, with the stored word in it', async () => {
+    await openPanel({ facts: [], advisories: [legacy] })
+
+    const entry = card(/type de compte inconnu/)
+    expect(within(entry).getByText(/Compte titres Boursorama/)).toBeInTheDocument()
+    // The server's `message` is English and it is the fallback for a family this
+    // front does not know. This one is known, so none of it reaches the screen.
+    expect(panel().textContent).not.toContain('is filed under')
+  })
+
+  it('offers the account it is about, which is where the type is fixed', async () => {
+    await openPanel({ facts: [], advisories: [legacy] })
+
+    expect(
+      within(card(/type de compte inconnu/)).getByRole('link', { name: 'Voir le compte' }),
+    ).toHaveAttribute('href', '/accounts?account=bourso')
+  })
+})
+
 describe('a card’s link lands on the figure, not on the page', () => {
   it('opens the accounts page with that account selected', async () => {
     const view = await openPanel({ facts: [], advisories: [anAdvisory()] })

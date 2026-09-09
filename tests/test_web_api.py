@@ -4947,6 +4947,66 @@ def test_an_account_is_declared_here_renamed_here_and_removed_here(tmp_path):
     assert [a['id'] for a in after['accounts']] == ['default']
 
 
+def test_a_type_outside_the_catalogue_is_a_400_at_both_doors(tmp_path):
+    """Closed on write (#916), and the two writers answer alike.
+
+    ``PATCH`` is the gesture that *repairs* a legacy type, so it is exactly the
+    one that must not be a second door for a new one — and it refuses with the
+    same problem document the declaration does, which is what the front branches
+    on (``type``, never ``status``).
+    """
+    client = build_client(tmp_path)
+
+    refused = client.post('/api/accounts',
+                          json={'id': 'bourso', 'type': 'Compte titres'})
+
+    assert refused.status_code == 400
+    assert refused.get_json()['type'] == problem.TYPE_BAD_REQUEST
+    assert [a['id'] for a in
+            client.get('/api/accounts').get_json()['accounts']] == ['default']
+
+    client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'})
+    retyped = client.patch('/api/accounts/pea', json={'type': 'pea'})
+
+    assert retyped.status_code == 400
+    assert retyped.get_json()['type'] == problem.TYPE_BAD_REQUEST
+    assert next(a for a in client.get('/api/accounts').get_json()['accounts']
+                if a['id'] == 'pea')['type'] == 'PEA'
+
+
+def test_a_legacy_type_is_named_by_an_advisory_and_repaired_by_a_patch(tmp_path):
+    """The whole of what happens to a store laid down before the catalogue.
+
+    It reads, it renders its own word, an advisory on the accounts subject names
+    it and carries the account the card links to — and the retype the app
+    already offers is what makes it go. Nothing is rewritten under its owner.
+    """
+    # The row is laid down **before the app boots**, which is the whole shape of
+    # the install this is about: a store created by a version that had no
+    # catalogue, opened by one that has.
+    legacy = store.open_store(tmp_path / 'store.duckdb')
+    legacy.execute('INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
+                   ['bourso', 'Compte titres Boursorama', 'Bourso'])
+    legacy.close()
+
+    client, opened = build_client_and_store(tmp_path)
+
+    listed = next(a for a in client.get('/api/accounts').get_json()['accounts']
+                  if a['id'] == 'bourso')
+    assert listed['type'] == 'Compte titres Boursorama'
+
+    (standing,) = client.get('/api/advisories').get_json()
+    assert standing['key'] == 'account_type:bourso'
+    assert standing['kind'] == advisories.ACCOUNT_TYPE
+    assert standing['subject'] == advisories.SUBJECT_ACCOUNTS
+    assert standing['detail']['account'] == 'bourso'
+    assert standing['detail']['type'] == 'Compte titres Boursorama'
+
+    assert client.patch('/api/accounts/bourso',
+                        json={'type': 'CTO'}).status_code == 200
+    assert client.get('/api/advisories').get_json() == []
+
+
 def test_declaring_an_id_twice_is_a_409(tmp_path):
     client = build_client(tmp_path)
     client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'})
