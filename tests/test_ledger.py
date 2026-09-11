@@ -1228,6 +1228,12 @@ def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
     assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
     assert opened.query('SELECT type FROM account WHERE id = ?', ['TR']) == \
         [(store_module.DEFAULT_ACCOUNT_ROW[1],)]
+    # **And its name is its id**, which is what a row nobody named must carry.
+    # The seeded word belongs to the column nothing reads; the moment it reached
+    # the *label* instead, this account was called `OTHER` on every screen — and
+    # the whole suite stayed green, which is why the assertion is here.
+    assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
+        [('TR',)]
 
 
 def test_the_correspondence_applies_before_the_split_at_both_moments(tmp_path):

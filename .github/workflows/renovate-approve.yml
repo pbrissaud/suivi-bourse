@@ -1,0 +1,27 @@
+name: "Renovate auto-approve"
+
+# `autoApprove` de Renovate ne vaut que sur Azure, Gerrit et GitLab — c'est
+# l'ancien `azureAutoApprove`. Sur GitHub l'approbation que `master` exige doit
+# venir d'un acteur du dépôt : c'est ce job, et l'approbation de
+# github-actions[bot] compte pour la règle de branche.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [master]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  approve:
+    name: Renovate approval
+    if: github.event.pull_request.user.login == 'renovate[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      # `dismiss_stale_reviews` est armé sur master : chaque rebase de Renovate
+      # efface l'approbation, d'où le `synchronize` au-dessus.
+      - run: gh pr review "$PR" --approve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
