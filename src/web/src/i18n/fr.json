@@ -304,7 +304,6 @@
   "accounts.reason.empty": "rien d’enregistré sur ce compte",
 
   "accounts.default.label": "Non affecté",
-  "accounts.default.type": "Autre",
   "accounts.default.reassign": "Affecter ces événements à un compte",
 
   "accounts.detail.gainTotal.explain": "Ce que vaut ce compte moins ce que vous y avez versé. Il compte les positions soldées de ce compte, et seulement les frais prélevés sur ses propres virements.",
@@ -345,8 +344,6 @@
   "accounts.form.id": "Identifiant",
   "accounts.form.id.fixed": "C’est ce que nomment vos événements, dans un fichier comme ici : il ne peut donc pas changer. Déclarez un autre compte et affectez-y les événements.",
   "accounts.form.id.hint": "C’est ce que nomment vos événements. Il ne changera plus.",
-  "accounts.form.type": "Type",
-  "accounts.form.type.hint": "Comme vous l’appelez : PEA, CTO, assurance-vie…",
   "accounts.form.label": "Nom",
   "accounts.form.required": "Ce champ est obligatoire.",
   "accounts.form.submit": "Déclarer ce compte",

@@ -67,7 +67,7 @@ def test_the_blank_column_lands_under_the_seeded_row(store, tmp_path):
 def test_reassignment_moves_every_unassigned_event_onto_the_declaration(
         store, tmp_path):
     _the_month_before_declaring(store, tmp_path)
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'pea', 'Plan')
 
     with store.transaction():
         moved = reassignment.reassign_unassigned(store, 'pea')
@@ -90,7 +90,7 @@ def test_the_column_is_the_whole_population(store, tmp_path):
         'SELECT count(*) FROM event WHERE account = ?', [DEFAULT_ACCOUNT]
     )[0][0] == 3
 
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'pea', 'Plan')
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
 
@@ -104,7 +104,7 @@ def test_a_row_typed_here_carrying_default_goes_with_them(store, tmp_path):
                                 'Apple Inc', quantity=1, unit_price=10.0))
     assert reassignment.unassigned_events(store) == 4
 
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'pea', 'Plan')
     with store.transaction():
         assert reassignment.reassign_unassigned(store, 'pea') == 4
 
@@ -117,8 +117,8 @@ def test_after_the_reassignment_nothing_moves_a_row_again(
         store, tmp_path):
     """*Jamais ensuite* — and it is the ``WHERE`` that says so, not a flag."""
     _the_month_before_declaring(store, tmp_path)
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
-    accounts_module.create_account(store, 'cto', 'CTO', 'Titres')
+    accounts_module.create_account(store, 'pea', 'Plan')
+    accounts_module.create_account(store, 'cto', 'Titres')
 
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
@@ -138,8 +138,8 @@ def test_a_reassigned_row_is_then_an_ordinary_row(store, tmp_path):
     rewritten in place afterwards, like any other.
     """
     _the_month_before_declaring(store, tmp_path)
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
-    accounts_module.create_account(store, 'cto', 'CTO', 'Titres')
+    accounts_module.create_account(store, 'pea', 'Plan')
+    accounts_module.create_account(store, 'cto', 'Titres')
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
 
@@ -196,7 +196,7 @@ def test_nothing_declared_means_no_target_at_all(store, tmp_path):
 def test_the_unassigned_line_disappears_from_the_declaration(store, tmp_path):
     """``default`` leaves ``declared_portfolio`` the moment nothing names it."""
     _the_month_before_declaring(store, tmp_path)
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'pea', 'Plan')
     before = accounts_module.declared_portfolio(store)
     assert sorted(before.ids()) == ['default', 'pea']
 
@@ -210,7 +210,7 @@ def test_the_unassigned_line_disappears_from_the_declaration(store, tmp_path):
 def test_the_seeded_row_becomes_removable_again(store, tmp_path):
     """Not a promise the module makes — a consequence the owner can observe."""
     _the_month_before_declaring(store, tmp_path)
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'pea', 'Plan')
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
     assert accounts_module.is_named_by_events(store, DEFAULT_ACCOUNT) is False
@@ -220,7 +220,7 @@ def test_the_ledger_it_leaves_is_replayed_before_the_commit(store, tmp_path):
     """:mod:`entries`' last assertion, for the same reason: a ledger that does
     not replay committed here fails the **boot**."""
     _the_month_before_declaring(store, tmp_path)
-    accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'pea', 'Plan')
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
 
@@ -246,17 +246,24 @@ def test_a_renamed_seed_is_a_declaration_and_its_events_are_assigned(
 
     assert reassignment.unassigned_events(store) == 0
 
-    accounts_module.create_account(store, 'cto', 'CTO', 'Titres')
+    accounts_module.create_account(store, 'cto', 'Titres')
     with store.transaction():
         assert reassignment.reassign_unassigned(store, 'cto') == 0
     assert _accounts_of(store) == [DEFAULT_ACCOUNT] * 3
 
 
-def test_a_retyped_seed_is_a_declaration_too(store, tmp_path):
-    """The other seeded column, and it is one rule on both (``as_declared``)."""
-    _the_month_before_declaring(store, tmp_path)
-    accounts_module.update_account(store, DEFAULT_ACCOUNT, account_type='PEA')
+def test_the_name_is_the_whole_of_what_declares_the_seed(store, tmp_path):
+    """There was a second half to this rule, and #916 removed it.
 
+    ``as_declared`` used to compare **two** seeded columns, so retyping the row
+    declared it as surely as renaming it did. The type is gone (ADR-0043), so the
+    name is the whole predicate — and this asserts the half that is left is
+    genuinely doing the work alone.
+    """
+    _the_month_before_declaring(store, tmp_path)
+    assert reassignment.unassigned_events(store) == 3
+
+    accounts_module.update_account(store, DEFAULT_ACCOUNT, label='Mon PEA')
     assert reassignment.unassigned_events(store) == 0
 
 

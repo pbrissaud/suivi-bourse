@@ -380,7 +380,7 @@ def create_account():
         with runtime.config_manager.writing() as opened:
             with opened.transaction():
                 account = accounts_module.create_account(
-                    opened, body.get('id'), body.get('type'), body.get('label'))
+                    opened, body.get('id'), body.get('label'))
                 if _flag(body.get('reassign')):
                     reassignment.reassign_unassigned(opened, account.id)
     except accounts_module.DuplicateAccount as exc:
@@ -423,9 +423,12 @@ def update_account(account_id: str):
     runtime = current_runtime()
     try:
         with runtime.config_manager.writing() as opened:
+            # A `type` member is **read by nothing** rather than refused (#916,
+            # ADR-0043): `/api` is the front's interface and not a contract held
+            # for anybody else (ADR-0033), so a refusal written for a client that
+            # does not exist is code for nobody.
             account = accounts_module.update_account(
-                opened, account_id,
-                account_type=body.get('type'), label=body.get('label'))
+                opened, account_id, label=body.get('label'))
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
 
@@ -453,7 +456,6 @@ def _account_to_dict(account) -> dict:
     """One :class:`events.schemas.Account`, on the wire."""
     return {
         'id': account.id,
-        'type': account.type,
         'label': account.label,
     }
 

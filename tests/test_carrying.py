@@ -33,7 +33,7 @@ from application.events.schemas import Account, Event, EventType
 
 
 UTC = timezone.utc
-PEA = Account("PEA", "PEA", "Mon PEA")
+PEA = Account("PEA", "Mon PEA")
 
 
 # --------------------------------------------------------------------------- #

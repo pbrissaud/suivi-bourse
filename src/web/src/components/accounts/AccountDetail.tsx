@@ -59,15 +59,12 @@ import {
   accountEvents,
   accountPositions,
   declaredLabel,
-  declaredType,
   degradedReason,
   distinctSymbols,
   dividendPayers,
-  isDefaultAccount,
   onContributed,
   valueSeries,
   DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_ACCOUNT_TYPE,
   type AccountRow,
   type DegradedReason,
   type Reassignment as ReassignmentOffer,
@@ -180,7 +177,9 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-  const type = declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
+  // The id, under the name, where the type used to be — see `AccountsRail`
+  // (#916, ADR-0043, reversing #838).
+  const type = row.id
   const reason = degradedReason(row, rebuilding)
 
   // **Every derivation below is memoised, and against the reads themselves.**

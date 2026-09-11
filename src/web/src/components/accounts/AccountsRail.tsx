@@ -67,13 +67,10 @@ import {
   accountWeights,
   accountWorth,
   declaredLabel,
-  declaredType,
   degradedReason,
-  isDefaultAccount,
   onContributed,
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_ACCOUNT_TYPE,
   type AccountRow,
   type DegradedReason,
   type Reassignment as ReassignmentOffer,
@@ -248,8 +245,13 @@ export function AccountsRail({
           const reason = degradedReason(row, rebuilding)
           const cash = cashShare(advisories, row.id)
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-          const type =
-            declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
+          // **The id under the name** since #916 (ADR-0043), where the type used
+          // to sit. It reverses #838 deliberately: that ticket took the id off
+          // this page saying the line heads an account with *what the owner
+          // called it and what kind it is*, and only one of the two is left. The
+          // id is the half that does concrete work — it is what the owner writes
+          // in the `account` column of an import file.
+          const type = row.id
           // `null` where there is no ratio to state — nothing written about this
           // account yet, nothing ever paid in, or more taken out than put in.
           const performance = onContributed(row.gain_absolu, row.net_contributed)

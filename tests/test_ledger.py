@@ -1387,9 +1387,11 @@ def test_a_label_declared_between_the_forecast_and_the_button_is_not_refused(
 
     assert response.status_code == 201
     assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
-    # And it is still the account the reader declared, with the type they gave.
+    # And it is still the account the reader declared. The `type` member they
+    # sent is **read by nothing** (#916, ADR-0043): the request is not refused
+    # for carrying it, and the column keeps the seeded word the app writes.
     assert opened.query('SELECT type FROM account WHERE id = ?', ['TR']) == \
-        [('CTO',)]
+        [(store_module.DEFAULT_ACCOUNT_ROW[1],)]
 
 
 def test_a_correspondence_that_is_not_one_is_refused_before_anything(tmp_path):

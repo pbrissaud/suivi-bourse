@@ -611,6 +611,14 @@ Five nets hold a rule nothing made true by construction:
   run yet* and never *something is wrong*. `STATE_TONE` is declared **once**, in
   `Notifications.tsx`, and it has exactly one consumer since #829: the sidebar
   card that used to be its second reader is gone.
+- **An account is a name and an id, and the id is the subtitle** (#916,
+  ADR-0043). The type is gone from the forms, from `Account` and from the wire,
+  so declaring an account is two fields. What sits under the name on the rail
+  and on the detail is the **id** — which reverses #838 deliberately: that
+  ticket took the id off the page saying the line heads an account with *what
+  the owner called it and what kind it is*, and only one of the two is left. The
+  id is the half that does concrete work, being what the owner writes in the
+  `account` column of an import file.
 - **The theme, the language and the table density are the reader's three
   preferences, one mechanism** (ADR-0024 decided the first two): three states each
   for theme and language (`light|dark|auto`, `fr|en|auto`), **two** for density

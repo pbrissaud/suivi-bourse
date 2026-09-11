@@ -304,7 +304,6 @@
   "accounts.reason.empty": "nothing recorded on this account",
 
   "accounts.default.label": "Unassigned",
-  "accounts.default.type": "Other",
   "accounts.default.reassign": "Assign these events to an account",
 
   "accounts.detail.gainTotal.explain": "What this account is worth less what you have paid into it. It counts this account's sold positions, and only the fees taken on its own transfers.",
@@ -345,8 +344,6 @@
   "accounts.form.id": "Identifier",
   "accounts.form.id.fixed": "This is what your events name, in a file as well as here, so it cannot be changed. Declare another account and move the events onto it instead.",
   "accounts.form.id.hint": "This is what your events name. It will not change.",
-  "accounts.form.type": "Type",
-  "accounts.form.type.hint": "What you call it: PEA, brokerage, life insurance…",
   "accounts.form.label": "Name",
   "accounts.form.required": "This field is required.",
   "accounts.form.submit": "Declare this account",

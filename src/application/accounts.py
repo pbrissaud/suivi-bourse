@@ -95,9 +95,8 @@ def _normalised(names: Iterable) -> Set[str]:
 
 def read_accounts(store) -> List[Account]:
     """Every row of ``account``, id-sorted. ``default`` is always among them."""
-    rows = store.query(
-        'SELECT id, type, label FROM account ORDER BY id')
-    return [Account(id=r[0], type=r[1], label=r[2]) for r in rows]
+    rows = store.query('SELECT id, label FROM account ORDER BY id')
+    return [Account(id=r[0], label=r[1]) for r in rows]
 
 
 def account_ids(store) -> Set[str]:
@@ -113,12 +112,15 @@ def accounts_are_declared(store) -> bool:
 
 
 def default_is_declared(store) -> bool:
-    """Has anybody declared the row every install is given? (issue #725)"""
+    """Has anybody declared the row every install is given? (issue #725)
+
+    **On the label alone** since #916: the type used to be the other half of this
+    answer, and there is no longer a type to answer with.
+    """
     row = next((a for a in read_accounts(store) if a.id == DEFAULT_ACCOUNT), None)
     if row is None:
         return False
-    declared = as_declared(row)
-    return declared.label is not None or declared.type is not None
+    return as_declared(row).label is not None
 
 
 def declared_portfolio(store) -> Optional[Portfolio]:
@@ -138,11 +140,10 @@ def as_declared(account: Account) -> Account:
     """The row as a **reader** must see it: what nobody declared reads ``None``."""
     if account.id != DEFAULT_ACCOUNT:
         return account
-    _, seeded_type, seeded_label = store_module.DEFAULT_ACCOUNT_ROW
+    _, _, seeded_label = store_module.DEFAULT_ACCOUNT_ROW
     return replace(
         account,
         label=None if account.label == seeded_label else account.label,
-        type=None if account.type == seeded_type else account.type,
     )
 
 
@@ -176,36 +177,41 @@ def refuse_unaddressable_id(account_id: str) -> None:
             f"'..' there name a route that does not exist")
 
 
-def create_account(store, account_id: str, account_type: str,
+def create_account(store, account_id: str,
                    label: Optional[str] = None) -> Account:
-    """Declare an account. The app is where one is born, and the only place."""
+    """Declare an account. The app is where one is born, and the only place.
+
+    **Two fields** since #916: an identifier and a name. The ``type`` column is
+    still written, because it is ``NOT NULL`` and no migration machinery exists
+    to drop it (#926) — it takes the seed's own word, and nothing reads it.
+    """
     account_id = _text(account_id)
-    account_type = _text(account_type)
     if not account_id:
         raise AccountSourceError("id is required")
     refuse_unaddressable_id(account_id)
-    if not account_type:
-        raise AccountSourceError("type is required")
     if account_id in account_ids(store):
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 
+    _, seeded_type, _ = store_module.DEFAULT_ACCOUNT_ROW
     store.execute(
         'INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
-        [account_id, account_type, _text(label) or account_id])
+        [account_id, seeded_type, _text(label) or account_id])
     logger.info(f"Declared account {account_id}")
-    return Account(id=account_id, type=account_type,
-                   label=_text(label) or account_id)
+    return Account(id=account_id, label=_text(label) or account_id)
 
 
-def update_account(store, account_id: str, *, account_type: Optional[str] = None,
+def update_account(store, account_id: str, *,
                    label: Optional[str] = None) -> Account:
-    """Relabel or retype an account created in the app."""
+    """Rename an account created in the app.
+
+    Renaming is the whole of it since #916: there is no second column left to
+    change, and a blank keeps the name that is there.
+    """
     current = _require(store, account_id)
-    new_type = _text(account_type) or current.type
     new_label = _text(label) or current.label
-    store.execute('UPDATE account SET type = ?, label = ? WHERE id = ?',
-                  [new_type, new_label, account_id])
-    return Account(id=account_id, type=new_type, label=new_label)
+    store.execute('UPDATE account SET label = ? WHERE id = ?',
+                  [new_label, account_id])
+    return Account(id=account_id, label=new_label)
 
 
 def delete_account(store, account_id: str) -> None:

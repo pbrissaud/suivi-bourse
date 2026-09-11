@@ -207,9 +207,8 @@ def declare_ledger():
         for account in (accounts or []):
             opened.execute(
                 'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
-                'ON CONFLICT (id) DO UPDATE SET type = excluded.type, '
-                '                               label = excluded.label',
-                [account.id, account.type, account.label])
+                'ON CONFLICT (id) DO UPDATE SET label = excluded.label',
+                [account.id, store_module.DEFAULT_ACCOUNT_ROW[1], account.label])
         for symbol in sorted({e.symbol for e in events if e.symbol}):
             opened.execute(
                 'INSERT INTO symbol (symbol) VALUES (?) '

@@ -103,7 +103,7 @@ describe('the same form as the ledger, not a second one', () => {
     // `Gamma` was declared here too: its pencil opens the panel.
     const panel = await openPanel(user, 'Gamma')
     expect(panel).toHaveAttribute('data-slot', 'sheet-content')
-    expect(within(panel).getByLabelText('Type')).toHaveValue('CTO')
+    expect(within(panel).getByLabelText('Nom')).toHaveValue('Gamma')
   })
 
   it('does not offer the identifier for editing: it is what the events name', async () => {
@@ -116,15 +116,17 @@ describe('the same form as the ledger, not a second one', () => {
 })
 
 describe('the form loses `currency`', () => {
-  it('offers an identifier, a type and a name, and no currency of any kind', async () => {
+  it('offers an identifier and a name, and no currency and no type', async () => {
     const { user } = renderAccounts()
     await detail('Alpha')
     await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
 
     const panel = await screen.findByRole('dialog')
     expect(within(panel).getByLabelText('Identifiant')).toBeInTheDocument()
-    expect(within(panel).getByLabelText('Type')).toBeInTheDocument()
     expect(within(panel).getByLabelText('Nom')).toBeInTheDocument()
+    // **And no type** (#916, ADR-0043): the column was read by nothing, so the
+    // declaration is two fields — what the events name, and what it is called.
+    expect(within(panel).queryByLabelText('Type')).not.toBeInTheDocument()
 
     // ADR-0002 deleted `Account.currency` rather than guarding it: two currency
     // levels and not three, so *a EUR account holding a USD security* has no
@@ -142,7 +144,6 @@ describe('the form loses `currency`', () => {
 
     const panel = await screen.findByRole('dialog')
     await user.type(within(panel).getByLabelText('Identifiant'), 'delta')
-    await user.type(within(panel).getByLabelText('Type'), 'CTO')
     await user.type(within(panel).getByLabelText('Nom'), 'Delta')
 
     server.use(
@@ -150,7 +151,7 @@ describe('the form loses `currency`', () => {
         HttpResponse.json(
           anAccountsPayload([
             ...anAccountsPayload().accounts,
-            anAccount({ id: 'delta', label: 'Delta', type: 'CTO' }),
+            anAccount({ id: 'delta', label: 'Delta' }),
           ]),
         ),
       ),
@@ -272,16 +273,19 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     ])
 
     // `Non affecté` — one `lib/accounts.ts` function, read by the rail and by
-    // the detail, so two surfaces cannot name one thing two ways. Neither the
-    // label nor the type the seed wrote ever crosses the screen: both are the
-    // server's own English about a row nobody declared.
+    // the detail, so two surfaces cannot name one thing two ways. The label the
+    // seed wrote never crosses the screen: it is the server's own English about
+    // a row nobody declared.
     const opened = await detail('Non affecté')
     expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
-    // **The id is not on this page any more** (#838): the drawing heads an
-    // account with what the owner called it and what kind it is, and nothing
-    // else. It is still what every event names, and it is still read where an
-    // event is — the ledger's `Compte` column and the shares table's chip.
-    expect(opened).not.toHaveTextContent(DEFAULT_ACCOUNT_ID)
+    // **The id is back on this page** (#916, ADR-0043), and this reverses #838
+    // deliberately. That ticket took it off saying the line heads an account
+    // with *what the owner called it and what kind it is* — and the type is
+    // gone, so only one of the two is left. The id is the half that does
+    // concrete work: it is what the owner writes in the `account` column of an
+    // import file, and what the ledger's own `Compte` column shows them.
+    expect(opened).toHaveTextContent(DEFAULT_ACCOUNT_ID)
+    // What is still refused is the **seed's own English**, on either column.
     expect(screen.queryByText('Default account')).not.toBeInTheDocument()
     expect(screen.queryByText('OTHER')).not.toBeInTheDocument()
   })
@@ -294,9 +298,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // Both seeded columns open **empty**: neither `Default account` nor `OTHER`
     // is a value the reader typed, and handing one back had them typing `PEA`
     // into `OTHER` and saving `OTHERPEA`.
-    expect(within(panel).getByLabelText('Type')).toHaveValue('')
     expect(within(panel).getByLabelText('Nom')).toHaveValue('')
-    await user.type(within(panel).getByLabelText('Type'), 'PEA')
     await user.type(within(panel).getByLabelText('Nom'), 'Mon PEA')
 
     // **The body the server can actually produce**: `declared` stays `false` —
@@ -305,10 +307,10 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     server.use(
       http.patch(accountPath(DEFAULT_ACCOUNT_ID), async ({ request }) => {
         patched = await request.json()
-        return HttpResponse.json(theSeededAccount({ label: 'Mon PEA', type: 'PEA' }))
+        return HttpResponse.json(theSeededAccount({ label: 'Mon PEA' }))
       }),
       http.get(ROUTES.accounts, () =>
-        HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA', type: 'PEA' })),
+        HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA' })),
       ),
     )
 
@@ -319,14 +321,14 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // Renamed, and the row is still `default` underneath — which this page no
     // longer writes down (#838); what proves it is the request the form sent.
     await detail('Mon PEA')
-    expect(patched).toMatchObject({ label: 'Mon PEA', type: 'PEA' })
+    expect(patched).toEqual({ label: 'Mon PEA' })
   })
 
-  it('renames it without demanding a type it already has', async () => {
-    // The type is required where the store requires it — a declaration — and a
-    // blank on an edit is the label's own case: `update_account` keeps what is
-    // there. Refusing here made *renaming* the seeded row, the one gesture this
-    // panel exists for at N = 1, conditional on answering a second question.
+  it('renames it with the one field a rename needs, and sends nothing else', async () => {
+    // Renaming the seeded row is the gesture this panel exists for at N = 1, and
+    // since #916 it is the whole of what the panel can change: there is no
+    // second column left, so nothing can make the rename conditional on
+    // answering a second question.
     const { user } = renderAccounts(noAccountsDeclared(), [])
     const panel = await openPanel(user, 'Non affecté')
 
@@ -343,7 +345,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     expect(await within(rail()).findByRole('link', { name: /Mon PEA/ })).toBeInTheDocument()
-    expect(patched).toEqual({ type: '', label: 'Mon PEA' })
+    expect(patched).toEqual({ label: 'Mon PEA' })
   })
 
   it('is named the same way in the ledger’s create form, one page over', async () => {

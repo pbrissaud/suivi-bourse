@@ -402,8 +402,6 @@ export interface Account {
    * empty. The fold lives in `lib/accounts.ts` rather than in each cell.
    */
   label: string | null
-  /** Same clause, same row: `default`'s seeded type is the catalogue's too. */
-  type: string | null
   /**
    * The account's **newest** `account_metrics` row, ridden on this resource
    * rather than on a second one — one accounts resource with two consumers, the
@@ -482,7 +480,6 @@ export interface AccountsResponse {
  */
 export interface AccountDraft {
   id?: string
-  type: string
   label: string
   /**
    * Move the events still naming the seeded row onto this account, in the same

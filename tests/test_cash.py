@@ -349,7 +349,7 @@ def test_an_account_with_no_cash_event_writes_holdings_and_gain_and_nothing_else
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
               unit_price=100.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2024, 1, 1), 110.0)
 
     m = _metrics(store, declare_ledger, events, portfolio)
@@ -375,7 +375,7 @@ def test_an_account_with_a_deposit_keeps_every_field(
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
               unit_price=100.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2024, 1, 1), 110.0)
 
     m = _metrics(store, declare_ledger, events, portfolio)
@@ -411,8 +411,8 @@ def test_the_global_is_written_from_the_max_of_the_horizons(
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
               unit_price=100.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA"),
-                           Account("CTO", "CTO", "My CTO")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA"),
+                           Account("CTO", "My CTO")])
     _seed_price(store, "AAPL", date(2024, 1, 3), 110.0)
 
     m = _metrics(store, declare_ledger, events, portfolio)
@@ -498,7 +498,7 @@ def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
     _fixed_today(mocker, 2024, 1, 10)
     _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
     m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
-                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+                 Portfolio([Account("PEA", "Mon PEA")]))
     m.backfill_delay = 0
     m._share_info_cache["NEW"] = {"currency": "EUR"}
 
@@ -541,7 +541,7 @@ def test_buying_a_never_quoted_line_does_not_delete_four_years_of_history(
     _fixed_today(mocker, 2024, 1, 10)
     _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
     m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
-                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+                 Portfolio([Account("PEA", "Mon PEA")]))
 
     horizons = m.update_account_metrics()
 
@@ -582,7 +582,7 @@ def test_a_first_purchase_with_no_price_still_writes_nothing_at_all(
         Event(_BOUGHT, EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(_BOUGHT, EventType.BUY, "NEW", "New", quantity=5,
               unit_price=50.0, account="PEA"),
-    ], Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+    ], Portfolio([Account("PEA", "Mon PEA")]))
 
     horizons = m.update_account_metrics()
 
@@ -598,7 +598,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
         Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=2,
               unit_price=100.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     # Price series: AAPL at 110 from 2024-01-02.
     _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
 
@@ -626,7 +626,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
 def test_update_account_metrics_is_idempotent(store, declare_ledger, mocker):
     """Two cycles with no new event produce the identical point set."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
 
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 1)
@@ -643,7 +643,7 @@ def test_update_account_metrics_is_idempotent(store, declare_ledger, mocker):
 def test_update_account_metrics_writes_portfolio_totals_single_currency(
         store, declare_ledger, mocker):
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
 
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
@@ -669,8 +669,8 @@ def test_two_accounts_are_pooled_because_they_cannot_disagree_on_a_currency(
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
     ]
     portfolio = Portfolio([
-        Account("PEA", "PEA", "Mon PEA"),
-        Account("CTO", "CTO", "My CTO"),
+        Account("PEA", "Mon PEA"),
+        Account("CTO", "My CTO"),
     ])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
@@ -693,7 +693,7 @@ def test_no_base_currency_writes_no_performance_at_all(
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0,
                     account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
 
     m = _metrics(store, declare_ledger, events, portfolio)
     m.base_currency = None
@@ -732,7 +732,7 @@ def test_the_gain_is_written_on_every_day_and_the_rate_only_on_the_last(
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
               unit_price=100.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2024, 1, 1), 100.0)
     _seed_price(store, "AAPL", date(2025, 1, 1), 110.0)
 
@@ -800,7 +800,7 @@ def test_every_cycle_rewrites_the_whole_series(store, declare_ledger, mocker):
     that affordable (ADR-0011).
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -828,7 +828,7 @@ def test_the_series_is_dense_over_calendar_days(store, declare_ledger, mocker):
               unit_price=100.0, account="PEA"),
         Event(date(2024, 1, 6), EventType.DEPOSIT, amount=500.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2024, 1, 5), 110.0)   # Friday, and only it
 
     m = _metrics(store, declare_ledger, events, portfolio)
@@ -854,7 +854,7 @@ def test_deleting_the_rows_is_enough_to_rebuild(store, declare_ledger, mocker):
     designed a *rebuild* button has nothing left to design.
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -885,7 +885,7 @@ def test_the_file_does_not_drift_over_many_cycles(store, declare_ledger, mocker)
         Event(date(2023, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=2,
               unit_price=100.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2023, 1, 2), 110.0)
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 1)          # a year of daily points
@@ -914,7 +914,7 @@ def test_a_day_that_left_the_series_is_pruned(store, declare_ledger, mocker):
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 3), EventType.DEPOSIT, amount=10.0, account="PEA"),
     ]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 4)
 
@@ -945,8 +945,8 @@ def test_an_account_that_stops_being_written_is_pruned(
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
     ]
     portfolio = Portfolio([
-        Account("PEA", "PEA", "Mon PEA"),
-        Account("CTO", "CTO", "My CTO"),
+        Account("PEA", "Mon PEA"),
+        Account("CTO", "My CTO"),
     ])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
@@ -970,7 +970,7 @@ def test_an_emptied_ledger_empties_both_tables(store, declare_ledger, mocker):
     declares — the rule ``positions.write_state`` already follows.
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
 
@@ -992,7 +992,7 @@ def test_a_failed_write_leaves_the_previous_cache_whole(
     *complete* one, and the next tick rebuilds it whatever happened here.
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "Mon PEA")])
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -1045,7 +1045,7 @@ def test_an_event_dated_in_the_future_does_not_bound_the_series(
               unit_price=50.0, account="PEA"),
     ]
     m = _metrics(store, declare_ledger, events,
-                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+                 Portfolio([Account("PEA", "Mon PEA")]))
 
     horizons = m.update_account_metrics()
 
@@ -1085,7 +1085,7 @@ def test_a_future_buy_back_no_longer_holds_a_sold_line_at_today(
               unit_price=70.0, account="PEA"),
     ]
     m = _metrics(store, declare_ledger, events,
-                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+                 Portfolio([Account("PEA", "Mon PEA")]))
 
     m.update_account_metrics()
 

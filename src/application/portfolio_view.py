@@ -281,7 +281,6 @@ class AccountSummary:
 
     id: str
     label: Optional[str]
-    type: Optional[str]
     as_of: Optional[date]
     cash_balance: Optional[float]
     holdings_value: Optional[float]
@@ -296,7 +295,6 @@ class AccountSummary:
         return {
             'id': self.id,
             'label': self.label,
-            'type': self.type,
             'as_of': instants.iso(self.as_of),
             'cash_balance': self.cash_balance,
             'holdings_value': self.holdings_value,
@@ -326,7 +324,6 @@ def build_accounts(
         summaries.append(AccountSummary(
             id=account.id,
             label=getattr(account, 'label', None),
-            type=getattr(account, 'type', None),
             as_of=row.get('day'),
             cash_balance=row.get('cash_balance'),
             holdings_value=row.get('holdings_value'),

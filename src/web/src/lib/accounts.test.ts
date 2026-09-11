@@ -22,7 +22,6 @@ import {
   buildAccountRows,
   chooseAccount,
   declaredLabel,
-  declaredType,
   degradedReason,
   dividendPayers,
   firstDay,
@@ -410,20 +409,17 @@ describe('the name one account wears, on both pages', () => {
     // declaration table and the accounts page from naming one row two ways:
     // both call this function, so the rule cannot be written twice.
     expect(declaredLabel(theSeededAccount())).toBeNull()
-    expect(declaredType(theSeededAccount())).toBeNull()
     expect(declaredLabel(theSeededAccount({ label: '  ' }))).toBeNull()
   })
 
   it('hands the row back the moment its owner names it', () => {
     // The whole point of the block: a rename rendered nowhere is not a rename.
     expect(declaredLabel(theSeededAccount({ label: 'Mon PEA' }))).toBe('Mon PEA')
-    expect(declaredType(theSeededAccount({ type: 'PEA' }))).toBe('PEA')
   })
 
   it('never sends any other account to the catalogue, and falls back to the id', () => {
     expect(declaredLabel(anAccount({ id: 'pea', label: 'Default account' }))).toBe('Default account')
     expect(declaredLabel(anAccount({ id: 'pea', label: null }))).toBe('pea')
-    expect(declaredType(anAccount({ id: 'pea', type: null }))).toBeNull()
   })
 })
 
@@ -533,10 +529,12 @@ describe('réaffecter, jamais refuser (#725)', () => {
     expect(reassignmentOf(named, unassignedLedger())).toEqual({ kind: 'none' })
 
     // The other seeded column says as much. There was a third road — a file
-    // taking the row over — and it left with the accounts file (ADR-0034): the
-    // two that remain are the owner's own, which are the ones that mattered.
-    const retyped = anAccountsPayload([theSeededAccount({ type: 'PEA' })], false)
-    expect(reassignmentOf(retyped, unassignedLedger())).toEqual({ kind: 'none' })
+    // taking the row over — and it left with the accounts file (ADR-0034). Of
+    // the two that remained, the type left with #916 (ADR-0043), so **the name
+    // is the whole predicate**: a renamed seed is a declaration, and its events
+    // are no longer anybody's to move.
+    const renamed = anAccountsPayload([theSeededAccount({ label: 'Mon PEA' })], false)
+    expect(reassignmentOf(renamed, unassignedLedger())).toEqual({ kind: 'none' })
   })
 
   it('claims nothing while the read has not landed', () => {

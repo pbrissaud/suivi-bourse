@@ -225,13 +225,12 @@ def declare_accounts(opened, path):
     rather than inserted — which is also the one way an install with a page and
     no file declares its single account.
     """
-    for account_id, account_type, label in _declared_rows(path):
+    for account_id, _, label in _declared_rows(path):
         if account_id in accounts_module.account_ids(opened):
-            opened.execute(
-                'UPDATE account SET type = ?, label = ? WHERE id = ?',
-                [account_type, label, account_id])
+            opened.execute('UPDATE account SET label = ? WHERE id = ?',
+                           [label, account_id])
             continue
-        accounts_module.create_account(opened, account_id, account_type, label)
+        accounts_module.create_account(opened, account_id, label)
 
 
 def write_event_file(opened, path):
@@ -1547,7 +1546,10 @@ def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
     # seed's English on the far side of HTTP — see the test below, which is where
     # that rule is guarded.
     seeded = payload['accounts'][0]
-    assert (seeded['label'], seeded['type']) == (None, None)
+    assert seeded['label'] is None
+    # And no `type` at all since #916 (ADR-0043): the column is written by the
+    # app, read by nobody, and therefore served to nobody.
+    assert 'type' not in seeded
     # And nothing says where the row came from: an account is born in the app
     # (ADR-0034), so the rename is an ordinary `PATCH` with no rule to consult.
     assert not {'source_id', 'editable'} & set(seeded)
@@ -1565,24 +1567,27 @@ def test_renaming_the_seeded_account_is_visible_on_the_resource(tmp_path):
     """
     client = build_client(tmp_path)
 
+    # The `type` member is sent and **read by nothing** (#916): a client that
+    # still carries it is not refused, and nothing of it is written.
     renamed = client.patch('/api/accounts/default',
                            json={'label': 'Mon PEA', 'type': 'PEA'})
 
     assert renamed.status_code == 200
     payload = client.get('/api/accounts').get_json()
     assert payload['declared'] is False
-    assert [(a['id'], a['label'], a['type']) for a in payload['accounts']] == [
-        ('default', 'Mon PEA', 'PEA')]
+    assert [(a['id'], a['label']) for a in payload['accounts']] == [
+        ('default', 'Mon PEA')]
 
 
 def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
     """What nobody declared goes out as ``null``, and the recognising is here.
 
-    ``store.DEFAULT_ACCOUNT_ROW`` writes ``Default account`` / ``OTHER`` into a
-    row every install owns and nobody asked for. The front must not render
-    either — they are the *server's* English, and ADR-0024 puts every rendering
-    in the reader's language — so one side has to recognise them, and it is the
-    side that writes them.
+    ``store.DEFAULT_ACCOUNT_ROW`` writes ``Default account`` into the label of a
+    row every install owns and nobody asked for. The front must not render it —
+    it is the *server's* English, and ADR-0024 puts every rendering in the
+    reader's language — so one side has to recognise it, and it is the side that
+    writes it. (The seed's other word, ``OTHER``, no longer crosses anything:
+    #916 took the type off the wire entirely.)
 
     Recognising them in the client was written first and undone: it put a third
     copy of this string across HTTP, where nothing spans both ends. The front's
@@ -1599,22 +1604,19 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
     client = build_client(tmp_path)
 
     served = client.get('/api/accounts').get_json()['accounts']
-    assert [(a['id'], a['label'], a['type']) for a in served] == [
-        ('default', None, None)]
+    assert [(a['id'], a['label']) for a in served] == [('default', None)]
     # Read off the constant rather than quoted: this assertion has to fail when
     # the seed is reworded, which is the whole reason it exists.
-    _, seeded_type, seeded_label = store.DEFAULT_ACCOUNT_ROW
-    assert (seeded_label, seeded_type) not in [
-        (a['label'], a['type']) for a in served]
+    _, _, seeded_label = store.DEFAULT_ACCOUNT_ROW
+    assert seeded_label not in [a['label'] for a in served]
 
     # An account that is **not** the seeded one keeps whatever it says, the
     # seed's own words included if its owner chose them: what is recognised is
     # one row, never a string.
-    client.post('/api/accounts',
-                json={'id': 'pea', 'label': seeded_label, 'type': seeded_type})
-    named = [(a['id'], a['label'], a['type'])
+    client.post('/api/accounts', json={'id': 'pea', 'label': seeded_label})
+    named = [(a['id'], a['label'])
              for a in client.get('/api/accounts').get_json()['accounts']]
-    assert ('pea', seeded_label, seeded_type) in named
+    assert ('pea', seeded_label) in named
     # The seeded row leaves the list here for its own reason and not this one:
     # nothing names it, so ADR-0013 keeps it out of a declaration it did not
     # join (#698). What is asserted above is that its *words* are not the guard.
@@ -1622,9 +1624,10 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
 
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     """Reading the declaration rather than a DISTINCT on the tag (#652 déc. 4)
-    hands over label and type — fields the app writes and zero Grafana panels
-    read. An account is declared in the app and nowhere else (ADR-0034), so
-    there is nothing beside them saying where the row came from."""
+    hands over the label — the one identity field left since #916 took the type
+    away, and one zero Grafana panels ever read. An account is declared in the
+    app and nowhere else (ADR-0034), so there is nothing beside it saying where
+    the row came from."""
     accounts = (
         "id,type,label\n"
         "pea,PEA,PEA Bourso\n"
@@ -1638,8 +1641,8 @@ def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
 
     assert payload['declared'] is True
     row = payload['accounts'][0]
-    assert (row['id'], row['label'], row['type']) == ('pea', 'PEA Bourso', 'PEA')
-    assert not {'source_id', 'editable'} & set(row)
+    assert (row['id'], row['label']) == ('pea', 'PEA Bourso')
+    assert not {'source_id', 'editable', 'type'} & set(row)
     # #661 enriched the resource with the newest perf figures. With nothing
     # written yet they are all null and `as_of` says so — a declared account
     # whose first perf cycle has not run is a row with em dashes, not a missing
@@ -1663,10 +1666,11 @@ def test_accounts_carries_the_newest_figures_of_each_account(tmp_path):
     assert row['gain_absolu'] == 2500.0
     assert row['twr_index'] == 118.4
     assert row['as_of'] == '2026-08-05'
-    # The declaration drives the identity fields, and since #700 it is the only
+    # The declaration drives the identity field, and since #700 it is the only
     # thing that could: `account_type` and `account_currency` were InfluxDB
-    # tags, and the store has no column for either.
-    assert row['type'] == 'PEA'
+    # tags. The type has since left the wire altogether (#916), so the name is
+    # what the declaration hands over.
+    assert row['label'] == 'PEA Bourso'
 
 
 def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
@@ -3434,7 +3438,7 @@ def test_the_report_reads_the_store_and_not_the_published_snapshot(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
 
-    accounts_module.create_account(opened, 'cto', 'CTO', 'Compte-titres')
+    accounts_module.create_account(opened, 'cto', 'Compte-titres')
 
     served = client.get('/api/accounts').get_json()
     assert 'cto' not in [row['id'] for row in served['accounts']]
@@ -4917,20 +4921,21 @@ def test_a_sale_does_not_lower_the_month_that_holds_it(tmp_path):
 # --------------------------------------------------------------------- #
 
 def test_an_account_is_declared_here_renamed_here_and_removed_here(tmp_path):
-    """The one place an account is born, and three members on the wire.
+    """The one place an account is born, and **two** members on the wire.
 
-    No ``source_id`` and no ``editable``: an account is declared in the app and
-    nowhere else (ADR-0034), so there is no second population to tell this row
-    from and no rule about it for the front to re-implement.
+    It was three: the type left with #916 (ADR-0043), read by nothing and
+    therefore served to nobody. No ``source_id`` and no ``editable`` either — an
+    account is declared in the app and nowhere else (ADR-0034), so there is no
+    second population to tell this row from and no rule about it for the front
+    to re-implement.
     """
     client = build_client(tmp_path)
 
     created = client.post('/api/accounts',
-                          json={'id': 'pea', 'type': 'PEA', 'label': 'PEA Bourso'})
+                          json={'id': 'pea', 'label': 'PEA Bourso'})
 
     assert created.status_code == 201
-    assert created.get_json() == {'id': 'pea', 'type': 'PEA',
-                                  'label': 'PEA Bourso'}
+    assert created.get_json() == {'id': 'pea', 'label': 'PEA Bourso'}
     # The replay followed the write: the declaration is already published.
     listed = client.get('/api/accounts').get_json()
     assert listed['declared'] is True

@@ -132,7 +132,6 @@ export function anAccount(overrides: Partial<Account> = {}): Account {
   return {
     id: 'alpha',
     label: 'Alpha',
-    type: 'PEA',
     as_of: '2026-03-02',
     total_value: 1800,
     holdings_value: 1300,
@@ -185,7 +184,7 @@ export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Accoun
  * in the same process.
  */
 export function theSeededAccount(overrides: Partial<Account> = {}): Account {
-  return anAccount({ id: 'default', label: null, type: null, ...overrides })
+  return anAccount({ id: 'default', label: null, ...overrides })
 }
 
 export interface PositionOptions extends Partial<Omit<Position, 'price' | 'converted'>> {
@@ -315,11 +314,10 @@ export function noAccountsDeclared(overrides: Partial<Account> = {}): AccountsRe
  */
 export function defaultAccounts(): Account[] {
   return [
-    anAccount({ id: 'alpha', label: 'Alpha', type: 'PEA' }),
+    anAccount({ id: 'alpha', label: 'Alpha' }),
     anAccount({
       id: 'beta',
       label: 'Beta',
-      type: 'CTO',
       total_value: 900,
       holdings_value: 400,
       cash_balance: 500,
@@ -333,7 +331,6 @@ export function defaultAccounts(): Account[] {
     anAccount({
       id: 'gamma',
       label: 'Gamma',
-      type: 'CTO',
       total_value: null,
       cash_balance: null,
       net_contributed: null,
@@ -398,7 +395,6 @@ export function anAccountGoingNowhere(overrides: Partial<Account> = {}): Account
   return anAccount({
     id: 'nowhere',
     label: 'Nowhere',
-    type: 'CTO',
     total_value: 452.35,
     holdings_value: 452.35,
     cash_balance: 0,

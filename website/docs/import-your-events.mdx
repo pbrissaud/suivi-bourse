@@ -165,13 +165,16 @@ ignored, because a deposit that names a ticker means something was misfiled.
 
 An account is user data — not a setting, and not something a file brings with
 it. **It is declared in the app**, on the accounts page, and nowhere else. It
-has three fields, and they are the three columns your events name it by.
+has two fields.
 
 | Field | What it holds |
 |---|---|
 | `id` | the id your events name in their `account` column, e.g. `pea` |
-| `type` | `PEA`, `CTO`, … — free text, used for grouping and display |
 | `label` | the name shown on screen, e.g. `PEA Boursorama` |
+
+There was a third, a `type`, and it is gone: nothing in the app ever read it, so
+it asked you a question to display the answer back to you. Call your account
+what it is — `PEA Boursorama` — and the name carries it.
 
 Declaring an account before importing the file that names it is the whole of
 what you have to remember. A few rules follow, and each of them exists to keep a

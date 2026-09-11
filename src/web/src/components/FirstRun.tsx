@@ -113,9 +113,7 @@ import { Input } from '@/components/ui/input'
 import { api, type AccountDraft, type ConfigResponse } from '@/lib/api'
 import {
   DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_ACCOUNT_TYPE,
   declaredLabel,
-  declaredType,
 } from '@/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
@@ -368,7 +366,10 @@ export function FirstRun() {
                             {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
                           </span>
                           <span className="ml-auto shrink-0 font-mono text-2xs">
-                            {account.id} · {declaredType(account) ?? t(DEFAULT_ACCOUNT_TYPE)}
+                            {/* The id alone since #916: it is what the
+                                owner's own files name, and the type it used to
+                                sit beside is gone (ADR-0043). */}
+                            {account.id}
                           </span>
                         </li>
                       ))}
@@ -568,8 +569,8 @@ function DeclareAccount() {
   const { t } = useI18n()
   const client = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState({ id: '', type: '', label: '' })
-  const [errors, setErrors] = useState<Partial<Record<'id' | 'type', MessageKey>>>({})
+  const [draft, setDraft] = useState({ id: '', label: '' })
+  const [errors, setErrors] = useState<Partial<Record<'id', MessageKey>>>({})
 
   const write = useMutation({
     mutationFn: (body: AccountDraft) => api.createAccount(body),
@@ -585,28 +586,26 @@ function DeclareAccount() {
 
   function close() {
     setOpen(false)
-    setDraft({ id: '', type: '', label: '' })
+    setDraft({ id: '', label: '' })
     setErrors({})
     write.reset()
   }
 
-  function set(field: 'id' | 'type' | 'label', value: string) {
+  function set(field: 'id' | 'label', value: string) {
     setDraft((previous) => ({ ...previous, [field]: value }))
     setErrors((previous) => ({ ...previous, [field]: undefined }))
   }
 
   function submit() {
     const id = draft.id.trim()
-    const type = draft.type.trim()
-    const found: Partial<Record<'id' | 'type', MessageKey>> = {}
+    const found: Partial<Record<'id', MessageKey>> = {}
     if (id === '') found.id = 'accounts.form.required'
-    if (type === '') found.type = 'accounts.form.required'
 
     setErrors(found)
     if (Object.values(found).some(Boolean)) return
 
     const label = draft.label.trim()
-    write.mutate({ id, type, label: label || id })
+    write.mutate({ id, label: label || id })
   }
 
   if (!open) {
@@ -649,37 +648,21 @@ function DeclareAccount() {
             />
           )}
         </Field>
-        <Field
-          name="type"
-          label="accounts.form.type"
-          hint="accounts.form.type.hint"
-          error={errors.type}
-        >
+        {/* The name takes the column the type used to hold (#916): two fields
+            declare an account now, and they sit side by side rather than
+            leaving a half-empty row above a full-width one. */}
+        <Field name="label" label="accounts.form.label" optional>
           {(id, described) => (
             <Input
               id={id}
-              value={draft.type}
+              value={draft.label}
               autoComplete="off"
-              placeholder="PEA"
-              aria-invalid={errors.type !== undefined}
               aria-describedby={described}
-              onChange={(changed) => set('type', changed.target.value)}
+              onChange={(changed) => set('label', changed.target.value)}
             />
           )}
         </Field>
       </div>
-
-      <Field name="label" label="accounts.form.label" optional>
-        {(id, described) => (
-          <Input
-            id={id}
-            value={draft.label}
-            autoComplete="off"
-            aria-describedby={described}
-            onChange={(changed) => set('label', changed.target.value)}
-          />
-        )}
-      </Field>
 
       {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
@@ -711,7 +694,7 @@ function Field({
   optional,
   children,
 }: {
-  name: 'id' | 'type' | 'label'
+  name: 'id' | 'label'
   label: MessageKey
   /** What the value is for, under the control — never a second label. */
   hint?: MessageKey
