@@ -700,9 +700,10 @@ describe('an account can be declared from inside the walk', () => {
     // Declared, and read back: the list is the installation's own accounts, so
     // the row is there because the server has it and not because a form said so.
     // The declaration carried no name, so the label falls back to the id — and
-    // the row therefore renders `pea` twice, as its name and as the identifier
-    // under it (#916). Both are the row being there.
-    expect(await within(modal()).findAllByText('pea')).not.toHaveLength(0)
+    // the row therefore renders `pea` **exactly twice**, as its name and as the
+    // identifier beside it (#916). Asserting the count rather than *at least
+    // one* is what makes this fail if either half stops rendering.
+    expect(await within(modal()).findAllByText('pea')).toHaveLength(2)
     // The form closes behind it — the offer is not a place the reader stays.
     await waitFor(() =>
       expect(within(modal()).queryByLabelText('Identifiant')).not.toBeInTheDocument(),

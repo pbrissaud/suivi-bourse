@@ -366,8 +366,9 @@ export function FirstRun() {
                             {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
                           </span>
                           <span className="ml-auto shrink-0 font-mono text-2xs">
-                            {/* The id alone since #916: it is what the
-                                owner's own files name, and the type it used to
+                            {/* The id alone since #916, in the column it
+                                already shared with the type: it is what the
+                                owner's own files name, and the word it used to
                                 sit beside is gone (ADR-0043). */}
                             {account.id}
                           </span>

@@ -177,9 +177,10 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-  // The id, under the name, where the type used to be — see `AccountsRail`
-  // (#916, ADR-0043, reversing #838).
-  const type = row.id
+  // The id, **where the type used to be** — beside the name, not under it: the
+  // drawing puts this value on the heading's own line and #916 changes which
+  // value it is, never where it sits (ADR-0043, reversing #838).
+  const identifier = row.id
   const reason = degradedReason(row, rebuilding)
 
   // **Every derivation below is memoised, and against the reads themselves.**
@@ -281,13 +282,13 @@ export function AccountDetail({
                 {/* The heading is the **name alone**: it is the accessible name
                     of the whole detail (`aria-labelledby`), and a region called
                     *Alpha · CTO* names a thing nobody calls that. The kind
-                    rides beside it as ordinary text, which is where the drawing
-                    puts it and where a screen reader reads it after the heading
-                    rather than inside it. */}
+                    identifier rides beside it as ordinary text, which is where
+                    the drawing puts it and where a screen reader reads it after
+                    the heading rather than inside it. */}
                 <h2 id={heading} className="eyebrow">
                   {name}
                 </h2>
-                {type === null ? null : <span className="eyebrow">· {type}</span>}
+                <span className="eyebrow">· {identifier}</span>
                 {/* **The gesture is a pencil beside the name**, where it was
                     the name itself. One control for one gesture: a heading that
                     is also a button reads as a link to somewhere, and the

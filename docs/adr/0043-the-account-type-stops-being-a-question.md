@@ -122,11 +122,14 @@ that matters is handed to it.
 
 ## Consequences
 
-- **The account id returns to the accounts page as the subtitle, reversing
+- **The account id returns to the accounts page, in the slot the type held, reversing
   [#838](https://github.com/pbrissaud/suivi-bourse/issues/838).** That ticket removed it
   saying the page heads an account with *what the owner called it and what kind it is*; only
   one of the two is left, and the id is the half that does concrete work — it is what the
-  owner writes in the `account` column of an import file.
+  owner writes in the `account` column of an import file. **Beside the name, never beneath
+  it**: the drawing puts this value on the heading's own line — inline after a `·` on the
+  detail, at the far end of a `justify-between` row on the rail — so what changes is which
+  value sits there and nothing about where.
 - **`wrapper` enters `CONTEXT.md`, and it is the only word this adds.** ADR-0042 already
   uses it three times as though it were defined. The shortcut gets no term of its own: it is
   not stored, does not survive the form, and naming it would promise a concept where there
