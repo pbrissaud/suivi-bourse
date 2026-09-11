@@ -29,9 +29,19 @@ A `DEPOSIT` or `WITHDRAWAL` — an event that names an account and an amount, an
 security.
 
 **Account**:
-A named bucket of positions and cash, corresponding to a real-world envelope (a PEA,
+A named bucket of positions and cash, corresponding to a real-world wrapper (a PEA,
 a CTO, a broker). Every event belongs to exactly one. There is always at least one;
 when the owner has declared none it is called `default`.
+
+**Wrapper**:
+The real-world product an account is held in — a PEA, an assurance-vie, a plain
+brokerage account. It is what decides how an account is taxed, and is therefore the
+**fiscal unit**: a taxation model is attached to an account, never to a position.
+It is **not a field of its own**. What is worth knowing about a wrapper — how many
+years a threshold runs for, and the day it runs from — reaches the app through the
+account's taxation model; the wrapper's own name lives in the name the owner gave
+the account.
+_Avoid_: account type, envelope
 
 **Position**:
 What an account holds of one security: a quantity and a cost basis. A position with
