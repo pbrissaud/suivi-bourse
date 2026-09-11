@@ -245,15 +245,6 @@ export function AccountsRail({
           const reason = degradedReason(row, rebuilding)
           const cash = cashShare(advisories, row.id)
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-          // **The id, at the end of the row**, in the slot the type held since
-          // #838 — the row is `justify-between`, so this value sits opposite the
-          // name rather than beneath it, and #916 changes which value it is and
-          // nothing about where (ADR-0043). It reverses #838 deliberately: that
-          // ticket took the id off this page saying the line heads an account
-          // with *what the owner called it and what kind it is*, and only one of
-          // the two is left. The id is the half that does concrete work — it is
-          // what the owner writes in the `account` column of an import file.
-          const identifier = row.id
           // `null` where there is no ratio to state — nothing written about this
           // account yet, nothing ever paid in, or more taken out than put in.
           const performance = onContributed(row.gain_absolu, row.net_contributed)
@@ -288,7 +279,9 @@ export function AccountsRail({
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">{identifier}</span>
+                  {/* The id, in the slot the type held since #838 — opposite
+                      the name, never beneath it (#916, ADR-0043). */}
+                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.id}</span>
                 </span>
 
                 {/* **What the account is worth, and what it has done with it.**

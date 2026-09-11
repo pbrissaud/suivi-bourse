@@ -177,10 +177,6 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-  // The id, **where the type used to be** — beside the name, not under it: the
-  // drawing puts this value on the heading's own line and #916 changes which
-  // value it is, never where it sits (ADR-0043, reversing #838).
-  const identifier = row.id
   const reason = degradedReason(row, rebuilding)
 
   // **Every derivation below is memoised, and against the reads themselves.**
@@ -288,7 +284,9 @@ export function AccountDetail({
                 <h2 id={heading} className="eyebrow">
                   {name}
                 </h2>
-                <span className="eyebrow">· {identifier}</span>
+                {/* The id, where the type used to be — beside the name and
+                    never under it (#916, ADR-0043, reversing #838). */}
+                <span className="eyebrow">· {row.id}</span>
                 {/* **The gesture is a pencil beside the name**, where it was
                     the name itself. One control for one gesture: a heading that
                     is also a button reads as a link to somewhere, and the

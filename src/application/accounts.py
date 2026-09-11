@@ -117,10 +117,8 @@ def default_is_declared(store) -> bool:
     **On the label alone** since #916: the type used to be the other half of this
     answer, and there is no longer a type to answer with.
     """
-    row = next((a for a in read_accounts(store) if a.id == DEFAULT_ACCOUNT), None)
-    if row is None:
-        return False
-    return as_declared(row).label is not None
+    return any(as_declared(a).label is not None
+               for a in read_accounts(store) if a.id == DEFAULT_ACCOUNT)
 
 
 def declared_portfolio(store) -> Optional[Portfolio]:
@@ -140,11 +138,9 @@ def as_declared(account: Account) -> Account:
     """The row as a **reader** must see it: what nobody declared reads ``None``."""
     if account.id != DEFAULT_ACCOUNT:
         return account
-    _, _, seeded_label = store_module.DEFAULT_ACCOUNT_ROW
-    return replace(
-        account,
-        label=None if account.label == seeded_label else account.label,
-    )
+    seeded_label = store_module.DEFAULT_ACCOUNT_ROW[2]
+    return replace(account,
+                   label=None if account.label == seeded_label else account.label)
 
 
 def is_named_by_events(store, account_id: str) -> bool:
@@ -192,10 +188,10 @@ def create_account(store, account_id: str,
     if account_id in account_ids(store):
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 
-    _, seeded_type, _ = store_module.DEFAULT_ACCOUNT_ROW
     store.execute(
         'INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
-        [account_id, seeded_type, _text(label) or account_id])
+        [account_id, store_module.DEFAULT_ACCOUNT_ROW[1],
+         _text(label) or account_id])
     logger.info(f"Declared account {account_id}")
     return Account(id=account_id, label=_text(label) or account_id)
 
