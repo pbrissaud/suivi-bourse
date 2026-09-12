@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS account (
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 
+-- The owner's own taxation models (#752, ADR-0042). Reusable across accounts,
+-- so they have an identity of their own rather than living on the account.
+-- `parameters` is **one JSON value in one column** and not a column per field:
+-- ADR-0042 refuses a new nullable column per parameter, which would make the
+-- absent case indistinguishable from the unset one — and it is what makes a
+-- kind added in version n+1 an addition rather than a migration.
+CREATE TABLE IF NOT EXISTS taxation_model (
+    id          VARCHAR PRIMARY KEY,
+    name        VARCHAR NOT NULL,
+    kind        VARCHAR NOT NULL,                    -- one of taxation.KINDS
+    parameters  VARCHAR NOT NULL);                   -- the kind's own, as JSON
+
+-- What its owner declares **about an account** and no computation can produce
+-- (#752, ADR-0044). Keyed by the account, one writer, and an **absent row is an
+-- absence**: no model declared is not a model of nothing.
+CREATE TABLE IF NOT EXISTS account_fact (
+    account         VARCHAR PRIMARY KEY REFERENCES account(id),
+    taxation_model  VARCHAR REFERENCES taxation_model(id),
+    opened_on       DATE);                           -- declared by #918
+
 CREATE TABLE IF NOT EXISTS event (
     id            BIGINT  PRIMARY KEY,
     date          DATE    NOT NULL,
@@ -127,7 +147,7 @@ DDL = ''.join((
 ))
 
 TABLES = (
-    'account', 'symbol', 'event',
+    'account', 'symbol', 'event', 'taxation_model', 'account_fact',
     'position', 'account_state',
     'symbol_quote', 'price_point',
     'account_metrics', 'portfolio_totals',

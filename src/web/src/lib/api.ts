@@ -42,6 +42,18 @@ export const ROUTES = {
    * declaration, which is the one instant those rows may be rewritten at.
    */
   accountReassignment: '/api/accounts/:id/reassignment',
+  /**
+   * The owner's taxation models, **and the shape one may take** (#752).
+   *
+   * One read for the two, deliberately: the kinds are a closed enumeration in
+   * the server's code (ADR-0042) and the two wrapper templates are the only
+   * structure the app ships (ADR-0043), so a second copy of either over here
+   * would drift the day a kind is added. What this front holds is the *words* —
+   * one message key per kind and per template, in both catalogues.
+   */
+  taxationModels: '/api/taxation-models',
+  /** One model. A **pattern**, like {@link ROUTES.account}. */
+  taxationModel: '/api/taxation-models/:id',
   positions: '/api/positions',
   portfolioTotals: '/api/portfolio-totals',
   /**
@@ -179,6 +191,10 @@ export function accountPath(id: string): string {
 
 export function accountReassignmentPath(id: string): string {
   return `${accountPath(id)}/reassignment`
+}
+
+export function taxationModelPath(id: string): string {
+  return `/api/taxation-models/${encodeURIComponent(id)}`
 }
 
 function installationFactAcknowledgementPath(key: string): string {
@@ -447,6 +463,16 @@ export interface Account {
    * never learns the fourth exists.
    */
   transfer_fees?: number | null
+  /**
+   * The id of the taxation model this account carries (#752), and **absent
+   * where it carries none** — never `null`, never an empty string.
+   *
+   * An account with no model is ordinary: every store that predates this, the
+   * seeded `default` row, and anyone who declined the question. The absence
+   * reaches the reader as an absence (#845, ADR-0044) and #919 is what publishes
+   * nothing rather than a zero for it.
+   */
+  taxation_model?: string
 }
 
 export interface AccountsResponse {
@@ -488,6 +514,77 @@ export interface AccountDraft {
    * declaration is never refused for want of it.
    */
   reassign?: boolean
+  /**
+   * The model to attach, `null` to detach — and **absent to leave it alone**
+   * (#752).
+   *
+   * The three are three, and the middle one is why the member is optional: a
+   * `PATCH` sent to rename an account must not drop the model it carries, so
+   * *say nothing* has to be sayable. The form sends it on every submission all
+   * the same, because the select always has an answer.
+   */
+  taxation_model?: string | null
+}
+
+// ------------------------------------------------------------------------- //
+// The taxation models (#752, ADR-0042, ADR-0043)
+// ------------------------------------------------------------------------- //
+
+/** What a parameter is. The four the server's enumeration knows. */
+export type TaxationParameterType = 'rate' | 'years' | 'age_basis' | 'brackets'
+
+export interface TaxationParameter {
+  name: string
+  type: TaxationParameterType
+  required: boolean
+}
+
+/** One rung of a `bracketed_realised` ladder; the top one has no ceiling. */
+export interface TaxationBracket {
+  upper_bound: number | null
+  rate: number
+}
+
+/**
+ * A model's parameters. Typed loosely on purpose: which members are there is
+ * decided by the `kind`, and the server is what states the pairing — a union per
+ * kind here would be a second declaration of the enumeration, which is the thing
+ * {@link ROUTES.taxationModels} exists to serve rather than duplicate.
+ */
+export type TaxationParameters = Record<string, number | string | TaxationBracket[]>
+
+export interface TaxationModel {
+  id: string
+  name: string
+  kind: string
+  parameters: TaxationParameters
+}
+
+/**
+ * A wrapper whose **structure** ships — and no money whatsoever (ADR-0042).
+ *
+ * Picking one fills two fields of the form. It is not stored, does not survive
+ * the submission, and nothing reads it back: the taxation model is what is
+ * written (ADR-0043).
+ */
+export interface TaxationTemplate {
+  id: string
+  kind: string
+  values: TaxationParameters
+}
+
+export interface TaxationModelsResponse {
+  kinds: { kind: string; parameters: TaxationParameter[] }[]
+  age_bases: string[]
+  templates: TaxationTemplate[]
+  models: TaxationModel[]
+}
+
+/** What the model form sends. `kind` and `parameters` travel together. */
+export interface TaxationModelDraft {
+  name: string
+  kind: string
+  parameters: TaxationParameters
 }
 
 /**
@@ -1522,6 +1619,15 @@ export const api = {
   updateAccount: (id: string, draft: AccountDraft) =>
     send<Account>(accountPath(id), 'PATCH', draft),
   removeAccount: (id: string) => remove<{ id: string; removed: boolean }>(accountPath(id)),
+  // The taxation models (#752). Four gestures on one resource — the catalogue
+  // rides on the read, the three writes are the account's own three.
+  taxationModels: () => get<TaxationModelsResponse>(ROUTES.taxationModels),
+  createTaxationModel: (draft: TaxationModelDraft) =>
+    send<TaxationModel>(ROUTES.taxationModels, 'POST', draft),
+  updateTaxationModel: (id: string, draft: TaxationModelDraft) =>
+    send<TaxationModel>(taxationModelPath(id), 'PATCH', draft),
+  removeTaxationModel: (id: string) =>
+    remove<{ id: string; removed: boolean }>(taxationModelPath(id)),
   reassignEvents: (id: string) =>
     send<{ account: string; reassigned: number }>(
       accountReassignmentPath(id),

@@ -22,6 +22,9 @@ grep -rnE --include='*.py' "['\"]undefined['\"]" $SRC tests && rule "the sentine
 # One writer per table.
 [ "$(grep -rlE --include='*.py' '(INSERT INTO|UPDATE|DELETE FROM) event\b' $SRC | sort | tr '\n' ' ')" = "src/application/entries.py src/application/reassignment.py " ] || rule "a third writer of the event table"
 [ "$(grep -rliE --include='*.py' '(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(position|account_state)\b' $SRC | tr '\n' ' ')" = "src/application/positions.py " ] || rule "a second writer of position/account_state"
+# The two tables #752 adds are declaration, and the module that owns the account
+# declaration owns them (ADR-0044). The arithmetic is next door and pure.
+[ "$(grep -rliE --include='*.py' '(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(taxation_model|account_fact)\b' $SRC | tr '\n' ' ')" = "src/application/accounts.py " ] || rule "a second writer of taxation_model/account_fact"
 
 # One allocator, and it is Store.reserve (ADR-0027, #785).
 [ "$(grep -rliE --include='*.py' 'max\(id\)' $SRC tests | sort | tr '\n' ' ')" = "src/application/store.py " ] || rule "a key allocated outside Store.reserve"
@@ -29,7 +32,7 @@ grep -rnE --include='*.py' "['\"]undefined['\"]" $SRC tests && rule "the sentine
 # The pure modules import neither the store nor the market.
 PYTHONPATH=src uv run python -c '
 import sys, importlib
-for name in ("scheduling", "performance", "carrying", "retention", "fx", "boot_env", "mounts", "market_info", "build_info", "rhythm"):
+for name in ("scheduling", "performance", "carrying", "retention", "fx", "boot_env", "mounts", "market_info", "build_info", "rhythm", "taxation"):
     importlib.import_module("application." + name)
 heavy = sorted(m for m in sys.modules if m.split(".")[0] in ("duckdb", "yfinance", "pandas", "openpyxl"))
 sys.exit("pure modules pulled: " + ", ".join(heavy)) if heavy else None

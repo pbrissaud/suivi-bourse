@@ -43,6 +43,32 @@ account's taxation model; the wrapper's own name lives in the name the owner gav
 the account.
 _Avoid_: account type, envelope
 
+**Taxation model**:
+How a wrapper is taxed, said in the one form this app can hold: a closed **kind**
+from a fixed enumeration, plus the typed parameters that kind requires — never a
+formula, never a free expression (ADR-0042). The models the app ships live in the
+code and carry **no money**: every rate, bracket bound and threshold is per tax
+year, so the owner types theirs and the app stores what it was told. A model has
+its own identity, because it is reusable across accounts, and an account carrying
+none is ordinary.
+_Avoid_: tax regime, tax rate, fiscal profile
+
+**Account fact**:
+What an owner declares **about an account** and no computation can produce — the
+taxation model it carries, and the day the wrapper was opened. Keyed by the
+account and held apart from it, because a declared fact has its own writer, its
+own absence and its own lifetime (ADR-0044). *Nothing declared* is the absence of
+a row, and it is not the same sentence as *declared as nothing*.
+_Avoid_: account metadata, account settings
+
+**Projected tax**:
+What an account's taxation model says would be owed **if its holdings were sold
+today**. A projection and never a tax return: no allowance, no loss carry-forward,
+no household situation (ADR-0042). It is computed on the wrapper — the fiscal unit
+— and never per position, and an account with no model publishes no figure at all
+rather than a plausible one.
+_Avoid_: tax due, tax owed, tax estimate
+
 **Position**:
 What an account holds of one security: a quantity and a cost basis. A position with
 a quantity of zero is not a special kind of position — it is a position that has

@@ -40,6 +40,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Refusal } from '@/components/Refusal'
+import { TaxationModelField } from '@/components/accounts/TaxationModelField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -131,6 +132,11 @@ export function AccountForm({
   // having to discover it — and unchecking it declares the account all the same:
   // the declaration is *never* refused because events are unassigned.
   const [reassign, setReassign] = useState(true)
+  // **Its own state, and not a member of `Draft`** (#752): the two fields above
+  // are strings a `Field` validates, and the model is an id a `<select>` either
+  // has or has not. `null` is *no model*, which is an ordinary answer and the
+  // one a declaration opens on.
+  const [taxationModel, setTaxationModel] = useState<string | null>(null)
 
 
   const remove = useMutation({
@@ -166,6 +172,7 @@ export function AccountForm({
     // attributing one account's failure to another.
     write.reset()
     remove.reset()
+    setTaxationModel(account?.taxation_model ?? null)
     setDraft(
       account === null
         ? EMPTY
@@ -213,11 +220,21 @@ export function AccountForm({
         ? {
             id,
             label: label || id,
+            ...(taxationModel === null ? {} : { taxation_model: taxationModel }),
             // Sent only where the box was shown **and** left ticked: `reassign`
             // is a request, and a client that never asks must never perform one.
             ...(offered && reassign ? { reassign: true } : {}),
           }
-        : { label },
+        // **Sent when the reader moved it**, `null` included — detaching is a
+        // gesture, and it is this one. Left alone, the member is absent, which
+        // is what a client with no such control sends and what keeps a rename a
+        // rename: the server reads an absent member as *leave it alone*.
+        : {
+            label,
+            ...(taxationModel === (account.taxation_model ?? null)
+              ? {}
+              : { taxation_model: taxationModel }),
+          },
     )
   }
 
@@ -285,6 +302,8 @@ export function AccountForm({
               />
             )}
           </Field>
+
+          <TaxationModelField value={taxationModel} onChange={setTaxationModel} />
 
           {offered ? (
             <div className="space-y-1 rounded-md border border-border p-3">

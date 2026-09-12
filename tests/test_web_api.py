@@ -5158,3 +5158,249 @@ def test_a_foreign_origin_may_still_read(tmp_path):
 
     assert response.status_code == 200
     assert [row['symbol'] for row in response.get_json()] == ['AAPL']
+
+
+# --------------------------------------------------------------------------- #
+# The taxation models over `/api` (#752, ADR-0042, ADR-0043, ADR-0044)
+# --------------------------------------------------------------------------- #
+
+def _a_flat_model(client, name='Flat', rate=0.3):
+    """One model written the way the panel writes it, and its id."""
+    written = client.post('/api/taxation-models',
+                          json={'name': name, 'kind': 'flat_realised',
+                                'parameters': {'rate': rate}})
+    assert written.status_code == 201, written.get_json()
+    return written.get_json()['id']
+
+
+def test_the_models_read_carries_the_catalogue_and_the_owner_s_own(tmp_path):
+    """The kinds are code and the templates ship no money (ADR-0042).
+
+    Served rather than duplicated in the front: a second copy of the enumeration
+    over there would drift the day a kind is added.
+    """
+    client = build_client(tmp_path)
+
+    payload = client.get('/api/taxation-models').get_json()
+
+    assert [entry['kind'] for entry in payload['kinds']] == [
+        'none', 'flat_realised', 'aged_flat_realised', 'bracketed_realised',
+        'withholding_income']
+    # Nothing is seeded: a shipped model is never a row.
+    assert payload['models'] == []
+    for template in payload['templates']:
+        assert template['kind'] == 'aged_flat_realised'
+        assert set(template['values']) == {'threshold_years', 'age_basis'}
+
+
+def test_a_model_is_written_corrected_and_removed_over_the_api(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    key = _a_flat_model(client)
+    assert [row[1] for row in opened.query(
+        'SELECT id, name FROM taxation_model')] == ['Flat']
+
+    corrected = client.patch(f'/api/taxation-models/{key}',
+                             json={'name': 'Corrected',
+                                   'parameters': {'rate': 0.28}})
+    assert corrected.status_code == 200
+    assert corrected.get_json()['parameters'] == {'rate': 0.28}
+
+    removed = client.delete(f'/api/taxation-models/{key}')
+    assert removed.status_code == 200
+    assert opened.query('SELECT count(*) FROM taxation_model') == [(0,)]
+
+
+def test_a_model_whose_parameters_do_not_fit_its_kind_is_422(tmp_path):
+    """Checked when it is written, which is what a closed kind buys."""
+    response = build_client(tmp_path).post(
+        '/api/taxation-models',
+        json={'name': 'Aged', 'kind': 'aged_flat_realised',
+              'parameters': {'rate_before': 0.128}})
+
+    assert response.status_code == 422
+    assert response.get_json()['type'] == '/problems/bad-request'
+
+
+def test_a_kind_outside_the_enumeration_is_422(tmp_path):
+    response = build_client(tmp_path).post(
+        '/api/taxation-models',
+        json={'name': 'Wealth', 'kind': 'wealth_tax',
+              'parameters': {'rate': 0.01}})
+
+    assert response.status_code == 422
+
+
+def test_an_account_declares_the_model_it_carries_and_the_read_publishes_it(
+        tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    key = _a_flat_model(client)
+
+    declared = client.post('/api/accounts',
+                           json={'id': 'pea', 'label': 'PEA',
+                                 'taxation_model': key})
+    assert declared.status_code == 201
+    assert declared.get_json()['taxation_model'] == key
+    assert opened.query('SELECT account, taxation_model FROM account_fact') == [
+        ('pea', key)]
+
+    listed = client.get('/api/accounts').get_json()['accounts']
+    assert {row['id']: row.get('taxation_model') for row in listed} == {
+        'pea': key}
+
+
+def test_an_account_with_no_model_publishes_no_member_at_all(tmp_path):
+    """**An absence reaches the reader as one** (#845, ADR-0044).
+
+    No `null`, no *not set*: the account is ordinary, and #919 is what publishes
+    nothing rather than a plausible zero for it.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    declared = client.post('/api/accounts', json={'id': 'pea', 'label': 'PEA'})
+
+    assert 'taxation_model' not in declared.get_json()
+    assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
+    listed = client.get('/api/accounts').get_json()['accounts']
+    assert all('taxation_model' not in row for row in listed)
+
+
+def test_renaming_an_account_leaves_the_model_it_carries_alone(tmp_path):
+    """**Absent is *leave it alone***, which is what makes a rename a rename."""
+    client, opened = build_client_and_store(tmp_path)
+    key = _a_flat_model(client)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+
+    renamed = client.patch('/api/accounts/pea', json={'label': 'Mon PEA'})
+
+    assert renamed.status_code == 200
+    assert renamed.get_json()['taxation_model'] == key
+    assert opened.query('SELECT taxation_model FROM account_fact') == [(key,)]
+
+
+def test_a_null_model_detaches_it_and_leaves_no_row(tmp_path):
+    """And `null` is *detach it*: the two are two gestures."""
+    client, opened = build_client_and_store(tmp_path)
+    key = _a_flat_model(client)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+
+    detached = client.patch('/api/accounts/pea', json={'taxation_model': None})
+
+    assert 'taxation_model' not in detached.get_json()
+    assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
+
+
+def test_a_model_reference_matching_nothing_is_422_and_writes_no_account(
+        tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    response = client.post('/api/accounts',
+                           json={'id': 'pea', 'label': 'PEA',
+                                 'taxation_model': 'no-such-model'})
+
+    assert response.status_code == 422
+    assert response.get_json()['key'] == 'taxation_model'
+    # The declaration and the attachment are one transaction: nothing landed.
+    assert 'pea' not in {row[0] for row in opened.query('SELECT id FROM account')}
+
+
+def test_removing_a_model_an_account_carries_is_409_and_names_the_accounts(
+        tmp_path):
+    """The front branches on `type` and never on `detail`, so the names ride."""
+    client, opened = build_client_and_store(tmp_path)
+    key = _a_flat_model(client)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+    client.post('/api/accounts',
+                json={'id': 'cto', 'label': 'CTO', 'taxation_model': key})
+
+    refused = client.delete(f'/api/taxation-models/{key}')
+
+    assert refused.status_code == 409
+    body = refused.get_json()
+    assert body['type'] == '/problems/taxation-model-in-use'
+    assert body['accounts'] == ['cto', 'pea']
+    assert opened.query('SELECT count(*) FROM taxation_model') == [(1,)]
+
+
+def test_removing_a_model_nothing_carries_goes_through(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    key = _a_flat_model(client)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+    client.patch('/api/accounts/pea', json={'taxation_model': None})
+
+    assert client.delete(f'/api/taxation-models/{key}').status_code == 200
+    assert opened.query('SELECT count(*) FROM taxation_model') == [(0,)]
+
+
+def test_a_model_that_does_not_exist_is_404_rather_than_a_silent_create(
+        tmp_path):
+    client = build_client(tmp_path)
+
+    assert client.patch('/api/taxation-models/nobody',
+                        json={'name': 'X'}).status_code == 404
+    assert client.delete('/api/taxation-models/nobody').status_code == 404
+
+
+def test_removing_an_account_takes_the_facts_declared_about_it(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    key = _a_flat_model(client)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+
+    assert client.delete('/api/accounts/pea').status_code == 200
+
+    assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
+    # The model outlives the account: it is reusable, and it belonged to none.
+    assert opened.query('SELECT count(*) FROM taxation_model') == [(1,)]
+
+
+def test_a_refused_model_reference_does_not_rename_the_account_either(tmp_path):
+    """One transaction: a request answered `422` leaves nothing behind.
+
+    The rename and the attachment are two writes in one gesture, and the second
+    is what can be refused — so the first had to stop being applied before it.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/accounts', json={'id': 'pea', 'label': 'PEA'})
+
+    refused = client.patch('/api/accounts/pea',
+                           json={'label': 'Renamed',
+                                 'taxation_model': 'no-such-model'})
+
+    assert refused.status_code == 422
+    assert opened.query("SELECT label FROM account WHERE id = 'pea'") == [('PEA',)]
+
+
+def test_a_kind_that_is_not_a_string_is_422_and_never_a_500(tmp_path):
+    """A body may carry anything where the kind goes, and the route answers."""
+    response = build_client(tmp_path).post(
+        '/api/taxation-models',
+        json={'name': 'Odd', 'kind': [], 'parameters': {}})
+
+    assert response.status_code == 422
+
+
+def test_a_refused_removal_writes_none_of_its_three_statements(tmp_path):
+    """Removing an account is three writes since #752, and no transaction.
+
+    DuckDB checks a foreign key against committed rows, so the three cannot be
+    wrapped in one — the account's own delete would be refused by the constraint
+    the fact row's delete has just satisfied. What makes that survivable is
+    **where the refusals are**: an account an event names is refused before any
+    of the three runs, so the reader still has the account *and* the model it
+    carries.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    key = _a_flat_model(client)
+    client.patch('/api/accounts/pea', json={'taxation_model': key})
+
+    refused = client.delete('/api/accounts/pea')
+
+    assert refused.status_code == 409
+    assert opened.query("SELECT taxation_model FROM account_fact "
+                        "WHERE account = 'pea'") == [(key,)]

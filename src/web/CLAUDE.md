@@ -611,6 +611,21 @@ Five nets hold a rule nothing made true by construction:
   run yet* and never *something is wrong*. `STATE_TONE` is declared **once**, in
   `Notifications.tsx`, and it has exactly one consumer since #829: the sidebar
   card that used to be its second reader is gone.
+- **An account carries a taxation model, and carrying none is ordinary** (#752,
+  ADR-0042, ADR-0043). `TaxationModelField` is a field of `AccountForm` *and* the
+  little CRUD the models have: a model is written where it is attached, because
+  anywhere else the owner declares an account, discovers the question, leaves to
+  answer it and comes back. **The kind is asked first**, and the wrapper shortcut
+  is nested inside the one kind of five with any structure to pre-fill — so a
+  reader whose regime has no age threshold never meets the word *PEA*. The
+  abbreviation is expanded and the country is in the label (WCAG 3.1.4), the
+  escape hatch is **named** rather than left as an empty control, and a rate is
+  **typed as a percentage and stored as a fraction**, rounded at the conversion
+  so `18,6 %` is not written down as `0.18600000000000003`. The field renders
+  **nothing at all** until its catalogue has landed (ADR-0026): a `<select>`
+  whose options have not arrived would show *no model* about an account that has
+  one. The kinds and the templates are **served**, never copied here — what this
+  front holds is the words.
 - **An account is a name and an id, and the id sits where the type sat** (#916,
   ADR-0043). The type is gone from the forms, from `Account` and from the wire,
   so declaring an account is two fields. What that slot now holds is the **id** —
@@ -772,6 +787,7 @@ src/
 │   ├── settings/   # the dials, the workloads, the orphans, the store, the environment
 │   │               # (RebuildBlock: where the bell's reconstruction card lands)
 │   └── accounts/   # the rail of weights, one account's detail, its curve, its form
+│                   # (TaxationModelField: the model it carries, and where one is written)
 └── test/           # setup · MSW server · payload factory · renderApp
 ```
 

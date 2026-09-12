@@ -1,13 +1,26 @@
-"""The ``account`` table: what is declared, and what may not be undone (#698)."""
+"""The ``account`` table: what is declared, and what may not be undone (#698).
+
+**And the two tables #752 adds**, because they are the same gesture continued:
+``taxation_model`` holds the models their owner wrote, ``account_fact`` holds
+what they declared *about an account* — which model it carries, and the day the
+wrapper was opened (#918 writes that one; this module declares its column).
+Both are declaration, both are written here and nowhere else, and
+``.github/scripts/conventions.sh`` says so on the source (ADR-0006, ADR-0044).
+The arithmetic is not here: :mod:`application.taxation` is pure and holds the
+kinds, and one module cannot be both.
+"""
 import csv
-from dataclasses import replace
+import json
+import uuid
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from logfmt_logger import getLogger
 
 from application import perf_series
 from application import store as store_module
+from application import taxation
 from application.events.schemas import (
     ACCOUNT_FILE_COLUMNS, Account, DEFAULT_ACCOUNT, Portfolio)
 
@@ -32,6 +45,23 @@ class AccountInUse(Exception):
 
 class UnknownAccount(Exception):
     """No account has that id. A 404 at the API, never a silent create."""
+
+
+class UnknownTaxationModel(Exception):
+    """No model has that id — a reference to nothing, refused where it enters."""
+
+
+class TaxationModelInUse(Exception):
+    """The model cannot go: an account carries it. It **names which**.
+
+    The accounts ride on the exception rather than being re-read by whoever
+    catches it: the refusal's whole point is where to go next, and a second query
+    for them would run outside the lock the refusal was decided under.
+    """
+
+    def __init__(self, message: str, accounts: Sequence[str]):
+        super().__init__(message)
+        self.accounts = list(accounts)
 
 
 class DuplicateAccount(Exception):
@@ -221,7 +251,20 @@ def delete_account(store, account_id: str) -> None:
         raise AccountInUse(
             f"Account {account_id!r} cannot be removed while an event names "
             f"it; forget those events first")
+    # **Three statements, and deliberately not one transaction.** DuckDB checks a
+    # foreign key against *committed* rows, so deleting the referencing rows and
+    # the referenced one inside one transaction is refused by the constraint the
+    # first statement has already satisfied — its own documented limitation. What
+    # that costs is a crash between two of them, and what it leaves is an account
+    # whose taxation model is gone: the state of every account that never had
+    # one, which the reader can see and repair from the panel. The refusals above
+    # are decided before any of the three runs, which is the part that matters.
     perf_series.forget_account(store, account_id)
+    # What its owner declared about it goes with it (#752): the row is keyed by
+    # the account and references it, so leaving it behind is a foreign key
+    # pointing at nothing — and a fact about an account that no longer exists is
+    # not a fact about anything.
+    store.execute('DELETE FROM account_fact WHERE account = ?', [account_id])
     store.execute('DELETE FROM account WHERE id = ?', [account_id])
     logger.info(f"Removed account {account_id}")
 
@@ -233,10 +276,155 @@ def _require(store, account_id: str) -> Account:
     raise UnknownAccount(f"No account with id {account_id!r}")
 
 
+# --------------------------------------------------------------------------- #
+# The taxation model, and the facts an account carries (#752, ADR-0042/43/44)
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class TaxationModel:
+    """One row of ``taxation_model`` — the owner's own, never a shipped one.
+
+    Nothing is seeded here and nothing ever will be: a seeded row could not be
+    corrected (``DO NOTHING`` skips the fix, ``DO UPDATE`` overwrites what its
+    owner did to it), and what the app ships carries no money anyway — it is two
+    structural fields a form pre-fills and does not store (ADR-0043).
+    """
+    id: str
+    name: str
+    kind: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+
+
+def read_models(store) -> List[TaxationModel]:
+    """Every model its owner wrote, name-sorted."""
+    rows = store.query(
+        'SELECT id, name, kind, parameters FROM taxation_model '
+        'ORDER BY name, id')
+    return [TaxationModel(id=r[0], name=r[1], kind=r[2],
+                          parameters=json.loads(r[3])) for r in rows]
+
+
+def read_model(store, model_id: str) -> TaxationModel:
+    """One model, or :class:`UnknownTaxationModel`."""
+    for model in read_models(store):
+        if model.id == model_id:
+            return model
+    raise UnknownTaxationModel(f"No taxation model with id {model_id!r}")
+
+
+def create_model(store, name: Optional[str], kind: Any,
+                 parameters: Any) -> TaxationModel:
+    """Write a taxation model. The kind is checked here, once.
+
+    The id is the app's to allocate and the owner never sees it typed: it names
+    the row for as long as the row lives (ADR-0027) and carries no meaning, so a
+    name corrected does not move what an account points at.
+    """
+    checked = taxation.validate(kind, parameters)
+    label = _text(name)
+    if not label:
+        raise taxation.ModelRejected("a taxation model is named")
+
+    model = TaxationModel(id=uuid.uuid4().hex, name=label, kind=kind,
+                          parameters=checked)
+    store.execute(
+        'INSERT INTO taxation_model (id, name, kind, parameters) '
+        'VALUES (?, ?, ?, ?)',
+        [model.id, model.name, model.kind, json.dumps(model.parameters)])
+    logger.info(f"Declared taxation model {model.id} ({model.kind})")
+    return model
+
+
+def update_model(store, model_id: str, *, name: Optional[str] = None,
+                 kind: Any = None, parameters: Any = None) -> TaxationModel:
+    """Correct a model. A blank name keeps the one that is there.
+
+    **The kind and its parameters move together.** They are one value — a kind
+    fixes what a row of it must carry — so a kind sent without parameters is
+    checked against the parameters that are there, and either it fits or the
+    write is refused.
+    """
+    current = read_model(store, model_id)
+    next_kind = current.kind if kind is None else kind
+    given = current.parameters if parameters is None else parameters
+    checked = taxation.validate(next_kind, given)
+    label = _text(name) or current.name
+
+    model = TaxationModel(id=model_id, name=label, kind=next_kind,
+                          parameters=checked)
+    store.execute(
+        'UPDATE taxation_model SET name = ?, kind = ?, parameters = ? '
+        'WHERE id = ?',
+        [model.name, model.kind, json.dumps(model.parameters), model_id])
+    return model
+
+
+def accounts_carrying(store, model_id: str) -> List[str]:
+    """The accounts this model is attached to — the refusal's whole predicate."""
+    return [row[0] for row in store.query(
+        'SELECT account FROM account_fact WHERE taxation_model = ? '
+        'ORDER BY account', [model_id])]
+
+
+def delete_model(store, model_id: str) -> None:
+    """Remove a model, unless an account still carries it.
+
+    ``delete_account``'s own shape: the refusal **names** what holds the row
+    back, because *it is in use* without saying where sends its reader hunting
+    through their accounts one panel at a time.
+    """
+    read_model(store, model_id)
+    carried = accounts_carrying(store, model_id)
+    if carried:
+        raise TaxationModelInUse(
+            f"Taxation model {model_id!r} cannot be removed while "
+            f"{', '.join(repr(a) for a in carried)} carries it; detach it "
+            f"there first", carried)
+    store.execute('DELETE FROM taxation_model WHERE id = ?', [model_id])
+    logger.info(f"Removed taxation model {model_id}")
+
+
+def taxation_models_by_account(store) -> Dict[str, str]:
+    """Which account carries which model. **Absent means absent** (#845)."""
+    return {row[0]: row[1] for row in store.query(
+        'SELECT account, taxation_model FROM account_fact '
+        'WHERE taxation_model IS NOT NULL')}
+
+
+def set_taxation_model(store, account_id: str,
+                       model_id: Optional[str]) -> Optional[str]:
+    """Attach a model to an account, or detach the one it carries.
+
+    ``None`` detaches, and detaching leaves **no row** rather than a row saying
+    nothing: a missing row is *never declared* and a null column is *unset*, and
+    ADR-0044 is written about the class of defect that follows from spelling the
+    first as the second. The row survives its own emptiness only once #918 puts
+    an opening date beside it — which is why the delete below reads that column
+    rather than dropping the row outright.
+    """
+    _require(store, account_id)
+    target = _text(model_id) or None
+    if target is not None:
+        read_model(store, target)
+
+    store.execute(
+        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?) '
+        'ON CONFLICT (account) DO UPDATE SET '
+        'taxation_model = excluded.taxation_model',
+        [account_id, target])
+    store.execute(
+        'DELETE FROM account_fact WHERE account = ? '
+        'AND taxation_model IS NULL AND opened_on IS NULL', [account_id])
+    return target
+
+
 __all__ = [
     'ACCOUNT_COLUMNS', 'REQUIRED_ACCOUNT_COLUMNS',
     'AccountSourceError', 'AccountInUse', 'UnknownAccount',
-    'DuplicateAccount',
+    'DuplicateAccount', 'UnknownTaxationModel', 'TaxationModelInUse',
+    'TaxationModel', 'read_models', 'read_model', 'create_model',
+    'update_model', 'delete_model', 'accounts_carrying',
+    'taxation_models_by_account', 'set_taxation_model',
     'is_accounts_file', 'header_of',
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',
