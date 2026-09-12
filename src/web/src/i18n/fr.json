@@ -75,6 +75,8 @@
   "notification.fact.assumed_base_currency": "Montants lus dans votre devise de base",
   "notification.advisory.cash_share": "{label} · {share, number, percent} de liquidités non investies",
   "notification.advisory.cash_share.body": "Une part de ce compte dort en cash au lieu d’être investie. Rien d’anormal si c’est voulu.",
+  "notification.advisory.opened_after_first_payment": "{label} · ouvert après son premier versement",
+  "notification.advisory.opened_after_first_payment.body": "Vous avez déclaré ce compte ouvert le {opened}, et il a reçu un versement le {payment}. Une enveloppe ne peut pas être alimentée avant d’exister : l’une des deux dates est donc fausse, et l’application ne peut pas dire laquelle.",
 
   "empty.noCurrency.title": "Aucune devise de base",
   "empty.noCurrency.body": "Rien n’est valorisé et aucun gain n’est calculé tant que vous n’avez pas choisi de devise de base. Vos événements sont enregistrés malgré tout, et le grand livre reste lisible.",
@@ -356,6 +358,8 @@
   "accounts.form.taxation.hint": "Comment ce compte est imposé, enregistré pour la projection à venir. Laissez vide et l’application n’affiche aucun chiffre — c’est la bonne réponse tant que vous n’avez pas dit comment votre enveloppe est imposée. Un modèle peut servir à plusieurs comptes.",
   "accounts.form.taxation.edit": "Corriger ce modèle",
   "accounts.form.taxation.remove": "Supprimer ce modèle",
+  "accounts.form.openedOn": "Ouvert le",
+  "accounts.form.openedOn.hint": "Le jour où cette enveloppe a été ouverte : c’est de là que court son ancienneté, et la forme choisie ci-dessus s’en sert. Nous proposons la date de son premier versement connu ; corrigez-la si l’enveloppe est plus ancienne que ce registre, ce qui est le cas d’un transfert depuis un autre courtier.",
 
   "taxation.name": "Le nom de ce modèle",
   "taxation.kind": "Forme",

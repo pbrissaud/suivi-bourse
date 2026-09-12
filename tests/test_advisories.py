@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from application import accounts
 from application import advisories
 from application import store as store_module
 
@@ -296,3 +297,87 @@ def test_an_expired_row_is_swept_by_the_gesture_and_never_by_a_read(store):
     advisories.acknowledge(store, 'cash_share:pea', late)
     rows = {row[0] for row in store.query('SELECT key FROM advisory_ack')}
     assert rows == {'cash_share:pea'}
+
+
+# --------------------------------------------------------------------------- #
+# The opening date contradicted by the ledger (#918)
+# --------------------------------------------------------------------------- #
+
+def _payment(opened, account: str, day: date, key: int = 0) -> None:
+    """One declared payment — a ``DEPOSIT``, which is what opens a wrapper."""
+    opened.execute(
+        'INSERT INTO event (id, date, event_type, account, amount) '
+        'VALUES (?, CAST(? AS DATE), ?, ?, 1000)',
+        [key, day.isoformat(), 'DEPOSIT', account])
+
+
+def test_a_wrapper_that_received_money_before_it_existed_raises_one(store):
+    """The contradiction, stated — and **not** arbitrated.
+
+    One of the two dates is wrong and the app cannot say which: a transfer
+    carries a real opening date no event of this ledger knows, and a typed year
+    is a typed year. So both are in the detail, and the sentence says they
+    disagree.
+    """
+    _account(store, 'pea', 'PEA Bourso')
+    _payment(store, 'pea', date(2019, 3, 4))
+    accounts.set_opened_on(store, 'pea', date(2021, 1, 1))
+
+    found = advisories.listing(store, NOW)
+
+    assert _keys(found) == ['opened_after_first_payment:pea']
+    one = found[0]
+    assert one.kind == advisories.OPENED_AFTER_FIRST_PAYMENT
+    assert one.subject == advisories.SUBJECT_ACCOUNTS
+    assert one.detail == {
+        'account': 'pea',
+        'label': 'PEA Bourso',
+        'opened_on': '2021-01-01',
+        'first_payment': '2019-03-04',
+    }
+    assert one.observed_at == NOW
+
+
+def test_a_date_earlier_than_the_first_payment_raises_nothing(store):
+    """It is exactly what a transferred wrapper looks like — the case the
+    declared date exists for, and the reason it cannot be derived."""
+    _account(store, 'pea', 'PEA')
+    _payment(store, 'pea', date(2022, 1, 10))
+    accounts.set_opened_on(store, 'pea', date(2015, 6, 1))
+
+    assert advisories.listing(store, NOW) == []
+
+
+def test_the_same_day_raises_nothing(store):
+    """A wrapper funded the day it was opened is the ordinary case."""
+    _account(store, 'pea', 'PEA')
+    _payment(store, 'pea', date(2022, 1, 10))
+    accounts.set_opened_on(store, 'pea', date(2022, 1, 10))
+
+    assert advisories.listing(store, NOW) == []
+
+
+def test_neither_half_alone_raises_anything(store):
+    """A declared date with no payment says nothing, and a payment with no
+    declared date has nothing to contradict."""
+    _account(store, 'pea', 'PEA')
+    accounts.set_opened_on(store, 'pea', date(2021, 1, 1))
+    assert advisories.listing(store, NOW) == []
+
+    _account(store, 'cto', 'CTO')
+    _payment(store, 'cto', date(2019, 3, 4), key=1)
+    assert advisories.listing(store, NOW) == []
+
+
+def test_it_is_acknowledgeable_like_any_other(store):
+    _account(store, 'pea', 'PEA')
+    _payment(store, 'pea', date(2019, 3, 4))
+    accounts.set_opened_on(store, 'pea', date(2021, 1, 1))
+
+    advisories.acknowledge(store, 'opened_after_first_payment:pea', NOW)
+
+    assert advisories.listing(store, NOW) == []
+    # Still true, and still said where the figure is: the acknowledgement is a
+    # *not now*, never an observation that the condition went false.
+    assert _keys(advisories.standing(store, NOW)) == [
+        'opened_after_first_payment:pea']

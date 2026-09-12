@@ -47,6 +47,7 @@ from api.problem import (
     storage_unavailable,
     too_large,
     unprocessable,
+    unprocessable_account,
     unprocessable_entry,
     unprocessable_file,
     unprocessable_model,
@@ -327,19 +328,36 @@ def list_accounts():
     # rather than a `null` the front would have to tell from *not yet read*
     # (#845, ADR-0044).
     carried = accounts_module.taxation_models_by_account(_store())
+    opened_on = accounts_module.opening_dates_by_account(_store())
+    # **The pre-fill, served and never stored** (#918). It is the ledger's own
+    # figure — the earliest declared payment — and the form offers it where the
+    # account has declared no opening date. Derived here rather than written
+    # anywhere: a declared fact and a derived one do not share a row (ADR-0006).
+    payments = ledger.first_payments(_store())
     return jsonify({
         'declared': accounts is not None,
         'accounts': [
-            _with_taxation_model(summary.to_dict(), carried)
+            _with_account_facts(summary.to_dict(), carried, opened_on, payments)
             for summary in portfolio_view.build_accounts(
                 declaration, rows, reader.transfer_fees_by_account(through))
         ],
     })
 
 
-def _with_taxation_model(row: dict, carried: dict) -> dict:
-    model = carried.get(row['id'])
-    return row if model is None else {**row, 'taxation_model': model}
+def _with_account_facts(row: dict, carried: dict, opened_on: dict,
+                        payments: dict) -> dict:
+    """The three members an account carries where there is one to carry."""
+    return {**row, **_declared({
+        'taxation_model': carried.get(row['id']),
+        'opened_on': instants.iso(opened_on.get(row['id'])),
+        'first_payment': instants.iso(payments.get(row['id'])),
+    })}
+
+
+def _declared(facts: dict) -> dict:
+    """The facts there are — **an absence reaches the reader as one** (#845,
+    ADR-0044), never as a `null` it would have to tell from *not yet read*."""
+    return {name: value for name, value in facts.items() if value is not None}
 
 
 def _seeded_only():
@@ -389,6 +407,11 @@ def create_account():
     if body is None:
         return bad_request("a JSON object is required")
 
+    try:
+        day = _opening_day(body)
+    except _InvalidBody as exc:
+        return unprocessable_account(str(exc), key=exc.field)
+
     runtime = current_runtime()
     try:
         with runtime.config_manager.writing() as opened:
@@ -396,9 +419,13 @@ def create_account():
                 account = accounts_module.create_account(
                     opened, body.get('id'), body.get('label'))
                 # What the form **proposed** is not what is written: the offer
-                # is interface, and the row takes what was submitted (#752).
+                # is interface, and the row takes what was submitted (#752,
+                # #918) — the opening date included, which the form pre-fills
+                # from the first payment and never re-derives afterwards.
                 model = accounts_module.set_taxation_model(
                     opened, account.id, body.get('taxation_model'))
+                opened_on = accounts_module.set_opened_on(
+                    opened, account.id, day)
                 if _flag(body.get('reassign')):
                     reassignment.reassign_unassigned(opened, account.id)
     except accounts_module.DuplicateAccount as exc:
@@ -411,7 +438,7 @@ def create_account():
         return _unreplayable(exc, GESTURE_WRITE)
 
     main.replay_after_write(runtime)
-    return jsonify(_account_to_dict(account, model)), 201
+    return jsonify(_account_to_dict(account, model, opened_on)), 201
 
 
 @api_bp.post('/accounts/<account_id>/reassignment')
@@ -440,6 +467,11 @@ def update_account(account_id: str):
     if body is None:
         return bad_request("a JSON object is required")
 
+    try:
+        day = _opening_day(body)
+    except _InvalidBody as exc:
+        return unprocessable_account(str(exc), key=exc.field)
+
     runtime = current_runtime()
     try:
         with runtime.config_manager.writing() as opened:
@@ -461,13 +493,20 @@ def update_account(account_id: str):
                     if 'taxation_model' not in body
                     else accounts_module.set_taxation_model(
                         opened, account_id, body.get('taxation_model')))
+                # The opening date is read the same way, and for the same
+                # reason (#918): a `PATCH` that renames an account must not
+                # take away a date nobody mentioned.
+                opened_on = (
+                    accounts_module.opening_dates_by_account(opened).get(account_id)
+                    if 'opened_on' not in body
+                    else accounts_module.set_opened_on(opened, account_id, day))
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
     except accounts_module.UnknownTaxationModel as exc:
         return unprocessable_model(str(exc), 'taxation_model')
 
     main.replay_after_write(runtime)
-    return jsonify(_account_to_dict(account, model))
+    return jsonify(_account_to_dict(account, model, opened_on))
 
 
 @api_bp.delete('/accounts/<account_id>')
@@ -486,14 +525,42 @@ def delete_account(account_id: str):
     return jsonify({'id': account_id, 'removed': True})
 
 
-def _account_to_dict(account, taxation_model: Optional[str] = None) -> dict:
-    """One :class:`events.schemas.Account`, on the wire."""
-    row = {
+def _account_to_dict(account, taxation_model: Optional[str] = None,
+                     opened_on: Optional[date] = None) -> dict:
+    """One :class:`events.schemas.Account`, on the wire.
+
+    The two facts it may carry are **absent where it carries none** (#752,
+    #918): the front tells an absence from a value, and never from a sentinel.
+    """
+    return {
         'id': account.id,
         'label': account.label,
+        **_declared({
+            'taxation_model': taxation_model,
+            'opened_on': instants.iso(opened_on),
+        }),
     }
-    return row if taxation_model is None else {
-        **row, 'taxation_model': taxation_model}
+
+
+def _opening_day(body: dict) -> Optional[date]:
+    """The ``opened_on`` member as a **day**, or a refusal naming the field.
+
+    ``None`` covers the two sentences the routes tell apart themselves — the
+    member absent, and the member sent as `null` to take the declaration away —
+    because neither of them is a date to parse.
+    """
+    raw = body.get('opened_on')
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not _ISO_DAY.fullmatch(raw.strip()):
+        raise _InvalidBody(
+            f"opened_on {raw!r} is not a calendar day (YYYY-MM-DD)",
+            'opened_on')
+    try:
+        return date.fromisoformat(raw.strip())
+    except ValueError:
+        raise _InvalidBody(f"opened_on {raw!r} is not a day that exists",
+                           'opened_on')
 
 
 # --------------------------------------------------------------------------- #

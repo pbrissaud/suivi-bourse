@@ -75,6 +75,8 @@
   "notification.fact.assumed_base_currency": "Amounts read in your base currency",
   "notification.advisory.cash_share": "{label} · {share, number, percent} in uninvested cash",
   "notification.advisory.cash_share.body": "Part of this account is sitting in cash rather than being invested. Nothing is wrong with that if it is deliberate.",
+  "notification.advisory.opened_after_first_payment": "{label} · opened after its first payment",
+  "notification.advisory.opened_after_first_payment.body": "You declared this account as opened on {opened}, and it received a payment on {payment}. A wrapper cannot be funded before it exists, so one of the two dates is wrong — the app cannot tell which.",
 
   "empty.noCurrency.title": "No base currency yet",
   "empty.noCurrency.body": "Nothing is valued and no gain is computed until you choose a base currency. Your events are recorded all the same, and the ledger stays readable.",
@@ -356,6 +358,8 @@
   "accounts.form.taxation.hint": "How this account is taxed, recorded for the projection to come. Leave it empty and the app shows no figure at all — which is the right answer until you have said what your wrapper is taxed like. A model can be reused across accounts.",
   "accounts.form.taxation.edit": "Correct this model",
   "accounts.form.taxation.remove": "Remove this model",
+  "accounts.form.openedOn": "Opened on",
+  "accounts.form.openedOn.hint": "The day this wrapper was opened — it is what its age is counted from, and the shape you chose above uses that age. We offer the date of its first payment on record; correct it if the wrapper is older than this ledger, which is what a transfer from another broker looks like.",
 
   "taxation.name": "What to call this model",
   "taxation.kind": "Shape",

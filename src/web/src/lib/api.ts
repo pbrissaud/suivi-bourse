@@ -473,6 +473,26 @@ export interface Account {
    * nothing rather than a zero for it.
    */
   taxation_model?: string
+  /**
+   * The day the wrapper was opened, **as its owner declared it** (#918) — and
+   * absent where they declared none, which is ordinary.
+   *
+   * It cannot be derived, which is the whole reason it is typed: a PEA opened
+   * in 2015 and transferred to a broker whose ledger only starts in 2022
+   * derives three years of seniority instead of ten, and the date its owner
+   * cares about is exactly the one no event carries.
+   */
+  opened_on?: string
+  /**
+   * This account's **earliest declared payment** — a `DEPOSIT`, derived on
+   * every read and stored nowhere.
+   *
+   * It is here for one consumer: the form offers it as the opening date it
+   * pre-fills, where the account has declared none. A *suggestion made by the
+   * interface* — accepted it becomes a declaration and stops moving, and
+   * nothing re-derives it afterwards (ADR-0006).
+   */
+  first_payment?: string
 }
 
 export interface AccountsResponse {
@@ -524,6 +544,15 @@ export interface AccountDraft {
    * the same, because the select always has an answer.
    */
   taxation_model?: string | null
+  /**
+   * The opening date, `null` to take it away — and **absent to leave it alone**
+   * (#918), on `taxation_model`'s own three-way rule.
+   *
+   * Sent only where the field was **shown**: it is not asked for when the
+   * account's taxation model counts its threshold from anything but the
+   * opening, and a client that never asked the question must not answer it.
+   */
+  opened_on?: string | null
 }
 
 // ------------------------------------------------------------------------- //
