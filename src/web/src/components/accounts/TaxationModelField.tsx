@@ -295,7 +295,12 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
                   if (picked === undefined) return
                   setEditor({
                     ...editor,
-                    fields: { ...editor.fields, ...displayed(picked.values) },
+                    fields: {
+                      ...editor.fields,
+                      ...Object.fromEntries(
+                        Object.entries(picked.values).map(([n, v]) => [n, String(v)]),
+                      ),
+                    },
                   })
                 }}
               >
@@ -338,12 +343,20 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
                     ))}
                   </select>
                 ) : (
-                  <Number_
-                    id={`taxation-${parameter.name}`}
-                    percent={parameter.type === 'rate'}
-                    value={editor.fields[parameter.name] ?? ''}
-                    onChange={(next) => field(parameter.name, next)}
-                  />
+                  // A number, with the unit said beside it where it is a rate.
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id={`taxation-${parameter.name}`}
+                      type="number"
+                      inputMode="decimal"
+                      step={parameter.type === 'rate' ? '0.01' : '1'}
+                      value={editor.fields[parameter.name] ?? ''}
+                      onChange={(changed) => field(parameter.name, changed.target.value)}
+                    />
+                    {parameter.type === 'rate' ? (
+                      <span className="text-sm text-muted-foreground">%</span>
+                    ) : null}
+                  </div>
                 )}
               </Labelled>
             ),
@@ -396,33 +409,6 @@ function Labelled({
         ) : null}
       </div>
       {children}
-    </div>
-  )
-}
-
-/** A number, with the unit said beside it where the unit is a percentage. */
-function Number_({
-  id,
-  value,
-  percent,
-  onChange,
-}: {
-  id: string
-  value: string
-  percent: boolean
-  onChange: (next: string) => void
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Input
-        id={id}
-        type="number"
-        inputMode="decimal"
-        step={percent ? '0.01' : '1'}
-        value={value}
-        onChange={(changed) => onChange(changed.target.value)}
-      />
-      {percent ? <span className="text-sm text-muted-foreground">%</span> : null}
     </div>
   )
 }
@@ -494,13 +480,6 @@ function Brackets({ rows, onChange }: { rows: Row[]; onChange: (rows: Row[]) => 
         {t('taxation.brackets.add')}
       </Button>
     </fieldset>
-  )
-}
-
-/** A template's values, in the units the fields are typed in. */
-function displayed(values: TaxationParameters): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(values).map(([name, value]) => [name, String(value)]),
   )
 }
 

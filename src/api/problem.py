@@ -149,5 +149,5 @@ __all__ = [
     'unprocessable_entry', 'unprocessable_file', 'unprocessable_model',
     'model_in_use', 'too_large', 'foreign_origin',
     'internal_error',
-    'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE', 'TYPE_MODEL_IN_USE',
+    'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE',
 ]

@@ -254,7 +254,6 @@ __all__ = [
     'NONE', 'FLAT_REALISED', 'AGED_FLAT_REALISED', 'BRACKETED_REALISED',
     'WITHHOLDING_INCOME',
     'OPENING', 'FIRST_PAYMENT', 'AGE_BASES',
-    'RATE', 'YEARS', 'AGE_BASIS', 'BRACKETS',
-    'KINDS', 'PARAMETERS', 'TEMPLATES',
+    'KINDS', 'TEMPLATES',
     'ModelRejected', 'catalogue', 'validate',
 ]

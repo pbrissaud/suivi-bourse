@@ -1,6 +1,6 @@
 """The ``/api`` blueprint — the disposable half (issue #659, design #655)."""
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
@@ -512,7 +512,7 @@ def list_taxation_models():
     """
     return jsonify({
         **taxation.catalogue(),
-        'models': [model.to_dict()
+        'models': [asdict(model)
                    for model in accounts_module.read_models(_store())],
     })
 
@@ -533,7 +533,7 @@ def create_taxation_model():
     except taxation.ModelRejected as exc:
         return unprocessable_model(str(exc))
 
-    return jsonify(model.to_dict()), 201
+    return jsonify(asdict(model)), 201
 
 
 @api_bp.patch('/taxation-models/<model_id>')
@@ -555,7 +555,7 @@ def update_taxation_model(model_id: str):
     except taxation.ModelRejected as exc:
         return unprocessable_model(str(exc))
 
-    return jsonify(model.to_dict())
+    return jsonify(asdict(model))
 
 
 @api_bp.delete('/taxation-models/<model_id>')

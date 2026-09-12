@@ -294,10 +294,6 @@ class TaxationModel:
     kind: str
     parameters: Dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {'id': self.id, 'name': self.name, 'kind': self.kind,
-                'parameters': dict(self.parameters)}
-
 
 def read_models(store) -> List[TaxationModel]:
     """Every model its owner wrote, name-sorted."""
