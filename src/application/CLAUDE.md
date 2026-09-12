@@ -102,8 +102,10 @@ name: `/healthz` was examined and declined.
   `accounts.py` is the writer, and one module cannot be both.
 - **What an owner declares about an account lives in `account_fact`** (#752,
   ADR-0044), keyed by the account, never as a column on it. Detaching a model
-  leaves **no row**, because a missing row is *never declared* and a null column
-  is *unset*, and on an account fact those are two different sentences. The
+  leaves **no row** where the account declares nothing else, because a missing
+  row is *never declared* and a null column is *unset*, and on an account fact
+  those are two different sentences; where another fact remains, the row stays
+  and the model's column alone goes null. The
   `opened_on` column is declared here and written by #918: a column added later
   would exist on no store created between the two releases.
 - **The app ships no rates.** Every rate, bracket bound and threshold in the

@@ -377,6 +377,36 @@ describe('the two hazards of a form inside a form', () => {
     expect(declared).toBe(false)
   })
 
+  it('leaves the buttons their own Enter, and Cancel writes nothing', async () => {
+    // The guard above sits on the block, so it also catches an Enter that
+    // bubbled from a button — and a button activates itself *on* that keydown.
+    // Swallowed, the reader who pressed Enter on Cancel would have saved.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+
+    let writes = 0
+    server.use(
+      http.post(ROUTES.taxationModels, () => {
+        writes += 1
+        return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
+      }),
+    )
+
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon CTO')
+
+    // The account's own footer carries an *Annuler* too — this is the editor's.
+    const buttons = within(panel).getByRole('button', { name: 'Enregistrer ce modèle' })
+      .parentElement as HTMLElement
+    within(buttons).getByRole('button', { name: 'Annuler' }).focus()
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(within(panel).queryByLabelText('Le nom de ce modèle')).toBeNull())
+    expect(writes).toBe(0)
+  })
+
   it('sends a blank bracket bound as nothing, never as a zero', async () => {
     // `Number('')` is `0`, and `0` is a perfectly valid bound — so a coerced
     // blank would be stored as *up to 0 €* and the server would take it. The

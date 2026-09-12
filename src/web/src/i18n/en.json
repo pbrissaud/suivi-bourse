@@ -353,7 +353,7 @@
   "accounts.form.taxation": "Taxation model",
   "accounts.form.taxation.none": "No model",
   "accounts.form.taxation.new": "Write a model…",
-  "accounts.form.taxation.hint": "What this account would owe if you sold today. Leave it empty and the app shows no figure at all — which is the right answer until you have said what your wrapper is taxed like. A model can be reused across accounts.",
+  "accounts.form.taxation.hint": "How this account is taxed, recorded for the projection to come. Leave it empty and the app shows no figure at all — which is the right answer until you have said what your wrapper is taxed like. A model can be reused across accounts.",
   "accounts.form.taxation.edit": "Correct this model",
   "accounts.form.taxation.remove": "Remove this model",
 

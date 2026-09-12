@@ -353,7 +353,7 @@
   "accounts.form.taxation": "Modèle d’imposition",
   "accounts.form.taxation.none": "Aucun modèle",
   "accounts.form.taxation.new": "Écrire un modèle…",
-  "accounts.form.taxation.hint": "Ce que ce compte coûterait si vous vendiez aujourd’hui. Laissez vide et l’application n’affiche aucun chiffre — c’est la bonne réponse tant que vous n’avez pas dit comment votre enveloppe est imposée. Un modèle peut servir à plusieurs comptes.",
+  "accounts.form.taxation.hint": "Comment ce compte est imposé, enregistré pour la projection à venir. Laissez vide et l’application n’affiche aucun chiffre — c’est la bonne réponse tant que vous n’avez pas dit comment votre enveloppe est imposée. Un modèle peut servir à plusieurs comptes.",
   "accounts.form.taxation.edit": "Corriger ce modèle",
   "accounts.form.taxation.remove": "Supprimer ce modèle",
 

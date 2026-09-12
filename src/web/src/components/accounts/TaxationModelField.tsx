@@ -240,6 +240,10 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
           // the half of it no attribute can reach.
           onKeyDown={(pressed) => {
             if (pressed.key !== 'Enter' || pressed.shiftKey) return
+            // A button activates itself on Enter, and that activation *is* the
+            // keydown's default action — so swallowing it here would run Save
+            // under the reader who pressed Enter on Cancel.
+            if (pressed.target instanceof HTMLButtonElement) return
             pressed.preventDefault()
             if (!write.isPending) write.mutate(editor)
           }}
@@ -350,11 +354,21 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
                       type="number"
                       inputMode="decimal"
                       step={parameter.type === 'rate' ? '0.01' : '1'}
+                      // The unit is said in the description rather than drawn
+                      // alone: a reader who hears the label hears the percent.
+                      aria-describedby={
+                        parameter.type === 'rate' ? `taxation-${parameter.name}-unit` : undefined
+                      }
                       value={editor.fields[parameter.name] ?? ''}
                       onChange={(changed) => field(parameter.name, changed.target.value)}
                     />
                     {parameter.type === 'rate' ? (
-                      <span className="text-sm text-muted-foreground">%</span>
+                      <span
+                        id={`taxation-${parameter.name}-unit`}
+                        className="text-sm text-muted-foreground"
+                      >
+                        %
+                      </span>
                     ) : null}
                   </div>
                 )}
@@ -451,10 +465,13 @@ function Brackets({ rows, onChange }: { rows: Row[]; onChange: (rows: Row[]) => 
               step="0.01"
               className="w-24"
               aria-label={t('taxation.brackets.rate')}
+              aria-describedby={`taxation-bracket-${index}-unit`}
               value={row.rate}
               onChange={(changed) => set(index, 'rate', changed.target.value)}
             />
-            <span className="text-sm text-muted-foreground">%</span>
+            <span id={`taxation-bracket-${index}-unit`} className="text-sm text-muted-foreground">
+              %
+            </span>
             {rows.length > 1 ? (
               <Button
                 type="button"
