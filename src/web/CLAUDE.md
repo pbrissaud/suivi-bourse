@@ -626,6 +626,19 @@ Five nets hold a rule nothing made true by construction:
   whose options have not arrived would show *no model* about an account that has
   one. The kinds and the templates are **served**, never copied here — what this
   front holds is the words.
+- **And it declares the day it was opened, where that changes a figure** (#918).
+  The field is a `<input type="date">` on the same panel, shown only when the
+  model the account carries counts its threshold **from the opening**
+  (`age_basis`) — asking for a date that moves no figure is asking the reader to
+  work for nothing, and a shape whose years run from the *first payment*, which
+  is what a PEA does, has an age threshold and still no use for this date — and
+  **pre-filled** with the account's earliest declared payment (`first_payment`,
+  served and stored nowhere) where the account has declared none. The pre-fill is
+  an *offer*: submitting is what turns it into a declaration, so the panel sends
+  `opened_on` when the field was shown **and** its value moved, `null` when it
+  was emptied, and nothing at all otherwise — `taxation_model`'s own three-way
+  rule, for the same reason. A declared date later than the first payment is
+  contradicted by an advisory, in the panel, with both dates in it.
 - **An account is a name and an id, and the id sits where the type sat** (#916,
   ADR-0043). The type is gone from the forms, from `Account` and from the wire,
   so declaring an account is two fields. What that slot now holds is the **id** —

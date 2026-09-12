@@ -3,7 +3,7 @@
 **And the two tables #752 adds**, because they are the same gesture continued:
 ``taxation_model`` holds the models their owner wrote, ``account_fact`` holds
 what they declared *about an account* — which model it carries, and the day the
-wrapper was opened (#918 writes that one; this module declares its column).
+wrapper was opened (#918).
 Both are declaration, both are written here and nowhere else, and
 ``.github/scripts/conventions.sh`` says so on the source (ADR-0006, ADR-0044).
 The arithmetic is not here: :mod:`application.taxation` is pure and holds the
@@ -13,6 +13,7 @@ import csv
 import json
 import uuid
 from dataclasses import dataclass, field, replace
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
@@ -398,9 +399,9 @@ def set_taxation_model(store, account_id: str,
     ``None`` detaches, and detaching leaves **no row** rather than a row saying
     nothing: a missing row is *never declared* and a null column is *unset*, and
     ADR-0044 is written about the class of defect that follows from spelling the
-    first as the second. The row survives its own emptiness only once #918 puts
-    an opening date beside it — which is why the delete below reads that column
-    rather than dropping the row outright.
+    first as the second. The row survives its own emptiness where the account
+    declares an opening date beside it (#918), which is what
+    :func:`_forget_empty_fact` reads before dropping anything.
     """
     _require(store, account_id)
     target = _text(model_id) or None
@@ -412,10 +413,60 @@ def set_taxation_model(store, account_id: str,
         'ON CONFLICT (account) DO UPDATE SET '
         'taxation_model = excluded.taxation_model',
         [account_id, target])
+    _forget_empty_fact(store, account_id)
+    return target
+
+
+def opening_dates_by_account(store) -> Dict[str, date]:
+    """When each account says it was opened. **Absent means absent** (#845)."""
+    return {row[0]: row[1] for row in store.query(
+        'SELECT account, opened_on FROM account_fact '
+        'WHERE opened_on IS NOT NULL')}
+
+
+def set_opened_on(store, account_id: str,
+                  day: Optional[date]) -> Optional[date]:
+    """Declare the day an account was opened, or take the declaration away.
+
+    **Declared, and only declared** (#918, ADR-0006). The form offers the
+    account's earliest declared payment where there is one, and that offer is
+    *interface*: what lands here is what was submitted, and it stops moving. A
+    date re-derived on every replay would be a derived value in a declared row,
+    which is the one thing this table may not hold.
+
+    ``None`` takes it away, and — :func:`set_taxation_model`'s own rule — a row
+    left saying nothing at all goes rather than staying as two nulls.
+    """
+    _require(store, account_id)
+    # **A ``datetime`` is not a day**, and it is a subclass of one — so the
+    # check is on the type itself. The column is a `DATE`: an instant left
+    # through would be truncated on the way in, and a store's own clause about
+    # a calendar day staying a day would have been broken by the guard that
+    # says so.
+    if day is not None and type(day) is not date:
+        raise AccountSourceError(
+            f"{day!r} is not a calendar day: an opening date is a day, and the "
+            f"store holds it as one")
+
+    store.execute(
+        'INSERT INTO account_fact (account, opened_on) VALUES (?, ?) '
+        'ON CONFLICT (account) DO UPDATE SET opened_on = excluded.opened_on',
+        [account_id, day])
+    _forget_empty_fact(store, account_id)
+    return day
+
+
+def _forget_empty_fact(store, account_id: str) -> None:
+    """Drop a row that declares nothing — **a missing row is an absence**.
+
+    A null column is *unset* and a missing row is *never declared*, and ADR-0044
+    is written about the class of defect that follows from spelling the first as
+    the second. Both writers above end here, so the rule holds whichever fact
+    was the last one taken away.
+    """
     store.execute(
         'DELETE FROM account_fact WHERE account = ? '
         'AND taxation_model IS NULL AND opened_on IS NULL', [account_id])
-    return target
 
 
 __all__ = [
@@ -425,6 +476,7 @@ __all__ = [
     'TaxationModel', 'read_models', 'read_model', 'create_model',
     'update_model', 'delete_model', 'accounts_carrying',
     'taxation_models_by_account', 'set_taxation_model',
+    'opening_dates_by_account', 'set_opened_on',
     'is_accounts_file', 'header_of',
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',

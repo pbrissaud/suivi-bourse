@@ -61,6 +61,26 @@ own absence and its own lifetime (ADR-0044). *Nothing declared* is the absence o
 a row, and it is not the same sentence as *declared as nothing*.
 _Avoid_: account metadata, account settings
 
+**Opening date**:
+The day a wrapper was opened, **as its owner declared it** (#918). It cannot be
+derived and that is the whole point of it: a PEA opened in 2015 and transferred to
+a broker whose ledger is only imported from 2022 derives three years of seniority
+instead of ten. The form offers the account's **first payment** where there is one
+— a suggestion of the interface, which becomes a declaration the moment it is
+submitted and stops moving afterwards. It is asked for only where the account's
+taxation model counts its threshold **from the opening**: a shape whose years run
+from the first payment — a PEA's do — has an age threshold and no use for this
+date (ADR-0042).
+_Avoid_: account creation date, inception date, start date
+
+**First payment**:
+The earliest `DEPOSIT` an account carries. Derived from the ledger on every read
+and stored nowhere: it is what the opening-date field is pre-filled with, and what
+a declared opening date is contradicted against when it comes *after* it. A
+declared date **earlier** than the first payment is ordinary — it is what a
+transferred wrapper looks like.
+_Avoid_: first contribution, funding date
+
 **Projected tax**:
 What an account's taxation model says would be owed **if its holdings were sold
 today**. A projection and never a tax return: no allowance, no loss carry-forward,

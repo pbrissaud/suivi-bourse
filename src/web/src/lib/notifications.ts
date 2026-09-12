@@ -151,28 +151,51 @@ const FACT_TITLES: Record<string, MessageKey> = {
  */
 function advisoryEntry(advisory: Advisory): Entry {
   const account = String(advisory.detail.account ?? '')
-  const known = advisory.kind === 'cash_share' && account !== ''
+  const label = String(advisory.detail.label ?? account)
+  const said = account === '' ? null : sentences(advisory, label)
   return {
     id: advisory.key,
     register: 'advisory',
     subject: subjectOf(advisory.subject),
     pinned: false,
-    title: known
-      ? {
-          key: 'notification.advisory.cash_share',
-          values: {
-            label: String(advisory.detail.label ?? account),
-            share: Number(advisory.detail.share ?? 0),
-          },
-        }
-      : { text: advisory.message },
-    body: known ? { key: 'notification.advisory.cash_share.body' } : { text: '' },
+    title: said?.title ?? { text: advisory.message },
+    body: said?.body ?? { text: '' },
     at: advisory.observed_at,
-    link: known
-      ? { label: 'notification.link.account', to: { to: '/accounts', search: { account } } }
-      : null,
+    link:
+      said === null
+        ? null
+        : { label: 'notification.link.account', to: { to: '/accounts', search: { account } } },
     acknowledge: { register: 'advisory', key: advisory.key },
   }
+}
+
+/** The two sentences of a family this front knows, or `null` for one it does not. */
+function sentences(advisory: Advisory, label: string): Pick<Entry, 'title' | 'body'> | null {
+  if (advisory.kind === 'cash_share') {
+    return {
+      title: {
+        key: 'notification.advisory.cash_share',
+        values: { label, share: Number(advisory.detail.share ?? 0) },
+      },
+      body: { key: 'notification.advisory.cash_share.body' },
+    }
+  }
+  // **It states the contradiction and does not arbitrate it** (#918): one of
+  // the two dates is wrong and the app cannot say which, so both are in the
+  // sentence and neither is called the mistake.
+  if (advisory.kind === 'opened_after_first_payment') {
+    return {
+      title: { key: 'notification.advisory.opened_after_first_payment', values: { label } },
+      body: {
+        key: 'notification.advisory.opened_after_first_payment.body',
+        values: {
+          opened: String(advisory.detail.opened_on ?? ''),
+          payment: String(advisory.detail.first_payment ?? ''),
+        },
+      },
+    }
+  }
+  return null
 }
 
 /** A subject this front knows, or the portfolio — the server decides, we render. */

@@ -105,9 +105,13 @@ name: `/healthz` was examined and declined.
   leaves **no row** where the account declares nothing else, because a missing
   row is *never declared* and a null column is *unset*, and on an account fact
   those are two different sentences; where another fact remains, the row stays
-  and the model's column alone goes null. The
-  `opened_on` column is declared here and written by #918: a column added later
-  would exist on no store created between the two releases.
+  and the model's column alone goes null. The `opened_on` column was declared by
+  #752 and is written by #918 — a column added later would exist on no store
+  created between the two releases — and **it is declared, never derived**: the
+  form offers the account's earliest declared payment, and that offer is
+  *interface*. What lands in the row is what was submitted, and nothing
+  re-derives it on a replay (ADR-0006). The figure the offer is made of —
+  `ledger.first_payments` — is read off the ledger every time and held nowhere.
 - **The app ships no rates.** Every rate, bracket bound and threshold in the
   survey is per tax year, so what may ship is only what is *not money* —
   `threshold_years` and `age_basis`, which one kind of five has. The two
@@ -217,9 +221,14 @@ true of the install (`installation_facts.py`) or of the app (`/health`).
   `IF NOT EXISTS` with no migration machinery, so a column added there would
   exist on no store created before it. `advisory_ack` is the twelfth table, and
   it carries the expiry the fact's own row deliberately does not.
-- **One family today** — the cash share of an account, over a constant
-  threshold (`CASH_SHARE_THRESHOLD`, ADR-0036: *"a setting nobody has ever
-  turned is a setting that should not have been written"*). The four **subjects**
+- **Two families** — the cash share of an account, over a constant threshold
+  (`CASH_SHARE_THRESHOLD`, ADR-0036: *"a setting nobody has ever turned is a
+  setting that should not have been written"*), and a declared opening date
+  **later** than that account's first declared payment (#918), which is a
+  contradiction the app states without arbitrating: a wrapper cannot be funded
+  before it exists, and nothing here can say which of the two dates is the wrong
+  one. The opposite order raises nothing — a date earlier than the first payment
+  is what a transferred wrapper looks like. The four **subjects**
   the panel groups by are declared all the same, `portfolio` included: a front
   inventing a heading for a key it does not know would be a second authority on
   the grouping.
@@ -457,14 +466,15 @@ src/application/
 │                       #   the rates, the scheduler, the recorder, the pass lock
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state
-├── ledger.py           # the ledger's reads: read_events, the stamp, the last write, the orphans
+├── ledger.py           # the ledger's reads: read_events, the stamp, the last write, the orphans,
+│                       #   and each account's first payment (#918) — derived per read
 ├── uploads.py          # the gesture: one file in, read once, refused by name
 ├── entries.py          # the one writer of `event`: the row's four gestures + the bulk one
 │                       #   and the forecast that writes none: the content key, the split, the judgement
 ├── taxation.py         # pure: the closed kinds, their typed parameters, and the
 │                       #   two wrapper templates — structure only, never a rate
 ├── accounts.py         # the account table, the declaration, the refusals —
-│                       #   and the writer of taxation_model/account_fact (#752)
+│                       #   and the writer of taxation_model/account_fact (#752, #918)
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
 ├── installation_facts.py  # the three facts: predicate in code, the table holds the ack
