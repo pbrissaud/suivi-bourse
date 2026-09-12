@@ -26,6 +26,7 @@ from application import runtime_view
 from application import settings as settings_module
 from application import settings_registry
 from application import store as store_module
+from application import taxation
 from application import uploads
 from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
@@ -48,8 +49,10 @@ from api.problem import (
     unprocessable,
     unprocessable_entry,
     unprocessable_file,
+    unprocessable_model,
     unprocessable_parameter,
     unreplayable,
+    model_in_use,
 )
 
 logger = getLogger("api.api")
@@ -318,14 +321,25 @@ def list_accounts():
         row['account']: row['day'] for row in rows
         if row.get('account') is not None and row.get('day') is not None
     }
+    # **The model rides on the account, and only where there is one** (#752).
+    # It is a *declaration*, so it is read off the store rather than off the
+    # published snapshot — and an account carrying none gets no member at all
+    # rather than a `null` the front would have to tell from *not yet read*
+    # (#845, ADR-0044).
+    carried = accounts_module.taxation_models_by_account(_store())
     return jsonify({
         'declared': accounts is not None,
         'accounts': [
-            summary.to_dict()
+            _with_taxation_model(summary.to_dict(), carried)
             for summary in portfolio_view.build_accounts(
                 declaration, rows, reader.transfer_fees_by_account(through))
         ],
     })
+
+
+def _with_taxation_model(row: dict, carried: dict) -> dict:
+    model = carried.get(row['id'])
+    return row if model is None else {**row, 'taxation_model': model}
 
 
 def _seeded_only():
@@ -381,17 +395,23 @@ def create_account():
             with opened.transaction():
                 account = accounts_module.create_account(
                     opened, body.get('id'), body.get('label'))
+                # What the form **proposed** is not what is written: the offer
+                # is interface, and the row takes what was submitted (#752).
+                model = accounts_module.set_taxation_model(
+                    opened, account.id, body.get('taxation_model'))
                 if _flag(body.get('reassign')):
                     reassignment.reassign_unassigned(opened, account.id)
     except accounts_module.DuplicateAccount as exc:
         return conflict(str(exc))
+    except accounts_module.UnknownTaxationModel as exc:
+        return unprocessable_model(str(exc), 'taxation_model')
     except accounts_module.AccountSourceError as exc:
         return bad_request(str(exc))
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 
     main.replay_after_write(runtime)
-    return jsonify(_account_to_dict(account)), 201
+    return jsonify(_account_to_dict(account, model)), 201
 
 
 @api_bp.post('/accounts/<account_id>/reassignment')
@@ -427,13 +447,27 @@ def update_account(account_id: str):
             # ADR-0043): `/api` is the front's interface and not a contract held
             # for anybody else (ADR-0033), so a refusal written for a client that
             # does not exist is code for nobody.
-            account = accounts_module.update_account(
-                opened, account_id, label=body.get('label'))
+            # **One transaction**, since #752 put a second write in here: a model
+            # reference matching nothing is refused *after* the rename has been
+            # applied, and a request answered `422` must leave nothing behind.
+            with opened.transaction():
+                account = accounts_module.update_account(
+                    opened, account_id, label=body.get('label'))
+                # **Absent is *leave it alone*, `null` is *detach it***, and the
+                # two are two gestures: a `PATCH` sent to rename an account would
+                # otherwise silently drop the model it carries.
+                model = (
+                    accounts_module.taxation_models_by_account(opened).get(account_id)
+                    if 'taxation_model' not in body
+                    else accounts_module.set_taxation_model(
+                        opened, account_id, body.get('taxation_model')))
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
+    except accounts_module.UnknownTaxationModel as exc:
+        return unprocessable_model(str(exc), 'taxation_model')
 
     main.replay_after_write(runtime)
-    return jsonify(_account_to_dict(account))
+    return jsonify(_account_to_dict(account, model))
 
 
 @api_bp.delete('/accounts/<account_id>')
@@ -452,12 +486,91 @@ def delete_account(account_id: str):
     return jsonify({'id': account_id, 'removed': True})
 
 
-def _account_to_dict(account) -> dict:
+def _account_to_dict(account, taxation_model: Optional[str] = None) -> dict:
     """One :class:`events.schemas.Account`, on the wire."""
-    return {
+    row = {
         'id': account.id,
         'label': account.label,
     }
+    return row if taxation_model is None else {
+        **row, 'taxation_model': taxation_model}
+
+
+# --------------------------------------------------------------------------- #
+# The taxation models — the owner's own, and the catalogue that is code (#752)
+# --------------------------------------------------------------------------- #
+
+@api_bp.get('/taxation-models')
+def list_taxation_models():
+    """The models their owner wrote, and the shape a model may take.
+
+    **The catalogue rides on this read** rather than living a second time in the
+    front: the kinds are a closed enumeration in code (ADR-0042) and the
+    templates are two structural values the app is allowed to ship (ADR-0043).
+    What the front holds is the *words* — one message key per kind and per
+    template, in both catalogues (ADR-0024).
+    """
+    return jsonify({
+        **taxation.catalogue(),
+        'models': [model.to_dict()
+                   for model in accounts_module.read_models(_store())],
+    })
+
+
+@api_bp.post('/taxation-models')
+def create_taxation_model():
+    """Write a taxation model. Its kind is checked here, once, on the way in."""
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            model = accounts_module.create_model(
+                opened, body.get('name'), body.get('kind'),
+                body.get('parameters'))
+    except taxation.ModelRejected as exc:
+        return unprocessable_model(str(exc))
+
+    return jsonify(model.to_dict()), 201
+
+
+@api_bp.patch('/taxation-models/<model_id>')
+def update_taxation_model(model_id: str):
+    """Correct a model — and every account carrying it reads the correction."""
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            model = accounts_module.update_model(
+                opened, model_id,
+                name=body.get('name'), kind=body.get('kind'),
+                parameters=body.get('parameters'))
+    except accounts_module.UnknownTaxationModel as exc:
+        return not_found(str(exc))
+    except taxation.ModelRejected as exc:
+        return unprocessable_model(str(exc))
+
+    return jsonify(model.to_dict())
+
+
+@api_bp.delete('/taxation-models/<model_id>')
+def delete_taxation_model(model_id: str):
+    """Remove a model, unless an account carries it — and then say which."""
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            accounts_module.delete_model(opened, model_id)
+    except accounts_module.UnknownTaxationModel as exc:
+        return not_found(str(exc))
+    except accounts_module.TaxationModelInUse as exc:
+        return model_in_use(str(exc), exc.accounts)
+
+    return jsonify({'id': model_id, 'removed': True})
 
 
 @api_bp.get('/events')

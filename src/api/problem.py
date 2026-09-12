@@ -1,5 +1,5 @@
 """RFC 9457 ``application/problem+json`` responses (issue #659, design #655)."""
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from flask import jsonify
 
@@ -16,6 +16,7 @@ TYPE_INVALID_FILE = '/problems/invalid-file'
 TYPE_TOO_LARGE = '/problems/payload-too-large'
 TYPE_UNREPLAYABLE = '/problems/unreplayable-ledger'
 TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
+TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
 
 
 def problem(status: int, title: str, detail: Optional[str] = None,
@@ -99,6 +100,29 @@ def unprocessable_entry(detail: str, key: Optional[str] = None):
     return problem(422, 'Invalid event', detail, TYPE_BAD_REQUEST, key=key or None)
 
 
+def unprocessable_model(detail: str, key: Optional[str] = None):
+    """422 — the body parsed, and what is in it is not a taxation model (#752).
+
+    ``TYPE_BAD_REQUEST``'s identifier, like the two refusals above: the reader is
+    holding a form they filled, and a `type` of its own would buy a second
+    sentence saying what *this field is not one of the values* already says.
+    """
+    return problem(422, 'Invalid taxation model', detail, TYPE_BAD_REQUEST,
+                   key=key or None)
+
+
+def model_in_use(detail: str, accounts: Sequence[str]):
+    """409 — the model cannot go: these accounts carry it (#752).
+
+    Its own identifier, and it carries **the accounts**: the front branches on
+    `type` and never on `detail` (ADR-0024), so a refusal that named them in its
+    prose alone would reach the reader as the generic conflict sentence — *this
+    already exists* about a removal, which is not what happened.
+    """
+    return problem(409, 'Taxation model in use', detail, TYPE_MODEL_IN_USE,
+                   accounts=list(accounts))
+
+
 def unprocessable_file(detail: str):
     """422 — the file parsed as far as it could, and it is not a ledger."""
     return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE)
@@ -122,7 +146,8 @@ def internal_error(detail: str):
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
     'unreplayable', 'unprocessable', 'unprocessable_parameter',
-    'unprocessable_entry', 'unprocessable_file', 'too_large', 'foreign_origin',
+    'unprocessable_entry', 'unprocessable_file', 'unprocessable_model',
+    'model_in_use', 'too_large', 'foreign_origin',
     'internal_error',
-    'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE',
+    'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE', 'TYPE_MODEL_IN_USE',
 ]

@@ -58,7 +58,7 @@ name: `/healthz` was examined and declined.
 
 ## The store
 
-`store.py` owns the file: the connection, the DDL of the twelve tables, the seed.
+`store.py` owns the file: the connection, the DDL of the fourteen tables, the seed.
 
 - **One thread inside the connection at a time**, reentrant lock;
   `Store.transaction()` holds it from `BEGIN` to `COMMIT` (a transaction on one
@@ -92,6 +92,27 @@ name: `/healthz` was examined and declined.
   word into it and **nothing reads it**: not the API, not the view, not the
   export. `default_is_declared` therefore answers on the label alone, where it
   used to read both seeded columns.
+- **A taxation model is a closed `kind` plus typed parameters** (#752, ADR-0042),
+  and the parameters are **one JSON value in one column** rather than a column
+  apiece: a nullable column per field would make *this kind has no such
+  parameter* indistinguishable from *this row has not set it*, and it is what
+  makes a kind added in version *n+1* an addition rather than a migration. The
+  kinds, their parameters and the two shippable wrapper templates live in
+  `taxation.py`, which is **pure** and named in `conventions.sh` with the others;
+  `accounts.py` is the writer, and one module cannot be both.
+- **What an owner declares about an account lives in `account_fact`** (#752,
+  ADR-0044), keyed by the account, never as a column on it. Detaching a model
+  leaves **no row**, because a missing row is *never declared* and a null column
+  is *unset*, and on an account fact those are two different sentences. The
+  `opened_on` column is declared here and written by #918: a column added later
+  would exist on no store created between the two releases.
+- **The app ships no rates.** Every rate, bracket bound and threshold in the
+  survey is per tax year, so what may ship is only what is *not money* —
+  `threshold_years` and `age_basis`, which one kind of five has. The two
+  templates that carry them (`fr_pea`, `fr_assurance_vie`) pre-fill a form and
+  are **never stored**. The Portuguese unit-linked ADR-0042 names is not among
+  them: its regime has two thresholds and a premium condition, which one
+  `threshold_years` cannot say.
 - **The seed has two halves**: the `default` account row is written at creation
   only and never removed; the `setting` defaults are inserted at every start with
   `ON CONFLICT DO NOTHING`. `base_currency` has no default and is therefore never
@@ -401,7 +422,7 @@ puts a constraint where the error enters, which is at the import.
 src/application/
 ├── boot.py             # entrypoint AND boot sequence (ADR-0039)
 ├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, the boot's three steps
-├── store.py            # the connection, the DDL of the twelve tables, the seed
+├── store.py            # the connection, the DDL of the fourteen tables, the seed
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── build_info.py       # pure: RELEASE_VERSION + SOURCE_COMMIT → which SuiviBourse
@@ -438,7 +459,10 @@ src/application/
 ├── uploads.py          # the gesture: one file in, read once, refused by name
 ├── entries.py          # the one writer of `event`: the row's four gestures + the bulk one
 │                       #   and the forecast that writes none: the content key, the split, the judgement
-├── accounts.py         # the account table, the declaration, the refusals
+├── taxation.py         # pure: the closed kinds, their typed parameters, and the
+│                       #   two wrapper templates — structure only, never a rate
+├── accounts.py         # the account table, the declaration, the refusals —
+│                       #   and the writer of taxation_model/account_fact (#752)
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
 ├── installation_facts.py  # the three facts: predicate in code, the table holds the ack

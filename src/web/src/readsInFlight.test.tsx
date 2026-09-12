@@ -72,6 +72,9 @@ const WRITE_ONLY_ROUTES = [
   'eventsImport',
   'account',
   'accountReassignment',
+  // One taxation model, written and removed and never read on its own: the
+  // collection above it is what carries the catalogue the panel reads.
+  'taxationModel',
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
@@ -233,6 +236,20 @@ const SURFACES: readonly Surface[] = [
   // left to open.
   { name: 'les comptes', url: '/accounts', heading: 'Comptes' },
   { name: 'le grand livre', url: '/ledger', heading: 'Grand livre' },
+  {
+    // The account's own panel, which is where a taxation model is chosen and
+    // written (#752). It is opened here for the same reason the share sheet is:
+    // the catalogue it reads is asked for when the panel mounts, and a field
+    // rendering *no model* over a read that has not landed would say it about an
+    // account that carries one.
+    name: 'le panneau d’un compte',
+    url: '/accounts',
+    heading: 'Comptes',
+    open: async ({ user }) => {
+      await user.click(await screen.findByRole('button', { name: 'Modifier le compte' }))
+      return screen.findByRole('dialog')
+    },
+  },
   {
     // The notifications panel, which is mounted in the **shell** and therefore
     // read from every route (#829). It is opened here rather than left closed

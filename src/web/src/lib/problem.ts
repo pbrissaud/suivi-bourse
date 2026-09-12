@@ -74,6 +74,16 @@ export const PROBLEM_TYPES = {
    * no page this app serves can ever read it.
    */
   invalidSetting: '/problems/invalid-setting',
+  /**
+   * The taxation model cannot be removed: accounts carry it (#752).
+   *
+   * `conflict`'s status and not its sentence — *this already exists* is the one
+   * thing that is certainly not what happened to a removal — and it carries
+   * `accounts`, which is what turns *it is in use* into somewhere to go. The
+   * server names them because this front branches on `type` and never on
+   * `detail` (ADR-0024), so prose alone would have reached nobody.
+   */
+  taxationModelInUse: '/problems/taxation-model-in-use',
   internal: '/problems/internal-error',
 } as const
 
@@ -92,6 +102,10 @@ const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.invalidFile]: 'problem.invalidFile',
   [PROBLEM_TYPES.tooLarge]: 'problem.tooLarge',
   [PROBLEM_TYPES.invalidSetting]: 'problem.invalidSetting',
+  // The sentence with **no** accounts in it — what is left to say when the
+  // refusal arrived without them. The one that names them is reached through
+  // `problemMessage` below.
+  [PROBLEM_TYPES.taxationModelInUse]: 'problem.taxationModelInUse',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 
@@ -111,6 +125,14 @@ export function problemMessageKey(error: unknown): MessageKey {
 function text(problem: ApiProblem, member: string): string | null {
   const value = problem.members[member]
   return typeof value === 'string' && value !== '' ? value : null
+}
+
+/** A list of names, read only when the server sent one that is one. */
+function names(problem: ApiProblem, member: string): string[] | null {
+  const value = problem.members[member]
+  if (!Array.isArray(value)) return null
+  const found = value.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+  return found.length > 0 ? found : null
 }
 
 function quantity(problem: ApiProblem, member: string): number | null {
@@ -172,6 +194,19 @@ export function problemMessage(error: unknown): {
           ? 'problem.unreplayableLedger.remove'
           : 'problem.unreplayableLedger.write',
         values: { symbol, wanted, owned },
+      }
+    }
+  }
+  if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.taxationModelInUse) {
+    // **Named, or not said at all.** The point of the refusal is where to go
+    // next, and *some account carries it* sends its reader through every panel
+    // they own. Absent the member there is still a true sentence, and it is the
+    // table's.
+    const accounts = names(error, 'accounts')
+    if (accounts !== null) {
+      return {
+        message: 'problem.taxationModelInUse.accounts',
+        values: { count: accounts.length, accounts: accounts.join(', ') },
       }
     }
   }

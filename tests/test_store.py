@@ -32,9 +32,11 @@ from application import store as store_module
 # A fresh file, and a second boot on it
 # --------------------------------------------------------------------------- #
 
-def test_a_new_file_carries_the_twelve_tables(store):
+def test_a_new_file_carries_the_fourteen_tables(store):
     assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
-    assert len(store_module.TABLES) == 12
+    # **Fourteen since #752** — ``taxation_model`` and ``account_fact``, both
+    # declared by the same ``IF NOT EXISTS`` DDL (ADR-0044).
+    assert len(store_module.TABLES) == 14
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):
@@ -166,7 +168,7 @@ def test_price_point_carries_no_key_at_all(store):
     assert [c for c in _constraints(store) if c[0] == 'price_point'] == []
 
 
-def test_the_other_eleven_tables_keep_their_keys(store):
+def test_the_other_thirteen_tables_keep_their_keys(store):
     """A few thousand rows cost nothing, so the constraint earns its place."""
     with_keys = {table for table, kind in _constraints(store)
                  if kind == 'PRIMARY KEY'}

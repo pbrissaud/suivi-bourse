@@ -40,17 +40,22 @@ def _keys(found):
 
 
 # --------------------------------------------------------------------------- #
-# The table: the twelfth, and it carries the expiry
+# The table: one of fourteen, and it carries the expiry
 # --------------------------------------------------------------------------- #
 
-def test_the_product_declares_twelve_tables_and_the_twelfth_is_the_ack():
+def test_the_product_declares_fourteen_tables_and_one_of_them_is_the_ack():
     """ADR-0037's own clause, on the source rather than in prose.
 
     The acknowledgement is a **table** and not a column on ``installation_fact``:
-    the DDL runs with ``IF NOT EXISTS`` and there is no migration machinery, so
-    a column added there would exist on no store created before it.
+    a declared fact is its own thing, with its own writer, its own absence and
+    its own lifetime (ADR-0044).
+
+    **Fourteen since #752**, and the count is a number this suite states
+    deliberately rather than a constant nobody may change: that ticket added
+    ``taxation_model`` and ``account_fact``, and said by how much in its own
+    acceptance criteria.
     """
-    assert len(store_module.TABLES) == 12
+    assert len(store_module.TABLES) == 14
     assert 'advisory_ack' in store_module.TABLES
 
 

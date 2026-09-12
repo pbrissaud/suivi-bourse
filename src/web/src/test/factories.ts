@@ -100,6 +100,8 @@ import type {
   RuntimeState,
   SettingDescription,
   StoreState,
+  TaxationModel,
+  TaxationModelsResponse,
   ValuationPoint,
 } from '@/lib/api'
 
@@ -145,6 +147,79 @@ export function anAccount(overrides: Partial<Account> = {}): Account {
     // The stored index — counted from **this account's** first day, and
     // therefore never rendered: it is what `pea 171,5` beside `TR 115,0` was.
     twr_index: 171.5,
+    ...overrides,
+  }
+}
+
+/**
+ * One taxation model, as its owner wrote it (#752). A `flat_realised` at 30 %,
+ * which is the shape four of the five kinds share — and **no real schedule**: a
+ * fixture naming a country's actual rate would be a tax table shipped in the
+ * suite, which is the thing ADR-0042 declines to ship at all.
+ */
+export function aTaxationModel(overrides: Partial<TaxationModel> = {}): TaxationModel {
+  return {
+    id: 'model-one',
+    name: 'A flat model',
+    kind: 'flat_realised',
+    parameters: { rate: 0.3 },
+    ...overrides,
+  }
+}
+
+/**
+ * The read that carries the owner's models **and the catalogue** — the kinds
+ * with their parameters, and the two wrappers whose structure ships.
+ *
+ * It is the server's enumeration copied once, here, and nowhere in `src/`: the
+ * front holds the *words* for these identifiers and never the list itself.
+ */
+export function aTaxationCatalogue(
+  overrides: Partial<TaxationModelsResponse> = {},
+): TaxationModelsResponse {
+  return {
+    kinds: [
+      { kind: 'none', parameters: [] },
+      {
+        kind: 'flat_realised',
+        parameters: [
+          { name: 'rate', type: 'rate', required: true },
+          { name: 'social_rate', type: 'rate', required: false },
+        ],
+      },
+      {
+        kind: 'aged_flat_realised',
+        parameters: [
+          { name: 'rate_before', type: 'rate', required: true },
+          { name: 'rate_after', type: 'rate', required: true },
+          { name: 'threshold_years', type: 'years', required: true },
+          { name: 'age_basis', type: 'age_basis', required: true },
+          { name: 'social_rate', type: 'rate', required: false },
+        ],
+      },
+      {
+        kind: 'bracketed_realised',
+        parameters: [{ name: 'brackets', type: 'brackets', required: true }],
+      },
+      {
+        kind: 'withholding_income',
+        parameters: [{ name: 'rate', type: 'rate', required: true }],
+      },
+    ],
+    age_bases: ['opening', 'first_payment'],
+    templates: [
+      {
+        id: 'fr_pea',
+        kind: 'aged_flat_realised',
+        values: { threshold_years: 5, age_basis: 'first_payment' },
+      },
+      {
+        id: 'fr_assurance_vie',
+        kind: 'aged_flat_realised',
+        values: { threshold_years: 8, age_basis: 'opening' },
+      },
+    ],
+    models: [aTaxationModel()],
     ...overrides,
   }
 }

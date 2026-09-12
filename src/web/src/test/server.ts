@@ -15,7 +15,14 @@
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 
-import { ROUTES, type AccountDraft, type ChartWindow, type EventDraft } from '@/lib/api'
+import {
+  ROUTES,
+  type Account,
+  type AccountDraft,
+  type ChartWindow,
+  type EventDraft,
+  type TaxationModelDraft,
+} from '@/lib/api'
 import {
   anAccount,
   anAccountHistory,
@@ -35,8 +42,20 @@ import {
   aRhythm,
   aRuntime,
   aStore,
+  aTaxationCatalogue,
+  aTaxationModel,
   aTotalsPayload,
 } from '@/test/factories'
+
+/**
+ * A draft as the row it becomes. `taxation_model: null` is *detach it*, and what
+ * comes back from a detached account is the member **absent** — the wire never
+ * carries a null there (#752), so the harness must not either.
+ */
+function echoed(draft: AccountDraft): Partial<Account> {
+  const { reassign: _reassign, taxation_model: model, ...rest } = draft
+  return model === null || model === undefined ? rest : { ...rest, taxation_model: model }
+}
 
 export function defaultHandlers() {
   return [
@@ -46,11 +65,11 @@ export function defaultHandlers() {
     // fourth, an account being born in the app and nowhere else (ADR-0034).
     http.post(ROUTES.accounts, async ({ request }) => {
       const draft = (await request.json()) as AccountDraft
-      return HttpResponse.json(anAccount({ ...draft, id: draft.id ?? '' }), { status: 201 })
+      return HttpResponse.json(anAccount({ ...echoed(draft), id: draft.id ?? '' }), { status: 201 })
     }),
     http.patch(ROUTES.account, async ({ params, request }) => {
       const draft = (await request.json()) as AccountDraft
-      return HttpResponse.json(anAccount({ ...draft, id: String(params.id) }))
+      return HttpResponse.json(anAccount({ ...echoed(draft), id: String(params.id) }))
     }),
     http.delete(ROUTES.account, ({ params }) =>
       HttpResponse.json({ id: String(params.id), removed: true }),
@@ -60,6 +79,21 @@ export function defaultHandlers() {
     // than this number — one truth about how many events name what.
     http.post(ROUTES.accountReassignment, ({ params }) =>
       HttpResponse.json({ account: String(params.id), reassigned: 0 }),
+    ),
+    // The taxation models (#752). The read carries the **catalogue** — the kinds
+    // and the two templates — because the server is where that enumeration lives
+    // and a handler inventing its own would let the front's copy drift from it.
+    http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue())),
+    http.post(ROUTES.taxationModels, async ({ request }) => {
+      const draft = (await request.json()) as TaxationModelDraft
+      return HttpResponse.json(aTaxationModel({ ...draft, id: 'written' }), { status: 201 })
+    }),
+    http.patch(ROUTES.taxationModel, async ({ params, request }) => {
+      const draft = (await request.json()) as TaxationModelDraft
+      return HttpResponse.json(aTaxationModel({ ...draft, id: String(params.id) }))
+    }),
+    http.delete(ROUTES.taxationModel, ({ params }) =>
+      HttpResponse.json({ id: String(params.id), removed: true }),
     ),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
     http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload())),
