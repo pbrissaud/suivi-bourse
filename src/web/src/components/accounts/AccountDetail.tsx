@@ -59,15 +59,12 @@ import {
   accountEvents,
   accountPositions,
   declaredLabel,
-  declaredType,
   degradedReason,
   distinctSymbols,
   dividendPayers,
-  isDefaultAccount,
   onContributed,
   valueSeries,
   DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_ACCOUNT_TYPE,
   type AccountRow,
   type DegradedReason,
   type Reassignment as ReassignmentOffer,
@@ -180,7 +177,6 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-  const type = declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
   const reason = degradedReason(row, rebuilding)
 
   // **Every derivation below is memoised, and against the reads themselves.**
@@ -282,13 +278,15 @@ export function AccountDetail({
                 {/* The heading is the **name alone**: it is the accessible name
                     of the whole detail (`aria-labelledby`), and a region called
                     *Alpha · CTO* names a thing nobody calls that. The kind
-                    rides beside it as ordinary text, which is where the drawing
-                    puts it and where a screen reader reads it after the heading
-                    rather than inside it. */}
+                    identifier rides beside it as ordinary text, which is where
+                    the drawing puts it and where a screen reader reads it after
+                    the heading rather than inside it. */}
                 <h2 id={heading} className="eyebrow">
                   {name}
                 </h2>
-                {type === null ? null : <span className="eyebrow">· {type}</span>}
+                {/* The id, where the type used to be — beside the name and
+                    never under it (#916, ADR-0043, reversing #838). */}
+                <span className="eyebrow">· {row.id}</span>
                 {/* **The gesture is a pencil beside the name**, where it was
                     the name itself. One control for one gesture: a heading that
                     is also a button reads as a link to somewhere, and the

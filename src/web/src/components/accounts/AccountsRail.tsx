@@ -67,13 +67,10 @@ import {
   accountWeights,
   accountWorth,
   declaredLabel,
-  declaredType,
   degradedReason,
-  isDefaultAccount,
   onContributed,
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_ACCOUNT_TYPE,
   type AccountRow,
   type DegradedReason,
   type Reassignment as ReassignmentOffer,
@@ -248,8 +245,6 @@ export function AccountsRail({
           const reason = degradedReason(row, rebuilding)
           const cash = cashShare(advisories, row.id)
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-          const type =
-            declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
           // `null` where there is no ratio to state — nothing written about this
           // account yet, nothing ever paid in, or more taken out than put in.
           const performance = onContributed(row.gain_absolu, row.net_contributed)
@@ -284,7 +279,9 @@ export function AccountsRail({
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">{type}</span>
+                  {/* The id, in the slot the type held since #838 — opposite
+                      the name, never beneath it (#916, ADR-0043). */}
+                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.id}</span>
                 </span>
 
                 {/* **What the account is worth, and what it has done with it.**

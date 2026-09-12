@@ -86,6 +86,12 @@ name: `/healthz` was examined and declined.
 - **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
   instant, `DATE` for a calendar day. A bound on a `DATE` column is **cast**, or
   DuckDB widens it to midnight and the first day of every window is dropped.
+- **An account has an id and a name, and no type** (#916, ADR-0043). The `type`
+  column is still in the DDL — it is `NOT NULL` and nothing can drop it until
+  #926 brings migration machinery — so `create_account` writes the seed's own
+  word into it and **nothing reads it**: not the API, not the view, not the
+  export. `default_is_declared` therefore answers on the label alone, where it
+  used to read both seeded columns.
 - **The seed has two halves**: the `default` account row is written at creation
   only and never removed; the `setting` defaults are inserted at every start with
   `ON CONFLICT DO NOTHING`. `base_currency` has no default and is therefore never

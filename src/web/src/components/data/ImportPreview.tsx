@@ -311,7 +311,7 @@ function AccountsBlock({
   onAnswer,
 }: {
   lines: readonly AccountLine[]
-  declared: { accounts: { id: string; label: string | null; type: string | null }[] }
+  declared: { accounts: { id: string; label: string | null }[] }
   busy: boolean
   onAnswer: (name: string, target: AccountTarget) => void
 }) {
@@ -359,7 +359,7 @@ function AccountRow({
   onAnswer,
 }: {
   line: AccountLine
-  declared: readonly { id: string; label: string | null; type: string | null }[]
+  declared: readonly { id: string; label: string | null }[]
   busy: boolean
   onAnswer: (name: string, target: AccountTarget) => void
 }) {
@@ -438,7 +438,7 @@ function AccountRow({
 function why(
   t: ReturnType<typeof useI18n>['t'],
   line: AccountLine,
-  declared: readonly { id: string; label: string | null; type: string | null }[],
+  declared: readonly { id: string; label: string | null }[],
 ): string {
   if (line.target.kind === 'unanswered') {
     return t('data.import.accounts.why.unanswered', {

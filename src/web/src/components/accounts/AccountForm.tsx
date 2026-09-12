@@ -51,7 +51,6 @@ import {
 } from '@/components/ui/sheet'
 import {
   declaredLabel,
-  declaredType,
   DEFAULT_ACCOUNT_LABEL,
   type Reassignment,
   type Removal,
@@ -75,13 +74,12 @@ const REFUSALS: Record<Exclude<Removal['kind'], 'offered'>, MessageKey> = {
 
 interface Draft {
   id: string
-  type: string
   label: string
 }
 
 type FieldName = keyof Draft
 
-const EMPTY: Draft = { id: '', type: '', label: '' }
+const EMPTY: Draft = { id: '', label: '' }
 
 interface AccountFormProps {
   open: boolean
@@ -173,12 +171,11 @@ export function AccountForm({
         ? EMPTY
         : {
             id: account.id,
-            // **Both seeded columns open empty.** `Default account` and `OTHER`
-            // are what the *server* wrote about a row nobody declared, so
-            // neither is a value the reader typed — and handing one back had
-            // them typing `PEA` into `OTHER` and saving `OTHERPEA`, the form
-            // giving them a value they never gave.
-            type: declaredType(account) ?? '',
+            // **The seeded name opens empty.** `Default account` is what the
+            // *server* wrote about a row nobody declared, so it is not a value
+            // the reader typed — and handing it back had them typing over it and
+            // saving a name the form had given them. There was a second column
+            // under this rule until #916 took the type away (ADR-0043).
             label: declaredLabel(account) ?? '',
           },
     )
@@ -199,15 +196,8 @@ export function AccountForm({
   function submit() {
     const found: Partial<Record<FieldName, MessageKey>> = {}
     const id = draft.id.trim()
-    const type = draft.type.trim()
 
     if (account === null && id === '') found.id = 'accounts.form.required'
-    // Required on a **declaration** only, which is where the store requires it
-    // (`create_account` raises without one). On an edit a blank type is the
-    // label's own case: `update_account` keeps what is there, so refusing here
-    // would make *renaming* the seeded row — the one gesture this panel exists
-    // for at N = 1 — conditional on answering a second question.
-    if (account === null && type === '') found.type = 'accounts.form.required'
 
     setErrors(found)
     if (Object.values(found).some(Boolean)) return
@@ -222,13 +212,12 @@ export function AccountForm({
       account === null
         ? {
             id,
-            type,
             label: label || id,
             // Sent only where the box was shown **and** left ticked: `reassign`
             // is a request, and a client that never asks must never perform one.
             ...(offered && reassign ? { reassign: true } : {}),
           }
-        : { type, label },
+        : { label },
     )
   }
 
@@ -277,18 +266,6 @@ export function AccountForm({
               </p>
             </div>
           )}
-
-          <Field name="type" label="accounts.form.type" error={errors.type}>
-            {(id, described) => (
-              <Input
-                id={id}
-                value={draft.type}
-                aria-invalid={errors.type !== undefined}
-                aria-describedby={described}
-                onChange={(changed) => set('type', changed.target.value)}
-              />
-            )}
-          </Field>
 
           <Field name="label" label="accounts.form.label" error={errors.label} optional>
             {(id, described) => (

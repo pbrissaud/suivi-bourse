@@ -653,7 +653,7 @@ describe('an account can be declared from inside the walk', () => {
     server.use(
       http.get(ROUTES.accounts, () => HttpResponse.json(current)),
       http.post(ROUTES.accounts, async ({ request }) => {
-        const draft = (await request.json()) as { id: string; type: string; label: string }
+        const draft = (await request.json()) as { id: string; label: string }
         const row = { ...theSeededAccount(), ...draft }
         current = { declared: true, accounts: [...current.accounts, row] }
         return HttpResponse.json(row, { status: 201 })
@@ -669,9 +669,10 @@ describe('an account can be declared from inside the walk', () => {
     const passage = within(modal())
     expect(await passage.findByText('Vos comptes actuels')).toBeInTheDocument()
     // The catalogue's name for the row nobody declared, and beside it the value
-    // a `.csv` would have to spell to land on it.
+    // a `.csv` would have to spell to land on it — the id alone since #916,
+    // where the seeded type used to sit beside it (ADR-0043).
     expect(passage.getByText('Non affecté')).toBeInTheDocument()
-    expect(passage.getByText('default · Autre')).toBeInTheDocument()
+    expect(passage.getByText('default')).toBeInTheDocument()
   })
 
   it('is closed until it is asked for, and the passage is satisfied without it', async () => {
@@ -694,12 +695,15 @@ describe('an account can be declared from inside the walk', () => {
 
     await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'pea')
-    await user.type(within(modal()).getByLabelText('Type'), 'PEA')
     await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
 
     // Declared, and read back: the list is the installation's own accounts, so
     // the row is there because the server has it and not because a form said so.
-    expect(await within(modal()).findByText('pea · PEA')).toBeInTheDocument()
+    // The declaration carried no name, so the label falls back to the id — and
+    // the row therefore renders `pea` **exactly twice**, as its name and as the
+    // identifier beside it (#916). Asserting the count rather than *at least
+    // one* is what makes this fail if either half stops rendering.
+    expect(await within(modal()).findAllByText('pea')).toHaveLength(2)
     // The form closes behind it — the offer is not a place the reader stays.
     await waitFor(() =>
       expect(within(modal()).queryByLabelText('Identifiant')).not.toBeInTheDocument(),
@@ -715,9 +719,10 @@ describe('an account can be declared from inside the walk', () => {
     await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
     await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
 
-    // The two required fields say so where they are, and nothing crossed the
-    // wire to be told what this form already knew.
-    expect(within(modal()).getAllByText('Ce champ est obligatoire.')).toHaveLength(2)
+    // The one required field says so where it is, and nothing crossed the wire
+    // to be told what this form already knew. It was two until #916: the type
+    // was the other, and there is no type to require.
+    expect(within(modal()).getAllByText('Ce champ est obligatoire.')).toHaveLength(1)
     expect(writes).not.toContain('POST /api/accounts')
   })
 
@@ -736,7 +741,6 @@ describe('an account can be declared from inside the walk', () => {
 
     await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'default')
-    await user.type(within(modal()).getByLabelText('Type'), 'PEA')
     await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
 
     // The refusal is in the form, and the form stays open on what was typed:

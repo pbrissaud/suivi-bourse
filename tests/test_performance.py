@@ -35,8 +35,8 @@ def _price_at(prices):
     return price_at
 
 
-PEA = Account("PEA", "PEA", "Mon PEA")
-CTO = Account("CTO", "CTO", "My CTO")
+PEA = Account("PEA", "Mon PEA")
+CTO = Account("CTO", "My CTO")
 
 
 # --------------------------------------------------------------------------- #
@@ -405,7 +405,7 @@ def test_a_grants_contribution_does_not_move_with_the_backfill():
 #
 # AAPL quotes 200 € today, so holdings are 2 000,00 €.
 
-WORKED_EXAMPLE_ACCOUNT = Account("CTO", "CTO", "Mon CTO")
+WORKED_EXAMPLE_ACCOUNT = Account("CTO", "Mon CTO")
 TODAY = date(2025, 4, 20)
 
 
@@ -504,7 +504,7 @@ def test_two_accounts_pool_because_an_account_has_no_currency():
 
 
 def test_portfolio_total_aggregates_the_accounts_it_is_given():
-    pea2 = Account("PEA2", "PEA", "PEA 2")
+    pea2 = Account("PEA2", "PEA 2")
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="PEA2"),
@@ -940,7 +940,7 @@ def test_the_global_is_written_only_where_every_account_is():
     back, on the one page the product opens on. The consequence is accepted
     rather than worked around: one slow account delays the whole home page.
     """
-    cto = Account("CTO", "CTO", "My CTO")
+    cto = Account("CTO", "My CTO")
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
@@ -1012,7 +1012,7 @@ def test_the_global_loses_its_cash_half_when_one_account_has_no_ledger():
     global ``total_value`` carrying it is the very figure the per-field rule
     exists to remove, at the level of the whole portfolio.
     """
-    cto = Account("CTO", "CTO", "My CTO")
+    cto = Account("CTO", "My CTO")
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=1,
@@ -1044,7 +1044,7 @@ def test_an_account_declared_and_never_used_does_not_veto_the_global():
     to make unwritable — and ADR-0013's seeded row would otherwise take the cash
     half off every install that declared its accounts by hand.
     """
-    cto = Account("CTO", "CTO", "My CTO")
+    cto = Account("CTO", "My CTO")
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
     ])

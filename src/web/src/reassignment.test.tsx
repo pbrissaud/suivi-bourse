@@ -81,12 +81,11 @@ describe('the first declaration carries the reassignment', () => {
     expect(box).toBeChecked()
 
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.type(within(panel).getByLabelText('Type'), 'PEA')
     await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
 
     // **One request**, which is what *dans le même geste* means: the declaration
     // and the move are not two gestures a reader can be interrupted between.
-    await waitFor(() => expect(sent).toEqual({ id: 'pea', type: 'PEA', label: 'pea', reassign: true }))
+    await waitFor(() => expect(sent).toEqual({ id: 'pea', label: 'pea', reassign: true }))
   })
 
   it('is never a refusal, and unchecking still declares', async () => {
@@ -108,10 +107,9 @@ describe('the first declaration carries the reassignment', () => {
     const panel = await screen.findByRole('dialog')
     await user.click(within(panel).getByRole('checkbox'))
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.type(within(panel).getByLabelText('Type'), 'PEA')
     await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
 
-    await waitFor(() => expect(sent).toEqual({ id: 'pea', type: 'PEA', label: 'pea' }))
+    await waitFor(() => expect(sent).toEqual({ id: 'pea', label: 'pea' }))
   })
 
   it('asks nothing about the row its owner has already named', async () => {

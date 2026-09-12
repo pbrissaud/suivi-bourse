@@ -8,7 +8,6 @@ from logfmt_logger import getLogger
 from application import accounts as accounts_module
 from application import ledger
 from application import settings_registry
-from application import store as store_module
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
 from application.events import export as events_export
@@ -84,8 +83,11 @@ def create_many(store, drafts: Sequence[Event], *,
 
     with store.transaction():
         for account_id in declare_accounts:
-            accounts_module.create_account(
-                store, account_id, store_module.DEFAULT_ACCOUNT_ROW[1])
+            # **The id and nothing else.** `create_account` falls the label back
+            # to the id, which is what a row nobody named must carry; passing a
+            # second argument here would put that word in the *label*, the type
+            # having stopped being a parameter with #916.
+            accounts_module.create_account(store, account_id)
             logger.info(f"The file names {account_id} and nobody had declared "
                         f"it; declaring it with the import")
 

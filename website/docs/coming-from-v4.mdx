@@ -75,9 +75,11 @@ column, and the two meet. Rename it on the *Accounts* page whenever you like.
 
 **If version 4 had one**, declare each account before importing, on the
 *Accounts* page, with **the same `id`** your rows already name — that id is the
-whole of the continuity. `type` and `label` carry over as they were; `currency`
-has nowhere to go, because version 5 has one reporting currency for the whole
-install and none on an account at all (ADR-0002). A file naming an account you
+whole of the continuity. `label` carries over as it was; `type` has nowhere to
+go either — version 5 asks for no account type, so put what it said into the
+name if you want to keep it — and `currency` has nowhere to go because version 5
+has one reporting currency for the whole install and none on an account at all
+(ADR-0002). A file naming an account you
 have not declared is **not imported at all** — not partially — and the message
 names the account. See
 [Declaring your accounts](./import-your-events.mdx#declaring-your-accounts).

@@ -85,8 +85,7 @@ def _declare(store, text):
     import io
     import csv as csv_module
     for row in csv_module.DictReader(io.StringIO(text)):
-        accounts_module.create_account(store, row['id'], row['type'],
-                                       row.get('label'))
+        accounts_module.create_account(store, row['id'], row.get('label'))
 
 
 def _accounts(store):
@@ -229,7 +228,7 @@ def test_a_declaration_is_recognised_in_a_workbook_too(store, tmp_path):
 
 def test_the_label_falls_back_to_the_id(store):
     """``label`` is ``NOT NULL``: a row cannot decline to name itself."""
-    accounts_module.create_account(store, 'pea', 'PEA')
+    accounts_module.create_account(store, 'pea')
 
     pea = next(a for a in accounts_module.read_accounts(store) if a.id == 'pea')
     assert pea.label == 'pea'
@@ -282,10 +281,9 @@ def test_the_default_account_is_never_removed(store):
 
 def test_an_account_declared_here_is_renamed_and_removed_here(store):
     """An account is born in the app, so every gesture on it is the app's."""
-    created = accounts_module.create_account(store, 'pea', 'PEA', 'PEA Bourso')
+    created = accounts_module.create_account(store, 'pea', 'PEA Bourso')
 
-    assert (created.id, created.type, created.label) == \
-        ('pea', 'PEA', 'PEA Bourso')
+    assert (created.id, created.label) == ('pea', 'PEA Bourso')
 
     accounts_module.update_account(store, 'pea', label="PEA Fortuneo")
     assert next(a for a in accounts_module.read_accounts(store)
@@ -296,9 +294,9 @@ def test_an_account_declared_here_is_renamed_and_removed_here(store):
 
 
 def test_two_accounts_cannot_share_an_id(store):
-    accounts_module.create_account(store, 'pea', 'PEA')
+    accounts_module.create_account(store, 'pea')
     with pytest.raises(accounts_module.DuplicateAccount):
-        accounts_module.create_account(store, 'pea', 'CTO')
+        accounts_module.create_account(store, 'pea')
 
 
 def test_an_id_no_route_can_carry_is_refused_before_it_is_written(store):
@@ -325,7 +323,7 @@ def test_creating_an_account_makes_a_blank_column_an_error(store, tmp_path):
     a real account existed — which is exactly the second account's events piling
     onto the first.
     """
-    accounts_module.create_account(store, 'pea', 'PEA')
+    accounts_module.create_account(store, 'pea')
 
     with pytest.raises(entries.InvalidEntry) as refusal:
         _upload(store, tmp_path, V4_SINGLE_ACCOUNT)
@@ -410,8 +408,8 @@ def test_a_declaration_changing_republishes_the_snapshot(tmp_path):
 
 def test_portfolio_ids_and_get():
     portfolio = Portfolio(accounts=[
-        Account(id="PEA", type="PEA", label="Mon PEA"),
-        Account(id="CTO", type="CTO", label="CTO"),
+        Account(id="PEA", label="Mon PEA"),
+        Account(id="CTO", label="CTO"),
     ])
     assert portfolio.ids() == {"PEA", "CTO"}
     assert portfolio.get("PEA").label == "Mon PEA"

@@ -93,13 +93,11 @@ export function isDefaultAccount(id: string): boolean {
  * construction is a single entry the two of them read.
  */
 export const DEFAULT_ACCOUNT_LABEL: MessageKey = 'accounts.default.label'
-export const DEFAULT_ACCOUNT_TYPE: MessageKey = 'accounts.default.type'
 
-/** The two members a naming rule needs — an `Account` or an {@link AccountRow}. */
+/** What a naming rule needs — an `Account` or an {@link AccountRow}. */
 interface NamedAccount {
   id: string
   label?: string | null
-  type?: string | null
 }
 
 /**
@@ -127,10 +125,6 @@ export function declaredLabel(account: NamedAccount): string | null {
   return isDefaultAccount(account.id) ? label : label ?? account.id
 }
 
-/** The same clause on the other seeded column. `null` — nothing was declared. */
-export function declaredType(account: NamedAccount): string | null {
-  return account.type?.trim() || null
-}
 
 // ------------------------------------------------------------------------- //
 // The one range control — the dashboard's accounts card, and nowhere else
@@ -316,7 +310,6 @@ export interface AccountRow {
   id: string
   /** As declared. The catalogue owns `default`'s (#745), and it owns it late. */
   label: string | null
-  type: string | null
   /** The day the money figures describe. `null` — no cycle wrote this account. */
   as_of: string | null
   total_value: number | null
@@ -351,7 +344,6 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
   return accounts.map((account) => ({
     id: account.id,
     label: account.label ?? null,
-    type: account.type ?? null,
     as_of: account.as_of ?? null,
     total_value: account.total_value ?? null,
     holdings_value: account.holdings_value ?? null,
@@ -649,16 +641,14 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
  * and this is the one place the front spells it (`lib/absence.ts`'s `isQuoted`
  * is the precedent, #774).
  *
- * Both seeded columns, not the label alone: an owner who retyped the row has
- * declared it as much as one who renamed it, and #725's whole correctness rests
- * on *has anybody declared this* rather than on *does it have a name*.
+ * **The label alone**, and it used to be two. An owner who *retyped* the seeded
+ * row had declared it as surely as one who renamed it, so this read both seeded
+ * columns; #916 removed the type (ADR-0043), and the name is the whole of what
+ * *has anybody declared this* can now be read off — server-side too
+ * (`accounts.default_is_declared`).
  */
 function isSeededOnly(account: Account): boolean {
-  return (
-    isDefaultAccount(account.id) &&
-    declaredLabel(account) === null &&
-    declaredType(account) === null
-  )
+  return isDefaultAccount(account.id) && declaredLabel(account) === null
 }
 
 /**

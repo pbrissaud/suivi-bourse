@@ -249,9 +249,15 @@ class Timeline:
 
 @dataclass
 class Account:
-    """A declared account — a row of the store's ``account`` table (issue #698)."""
+    """A declared account — a row of the store's ``account`` table (issue #698).
+
+    **No ``type``** (#916, ADR-0043). The column is still in the store — the DDL
+    runs with ``IF NOT EXISTS``, it is ``NOT NULL``, and there is no migration
+    machinery to drop it until #926 — but nothing asks for it, nothing serves it
+    and nothing renders it, so a reader that carried it would be carrying a value
+    no reader has.
+    """
     id: str
-    type: str
     label: str = ''
 
 

@@ -120,13 +120,12 @@ def _declared_rows(path):
 
 def _declare_from(opened, path):
     """The file's accounts, declared the way the app declares them (ADR-0034)."""
-    for account_id, account_type, label in _declared_rows(path):
+    for account_id, _, label in _declared_rows(path):
         if account_id in accounts_module.account_ids(opened):
-            opened.execute(
-                'UPDATE account SET type = ?, label = ? WHERE id = ?',
-                [account_type, label, account_id])
+            opened.execute('UPDATE account SET label = ? WHERE id = ?',
+                           [label, account_id])
             continue
-        accounts_module.create_account(opened, account_id, account_type, label)
+        accounts_module.create_account(opened, account_id, label)
 
 
 def _write_events(opened, path):
@@ -838,7 +837,10 @@ def test_a_figure_appears_once_and_a_name_repeats(tmp_path):
     # to reach the holdings and not the balance line alone.
     assert account['account_label'] == 'PEA Boursorama'
     assert position['account_label'] == 'PEA Boursorama'
-    assert position['account_type'] == 'PEA'
+    # **And there is no `account_type` column at all** (#916, ADR-0043): the
+    # value it carried is written by the app and read by nobody, so every row
+    # of it would have said the same seeded word.
+    assert 'account_type' not in position
     # And nothing of the position is on the account's own row.
     assert account['quantity'] == '' and account['market_value'] == ''
 

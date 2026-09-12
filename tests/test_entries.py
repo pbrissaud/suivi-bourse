@@ -65,11 +65,9 @@ def _upload(store, tmp_path, body=ONE_BUY, name='2024.csv'):
     return entries.create_many(store, EventLoader(str(path)).load())
 
 
-def _declare(store, account_id='pea', account_type='PEA',
-             label="Plan d'épargne en actions"):
+def _declare(store, account_id='pea', label="Plan d'épargne en actions"):
     """One account, declared the way the app declares it (ADR-0034)."""
-    return accounts_module.create_account(store, account_id, account_type,
-                                          label)
+    return accounts_module.create_account(store, account_id, label)
 
 
 # --------------------------------------------------------------------------- #

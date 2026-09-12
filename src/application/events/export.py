@@ -179,8 +179,11 @@ def _haystack(event: Event) -> str:
                          (event.symbol, event.notes, account_of(event)) if part))
 
 
+# **No `account_type`** since #916 (ADR-0043): the column it rendered is written
+# by the app and read by nobody, so exporting it would ship a field whose every
+# row carries the same seeded word.
 PORTFOLIO_COLUMNS = (
-    'account', 'account_label', 'account_type',
+    'account', 'account_label',
     'cash_balance', 'net_contributed',
     'symbol', 'name', 'quantity', 'unit_cost', 'cost_basis',
     'price', 'market_value', 'realized_gain', 'received_dividend',
@@ -216,7 +219,6 @@ def _account_row(account: str, declaration: Optional[Any],
     return {
         'account': account,
         'account_label': None if declaration is None else declaration.label,
-        'account_type': None if declaration is None else declaration.type,
         'cash_balance': None if state is None else state.cash_balance,
         'net_contributed': None if state is None else state.net_contributed,
         BASE_CURRENCY_COLUMN: base_currency,
@@ -232,7 +234,6 @@ def _position_row(account: str, declaration: Optional[Any],
     return {
         'account': account,
         'account_label': None if declaration is None else declaration.label,
-        'account_type': None if declaration is None else declaration.type,
         'symbol': position.get('symbol'),
         'name': position.get('name'),
         'quantity': quantity,

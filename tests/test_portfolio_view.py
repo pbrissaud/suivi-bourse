@@ -482,12 +482,14 @@ def test_a_mover_carries_no_currency_of_its_own():
 # The accounts comparison table (issue #661)
 # --------------------------------------------------------------------- #
 
-def declared(id='pea', label='PEA Bourso', type='PEA'):
+def declared(id='pea', label='PEA Bourso'):
     """A declared account — the shape `Portfolio.accounts` holds.
 
-    No `currency`: `Account.currency` is deleted (#702, ADR-0002).
+    No `currency`: `Account.currency` is deleted (#702, ADR-0002). No `type`
+    either since #916 (ADR-0043): the column was read by nothing, so the
+    declaration has one identity field left and it is the name.
     """
-    return SimpleNamespace(id=id, label=label, type=type)
+    return SimpleNamespace(id=id, label=label)
 
 
 def metrics(account='pea', **overrides):
@@ -510,7 +512,7 @@ def test_accounts_keep_their_declaration_order():
     """The store's `ORDER BY id`, stable across restarts and across a re-drop —
     and the table sorts on demand anyway."""
     summaries = build_accounts(
-        [declared('cto', 'CTO Degiro', 'CTO'), declared('pea')],
+        [declared('cto', 'CTO Degiro'), declared('pea')],
         [metrics('pea'), metrics('cto')])
 
     assert [s.id for s in summaries] == ['cto', 'pea']
@@ -519,14 +521,14 @@ def test_accounts_keep_their_declaration_order():
 def test_a_declared_account_with_no_series_is_a_row_of_absences():
     """Declared but not yet computed. #652 déc. 4 makes the declaration the
     list, so no data cannot remove a row — it empties one."""
-    summaries = build_accounts([declared('pea'), declared('cto', 'CTO', 'CTO')],
+    summaries = build_accounts([declared('pea'), declared('cto', 'CTO')],
                                [metrics('pea')])
 
     assert summaries[1].as_of is None
     assert summaries[1].total_value is None
     assert summaries[1].xirr is None
-    # The identity fields still come from the declaration.
-    assert (summaries[1].label, summaries[1].type) == ('CTO', 'CTO')
+    # The identity field still comes from the declaration.
+    assert summaries[1].label == 'CTO'
 
 
 def test_a_series_without_a_declaration_is_not_a_row():
@@ -536,15 +538,17 @@ def test_a_series_without_a_declaration_is_not_a_row():
     assert [s.id for s in summaries] == ['pea']
 
 
-def test_the_identity_fields_come_from_the_declaration_alone():
-    """Since #700 the series has no column for them at all: `account_type` and
+def test_the_identity_field_comes_from_the_declaration_alone():
+    """Since #700 the series has no column for it at all: `account_type` and
     `account_currency` were InfluxDB *tags*, recording what the account was when
-    the point was written. The declaration is what it is — and since #702 it
-    declares no currency at all, so the row does not carry one."""
+    the point was written. The declaration is what it is — and it declares
+    neither a currency (#702) nor a type (#916), so the row carries just the
+    name and the figures."""
     summaries = build_accounts([declared('pea')], [metrics('pea')])
 
-    assert 'currency' not in summaries[0].to_dict()
-    assert summaries[0].type == 'PEA'
+    for absent in ('currency', 'type'):
+        assert absent not in summaries[0].to_dict()
+    assert summaries[0].label == 'PEA Bourso'
     assert summaries[0].as_of == date(2026, 8, 5)
     assert summaries[0].to_dict()['as_of'] == '2026-08-05'
 
@@ -554,7 +558,7 @@ def test_nothing_is_summed_across_accounts():
     and a second arithmetic path to the same number is how two of them come to
     disagree — besides being plain wrong across currencies."""
     summaries = build_accounts(
-        [declared('pea'), declared('cto', 'CTO', 'CTO')],
+        [declared('pea'), declared('cto', 'CTO')],
         [metrics('pea', total_value=12500.0), metrics('cto', total_value=3000.0)])
 
     assert [s.total_value for s in summaries] == [12500.0, 3000.0]
