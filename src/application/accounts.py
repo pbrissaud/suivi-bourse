@@ -251,6 +251,14 @@ def delete_account(store, account_id: str) -> None:
         raise AccountInUse(
             f"Account {account_id!r} cannot be removed while an event names "
             f"it; forget those events first")
+    # **Three statements, and deliberately not one transaction.** DuckDB checks a
+    # foreign key against *committed* rows, so deleting the referencing rows and
+    # the referenced one inside one transaction is refused by the constraint the
+    # first statement has already satisfied — its own documented limitation. What
+    # that costs is a crash between two of them, and what it leaves is an account
+    # whose taxation model is gone: the state of every account that never had
+    # one, which the reader can see and repair from the panel. The refusals above
+    # are decided before any of the three runs, which is the part that matters.
     perf_series.forget_account(store, account_id)
     # What its owner declared about it goes with it (#752): the row is keyed by
     # the account and references it, so leaving it behind is a foreign key

@@ -5373,3 +5373,34 @@ def test_a_refused_model_reference_does_not_rename_the_account_either(tmp_path):
 
     assert refused.status_code == 422
     assert opened.query("SELECT label FROM account WHERE id = 'pea'") == [('PEA',)]
+
+
+def test_a_kind_that_is_not_a_string_is_422_and_never_a_500(tmp_path):
+    """A body may carry anything where the kind goes, and the route answers."""
+    response = build_client(tmp_path).post(
+        '/api/taxation-models',
+        json={'name': 'Odd', 'kind': [], 'parameters': {}})
+
+    assert response.status_code == 422
+
+
+def test_a_refused_removal_writes_none_of_its_three_statements(tmp_path):
+    """Removing an account is three writes since #752, and no transaction.
+
+    DuckDB checks a foreign key against committed rows, so the three cannot be
+    wrapped in one — the account's own delete would be refused by the constraint
+    the fact row's delete has just satisfied. What makes that survivable is
+    **where the refusals are**: an account an event names is refused before any
+    of the three runs, so the reader still has the account *and* the model it
+    carries.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    key = _a_flat_model(client)
+    client.patch('/api/accounts/pea', json={'taxation_model': key})
+
+    refused = client.delete('/api/accounts/pea')
+
+    assert refused.status_code == 409
+    assert opened.query("SELECT taxation_model FROM account_fact "
+                        "WHERE account = 'pea'") == [(key,)]

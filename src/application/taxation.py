@@ -130,7 +130,11 @@ def validate(kind: Any, parameters: Any) -> Dict[str, Any]:
     over a formula field (ADR-0042): what comes back is what goes in the column,
     so a reader never meets a rate that is a string or a ladder out of order.
     """
-    if kind not in PARAMETERS:
+    # **The type is checked before the lookup.** A JSON body may carry anything
+    # where the kind goes, and `[] in PARAMETERS` is a `TypeError` rather than a
+    # `False` — which would leave the route answering *an unexpected error* about
+    # a value it was written to refuse.
+    if not isinstance(kind, str) or kind not in PARAMETERS:
         raise ModelRejected(
             f"{kind!r} is not a taxation model kind; the kinds are "
             f"{', '.join(KINDS)}")
@@ -221,12 +225,21 @@ def _brackets(name: str, value: Any) -> List[Dict[str, Any]]:
 
 
 def _number(name: str, value: Any) -> float:
+    """A finite number, or a refusal — and ``Infinity`` is not one.
+
+    Python's own JSON reader accepts ``Infinity`` and ``NaN``, which no other
+    parser writes and no schedule contains. Left through, the first would reach
+    ``int(inf)`` in :func:`_years` and surface as *an unexpected error*.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         raise ModelRejected(f"{name} is a number, and {value!r} is not one")
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         raise ModelRejected(f"{name} is a number, and {value!r} is not one")
+    if number != number or number in (float('inf'), float('-inf')):
+        raise ModelRejected(f"{name} is a number, and {value!r} is not one")
+    return number
 
 
 _CHECKS = {

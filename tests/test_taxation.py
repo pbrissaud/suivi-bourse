@@ -320,3 +320,48 @@ def test_removing_an_account_takes_what_was_declared_about_it(store):
     assert store.query('SELECT count(*) FROM account_fact')[0][0] == 0
     # The model itself stays: it is reusable, and it belonged to no account.
     assert [m.id for m in accounts_module.read_models(store)] == [model.id]
+
+
+# --------------------------------------------------------------------------- #
+# What a JSON body may carry where a value goes
+# --------------------------------------------------------------------------- #
+
+def test_a_kind_that_is_not_even_a_string_is_refused_rather_than_raised():
+    """``[] in PARAMETERS`` is a ``TypeError``, not a ``False``.
+
+    A body may carry anything where the kind goes, and the route is written to
+    answer `422` — so the type is checked before the lookup, or the refusal
+    surfaces as *an unexpected error*.
+    """
+    for nonsense in ([], {}, 7, None):
+        with pytest.raises(taxation.ModelRejected):
+            taxation.validate(nonsense, {})
+
+
+def test_an_infinite_rate_is_refused():
+    """Python's JSON reader accepts ``Infinity``; no schedule contains one."""
+    with pytest.raises(taxation.ModelRejected):
+        taxation.validate(taxation.FLAT_REALISED, {'rate': float('inf')})
+    with pytest.raises(taxation.ModelRejected):
+        taxation.validate(taxation.AGED_FLAT_REALISED, {
+            'rate_before': 0.3, 'rate_after': 0.1,
+            'threshold_years': float('inf'), 'age_basis': taxation.OPENING})
+
+
+def test_a_bracket_with_no_bound_where_one_is_needed_is_refused():
+    """The shape a blank field reaches the server as — never a zero.
+
+    The form skips a scalar left blank, and a ladder has no *skip* to be skipped
+    by: an empty bound arrives as ``null`` and is refused, where a coerced ``0``
+    would be stored as *up to 0* and be perfectly valid.
+    """
+    with pytest.raises(taxation.ModelRejected):
+        taxation.validate(taxation.BRACKETED_REALISED, {'brackets': [
+            {'upper_bound': None, 'rate': 0.2},
+            {'upper_bound': None, 'rate': 0.3},
+        ]})
+    with pytest.raises(taxation.ModelRejected):
+        taxation.validate(taxation.BRACKETED_REALISED, {'brackets': [
+            {'upper_bound': 10_000, 'rate': None},
+            {'upper_bound': None, 'rate': 0.3},
+        ]})

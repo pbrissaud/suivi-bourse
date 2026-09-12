@@ -341,3 +341,83 @@ describe('removing a model', () => {
     await waitFor(async () => expect(await modelField(panel)).toHaveValue(''))
   })
 })
+
+describe('the two hazards of a form inside a form', () => {
+  it('saves the model on Enter, and never the account', async () => {
+    // The editor sits inside `AccountForm`'s own `<form>` — a nested one is not
+    // HTML — so an unguarded Enter triggers that form's implicit submission: the
+    // account is declared, the panel shuts, and the half-typed model is lost.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+
+    let declared = false
+    let written: TaxationModelDraft | null = null
+    server.use(
+      http.patch(accountPath('alpha'), () => {
+        declared = true
+        return HttpResponse.json(anAccount({ id: 'alpha', label: 'Alpha' }))
+      }),
+      http.post(ROUTES.taxationModels, async ({ request }) => {
+        written = (await request.json()) as TaxationModelDraft
+        return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
+      }),
+    )
+
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon CTO')
+    await user.selectOptions(
+      within(panel).getByLabelText('Forme'),
+      within(panel).getByRole('option', { name: 'Un taux unique sur la plus-value' }),
+    )
+    await user.type(within(panel).getByLabelText(/^Taux/), '30{Enter}')
+
+    await waitFor(() => expect(written).not.toBeNull())
+    expect(declared).toBe(false)
+  })
+
+  it('sends a blank bracket bound as nothing, never as a zero', async () => {
+    // `Number('')` is `0`, and `0` is a perfectly valid bound — so a coerced
+    // blank would be stored as *up to 0 €* and the server would take it. The
+    // scalar fields are skipped when blank; a ladder has no skip.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+
+    let written: TaxationModelDraft | null = null
+    server.use(
+      http.post(ROUTES.taxationModels, async ({ request }) => {
+        written = (await request.json()) as TaxationModelDraft
+        return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
+      }),
+    )
+
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.selectOptions(
+      within(panel).getByLabelText('Forme'),
+      within(panel).getByRole('option', { name: 'Un barème sur la plus-value' }),
+    )
+    await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon barème')
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter une tranche' }))
+
+    // The bound of the lower rung is left blank; only its rate is typed.
+    await user.type(within(panel).getAllByLabelText('Taux de cette tranche')[0], '20')
+    await user.type(within(panel).getAllByLabelText('Taux de cette tranche')[1], '30')
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce modèle' }))
+
+    await waitFor(() =>
+      expect(written).toEqual({
+        name: 'Mon barème',
+        kind: 'bracketed_realised',
+        parameters: {
+          brackets: [
+            { upper_bound: null, rate: 0.2 },
+            { upper_bound: null, rate: 0.3 },
+          ],
+        },
+      }),
+    )
+  })
+})

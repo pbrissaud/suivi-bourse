@@ -229,7 +229,21 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
       {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
 
       {editor === null ? null : (
-        <div className="space-y-4 rounded-md border border-border p-3">
+        <div
+          className="space-y-4 rounded-md border border-border p-3"
+          // **Enter saves the model, and never the account.** This block sits
+          // inside `AccountForm`'s own `<form>` — a nested one is not HTML — so
+          // an Enter in any field here triggers that form's implicit submission:
+          // the account would be declared, the panel would shut, and the model
+          // the reader was halfway through typing would never be sent. The
+          // buttons below carry `type="button"` against the same hazard; this is
+          // the half of it no attribute can reach.
+          onKeyDown={(pressed) => {
+            if (pressed.key !== 'Enter' || pressed.shiftKey) return
+            pressed.preventDefault()
+            if (!write.isPending) write.mutate(editor)
+          }}
+        >
           <Labelled id="taxation-name" label="taxation.name">
             <Input
               id="taxation-name"
@@ -566,7 +580,16 @@ function round(value: number): number {
   return Math.round(value * 1e6) / 1e6
 }
 
+/**
+ * What was typed, as a number — and **`NaN` where nothing was typed**.
+ *
+ * `Number('')` is `0`, which is the trap: a bracket whose bound was left blank
+ * would be stored as *up to 0 €* and a blank rate as *0 %*, both of which the
+ * server accepts because both are real values. `NaN` serializes to `null`, which
+ * it refuses — the scalar fields earn that refusal by being skipped when blank,
+ * and the ladder has no *skip* to be skipped by.
+ */
 function toNumber(value: string): number {
-  const parsed = Number(value.trim().replace(',', '.'))
-  return Number.isFinite(parsed) ? parsed : 0
+  const typed = value.trim().replace(',', '.')
+  return typed === '' ? NaN : Number(typed)
 }
