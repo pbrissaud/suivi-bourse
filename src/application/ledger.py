@@ -86,10 +86,9 @@ def first_payments(store) -> Dict[str, date]:
     A ``WITHDRAWAL`` is not a payment and a ``BUY`` is not one either: what opens
     a wrapper is money coming in from outside.
     """
-    return {account: day for account, day in store.query(
+    return dict(store.query(
         "SELECT account, min(date) FROM event "
-        "WHERE event_type = 'DEPOSIT' GROUP BY account")
-        if day is not None}
+        "WHERE event_type = 'DEPOSIT' GROUP BY account"))
 
 
 def last_write(store) -> Optional[datetime]:

@@ -152,7 +152,6 @@ export function AccountForm({
   const carried = catalogue.data?.models.find((model) => model.id === taxationModel)
   const ageMatters = carried?.parameters.age_basis === 'opening'
 
-
   const remove = useMutation({
     mutationFn: (id: string) => api.removeAccount(id),
     onSuccess: () => {

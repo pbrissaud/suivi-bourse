@@ -355,14 +355,8 @@ def _with_account_facts(row: dict, carried: dict, opened_on: dict,
 
 
 def _declared(facts: dict) -> dict:
-    """The facts there are, and no member for the ones there are not.
-
-    **An absence reaches the reader as an absence** (#845, ADR-0044): an account
-    with no model, no declared opening date or no payment on record gets no
-    member rather than a `null` the front would have to tell from *not yet
-    read*. Written once, because it is one rule and both account payloads obey
-    it.
-    """
+    """The facts there are — **an absence reaches the reader as one** (#845,
+    ADR-0044), never as a `null` it would have to tell from *not yet read*."""
     return {name: value for name, value in facts.items() if value is not None}
 
 
