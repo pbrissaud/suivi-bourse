@@ -1,5 +1,56 @@
 # Changelog
 
+## [5.1.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.0.0...v5.1.0) (2026-09-13)
+
+
+### Features
+
+* **accounts:** the account type stops being a question ([#916](https://github.com/pbrissaud/suivi-bourse/issues/916)) ([#928](https://github.com/pbrissaud/suivi-bourse/issues/928)) ([38ed210](https://github.com/pbrissaud/suivi-bourse/commit/38ed210cdf8f26d90899d81d6747b58f729fa722))
+* **app:** the investment rhythm, measured on the buys ([#751](https://github.com/pbrissaud/suivi-bourse/issues/751)) ([#896](https://github.com/pbrissaud/suivi-bourse/issues/896)) ([da52d7d](https://github.com/pbrissaud/suivi-bourse/commit/da52d7d501f69dd52cf62fb4b56e38591fd103b7))
+* **dashboard:** the rhythm draws its twelve months ([#906](https://github.com/pbrissaud/suivi-bourse/issues/906)) ([798f33e](https://github.com/pbrissaud/suivi-bourse/commit/798f33e19d8763691596ac0a8aa62a97b4249d12))
+* **mcp:** a read-only MCP server exposing the portfolio ([#877](https://github.com/pbrissaud/suivi-bourse/issues/877)) ([90de760](https://github.com/pbrissaud/suivi-bourse/commit/90de7607cfdfd9325debe1286e8e7804a50a5219))
+* **taxation:** a taxation model per account, and the two tables it lives in ([#752](https://github.com/pbrissaud/suivi-bourse/issues/752)) ([#930](https://github.com/pbrissaud/suivi-bourse/issues/930)) ([140fd23](https://github.com/pbrissaud/suivi-bourse/commit/140fd237a7c04733fd5d6005bef58385c017eed9))
+
+
+### Bug Fixes
+
+* **api:** a refusal by design is neither fault ([#856](https://github.com/pbrissaud/suivi-bourse/issues/856)) ([#913](https://github.com/pbrissaud/suivi-bourse/issues/913)) ([d4a300a](https://github.com/pbrissaud/suivi-bourse/commit/d4a300a83d89a9866a8aa1775b33432a33b057e7))
+* **backfill:** a failed write does not move the anchor ([#853](https://github.com/pbrissaud/suivi-bourse/issues/853)) ([#909](https://github.com/pbrissaud/suivi-bourse/issues/909)) ([8bf7df5](https://github.com/pbrissaud/suivi-bourse/commit/8bf7df54107860b5a80f7d720af3856267d39350))
+* **scrape:** the re-arm is the last thing that puts a symbol back ([#855](https://github.com/pbrissaud/suivi-bourse/issues/855)) ([#914](https://github.com/pbrissaud/suivi-bourse/issues/914)) ([0d13008](https://github.com/pbrissaud/suivi-bourse/commit/0d13008d750848f29f2c1334586c1e455a42aaf0))
+* **store:** a deleted key is never handed to the next writer ([#785](https://github.com/pbrissaud/suivi-bourse/issues/785)) ([#908](https://github.com/pbrissaud/suivi-bourse/issues/908)) ([de6e0d4](https://github.com/pbrissaud/suivi-bourse/commit/de6e0d4124368de6c177ba7a27a3150190418081))
+* the eleven findings of the preview/v5 review ([#861](https://github.com/pbrissaud/suivi-bourse/issues/861)) ([#912](https://github.com/pbrissaud/suivi-bourse/issues/912)) ([45cc57b](https://github.com/pbrissaud/suivi-bourse/commit/45cc57bd743c426f29f8afcd1f422222ca90df97))
+* **web:** the same dash is the same grey ([#860](https://github.com/pbrissaud/suivi-bourse/issues/860)) ([#911](https://github.com/pbrissaud/suivi-bourse/issues/911)) ([1a21883](https://github.com/pbrissaud/suivi-bourse/commit/1a2188354a515fe0074f3d7dc6fc90cd0f69a8bf))
+* **web:** unblock the image build after a same-day lucide-react bump ([#885](https://github.com/pbrissaud/suivi-bourse/issues/885)) ([3af6af1](https://github.com/pbrissaud/suivi-bourse/commit/3af6af1f06eb24fd3880c5c5c9df1f3c4e95f1da))
+
+
+### Dependencies
+
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.8 ([#876](https://github.com/pbrissaud/suivi-bourse/issues/876)) ([a29f98d](https://github.com/pbrissaud/suivi-bourse/commit/a29f98d06b44e721f5f235f59a69bb492f5bb4d2))
+* **website:** update pnpm to v11.25.0 ([#892](https://github.com/pbrissaud/suivi-bourse/issues/892)) ([f0fb251](https://github.com/pbrissaud/suivi-bourse/commit/f0fb251dfeb9636980c8b83c0c3839dae621f79e))
+* **website:** update pnpm to v11.26.0 ([#924](https://github.com/pbrissaud/suivi-bourse/issues/924)) ([51313b7](https://github.com/pbrissaud/suivi-bourse/commit/51313b72f2c8ba9463789b937967318b12ff3f70))
+* **website:** update pnpm to v12 ([#901](https://github.com/pbrissaud/suivi-bourse/issues/901)) ([a759313](https://github.com/pbrissaud/suivi-bourse/commit/a759313308bbb28e61c386878a38943cd9f63a53))
+* **website:** update react monorepo to v19.3.0 ([#936](https://github.com/pbrissaud/suivi-bourse/issues/936)) ([6db560c](https://github.com/pbrissaud/suivi-bourse/commit/6db560cb754ce1a0515ca1d60c3102aa3fbdc04e))
+* **web:** update dependency @tanstack/react-query to v5.102.8 ([#881](https://github.com/pbrissaud/suivi-bourse/issues/881)) ([c524ce2](https://github.com/pbrissaud/suivi-bourse/commit/c524ce2eca136e81ff10e0c1216cb0ea929fcdc0))
+* **web:** update dependency @tanstack/react-router to v1.170.33 ([#923](https://github.com/pbrissaud/suivi-bourse/issues/923)) ([871b6d9](https://github.com/pbrissaud/suivi-bourse/commit/871b6d99c7d6e2c3645d3351ceea9bb4dde25339))
+* **web:** update dependency @tanstack/react-router to v1.170.34 ([#939](https://github.com/pbrissaud/suivi-bourse/issues/939)) ([a334e53](https://github.com/pbrissaud/suivi-bourse/commit/a334e53ba13927055e14f1293c6dc2c237f416b9))
+* **web:** update dependency @testing-library/user-event to v14.6.7 ([#900](https://github.com/pbrissaud/suivi-bourse/issues/900)) ([30cc625](https://github.com/pbrissaud/suivi-bourse/commit/30cc6258253c0f9786e7c4c80a25a9551743ed47))
+* **web:** update dependency @types/node to v26.4.0 ([#882](https://github.com/pbrissaud/suivi-bourse/issues/882)) ([6b537be](https://github.com/pbrissaud/suivi-bourse/commit/6b537be536a36122ef0a35a89f1c3bfb6c99c3c9))
+* **web:** update dependency @types/node to v26.4.1 ([#899](https://github.com/pbrissaud/suivi-bourse/issues/899)) ([0be8a5e](https://github.com/pbrissaud/suivi-bourse/commit/0be8a5e98326d9621832a50f30c249c22715480c))
+* **web:** update dependency @types/node to v26.5.0 ([#925](https://github.com/pbrissaud/suivi-bourse/issues/925)) ([52c77b8](https://github.com/pbrissaud/suivi-bourse/commit/52c77b802f131cc33e4866e4f0d8844f71f9699a))
+* **web:** update dependency @types/node to v26.5.1 ([#937](https://github.com/pbrissaud/suivi-bourse/issues/937)) ([2138940](https://github.com/pbrissaud/suivi-bourse/commit/2138940df64a5f462e4270835775979948b4cd96))
+* **web:** update dependency @types/react-dom to v19.2.6 ([#902](https://github.com/pbrissaud/suivi-bourse/issues/902)) ([48592c2](https://github.com/pbrissaud/suivi-bourse/commit/48592c26e06500ee1c5f600be9951eefa429cd81))
+* **web:** update dependency @types/react-dom to v19.2.7 ([#903](https://github.com/pbrissaud/suivi-bourse/issues/903)) ([e169257](https://github.com/pbrissaud/suivi-bourse/commit/e169257c0db1e665637c4d1a7a66025baf47c5fc))
+* **web:** update dependency @vitejs/plugin-react to v6.1.1 ([#883](https://github.com/pbrissaud/suivi-bourse/issues/883)) ([f9fc1fd](https://github.com/pbrissaud/suivi-bourse/commit/f9fc1fd036b39b701820e89e9d05cdfb1478fcb7))
+* **web:** update dependency intl-messageformat to v11.2.14 ([#870](https://github.com/pbrissaud/suivi-bourse/issues/870)) ([f2e11be](https://github.com/pbrissaud/suivi-bourse/commit/f2e11be35e62651e36c8c71ad3393c27b5353241))
+* **web:** update dependency lucide-react to v1.37.0 ([#891](https://github.com/pbrissaud/suivi-bourse/issues/891)) ([fe448a5](https://github.com/pbrissaud/suivi-bourse/commit/fe448a53ec262f755e26cd53978d2d79de7d6527))
+* **web:** update dependency lucide-react to v1.38.0 ([#897](https://github.com/pbrissaud/suivi-bourse/issues/897)) ([25a467a](https://github.com/pbrissaud/suivi-bourse/commit/25a467a658fbfedb4f8881ca5e6969d7902fac87))
+* **web:** update dependency lucide-react to v1.39.0 ([#884](https://github.com/pbrissaud/suivi-bourse/issues/884)) ([fe3f549](https://github.com/pbrissaud/suivi-bourse/commit/fe3f5495a68e288636730a2d3bf949bd3267d28d))
+* **web:** update dependency lucide-react to v1.40.0 ([#898](https://github.com/pbrissaud/suivi-bourse/issues/898)) ([ad5b0f5](https://github.com/pbrissaud/suivi-bourse/commit/ad5b0f52279a27baf5ad1dbeb6e5db17640515d2))
+* **web:** update dependency vite to v8.2.2 ([#871](https://github.com/pbrissaud/suivi-bourse/issues/871)) ([7b7531d](https://github.com/pbrissaud/suivi-bourse/commit/7b7531d2e3d3350f442df07634e9aec48d1a9ff6))
+* **web:** update dependency vitest to v4.1.11 ([#878](https://github.com/pbrissaud/suivi-bourse/issues/878)) ([ae54032](https://github.com/pbrissaud/suivi-bourse/commit/ae54032cf25106b11e4d9dfd6f92f1e6f497f5f0))
+* **web:** update react monorepo to v19.3.0 ([#938](https://github.com/pbrissaud/suivi-bourse/issues/938)) ([39c912c](https://github.com/pbrissaud/suivi-bourse/commit/39c912ccd5d62bc5df6bd3aee1758b3610b4e3e1))
+* **web:** update testing-library monorepo ([#879](https://github.com/pbrissaud/suivi-bourse/issues/879)) ([0674c55](https://github.com/pbrissaud/suivi-bourse/commit/0674c553044e5c4eb2f7594917bc3fc8ee0269bd))
+
 ## [5.0.0](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.2...v5.0.0) (2026-08-31)
 
 
