@@ -111,6 +111,17 @@ def unprocessable_model(detail: str, key: Optional[str] = None):
                    key=key or None)
 
 
+def unprocessable_account(detail: str, key: Optional[str] = None):
+    """422 — the body parsed, and a fact declared about the account is not one.
+
+    ``unprocessable_model``'s own shape and its identifier (#918): the reader is
+    holding a form they filled, and *this field is not a day that exists* is the
+    whole of the news.
+    """
+    return problem(422, 'Invalid account', detail, TYPE_BAD_REQUEST,
+                   key=key or None)
+
+
 def model_in_use(detail: str, accounts: Sequence[str]):
     """409 — the model cannot go: these accounts carry it (#752).
 

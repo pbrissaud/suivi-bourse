@@ -5404,3 +5404,136 @@ def test_a_refused_removal_writes_none_of_its_three_statements(tmp_path):
     assert refused.status_code == 409
     assert opened.query("SELECT taxation_model FROM account_fact "
                         "WHERE account = 'pea'") == [(key,)]
+
+
+# --------------------------------------------------------------------- #
+# The opening date an account declares (#918)
+# --------------------------------------------------------------------- #
+
+_PEA_PAYMENTS = (
+    "date,event_type,amount,account\n"
+    "2022-05-10,DEPOSIT,2000,pea\n"
+    "2019-03-04,DEPOSIT,1000,pea\n"
+)
+
+
+def test_an_account_declares_the_day_it_was_opened(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    declared = client.post('/api/accounts',
+                           json={'id': 'pea', 'label': 'PEA',
+                                 'opened_on': '2015-06-01'})
+
+    assert declared.status_code == 201
+    assert declared.get_json()['opened_on'] == '2015-06-01'
+    # A calendar day stays a day: the column is a `DATE`, and nothing on the
+    # way in or out turns it into an instant.
+    assert opened.query('SELECT account, opened_on FROM account_fact') == [
+        ('pea', date(2015, 6, 1))]
+    listed = client.get('/api/accounts').get_json()['accounts']
+    assert {row['id']: row.get('opened_on') for row in listed} == {
+        'pea': '2015-06-01'}
+
+
+def test_an_account_with_no_opening_date_publishes_no_member(tmp_path):
+    """An account without one is normal — and the absence reaches the reader
+    as an absence (#845, ADR-0044)."""
+    client, opened = build_client_and_store(tmp_path)
+
+    declared = client.post('/api/accounts', json={'id': 'pea', 'label': 'PEA'})
+
+    assert 'opened_on' not in declared.get_json()
+    assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
+    listed = client.get('/api/accounts').get_json()['accounts']
+    assert all('opened_on' not in row for row in listed)
+
+
+def test_the_read_carries_the_earliest_payment_the_form_pre_fills_with(
+        tmp_path):
+    """**Served, never stored** — a derived figure beside a declared one.
+
+    It is the account's earliest declared payment, which the form offers as the
+    opening date and the owner accepts or corrects. Nothing writes it anywhere:
+    a declared fact and a derived one do not share a row (ADR-0006).
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=_PEA_PAYMENTS)
+
+    listed = client.get('/api/accounts').get_json()['accounts']
+
+    assert {row['id']: row.get('first_payment') for row in listed} == {
+        'pea': '2019-03-04'}
+    assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
+
+
+def test_the_stored_date_is_what_was_submitted_and_is_never_re_derived(
+        tmp_path):
+    """The pre-fill is the **interface's** offer, and it stops moving once
+    accepted: a later payment older than it does not rewrite the row."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=_PEA_PAYMENTS)
+    client.patch('/api/accounts/pea', json={'opened_on': '2019-03-04'})
+
+    written = client.post('/api/events',
+                          json={'date': '2017-01-05', 'event_type': 'DEPOSIT',
+                                'amount': 500, 'account': 'pea'})
+    assert written.status_code == 201
+
+    assert opened.query('SELECT opened_on FROM account_fact') == [
+        (date(2019, 3, 4),)]
+    listed = client.get('/api/accounts').get_json()['accounts']
+    (pea,) = [row for row in listed if row['id'] == 'pea']
+    assert (pea['opened_on'], pea['first_payment']) == \
+        ('2019-03-04', '2017-01-05')
+
+
+def test_renaming_an_account_leaves_the_opening_date_alone(tmp_path):
+    """Absent is *leave it alone*, `null` is *take it away* — the model's own
+    two gestures, and for the same reason."""
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'opened_on': '2015-06-01'})
+
+    renamed = client.patch('/api/accounts/pea', json={'label': 'Mon PEA'})
+    assert renamed.get_json()['opened_on'] == '2015-06-01'
+
+    cleared = client.patch('/api/accounts/pea', json={'opened_on': None})
+    assert 'opened_on' not in cleared.get_json()
+    assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
+
+
+def test_a_malformed_opening_date_is_refused_and_writes_no_account(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    for nonsense in ('01/06/2015', '2015-02-30', 2015, '2015-06-01T00:00:00Z'):
+        refused = client.post('/api/accounts',
+                              json={'id': 'pea', 'label': 'PEA',
+                                    'opened_on': nonsense})
+        assert refused.status_code == 422, nonsense
+        body = refused.get_json()
+        assert body['type'] == '/problems/bad-request'
+        assert body['key'] == 'opened_on'
+
+    assert opened.query("SELECT count(*) FROM account WHERE id = 'pea'") == [(0,)]
+
+
+def test_a_declared_date_later_than_the_first_payment_stands_as_an_advisory(
+        tmp_path):
+    """A wrapper cannot receive money before it exists, and the app says so
+    without deciding which of the two dates is the wrong one."""
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=_PEA_PAYMENTS)
+    client.patch('/api/accounts/pea', json={'opened_on': '2021-01-01'})
+
+    standing = client.get('/api/advisories').get_json()
+
+    (one,) = [row for row in standing
+              if row['kind'] == 'opened_after_first_payment']
+    assert one['subject'] == 'accounts'
+    assert one['detail']['account'] == 'pea'
+    assert one['detail']['opened_on'] == '2021-01-01'
+    assert one['detail']['first_payment'] == '2019-03-04'
+
+    client.patch('/api/accounts/pea', json={'opened_on': '2015-06-01'})
+    assert [row for row in client.get('/api/advisories').get_json()
+            if row['kind'] == 'opened_after_first_payment'] == []

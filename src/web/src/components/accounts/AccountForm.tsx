@@ -37,7 +37,7 @@
  *    ticket is named after.
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Refusal } from '@/components/Refusal'
 import { TaxationModelField } from '@/components/accounts/TaxationModelField'
@@ -76,11 +76,13 @@ const REFUSALS: Record<Exclude<Removal['kind'], 'offered'>, MessageKey> = {
 interface Draft {
   id: string
   label: string
+  /** The declared opening day, `''` for none — a `YYYY-MM-DD`, as it is stored. */
+  openedOn: string
 }
 
 type FieldName = keyof Draft
 
-const EMPTY: Draft = { id: '', label: '' }
+const EMPTY: Draft = { id: '', label: '', openedOn: '' }
 
 interface AccountFormProps {
   open: boolean
@@ -138,6 +140,17 @@ export function AccountForm({
   // one a declaration opens on.
   const [taxationModel, setTaxationModel] = useState<string | null>(null)
 
+  // **The same query as the field below**, which react-query serves from one
+  // cache. What it decides is whether the opening date is asked for at all, and
+  // the answer is **the model's own `age_basis`** rather than its kind: a shape
+  // that counts years from the *first payment* — which is what a PEA does, and
+  // what `taxation.py` warns is not the opening date — has an age threshold and
+  // still no use for this date. Asked on the kind, that reader would be filling
+  // in a day that moves no figure, under a hint telling them it moves one.
+  // Nothing at all while the read is in flight (ADR-0026).
+  const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: api.taxationModels })
+  const carried = catalogue.data?.models.find((model) => model.id === taxationModel)
+  const ageMatters = carried?.parameters.age_basis === 'opening'
 
   const remove = useMutation({
     mutationFn: (id: string) => api.removeAccount(id),
@@ -177,6 +190,13 @@ export function AccountForm({
       account === null
         ? EMPTY
         : {
+            // **The offer is the interface's, and the declaration wins it.**
+            // Where the account declared a day, that day is what shows; where it
+            // declared none, the form offers its earliest declared payment,
+            // which is the guess its owner accepts nine times out of ten. Either
+            // way nothing is written until they submit — and what is then
+            // written is what they submitted, never re-derived (#918).
+            openedOn: account.opened_on ?? account.first_payment ?? '',
             id: account.id,
             // **The seeded name opens empty.** `Default account` is what the
             // *server* wrote about a row nobody declared, so it is not a value
@@ -215,12 +235,23 @@ export function AccountForm({
     // keeps what is there, so clearing the field cannot rewrite the row's name
     // to its own identifier behind the reader's back.
     const label = draft.label.trim()
+    // **Sent only where the field was shown, and only where it moved** (#918).
+    // Shown and left on the pre-filled day, it is sent: submitting is how the
+    // offer becomes a declaration. Never shown, it is absent — a client that
+    // did not ask the question must not answer it, and the server reads an
+    // absent member as *leave it alone*. Emptied, it is `null`: taking the
+    // declaration away is a gesture, and it is that one.
+    const opening =
+      ageMatters && draft.openedOn !== (account?.opened_on ?? '')
+        ? { opened_on: draft.openedOn || null }
+        : {}
     write.mutate(
       account === null
         ? {
             id,
             label: label || id,
             ...(taxationModel === null ? {} : { taxation_model: taxationModel }),
+            ...opening,
             // Sent only where the box was shown **and** left ticked: `reassign`
             // is a request, and a client that never asks must never perform one.
             ...(offered && reassign ? { reassign: true } : {}),
@@ -234,6 +265,7 @@ export function AccountForm({
             ...(taxationModel === (account.taxation_model ?? null)
               ? {}
               : { taxation_model: taxationModel }),
+            ...opening,
           },
     )
   }
@@ -304,6 +336,28 @@ export function AccountForm({
           </Field>
 
           <TaxationModelField value={taxationModel} onChange={setTaxationModel} />
+
+          {/* **Asked for only where it changes a figure**: the shape this
+              account carries counts its threshold from the wrapper's age, and
+              nothing else on this panel does. */}
+          {ageMatters ? (
+            <Field name="openedOn" label="accounts.form.openedOn" optional>
+              {(id) => (
+                <>
+                  <Input
+                    id={id}
+                    type="date"
+                    value={draft.openedOn}
+                    aria-describedby={`${id}-hint`}
+                    onChange={(changed) => set('openedOn', changed.target.value)}
+                  />
+                  <p id={`${id}-hint`} className="max-w-prose text-xs text-muted-foreground">
+                    {t('accounts.form.openedOn.hint')}
+                  </p>
+                </>
+              )}
+            </Field>
+          ) : null}
 
           {offered ? (
             <div className="space-y-1 rounded-md border border-border p-3">

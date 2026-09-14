@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from logfmt_logger import getLogger
 
+from application import accounts
 from application import instants
+from application import ledger
 
 logger = getLogger("advisories")
 
@@ -17,6 +19,8 @@ SUBJECT_PORTFOLIO = 'portfolio'
 SUBJECT_ACCOUNTS = 'accounts'
 
 CASH_SHARE = 'cash_share'
+#: A declared opening date **later** than the account's first declared payment.
+OPENED_AFTER_FIRST_PAYMENT = 'opened_after_first_payment'
 
 CASH_SHARE_THRESHOLD = 0.10
 
@@ -105,8 +109,57 @@ def _say_cash_share(detail: Mapping[str, Any]) -> str:
         f"uninvested cash. Nothing is wrong with that if it is deliberate.")
 
 
+def _observe_opened_after_first_payment(opened, now: datetime) -> List[Advisory]:
+    """A wrapper that received money before it existed (#918).
+
+    One of the two dates is wrong and the app cannot say which — a transfer
+    carries a real opening date the ledger has no event for, and a typed year is
+    a typed year — so the advisory **states the contradiction** and stops there.
+
+    The other direction raises nothing: a date *earlier* than the first payment
+    is exactly what a wrapper transferred to a new broker looks like, which is
+    the case the declared date exists for.
+    """
+    payments = ledger.first_payments(opened)
+    # Both halves are read through the module that owns them rather than
+    # re-spelled here: a second `SELECT … FROM account_fact` would be a second
+    # place to change the day the row's own rules move.
+    labels = {row.id: row.label for row in accounts.read_accounts(opened)}
+
+    standing: List[Advisory] = []
+    for account, opened_on in sorted(
+            accounts.opening_dates_by_account(opened).items()):
+        label = labels.get(account)
+        first = payments.get(account)
+        if first is None or opened_on <= first:
+            continue
+        detail = {
+            'account': account,
+            'label': label,
+            'opened_on': instants.iso(opened_on),
+            'first_payment': instants.iso(first),
+        }
+        standing.append(Advisory(
+            key=f'{OPENED_AFTER_FIRST_PAYMENT}:{account}',
+            kind=OPENED_AFTER_FIRST_PAYMENT,
+            subject=SUBJECT_ACCOUNTS,
+            detail=detail,
+            message=_say_opened_after_first_payment(detail),
+            observed_at=now,
+        ))
+    return standing
+
+
+def _say_opened_after_first_payment(detail: Mapping[str, Any]) -> str:
+    return (
+        f"{detail['label']} is declared as opened on {detail['opened_on']}, "
+        f"and it received a payment on {detail['first_payment']}. One of the "
+        f"two is wrong.")
+
+
 OBSERVATIONS = (
     _observe_cash_share,
+    _observe_opened_after_first_payment,
 )
 
 
@@ -175,6 +228,7 @@ def acknowledge(opened, key: str,
 __all__ = [
     'Advisory', 'Acknowledgement', 'UnknownAdvisory',
     'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD',
+    'OPENED_AFTER_FIRST_PAYMENT',
     'SUBJECT_HEALTH', 'SUBJECT_INSTALLATION', 'SUBJECT_PORTFOLIO',
     'SUBJECT_ACCOUNTS',
     'OBSERVATIONS', 'acknowledgements', 'standing', 'listing', 'acknowledge',

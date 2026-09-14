@@ -11,10 +11,12 @@ What is deliberately *not* asserted is that a function was called. The rules are
 rules about rows and about which gestures the store refuses.
 """
 import json
+from datetime import date, datetime, timezone
 
 import pytest
 
 from application import accounts as accounts_module
+from application import ledger
 from application import store as store_module
 from application import taxation
 
@@ -365,3 +367,95 @@ def test_a_bracket_with_no_bound_where_one_is_needed_is_refused():
             {'upper_bound': 10_000, 'rate': None},
             {'upper_bound': None, 'rate': 0.3},
         ]})
+
+
+# --------------------------------------------------------------------------- #
+# The opening date: declared, and only declared (#918)
+# --------------------------------------------------------------------------- #
+
+def test_an_account_declares_the_day_it_was_opened(store):
+    """A **day**, held as one, and read back as one.
+
+    The date the owner cares about is exactly the one no event carries — a PEA
+    opened in 2015 and transferred to a broker whose ledger starts in 2022 —
+    which is why it is declared rather than derived.
+    """
+    accounts_module.create_account(store, 'pea', 'PEA')
+
+    assert accounts_module.set_opened_on(
+        store, 'pea', date(2015, 6, 1)) == date(2015, 6, 1)
+    assert store.query('SELECT opened_on FROM account_fact') == [
+        (date(2015, 6, 1),)]
+    assert accounts_module.opening_dates_by_account(store) == {
+        'pea': date(2015, 6, 1)}
+
+
+def test_an_account_with_no_opening_date_has_no_row_at_all(store):
+    """An account without one is ordinary — no row, no null, no sentinel."""
+    accounts_module.create_account(store, 'pea', 'PEA')
+
+    assert accounts_module.opening_dates_by_account(store) == {}
+    assert store.query('SELECT count(*) FROM account_fact')[0][0] == 0
+
+
+def test_the_two_facts_share_a_row_and_outlive_each_other(store):
+    """One row per account, and taking one fact away leaves the other alone.
+
+    This is the case ``set_taxation_model``'s own docstring was written against:
+    the row survives its own emptiness only while something is still declared in
+    it, and it goes when nothing is.
+    """
+    accounts_module.create_account(store, 'pea', 'PEA')
+    model = accounts_module.create_model(
+        store, 'Flat', taxation.FLAT_REALISED, {'rate': 0.3})
+
+    accounts_module.set_taxation_model(store, 'pea', model.id)
+    accounts_module.set_opened_on(store, 'pea', date(2015, 6, 1))
+    assert store.query(
+        'SELECT taxation_model, opened_on FROM account_fact') == [
+            (model.id, date(2015, 6, 1))]
+
+    accounts_module.set_taxation_model(store, 'pea', None)
+    assert store.query('SELECT taxation_model, opened_on FROM account_fact') \
+        == [(None, date(2015, 6, 1))]
+
+    accounts_module.set_opened_on(store, 'pea', None)
+    assert store.query('SELECT count(*) FROM account_fact')[0][0] == 0
+
+
+def test_an_opening_date_that_is_not_a_day_is_refused(store):
+    """The column holds a day, and a string that looks like one is not one."""
+    accounts_module.create_account(store, 'pea', 'PEA')
+
+    with pytest.raises(accounts_module.AccountSourceError):
+        accounts_module.set_opened_on(store, 'pea', '2015-06-01')
+    # And an **instant** is not one either, though it is a `date` to Python:
+    # the column would truncate it, and the guard that says a day stays a day
+    # would be the thing that let one through.
+    with pytest.raises(accounts_module.AccountSourceError):
+        accounts_module.set_opened_on(
+            store, 'pea', datetime(2015, 6, 1, 8, 30, tzinfo=timezone.utc))
+    assert store.query('SELECT count(*) FROM account_fact')[0][0] == 0
+
+
+def test_the_earliest_payment_is_a_deposit_and_nothing_else(store):
+    """What the form offers is a figure of the **ledger**, per account.
+
+    A `BUY` is money moving inside the wrapper and a `WITHDRAWAL` is money
+    leaving it; neither opens anything. And it is derived on every read: no
+    column holds it, because a declared fact and a derived one do not share a
+    row (ADR-0006).
+    """
+    accounts_module.create_account(store, 'pea', 'PEA')
+    accounts_module.create_account(store, 'cto', 'CTO')
+    for key, (day, kind, account) in enumerate((
+            ('2022-03-04', 'BUY', 'pea'),
+            ('2022-05-10', 'DEPOSIT', 'pea'),
+            ('2023-01-02', 'DEPOSIT', 'pea'),
+            ('2021-01-02', 'WITHDRAWAL', 'cto'))):
+        store.execute(
+            'INSERT INTO event (id, date, event_type, account, amount) '
+            'VALUES (?, CAST(? AS DATE), ?, ?, 100)',
+            [key, day, kind, account])
+
+    assert ledger.first_payments(store) == {'pea': date(2022, 5, 10)}
