@@ -85,10 +85,14 @@ A regime is added in four steps and no others:
    charged, one saying what it does not cover. They are what the front and the agent surface
    read; a kind without them is a figure nobody can qualify.
 
-Nothing above is a migration. The DDL is applied with `IF NOT EXISTS` and there is no
-migration machinery, so the account-level facts of #752 go in a **new table** rather than in
-new columns — and a kind added in version *n+1* exists on a store created at version *n*
-because rows simply do not use it.
+Nothing above is a migration, and since
+[ADR-0045](./0045-the-store-learns-what-generation-it-is.md) that is a choice rather than
+a fact about what was possible. The account-level facts of #752 go in a **new table**
+rather than in new columns for [ADR-0044](./0044-a-new-fact-lands-in-a-new-table.md)'s
+three reasons — own writer, own absence, own lifetime — none of which mentions
+migrations. And a kind added in version *n+1* exists on a store created at version *n*
+because `parameters` is one JSON column and rows simply do not use it, which is a
+property of the shape and not of the DDL.
 
 ## The model is a projection, and the tax return is not its business
 

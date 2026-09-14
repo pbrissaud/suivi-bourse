@@ -65,7 +65,7 @@ def stamp(store) -> Optional[str]:
     """A fingerprint of the whole ledger, for the snapshot's cache key."""
     (digest,) = store.query(_LEDGER_DIGEST)[0:1][0]
     declared = store.query(
-        'SELECT id, type, label FROM account '
+        'SELECT id, label FROM account '
         'WHERE id <> ? ORDER BY id', [DEFAULT_ACCOUNT])
     if digest is None and not declared:
         return None

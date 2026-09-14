@@ -63,13 +63,18 @@ below.
   offers *Acknowledge 30 days*, and says so on the card — it is put to sleep, never
   ended, and the condition itself ends when the owner invests the cash or the price
   starts moving again.
-- **The advisory acknowledgement is a new table, not a new column.** The DDL is applied
+- **The advisory acknowledgement is a new table, not a new column.** ~~The DDL is applied
   with `IF NOT EXISTS` and there is no migration machinery, so a column added to
-  `installation_fact` would exist on no store created before it. `advisory_ack` is
-  created on an existing store like any other table, and it carries the expiry that
-  `installation_fact` deliberately does not. The count of tables the product declares
-  goes from eleven to twelve, and the comment in `store.py` that calls the count
-  meaningful moves with it.
+  `installation_fact` would exist on no store created before it.~~
+  **Amended by [ADR-0045](./0045-the-store-learns-what-generation-it-is.md)**: schema
+  steps exist, so that column is now possible — and the decision does not move, because
+  it never needed the impossibility. `advisory_ack` is its own table for the reason
+  [ADR-0044](./0044-a-new-fact-lands-in-a-new-table.md) states at length: it has its own
+  writer, its own absence and **its own lifetime**, carrying the expiry that
+  `installation_fact` deliberately does not. An acknowledgement that wakes up is not a
+  column on a fact that never does. The count of tables the product declares goes from
+  eleven to twelve here, and the comment in `store.py` that calls the count meaningful
+  moves with it.
 - **An advisory is still read beside the figure it comments on.** The chip on the account
   and the chip on the security stay: they are the *reading*, the panel is the *inventory*.
   What the chip never offers is the acknowledgement — one fact cannot propose two

@@ -20,9 +20,9 @@ NOW = datetime(2026, 8, 26, 8, 10, tzinfo=timezone.utc)
 
 def _account(opened, identifier: str, label: str) -> None:
     opened.execute(
-        'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
+        'INSERT INTO account (id, label) VALUES (?, ?) '
         'ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label',
-        [identifier, 'CTO', label])
+        [identifier, label])
 
 
 def _metrics(opened, account: str, day: date, cash: float,
@@ -44,19 +44,25 @@ def _keys(found):
 # The table: one of fourteen, and it carries the expiry
 # --------------------------------------------------------------------------- #
 
-def test_the_product_declares_fourteen_tables_and_one_of_them_is_the_ack():
+def test_the_product_declares_fifteen_tables_and_one_of_them_is_the_ack():
     """ADR-0037's own clause, on the source rather than in prose.
 
     The acknowledgement is a **table** and not a column on ``installation_fact``:
     a declared fact is its own thing, with its own writer, its own absence and
     its own lifetime (ADR-0044).
 
-    **Fourteen since #752**, and the count is a number this suite states
-    deliberately rather than a constant nobody may change: that ticket added
-    ``taxation_model`` and ``account_fact``, and said by how much in its own
-    acceptance criteria.
+    **Fifteen since #926**, and the count is a number this suite states
+    deliberately rather than a constant nobody may change: #752 added
+    ``taxation_model`` and ``account_fact``, #926 added ``schema_step``, and each
+    said by how much in its own acceptance criteria.
+
+    ADR-0037's clause survives #926 intact, and that is the point worth pinning
+    here: schema steps exist now (ADR-0045), so ``acknowledged_at`` *could* be a
+    column on ``installation_fact``. It is still a table, because the reason was
+    never that a column was impossible — it was that a declared fact has its own
+    writer, its own absence and its own lifetime.
     """
-    assert len(store_module.TABLES) == 14
+    assert len(store_module.TABLES) == 15
     assert 'advisory_ack' in store_module.TABLES
 
 

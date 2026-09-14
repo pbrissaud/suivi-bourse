@@ -55,6 +55,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0042](./0042-a-taxation-model-is-a-closed-kind.md) | A taxation model is a closed `kind`, and the app ships no tax table |
 | [0043](./0043-the-account-type-stops-being-a-question.md) | The account type stops being a question |
 | [0044](./0044-a-new-fact-lands-in-a-new-table.md) | A new fact lands in a new table, never in a new column |
+| [0045](./0045-the-store-learns-what-generation-it-is.md) | The store learns what generation it is, and gains a way to move between two |
 
 > These records describe **v5**, and v5 has landed: `master` carries it, so a record that
 > contradicts the code is no longer a plan — it is a **documentation defect**, and it is

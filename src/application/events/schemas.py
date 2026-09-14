@@ -251,11 +251,14 @@ class Timeline:
 class Account:
     """A declared account — a row of the store's ``account`` table (issue #698).
 
-    **No ``type``** (#916, ADR-0043). The column is still in the store — the DDL
-    runs with ``IF NOT EXISTS``, it is ``NOT NULL``, and there is no migration
-    machinery to drop it until #926 — but nothing asks for it, nothing serves it
-    and nothing renders it, so a reader that carried it would be carrying a value
-    no reader has.
+    **No ``type``** (#916, ADR-0043), and since #926 none in the store either:
+    it was the first schema step's whole errand (ADR-0045). Nothing asks for it,
+    nothing serves it and nothing renders it.
+
+    ``ACCOUNT_FILE_COLUMNS`` above still names one, and that is not a leftover:
+    it is the header of the **v4 accounts file**, which is a shape this app
+    recognises in order to refuse it. A format read from outside does not follow
+    the store's schema.
     """
     id: str
     label: str = ''

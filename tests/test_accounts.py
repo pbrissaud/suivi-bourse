@@ -89,9 +89,9 @@ def _declare(store, text):
 
 
 def _accounts(store):
-    """Every account row, as ``(id, type, label)`` tuples."""
+    """Every account row, as ``(id, label)`` tuples — two columns since #926."""
     return store.query(
-        'SELECT id, type, label FROM account ORDER BY id')
+        'SELECT id, label FROM account ORDER BY id')
 
 
 def _event_accounts(store):
@@ -115,7 +115,7 @@ def test_a_v4_single_account_install_imports_untouched(store, tmp_path):
     assert len(written) == 2
     assert _event_accounts(store) == [DEFAULT_ACCOUNT, DEFAULT_ACCOUNT]
     # The seeded row is the whole declaration, and nothing else appeared.
-    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account')]
+    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'Default account')]
     assert accounts_module.declared_portfolio(store) is None
 
 

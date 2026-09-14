@@ -73,9 +73,12 @@ the conclusion, which is what #751 wanted from them to begin with.
   is not.
 - **Nothing is stored.** The figures are derived on every read, like the advisories, for
   the reason that module already gives — there is nothing a row could know that the figures
-  do not. The DDL runs with `IF NOT EXISTS` and there is no migration machinery, so a table
-  added now would exist on no store created before it; and twelve months of buys is a cheap
-  replay.
+  do not, and twelve months of buys is a cheap replay. ~~The DDL runs with `IF NOT EXISTS`
+  and there is no migration machinery, so a table added now would exist on no store created
+  before it.~~ **Amended by [ADR-0045](./0045-the-store-learns-what-generation-it-is.md)**,
+  which was never the argument anyway: a *table* was always addable under
+  `IF NOT EXISTS`, and what the sentence actually meant was that storing these figures
+  would put a derived value where a declaration belongs (ADR-0006). That holds unchanged.
 - **The calculation is a pure module** in the sense `CLAUDE.md` gives the word: no store,
   no yfinance, `now` injected. The purity guard that already runs over the source holds it.
 - **`/api` gains a route, the tool surface gains a sixth tool, and the order matters.**

@@ -112,13 +112,19 @@ and on the front's `Account`, and `default_is_declared` rewritten to read the la
 Every install stops being asked, and nothing visible remains. New rows are written `OTHER`,
 the value the seed already carries.
 
-**A later ticket removes the column**, and it introduces the migration machinery this
+**A later ticket removes the column**, and it introduces the schema-step machinery this
 project has never had — which is a reversal of a rule stated in `CLAUDE.md`, leaned on by
 five records and asserted by name in nine tests, and it gets **its own ADR**. Splitting it
 this way is what keeps that decision from being made under a milestone's pressure, for the
 sake of a column nobody reads. The column is also the ideal first case for the machinery:
 a removal with no reader, and therefore no risk, to prove the mechanism before anything
 that matters is handed to it.
+
+> **That ticket was #926 and it has landed**
+> ([ADR-0045](./0045-the-store-learns-what-generation-it-is.md)). The column is gone and
+> `drop_account_type` is the first entry of `store.STEPS`. The split did what it was for:
+> the reversal was argued on its own, and the first thing the mechanism was handed was a
+> column with no reader.
 
 ## Consequences
 

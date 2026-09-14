@@ -143,9 +143,19 @@ advisories together. There is no banner and no status dot.
   in bulk, addresses no row by its key, and is a module of its own precisely so
   that a reader counting the writers finds it. `.github/scripts/conventions.sh`
   names the two on the source, and there is no third.
-- **The DDL is applied with `IF NOT EXISTS` and there is no migration
-  machinery.** A new column would exist on no store created before it — so derive
-  at read time rather than adding one.
+- **The DDL is applied with `IF NOT EXISTS`, and what it cannot express is a
+  *step*** (ADR-0045, #926). The DDL stays the first answer: a new table costs
+  nothing on a store that predates it. Dropping a column and renaming one are the
+  two gestures it cannot express, and they live in **one ordered, append-only
+  list** — `store.STEPS`, run at boot right after the DDL, one transaction and one
+  mark per step, forward only. `.github/scripts/conventions.sh` holds it on the
+  source: `ALTER TABLE` outside `store.py` is a schema change no store records
+  having run. **A step's name is its identity forever**, and a released one is
+  never edited or renamed. Altering a table something references is `rebuilding`,
+  which asks the catalogue who those are — so a step is two lines, and there are
+  no migration files. Deriving at read time is still the answer wherever it
+  is already used — what changed is that *not deriving* stopped being forbidden,
+  and a mechanism being available is not a reason to route through it.
 - **The pure modules stay pure** (`scheduling`, `performance`, `carrying`,
   `retention`, `fx`, `boot_env`, `mounts`, `market_info`, `build_info`): no
   store, no yfinance, `now` injected.

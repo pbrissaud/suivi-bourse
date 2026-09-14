@@ -3,6 +3,7 @@ import math
 import os
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -27,7 +28,6 @@ class StoreUnavailable(Exception):
 _DDL_DECLARED = """
 CREATE TABLE IF NOT EXISTS account (
     id         VARCHAR PRIMARY KEY,
-    type       VARCHAR NOT NULL,                    -- PEA | CTO | …
     label      VARCHAR NOT NULL);
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 -- `parameters` is **one JSON value in one column** and not a column per field:
 -- ADR-0042 refuses a new nullable column per parameter, which would make the
 -- absent case indistinguishable from the unset one — and it is what makes a
--- kind added in version n+1 an addition rather than a migration.
+-- kind added in version n+1 an addition rather than a schema step to write.
 CREATE TABLE IF NOT EXISTS taxation_model (
     id          VARCHAR PRIMARY KEY,
     name        VARCHAR NOT NULL,
@@ -135,6 +135,15 @@ CREATE TABLE IF NOT EXISTS advisory_ack (
     key              VARCHAR PRIMARY KEY,
     acknowledged_at  TIMESTAMPTZ NOT NULL,
     expires_at       TIMESTAMPTZ NOT NULL);
+
+-- **What generation this store is** (#926, ADR-0045). One row per applied step,
+-- and the *absence* of a row is the first generation: every store in the wild
+-- predates this table, so no mark is the mark. Created by the DDL like any
+-- other table, which is what lets :func:`apply_steps` ask the question a line
+-- later on a file that had never heard of it.
+CREATE TABLE IF NOT EXISTS schema_step (
+    step        VARCHAR PRIMARY KEY,
+    applied_at  TIMESTAMPTZ NOT NULL);
 """
 
 DDL = ''.join((
@@ -151,7 +160,7 @@ TABLES = (
     'position', 'account_state',
     'symbol_quote', 'price_point',
     'account_metrics', 'portfolio_totals',
-    'setting', 'installation_fact', 'advisory_ack',
+    'setting', 'installation_fact', 'advisory_ack', 'schema_step',
 )
 
 #: The tables whose surrogate key this store hands out — see
@@ -159,7 +168,7 @@ TABLES = (
 #: so: every other table is keyed by something the domain already names.
 KEYED_TABLES = ('event',)
 
-DEFAULT_ACCOUNT_ROW = ('default', 'OTHER', 'Default account')
+DEFAULT_ACCOUNT_ROW = ('default', 'Default account')
 
 
 class Store:
@@ -305,6 +314,139 @@ def file_size(path: Path) -> Optional[int]:
     return total if seen else None
 
 
+# --------------------------------------------------------------------------- #
+# The steps: how this store moves from one generation to the next (ADR-0045)
+# --------------------------------------------------------------------------- #
+
+@contextmanager
+def rebuilding(connection, table: str):
+    """Make ``table`` alterable, run the caller's ``ALTER``, put it back.
+
+    **The one gesture a schema step cannot avoid** (ADR-0045). DuckDB refuses to
+    alter a table another one references, and almost every table worth altering
+    here is referenced by something. So the tables holding a foreign key on
+    ``table`` are copied aside and dropped, the caller does its work, the DDL
+    declares them again with their keys, and the rows go back::
+
+        with rebuilding(connection, 'account'):
+            connection.execute('ALTER TABLE account DROP COLUMN type')
+
+    **Who depends on what is asked of the catalogue, never listed here.** A
+    hand-written list is a list that is right until the next table is declared,
+    and it would be wrong on exactly the stores a step runs on — old ones, opened
+    once, by an app whose CI only ever exercises fresh files where every step is
+    a no-op.
+
+    Two things this does that its three lines do not show:
+
+    - **The copies are real tables and not ``CREATE TEMP``.** This runs inside
+      the step's transaction, and a temporary table lives outside it — the
+      rollback that makes a step atomic would leave the store without its ledger
+      and the copy still holding it.
+    - **The rows go back by shared column name, never by position.** A store old
+      enough carries columns today's DDL does not declare (``event.source_id``
+      and its two neighbours, #816's residue), so the copy is wider than the
+      table it feeds. Those columns do not survive: a table recreated from the
+      DDL is the DDL's table. It is the price of the reconstruction the foreign
+      keys impose, and the first thing to check when a step lands — what is swept
+      up here is residue nothing reads, and it must stay that.
+    """
+    dependents = [name for name, in connection.execute(
+        "SELECT DISTINCT table_name FROM duckdb_constraints() "
+        "WHERE referenced_table = ? AND constraint_type = 'FOREIGN KEY' "
+        "ORDER BY table_name", [table]).fetchall()]
+
+    for dependent in dependents:
+        connection.execute(
+            f'CREATE TABLE _step_{dependent} AS SELECT * FROM {dependent}')
+        connection.execute(f'DROP TABLE {dependent}')
+
+    yield
+
+    connection.execute(DDL)
+
+    for dependent in dependents:
+        shared = ', '.join(name for name, in connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = ? AND column_name IN "
+            "  (SELECT column_name FROM information_schema.columns "
+            "   WHERE table_name = ?) ORDER BY ordinal_position",
+            [dependent, f'_step_{dependent}']).fetchall())
+        connection.execute(f'INSERT INTO {dependent} ({shared}) '
+                           f'SELECT {shared} FROM _step_{dependent}')
+        connection.execute(f'DROP TABLE _step_{dependent}')
+
+
+def _drop_account_type(connection) -> None:
+    """Drop ``account.type`` — the first step, and deliberately the smallest.
+
+    #916 left the column written by the app and read by nobody, so this step has
+    no reader to break: it proves the mechanism before anything that matters is
+    handed to it.
+
+    The derived tables :func:`rebuilding` carries across are carried rather than
+    left to rebuild. They would come back on the next replay, and between the
+    boot and that replay the owner would read an empty product — a schema step is
+    not a thing anybody should notice.
+    """
+    columns = {row[0] for row in connection.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'account'").fetchall()}
+    if 'type' not in columns:
+        return
+
+    with rebuilding(connection, 'account'):
+        connection.execute('ALTER TABLE account DROP COLUMN type')
+
+
+#: The schema steps, oldest first (#926, ADR-0045). A step is the one thing the
+#: ``IF NOT EXISTS`` DDL cannot express — dropping a column, renaming one — and
+#: the list is append-only in both directions: **a name is an identity forever**
+#: (renaming one runs it a second time) and a step already released is never
+#: edited, because the stores that ran it will not run it again.
+#:
+#: Every step is written to be a **no-op on a store that does not need it**, so
+#: a file created today walks the same list, changes nothing and records the
+#: same generation as one brought forward. There is one generation, not two.
+#:
+#: Forward only. This app has one writer and no fleet, and a downgrade is a
+#: promise nobody can keep about data a newer version wrote.
+STEPS = (
+    ('drop_account_type', _drop_account_type),
+)
+
+
+def apply_steps(connection) -> List[str]:
+    """Run the steps this store has not run, and name the ones that ran.
+
+    Each step gets **its own transaction, with its own mark inside it**, so the
+    schema and the record of it move together: a step that raises rolls both
+    back and the store is exactly what it was, down to the mark. The failure
+    then propagates — :func:`open_store` turns it into ``StoreUnavailable``,
+    because a store the app could not bring forward is a store it must not
+    serve from.
+    """
+    applied = {row[0] for row in connection.execute(
+        'SELECT step FROM schema_step').fetchall()}
+
+    ran = []
+    for name, step in STEPS:
+        if name in applied:
+            continue
+        connection.execute('BEGIN TRANSACTION')
+        try:
+            step(connection)
+            connection.execute(
+                'INSERT INTO schema_step (step, applied_at) VALUES (?, ?)',
+                [name, datetime.now(timezone.utc)])
+        except Exception:
+            connection.execute('ROLLBACK')
+            raise
+        connection.execute('COMMIT')
+        ran.append(name)
+    return ran
+
+
 def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
     """Bring an open connection to the current schema and seed it."""
     connection.execute("SET TimeZone='UTC'")
@@ -318,9 +460,19 @@ def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
 
     connection.execute(DDL)
 
+    # Right after the DDL and before anything is seeded (#926): the DDL is what
+    # declares ``schema_step``, and what a step rebuilds must not be holding a
+    # row this boot has just put there.
+    ran = apply_steps(connection)
+    if ran and not is_new:
+        # Said out loud only where it *did* something. A new file walks the
+        # same list and records the same marks, but nothing was brought
+        # forward and a line claiming so would be a line to chase.
+        logger.info(f"Brought the store forward: {', '.join(ran)}")
+
     if is_new:
         connection.execute(
-            'INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
+            'INSERT INTO account (id, label) VALUES (?, ?)',
             list(DEFAULT_ACCOUNT_ROW))
 
     for key, value in settings_registry.seeded_defaults().items():
@@ -360,5 +512,5 @@ __all__ = [
     'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
     'file_size', 'finite',
     'DDL', 'TABLES', 'KEYED_TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
-    'DEFAULT_ACCOUNT_ROW',
+    'DEFAULT_ACCOUNT_ROW', 'STEPS', 'apply_steps', 'rebuilding',
 ]

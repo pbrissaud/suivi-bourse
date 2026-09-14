@@ -180,8 +180,8 @@ def declare_positions():
         for share in shares:
             account = share.get('account') or 'default'
             opened.execute(
-                'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
-                'ON CONFLICT (id) DO NOTHING', [account, 'CTO', account])
+                'INSERT INTO account (id, label) VALUES (?, ?) '
+                'ON CONFLICT (id) DO NOTHING', [account, account])
             opened.execute(
                 'INSERT INTO symbol (symbol) VALUES (?) '
                 'ON CONFLICT (symbol) DO NOTHING', [share['symbol']])
@@ -206,9 +206,9 @@ def declare_ledger():
     def _declare(opened, events, accounts=None):
         for account in (accounts or []):
             opened.execute(
-                'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
+                'INSERT INTO account (id, label) VALUES (?, ?) '
                 'ON CONFLICT (id) DO UPDATE SET label = excluded.label',
-                [account.id, store_module.DEFAULT_ACCOUNT_ROW[1], account.label])
+                [account.id, account.label])
         for symbol in sorted({e.symbol for e in events if e.symbol}):
             opened.execute(
                 'INSERT INTO symbol (symbol) VALUES (?) '

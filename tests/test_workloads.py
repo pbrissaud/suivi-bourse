@@ -419,8 +419,8 @@ def test_a_symbol_held_in_two_accounts_is_written_once(
     shares = [_valid_shares(), dict(_valid_shares(), account="pea")]
     metrics, _ = _build_metrics([_valid_shares()], store)
     metrics.config_manager._shares = shares
-    store.execute("INSERT INTO account (id, type, label) VALUES "
-                  "('pea', 'PEA', 'PEA')")
+    store.execute("INSERT INTO account (id, label) VALUES "
+                  "('pea', 'PEA')")
     store.execute(
         "INSERT INTO position (account, symbol, name, quantity, cost_basis,"
         "                      realized_gain, received_dividend) "

@@ -26,6 +26,14 @@ grep -rnE --include='*.py' "['\"]undefined['\"]" $SRC tests && rule "the sentine
 # declaration owns them (ADR-0044). The arithmetic is next door and pure.
 [ "$(grep -rliE --include='*.py' '(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(taxation_model|account_fact)\b' $SRC | tr '\n' ' ')" = "src/application/accounts.py " ] || rule "a second writer of taxation_model/account_fact"
 
+# A schema change the DDL cannot express is a step, and store.py holds the list
+# (ADR-0045, #926). The DDL is still `IF NOT EXISTS` and still the first answer;
+# what a step buys is the two gestures it could not express — dropping a column
+# and renaming one — and the whole value of the mechanism is that there is *one*
+# ordered, marked, forward-only list. An ALTER anywhere else is a schema change
+# no store records having run, which is the state the marker exists to forbid.
+[ "$(grep -rliE --include='*.py' 'ALTER\s+TABLE' $SRC | tr '\n' ' ')" = "src/application/store.py " ] || rule "a schema change outside store.STEPS"
+
 # One allocator, and it is Store.reserve (ADR-0027, #785).
 [ "$(grep -rliE --include='*.py' 'max\(id\)' $SRC tests | sort | tr '\n' ' ')" = "src/application/store.py " ] || rule "a key allocated outside Store.reserve"
 
