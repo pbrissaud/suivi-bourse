@@ -61,6 +61,15 @@ created by the same `IF NOT EXISTS` statement, so it appears empty on a store th
 predates it and needs nothing done to that store. That is why this costs nothing today.
 It is not why it is right.
 
+> **#926 has landed, and this is the amendment written above in advance**
+> ([ADR-0045](./0045-the-store-learns-what-generation-it-is.md)). Schema steps exist: a
+> column on an existing table is now possible, and the convenience paragraph is the only
+> thing that changed. The three properties hold exactly as written, the rule is unchanged,
+> and a declared fact still lands in a new table — because it has its own writer, its own
+> absence and its own lifetime, and a step that could add a column gives it none of the
+> three. What was a constraint that happened to produce the right design is now the design
+> alone, standing on the argument that was always underneath it.
+
 ## What this does not license
 
 **Not a table per field.** The unit is the *subject* — an account, a symbol — not the

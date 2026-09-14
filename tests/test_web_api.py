@@ -255,7 +255,7 @@ def seed_position(opened, symbol='AAPL', name='Apple Inc', account='pea',
                   quantity=10.0, cost_basis=1500.0, realized_gain=0.0,
                   received_dividend=0.0):
     """One row of ``position`` — what the replay lays down."""
-    opened.execute("INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+    opened.execute("INSERT INTO account (id, label) VALUES (?, ?) "
                    "ON CONFLICT (id) DO NOTHING", [account, account])
     opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
                    'ON CONFLICT (symbol) DO NOTHING', [symbol])
@@ -310,7 +310,7 @@ def seed_account_metrics(opened, account='pea', day=date(2026, 8, 5),
               'total_value': 12500.0, 'net_contributed': 10000.0,
               'xirr': 0.12, 'gain_absolu': 2500.0, 'twr_index': 118.4}
     values.update(overrides)
-    opened.execute("INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+    opened.execute("INSERT INTO account (id, label) VALUES (?, ?) "
                    "ON CONFLICT (id) DO NOTHING", [account, account])
     perf_series.write_account_metrics(opened, [AccountMetricPoint(
         account=account, day=day, **values)])
@@ -1607,7 +1607,7 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
     assert [(a['id'], a['label']) for a in served] == [('default', None)]
     # Read off the constant rather than quoted: this assertion has to fail when
     # the seed is reworded, which is the whole reason it exists.
-    _, _, seeded_label = store.DEFAULT_ACCOUNT_ROW
+    _, seeded_label = store.DEFAULT_ACCOUNT_ROW
     assert seeded_label not in [a['label'] for a in served]
 
     # An account that is **not** the seeded one keeps whatever it says, the
@@ -4650,9 +4650,9 @@ def _cash_heavy_account(opened) -> None:
     """One account whose newest perf day is a quarter cash — the worked example
     ADR-0037 and ``CONTEXT.md`` both use."""
     opened.execute(
-        'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
+        'INSERT INTO account (id, label) VALUES (?, ?) '
         'ON CONFLICT (id) DO NOTHING',
-        ['cto', 'CTO', 'CTO Trade Republic'])
+        ['cto', 'CTO Trade Republic'])
     opened.execute(
         'INSERT INTO account_metrics (account, day, cash_balance, '
         '                             holdings_value, total_value) '

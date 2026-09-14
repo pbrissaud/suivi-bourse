@@ -16,7 +16,7 @@ Three things live here and nothing else:
   in one column rather than a column apiece: ADR-0042 refuses *"a new nullable
   column on the existing parameters, which would make the absent case
   indistinguishable from the unset one"*, and a kind added later is then an
-  addition and not a migration;
+  addition and not a schema step to write (ADR-0045);
 - **the wrapper templates**, and they carry **no money**. ADR-0042 ships no rates
   — every one of them is per tax year and several move with a budget law — so
   what may ship is only what is not money, which is `threshold_years` and

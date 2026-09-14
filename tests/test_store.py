@@ -6,9 +6,9 @@ Everything here runs against a **real DuckDB file** in ``tmp_path`` — the
 the product. Nothing reads or writes domain rows yet; what is pinned is what the
 tickets that follow will build on and could silently break:
 
-* the twelve tables exist on a brand-new file, and a second boot on the same
-  file adds nothing to it;
-* ``price_point`` carries no key of any kind while the other eleven keep theirs
+* the fifteen tables exist on a brand-new file, and a second boot on the same
+  file adds nothing to it — nor does it re-run a schema step (#926, ADR-0045);
+* ``price_point`` carries no key of any kind while the others keep theirs
   (ADR-0007) — a primary key here costs +563 MB of *resident* memory on a 319 MB
   base, because a DuckDB ART index is a second copy whose buffers the buffer
   manager does not own;
@@ -22,6 +22,7 @@ tickets that follow will build on and could silently break:
 import time
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from application import settings_registry
@@ -32,11 +33,12 @@ from application import store as store_module
 # A fresh file, and a second boot on it
 # --------------------------------------------------------------------------- #
 
-def test_a_new_file_carries_the_fourteen_tables(store):
+def test_a_new_file_carries_the_fifteen_tables(store):
     assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
-    # **Fourteen since #752** — ``taxation_model`` and ``account_fact``, both
-    # declared by the same ``IF NOT EXISTS`` DDL (ADR-0044).
-    assert len(store_module.TABLES) == 14
+    # **Fifteen since #926** — ``schema_step``, which is the one table that is
+    # about the store rather than about the portfolio: it says what generation
+    # this file is (ADR-0045). The fourteenth was #752's ``account_fact``.
+    assert len(store_module.TABLES) == 15
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):
@@ -44,9 +46,13 @@ def test_a_new_file_declares_no_provenance_at_all(store):
 
     ``import_source`` existed because a mounted file was re-read and had to be
     named to be revoked; the three columns on ``event`` existed to point at it.
-    A file is a payload now, so a fresh store declares neither — and there is no
-    migration machinery, deliberately: an older store keeps them as inert
-    residue that nothing reads and nothing writes.
+    A file is a payload now, so a fresh store declares neither. An older store
+    kept them as inert residue that nothing reads and nothing writes, and #926
+    wrote no step for them — but the three on ``event`` went all the same, swept
+    up by ``drop_account_type``: that step rebuilds ``event`` from the current
+    DDL, and a table recreated from the DDL is the DDL's table (ADR-0045).
+    ``account.source_id`` survives, because ``account`` is altered rather than
+    rebuilt. The asymmetry is real and costs nothing: nobody reads either.
     """
     assert 'import_source' not in [row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]
 
@@ -63,18 +69,23 @@ def test_a_new_file_declares_no_provenance_on_an_account_either(store):
     """The accounts' own half of that, and it is ADR-0034's (#817).
 
     ``account.source_id`` said which accounts file had declared a row; there is
-    no accounts file, so a fresh store declares no such column — the same inert
-    residue on an older store, and the same absence of migration machinery.
+    no accounts file, so a fresh store declares no such column.
+
+    On an **older** store it survives as inert residue, and since #926 that is a
+    decision rather than a fatality: a schema step could drop it (ADR-0045), and
+    none does, because nobody reads it and a step that buys nothing is a step
+    that can only cost. The column ``type`` is the one that earned a step — it
+    was ``NOT NULL``, so the writer had to keep feeding it a word no reader had.
     """
     columns = {row[0] for row in store.query(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_name = 'account'")}
-    assert columns == {'id', 'type', 'label'}
+    assert columns == {'id', 'label'}
     assert 'source_id' not in store_module.DDL
 
 
 def test_a_new_file_is_seeded_with_the_default_account(store):
-    rows = store.query('SELECT id, type, label FROM account')
+    rows = store.query('SELECT id, label FROM account')
 
     assert rows == [store_module.DEFAULT_ACCOUNT_ROW]
 
@@ -90,7 +101,7 @@ def test_a_new_file_is_seeded_with_every_dial_that_has_a_default(store):
 
 
 def test_a_second_boot_on_the_same_file_duplicates_nothing(store, tmp_path):
-    """Idempotence is what makes "no migration for a new dial" true.
+    """Idempotence is what makes "a new dial needs no step" true.
 
     The DDL, the account seed and the settings completion all run again at every
     start; if any of them wrote a second time, the account table would grow a
@@ -113,9 +124,14 @@ def test_a_second_boot_on_the_same_file_duplicates_nothing(store, tmp_path):
         reopened.close()
 
 
-def test_a_dial_added_later_is_inserted_without_a_migration(store, tmp_path,
-                                                            monkeypatch):
-    """The whole point of seeding at every boot rather than at creation."""
+def test_a_dial_added_later_is_inserted_without_a_step(store, tmp_path,
+                                                       monkeypatch):
+    """The whole point of seeding at every boot rather than at creation.
+
+    Schema steps exist since #926 and this is still not one of them: completing
+    the settings table at every boot already makes a later dial an insert. A
+    mechanism being available is not a reason to route through it.
+    """
     store.close()
     monkeypatch.setitem(settings_registry.BY_KEY, 'a_later_dial',
                         settings_registry.SettingSpec(
@@ -168,7 +184,7 @@ def test_price_point_carries_no_key_at_all(store):
     assert [c for c in _constraints(store) if c[0] == 'price_point'] == []
 
 
-def test_the_other_thirteen_tables_keep_their_keys(store):
+def test_the_other_fourteen_tables_keep_their_keys(store):
     """A few thousand rows cost nothing, so the constraint earns its place."""
     with_keys = {table for table, kind in _constraints(store)
                  if kind == 'PRIMARY KEY'}
@@ -323,3 +339,232 @@ def test_ping_fails_once_the_store_is_closed(store):
 
     with pytest.raises(Exception):
         store.ping()
+
+
+# --------------------------------------------------------------------------- #
+# The generation, and the steps that move between two (#926, ADR-0045)
+# --------------------------------------------------------------------------- #
+
+#: The schema as it stood before ``schema_step`` existed: ``account`` carries a
+#: ``type`` and nothing records a generation. It is written out in full rather
+#: than derived from :data:`store.DDL`, because what is being asserted is that
+#: *this* shape — the one in the wild — opens and is brought forward. A store
+#: built from today's DDL would prove nothing about yesterday's.
+_GENERATION_ZERO_DDL = """
+CREATE TABLE account (id VARCHAR PRIMARY KEY, type VARCHAR NOT NULL, label VARCHAR NOT NULL);
+CREATE TABLE symbol (symbol VARCHAR PRIMARY KEY);
+CREATE TABLE event (
+    id BIGINT PRIMARY KEY, date DATE NOT NULL, event_type VARCHAR NOT NULL,
+    account VARCHAR NOT NULL REFERENCES account(id),
+    symbol VARCHAR REFERENCES symbol(symbol),
+    name VARCHAR, quantity DOUBLE, unit_price DOUBLE, fee DOUBLE,
+    amount DOUBLE, notes VARCHAR);
+"""
+
+#: What #816 left on a store older still: the three provenance columns that
+#: pointed at the mounted file an event came from. Nothing declares them today
+#: and nothing reads them, and they are exactly what a rebuild from the current
+#: DDL cannot put back.
+_PRE_816_RESIDUE = (
+    'ALTER TABLE event ADD COLUMN source_id VARCHAR;'
+    'ALTER TABLE event ADD COLUMN source_sheet VARCHAR;'
+    'ALTER TABLE event ADD COLUMN source_row BIGINT;')
+
+
+def _generation_zero(path, residue=False):
+    """A store of the shape shipped before this ticket, with rows in it."""
+    connection = duckdb.connect(str(path))
+    connection.execute("SET TimeZone='UTC'")
+    connection.execute(_GENERATION_ZERO_DDL)
+    if residue:
+        connection.execute(_PRE_816_RESIDUE)
+    connection.execute(
+        "INSERT INTO account VALUES ('default', 'OTHER', 'Default account'), "
+        "('pea', 'PEA', 'My PEA')")
+    connection.execute("INSERT INTO symbol VALUES ('AAPL')")
+    connection.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, quantity, "
+        "unit_price) VALUES (1, '2024-01-02', 'BUY', 'pea', 'AAPL', 3, 100.0), "
+        "(2, '2024-01-03', 'DEPOSIT', 'pea', NULL, NULL, NULL)")
+    connection.close()
+
+
+def test_an_older_store_is_brought_forward_without_losing_a_row(tmp_path):
+    """The rows the owner typed survive the reconstruction the step performs.
+
+    DuckDB refuses to alter a table another one references, so dropping a column
+    of ``account`` means lifting the five tables that point at it out, altering,
+    letting the DDL declare them again and putting the rows back. That is the
+    gesture this pins: the ledger is the product, and a schema step that loses a
+    line of it has lost the thing the schema was holding.
+    """
+    path = tmp_path / 'old.duckdb'
+    _generation_zero(path)
+
+    opened = store_module.open_store(path)
+    try:
+        assert opened.query(
+            'SELECT id, label FROM account ORDER BY id') == [
+                ('default', 'Default account'), ('pea', 'My PEA')]
+        assert opened.query(
+            'SELECT id, event_type, account, symbol, quantity, unit_price '
+            'FROM event ORDER BY id') == [
+                (1, 'BUY', 'pea', 'AAPL', 3.0, 100.0),
+                (2, 'DEPOSIT', 'pea', None, None, None)]
+        # And the column is gone, which is the whole of the first step.
+        assert {row[0] for row in opened.query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'account'")} == {'id', 'label'}
+    finally:
+        opened.close()
+
+
+def test_a_step_that_has_run_does_not_run_again(tmp_path):
+    """Forward only, and idempotent — asserted on the mark, not on the column.
+
+    A second boot must leave one identical schema, and it must reach it without
+    re-running anything: the reconstruction is cheap on a new file and is not on
+    a large one, and a step run twice would rebuild the derived tables for
+    nothing every single start.
+    """
+    path = tmp_path / 'old.duckdb'
+    _generation_zero(path)
+
+    first = store_module.open_store(path)
+    marks = first.query('SELECT step, applied_at FROM schema_step')
+    shape = first.query(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = 'main' ORDER BY table_name, column_name")
+    first.close()
+
+    second = store_module.open_store(path)
+    try:
+        # Same marks, same instants: nothing was applied a second time.
+        assert second.query('SELECT step, applied_at FROM schema_step') == marks
+        assert second.query(
+            "SELECT table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema = 'main' ORDER BY table_name, column_name") \
+            == shape
+    finally:
+        second.close()
+
+
+def test_a_fresh_file_records_the_same_generation_as_one_brought_forward(
+        store, tmp_path):
+    """A new store walks the list too, changes nothing, and records it.
+
+    **Generation zero is unlabelled**, and the absence reads without erroring: a
+    store that predates the table carries no row, and the DDL creates the table a
+    line before it is asked, which is what makes the question answerable at all.
+    What it records once brought forward is the assertion here.
+
+    The steps are written to be a no-op where they are not needed, so there is
+    **one** generation and not two: a file created today and a file brought
+    forward from before carry the same marks, and the next step that lands can
+    read the list rather than asking where the file came from.
+    """
+    fresh = store.query('SELECT step FROM schema_step')
+    assert fresh == [(name,) for name, _ in store_module.STEPS]
+
+    old = tmp_path / 'old.duckdb'
+    _generation_zero(old)
+    brought = store_module.open_store(old)
+    try:
+        assert brought.query('SELECT step FROM schema_step') == fresh
+    finally:
+        brought.close()
+
+
+def test_a_step_that_fails_leaves_the_store_exactly_as_it_was(tmp_path,
+                                                              monkeypatch):
+    """Half a step is not a state this store is ever left in.
+
+    Each step runs inside its own transaction with its own mark, so a failure
+    rolls back the schema *and* the mark together — the alternative being a
+    store that believes a step ran and carries half of it.
+    """
+    path = tmp_path / 'old.duckdb'
+    _generation_zero(path)
+
+    def explodes(connection):
+        connection.execute('ALTER TABLE symbol RENAME TO symbole')
+        raise RuntimeError('the step gave up halfway')
+
+    monkeypatch.setattr(store_module, 'STEPS', (('boom', explodes),))
+
+    with pytest.raises(store_module.StoreUnavailable):
+        store_module.open_store(path)
+
+    connection = duckdb.connect(str(path))
+    try:
+        tables = {row[0] for row in connection.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'main'").fetchall()}
+        assert 'symbol' in tables and 'symbole' not in tables
+        assert connection.execute(
+            'SELECT count(*) FROM schema_step').fetchone() == (0,)
+    finally:
+        connection.close()
+
+
+def test_a_store_carrying_a_column_the_ddl_no_longer_declares_still_opens(
+        tmp_path):
+    """The oldest stores in the wild, and the ones the step is *for*.
+
+    A store from before #816 carries ``event.source_id``, ``source_sheet`` and
+    ``source_row``: three columns today's DDL does not declare. The step rebuilds
+    ``event`` from that DDL, so the copy has more columns than the table the rows
+    go back into — and an ``INSERT … SELECT *`` hands fourteen values to an
+    eleven-column table and raises. It would raise at **every** boot, too: the
+    mark rolls back with the step, so the app would never open that store again.
+
+    The rows go back by shared column name instead. The residue does not survive
+    — a table recreated from the DDL is the DDL's table — and that is the whole
+    of what is lost, because nothing has read those three since #816.
+    """
+    path = tmp_path / 'ancient.duckdb'
+    _generation_zero(path, residue=True)
+
+    opened = store_module.open_store(path)
+    try:
+        assert opened.query(
+            'SELECT id, event_type, account, quantity FROM event ORDER BY id') \
+            == [(1, 'BUY', 'pea', 3.0), (2, 'DEPOSIT', 'pea', None)]
+        assert {row[0] for row in opened.query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'event'")}.isdisjoint(
+                {'source_id', 'source_sheet', 'source_row'})
+        assert opened.query('SELECT step FROM schema_step') == \
+            [(name,) for name, _ in store_module.STEPS]
+    finally:
+        opened.close()
+
+
+def test_a_table_declared_after_this_step_does_not_break_it(tmp_path,
+                                                            monkeypatch):
+    """The trap a hand-written list of dependents would have set.
+
+    A step runs on **old** stores, and CI only ever exercises fresh ones where
+    every step is a no-op — so a list of *who references account* would go stale
+    silently and fail on the one population it exists for, permanently: the
+    rollback means the next boot fails identically. :func:`store.rebuilding` asks
+    the catalogue instead, so a sixth dependent declared in a later version is
+    lifted out with the other five without anybody remembering to say so.
+    """
+    later = store_module.DDL + (
+        'CREATE TABLE IF NOT EXISTS account_note ('
+        '  account VARCHAR PRIMARY KEY REFERENCES account(id),'
+        '  note VARCHAR NOT NULL);')
+    monkeypatch.setattr(store_module, 'DDL', later)
+
+    path = tmp_path / 'old.duckdb'
+    _generation_zero(path)
+
+    opened = store_module.open_store(path)
+    try:
+        assert {row[0] for row in opened.query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'account'")} == {'id', 'label'}
+        assert opened.query('SELECT count(*) FROM account_note') == [(0,)]
+    finally:
+        opened.close()

@@ -462,7 +462,8 @@ def reassign_unassigned_events(account_id: str):
 
 @api_bp.patch('/accounts/<account_id>')
 def update_account(account_id: str):
-    """Relabel or retype an account created in the app."""
+    """Relabel an account created in the app — since #916 there is nothing else
+    to change, and since #926 no second column to change it in."""
     body = _json_object()
     if body is None:
         return bad_request("a JSON object is required")

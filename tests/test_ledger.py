@@ -1215,8 +1215,8 @@ def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
     *Declare « TR » as a new account* is a target like any other, and it is the
     entry that stops a file being rejected whole. The account is born in the app
     (ADR-0034) — the file did not declare it, the reader did, in the modal — and
-    it takes the seed row's own neutral type, retyping and relabelling being the
-    Accounts page's two gestures.
+    it is named after its id, relabelling being the Accounts page's one gesture
+    on a declared row.
     """
     client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
 
@@ -1226,12 +1226,12 @@ def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
     assert response.status_code == 201
     assert _declared(opened) == ['TR', 'default', 'pea']
     assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
-    assert opened.query('SELECT type FROM account WHERE id = ?', ['TR']) == \
-        [(store_module.DEFAULT_ACCOUNT_ROW[1],)]
     # **And its name is its id**, which is what a row nobody named must carry.
-    # The seeded word belongs to the column nothing reads; the moment it reached
-    # the *label* instead, this account was called `OTHER` on every screen — and
-    # the whole suite stayed green, which is why the assertion is here.
+    # There used to be a seeded word beside it, in the column nothing read, and
+    # the moment it reached the *label* instead this account was called `OTHER`
+    # on every screen with the whole suite green. #926 dropped that column
+    # (ADR-0045), so the trap is gone; the assertion stays, because what it
+    # actually guards is that an unnamed account is named after its id.
     assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
         [('TR',)]
 
@@ -1394,10 +1394,11 @@ def test_a_label_declared_between_the_forecast_and_the_button_is_not_refused(
     assert response.status_code == 201
     assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
     # And it is still the account the reader declared. The `type` member they
-    # sent is **read by nothing** (#916, ADR-0043): the request is not refused
-    # for carrying it, and the column keeps the seeded word the app writes.
-    assert opened.query('SELECT type FROM account WHERE id = ?', ['TR']) == \
-        [(store_module.DEFAULT_ACCOUNT_ROW[1],)]
+    # sent is **read by nothing** (#916, ADR-0043) and there is no longer a
+    # column for it to land in either (#926): the request is not refused for
+    # carrying it, and the row holds the two fields an account has.
+    assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
+        [('TR',)]
 
 
 def test_a_correspondence_that_is_not_one_is_refused_before_anything(tmp_path):

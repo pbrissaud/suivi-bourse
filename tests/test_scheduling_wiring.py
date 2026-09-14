@@ -123,7 +123,7 @@ def _metrics(shares, store, mocker):
     """
     for share in shares:
         store.execute(
-            "INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+            "INSERT INTO account (id, label) VALUES (?, ?) "
             "ON CONFLICT (id) DO NOTHING",
             [share["account"], share["account"]])
         store.execute(

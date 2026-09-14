@@ -58,13 +58,31 @@ name: `/healthz` was examined and declined.
 
 ## The store
 
-`store.py` owns the file: the connection, the DDL of the fourteen tables, the seed.
+`store.py` owns the file: the connection, the DDL of the fifteen tables, the seed,
+and the schema steps.
 
 - **One thread inside the connection at a time**, reentrant lock;
   `Store.transaction()` holds it from `BEGIN` to `COMMIT` (a transaction on one
   connection is visible to every thread using it).
-- **DDL with `IF NOT EXISTS`, no migration machinery.** A new column would exist
-  on no store created before it: derive at read time instead.
+- **DDL with `IF NOT EXISTS`, and a *step* for what it cannot express**
+  (ADR-0045, #926). `STEPS` is one ordered, append-only list of named schema
+  steps, run by `apply_steps` at the boot right after the DDL. A step gets its
+  own transaction with its **own mark inside it**, so a failure rolls the schema
+  and the record of it back together; `schema_step` holds one row per applied
+  step, and **no row is the first generation** — every store in the wild predates
+  the table. Forward only, and every step is a no-op where it is not needed, so a
+  fresh file walks the same list and records the same marks. `ALTER TABLE` lives
+  in this file or `conventions.sh` fails. Deriving at read time is still the
+  answer where it is already used.
+- **`rebuilding(connection, table)` is how a step alters a table something
+  references**, which is almost all of them: DuckDB refuses the `ALTER`, so the
+  dependents are copied aside, dropped, redeclared by the DDL and refilled **by
+  shared column name**. Who depends on what comes from the catalogue and is never
+  listed in the code — a hand-written list goes stale silently and fails only on
+  old stores, which are the only ones a step ever runs on. A new step on a
+  referenced table is therefore two lines. A column today's DDL no longer
+  declares does not survive the rebuild; that is the price, and it must stay
+  paid in residue nobody reads.
 - **Every table has exactly one writer** — the configuration path owns
   `account`/`symbol`/`installation_fact`, `advisories.py` owns `advisory_ack`
   (one write path, and it is the acknowledgement), `entries.py` owns `event`
@@ -86,17 +104,19 @@ name: `/healthz` was examined and declined.
 - **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
   instant, `DATE` for a calendar day. A bound on a `DATE` column is **cast**, or
   DuckDB widens it to midnight and the first day of every window is dropped.
-- **An account has an id and a name, and no type** (#916, ADR-0043). The `type`
-  column is still in the DDL — it is `NOT NULL` and nothing can drop it until
-  #926 brings migration machinery — so `create_account` writes the seed's own
-  word into it and **nothing reads it**: not the API, not the view, not the
-  export. `default_is_declared` therefore answers on the label alone, where it
-  used to read both seeded columns.
+- **An account has an id and a name, and no type** (#916, ADR-0043) — **two
+  columns and not three** since #926's first schema step dropped `type`
+  (ADR-0045). Nothing read it: not the API, not the view, not the export, and
+  `default_is_declared` answers on the label alone. The step is worth reading once
+  as the shape a later one will take: five tables hold a foreign key on `account`,
+  so the step is two lines inside `rebuilding`, and #816's three provenance
+  columns on `event` go with it — a table recreated from the DDL is the DDL's
+  table.
 - **A taxation model is a closed `kind` plus typed parameters** (#752, ADR-0042),
   and the parameters are **one JSON value in one column** rather than a column
   apiece: a nullable column per field would make *this kind has no such
   parameter* indistinguishable from *this row has not set it*, and it is what
-  makes a kind added in version *n+1* an addition rather than a migration. The
+  makes a kind added in version *n+1* an addition rather than a step to write. The
   kinds, their parameters and the two shippable wrapper templates live in
   `taxation.py`, which is **pure** and named in `conventions.sh` with the others;
   `accounts.py` is the writer, and one module cannot be both.
@@ -217,10 +237,12 @@ true of the install (`installation_facts.py`) or of the app (`/health`).
   from one derivation, so the two cannot disagree about what stands; an unknown
   value of the parameter is the inventory, a typo in a URL being no reason to
   refuse a page.
-- **It is a table and not a column** on `installation_fact`: the DDL is
-  `IF NOT EXISTS` with no migration machinery, so a column added there would
-  exist on no store created before it. `advisory_ack` is the twelfth table, and
-  it carries the expiry the fact's own row deliberately does not.
+- **It is a table and not a column** on `installation_fact`, and since ADR-0045
+  that is a choice rather than the only option: a column is possible now, and the
+  reason was never that it was not (ADR-0044). `advisory_ack` has its own writer,
+  its own absence and **its own lifetime** — it carries the expiry the fact's own
+  row deliberately does not, because an acknowledgement that wakes up is not a
+  column on a fact that never does.
 - **Two families** — the cash share of an account, over a constant threshold
   (`CASH_SHARE_THRESHOLD`, ADR-0036: *"a setting nobody has ever turned is a
   setting that should not have been written"*), and a declared opening date
@@ -433,7 +455,7 @@ puts a constraint where the error enters, which is at the import.
 src/application/
 ├── boot.py             # entrypoint AND boot sequence (ADR-0039)
 ├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, the boot's three steps
-├── store.py            # the connection, the DDL of the fourteen tables, the seed
+├── store.py            # the connection, the DDL of the fifteen tables, the seed, STEPS
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── build_info.py       # pure: RELEASE_VERSION + SOURCE_COMMIT → which SuiviBourse

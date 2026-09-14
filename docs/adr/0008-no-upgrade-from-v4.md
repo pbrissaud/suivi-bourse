@@ -5,6 +5,14 @@ carried over — not from v4, not from the v5 preview branch — so there is no 
 detection, no migration command, and no special startup path. The documentation gets a
 paragraph titled *"coming from v4"*, not a migration guide.
 
+> **Amended in one word by [ADR-0045](./0045-the-store-learns-what-generation-it-is.md)**,
+> and the decision is untouched. A v5 store now knows what generation it is and brings
+> itself forward at boot, so *"no version detection"* is no longer literally true of the
+> app. It stays true of this record's subject: what does not migrate is **v4's data**,
+> which is another product's, in another store, under conventions ADR-0002 to ADR-0004
+> changed. Nothing here ever rested on v5 being unable to move its own schema; it rested
+> on there being nothing worth carrying across from v4.
+
 The one continuity that survives concerns no state at all: an empty account column
 means `default` until an account is declared, which lets a single-account v4's event
 files import **without a single edit**.

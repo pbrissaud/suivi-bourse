@@ -270,8 +270,11 @@ def test_the_name_is_the_whole_of_what_declares_the_seed(store, tmp_path):
 def test_the_seed_wearing_the_seed_s_own_words_is_not_a_declaration(
         store, tmp_path):
     """The other edge: an owner may legitimately name their account exactly
-    what the seed named it, and the comparison is all the store's lack of
-    migration machinery leaves (``accounts.as_declared``). Untouched, the row
-    is the one nobody declared and its events are the ones to move."""
+    what the seed named it, and comparing against the seeded word is all the
+    store can offer (``accounts.as_declared``). Schema steps exist since #926
+    (ADR-0045) and none of them helps here: no column could hold *was this row
+    declared*, because the seed writes the row before anybody could have
+    answered. Untouched, the row is the one nobody declared and its events are
+    the ones to move."""
     _the_month_before_declaring(store, tmp_path)
     assert reassignment.unassigned_events(store) == 3

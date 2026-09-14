@@ -789,8 +789,8 @@ def test_a_window_on_a_daily_series_keeps_the_day_it_starts_on(store):
 
 
 def test_a_window_on_an_account_series_keeps_it_too(store):
-    store.execute("INSERT INTO account (id, type, label) "
-                  "VALUES ('pea', 'PEA', 'PEA')")
+    store.execute("INSERT INTO account (id, label) "
+                  "VALUES ('pea', 'PEA')")
     for day in (date(2025, 8, 10), date(2025, 8, 11)):
         perf_series.write_account_metrics(store, [AccountMetricPoint(
             account='pea',
@@ -862,8 +862,8 @@ def test_deleting_an_account_takes_its_cached_figures_with_it(store):
     """
     from application import accounts as accounts_module
 
-    store.execute("INSERT INTO account (id, type, label) "
-                  "VALUES ('pea', 'PEA', 'PEA')")
+    store.execute("INSERT INTO account (id, label) "
+                  "VALUES ('pea', 'PEA')")
     perf_series.write_account_metrics(store, [AccountMetricPoint(
         account='pea',
         day=date(2024, 1, 1), cash_balance=1.0, holdings_value=1.0,
@@ -894,8 +894,8 @@ def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker
     And it is **one block statement**, not a loop: the same 5 478-row upsert is
     3 ms in one call and does not finish in two minutes row by row.
     """
-    store.execute("INSERT INTO account (id, type, label) "
-                  "VALUES ('pea', 'PEA', 'PEA')")
+    store.execute("INSERT INTO account (id, label) "
+                  "VALUES ('pea', 'PEA')")
     days = [date(2024, 1, 1) + timedelta(days=n) for n in range(60)]
     block = mocker.spy(store, 'executemany')
 

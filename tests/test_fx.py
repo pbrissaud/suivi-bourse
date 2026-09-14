@@ -494,7 +494,7 @@ def _metrics(store, shares=None, base_currency=None):
     shares = shares if shares is not None else [_share()]
     for share in shares:
         store.execute(
-            "INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+            "INSERT INTO account (id, label) VALUES (?, ?) "
             "ON CONFLICT (id) DO NOTHING",
             [share['account'], share['account']])
         store.execute("INSERT INTO symbol (symbol) VALUES (?) "
@@ -1828,16 +1828,19 @@ def test_no_pair_is_ever_named_from_a_currency_that_is_not_one():
 
 def test_a_row_written_before_the_fix_learns_its_real_unit(
         store, monkeypatch):
-    """The repair of a **pre-polluted** store, and there is no migration.
+    """The repair of a **pre-polluted** store, and it is not a schema step.
 
     A column holding that word is *truthy*, so every gate on this path read it
     as a currency: the lateral pass declared the unit known and stood down, and
     the line stayed *waiting for a rate* for the life of the install with
-    nothing left to ask on its behalf. The DDL carries no migration machinery
-    (ADR-0007), so the repair is the pass's own predicate widening — a unit that
-    cannot name a pair counts as **absent** — after which the pass does what it
-    does for any symbol with no unit: it asks, it writes, and the condition
-    empties itself as the rows go through it.
+    nothing left to ask on its behalf. The repair is the pass's own predicate
+    widening — a unit that cannot name a pair counts as **absent** — after which
+    the pass does what it does for any symbol with no unit: it asks, it writes,
+    and the condition empties itself as the rows go through it.
+
+    Steps exist since #926 (ADR-0045) and this is still the right answer: what
+    is wrong here is a **row's value**, not the schema's shape, and a store that
+    repairs itself as it runs needs nothing done to it at boot.
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=_PRE_845_CURRENCY)

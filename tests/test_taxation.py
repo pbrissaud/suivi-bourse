@@ -185,8 +185,8 @@ def test_a_store_created_before_this_ticket_opens_reads_and_writes(tmp_path):
     old = duckdb.connect(str(path))
     old.execute("SET TimeZone='UTC'")
     old.execute(before)
-    old.execute("INSERT INTO account (id, type, label) VALUES ('pea', 'OTHER', 'PEA')")
-    # The store this test is about: twelve tables, and neither of the two.
+    old.execute("INSERT INTO account (id, label) VALUES ('pea', 'PEA')")
+    # The store this test is about: the others, and neither of the two.
     held = {row[0] for row in old.execute(
         "SELECT table_name FROM information_schema.tables "
         "WHERE table_schema = 'main'").fetchall()}

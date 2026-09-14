@@ -169,7 +169,7 @@ def as_declared(account: Account) -> Account:
     """The row as a **reader** must see it: what nobody declared reads ``None``."""
     if account.id != DEFAULT_ACCOUNT:
         return account
-    seeded_label = store_module.DEFAULT_ACCOUNT_ROW[2]
+    seeded_label = store_module.DEFAULT_ACCOUNT_ROW[1]
     return replace(account,
                    label=None if account.label == seeded_label else account.label)
 
@@ -208,9 +208,9 @@ def create_account(store, account_id: str,
                    label: Optional[str] = None) -> Account:
     """Declare an account. The app is where one is born, and the only place.
 
-    **Two fields** since #916: an identifier and a name. The ``type`` column is
-    still written, because it is ``NOT NULL`` and no migration machinery exists
-    to drop it (#926) — it takes the seed's own word, and nothing reads it.
+    **Two fields**, and now two columns: #916 stopped asking for the type and
+    #926's first schema step dropped it (ADR-0045), so the row the app writes
+    and the row the store holds finally say the same thing.
     """
     account_id = _text(account_id)
     if not account_id:
@@ -220,9 +220,8 @@ def create_account(store, account_id: str,
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 
     store.execute(
-        'INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
-        [account_id, store_module.DEFAULT_ACCOUNT_ROW[1],
-         _text(label) or account_id])
+        'INSERT INTO account (id, label) VALUES (?, ?)',
+        [account_id, _text(label) or account_id])
     logger.info(f"Declared account {account_id}")
     return Account(id=account_id, label=_text(label) or account_id)
 
@@ -231,8 +230,8 @@ def update_account(store, account_id: str, *,
                    label: Optional[str] = None) -> Account:
     """Rename an account created in the app.
 
-    Renaming is the whole of it since #916: there is no second column left to
-    change, and a blank keeps the name that is there.
+    Renaming is the whole of it since #916, and since #926 there is no second
+    column left to change at all. A blank keeps the name that is there.
     """
     current = _require(store, account_id)
     new_label = _text(label) or current.label

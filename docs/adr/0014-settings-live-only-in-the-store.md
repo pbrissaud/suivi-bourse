@@ -23,7 +23,12 @@ the store location is mandatory and unset, so every install rewrites its compose
   pair goes, and sizing is always automatic — so the settings page has one class of
   field rather than two.
 - The table is `setting(key, value)`, seeded with the defaults and **completed at every
-  boot**, so a later version that adds a dial needs no migration. It has no types, so
+  boot**, so a later version that adds a dial needs no migration — and since
+  [ADR-0045](./0045-the-store-learns-what-generation-it-is.md) that is a property of the
+  seeding rather than the absence of an alternative. Schema steps exist; a new dial is
+  still not one of them, because completing the table at every boot already makes it an
+  insert of what is missing, and a mechanism being available is not a reason to route
+  through it. It has no types, so
   validation lives in the write path against a **registry in code** — the single list of
   dials the API, the effective-configuration view and the form all read.
 - The ingestion interval loses its subject with "the files are the truth": the replay

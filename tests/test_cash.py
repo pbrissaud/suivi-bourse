@@ -232,8 +232,8 @@ def test_account_metrics_are_upserted_on_the_day_they_describe(store):
     rewrites the row rather than appending one. Measured on a thousand cycles, a
     ``DELETE``+``INSERT`` replacement takes the file to 44,8 MB for a 1,6 MB
     table."""
-    store.execute("INSERT INTO account (id, type, label) VALUES "
-                  "('PEA', 'PEA', 'Mon PEA')")
+    store.execute("INSERT INTO account (id, label) VALUES "
+                  "('PEA', 'Mon PEA')")
     point = AccountMetricPoint(
         account="PEA",
         day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
@@ -257,8 +257,8 @@ def test_a_field_that_was_never_computable_is_null_not_missing(store):
     query error — and, after #696, into a 503 that took the whole table with it.
     Here the column is declared at creation and reads ``NULL``.
     """
-    store.execute("INSERT INTO account (id, type, label) VALUES "
-                  "('PEA', 'PEA', 'Mon PEA')")
+    store.execute("INSERT INTO account (id, label) VALUES "
+                  "('PEA', 'Mon PEA')")
     perf_series.write_account_metrics(store, [AccountMetricPoint(
         account="PEA",
         day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,

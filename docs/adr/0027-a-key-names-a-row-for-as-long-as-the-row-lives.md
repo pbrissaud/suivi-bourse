@@ -38,9 +38,13 @@ seeded from `max(id)` on first use, which never descends when rows are deleted.
   all. With a 30 s `staleTime` and no refetch on focus, a stale panel could
   forget a *different* import than the row it displayed, and what that destroys
   is a file of events rather than a line.
-- **No sequence, and no thirteenth table.** `ledger.py`'s original reasoning
-  survives — a sequence is a second thing to keep in step with a DDL that has no
-  migration machinery — and it now carries the half it was missing. A durable
+- **No sequence, and no extra table.** `ledger.py`'s original reasoning
+  survives, and [ADR-0045](./0045-the-store-learns-what-generation-it-is.md) takes one
+  leg out from under it without reaching the conclusion: a sequence is no longer
+  impossible to introduce, it is still a second thing to keep in step. The half that was
+  always load-bearing is the one below — a counter is not a dial, and the mark is memory
+  because the guarantee it buys is scoped to the life of the process, not because no
+  table could have held it. A durable
   high-water mark was available in `setting` and refused: the configuration path
   owns both tables so ADR-0006 was never the obstacle, but `CONTEXT.md` defines a
   setting as *a dial the owner turns*, and a counter is not one.
