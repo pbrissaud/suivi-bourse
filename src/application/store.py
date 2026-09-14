@@ -388,15 +388,13 @@ def _drop_account_type(connection) -> None:
     left to rebuild. They would come back on the next replay, and between the
     boot and that replay the owner would read an empty product — a schema step is
     not a thing anybody should notice.
-    """
-    columns = {row[0] for row in connection.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = 'account'").fetchall()}
-    if 'type' not in columns:
-        return
 
+    ``IF EXISTS`` is what makes it a no-op on a file created today, and there is
+    no Python guard beside it: a step runs once per store either way, and the
+    reconstruction it skips there is five empty tables.
+    """
     with rebuilding(connection, 'account'):
-        connection.execute('ALTER TABLE account DROP COLUMN type')
+        connection.execute('ALTER TABLE account DROP COLUMN IF EXISTS type')
 
 
 #: The schema steps, oldest first (#926, ADR-0045). A step is the one thing the

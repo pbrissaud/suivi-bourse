@@ -22,6 +22,7 @@ tickets that follow will build on and could silently break:
 import time
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from application import settings_registry
@@ -372,7 +373,6 @@ _PRE_816_RESIDUE = (
 
 def _generation_zero(path, residue=False):
     """A store of the shape shipped before this ticket, with rows in it."""
-    import duckdb
     connection = duckdb.connect(str(path))
     connection.execute("SET TimeZone='UTC'")
     connection.execute(_GENERATION_ZERO_DDL)
@@ -387,25 +387,6 @@ def _generation_zero(path, residue=False):
         "unit_price) VALUES (1, '2024-01-02', 'BUY', 'pea', 'AAPL', 3, 100.0), "
         "(2, '2024-01-03', 'DEPOSIT', 'pea', NULL, NULL, NULL)")
     connection.close()
-
-
-def test_a_store_that_predates_the_marker_is_the_first_generation(tmp_path):
-    """Generation zero is unlabelled, and the absence reads without erroring.
-
-    Nothing in the wild carries a mark and nothing ever will, so *no row* is the
-    first generation rather than a missing one. The table is created by the DDL
-    a line before it is asked, which is what makes the question answerable on a
-    file that predates the table entirely.
-    """
-    path = tmp_path / 'old.duckdb'
-    _generation_zero(path)
-
-    opened = store_module.open_store(path)
-    try:
-        assert opened.query('SELECT step FROM schema_step') == \
-            [(name,) for name, _ in store_module.STEPS]
-    finally:
-        opened.close()
 
 
 def test_an_older_store_is_brought_forward_without_losing_a_row(tmp_path):
@@ -472,12 +453,18 @@ def test_a_fresh_file_records_the_same_generation_as_one_brought_forward(
         store, tmp_path):
     """A new store walks the list too, changes nothing, and records it.
 
+    **Generation zero is unlabelled**, and the absence reads without erroring: a
+    store that predates the table carries no row, and the DDL creates the table a
+    line before it is asked, which is what makes the question answerable at all.
+    What it records once brought forward is the assertion here.
+
     The steps are written to be a no-op where they are not needed, so there is
     **one** generation and not two: a file created today and a file brought
     forward from before carry the same marks, and the next step that lands can
     read the list rather than asking where the file came from.
     """
     fresh = store.query('SELECT step FROM schema_step')
+    assert fresh == [(name,) for name, _ in store_module.STEPS]
 
     old = tmp_path / 'old.duckdb'
     _generation_zero(old)
@@ -508,7 +495,6 @@ def test_a_step_that_fails_leaves_the_store_exactly_as_it_was(tmp_path,
     with pytest.raises(store_module.StoreUnavailable):
         store_module.open_store(path)
 
-    import duckdb
     connection = duckdb.connect(str(path))
     try:
         tables = {row[0] for row in connection.execute(
