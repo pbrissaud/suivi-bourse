@@ -433,6 +433,8 @@ export interface Account {
    * `lib/accounts.ts` from {@link AccountHistoryResponse}.
    */
   twr_index?: number | null
+  /** The day the index counts from. Served for the agent; the table rebases. */
+  twr_since?: string | null
   /**
    * It is the one member of this row that is not a column of `account_metrics`:
    * it belongs to no position, so the account's panel could not read it off

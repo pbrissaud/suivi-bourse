@@ -16,6 +16,8 @@ from datetime import date, datetime, timezone
 import pytest
 from mcp import Client
 
+from api import create_app
+from application import accounts as accounts_module
 from application import entries
 from application import main
 from application import mcp_server
@@ -162,6 +164,67 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
     assert 'worth zero' in described
 
 
+def test_the_server_states_the_set_its_answers_are_drawn_from(tmp_path):
+    """**What is not here**, said once for the six tools (#889).
+
+    Every field says which absence it is, and the payload as a whole said
+    nothing about the set it is drawn from. An unlisted holding — private
+    equity, an SPV, anything without a ticker — cannot be in the ledger, and the
+    first outside agent to use this server nearly reported a position as sold
+    when it had simply never been in scope.
+
+    The perimeter is stated in the instructions, which every tool inherits, and
+    again on ``list_positions``, which is the table an agent reads when it goes
+    looking for a line that is not there.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    async def _handshake():
+        """Through the client, as :func:`listed` is: what a model reads is the
+        copy that crossed the wire."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            return client.instructions or ''
+
+    said = asyncio.run(_handshake())
+    assert 'listed instruments' in said
+    assert 'not a sale' in said
+    assert 'net worth' in said
+
+    # Unwrapped before it is read: these are sentences, and a paragraph
+    # reflowed to 79 columns puts a line break wherever it lands. An assertion
+    # that a rewrap breaks is an assertion about the margin, not about the words.
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)}['list_positions'].split())
+    assert 'A SYMBOL ABSENT FROM THIS TABLE WAS NEVER IN IT' in described
+    assert 'was never declared, and reading it as a sale' in described
+
+
+def test_the_accounts_description_frames_the_tax_and_the_index(tmp_path):
+    """Two figures a model will misread unless the words stop it.
+
+    ``projected_tax`` is a number called *tax*, and a model reading one will
+    present it as one (#920): the description has to say it is a projection
+    under a model the owner declared, and name what it does not express.
+    ``twr_index`` is an index whose base day differs per row (#887), so the
+    description has to send the reader to ``twr_since`` rather than invite the
+    comparison — which is what it used to do.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    described = {tool.name: tool.description or ''
+                 for tool in listed(runtime)}['list_accounts']
+
+    assert 'projection' in described
+    assert 'OWNER DECLARED THEMSELVES' in described
+    assert 'no allowance' in described and 'loss carry-forward' in described
+    assert 'when to sell' in described
+    assert 'projected_base' in described
+
+    assert 'twr_since' in described
+    # The sentence that sold the comparison the payload cannot support.
+    assert 'the figure that compares two accounts of different sizes' not in described
+
+
 # --------------------------------------------------------------------- #
 # The figures
 # --------------------------------------------------------------------- #
@@ -214,6 +277,40 @@ def test_the_accounts_list_always_holds_at_least_one_row(tmp_path):
 
     assert body['declared'] is False
     assert len(body['accounts']) >= 1
+
+
+def test_the_agent_and_the_browser_are_served_the_same_account(tmp_path):
+    """One store, two surfaces, **the same members on a row** (#920).
+
+    The tool used to re-assemble this payload by hand and stopped where the perf
+    figures stop, so every member #752, #918 and #948 hung on an account reached
+    the panel and not the agent — eight of them by the time anybody counted, the
+    taxation model among them, which is why an agent could say nothing about a
+    wrapper it could see.
+
+    What is held here is **not the list of eight**. It is that the two key sets
+    are equal, so a ninth member added to one surface and not the other fails
+    here rather than in the next ticket. The account carries a model so the
+    comparison is not made between two rows that both lost the same thing.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    model = accounts_module.create_model(opened, 'Flat', 'flat_realised',
+                                         {'rate': 0.3})
+    accounts_module.set_taxation_model(
+        opened, accounts_module.DEFAULT_ACCOUNT, model.id)
+
+    served = create_app(runtime).test_client().get('/api/accounts').get_json()
+    read = payload(call(runtime, 'list_accounts'))
+
+    assert read['declared'] == served['declared']
+    by_id = {row['id']: row for row in served['accounts']}
+    assert {row['id'] for row in read['accounts']} == set(by_id)
+    for row in read['accounts']:
+        assert set(row) == set(by_id[row['id']]), row['id']
+
+    carrying = by_id[accounts_module.DEFAULT_ACCOUNT]
+    assert carrying['taxation_model'] == model.id
+    assert carrying['taxation_kind'] == 'flat_realised'
 
 
 def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):

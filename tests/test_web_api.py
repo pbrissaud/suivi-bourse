@@ -1809,6 +1809,30 @@ def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
     assert [a['id'] for a in payload['accounts']] == ['pea']
 
 
+def test_an_account_states_the_day_its_index_is_based_at(tmp_path):
+    """`twr_index` is based at 100 on the first day of **its own** series (#887).
+
+    The accounts do not share that day — one opened in 2019 has been indexing
+    for six years, the aggregate starts at the latest horizon among its terms —
+    so two of these figures compared point to point compare different periods,
+    and a global index sitting below every account's is the ordinary consequence
+    rather than a fault in the arithmetic. The anchor rides with the figure
+    because it is the only thing that lets a reader tell.
+
+    Anchored on the first day the index **exists**, not the first day the series
+    has a row: a day the perf job wrote with a null index is not a base of 100.
+    """
+    def seed(opened):
+        seed_account_metrics(opened, day=date(2026, 8, 4), twr_index=None)
+        seed_account_metrics(opened, day=date(2026, 8, 5))
+
+    client = build_client(tmp_path, seed=seed, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    row = client.get('/api/accounts').get_json()['accounts'][0]
+
+    assert row['twr_since'] == '2026-08-05'
+
+
 # --------------------------------------------------------------------- #
 # One account's history — the empty / absent / failed triad (#661)
 # --------------------------------------------------------------------- #

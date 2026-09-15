@@ -7,7 +7,7 @@ import duckdb
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from application import accounts as accounts_module
+from application import account_facts
 from application import instants
 from application import portfolio_view
 from application import quotes
@@ -48,6 +48,14 @@ Two things about a row will mislead you if you do not know them:
   both cases the honest answer is that it is not priced, and terminal is what
   lets you say which of the two it is.
 
+A SYMBOL ABSENT FROM THIS TABLE WAS NEVER IN IT. The ledger holds listed
+instruments only, so a holding with no ticker — private equity, an SPV,
+property — could not be entered and does not appear here. A sold position stays
+as a row with quantity 0, which is the only shape a disposal takes: nothing
+leaves this table. So a position you expected and cannot find was never
+declared, and reading it as a sale is the mistake this paragraph exists to
+prevent.
+
 {_ABSENCE}
 """
 
@@ -60,6 +68,13 @@ year-to-date figures, and the gain broken into its four terms — the unrealised
 gain, the realised gain, the dividends received, and the transfer fees paid.
 Those four terms sum to the total gain by definition: do not recombine them some
 other way, and do not treat their sum as an independent check.
+
+twr is based at 100 on twr_since, the day this series starts — which is the
+latest horizon among the accounts it sums, and so is later than the day an
+individual account's index starts at. The two are not on the same base: a global
+index below every account's measures a shorter period and is not a sign that the
+accounts outperformed the portfolio holding them. Compare it to an account's
+figure only after reading both twr_since, and say which period each covers.
 
 {_CURRENCY}
 
@@ -103,9 +118,41 @@ declared=false means the owner has never declared an account, so what you are
 looking at is the single account every install is given. It is a designed state
 and not an empty one: the list always holds at least one row.
 
-Comparing accounts by value tells you about size, not about performance. twr is
-the figure that compares two accounts of different sizes, because an index
-carries neither size nor currency.
+Comparing accounts by value tells you about size, not about performance. But
+twr_index IS NOT COMPARABLE ACROSS ROWS AS IT STANDS: it is an index based at
+100 on the first day of its own series, and these series do not start on the
+same day. An account opened in 2019 has been indexing for six years; one opened
+last month has been indexing for one, and the portfolio-wide index served by the
+other tools starts later still, at the latest horizon among the accounts it
+sums. So a global index below every account's is arithmetically ordinary and not
+a bug — it measures a shorter period. Each row carries twr_since, the calendar
+day its index is based at, and get_portfolio_totals carries the same member for
+the portfolio-wide index. READ twr_since BEFORE YOU PUT TWO OF THESE FIGURES IN
+ONE SENTENCE. Where two of them differ, the figures measure different periods
+and you cannot rank them: say which period each one covers, and do not call the
+lower one the worse performer. twr_since is absent on an account the app has
+computed no series for.
+
+Where an account carries a taxation model it also carries taxation_model,
+opened_on, first_payment, taxation_kind, projected_tax, projected_base,
+projected_rates and projected_rate_changes_on. An account with no model carries
+none of them: the absence is the answer, and not a gap in this read.
+
+projected_tax IS A PROJECTION AND NOT A TAX. It is what the account would owe if
+it were emptied today under a model THE OWNER DECLARED THEMSELVES — they entered
+the kind and the rates, and this app applied their arithmetic rather than
+reading any tax code. It expresses no allowance, no loss carry-forward, no
+household situation and no year of any actual return. Say it is a projection
+under a model the owner declared, every time you quote it, and never use it to
+advise what is owed, what is due, or when to sell.
+
+projected_base is the gain that rate was applied to, and it is the LATENT gain
+alone — not gain_absolu, which also holds the realised gain, the dividends and
+the fees. Applying projected_rates to gain_absolu gives a number this app did
+not publish and does not agree with. projected_rates is a list of fractions: one
+for a flat model, the rungs of the ladder for a bracketed one.
+projected_rate_changes_on is the day the rate would next change for this
+wrapper, absent when nothing is coming.
 
 {_CURRENCY}
 
@@ -195,6 +242,14 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             "is a dated ledger of what its owner did; everything else — the "
             "positions, the prices, the returns — is derived from it. These "
             "tools read that data and cannot change it.\n\n"
+            "THIS IS NOT THE OWNER'S WHOLE WEALTH. The ledger holds listed "
+            "instruments, valued from market data: anything held outside that "
+            "— private equity, an SPV, property, a holding with no ticker — "
+            "cannot be entered here and is therefore not in any answer these "
+            "tools give. A holding you expected and cannot find was very "
+            "probably never in scope, and its absence is not a sale. Say what "
+            "this app covers before you characterise what the owner owns, and "
+            "never present these figures as their net worth.\n\n"
             "Advise on strategy and allocation. Do not recommend individual "
             "securities to buy or sell.\n\n"
             "Read each tool's description before using its figures: this app "
@@ -306,29 +361,10 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         """The declared accounts with their newest figures — ``/api/accounts``."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
-            accounts = _snapshot().accounts
-            declaration = (
-                accounts.accounts if accounts is not None
-                else [row for row in accounts_module.read_accounts(_store())
-                      if row.id == accounts_module.DEFAULT_ACCOUNT])
-            declaration = [accounts_module.as_declared(row)
-                           for row in declaration]
-
-            reader = _reader()
-            rows = reader.latest_account_metrics()
-            through = {
-                row['account']: row['day'] for row in rows
-                if row.get('account') is not None and row.get('day') is not None
-            }
             return {
                 'base_currency': _base_currency(),
-                'declared': accounts is not None,
-                'accounts': [
-                    summary.to_dict()
-                    for summary in portfolio_view.build_accounts(
-                        declaration, rows,
-                        reader.transfer_fees_by_account(through))
-                ],
+                **account_facts.accounts_payload(
+                    _store(), _snapshot(), datetime.now(timezone.utc)),
             }
         return reading(_body)
 
