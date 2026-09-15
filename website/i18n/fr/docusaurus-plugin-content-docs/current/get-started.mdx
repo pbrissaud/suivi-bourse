@@ -1,0 +1,172 @@
+---
+title: Premiers pas
+description: Une commande, un écran
+---
+
+Il vous faut Docker, et il ne vous faut nulle part où ranger quoi que ce soit —
+l’application nomme elle-même son fichier de magasin dans le répertoire que vous
+lui donnez.
+
+## Lancer
+
+```bash
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -p 8080:8080 \
+  ghcr.io/pbrissaud/suivi-bourse:5
+```
+
+`--restart unless-stopped` est ce qui ramène le conteneur après un redémarrage —
+et après un plantage. Rien à l’intérieur du conteneur ne relance quoi que ce
+soit : l’application est un seul processus, si bien que lorsqu’elle s’arrête le
+conteneur se termine, et c’est cette politique qui décide s’il revient.
+
+Le `-v` fait toute la différence entre un essai et une installation. Sans lui le
+conteneur démarre quand même — il ne garde simplement rien, et il le dit à chaque
+démarrage, dans ses premières lignes de journal et sur la page **Réglages** de
+l’application. C’est une façon honnête d’essayer l’application le temps d’une
+soirée. Ce n’est pas une façon de conserver un portefeuille : le magasin vit dans
+la couche accessible en écriture du conteneur, et le premier `docker rm`
+l’emporte.
+
+## Ouvrir
+
+Rendez-vous sur [http://localhost:8080](http://localhost:8080).
+
+Sur un magasin auquel personne n’a encore répondu, l’application s’ouvre sur un
+court parcours de **trois passages**. Il dit en trois phrases ce qu’elle est — un
+grand livre d’événements datés, des cours qu’elle récupère elle-même, une devise
+unique dans laquelle tout est reporté — et, sur une installation sans volume, que
+ce conteneur ne garde rien.
+
+1. **Les réglages nécessaires.** Une seule chose doit être décidée à
+   l’installation : **la devise de base** dans laquelle chaque chiffre est
+   reporté. Elle n’a pas de valeur par défaut, et c’est bien pour cela qu’elle
+   est demandée.
+2. **Vos comptes.** Chaque événement est enregistré sur un compte, et votre
+   installation en possède déjà un — ce passage vous montre donc ce que vous avez
+   et ne demande rien. Vous en déclarez d’autres, et vous renommez celui-là, sur
+   la page *Comptes*. Il précède le passage suivant à dessein : un fichier que
+   vous importez nomme ses comptes par leur identifiant.
+3. **Vos premiers événements.** Deux portes, côte à côte et aucune recommandée
+   plutôt que l’autre : confier un `.csv` ou un `.xlsx` à l’application, ou saisir
+   un premier achat.
+   Saisir une position, c’est *créer* des événements datés,
+   si bien qu’un lecteur sans fichier à importer n’a rien manqué.
+
+**Traverser le parcours n’est pas y répondre.** Aucun passage n’extrait quoi que
+ce soit : vous pouvez traverser les trois, ne rien fournir, et arriver sur une
+application qui fonctionne. Et vous pouvez partir à tout moment — la fenêtre se
+ferme sur sa croix, sans bouton *Plus tard*, parce que la sortie ne devrait pas
+peser autant que la réponse. Quelle que soit la façon dont vous partez, votre
+navigateur retient que vous êtes passé : le parcours ne revient pas au chargement
+suivant, et vider votre grand livre plus tard ne le ramène pas davantage.
+Rien de
+tout cela n’est consigné dans votre magasin, si bien qu’un magasin effacé repose
+la question.
+
+La devise peut être renseignée plus tard, et là où vous l’avez laissée
+l’application le signale.
+Tant que votre grand livre est vide, la réponse vous
+appartient encore ; dès votre premier événement elle est figée, car en changer
+ensuite réinterpréterait des montants que vous avez déjà enregistrés. Tant
+qu’elle n’a pas de réponse, les cours sont quand même récupérés, rien n’est
+converti et aucun rendement n’est calculé ; l’application le dit à l’écran plutôt
+que de refuser.
+
+Si vous préférez ne pas y répondre à la main, la même question se règle avec un
+`curl` sur l’API d’écriture, servie sur le même port que la page. Un import qui
+déclare sa propre devise y répond aussi, et alors même cet appel devient inutile.
+
+Enregistrez ensuite une position, ou importez les fichiers que vous avez déjà. Les cours apparaissent au fur et à mesure qu’ils sont récupérés ; l’historique
+qui les précède est reconstruit vers l’arrière pendant que vous utilisez
+l’application. Laissez-lui du temps plutôt que de recharger : **environ 25
+minutes pour 30 titres sur cinq ans**, et les chiffres qui dépendent d’un cours
+dont vous ne disposez pas encore le disent au lieu de deviner.
+
+## Est-ce que ça marche ?
+
+L’image embarque sa propre sonde, et l’application y répond sur `/health`, sur le
+même port que tout le reste. Cette unique réponse s’adresse à deux lecteurs à la
+fois, et ils ne se mélangent jamais.
+
+**Le code de statut est pour ce qui supervise le conteneur.** Il répond à une
+seule question — *faut-il redémarrer ce conteneur* — et `200` signifie que le
+processus sert et que son magasin répond. Un `503` signifie qu’il ne peut pas
+travailler du tout, ce qui est la seule panne qu’un redémarrage répare. C’est ce
+que lit `docker ps` pour marquer le conteneur `healthy`, et ce que lirait une
+sonde Kubernetes.
+
+**Le corps est pour vous.** Il nomme chacune des trois tâches — le relevé, la
+reconstruction, les rendements — avec la dernière fois qu’elle a tourné et ce
+qu’il en est sorti, plus un mot pour l’ensemble :
+
+```bash
+curl -s localhost:8080/health
+```
+
+```json
+{
+  "status": "attention",
+  "now": "2026-08-24T15:00:00+00:00",
+  "scheduler_running": true,
+  "jobs": {
+    "scrape": {
+      "status": "attention", "at": "2026-08-24T14:59:12+00:00",
+      "verdict": "frozen", "held": 12, "attention": ["ASML.AS"]
+    },
+    "backfill": {
+      "status": "ok", "at": "2026-08-24T14:58:40+00:00",
+      "verdict": "running", "complete": 7, "in_scope": 12, "attention": []
+    },
+    "performance": {
+      "status": "ok", "at": "2026-08-24T14:58:41+00:00",
+      "verdict": "ran", "error": null
+    }
+  }
+}
+```
+
+Chaque tâche — et l’ensemble au-dessus d’elles — porte l’un de trois mots. `ok`,
+c’est tout a tourné et rien ne demande à être regardé. `attention`, c’est quelque
+chose qui a mal tourné, ou qui a cessé de tourner. `unknown`, c’est *rien n’a
+encore été observé*, ce qu’un conteneur démarré il y a une minute dit
+honnêtement, et ce qui n’est délibérément pas `ok`. `attention` énumère les
+titres dont le verdict parle, pour que vous sachiez quelle ligne aller lire ;
+`verdict` est le mot que la tâche emploie pour son dernier passage, et `at` est
+le moment où ce passage a eu lieu.
+
+**La cloche en haut à droite de l’application lit ce même corps**, si bien que
+vous n’avez rien à `curl` pour savoir. Elle porte deux canaux à la fois : son
+icône prend la couleur — vert pour `ok`, ambre pour `attention` ou une
+reconstruction encore en cours, rouge quand l’application ne répond pas du tout —
+et sa pastille compte tout ce qui reste ouvert. Elle ouvre sur un panneau où la
+santé, les faits sur cette installation et les avis sur votre portefeuille
+tiennent ensemble, et de là sur la page **Réglages**, où les tâches et le magasin
+sont détaillés en entier.
+
+:::note Un relevé devenu silencieux est ambre, et le code reste `200`
+Redémarrer le conteneur ne répare rien de ce que Yahoo ou le marché a cassé, et
+une sonde qui échouerait sur une tâche coincée en ferait une boucle de
+redémarrages qui ne répare rien et masque tout. Une tâche en retard, bloquée ou
+muette se lit donc dans le corps et jamais dans le code de statut. La seule chose
+qui fasse échouer le code, c’est le magasin qui ne répond pas — et alors il n’y a
+plus de corps du tout, ce qui est en soi la réponse.
+:::
+
+:::note Les sauvegardes existent sous deux formes, et aucune n’est à chaud
+Exporter vos événements sauvegarde **le portefeuille** : réimportez-les dans une
+installation neuve et la reconstruction récupère les cours à nouveau. Arrêter le
+conteneur, copier le volume et redémarrer sauvegarde **l’installation** — la
+seule forme qui conserve aussi vos réglages, votre devise de base et
+l’historique de cours fin que vous avez accumulé. C’est celle-là que jamais
+aucune sauvegarde tardive ne rattrape : passé 60 jours, plus personne ne vous
+vend un cours plus fin que l’heure.
+:::
+
+---
+
+Vous êtes aujourd’hui en version 4 ? Rien ici n’est une mise à niveau, et le
+rapprochement a sa propre page : [Venir de la v4](./coming-from-v4.mdx).
