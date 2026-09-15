@@ -311,6 +311,35 @@ export interface AccountRow {
    * of its own.
    */
   twr_index: number | null
+  /**
+   * The id of the model this account carries (#752) — **absent where it carries
+   * none**, which is what the projection card's whole presence turns on.
+   */
+  taxation_model?: string
+  /**
+   * The `kind` of the model this account carries — what decides the sentence
+   * under the figure and whether there is a figure at all (#919).
+   */
+  taxation_kind?: string
+  /**
+   * The rate or rates that produced the figure, as fractions. **Read, never
+   * derived**: the rule lives in `application/taxation_projection.py` and a
+   * second reading of it here would drift on the accounts nobody tests.
+   */
+  projected_rates?: number[]
+  /** The day an aged rate changes, where the threshold is still ahead. */
+  projected_rate_changes_on?: string
+  /**
+   * What this account would owe if everything in it were sold today (#919) —
+   * and **absent** wherever there is no figure to state.
+   *
+   * Optional, and mapped by spreading rather than `?? null` like every other
+   * member of the row above: that idiom collapses *absent* into *null*, and absent is
+   * what the server preserves on purpose. A projected zero — an account in
+   * aggregate loss — and a zero nobody could compute are two different
+   * sentences, and `null` says neither.
+   */
+  projected_tax?: number
 }
 
 /**
@@ -339,6 +368,23 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     xirr: account.xirr ?? null,
     transfer_fees: account.transfer_fees ?? null,
     twr_index: account.twr_index ?? null,
+    // Spread, never `?? null` (#919): the five optional members carry the
+    // distinction between *absent* and *null*, and the idiom above erases it.
+    ...(account.taxation_model === undefined
+      ? {}
+      : { taxation_model: account.taxation_model }),
+    ...(account.taxation_kind === undefined
+      ? {}
+      : { taxation_kind: account.taxation_kind }),
+    ...(account.projected_rates === undefined
+      ? {}
+      : { projected_rates: account.projected_rates }),
+    ...(account.projected_rate_changes_on === undefined
+      ? {}
+      : { projected_rate_changes_on: account.projected_rate_changes_on }),
+    ...(account.projected_tax === undefined
+      ? {}
+      : { projected_tax: account.projected_tax }),
   }))
 }
 
@@ -813,3 +859,5 @@ const ACCOUNT_HUES = [165, 225, 285, 345, 45, 105] as const
 export function accountColour(index: number): string {
   return `oklch(0.62 0.15 ${ACCOUNT_HUES[index % ACCOUNT_HUES.length]})`
 }
+
+

@@ -36,6 +36,7 @@ from application import quotes
 from application import runtime_state
 from application import settings_registry
 from application import store
+from application.store_reads import PortfolioReader
 import api as api_module
 from application import workloads
 from application.events.loader import EventLoader
@@ -4598,6 +4599,10 @@ def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
 
 def _cash_heavy_account(opened) -> None:
     """One account whose newest perf day is a quarter cash — the worked example
+
+    It carries a **taxation model**, which is not decoration: an account with
+    money and none of its own raises `no_taxation_model` (#919), and every test
+    below asserts on the whole listing while being about something else.
     """
     opened.execute(
         'INSERT INTO account (id, label) VALUES (?, ?) '
@@ -4608,6 +4613,15 @@ def _cash_heavy_account(opened) -> None:
         '                             holdings_value, total_value) '
         'VALUES (?, ?, ?, ?, ?)',
         ['cto', date(2026, 8, 26), 1430.56, 4335.66, 5766.22])
+    opened.execute(
+        "INSERT INTO taxation_model (id, name, kind, parameters) "
+        "VALUES ('flat', 'Flat', 'flat_realised', '{\"rate\": 0.3}') "
+        "ON CONFLICT (id) DO NOTHING")
+    opened.execute(
+        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?) '
+        'ON CONFLICT (account) DO UPDATE SET '
+        '  taxation_model = EXCLUDED.taxation_model',
+        ['cto', 'flat'])
 
 
 def test_a_portfolio_with_nothing_to_say_answers_an_empty_collection(tmp_path):
@@ -5472,3 +5486,282 @@ def test_a_declared_date_later_than_the_first_payment_stands_as_an_advisory(
     client.patch('/api/accounts/pea', json={'opened_on': '2015-06-01'})
     assert [row for row in client.get('/api/advisories').get_json()
             if row['kind'] == 'opened_after_first_payment'] == []
+
+
+# --------------------------------------------------------------------- #
+# What an account would owe if it were emptied today (#919)
+# --------------------------------------------------------------------- #
+
+def _valued_pea(tmp_path, events=ACCOUNTS_EVENTS, price=200.0, converted=200.0,
+                rate=1.0):
+    """One PEA holding 10 AAPL bought at 150 and quoted at 200 — a latent 500."""
+    def seed(opened):
+        seed_quote(opened, price=price, currency='EUR', converted=converted,
+                   rate=rate,
+                   at=datetime(2024, 6, 5, 17, 0, tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    return build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE,
+                                  events=events, seed=seed)
+
+
+def _carry(client, account='pea', **model):
+    """Write a model and hang it on an account, the way the panel does."""
+    written = client.post('/api/taxation-models', json=model)
+    assert written.status_code == 201, written.get_json()
+    key = written.get_json()['id']
+    assert client.patch(f'/api/accounts/{account}',
+                        json={'taxation_model': key}).status_code == 200
+    return key
+
+
+def _pea_row(client, account='pea'):
+    (row,) = [row for row in client.get('/api/accounts').get_json()['accounts']
+              if row['id'] == account]
+    return row
+
+
+def test_a_flat_account_publishes_what_it_would_owe_on_its_latent_gain(tmp_path):
+    """The assiette of a flat regime is `Σ market_value − Σ cost_basis`, folded
+    off the same `build_shares` the shares table renders — so the tax and the
+    gain it is derived from cannot disagree.
+
+    `total_value − net_contributed` was the other candidate and was rejected: it
+    is null on an account with no cash flows, and it counts a GRANT's declared
+    value as a gain.
+    """
+    client, _ = _valued_pea(tmp_path)
+    _carry(client, name='CTO', kind='flat_realised',
+           parameters={'rate': 0.128, 'social_rate': 0.172})
+
+    row = _pea_row(client)
+    assert row['projected_tax'] == pytest.approx(150.0, abs=5e-3)
+    # **The words and the rates ride with the figure** (#919). The kind is what
+    # lets the panel tell a declared exemption from a measured zero without a
+    # second read of the catalogue, and the rates are published rather than
+    # re-derived in the browser: a second reading of *which side of the
+    # threshold* would drift on the accounts nobody tests.
+    assert row['taxation_kind'] == 'flat_realised'
+    assert row['projected_rates'] == pytest.approx([0.30])
+    assert 'projected_rate_changes_on' not in row
+
+
+def test_a_pea_declared_through_the_shipped_template_still_gets_a_figure(
+        tmp_path):
+    """The reversal of 9A, asserted on the route rather than on the arithmetic.
+
+    `fr_pea` ships `age_basis: first_payment`, and the form renders and sends
+    `opened_on` only under `opening` — so this account has no declared date and
+    never will have one through the interface. The age runs from the ledger's
+    earliest payment, and without that fallback the flagship case of the whole
+    feature publishes nothing, for ever.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount,account\n"
+        "2014-01-02,DEPOSIT,,,,,1500.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
+    )
+    client, opened = _valued_pea(tmp_path, events=events)
+    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+    _carry(client, name='PEA', kind='aged_flat_realised',
+           parameters={'rate_before': 0.128, 'rate_after': 0.0,
+                       'threshold_years': 5, 'age_basis': 'first_payment',
+                       'social_rate': 0.172})
+
+    row = _pea_row(client)
+
+    # No declared date anywhere — and the figure exists anyway.
+    assert 'opened_on' not in row
+    assert row['first_payment'] == '2014-01-02'
+    # Past five years: exempt of income tax, and the 17,2 % still applies.
+    # The assiette is the **latent** gain — 10 AAPL bought at 150, quoted at
+    # 200 — and not `gain_absolu`, which is net of withdrawals and would keep
+    # billing a gain this account no longer holds.
+    assert row['projected_tax'] == pytest.approx(0.172 * 500.0, abs=5e-3)
+    # Past the threshold, so the footing names the levy and nothing is coming.
+    assert row['projected_rates'] == pytest.approx([0.172])
+    assert 'projected_rate_changes_on' not in row
+
+
+def test_the_positions_are_not_read_where_no_model_projects(tmp_path, mocker):
+    """**The cost of the feature is paid by the readers who have it.**
+
+    `reader.positions()` is the portfolio's hot read, and this route is asked by
+    every page that needs the account list — the settings, the ledger and the
+    ⌘K palette among them. Taking it to derive an assiette no declared model
+    consumes charges the whole feature to readers who declared nothing.
+
+    Pinned by making the read fatal rather than by timing it: a route that still
+    answers is a route that did not take it. Both silences are covered — no
+    model at all, and a model of a kind with no realised gain to project.
+    """
+    client, _ = _valued_pea(tmp_path)
+    # **Both halves of the read are made fatal**, not just the fold. They sit in
+    # one expression today, so patching the fold alone happens to catch the
+    # query too — until somebody hoists the query out of the call, at which
+    # point this test would go on passing over a hot read it no longer prevents.
+    mocker.patch.object(PortfolioReader, 'positions',
+                        side_effect=AssertionError('the positions were read'))
+    mocker.patch.object(portfolio_view, 'build_shares',
+                        side_effect=AssertionError('the positions were folded'))
+
+    assert client.get('/api/accounts').status_code == 200
+
+    _carry(client, name='Exonéré', kind='none', parameters={})
+    row = _pea_row(client)
+    assert row['taxation_kind'] == 'none'
+    assert 'projected_tax' not in row
+
+
+def test_an_account_carrying_no_model_publishes_no_projection(tmp_path):
+    """No model is no figure, and the absence reaches the reader as one (#845):
+    the member is missing, not `null`."""
+    client, _ = _valued_pea(tmp_path)
+
+    assert 'projected_tax' not in _pea_row(client)
+
+
+def test_a_model_with_no_realised_gain_publishes_no_projection(tmp_path):
+    """`none` is worth `0 €` on the screen and `withholding_income` taxes
+    something else — and neither zero is *computed*. Publishing one would make a
+    declared exemption indistinguishable from a measured zero."""
+    client, _ = _valued_pea(tmp_path)
+    _carry(client, name='Exempt', kind='none', parameters={})
+    assert 'projected_tax' not in _pea_row(client)
+
+    _carry(client, name='Withheld', kind='withholding_income',
+           parameters={'rate': 0.30})
+    assert 'projected_tax' not in _pea_row(client)
+
+
+def test_an_unvalued_line_makes_the_assiette_unknown_rather_than_partial(
+        tmp_path):
+    """Strict absence. A gain nobody knows is not a gain of zero, and a tax
+    projected off the lines that happened to have a price would understate
+    itself in silence."""
+    events = ACCOUNTS_EVENTS + "2024-02-01,BUY,MSFT,Microsoft,5,300.00,pea\n"
+    client, _ = _valued_pea(tmp_path, events=events)
+    _carry(client, name='CTO', kind='flat_realised', parameters={'rate': 0.30})
+
+    # MSFT was never quoted, so one of the two lines has no market value.
+    assert 'projected_tax' not in _pea_row(client)
+
+
+def test_an_account_in_loss_owes_nothing_rather_than_a_negative(tmp_path):
+    """The floor is taken per account: a loss owes nothing, and it does not owe
+    a negative for another account to absorb."""
+    client, _ = _valued_pea(tmp_path, price=90.0, converted=90.0)
+    _carry(client, name='CTO', kind='flat_realised', parameters={'rate': 0.30})
+
+    assert _pea_row(client)['projected_tax'] == 0.0
+
+
+def test_an_aged_wrapper_short_of_its_threshold_names_the_day_it_changes(tmp_path):
+    """The kink is the most interesting thing the arithmetic knows and is
+    otherwise invisible: an owner three months from their fifth anniversary
+    would see one figure with no hint it is about to fall."""
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount,account\n"
+        "2024-01-02,DEPOSIT,,,,,1500.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
+    )
+    client, _ = _valued_pea(tmp_path, events=events)
+    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+    _carry(client, name='PEA', kind='aged_flat_realised',
+           parameters={'rate_before': 0.128, 'rate_after': 0.0,
+                       'threshold_years': 5, 'age_basis': 'first_payment',
+                       'social_rate': 0.172})
+
+    row = _pea_row(client)
+
+    assert row['projected_rate_changes_on'] == '2029-01-02'
+    assert row['projected_rates'] == pytest.approx([0.30])
+
+
+def test_an_account_holding_nothing_owes_a_known_zero_not_an_unknown(tmp_path):
+    """Deposits and no purchase — what a freshly declared wrapper looks like.
+
+    Its assiette is exactly nothing and the app can do that sum in its head, so
+    the panel states `0 €`. An absent member here would say *I cannot tell*
+    about the one account whose answer is never in doubt.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount,account\n"
+        "2024-01-02,DEPOSIT,,,,,1500.00,pea\n"
+    )
+    client, _ = _valued_pea(tmp_path, events=events)
+    _carry(client, name='CTO', kind='flat_realised', parameters={'rate': 0.30})
+
+    assert _pea_row(client)['projected_tax'] == 0.0
+
+
+def test_an_account_carrying_no_model_publishes_none_of_the_three(tmp_path):
+    """One member's absence, three times over — the panel has no card to build
+    and nothing to build it out of."""
+    client, _ = _valued_pea(tmp_path)
+
+    row = _pea_row(client)
+
+    for member in ('taxation_kind', 'projected_tax', 'projected_rates',
+                   'projected_rate_changes_on'):
+        assert member not in row
+
+
+def test_a_bracket_ceiling_at_or_below_zero_is_refused(tmp_path):
+    """The climbing check compares against the rung before, so index 0 has
+    nothing to be refused by — and a ceiling at or below zero makes the slice
+    under it negative, which the walk would turn into a negative tax."""
+    client = build_client(tmp_path)
+
+    for bad in (-100.0, 0):
+        refused = client.post(
+            '/api/taxation-models',
+            json={'name': 'Ladder', 'kind': 'bracketed_realised',
+                  'parameters': {'brackets': [{'upper_bound': bad, 'rate': 0.1},
+                                              {'upper_bound': None, 'rate': 0.4}]}})
+        assert refused.status_code == 422, bad
+
+
+def test_a_threshold_nobody_lives_to_see_is_refused(tmp_path):
+    """A typo in a year count is not a schedule, and it reaches date arithmetic
+    that has no answer for it."""
+    client = build_client(tmp_path)
+
+    refused = client.post(
+        '/api/taxation-models',
+        json={'name': 'Aged', 'kind': 'aged_flat_realised',
+              'parameters': {'rate_before': 0.1, 'rate_after': 0.1,
+                             'threshold_years': 10 ** 15,
+                             'age_basis': 'opening'}})
+
+    assert refused.status_code == 422
+    assert client.post(
+        '/api/taxation-models',
+        json={'name': 'Aged', 'kind': 'aged_flat_realised',
+              'parameters': {'rate_before': 0.1, 'rate_after': 0.1,
+                             'threshold_years': 30,
+                             'age_basis': 'opening'}}).status_code == 201
+
+
+def test_a_rate_and_its_levy_may_not_come_to_more_than_the_gain(tmp_path):
+    """Each is bounded to `[0, 1]` on its own and nothing bounded the sum, so
+    two ordinary-looking entries projected 180 % of a gain and printed it as a
+    fact."""
+    client = build_client(tmp_path)
+
+    refused = client.post(
+        '/api/taxation-models',
+        json={'name': 'Greedy', 'kind': 'flat_realised',
+              'parameters': {'rate': 0.9, 'social_rate': 0.9}})
+
+    assert refused.status_code == 422
+    assert client.post(
+        '/api/taxation-models',
+        json={'name': 'Real', 'kind': 'flat_realised',
+              'parameters': {'rate': 0.128, 'social_rate': 0.172}}
+    ).status_code == 201

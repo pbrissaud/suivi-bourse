@@ -23,6 +23,7 @@ from application.portfolio_view import (
     build_accounts,
     build_movers,
     build_shares,
+    latent_gains_by_account,
     session_baseline_instant,
     unit_cost,
     valuation_series,
@@ -565,3 +566,98 @@ def test_nothing_is_summed_across_accounts():
     assert [s.total_value for s in summaries] == [12500.0, 3000.0]
     payload = summaries[0].to_dict()
     assert 'portfolio_total' not in payload and 'share_pct' not in payload
+
+
+# --------------------------------------------------------------------- #
+# The assiette #919 projects a tax off
+# --------------------------------------------------------------------- #
+
+def test_the_latent_gain_folds_an_account_s_lines_and_keeps_them_apart():
+    """One entry per account, and the accounts do not bleed into each other:
+    a loss in one may not absorb a gain in the other, which is what the floor
+    at zero is taken per account for."""
+    gains = latent_gains_by_account(build_shares([
+        row(account='pea', quantity=10.0, cost_basis=1500.0, price=200.0),
+        row(account='cto', quantity=5.0, cost_basis=1200.0, price=200.0),
+        row(symbol='MSFT', account='pea', quantity=2.0, cost_basis=600.0,
+            price=400.0),
+    ]))
+
+    assert gains == {'pea': 700.0, 'cto': -200.0}
+
+
+def test_one_unvalued_line_makes_the_whole_account_s_assiette_unknown():
+    """Strict, and `_sum` is what it refuses: summing the lines that happen to
+    have a price would publish a tax that understates itself in silence, and a
+    partial figure is indistinguishable from a complete one on screen."""
+    gains = latent_gains_by_account(build_shares([
+        row(account='pea', quantity=10.0, cost_basis=1500.0, price=200.0),
+        row(symbol='MSFT', account='pea', quantity=2.0, cost_basis=600.0,
+            price=None),
+        row(account='cto', quantity=5.0, cost_basis=900.0, price=200.0),
+    ]))
+
+    assert gains == {'pea': None, 'cto': 100.0}
+
+
+def test_an_account_whose_only_line_is_unvalued_is_unknown_not_missing():
+    """The order the lines arrive in does not decide it either: the unknown has
+    to survive a valued line landing after it."""
+    gains = latent_gains_by_account(build_shares([
+        row(symbol='AAA', account='pea', price=None),
+        row(symbol='ZZZ', account='pea', quantity=1.0, cost_basis=10.0,
+            price=50.0),
+    ]))
+
+    assert gains == {'pea': None}
+
+
+def test_a_declared_account_holding_nothing_owes_a_known_zero():
+    """The other half of the strict rule. An account with no line — deposits and
+    no purchase — has an assiette of exactly nothing, and it is *known*: left out
+    of the fold it would publish no figure and the panel would say *I cannot
+    tell* about a sum the app can do in its head."""
+    gains = latent_gains_by_account(
+        build_shares([row(account='pea', quantity=10.0, cost_basis=1500.0,
+                          price=200.0)]),
+        ['pea', 'cto'])
+
+    assert gains == {'pea': 500.0, 'cto': 0.0}
+
+
+def test_seeding_the_declared_accounts_does_not_rescue_an_unknown_one():
+    """The seed is a starting point, not a floor: one unvalued line still makes
+    the whole account unknown."""
+    gains = latent_gains_by_account(
+        build_shares([row(account='pea', price=None)]), ['pea'])
+
+    assert gains == {'pea': None}
+
+
+def test_a_closed_line_on_an_unquoted_symbol_does_not_erase_the_account():
+    """`positions()` keeps the row after a full exit and the aggregator zeroes
+    its basis with it, so a closed holding is worth exactly nothing — *known*.
+    A delisted symbol has no price, and the strict rule would otherwise read
+    `unknown` off a line whose answer is not in doubt and take the whole
+    account's assiette down with it, for ever and with no hint why."""
+    gains = latent_gains_by_account(build_shares([
+        row(symbol='AAA', account='pea', quantity=10.0, cost_basis=1500.0,
+            price=200.0),
+        row(symbol='ZZZ', account='pea', quantity=0.0, cost_basis=0.0,
+            price=None),
+    ]), ['pea'])
+
+    assert gains == {'pea': 500.0}
+
+
+def test_a_held_line_with_no_price_still_makes_the_account_unknown():
+    """The strictness is intact: what is excused above is a holding of nothing,
+    not a holding nobody priced."""
+    gains = latent_gains_by_account(build_shares([
+        row(symbol='AAA', account='pea', quantity=10.0, cost_basis=1500.0,
+            price=200.0),
+        row(symbol='ZZZ', account='pea', quantity=3.0, cost_basis=600.0,
+            price=None),
+    ]), ['pea'])
+
+    assert gains == {'pea': None}

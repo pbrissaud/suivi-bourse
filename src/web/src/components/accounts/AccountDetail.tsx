@@ -580,6 +580,133 @@ export function AccountDetail({
           </Card>
         )}
       </div>
+      {/* **The projection, in a card of its own and full width** (#919, D10).
+          Not a fourth member of the grid above: four cards in `lg:grid-cols-3`
+          orphan one on a second row, and 34 px would put a hypothetical
+          disposal at the altitude of three measured facts. A projection never
+          outranks a measurement, so the figure sits one rung down from the
+          head's — the rung this panel already reserves for `Performance
+          totale`.
+
+          **Every account carrying a model gets it; only an account carrying
+          none is silent** (D11). Sending `none`, `withholding_income` and a
+          dateless aged wrapper to the same blank as *never answered* would make
+          a declaration indistinguishable from its absence — and the sentence
+          that says why a modelless account is silent is raised once, as an
+          advisory, in the place built for saying it. */}
+      {row.taxation_kind === undefined || (terms === null && !failures.positions) ? null : (
+        <Card className="gap-3">
+          <CardHeader>
+            <h3 className="eyebrow">{t('accounts.detail.projectedTax')}</h3>
+          </CardHeader>
+          {/* `flex h-full flex-col gap-3` and not `space-y-2.5`: it is what makes
+              the footing's `mt-auto` mean anything, and it is the shape the two
+              cards this footing is borrowed from already use. */}
+          <CardContent className="flex h-full flex-col gap-3">
+            {/* **It waits on the positions, not on its own read** (D12).
+                `projected_tax` rides on the accounts payload and therefore
+                lands *before* the figures it is derived from; the head gates
+                even `total_value` behind this same read so that it cannot
+                contradict itself, and a tax rendered beside a `Gain` that is
+                still blank states a figure derived from a gain it is
+                simultaneously refusing to state.
+
+                **The whole card waits, footing included.** A rate under a
+                hairline with nothing above it is an orphan rule, and *Taux
+                appliqué 30 %* printed beneath `<Unreadable>` names the rate
+                that produced a figure the card is refusing to state in the same
+                breath. The card that has nothing to say does not exist at all
+                (#724), which is why the wait is in its own predicate above. */}
+            {terms === null && row.taxation_kind !== 'none' ? (
+              // `none` is the one kind whose figure rests on no read at all:
+              // the model *says* zero, and a refused positions read is not a
+              // reason to withhold an answer that was never derived from it.
+              <Unreadable failure={failures.positions!} />
+            ) : (
+              <>
+                {/* **No figure at all where the model taxes something else**
+                    (D11). An empty `role="group"` is a named region announcing
+                    nothing, which is worse than the absence it was standing in
+                    for: the card carries this model's own sentence instead. */}
+                {row.taxation_kind === 'withholding_income' ? null : (
+                  <p
+                    role="group"
+                    aria-label={t('accounts.detail.projectedTax')}
+                    className="tabular text-4xl font-heavy tracking-tight"
+                  >
+                    {row.taxation_kind === 'none'
+                      ? f.currency(0, currency)
+                      : row.projected_tax === undefined
+                        ? ABSENT
+                        : f.currency(row.projected_tax, currency)}
+                  </p>
+                )}
+                {/* **Visible body text, never an `Explain` bubble** (D13). A
+                    bubble opens on click and nothing else, and every bubble in
+                    this product explains a convention behind a number the
+                    reader can otherwise trust. Here, not clicking costs the
+                    entire epistemic status of the figure: `Impôt projeté
+                    4 168,95 €` reads as a fact. The panel has the precedent
+                    twice already, both plain `text-xs text-muted-foreground`.
+
+                    A model that taxes something else says what it taxes, in its
+                    own words — the catalogue already holds one sentence per
+                    kind, and a second copy here would drift. */}
+                <p className="text-xs text-muted-foreground">
+                  {row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income'
+                    ? t(`taxation.kind.${row.taxation_kind}.assessed`)
+                    : t('accounts.detail.projectedTax.caveat')}
+                </p>
+                {/* The kink, which is the most interesting thing the arithmetic
+                    knows and is otherwise invisible: an owner three months from
+                    their PEA's fifth anniversary would see one number with no
+                    hint it is about to fall. */}
+                {row.projected_rate_changes_on === undefined ? null : (
+                  <p className="text-xs text-muted-foreground">
+                    {t('accounts.detail.projectedTax.changesOn', {
+                      day: f.date(row.projected_rate_changes_on),
+                    })}
+                  </p>
+                )}
+                {/* **The footing names the rate that produced the figure** (D14).
+                    The record ships no rate, so the reader learns which one theirs
+                    is; a ladder has no single rate to name and the footing names
+                    its rungs instead. The levy is folded in — it applies on both
+                    sides of an aged threshold, and naming the income rate alone
+                    would contradict the figure above on a mature PEA.
+
+                    `flex-wrap` and `text-right` because a ladder is the one case
+                    that puts N figures where the two cards beside this one put
+                    one: four rungs on a phone wrap, and without them they wrap
+                    ragged-left under a label that stays on the first line. */}
+                {row.projected_rates === undefined ? null : (
+                  <div
+                    role="group"
+                    aria-label={t(
+                      row.projected_rates.length > 1
+                        ? 'accounts.detail.projectedTax.rates'
+                        : 'accounts.detail.projectedTax.rate',
+                    )}
+                    className="mt-auto flex flex-wrap items-baseline justify-between gap-2.5 border-t pt-3"
+                  >
+                    <span className="text-xs text-muted-foreground">
+                      {t(
+                        row.projected_rates.length > 1
+                          ? 'accounts.detail.projectedTax.rates'
+                          : 'accounts.detail.projectedTax.rate',
+                      )}
+                    </span>
+                    <span className="tabular min-w-0 text-right font-mono text-lg font-semibold">
+                      {row.projected_rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* **The lines take the whole track**, which is the maquette's own shape
           for this block and not a preference: every other block on this page is
           one figure and its terms, and this one is a table — the width it wants

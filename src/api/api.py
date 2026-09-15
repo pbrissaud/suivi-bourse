@@ -27,6 +27,7 @@ from application import settings as settings_module
 from application import settings_registry
 from application import store as store_module
 from application import taxation
+from application import taxation_projection
 from application import uploads
 from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
@@ -334,24 +335,98 @@ def list_accounts():
     # account has declared no opening date. Derived here rather than written
     # anywhere: a declared fact and a derived one do not share a row.
     payments = ledger.first_payments(_store())
+    # **The projection is computed here, not in the browser** (#919): the rates
+    # are a declaration the front never holds, and a figure this load-bearing is
+    # not re-derived in two languages. The assiette for the two kinds that read
+    # one is folded off `build_shares`, so the tax rests on the valuation the
+    # shares table already renders rather than on a second opinion of it.
+    models = {model.id: model
+              for model in accounts_module.read_models(_store())}
+    latent = _latent_gains(reader, declaration, carried, models)
+    today = datetime.now(timezone.utc).date()
     return jsonify({
         'declared': accounts is not None,
         'accounts': [
-            _with_account_facts(summary.to_dict(), carried, opened_on, payments)
+            _with_account_facts(summary.to_dict(), carried, opened_on, payments,
+                                models, latent, today)
             for summary in portfolio_view.build_accounts(
                 declaration, rows, reader.transfer_fees_by_account(through))
         ],
     })
 
 
+#: The kinds with an assiette to read, which since the review of 2026-09-15 is
+#: every kind that projects: the three read the same latent gain and differ only
+#: in the rate they apply to it.
+_NEEDS_POSITIONS = taxation_projection.PROJECTED_KINDS
+
+
+def _latent_gains(reader, declaration, carried: dict, models: dict) -> dict:
+    """The per-account assiette — **read only where something reads it**.
+
+    `reader.positions()` is the portfolio's hot read, and this route is asked by
+    every page that needs the account list: the settings, the ledger and the ⌘K
+    palette among them. Running it there to derive a figure no declared model
+    consumes is the whole cost of the feature paid by readers who do not have
+    it. Resolving the models first is one dictionary lookup per account, and it
+    turns the read into something proportional to the feature being in use.
+    """
+    wanted = False
+    for account in declaration:
+        model = models.get(carried.get(account.id))
+        if model is not None and model.kind in _NEEDS_POSITIONS:
+            wanted = True
+            break
+    if not wanted:
+        return {}
+    return portfolio_view.latent_gains_by_account(
+        portfolio_view.build_shares(reader.positions(), _carried()),
+        [account.id for account in declaration])
+
+
 def _with_account_facts(row: dict, carried: dict, opened_on: dict,
-                        payments: dict) -> dict:
-    """The three members an account carries where there is one to carry."""
+                        payments: dict, models: dict, latent: dict,
+                        today: date) -> dict:
+    """The three members an account carries where there is one to carry, and the
+    three the projection is where there is a model to project it through."""
     return {**row, **_declared({
         'taxation_model': carried.get(row['id']),
         'opened_on': instants.iso(opened_on.get(row['id'])),
         'first_payment': instants.iso(payments.get(row['id'])),
+        **_projection(row, carried, opened_on, payments, models, latent, today),
     })}
+
+
+def _projection(row: dict, carried: dict, opened_on: dict, payments: dict,
+                models: dict, latent: dict, today: date) -> dict:
+    """What this account would owe if it were emptied today, the kind that says
+    how to read it, and the rates that produced it.
+
+    **The words are the front's and the arithmetic is not.** The kind rides so
+    the panel can tell a declared exemption from a measured zero without a second
+    read of the model catalogue; the rates ride so no second implementation of
+    *which side of the threshold* exists to drift from this one.
+
+    The figure itself is absent in five cases and they reach the reader as one
+    member's absence: no model carried, a kind with no realised gain, an aged
+    wrapper with no date to age it from, an assiette one unvalued line makes
+    unknown, and a model whose kind needs the positions read this request did not
+    take.
+    """
+    model = models.get(carried.get(row['id']))
+    if model is None:
+        return {}
+    facts = dict(kind=model.kind, parameters=model.parameters,
+                 opened_on=opened_on.get(row['id']),
+                 first_payment=payments.get(row['id']), now=today)
+    changes_on = taxation_projection.rate_changes_on(**facts)
+    return {
+        'taxation_kind': model.kind,
+        'projected_tax': taxation_projection.projected_tax(
+            latent_gain=latent.get(row['id']), **facts),
+        'projected_rates': taxation_projection.applied_rates(**facts),
+        'projected_rate_changes_on': instants.iso(changes_on),
+    }
 
 
 def _declared(facts: dict) -> dict:

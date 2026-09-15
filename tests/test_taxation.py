@@ -154,6 +154,63 @@ def test_a_ladder_out_of_order_is_refused():
         ]})
 
 
+def test_an_aged_rate_and_its_levy_may_not_come_to_more_than_the_gain():
+    """The **two sides of a threshold**, which the flat refusal never reaches.
+
+    :func:`taxation._rate` bounds each value to ``[0, 1]`` on its own and
+    nothing bounded the sum, so ``rate_before 0,9`` beside ``social_rate 0,9``
+    is two ordinary-looking entries that project 180 % of a gain and print it
+    as a fact (#919). Both sides are checked, because an aged wrapper spends
+    half its life on each.
+    """
+    for wrong in ({'rate_before': 0.9, 'rate_after': 0.0},
+                  {'rate_before': 0.1, 'rate_after': 0.9}):
+        with pytest.raises(taxation.ModelRejected):
+            taxation.validate(taxation.AGED_FLAT_REALISED, dict(
+                wrong, threshold_years=5, age_basis=taxation.OPENING,
+                social_rate=0.172))
+
+
+def test_a_rate_and_its_levy_coming_to_exactly_the_gain_still_stands():
+    """The bound is *more than everything*, not *everything*. A confiscatory
+    schedule is a schedule; refusing it would refuse a lawful one the day a
+    jurisdiction writes it, and the refusal exists for the arithmetic that
+    cannot be true, not for the rate nobody likes."""
+    assert taxation.validate(taxation.FLAT_REALISED,
+                             {'rate': 0.5, 'social_rate': 0.5}) == {
+        'rate': 0.5, 'social_rate': 0.5}
+
+
+def test_a_threshold_longer_than_a_lifetime_is_refused_and_the_bound_stands():
+    """A typo in a year count is not a schedule, and it reaches date arithmetic
+    that has no answer for it (#919). The bound itself is a legal declaration —
+    the refusal starts one year past it, never on it."""
+    assert taxation.validate(taxation.AGED_FLAT_REALISED, {
+        'rate_before': 0.3, 'rate_after': 0.1, 'age_basis': taxation.OPENING,
+        'threshold_years': taxation.MAX_THRESHOLD_YEARS,
+    })['threshold_years'] == taxation.MAX_THRESHOLD_YEARS
+
+    with pytest.raises(taxation.ModelRejected):
+        taxation.validate(taxation.AGED_FLAT_REALISED, {
+            'rate_before': 0.3, 'rate_after': 0.1,
+            'age_basis': taxation.OPENING,
+            'threshold_years': taxation.MAX_THRESHOLD_YEARS + 1})
+
+
+def test_a_first_ceiling_at_or_below_zero_is_refused():
+    """**The first rung is checked too.** The climbing test compares against the
+    rung before, so index 0 had nothing to be refused by — and a ceiling at or
+    below zero makes the slice under it negative, which #919's walk would turn
+    into a *negative* tax on a real gain. Zero is refused with the negatives:
+    a rung that can hold nothing is not a rung."""
+    for ceiling in (0, -100):
+        with pytest.raises(taxation.ModelRejected):
+            taxation.validate(taxation.BRACKETED_REALISED, {'brackets': [
+                {'upper_bound': ceiling, 'rate': 0.2},
+                {'upper_bound': None, 'rate': 0.3},
+            ]})
+
+
 def test_none_is_a_model_and_carries_nothing():
     """Not a placeholder: it is the right answer for an exempt holding."""
     assert taxation.validate(taxation.NONE, {}) == {}

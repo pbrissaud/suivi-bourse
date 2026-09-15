@@ -112,6 +112,47 @@ def build_shares(rows: Sequence[Dict[str, Any]],
             for symbol, group in sorted(by_symbol.items())]
 
 
+def latent_gains_by_account(
+        shares: Sequence[SharePosition],
+        accounts: Collection[str] = ()) -> Dict[str, Optional[float]]:
+    """``Σ market_value − Σ cost_basis`` per account — the projection's assiette
+    for the two kinds that read one (#919).
+
+    Folded off :func:`build_shares` rather than off P1's rows, so the figure is
+    the one the shares table already renders, carried prices and all.
+
+    **Strict**: one unvalued line makes the whole account's assiette unknown, and
+    the account answers ``None`` rather than a sum of the lines that happened to
+    have a price. :func:`_sum` is the ``?? 0`` this refuses — a gain nobody knows
+    is not a gain of zero, and a tax projected off a partial valuation would
+    understate itself in silence.
+
+    ``accounts`` seeds the declared ones at zero, and that is the *other* half of
+    the same distinction: an account holding nothing — deposits and no purchase,
+    which is what a freshly declared wrapper looks like — has an assiette of
+    exactly nothing, and it is **known**. Left out of the fold it would publish
+    no figure and the panel would say *I cannot tell* about a sum the app can do
+    in its head.
+    """
+    gains: Dict[str, Optional[float]] = {account: 0.0 for account in accounts}
+    for share in shares:
+        for holding in share.accounts:
+            known = gains.get(holding.account, 0.0)
+            if known is None:
+                continue
+            # **A closed line is worth exactly nothing, and that is known.**
+            # `positions()` keeps the row after a full exit, and the aggregator
+            # zeroes its basis with it; a delisted symbol then has no price, so
+            # the strict rule below would read *unknown* off a holding whose
+            # answer is not in doubt and erase the whole account's assiette with
+            # it — for ever, and with no hint why.
+            if not holding.quantity:
+                continue
+            latent = holding.plus_value_latente
+            gains[holding.account] = None if latent is None else known + latent
+    return gains
+
+
 def _build_share(symbol: str, group: List[Dict[str, Any]],
                  carry: bool = False) -> SharePosition:
     """Aggregate one symbol's per-account rows into a table row + breakdown."""
@@ -527,7 +568,7 @@ def _first_value(rows: Sequence[Dict[str, Any]], field: str) -> Any:
 
 __all__ = [
     'AccountPosition', 'AccountSummary', 'SharePosition', 'Mover',
-    'build_shares', 'build_accounts', 'unit_cost',
+    'build_shares', 'build_accounts', 'latent_gains_by_account', 'unit_cost',
     'build_positions', 'build_portfolio_totals', 'ytd_base_day',
     'build_price_series',
     'valuation_series', 'session_baseline_instant', 'baseline_reference',

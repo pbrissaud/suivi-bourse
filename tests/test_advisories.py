@@ -5,6 +5,7 @@ and what is not*: an advisory has no row, the acknowledgement has one, and the
 row carries an expiry the acknowledgement next door deliberately does not.
 """
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
 import pytest
 
@@ -16,22 +17,43 @@ from application import store as store_module
 NOW = datetime(2026, 8, 26, 8, 10, tzinfo=timezone.utc)
 
 
-def _account(opened, identifier: str, label: str) -> None:
+def _account(opened, identifier: str, label: str, *, model: bool = True) -> None:
+    """A **fully declared** account by default — taxation model included.
+
+    The default is `True` because every observer but one is about something
+    else, and an account carrying no model raises `no_taxation_model` on its
+    own (#919): without this, half this file would be asserting on an advisory
+    it is not about. The tests that *are* about it pass `model=False`.
+    """
     opened.execute(
         'INSERT INTO account (id, label) VALUES (?, ?) '
         'ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label',
         [identifier, label])
+    if model:
+        opened.execute(
+            "INSERT INTO taxation_model (id, name, kind, parameters) "
+            "VALUES ('flat', 'Flat', 'flat_realised', '{\"rate\": 0.3}') "
+            "ON CONFLICT (id) DO NOTHING")
+        opened.execute(
+            'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?) '
+            'ON CONFLICT (account) DO UPDATE SET '
+            '  taxation_model = EXCLUDED.taxation_model',
+            [identifier, 'flat'])
 
 
 def _metrics(opened, account: str, day: date, cash: float,
-             total: float) -> None:
+             total: Optional[float]) -> None:
     """One day of an account's perf series — the row the panel reads its share
-    off, and the very row ``/api/accounts`` publishes its figures from."""
+    off, and the very row ``/api/accounts`` publishes its figures from.
+
+    ``total=None`` writes the row a cycle leaves when it has a cash balance and
+    no valuation: a ``NULL`` worth, which is not a worth of zero.
+    """
     opened.execute(
         'INSERT INTO account_metrics (account, day, cash_balance, '
         '                             holdings_value, total_value) '
         'VALUES (?, ?, ?, ?, ?)',
-        [account, day, cash, total - cash, total])
+        [account, day, cash, None if total is None else total - cash, total])
 
 
 def _keys(found):
@@ -376,3 +398,68 @@ def test_it_is_acknowledgeable_like_any_other(store):
     # *not now*, never an observation that the condition went false.
     assert _keys(advisories.standing(store, NOW)) == [
         'opened_after_first_payment:pea']
+
+
+# --------------------------------------------------------------------------- #
+# The account nothing can be projected for (#919)
+# --------------------------------------------------------------------------- #
+
+def test_an_account_with_money_and_no_model_says_why_its_panel_is_silent(store):
+    """**The sentence #919's silence rests on.**
+
+    A panel showing no projection because no model was declared looks exactly
+    like a panel whose projection is nothing, and the account's own surface is
+    the wrong place to say so: it would be an empty block explaining its own
+    emptiness, on every account, for ever.
+    """
+    _account(store, 'cto', 'CTO Trade Republic', model=False)
+    _metrics(store, 'cto', date(2026, 8, 26), cash=0.0, total=5766.22)
+
+    (one,) = [found for found in advisories.listing(store, NOW)
+              if found.kind == advisories.NO_TAXATION_MODEL]
+
+    assert one.key == 'no_taxation_model:cto'
+    assert one.subject == advisories.SUBJECT_ACCOUNTS
+    assert one.detail['account'] == 'cto'
+    assert 'CTO Trade Republic' in one.message
+
+
+def test_an_account_carrying_a_model_raises_nothing(store):
+    _account(store, 'cto', 'CTO Trade Republic')
+    _metrics(store, 'cto', date(2026, 8, 26), cash=0.0, total=5766.22)
+
+    assert [one for one in advisories.listing(store, NOW)
+            if one.kind == advisories.NO_TAXATION_MODEL] == []
+
+
+def test_an_empty_account_is_not_missing_a_declaration(store):
+    """An account with no value is not undeclared; it is empty. Asking its owner
+    to describe the taxation of nothing is noise, and the seeded row on a fresh
+    install is exactly that case."""
+    _account(store, 'default', 'Default', model=False)
+    _metrics(store, 'default', date(2026, 8, 26), cash=0.0, total=0.0)
+
+    assert [one for one in advisories.listing(store, NOW)
+            if one.kind == advisories.NO_TAXATION_MODEL] == []
+
+
+def test_an_account_whose_worth_is_unwritten_raises_nothing(store):
+    """A ``total_value`` of ``NULL`` is **not** a total of zero, and neither of
+    them is *an account worth taxing*. A cycle that wrote a cash balance and no
+    valuation leaves exactly this row, and reading it as *money with no model*
+    would raise the advisory off a figure the app does not have.
+    """
+    _account(store, 'cto', 'CTO Trade Republic', model=False)
+    _metrics(store, 'cto', date(2026, 8, 26), cash=120.0, total=None)
+
+    assert [one for one in advisories.listing(store, NOW)
+            if one.kind == advisories.NO_TAXATION_MODEL] == []
+
+
+def test_an_account_no_cycle_has_written_raises_nothing_either(store):
+    """No `account_metrics` row is no claim about the account's worth, and an
+    advisory on a silence would fire on every account of a fresh install."""
+    _account(store, 'cto', 'CTO Trade Republic', model=False)
+
+    assert [one for one in advisories.listing(store, NOW)
+            if one.kind == advisories.NO_TAXATION_MODEL] == []

@@ -21,6 +21,9 @@ SUBJECT_ACCOUNTS = 'accounts'
 CASH_SHARE = 'cash_share'
 #: A declared opening date **later** than the account's first declared payment.
 OPENED_AFTER_FIRST_PAYMENT = 'opened_after_first_payment'
+#: An account holding money and carrying no taxation model, so #919's panel has
+#: nothing to project and says nothing at all.
+NO_TAXATION_MODEL = 'no_taxation_model'
 
 CASH_SHARE_THRESHOLD = 0.10
 
@@ -67,9 +70,19 @@ class Acknowledgement:
         }
 
 
-def _observe_cash_share(opened, now: datetime) -> List[Advisory]:
-    """The accounts whose cash is more than :data:`CASH_SHARE_THRESHOLD` of them."""
-    rows = opened.query(
+def _newest_account_metrics(opened):
+    """Each account's newest ``account_metrics`` row: ``(id, label, cash, total)``.
+
+    One join, read by every observer that asks *what is this account worth right
+    now* — so the day the newest-day rule moves, it moves once.
+
+    It is **one spelling, not one scan**: each observer still calls it, so the
+    aggregation runs once per observer per listing. Sharing the rows would mean
+    threading them through ``standing()`` into every observation's signature,
+    which is a bigger change than the second scan of a table holding one row per
+    account per day costs.
+    """
+    return opened.query(
         'SELECT m.account, a.label, m.cash_balance, m.total_value '
         'FROM account_metrics m '
         'JOIN account a ON a.id = m.account '
@@ -78,8 +91,11 @@ def _observe_cash_share(opened, now: datetime) -> List[Advisory]:
         '  ON newest.account = m.account AND newest.day = m.day '
         'ORDER BY m.account')
 
+
+def _observe_cash_share(opened, now: datetime) -> List[Advisory]:
+    """The accounts whose cash is more than :data:`CASH_SHARE_THRESHOLD` of them."""
     standing: List[Advisory] = []
-    for account, label, cash, total in rows:
+    for account, label, cash, total in _newest_account_metrics(opened):
         if cash is None or total is None or total <= 0:
             continue
         share = cash / total
@@ -157,9 +173,51 @@ def _say_opened_after_first_payment(detail: Mapping[str, Any]) -> str:
         f"two is wrong.")
 
 
+def _observe_no_taxation_model(opened, now: datetime) -> List[Advisory]:
+    """An account with money in it and no model to tax it by (#919).
+
+    **This is the sentence #919's silence rests on.** A panel that shows no
+    projection because no model was ever declared looks exactly like a panel
+    whose projection happens to be nothing, and the account's own surface is the
+    wrong place to say why: it would be an empty block explaining its own
+    emptiness, on every account, for ever. The advisory says it once, in the
+    place built for saying it — **the bell**, which carries the sentence and the
+    link back to the account. The rail's chip is not that surface: it draws
+    ``cash_share``'s percentage and nothing else.
+
+    **Only where there is something to tax.** An account with no value is not
+    missing a declaration; it is empty, and asking its owner to describe the
+    taxation of nothing is noise. The seeded ``default`` row on a fresh install
+    is exactly that case.
+    """
+    carried = accounts.taxation_models_by_account(opened)
+
+    standing: List[Advisory] = []
+    for account, label, _cash, total in _newest_account_metrics(opened):
+        if account in carried or total is None or total <= 0:
+            continue
+        detail = {'account': account, 'label': label, 'total_value': total}
+        standing.append(Advisory(
+            key=f'{NO_TAXATION_MODEL}:{account}',
+            kind=NO_TAXATION_MODEL,
+            subject=SUBJECT_ACCOUNTS,
+            detail=detail,
+            message=_say_no_taxation_model(detail),
+            observed_at=now,
+        ))
+    return standing
+
+
+def _say_no_taxation_model(detail: Mapping[str, Any]) -> str:
+    return (
+        f"{detail['label']} carries no taxation model, so the app cannot say "
+        f"what you would owe on it. Declare one and it will.")
+
+
 OBSERVATIONS = (
     _observe_cash_share,
     _observe_opened_after_first_payment,
+    _observe_no_taxation_model,
 )
 
 
@@ -228,7 +286,7 @@ def acknowledge(opened, key: str,
 __all__ = [
     'Advisory', 'Acknowledgement', 'UnknownAdvisory',
     'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD',
-    'OPENED_AFTER_FIRST_PAYMENT',
+    'OPENED_AFTER_FIRST_PAYMENT', 'NO_TAXATION_MODEL',
     'SUBJECT_HEALTH', 'SUBJECT_INSTALLATION', 'SUBJECT_PORTFOLIO',
     'SUBJECT_ACCOUNTS',
     'OBSERVATIONS', 'acknowledgements', 'standing', 'listing', 'acknowledge',

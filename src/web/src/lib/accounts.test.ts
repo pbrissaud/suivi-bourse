@@ -542,3 +542,55 @@ describe('réaffecter, jamais refuser (#725)', () => {
     expect(reassignmentOf(declared, reassigned)).toEqual({ kind: 'none' })
   })
 })
+
+describe('the projection rides on the row, and an absence stays one (#919)', () => {
+  it('carries the five members through unchanged', () => {
+    const [row] = buildAccountRows([
+      anAccount({
+        id: 'pea',
+        label: 'PEA',
+        taxation_model: 'fr_pea',
+        taxation_kind: 'aged_flat_realised',
+        projected_tax: 86,
+        projected_rates: [0.3],
+        projected_rate_changes_on: '2030-03-01',
+      }),
+    ])
+
+    expect(row.taxation_model).toBe('fr_pea')
+    expect(row.taxation_kind).toBe('aged_flat_realised')
+    expect(row.projected_tax).toBe(86)
+    expect(row.projected_rates).toEqual([0.3])
+    expect(row.projected_rate_changes_on).toBe('2030-03-01')
+  })
+
+  it('keeps an absent member absent rather than collapsing it to null', () => {
+    // **The whole reason these five are spread and not mapped `?? null`** like
+    // every other member of the row. The card branches on `=== undefined`: under that
+    // idiom an absent `projected_tax` arrives as `null`, the branch does not
+    // take, and an assiette nobody could compute renders as a figure. The
+    // server preserves the distinction on purpose and the row must not lose it.
+    const [row] = buildAccountRows([anAccount({ id: 'pea', label: 'PEA' })])
+
+    for (const member of [
+      'taxation_model',
+      'taxation_kind',
+      'projected_tax',
+      'projected_rates',
+      'projected_rate_changes_on',
+    ] as const) {
+      expect(row[member]).toBeUndefined()
+      expect(member in row).toBe(false)
+    }
+  })
+
+  it('states a projected zero, which is a figure and not an absence', () => {
+    // An account in aggregate loss owes nothing. `?? undefined`, `|| undefined`
+    // and every other falsy idiom would erase it into the unknown.
+    const [row] = buildAccountRows([
+      anAccount({ id: 'pea', label: 'PEA', taxation_kind: 'flat_realised', projected_tax: 0 }),
+    ])
+
+    expect(row.projected_tax).toBe(0)
+  })
+})
