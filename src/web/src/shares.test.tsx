@@ -1125,3 +1125,83 @@ describe('the absences of this page, one screen apart', () => {
     expect(cells[6]).not.toHaveTextContent('—')
   })
 })
+
+// ------------------------------------------------------------------------- //
+// Colour is rationed (#907, ADR-0018): only the terms that can change sign
+// take it. `Valorisation` is a market value — positive on every line that
+// holds anything — so `signClass` on it resolved to the gain colour on every
+// held row, permanently. A green that is always on is not a signal, and it sat
+// one cell away from `Latente`, which is the column that does carry one.
+// ------------------------------------------------------------------------- //
+
+describe('the valuation column takes no sign colour', () => {
+  /** The nine cells of a row, found by the name the reader recognises it by. */
+  function cellsOf(name: string) {
+    const row = screen.getByRole('button', { name }).closest('tr') as HTMLElement
+    return within(row).getAllByRole('cell')
+  }
+
+  const VALUATION = 4
+  const UNREALISED = 5
+
+  /** Gain, loss, zero, and a valuation that is not a figure at all. */
+  function colouredPortfolio() {
+    return [
+      // +300,00 latent.
+      ...defaultPositions(),
+      // −200,00 latent: 10 × 80,00 against a basis of 1 000,00.
+      aPosition({
+        account: 'delta',
+        symbol: 'ZZH',
+        name: 'Zeta Eta',
+        price: 80,
+      }),
+      // Quoted, and waiting for the rate: the valuation renders as a named
+      // cause rather than a figure.
+      aPosition({
+        account: 'delta',
+        symbol: 'ZZI',
+        name: 'Zeta Iota',
+        quantity: 3,
+        cost_basis: 300,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
+    ]
+  }
+
+  it('never paints a held row’s valuation, whatever the line has done', async () => {
+    renderShares(colouredPortfolio())
+    await waitFor(() => expect(liveTable()).toBeInTheDocument())
+
+    for (const name of ['Zeta Alpha', 'Zeta Beta', 'Zeta Gamma', 'Zeta Eta']) {
+      const cell = cellsOf(name)[VALUATION]
+      expect(cell).not.toHaveClass('text-gain')
+      expect(cell).not.toHaveClass('text-loss')
+      // The colour of text, and **not** the grey of absence: a valuation that
+      // renders as a figure is one, zero included (ADR-0016).
+      expect(cell).toHaveClass('text-foreground')
+    }
+  })
+
+  it('keeps the grey of absence where the cell is not a figure', async () => {
+    renderShares(colouredPortfolio())
+    await waitFor(() => expect(liveTable()).toBeInTheDocument())
+
+    expect(cellsOf('Zeta Iota')[VALUATION]).toHaveClass('text-muted-foreground')
+  })
+
+  it('leaves the latent column’s tone alone, gain, loss and zero alike', async () => {
+    // The other caller of the same helper, asserted here so a regression on it
+    // is caught by the ticket that moved the helper's other caller.
+    renderShares(colouredPortfolio())
+    await waitFor(() => expect(liveTable()).toBeInTheDocument())
+
+    expect(cellsOf('Zeta Alpha')[UNREALISED]).toHaveClass('text-gain')
+    expect(cellsOf('Zeta Eta')[UNREALISED]).toHaveClass('text-loss')
+    expect(cellsOf('Zeta Beta')[UNREALISED]).toHaveClass('text-foreground')
+    expect(cellsOf('Zeta Gamma')[UNREALISED]).toHaveClass('text-foreground')
+    expect(cellsOf('Zeta Iota')[UNREALISED]).toHaveClass('text-muted-foreground')
+  })
+})

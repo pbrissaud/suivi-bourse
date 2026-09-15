@@ -324,7 +324,14 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
           realised gain instead. */}
       <TableCell className="text-right tabular">{f.currency(unitCost(row), currency)}</TableCell>
 
-      <TableCell className={`text-right tabular ${toneOf(renderings.valuation, value)}`}>
+      {/* **The valuation takes no sign colour** (#907, ADR-0018): it is a market
+          value, positive on every line that holds anything, so `signClass` on it
+          painted every held row green — permanently, and the reader's eye lost
+          the two columns beside it that do carry a sign. A zero handed to the
+          one predicate keeps the other two answers intact: the colour of text
+          on a figure, the grey of absence on a rendering that is not one. It is
+          `gain.ts`'s own idiom for a term that carries no sign. */}
+      <TableCell className={`text-right tabular ${toneOf(renderings.valuation, 0)}`}>
         {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
       </TableCell>
 
