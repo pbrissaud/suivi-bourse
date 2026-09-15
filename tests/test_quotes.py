@@ -275,7 +275,7 @@ def test_a_symbol_with_no_anchor_says_so(declared):
 
 def test_re_running_the_same_window_leaves_the_same_rows(declared):
     """Idempotence, which is where ``price_point``'s uniqueness lives now that
-    the table carries no key at all (ADR-0007). The backfill re-runs a window
+    the table carries no key at all. The backfill re-runs a window
     whenever a cycle is interrupted, and a second pass must not double it."""
     chunk = [{'timestamp': NOW - timedelta(days=n), 'price': 100.0 + n}
              for n in range(5)]
@@ -400,7 +400,7 @@ def test_the_repair_is_an_update_and_never_an_insert(declared):
     """The whole shape of the pass: the **same rows**, short of a column.
 
     An ``INSERT`` here would duplicate the very series it repairs — on a table
-    that carries no key to refuse it (ADR-0007) — so the row count is the
+    that carries no key to refuse it — so the row count is the
     assertion, beside the journal identity the stored rate exists for:
     ``price_converted == price_native × fx_rate``.
     """
@@ -510,7 +510,7 @@ def test_the_attributes_can_be_written_without_claiming_a_price(declared):
     That pass is *an ``UPDATE``, never an ``INSERT``*, so it cannot learn a
     symbol's currency through :func:`quotes.record_quote` — which appends a
     point. A row inserted to carry a unit would be a market observation nobody
-    made, on a table with no key to refuse it (ADR-0007). So the attributes move
+    made, on a table with no key to refuse it. So the attributes move
     alone: the series is untouched and the ``latest`` line stays where the last
     real observation left it.
     """
@@ -548,11 +548,7 @@ def test_the_attributes_reach_a_symbol_the_scrape_never_fetched(store):
 def test_a_number_with_no_unit_is_not_a_quote(declared):
     """``first_quoted_days`` asks for a number **and** a unit — issue #773.
 
-    The first term of the carrying predicate on the series paths. A symbol whose
-    ``symbol_quote.currency`` was never recorded carries closes no rate can turn
-    into money — there is no pair to name — so it is not quoted for a valuation
-    and the position joins ADR-0004's convention instead of *waiting for a rate*
-    for ever, counted at zero on every day it was held.
+    The first term of the carrying predicate on the series paths.
 
     The symbol beside it is the state #706 owns and this must not disturb: the
     unit is known, only the rate is missing, so the day stays observed.
@@ -855,10 +851,9 @@ def test_deleting_an_account_takes_its_cached_figures_with_it(store):
 
     ``account_metrics.account`` references ``account(id)``, and #700 gave that
     key its first writer: without dropping the rows, the perf job's very first
-    cycle would make every declared account undeletable — a constraint error the
-    API renders as a ``503`` where the gesture is designed to answer ``200``.
-    The refusal that stands is ADR-0013's, on an **event**, which is the thing
-    that cannot be rebuilt; a daily figure the next cycle recomputes is not.
+    cycle would make every declared account undeletable — a constraint error
+    the API renders as a ``503`` where the gesture is designed to answer
+    ``200``.
     """
     from application import accounts as accounts_module
 
@@ -881,15 +876,13 @@ def test_deleting_an_account_takes_its_cached_figures_with_it(store):
 # --------------------------------------------------------------------------- #
 
 def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker):
-    """The mechanism ADR-0011 measured, asserted as the property it establishes.
-
-    The measurement itself — 44,8 MB for a 1,6 MB table over a thousand cycles
+    """The measurement itself — 44,8 MB for a 1,6 MB table over a thousand cycles
     of a ``DELETE``+``INSERT``, against 1,1 MB for the upsert — comes from a
     throwaway harness and stays there (spec #695 Testing Decisions: *a bench is
     not a test*). What it established is this: a cycle that recomputes the same
-    days leaves the same **rows**, because the write lands on the primary key it
-    already occupies. The file-size claim belongs to #707, which is where the
-    incremental window it interacts with is removed.
+    days leaves the same **rows**, because the write lands on the primary key
+    it already occupies. The file-size claim belongs to #707, which is where
+    the incremental window it interacts with is removed.
 
     And it is **one block statement**, not a loop: the same 5 478-row upsert is
     3 ms in one call and does not finish in two minutes row by row.

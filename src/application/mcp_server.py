@@ -1,4 +1,4 @@
-"""The agent's interface — six read-only tools on the one socket (ADR-0040, #749)."""
+"""The agent's interface — six read-only tools on the one socket (#749)."""
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -237,7 +237,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         return _store().setting('base_currency')
 
     def _carried():
-        """The symbols a position may be carried at cost on (ADR-0004, #845)."""
+        """The symbols a position may be carried at cost on (#845)."""
         return quotes.terminal_symbols(
             _store(), _snapshot().backfill_windows(),
             datetime.now(timezone.utc))
@@ -337,7 +337,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                     from_day: Optional[str] = None,
                     to_day: Optional[str] = None,
                     limit: int = DEFAULT_EVENT_LIMIT) -> Dict[str, Any]:
-        """The ledger, **bounded**, from the published snapshot (ADR-0031, ADR-0040)."""
+        """The ledger, **bounded**, from the published snapshot."""
         events = _snapshot().events
 
         if symbol:
@@ -367,7 +367,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
 
     @mcp.tool(description=GET_INVESTMENT_RHYTHM_DESCRIPTION)
     def get_investment_rhythm() -> Dict[str, Any]:
-        """``/api/investment-rhythm``' payload, field for field (#751, ADR-0041)."""
+        """``/api/investment-rhythm``' payload, field for field (#751)."""
         return {
             'base_currency': reading(_base_currency),
             **rhythm.measure(_snapshot().events,

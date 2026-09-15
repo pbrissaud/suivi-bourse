@@ -1,5 +1,5 @@
 /**
- * The accounts page (ADR-0028, ADR-0019, ADR-0016), at the one seam: the whole
+ * The accounts page, at the one seam: the whole
  * app in jsdom, HTTP the only faked edge.
  *
  * What this file holds is the **master**: the rail, the weights it draws, and
@@ -93,11 +93,7 @@ describe('the rail', () => {
     expect(entries()).toHaveLength(3)
     expect(entries()[0]).toContain('Alpha')
     expect(entries()[0]).toMatch(/1\D?800,00/)
-    // And what it has done with it (#833): `322,00 / 1 478,00`, the maquette's
-    // own `Performance totale` — a cumulative ratio, so ADR-0028's clause is
-    // satisfied rather than waived, a rail with no range control having no
-    // period it could state. The name is announced, the card carrying a value
-    // and a type already.
+    // The name is announced, the card carrying a value and a type already.
     expect(entries()[0]).toMatch(/\+21,79\s?%/)
     expect(entries()[0]).toContain('Performance totale')
 
@@ -135,7 +131,7 @@ describe('the rail', () => {
     renderAccounts([...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })])
     await settled()
 
-    // The em dash and nothing else (ADR-0021): an account nothing has been
+    // The em dash and nothing else: an account nothing has been
     // written about has no share of the whole to state, and `0,00 %` would be a
     // *figure* — the fifth rendering of absence the product refuses. The bar
     // #800 put under each of these rows answers the same way and for the same
@@ -163,7 +159,7 @@ describe('the rail', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('historique encore en reconstruction')).toBeInTheDocument()
     // A progression with a date belongs to the reconstruction's own card in the
-    // notifications panel (#829, ADR-0037), which is the one place that can
+    // notifications panel (#829), which is the one place that can
     // carry it without repeating it per account.
     expect(within(rail()).queryByRole('progressbar')).not.toBeInTheDocument()
   })
@@ -177,9 +173,6 @@ describe('the rail', () => {
     // catalogue rather than from the payload (#745).
     expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
     expect(screen.queryByText('Default account')).not.toBeInTheDocument()
-    // **The gesture, not the page** (#725): the link leads to the seeded
-    // account's own detail, where the offer stands — one click away on this very
-    // page since ADR-0028, rather than on another one.
     expect(
       await screen.findByRole('link', { name: 'Affecter ces événements à un compte' }),
     ).toHaveAttribute('href', '/accounts?account=default')
@@ -268,8 +261,6 @@ describe('what the page stopped doing', () => {
     renderAccounts()
     await settled()
 
-    // The eight columns and the plot of N curves are the dashboard's accounts
-    // card now, with ADR-0019's rule travelling with them.
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.queryByText('Portefeuille')).not.toBeInTheDocument()
   })
@@ -279,7 +270,7 @@ describe('what the page stopped doing', () => {
     await settled()
 
     // The subtitle telling the two rates apart was prose about the product's
-    // own rules, which is what the bubbles are for (ADR-0016).
+    // own rules, which is what the bubbles are for.
     expect(screen.queryByText(/annualisé depuis l’origine/)).not.toBeInTheDocument()
     await waitFor(() =>
       expect(
@@ -299,12 +290,10 @@ describe('what the page stopped doing', () => {
     renderAccounts()
     await settled()
 
-    // ADR-0028 corrected (#833): the control is the dashboard accounts card's,
-    // where several spans are read side by side and one account's ancient
-    // volatility can set the scale for every other. Here the detail draws one
-    // series on one axis and the rail draws none, so the defect the control
-    // guards against has no subject — and the maquette this page takes its form
-    // from defines its presets and renders them nowhere.
+    // Here the detail draws one series on one axis and the rail draws none, so
+    // the defect the control guards against has no subject — and the maquette
+    // this page takes its form from defines its presets and renders them
+    // nowhere.
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()
   })
@@ -323,7 +312,7 @@ describe('the page’s own reads', () => {
 
     expect(screen.queryByText(/Chiffres arrêtés/)).not.toBeInTheDocument()
     // What answers it instead, and it opens onto the detail the sentence never
-    // had room for (#829, ADR-0037).
+    // had room for (#829).
     expect(screen.getByRole('button', { name: /^Notifications/ })).toBeInTheDocument()
     // No interval is named on this page in any register since #833: there is no
     // control asking for one, and what is drawn is the account's whole history,
@@ -342,7 +331,7 @@ describe('the page’s own reads', () => {
     renderApp({ url: '/accounts' })
 
     // The declaration is what the page is made of, so the page is empty — and
-    // it says why, in an empty state and never in a band (#829, ADR-0037).
+    // it says why, in an empty state and never in a band (#829).
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
@@ -353,7 +342,7 @@ describe('the page’s own reads', () => {
     // Only the declaration failing empties the page. The four other reads each
     // go to the block they compose, so a ledger that would not answer costs the
     // reader the *last events* block and nothing else — and that block says why
-    // it is not there, in its own place (#829, ADR-0037).
+    // it is not there, in its own place (#829).
     server.use(
       problemHandler(ROUTES.events, {
         status: 503,
@@ -378,9 +367,6 @@ describe('the page’s own reads', () => {
   })
 
   it('says nothing has been declared, and offers the declaration itself', async () => {
-    // A state the resource does not produce — ADR-0013 gives every install one
-    // account — so the way out is the form on this very page, not a trip to the
-    // data page, which is where it was until #793.
     const { user } = renderAccounts([])
     expect(await screen.findByText('Aucun compte déclaré')).toBeInTheDocument()
 

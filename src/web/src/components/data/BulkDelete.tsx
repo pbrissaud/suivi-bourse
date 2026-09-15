@@ -1,6 +1,6 @@
 /**
  * **Deleting the reduction** — the successor of *forget this import* (#814,
- * #834, ADR-0032).
+ * #834).
  *
  * The revocation by file went with the provenance at #816, and what replaced it
  * is worth more: it undoes a whole import without ever naming one, and it also
@@ -37,16 +37,14 @@
  * box**, not the same one with a bigger number: it says no reduction is active,
  * names the other gesture — *Vider le grand livre* — and that gesture has a
  * confirmation of its own, which counts the whole ledger and says what stays.
- * ADR-0032 and #787 both ask for exactly that split, and the two boxes are the
- * shape of it.
  *
- * **The wipe reduces on the ledger's own first day**, which is what
- * `DELETE /api/events` tells a client to do in as many words when it refuses a
- * request with no parameter at all: *reduce on something that covers the whole
- * ledger to empty it*. `event.date` is `NOT NULL` in the store, so a lower
- * bound on the oldest day retains every row — and the count in the box is read
- * back through the reduction rather than off `events.length`, so what is
- * announced is what the request takes.
+ * **The wipe reduces on the ledger's own first day**, which is what `DELETE
+ * /api/events` tells a client to do in as many words when it refuses a request
+ * with no parameter at all: *reduce on something that covers the whole ledger
+ * to empty it*. `event.date` is `NOT NULL` in the store, so a lower bound on
+ * the oldest day retains every row — and the count in the box is read back
+ * through the reduction rather than off `events.length`, so what is announced
+ * is what the request takes.
  *
  * The count in a box is the **table's** — what the reduction retains, said
  * before the click. The count in the receipt is the **server's** — what

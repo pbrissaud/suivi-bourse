@@ -70,7 +70,7 @@ class PerfJob:
         self.facade = facade
 
     def recompute(self) -> None:
-        """Rebuild the perf cache, in full, every cycle (issue #707, ADR-0011)."""
+        """Rebuild the perf cache, in full, every cycle (issue #707)."""
         horizons: Dict[str, Optional[date]] = {}
         with self.facade._perf_lock:
             try:
@@ -137,11 +137,8 @@ class PerfJob:
 
             oldest_priced = {symbol: pairs[0][0]
                              for symbol, pairs in price_pairs.items() if pairs}
-            # The two halves of ADR-0004's domain, on a **terminal** symbol:
-            # one never quoted at all, which blocks nothing; one quoted from a
-            # day later than its acquisition, which blocks nothing before that
-            # day (issue #861). `compute_account` already values both at the
-            # carrying price — the horizon is what refused them.
+            # `compute_account` already values both at the carrying price — the
+            # horizon is what refused them.
             settled = {symbol for symbol in carried
                        if symbol not in first_quoted}
             carried_from = {symbol: first_quoted[symbol] for symbol in carried

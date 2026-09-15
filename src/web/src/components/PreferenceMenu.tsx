@@ -1,14 +1,11 @@
 /**
- * One control for the reader's three preferences (ADR-0024: *reader
- * preferences, one mechanism* — it decided the first two, the density joined
- * them at #789 and `src/web/CLAUDE.md` carries the count). Three
- * states for the theme and the language, **two** for the density, and the
+ * Three states for the theme and the language, **two** for the density, and the
  * current one marked — so a reader can tell *I chose light* from *it is light
  * because my system is*.
  *
  * It lives in the content header bar and nowhere else. The sidebar foot, where
  * the language selector was first mounted to prove the form, is exactly the
- * surface that does not survive the drawer (ADR-0022).
+ * surface that does not survive the drawer.
  */
 import type { ReactNode } from 'react'
 

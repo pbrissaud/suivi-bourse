@@ -1,5 +1,5 @@
 /**
- * The ⌘K palette (#797, ADR-0026), at the one seam: the whole app in jsdom,
+ * The ⌘K palette (#797), at the one seam: the whole app in jsdom,
  * HTTP the only faked edge.
  *
  * Four of the six cases below are the ticket's own criteria and they are not
@@ -175,7 +175,7 @@ describe('the ledger an event result lands on', () => {
 
     // **It names itself**, in the terms of what it retains — a type, a word and
     // an account — and never in terms of the one row it was asked about: a
-    // ledger row has no address (ADR-0020).
+    // ledger row has no address.
     expect(
       screen.getByText(
         /Réduit aux événements de type Versement portant « Virement entrant depuis le compte courant », sur le compte alpha\./,
@@ -213,9 +213,6 @@ describe('a gesture the palette armed is spent once', () => {
       expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull(),
     )
 
-    // Away and back, which since ADR-0038 is a **route** rather than a tab: the
-    // ledger unmounts either way, and what is asserted is that the arming does
-    // not survive the round trip.
     await user.click(await screen.findByRole('link', { name: 'Réglages' }))
     await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     await screen.findByRole('table', { name: 'Vos événements' })
@@ -255,7 +252,7 @@ describe('a gesture the palette armed is spent once', () => {
     await user.click(await screen.findByRole('button', { name: /Virement entrant/ }))
     await screen.findByRole('table', { name: 'Vos événements' })
 
-    // **The card's link lands on the figure** (#829, ADR-0037), and it does it
+    // **The card's link lands on the figure** (#829), and it does it
     // from the shell — so the set of securities became addressable, and the
     // reduction that arrived before it is replaced rather than added to: two
     // reductions cannot both be the table's.

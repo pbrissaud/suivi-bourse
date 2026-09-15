@@ -1,11 +1,8 @@
 /**
- * The settings **page** (#724, #794, #830, ADR-0014, ADR-0015, ADR-0020,
- * ADR-0021, ADR-0038), at the one seam: the whole app in jsdom, HTTP the only
- * faked edge.
+ * The settings **page** (#724, #794, #830), at the one seam: the whole app in
+ * jsdom, HTTP the only faked edge.
  *
- * It was the third tab of the data page, and this file was `installation.test.tsx`
- * until ADR-0038 gave the surface an address of its own and took the tab bar
- * with it. What it holds is what that record enumerates: the dials — *stale-price
+ * What it holds is what that record enumerates: the dials — *stale-price
  * horizon included* — the workloads, the orphans, the store and what the
  * container imposes.
  *
@@ -16,8 +13,9 @@
  *    Mo after, the same content rebuilt from scratch fitting in 26,0. That is
  *    why a size and a purge button cannot be shown without the sentence between
  *    them;
- *  - **a greyed-out form that refused** — the environment card is a description,
- *    and the test of that is mechanical: nothing in it is an `input`;
+ *  - **a greyed-out form that refused** — the environment card is a
+ *    description, and the test of that is mechanical: nothing in it is an
+ *    `input`;
  *  - **a page whose `<h1>` and first `<h2>` read the same word** — *Réglages*
  *    over *Réglages* — which is what the block being lifted out of the tab and
  *    cut into cards repairs.
@@ -55,8 +53,6 @@ async function openSettings(
   if (health) {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(health)))
   }
-  // **The address, and no gesture**: the surface is a page since ADR-0038, so
-  // there is no tab to click and nothing between the URL and what it renders.
   return renderApp({ url: '/settings' })
 }
 
@@ -68,7 +64,6 @@ describe('the page, and the cards it is made of', () => {
   it('is a page: one h1, and no tab anywhere', async () => {
     await openSettings()
 
-    // ADR-0038's whole subject: an address rather than a hash on a bar.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
   })
@@ -108,9 +103,6 @@ describe('the page, and the cards it is made of', () => {
     await openSettings([anEnvironmentFact()])
     await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
 
-    // A notice is prose — a date, an acknowledgement, a link to the events
-    // concerned — and a card in a column beside the store has nowhere to say
-    // it (ADR-0030, then ADR-0037, which gave it the panel).
     expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
   })
@@ -270,7 +262,7 @@ describe('the settings, which are one surface', () => {
     expect(imposed.querySelectorAll('input, select, textarea, button')).toHaveLength(0)
     // The list is the API's and never a hard-written one, which is what makes
     // this an assertion about *the page*: three names — the two the exporter
-    // answered for (ADR-0033) and the drop folder's own (ADR-0032) are gone from
+    // answered for and the drop folder's own are gone from
     // the payload rather than hidden here.
     for (const name of ['SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL']) {
       expect(within(imposed).getByText(name)).toBeInTheDocument()
@@ -293,7 +285,7 @@ describe('the store', () => {
     // French units, from `Intl` — the header of this very file writes them.
     expect(store).toHaveTextContent(/26,0\s*Mo/)
     // The last **write of the ledger**, never the last observed price — that
-    // second one is liveness, which the bell answers (#829, ADR-0037).
+    // second one is liveness, which the bell answers (#829).
     expect(store).toHaveTextContent('Dernière écriture du grand livre')
     expect(store).toHaveTextContent(/10 févr\. 2026/)
   })
@@ -320,9 +312,6 @@ describe('the store', () => {
 
     // The only screen where a trial run learns that it is a trial run.
     expect(screen.getByText('Ce conteneur ne garde rien')).toBeInTheDocument()
-    // And never a notification: its predicate is not acknowledgeable, so
-    // acknowledging it would make it go quiet while it was still true — and a
-    // badge that never decrements is the noise ADR-0021 wrote its rule against.
     // The panel is where every open entry is counted since #829, so this is
     // asked of the badge itself.
     expect(screen.getByRole('button', { name: /^Notifications/ })).not.toHaveAccessibleName(
@@ -346,7 +335,7 @@ describe('the store', () => {
   })
 
   it('keeps the em dash for a process that named no store', async () => {
-    // The read **landed** and there is nothing to compute (ADR-0016) — the one
+    // The read **landed** and there is nothing to compute — the one
     // state the `??` #777 gated out of the row was legitimately carrying, and
     // the phrase net cannot see it: an em dash carries no word.
     server.use(
@@ -363,8 +352,6 @@ describe('the store', () => {
   })
 
   it('says nothing about the ledger while its own read is in flight', async () => {
-    // ADR-0026, #777: *« Rien n’a encore été importé »* is a statement about the
-    // reader's own data, and a hanging read has told the app nothing.
     server.use(http.get(ROUTES.store, () => new Promise<never>(() => {})))
     await openSettings()
     await screen.findByRole('heading', { name: 'Le magasin' })
@@ -507,10 +494,7 @@ describe('the orphaned securities', () => {
 
 describe('the workloads, which the bell’s health card develops', () => {
   it('is where the bell’s health card lands, from any page', async () => {
-    // ADR-0038: *the status dot's destination changes name, not nature* — and
-    // what it leads to has to be the development of what it says, or the link
-    // is a link to a repetition. Walked from the dashboard, through the panel,
-    // to the card's own control.
+    // Walked from the dashboard, through the panel, to the card's own control.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     const { user } = renderApp({ url: '/' })
 
@@ -576,7 +560,7 @@ describe('the workloads, which the bell’s health card develops', () => {
     )
     const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
 
-    // An em dash is *there is nothing to compute* (ADR-0021), and a container a
+    // An em dash is *there is nothing to compute*, and a container a
     // minute old has plenty to compute and has simply not got there yet.
     expect(jobs).toHaveTextContent('Pas encore passé')
   })
@@ -587,7 +571,7 @@ describe('the workloads, which the bell’s health card develops', () => {
     await screen.findByRole('heading', { name: 'Le magasin' })
 
     // *Everything is running* is a claim about an installation nobody has
-    // observed yet (ADR-0026), title included.
+    // observed yet, title included.
     expect(screen.queryByRole('heading', { name: 'Les plans de charge' })).not.toBeInTheDocument()
   })
 
@@ -616,7 +600,7 @@ describe('the workloads, which the bell’s health card develops', () => {
     const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
     // The card the link named, keeping its name and carrying the reason its
     // three rows are not there — the same rule the dials and the store follow
-    // (#829, ADR-0037), one block further along.
+    // (#829), one block further along.
     expect(within(jobs).getByText('Lecture impossible')).toBeInTheDocument()
     expect(jobs).toHaveTextContent(/son magasin ne répond pas/)
     // An empty state and never an alert: there is no band anywhere, and what
@@ -629,7 +613,7 @@ describe('the workloads, which the bell’s health card develops', () => {
     // route down with it.** `installationState` folds two answers onto that
     // word: a refused request, and a `200` whose body is not this object —
     // a proxy answering with its own JSON, a stale image, the SPA catch-all
-    // (ADR-0036, #819). The bell shouts identically in both and lands here in
+    // (#819). The bell shouts identically in both and lands here in
     // both. Before #830's repair this page read `health.error` alone, so the
     // second answer reached the table, which tabulates three workloads out of
     // `jobs` — and threw on the first row, with no error boundary under it.
@@ -664,8 +648,7 @@ describe('the page’s own reads', () => {
     )
     renderApp({ url: '/settings' })
 
-    // **Each block says why it is empty, and there is no band** (#829,
-    // ADR-0037): the space the dials would have filled carries the reason they
+    // **Each block says why it is empty, and there is no band** (#829): the space the dials would have filled carries the reason they
     // are not there, and the store card carries the reason its two figures are
     // not.
     await screen.findAllByText('Lecture impossible')
@@ -697,7 +680,7 @@ describe('the page in English', () => {
     expect(screen.getByRole('heading', { name: 'The store' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What the container imposes' })).toBeInTheDocument()
     // The catalogue is the source in English, so this is where a key that
-    // landed in one file and not the other is caught (ADR-0024).
+    // landed in one file and not the other is caught.
     expect(screen.getByText('Last write to your ledger')).toBeInTheDocument()
   })
 })

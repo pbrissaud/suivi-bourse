@@ -1,6 +1,6 @@
 /**
- * **A read in flight is not an absence** (#775, ADR-0026), attested once for
- * the whole front rather than block by block.
+ * **A read in flight is not an absence** (#775), attested once for the whole
+ * front rather than block by block.
  *
  * The rule was stated at #718 and restated six times in six spellings, each
  * with the same sentence recopied in a comment beside it — and four blocks
@@ -23,18 +23,11 @@
  *    false by default (`enabled:`) leaves the net in silence — which is exactly
  *    what `/api/portfolio/movers` and `/api/positions/history` are, and the
  *    first of the two is occurrence 1.
- *  - **What it observes is the emptiness primitives** — `EmptyState` and
- *    `EntryPair`, marked by a `data-empty` attribute rather than by a role: an
- *    empty state is a state and not a change to announce, and a page may
- *    legitimately hold several of them at once — one per block that has nothing
- *    to show (#829, ADR-0037) — **and, since #777, every phrase
- *    carrying a word**, which is an amendment to ADR-0026 rather than a detail
- *    of this file: a sentence composed out of the absence of a value is a claim
- *    about the reader's own data that no marker could carry. Bare figures stay
- *    out (see {@link phrases}), and totals and counting sentences stay in the
- *    block's own test — they are too bound to the block's meaning to be read
- *    from outside — so #722's fourth term and the account panel's curve are
- *    asserted in `accountSheet.test.tsx`, where their figures are.
+ *  Bare figures stay out (see {@link phrases}), and totals and counting
+ *  sentences stay in the block's own test — they are too bound to the block's
+ *  meaning to be read from outside — so #722's fourth term and the account
+ *  panel's curve are asserted in `accountSheet.test.tsx`, where their figures
+ *  are.
  *
  * The comparison is against a **baseline**: whatever the surface says when
  * every read has landed. An empty state that is already true of the fixture is
@@ -53,7 +46,7 @@ import { server } from '@/test/server'
 /**
  * The routes no page ever **reads** — every one of them is a gesture.
  *
- * The split exists for one consumer, the in-flight test (ADR-0026): it draws
+ * The split exists for one consumer, the in-flight test: it draws
  * its net from `ROUTES` rather than from a list of its own, so a fifth block
  * reading an already-served route is covered the day it is written, and a route
  * declared here that no page visits fails it. A gesture has no in-flight state
@@ -193,10 +186,7 @@ interface Surface {
  * series is armed under a condition false by default and never enters the net.
  *
  * **It was nine until #830**, the ledger page's installation tab having been a
- * second address onto the settings page's reads. ADR-0038 took the tab bar
- * away, so the surface that survives is `/settings` — which is the one this
- * list already carried, the net being driven by the **surface** and not by the
- * block.
+ * second address onto the settings page's reads.
  */
 const SURFACES: readonly Surface[] = [
   { name: 'le tableau de bord', url: '/', heading: 'Tableau de bord' },
@@ -231,9 +221,6 @@ const SURFACES: readonly Surface[] = [
       return screen.findByRole('dialog')
     },
   },
-  // Since ADR-0028 the account's detail is the page rather than a panel a
-  // gesture away, so the six reads it makes are on the mount: there is nothing
-  // left to open.
   { name: 'les comptes', url: '/accounts', heading: 'Comptes' },
   { name: 'le grand livre', url: '/ledger', heading: 'Grand livre' },
   {

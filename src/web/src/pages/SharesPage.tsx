@@ -1,5 +1,5 @@
 /**
- * The shares page (#719, ADR-0017, ADR-0016).
+ * The shares page (#719).
  *
  * The page the owner actually opens, and the one that carried the most wrong
  * figure in the product: `Plus-value latente 335,22 €`, holding **−1 288,32 €**
@@ -53,8 +53,7 @@
  * one naming on one page, rather than a fifth read to fetch a label that would
  * disagree with the column beside it.
  *
- * **A read that did not answer is said where the table would have been** (#829,
- * ADR-0037). There is no band, here or anywhere: the positions are the one read
+ * **A read that did not answer is said where the table would have been** (#829). There is no band, here or anywhere: the positions are the one read
  * this page is made of, so a refusal empties it whole — and an empty page that
  * does not say why turns *the store would not answer* and *you hold nothing*
  * into one screen. The bell is the announcer of the installation; this is the
@@ -138,7 +137,7 @@ export default function SharesPage() {
   // from *not asked yet*, and it lives on the app's own state — never in the
   // data payload (rule four of the map, the only one proved in production).
   //
-  // **An optional read, so the `?? []` survives** (ADR-0026): with no counter a
+  // **An optional read, so the `?? []` survives**: with no counter a
   // row is *carried at its cost* instead of *N readings, no price* — a line
   // removed from a cell, never a false one — and the table must not be
   // withheld for it, `/api/runtime` being the read that answers when the store
@@ -175,14 +174,13 @@ export default function SharesPage() {
   // control is not offered rather than offered and inert.
   const accountCount = new Set(reduced.map((position) => position.account)).size
 
-  // **What the header sums**, and it is the literal sentence of ADR-0017: the
-  // rows it sits above. The folded ones are in that set — a fold is not a
-  // filter, so opening the section moves nothing — and the anomaly lens is,
-  // which is the other half of the same rule: a header that went on stating the
-  // portfolio's gain over a table showing one line would be read as that line's
-  // summary, which is the very reading the *hide the closed ones* switch was
-  // deleted for. The lens is a diagnostic and it names itself, pressed, on
-  // screen; the switch was a setting whose effect was invisible.
+  // The folded ones are in that set — a fold is not a filter, so opening the
+  // section moves nothing — and the anomaly lens is, which is the other half of
+  // the same rule: a header that went on stating the portfolio's gain over a
+  // table showing one line would be read as that line's summary, which is the
+  // very reading the *hide the closed ones* switch was deleted for. The lens is
+  // a diagnostic and it names itself, pressed, on screen; the switch was a
+  // setting whose effect was invisible.
   const onScreen = [...shown, ...closed]
   const onScreenSymbols = new Set(onScreen.map((row) => row.symbol))
   // Off the **reduced** set, not the payload: a symbol held on two accounts has
@@ -217,21 +215,17 @@ export default function SharesPage() {
     pricedAt === null ? null : t('shares.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
-  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
-  // currency nothing is converted and the perf job writes nothing at all, so
-  // this page would be a column of em dashes with no reason given anywhere. It
-  // says why instead, and the ledger — where the events are *declared* — stays
-  // readable throughout.
-  //
-  // `=== true` and never a truthy test: `undefined` is *the config has not
-  // landed*, and a page emptied on a silence would be the claim ADR-0026
-  // forbids.
+  // **The band's sentence, one floor down** (#829). With no reporting currency
+  // nothing is converted and the perf job writes nothing at all, so this page
+  // would be a column of em dashes with no reason given anywhere. It says why
+  // instead, and the ledger — where the events are *declared* — stays readable
+  // throughout.
   if (currencyUnanswered(config.data?.settings) === true) {
     return <NoBaseCurrency />
   }
 
   // **The page is its positions**, so a refusal on that read empties it whole —
-  // and it says so in the space the table would have filled (#829, ADR-0037).
+  // and it says so in the space the table would have filled (#829).
   // Everything below this line is composed off `positions.data`, header line
   // included, so what stood here before was a red strip above a blank page.
   if (failure !== null) {
@@ -304,7 +298,6 @@ export default function SharesPage() {
               lens on them are gestures, and the anomaly one carries the
               attention colour because what it names is something to repair.
 
-              **And the sentence waits for both reads** (ADR-0026, the fourth
               occurrence after #775, #777 and #778). *Aucun symbol en anomalie* is
               a claim, and three chains used to make it on a silence: positions
               in flight leaves `rows` empty, so the count is zero before

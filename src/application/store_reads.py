@@ -127,7 +127,6 @@ class PortfolioReader:
         return rows[0][0] if rows else None
 
     def transfer_fees(self, through: date) -> float:
-        """ADR-0018's fourth term, **signed as it enters the sum**."""
         rows = self._store.query(
             'SELECT sum(fee) FROM event '
             " WHERE event_type IN ('DEPOSIT', 'WITHDRAWAL') "

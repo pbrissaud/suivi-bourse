@@ -1,6 +1,5 @@
 /**
- * *The workloads* — the bell's one word, developed (#830, ADR-0036, ADR-0037,
- * ADR-0038).
+ * *The workloads* — the bell's one word, developed (#830).
  *
  * The panel behind the bell says **health** in one card and one sentence, and
  * offers a link rather than an acknowledgement because health is repaired and
@@ -30,16 +29,16 @@
  *    naming a symptom beside its cause is the defect `installationState`'s
  *    causal order exists against.
  *  - **A job this process has never run has no last pass**, and that is named
- *    rather than dashed: an em dash is *there is nothing to compute*
- *    (ADR-0021), and a container a minute old has plenty to compute and has
+ *    rather than dashed: an em dash is *there is nothing to compute*,
+ *   and a container a minute old has plenty to compute and has
  *    simply not got there yet.
  *
- * **`null` is a read in flight and the card does not exist** (ADR-0026), title
+ * **`null` is a read in flight and the card does not exist**, title
  * included: *everything is running* is a claim about an installation nobody has
  * observed yet.
  *
  * **A read that was refused is not that**, and the difference is the whole of
- * why this block takes a second prop (#830, #829, ADR-0037). `/health` refusing
+ * why this block takes a second prop (#830, #829). `/health` refusing
  * is precisely the state the bell sends the reader here in — `installationState`
  * reads `unreachable` off the failed request and the panel pins *Le magasin ne
  * répond pas* with a link to this page — so a card that vanished on it would
@@ -77,10 +76,8 @@ const JOB_TONE: Record<HealthStatus, string> = {
 
 /**
  * The same three states as a **mark** rather than as a colour on a word — the
- * dot the drawing puts beside this card's heading (#838). It is not the status
- * dot ADR-0037 removed: that one was a global indicator in the chrome, read on
- * every page and standing for the whole installation. This one names the card
- * it is in, on the page the bell's own link lands on.
+ * dot the drawing puts beside this card's heading (#838). This one names the
+ * card it is in, on the page the bell's own link lands on.
  */
 const JOB_DOT: Record<HealthStatus, string> = {
   ok: 'bg-gain',
@@ -100,7 +97,7 @@ const JOB_NAMES: Record<JobKey, MessageKey> = {
 }
 
 interface JobsBlockProps {
-  /** `null` until `GET /health` has landed, refusal included (ADR-0026). */
+  /** `null` until `GET /health` has landed, refusal included. */
   health: HealthState | null
   /**
    * `GET /health` refused — `null` when it answered or is still in flight. The
@@ -117,7 +114,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
   const format = useFormatters()
 
   if (health === null) {
-    // In flight, and nothing is rendered at all (ADR-0026).
+    // In flight, and nothing is rendered at all.
     if (failure === null) return null
     // Refused, and the card owes the reason where its three rows would have
     // been. It is the state the bell's health entry links here in, so the page

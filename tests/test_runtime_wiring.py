@@ -477,13 +477,11 @@ def test_a_failed_perf_recompute_records_the_error_it_only_logged(
     assert "the store is unreadable" in record.error
 
 
-# ===================================================================== #
-# The effective environment (#654 §6a → #656, halved by #701)
+# ===================================================================== # The
+# effective environment (#654 §6a → #656, halved by #701)
 # ===================================================================== #
 #
-# What is left here is the half ADR-0014's test keeps in the environment: what
-# the process must know *before* it can open the store. The dials moved into the
-# store and are covered by ``test_settings.py``.
+# The dials moved into the store and are covered by ``test_settings.py``.
 
 def test_the_database_variables_are_gone_and_are_named_as_such(monkeypatch):
     """#700. The three ``INFLUXDB_*`` names describe a server this version never
@@ -506,10 +504,6 @@ def test_the_database_variables_are_gone_and_are_named_as_such(monkeypatch):
 
 def test_the_dials_are_not_in_the_environment_list_any_more():
     """#701: a dial has no environment form at all — not even a reported one.
-
-    Listing it here would be the precedence rule ADR-0014 removes, dressed as a
-    read-only view: a reader seeing ``SB_REGULAR_INTERVAL`` next to the store's
-    own value would reasonably conclude that setting it does something.
     """
     names = {s["name"] for s in main.effective_environment()}
 
@@ -544,13 +538,13 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
 
 
 def test_the_inventory_is_the_three_and_no_fourth():
-    """#740, ADR-0033, ADR-0032. The environment says three things; everything
-    else is a dial, the two the exporter answered for left with it, and the drop
-    folder's own left with the mount.
+    """The environment says three things; everything else is a dial, the two the
+    exporter answered for left with it, and the drop folder's own left with the
+    mount.
 
-    Named here rather than only in ``test_boot_env.py`` because this is the list
-    ``/api/config`` publishes: a fourth name appearing in the payload is a fourth
-    name the documentation would have to explain.
+    Named here rather than only in ``test_boot_env.py`` because this is the
+    list ``/api/config`` publishes: a fourth name appearing in the payload is a
+    fourth name the documentation would have to explain.
     """
     names = [s["name"] for s in main.effective_environment()]
 

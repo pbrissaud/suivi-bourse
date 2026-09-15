@@ -6,8 +6,7 @@
  * each theme is — and they need them for the same reason: **the stylesheet is
  * the only source of those values**. `alloc.ts` generates the twelve allocation
  * stops but does not know the ground they are drawn on; `index.css` knows the
- * ground but generates nothing. A test that hard-coded either would be pinning
- * a copy, and a copy is what ADR-0023's cut exists to prevent.
+ * ground but generates nothing.
  *
  * The parse is deliberately shallow: three banner comments cut the file into
  * blocks, and inside a block a `:root {` / `.dark {` header opens a run of

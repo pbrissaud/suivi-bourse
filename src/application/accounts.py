@@ -5,7 +5,7 @@
 what they declared *about an account* — which model it carries, and the day the
 wrapper was opened (#918).
 Both are declaration, both are written here and nowhere else, and
-``.github/scripts/conventions.sh`` says so on the source (ADR-0006, ADR-0044).
+``.github/scripts/conventions.sh`` says so on the source.
 The arithmetic is not here: :mod:`application.taxation` is pure and holds the
 kinds, and one module cannot be both.
 """
@@ -187,9 +187,7 @@ def refuse_unaddressable_id(account_id: str) -> None:
     The id is the account's **address**: it is what four routes match on —
     ``GET …/history``, ``POST …/reassignment``, ``PATCH`` and ``DELETE`` — and
     Flask's default converter stops at a slash, while a URL resolves ``.`` and
-    ``..`` away before the request leaves the browser. An id holding one of the
-    three inserts and is then unreachable, unrenameable and **undeletable**,
-    with ADR-0013 refusing the cascade that would clean it up.
+    ``..`` away before the request leaves the browser.
 
     It is a function of its own, and not a line inside :func:`create_account`,
     because the dry run has to refuse what the write would refuse: the preview
@@ -209,7 +207,7 @@ def create_account(store, account_id: str,
     """Declare an account. The app is where one is born, and the only place.
 
     **Two fields**, and now two columns: #916 stopped asking for the type and
-    #926's first schema step dropped it (ADR-0045), so the row the app writes
+    #926's first schema step dropped it, so the row the app writes
     and the row the store holds finally say the same thing.
     """
     account_id = _text(account_id)
@@ -277,7 +275,7 @@ def _require(store, account_id: str) -> Account:
 
 
 # --------------------------------------------------------------------------- #
-# The taxation model, and the facts an account carries (#752, ADR-0042/43/44)
+# The taxation model, and the facts an account carries (#752)
 # --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
@@ -287,7 +285,7 @@ class TaxationModel:
     Nothing is seeded here and nothing ever will be: a seeded row could not be
     corrected (``DO NOTHING`` skips the fix, ``DO UPDATE`` overwrites what its
     owner did to it), and what the app ships carries no money anyway — it is two
-    structural fields a form pre-fills and does not store (ADR-0043).
+    structural fields a form pre-fills and does not store.
     """
     id: str
     name: str
@@ -317,7 +315,7 @@ def create_model(store, name: Optional[str], kind: Any,
     """Write a taxation model. The kind is checked here, once.
 
     The id is the app's to allocate and the owner never sees it typed: it names
-    the row for as long as the row lives (ADR-0027) and carries no meaning, so a
+    the row for as long as the row lives and carries no meaning, so a
     name corrected does not move what an account points at.
     """
     checked = taxation.validate(kind, parameters)
@@ -395,12 +393,9 @@ def set_taxation_model(store, account_id: str,
                        model_id: Optional[str]) -> Optional[str]:
     """Attach a model to an account, or detach the one it carries.
 
-    ``None`` detaches, and detaching leaves **no row** rather than a row saying
-    nothing: a missing row is *never declared* and a null column is *unset*, and
-    ADR-0044 is written about the class of defect that follows from spelling the
-    first as the second. The row survives its own emptiness where the account
-    declares an opening date beside it (#918), which is what
-    :func:`_forget_empty_fact` reads before dropping anything.
+    The row survives its own emptiness where the account declares an opening
+    date beside it (#918), which is what :func:`_forget_empty_fact` reads
+    before dropping anything.
     """
     _require(store, account_id)
     target = _text(model_id) or None
@@ -427,7 +422,7 @@ def set_opened_on(store, account_id: str,
                   day: Optional[date]) -> Optional[date]:
     """Declare the day an account was opened, or take the declaration away.
 
-    **Declared, and only declared** (#918, ADR-0006). The form offers the
+    **Declared, and only declared** (#918). The form offers the
     account's earliest declared payment where there is one, and that offer is
     *interface*: what lands here is what was submitted, and it stops moving. A
     date re-derived on every replay would be a derived value in a declared row,
@@ -458,10 +453,8 @@ def set_opened_on(store, account_id: str,
 def _forget_empty_fact(store, account_id: str) -> None:
     """Drop a row that declares nothing — **a missing row is an absence**.
 
-    A null column is *unset* and a missing row is *never declared*, and ADR-0044
-    is written about the class of defect that follows from spelling the first as
-    the second. Both writers above end here, so the rule holds whichever fact
-    was the last one taken away.
+    Both writers above end here, so the rule holds whichever fact was the last
+    one taken away.
     """
     store.execute(
         'DELETE FROM account_fact WHERE account = ? '

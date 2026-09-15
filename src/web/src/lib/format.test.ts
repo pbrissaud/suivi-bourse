@@ -1,11 +1,9 @@
 /**
  * The eight `Intl` sites, under both languages.
  *
- * The claim under test is ADR-0024's, and it is worth stating as the negative:
- * **the format follows the language, not the currency**. The same amount, in the
- * *same* currency, is grouped and pointed one way for a French reader and the
- * other way for an English one — which is exactly what `const LOCALE = 'fr-FR'`
- * made impossible.
+ * The same amount, in the *same* currency, is grouped and pointed one way for a
+ * French reader and the other way for an English one — which is exactly what
+ * `const LOCALE = 'fr-FR'` made impossible.
  *
  * Expected strings are written with their real code points: French groups with
  * a narrow no-break space (U+202F) and puts one before the symbol. A test that

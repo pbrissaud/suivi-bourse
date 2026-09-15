@@ -248,7 +248,7 @@ _generation = 0
 def oldest_stored(store) -> Dict[str, datetime]:
     """``{symbol: oldest instant stored}`` — one full scan, memoized (issue #861).
 
-    ``price_point`` carries no index (ADR-0007), so this ``GROUP BY`` is a scan
+    ``price_point`` carries no index, so this ``GROUP BY`` is a scan
     of the store's largest table — and it sat on the product's **hottest** read:
     every ``/api/positions`` and every dashboard load ran it whole. Its answer
     only moves when a price point is written or removed, which is the backfill's

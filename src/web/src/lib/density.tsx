@@ -1,14 +1,10 @@
 /**
  * The table density, as the reader's **third** preference (#789).
  *
- * ADR-0024 decided two and says two, which is not a defect to repair: a record
- * is dated, and the count is carried by `src/web/CLAUDE.md` rather than by an
- * amendment rewriting what was decided about the language and the theme.
- *
- * The same mechanism as those two, and deliberately so: one
- * `localStorage` key of the same shape, absence meaning the default, and **no
- * dial in the store** — a density is a property of the reader, and the store
- * stays purely about the engine (ADR-0014).
+ * The same mechanism as those two, and deliberately so: one `localStorage` key
+ * of the same shape, absence meaning the default, and **no dial in the store**
+ * — a density is a property of the reader, and the store stays purely about the
+ * engine.
  *
  * It is the one of the three with **two** states rather than three: `auto`
  * exists for the theme because the system answers `prefers-color-scheme`, and

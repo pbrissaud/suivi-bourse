@@ -9,32 +9,33 @@
  *    and is the subject of that block. The two transitory ones are elsewhere by
  *    construction: the time-weighted return's base date, on the head and only
  *    while it moves, and the reconstruction's progress, which is a card of the
- *    notifications panel since #829 (ADR-0037) and only there.
- *  - **No installation fact lands here.** A notice posted on the dashboard is invisible
- *    to whoever lands on another page, and it would compete with the one global
- *    indicator — the bell since #829 (ADR-0037), the banner before it.
+ *    notifications panel since #829 and only there.
+ *  - **No installation fact lands here.** A notice posted on the dashboard is
+ *    invisible to whoever lands on another page, and it would compete with the
+ *    one global indicator — the bell since #829, the banner before it.
  *  - **`/` is the dashboard unconditionally**, zero events included: a bookmark
- *    valid yesterday is valid tomorrow, and a redirection conditioned on data is
- *    how an app takes its reader somewhere they did not ask for.
- *  - **The four states are one decision** (`lib/dashboard.ts`), not a `?.length`
- *    per block: *no events* is a sentence and a link, while *events and nothing
- *    held* is an ordinary page whose blocks each say why they are empty.
+ *    valid yesterday is valid tomorrow, and a redirection conditioned on data
+ *    is how an app takes its reader somewhere they did not ask for.
+ *  - **The four states are one decision** (`lib/dashboard.ts`), not a
+ *    `?.length` per block: *no events* is a sentence and a link, while *events
+ *    and nothing held* is an ordinary page whose blocks each say why they are
+ *    empty.
  *  - **The page reads, the blocks render** (#799). Every read the dashboard
  *    makes is declared here and handed down; what may be *not answered yet*
- *    crosses as `readonly X[] | null` and never as `[]` (ADR-0026). It is not a
- *    tidying: a read declared inside the block that consumes it is a read whose
- *    failure nothing above it can name, which is exactly how a `503` on
+ *    crosses as `readonly X[] | null` and never as `[]`. It is not a tidying: a
+ *    read declared inside the block that consumes it is a read whose failure
+ *    nothing above it can name, which is exactly how a `503` on
  *    `/api/portfolio-totals/history` took the chart off the dashboard on every
  *    load without a word on screen.
- *  - **A failed read is named where its content would have been** (#829,
- *    ADR-0037). There is no band: the strip that carried this sentence across
- *    the top of the column is gone and is not replaced, so *this did not answer*
- *    is said by the surface that is empty because of it — the page when the two
- *    reads it is *made of* fail, the block when its own read does. That is the
- *    same repair #799 made, kept: a failed sparkline still costs the reader
- *    nothing but the sparkline, and the total gain and its four terms stay on
- *    screen. What it drops is the announcer at the top, which put the emptiness
- *    at one end of the screen and its reason at the other.
+ *  - **A failed read is named where its content would have been** (#829). There
+ *    is no band: the strip that carried this sentence across the top of the
+ *    column is gone and is not replaced, so *this did not answer* is said by
+ *    the surface that is empty because of it — the page when the two reads it
+ *    is *made of* fail, the block when its own read does. That is the same
+ *    repair #799 made, kept: a failed sparkline still costs the reader nothing
+ *    but the sparkline, and the total gain and its four terms stay on screen.
+ *    What it drops is the announcer at the top, which put the emptiness at one
+ *    end of the screen and its reason at the other.
  *  - **What empties the page and what empties a block are two lists.**
  *    `dashboardState` takes the two reads the page is *made of*; each block's
  *    own read is handed to that block. Folded into one, a failed accounts read
@@ -48,14 +49,9 @@
  *    split the plateau encoded survives as that row: what is *drawn* is above,
  *    what is *read down* is below, and the two lists are half the page each
  *    from `md` instead of a third of it from `lg`.
- *  - **One range control, and it is the page's** (#838, ADR-0019). It sits on a
- *    row of its own between the head and the chart, preceded by the extent it
- *    selects, and it drives the chart and the comparison alike. There were two
- *    — the chart's and the accounts card's — offering the same four options one
- *    row apart and answering differently; ADR-0019's *one range for every figure
- *    on the surface* is kept by there being one control rather than one per
- *    card, and `ACCOUNT_RANGE` is where the comparison's own vocabulary for it
- *    is stated.
+ *  - **One range control, and it is the page's** (#838). It sits on a row of
+ *    its own between the head and the chart, preceded by the extent it selects,
+ *    and it drives the chart and the comparison alike.
  */
 import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
@@ -131,10 +127,7 @@ export default function DashboardPage() {
   const declared = accounts.data?.accounts ?? []
   // One read per account, and the whole series each time: the bound the card
   // applies is a `max` over the accounts' openings, and no payload states an
-  // opening. Two accounts is where a comparison starts — and where the reads
-  // do: ADR-0013 seeds a `default` row that is never removed, so gated on the
-  // rendering alone every load would fetch that one account's whole daily
-  // series to throw it away.
+  // opening.
   const histories = useQueries({
     queries:
       state === 'portfolio' && declared.length > 1
@@ -159,10 +152,8 @@ export default function DashboardPage() {
     [stamp],
   )
 
-  // The rows are the shares page's, folded by symbol: one arithmetic for what a
-  // line is worth (ADR-0004's carrying convention included), so this page and
-  // that table cannot disagree about the same portfolio. The failure counter is
-  // a rendering concern there and has no subject here, so the map is empty.
+  // The failure counter is a rendering concern there and has no subject here,
+  // so the map is empty.
   //
   // The movers take the rows **whole**, closed lines included, and reduce them
   // with `isClosed`: what is in the portfolio is one question, and answering it
@@ -181,7 +172,7 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
-  // The investment rhythm (#751, ADR-0041). Read once there is a portfolio, like
+  // The investment rhythm (#751). Read once there is a portfolio, like
   // the movers: it is derived from the ledger rather than from the perf series,
   // so it answers on an install whose reconstruction has never run — but a
   // dashboard that is not showing a portfolio is not showing this block either,
@@ -248,21 +239,17 @@ export default function DashboardPage() {
       : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
-  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
-  // currency nothing is converted and the perf job writes nothing at all, so
-  // this page would be a column of em dashes with no reason given anywhere. It
-  // says why instead, and the ledger — where the events are *declared* — stays
-  // readable throughout.
-  //
-  // `=== true` and never a truthy test: `undefined` is *the config has not
-  // landed*, and a page emptied on a silence would be the claim ADR-0026
-  // forbids.
+  // **The band's sentence, one floor down** (#829). With no reporting currency
+  // nothing is converted and the perf job writes nothing at all, so this page
+  // would be a column of em dashes with no reason given anywhere. It says why
+  // instead, and the ledger — where the events are *declared* — stays readable
+  // throughout.
   if (currencyUnanswered(config.data?.settings) === true) {
     return <NoBaseCurrency />
   }
 
   // **The page is what did not answer, and it says so where it is empty**
-  // (#829, ADR-0037). `state` is `failed` on exactly this, and the head renders
+  // (#829). `state` is `failed` on exactly this, and the head renders
   // nothing without its two reads — so without this the screen would be blank
   // and *the store is unreadable* would read as *you own nothing yet*.
   if (state === 'failed' && pageFailure !== null) {
@@ -280,7 +267,7 @@ export default function DashboardPage() {
 
       {state !== 'portfolio' ? null : (
         <>
-          {/* **One range control, and it is the page's** (#838, ADR-0019). The
+          {/* **One range control, and it is the page's** (#838). The
               drawing sets it on a row of its own between the head and the
               chart, right-aligned and preceded by the extent it selects — so
               the chart, the movements and the comparison read the same window
@@ -320,7 +307,7 @@ export default function DashboardPage() {
               // `?? null` and never `?? []`: this read is armed only once the
               // page reaches `portfolio`, so there is a real window in which an
               // empty array would state *« Rien à comparer »* about movements
-              // nobody has answered for (ADR-0026).
+              // nobody has answered for.
               movers={movers.data?.movers ?? null}
               reference={movers.data?.reference ?? null}
               rows={rows}
@@ -338,7 +325,7 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* **A block and not a page** (ADR-0041). The sidebar's five entries
+          {/* **A block and not a page**. The sidebar's five entries
               are argued as three and two, and a sixth would open a page holding
               one block; the eventual home is a `Projections` page, created the
               day #757 or #758 gives it a second occupant. Full width under the
@@ -346,7 +333,7 @@ export default function DashboardPage() {
               and twelve months drawn, and the months are what the width is for.
 
               `?? null` and never a shape assembled here: a read that has not
-              answered renders nothing at all, title included (ADR-0026). */}
+              answered renders nothing at all, title included. */}
           <InvestmentRhythm rhythm={rhythm.data ?? null} failure={rhythmFailure} />
         </>
       )}

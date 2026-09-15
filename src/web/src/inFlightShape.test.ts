@@ -1,5 +1,5 @@
 /**
- * **The shape that carries *not yet* is held on the source** (#778, ADR-0026).
+ * **The shape that carries *not yet* is held on the source** (#778).
  *
  * #775 closed its four occurrences and left two supports: a shape at the props
  * boundary — `readonly X[] | null`, `?? null` and never `?? []` — and the
@@ -8,32 +8,23 @@
  * reasons compose:
  *
  *  1. **`tsc` does not close the shape.** `?? []` produces a `PerfPoint[]`,
- *     which satisfies `readonly PerfPoint[] | null`. That is ADR-0026's own
- *     arbitration — the front keeps one idiom instead of gaining a second —
- *     and it says in as many words that what closes the class is a test.
- *  2. **The net cannot see this one.** *In flight* (`points === null`) and
- *     *landed and empty* (`curve.length === 0`) are **identical on screen**:
- *     both render nothing, by ADR-0026 (*a block waiting on a needed read
- *     renders nothing at all*) crossed with *a block with nothing in it does
- *     not exist* (#724). No `data-empty` marker is emitted in either state, so
- *     no assertion about what a reader perceives can tell them apart.
+ *     which satisfies `readonly PerfPoint[] | null`.
+ *  2. No `data-empty` marker is emitted in either state, so no assertion about
+ *     what a reader perceives can tell them apart.
  *
  * So the gate is neither the compiler nor the screen: it is **the source**, and
- * the two exits that were available are refused here rather than elsewhere.
- * *A visible marker on the landed-and-empty curve* separates the two states for
- * the net, but it is a rendering ADR-0026 and #724 both refuse, and reopening it
- * is an ADR amendment rather than a repair. *A type that closes at the compiler*
- * (`Read<T> = { landed: true; value: T } | { landed: false }`) puts two idioms
- * on one page for one rule, which is exactly what #775 refused. What is left is
- * the assertion on the source — which the Python half has a precedent for
- * (`test_positions.py` asserts on the source that one module is the only writer
- * of its two tables; #706 asserts that two callers hold the same function
- * object) and the front had none of.
+ * the two exits that were available are refused here rather than elsewhere. *A
+ * type that closes at the compiler* (`Read<T> = { landed: true; value: T } | {
+ * landed: false }`) puts two idioms on one page for one rule, which is exactly
+ * what #775 refused. What is left is the assertion on the source — which the
+ * Python half has a precedent for (`test_positions.py` asserts on the source
+ * that one module is the only writer of its two tables; #706 asserts that two
+ * callers hold the same function object) and the front had none of.
  *
  * Three things about it are decisions:
  *
- *  - **It reads types, not text.** A regex over `?? []` would be blind to
- *    `?? EMPTY` and to a plain array handed over, and would fire on the five
+ *  - **It reads types, not text.** A regex over `?? []` would be blind to `??
+ *    EMPTY` and to a plain array handed over, and would fire on the five
  *    optional `?? []` that survive #775. The real program is built from
  *    `tsconfig.app.json` and the checker is asked what each slot was declared
  *    to hold — which is why the rule is about a **shape** and not a spelling.
@@ -41,22 +32,22 @@
  *    union carrying anything besides arrays and nothing-ness — `ClassValue`,
  *    say — is not a read that may be in flight, and judging it would make this
  *    gate a general-purpose nullability lint.
- *  - **Three doors, and no fourth.** A prop, and — *where the flattening happens
- *    upstream of the prop, the honesty goes upstream with it* — a declared local
- *    and an argument. Occurrence 2 has all three: the `?? null` the panel is
- *    handed, the annotated array the page builds it out of, and the call to
- *    `settledSeries`, which takes the N reads in the same shape and could
- *    therefore be flattened on the way **in** to the function that decides the
- *    state. A property assignment is deliberately **not** judged:
+ *  - **Three doors, and no fourth.** A prop, and — *where the flattening
+ *    happens upstream of the prop, the honesty goes upstream with it* — a
+ *    declared local and an argument. Occurrence 2 has all three: the `?? null`
+ *    the panel is handed, the annotated array the page builds it out of, and
+ *    the call to `settledSeries`, which takes the N reads in the same shape and
+ *    could therefore be flattened on the way **in** to the function that
+ *    decides the state. A property assignment is deliberately **not** judged:
  *    `Filters.symbols` wears the same shape and its `null` means *no reduction*
  *    rather than *not read yet*, and a rule that cannot tell those apart would
  *    be asserting something it does not know.
  *
  * The five optional `?? []` of #718's distinction — the account name the
- * retired banner carried,
- * the shares page's failure counters, the installation badge, the orphan list,
- * the chart's marker rail — land in no such slot and are untouched, which is
- * the point of judging the slot rather than the operator.
+ * retired banner carried, the shares page's failure counters, the installation
+ * badge, the orphan list, the chart's marker rail — land in no such slot and
+ * are untouched, which is the point of judging the slot rather than the
+ * operator.
  */
 import path from 'node:path'
 import ts from 'typescript'
@@ -181,7 +172,6 @@ describe('a read in flight is not an absence, held on the source', () => {
     }
 
     const visit = (node: ts.Node): void => {
-      // A prop: the boundary ADR-0026 states the shape at.
       if (ts.isJsxExpression(node) && node.expression && ts.isJsxAttribute(node.parent)) {
         const declared = checker.getContextualType(node.expression)
         if (declared) judge(node.expression, declared, node.parent.name.getText(), 'prop')

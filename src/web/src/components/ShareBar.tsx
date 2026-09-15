@@ -9,35 +9,30 @@
  * and the account's own held lines (#833; the shares table's `Poids` column,
  * which this file was written for at #791, has left it for good with #831, the
  * weight of a line being drawn there by the allocation above the table now) —
- * and that is the reason this is a primitive rather
- * than a fix: `Stat`, `EmptyState`, `Refusal` and `EntryPair` all exist because the
- * prototype held four copies of one thing, and a share bar written three times
- * diverges three times. It had already begun: the account's composition bar was
- * a second copy, hand-written under `AccountDetail`, and it now mounts this one.
+ * and that is the reason this is a primitive rather than a fix: `Stat`,
+ * `EmptyState`, `Refusal` and `EntryPair` all exist because the prototype held
+ * four copies of one thing, and a share bar written three times diverges three
+ * times. It had already begun: the account's composition bar was a second copy,
+ * hand-written under `AccountDetail`, and it now mounts this one.
  *
  * Four things about it are decisions:
  *
- *  - **It chooses neither the colour nor the order** (ADR-0023, amended by
- *    ADR-0029). The allocation's ramp encodes **rank**, redundantly with the
- *    angle, and it is allowed to *only because* that list is sorted and
- *    legended; the rail's wheel encodes **identity**, in declaration order.
- *    Two rules, and neither of them is this file's — it takes the rank already
- *    spelled as the colour its own surface gives it. A default fill here would
- *    be a third ramp, invented by the one module that cannot know what it is
- *    drawing.
+ *  The allocation's ramp encodes **rank**, redundantly with the angle, and it
+ *  is allowed to *only because* that list is sorted and legended; the rail's
+ *  wheel encodes **identity**, in declaration order. Two rules, and neither of
+ *  them is this file's — it takes the rank already spelled as the colour its
+ *  own surface gives it. A default fill here would be a third ramp, invented by
+ *  the one module that cannot know what it is drawing.
  *  - **The bar is `aria-hidden`.** The percentage is written beside it on every
  *    surface that mounts it, and announcing the drawing as well is two
  *    announcers for one figure.
  *  - **No share draws no bar; a zero share draws an empty track.** They are not
  *    the same claim. An account nothing has been written about has no share to
  *    state, and the em dash beside it says that already (`lib/absence.ts`) — a
- *    bar at zero would say *this is worth nothing*, which is a figure and not an
- *    absence. A line genuinely worth nothing out of a total that exists is that
- *    figure, and zero is not absence (`lib/sign.ts`): an empty track is what
- *    zero per cent looks like.
- *  - **The track is chrome and the fill is the domain's.** `bg-muted` is the
- *    preset's, which is ADR-0029's cut read the only way it can be here, and it
- *    is what leaves the fill as the one colour a caller has to think about.
+ *    bar at zero would say *this is worth nothing*, which is a figure and not
+ *    an absence. A line genuinely worth nothing out of a total that exists is
+ *    that figure, and zero is not absence (`lib/sign.ts`): an empty track is
+ *    what zero per cent looks like.
  */
 import { cn } from '@/lib/utils'
 
@@ -95,8 +90,8 @@ export function ShareBar({ share, fill, size = 'line', scale = 1, className }: S
       aria-hidden
       // The one handle a rendering test has on it: the bar is `aria-hidden` and
       // carries no word, so a suite that reads what is announced walks past it
-      // exactly as `EmptyState` needed `data-empty` to be seen at all
-      // (ADR-0026). `accounts.test.tsx` reads the drawn share through it.
+      // exactly as `EmptyState` needed `data-empty` to be seen at all.
+      //`accounts.test.tsx` reads the drawn share through it.
       data-share-bar
       className={cn('block w-full overflow-hidden rounded-full bg-muted', HEIGHTS[size], className)}
     >

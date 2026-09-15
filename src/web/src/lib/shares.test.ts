@@ -87,9 +87,7 @@ describe('a row is a symbol, not a holding', () => {
 
 describe('a closed position', () => {
   it('is a derivation over quantity and has no unit cost at all', () => {
-    // ADR-0003: quantity zero means basis zero, so the division is `0 / 0` and
-    // the honest answer is *there is nothing to compute*. This is where the
-    // phantom −932 € of a sold line used to come from.
+    // This is where the phantom −932 € of a sold line used to come from.
     const [row] = rowsOf([
       aClosedPosition({ symbol: 'ZZD', realised: 120, dividends: 10, closed_at: '2025-11-04' }),
     ])
@@ -140,10 +138,6 @@ describe('a quoted position waiting for its rate', () => {
 
 describe('a position whose history is still being rebuilt', () => {
   it('is worth nothing computable, and is not carried at its cost', () => {
-    // ADR-0004's domain is exactly *the symbol's backfill is terminal*, and
-    // this line is not: *no price* means *not yet*, so valuing it at its PMP
-    // renders *not yet* as *never* — and it did, on every line of every fresh
-    // install, while the dashboard's own curve left the same day hollow (#845).
     const rows = rowsOf([
       aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null, terminal: false }),
     ])
@@ -173,10 +167,6 @@ describe('a position whose history is still being rebuilt', () => {
   })
 
   it('is left out of the weights, which go on dividing what they can', () => {
-    // The asymmetry is deliberate: a **total** is refused because a sum that
-    // quietly drops a line is a wrong number, while the divisor of the weights
-    // omits — refusing it would put one line's absence on every other row,
-    // which is the noise ADR-0016 deletes markers for.
     const rows = rowsOf([
       aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
       aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null, terminal: false }),
@@ -364,9 +354,7 @@ describe('the weight of a line', () => {
   it('divides the value of the lines that can be placed, and not the whole table', () => {
     // The line **awaiting its rate** is out of the whole rather than counted as
     // nothing: counting it would make every other percentage silently wrong. It
-    // is `allocation`'s rule one page over, reused rather than re-decided. A
-    // line that was never quoted at all is a different case — ADR-0004 carries
-    // it at its cost, so it has a value and belongs in the whole.
+    // is `allocation`'s rule one page over, reused rather than re-decided.
     const rows = rowsOf([
       aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 500, price: 130 }),
       aPosition({ symbol: 'ZZB', quantity: 10, cost_basis: 500, price: 70 }),
@@ -477,7 +465,7 @@ describe('the allocation', () => {
   })
 
   it('keeps a line carried at its cost and drops a closed one', () => {
-    // A position nothing has ever quoted is worth what it cost (ADR-0004), so
+    // A position nothing has ever quoted is worth what it cost, so
     // it is a slice; a sold one is worth exactly zero, and a legend of zeros is
     // noise — the shares page's folded section is where it lives.
     const { slices } = allocation(

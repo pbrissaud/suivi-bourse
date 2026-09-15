@@ -92,7 +92,7 @@ describe('what the form sends', () => {
       setting.key === 'base_currency' ? { ...setting, value: null, stored: false } : setting,
     )
 
-    // *Not answered yet* and *answered* have to stay two states (ADR-0002).
+    // *Not answered yet* and *answered* have to stay two states.
     expect(draftFrom(unanswered).base_currency).toBe('')
     expect(changedValues(unanswered, { ...draftFrom(unanswered), base_currency: 'usd' })).toEqual({
       base_currency: 'usd',

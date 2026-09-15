@@ -1,22 +1,19 @@
 /**
- * The taxation model on the account's panel (#752, ADR-0042, ADR-0043).
+ * The taxation model on the account's panel (#752).
  *
  * At the one seam, like every page test here: the whole app in jsdom, HTTP the
- * only faked edge, and every assertion on the **accessible rendering** or on the
- * request that actually left.
+ * only faked edge, and every assertion on the **accessible rendering** or on
+ * the request that actually left.
  *
  * Four of the cases below name a reading they prevent:
  *
- *  - **the shortcut is nested**, so a reader whose regime has no age threshold
- *    never meets the word *PEA* — which is the objection ADR-0043 was tested
- *    against, the shortcut being French and the product not;
- *  - **the abbreviation is expanded and the country is in the label**, because a
- *    bare sigle leans on knowledge a reader outside France does not have (WCAG
- *    3.1.4);
+ *  - **the abbreviation is expanded and the country is in the label**, because
+ *    a bare sigle leans on knowledge a reader outside France does not have
+ *    (WCAG 3.1.4);
  *  - **no model is an ordinary answer** and nothing is fabricated to stand in
  *    for it;
- *  - **the refusal names the accounts**, because *it is in use* sends its reader
- *    through every panel they own.
+ *  - **the refusal names the accounts**, because *it is in use* sends its
+ *    reader through every panel they own.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -126,7 +123,7 @@ describe('the model an account carries', () => {
 
 describe('writing a model', () => {
   it('asks for the shape first, and the rate is typed as a percentage', async () => {
-    // The app ships no rates (ADR-0042), so every one of them is typed — and it
+    // The app ships no rates, so every one of them is typed — and it
     // is typed the way a tax schedule says it. `0.3` is what is stored.
     const { user } = renderAccounts()
     const panel = await openPanel(user)

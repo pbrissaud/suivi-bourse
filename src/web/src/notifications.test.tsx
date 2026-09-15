@@ -1,15 +1,11 @@
 /**
- * The notifications panel (#829, ADR-0036, ADR-0037), at the one seam: the
- * whole app in jsdom, HTTP the only faked edge.
+ * The notifications panel (#829), at the one seam: the whole app in jsdom, HTTP
+ * the only faked edge.
  *
  * It replaces `notices.test.tsx` rather than extending it, because the surface
  * it covered no longer exists: the notices tab is gone, the banner is gone, the
  * status dot is gone, and what carries all three is one control in the content
- * header. What is **kept** from that file is the rule the tab was the last
- * exception to — *a block with nothing in it does not exist* — and ADR-0026's
- * clause beside it: nothing is claimed while a read is in flight, which is what
- * makes *Rien à signaler* a statement about the panel rather than about a
- * silence.
+ * header.
  *
  * The three registers are exercised together on purpose. They are one panel,
  * their difference is what each card **offers**, and the register itself is
@@ -74,7 +70,7 @@ describe('the panel holds three registers under four subjects', () => {
     await openPanel({ facts: [anEnvironmentFact()], advisories: [anAdvisory()] })
 
     // The reader sees **subjects** and infers the rest from what each card lets
-    // them do (ADR-0037). Since #838 the subject is a mark *on the card* rather
+    // them do. Since #838 the subject is a mark *on the card* rather
     // than a heading over a group of one: the drawer is one list, and three
     // headings of one line each are a table of contents for three lines. The
     // order the subjects come in is unchanged — it is `lib/notifications.ts`'s.
@@ -98,9 +94,6 @@ describe('the panel holds three registers under four subjects', () => {
     await openPanel({ facts: [], advisories: [anAdvisory()] })
 
     const advisory = card(/de liquidités non investies/)
-    // *Acknowledge 30 days*, and the card says why it is not *acknowledge*: the
-    // window is what answers ADR-0036's objection, and a reader who is not told
-    // about it has been sold a permanent silence.
     expect(
       within(advisory).getByRole('button', { name: 'Acquitter 30 jours' }),
     ).toBeInTheDocument()
@@ -145,7 +138,7 @@ describe('the control that clears says what it clears', () => {
   it('names its scope rather than promising a clean slate', async () => {
     // The badge cannot reach zero — three of the four sources never decrement
     // on their own — so *Acknowledge all* would be a promise the panel cannot
-    // keep. This is the exchange ADR-0037 accepts the stuck counter for.
+    // keep.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     await openPanel({
       facts: [anEnvironmentFact(), anInstallationFact()],
@@ -215,8 +208,8 @@ describe('nothing to report is said of the panel, or it is not said', () => {
   })
 
   it('never says it under a pinned card', async () => {
-    // A pinned red health card and this sentence cannot be on screen together
-    // (ADR-0037): the sentence is true of the panel or it is not said.
+    // A pinned red health card and this sentence cannot be on screen together:
+    //the sentence is true of the panel or it is not said.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     await openPanel({ facts: [], advisories: [] })
 
@@ -225,8 +218,6 @@ describe('nothing to report is said of the panel, or it is not said', () => {
   })
 
   it('never says it while a read is in flight', async () => {
-    // ADR-0026, and the member the net cannot see: *Rien à signaler* is a claim
-    // about the reader's installation, and one read hanging is not an answer.
     server.use(http.get(ROUTES.advisories, () => new Promise<never>(() => {})))
     await openPanel({ facts: [] })
 
@@ -275,7 +266,7 @@ describe('a card’s link lands on the figure, not on the page', () => {
 
 describe('the advisory is read twice, and acknowledged in one place', () => {
   it('draws a chip beside the account and offers no gesture on it', async () => {
-    // The chip is the **reading**, the panel is the **inventory** (ADR-0037):
+    // The chip is the **reading**, the panel is the **inventory**:
     // one fact cannot propose two different gestures depending on where it is
     // met, so the acknowledgement belongs to the panel and to the panel alone.
     server.use(http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])))
@@ -299,9 +290,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     // **The two surfaces ask two questions of the same instant.** *Acknowledge
     // for thirty days* is *not now*, said to the inventory; the cash is still
     // sitting in that account while the card sleeps, so the reading beside the
-    // figure goes on saying so. Read through the inventory the chip left with
-    // the card, and ADR-0037's *the chip is the reading, the panel is the
-    // inventory* had no effect anybody could observe.
+    // figure goes on saying so.
     //
     // The server tells the two apart with `?asleep=include`, so the net does
     // too: `listing` on the panel's read, `standing` on the rail's.

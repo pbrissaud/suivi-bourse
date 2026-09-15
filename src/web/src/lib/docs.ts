@@ -1,5 +1,5 @@
 /**
- * The one door this front has to the outside (ADR-0016, ADR-0025).
+ * The one door this front has to the outside.
  *
  * Every convention bubble ends in a link, and the link carries **version and
  * locale**. Both halves are load-bearing:
@@ -27,7 +27,7 @@ const DOCS_ORIGIN = 'https://pbrissaud.github.io/suivi-bourse'
 const DOCS_VERSION = 'v5'
 
 /**
- * **One page** — never one page per figure (ADR-0016). The count is descriptive
+ * **One page** — never one page per figure. The count is descriptive
  * and the rule is not: a figure that earns a bubble earns a heading on that same
  * page, and the list grows with it. `net-contributed` is the first to arrive
  * that way — its bubble pointed at `deposit-fees`, where the *second* half of

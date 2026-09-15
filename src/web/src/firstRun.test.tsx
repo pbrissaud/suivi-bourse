@@ -1,5 +1,5 @@
 /**
- * The first run (#726, #823, ADR-0021, ADR-0035, ADR-0005, ADR-0015, ADR-0002),
+ * The first run (#726, #823),
  * at the one seam: the whole app in jsdom, HTTP the only faked edge.
  *
  * Every case names what it prevents, and four of them are the ticket's own
@@ -16,7 +16,7 @@
  *  - **a wall of announcements** — the banner was validated in production on a
  *    `503`, something that happens and passes; two conditions that stand until
  *    somebody acts stack into a wall, which is why it rendered one band or none
- *    in causal order, and why #829 retired the strip altogether (ADR-0037):
+ *    in causal order, and why #829 retired the strip altogether:
  *    those conditions are cards of the notifications panel now, and the sentence
  *    is one floor down, in the empty state of the page it explains;
  *  - **an escape hatch given the weight of the answer** — no *Later* button
@@ -94,9 +94,7 @@ async function firstRun(options: RenderAppOptions = {}) {
 type Reader = ReturnType<typeof renderApp>['user']
 
 /**
- * Walk on, one passage at a time. The control carries no colour and the answer
- * does, which is ADR-0021's *no escape hatch at the weight of the answer* one
- * control over: continuing is the walk, not a second spelling of the way out.
+ * Walk on, one passage at a time.
  */
 async function walk(user: Reader, passages = 1) {
   for (let step = 0; step < passages; step += 1) {
@@ -159,7 +157,6 @@ describe('what it says, and what it refuses to say', () => {
     expect(described.getByText(/vos achats et vos ventes : le titre, la date, le prix/)).toBeInTheDocument()
     expect(described.getByText(/relève les cours tout seul/)).toBeInTheDocument()
     expect(described.getByText(/Trois passages pour démarrer/)).toBeInTheDocument()
-    // ADR-0016 gives a rule its own surface, beside the figure it governs.
     expect(described.queryByText(/PRU|prix de revient|moyen pondéré/i)).not.toBeInTheDocument()
   })
 
@@ -214,7 +211,7 @@ describe('closing it', () => {
 
     // The ledger is writable: the app runs, it scrapes in the security's own
     // currency, and what waits is the conversion — which the panel's pinned card
-    // and each valued page's empty state then say (#829, ADR-0037).
+    // and each valued page's empty state then say (#829).
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
     expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
   })
@@ -345,11 +342,9 @@ describe('the currency itself', () => {
   })
 
   it('shows a code another road stored, and names it as being outside the list', async () => {
-    // Two roads reach the dial without this field: a headless `curl` on
-    // `PUT /api/settings` (ADR-0015's one non-interactive path) and #710's
-    // import column. **What is closed is what the field offers, not what it can
-    // show**: the stored answer is rendered whatever it is, and named as one the
-    // field would not have offered.
+    // **What is closed is what the field offers, not what it can show**: the
+    // stored answer is rendered whatever it is, and named as one the field
+    // would not have offered.
     const config = aConfig()
     server.use(
       http.get(ROUTES.config, () =>
@@ -374,7 +369,7 @@ describe('the currency itself', () => {
     // `findAllBy`: a toast renders its text twice, once drawn and once in the
     // live region that announces it.
     expect(await screen.findAllByText(/Devise de base enregistrée : EUR/)).not.toHaveLength(0)
-    // **The answer no longer closes anything** (ADR-0035). It made the predicate
+    // **The answer no longer closes anything**. It made the predicate
     // false, and the predicate is what *armed* the modal rather than what holds
     // it open — otherwise the two passages after the question would be
     // unreachable to everybody who answers it, which is everybody it is for.
@@ -383,7 +378,7 @@ describe('the currency itself', () => {
   })
 })
 
-describe('the band is gone and its sentence descends (#829, ADR-0037)', () => {
+describe('the band is gone and its sentence descends (#829)', () => {
   const bell = () => screen.getByRole('button', { name: /^Notifications/ })
 
   it('says why each page is empty, and keeps the ledger readable', async () => {
@@ -423,7 +418,7 @@ describe('the band is gone and its sentence descends (#829, ADR-0037)', () => {
     ).toBeInTheDocument()
     // A link to its own field, never an acknowledgement: acknowledging *I have
     // no currency* means nothing, which is why it was never one of the
-    // acknowledgement table's keys (ADR-0021).
+    // acknowledgement table's keys.
     const card = within(panel).getByText('Aucune devise de base : rien n’est calculé')
       .parentElement as HTMLElement
     expect(within(card).getByRole('link', { name: 'Répondre dans Réglages' })).toBeInTheDocument()
@@ -473,8 +468,6 @@ describe('the bell is a state and a link, and the link arrives', () => {
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
     await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
 
-    // Where one repairs — which is what ADR-0022 asked of the indicator when it
-    // made it *lead* somewhere rather than indicate without pointing.
     expect(await screen.findByRole('heading', { name: 'Le magasin', level: 2 })).toBeInTheDocument()
   })
 })
@@ -502,10 +495,8 @@ describe('the walk is three passages, and they are walked in order', () => {
     expect(
       within(modal()).getByRole('heading', { name: 'Vos premiers événements' }),
     ).toBeInTheDocument()
-    // Named for the events and **not** for the import: *premier import* would
-    // tell a reader with no file that they cannot come in, and ADR-0005 decided
-    // the opposite. The file is one of two doors inside the passage, never the
-    // passage itself.
+    // The file is one of two doors inside the passage, never the passage
+    // itself.
     expect(
       within(modal()).queryByRole('heading', { name: /premier import/i }),
     ).not.toBeInTheDocument()
@@ -538,10 +529,8 @@ describe('the walk is three passages, and they are walked in order', () => {
   })
 
   it('says nothing about the accounts while that read is in flight', async () => {
-    // ADR-0026, on the one read this walk added: *what this installation holds*
-    // is a claim about the reader's own install, and a read that has not landed
-    // is not an absence. The passage's own two sentences are about the product
-    // and stand; the block that names rows does not exist yet.
+    // The passage's own two sentences are about the product and stand; the
+    // block that names rows does not exist yet.
     server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
     const { user } = await firstRun()
     await walk(user)
@@ -670,7 +659,7 @@ describe('an account can be declared from inside the walk', () => {
     expect(await passage.findByText('Vos comptes actuels')).toBeInTheDocument()
     // The catalogue's name for the row nobody declared, and beside it the value
     // a `.csv` would have to spell to land on it — the id alone since #916,
-    // where the seeded type used to sit beside it (ADR-0043).
+    // where the seeded type used to sit beside it.
     expect(passage.getByText('Non affecté')).toBeInTheDocument()
     expect(passage.getByText('default')).toBeInTheDocument()
   })
@@ -750,9 +739,6 @@ describe('an account can be declared from inside the walk', () => {
   })
 
   it('offers nothing at all while the accounts read is in flight', async () => {
-    // ADR-0026, on the offer as much as on the list: a form asking which
-    // identifier is free, over a list nobody can see, asks for a name against
-    // nothing.
     server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
     const { user } = await firstRun()
     await walk(user)
@@ -772,7 +758,7 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     expect(await pair.findByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument()
     expect(pair.getByRole('region', { name: 'Saisir un premier événement' })).toBeInTheDocument()
     // Both entries are **available**, and that is a property of the product
-    // rather than of this install (#811, ADR-0032): a file is handed to the app
+    // rather than of this install (#811): a file is handed to the app
     // by a gesture, so there is no mount left whose absence could take an
     // entrance away — and the sentence names no folder, there being none left
     // to name.
@@ -809,7 +795,7 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
   })
 
-  it('is traversed by the typed event, ADR-0005 having decided that is a way in', async () => {
+  it('is traversed by the typed event, which is a way in', async () => {
     const { user } = await firstRun()
     await walk(user, 2)
 
@@ -825,10 +811,9 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
 
 describe('mandatory means traversed, never answered', () => {
   it('lets a bare docker run through the three without supplying anything', async () => {
-    // The install ADR-0015 designs for: no volume, nothing declared, an empty
-    // ledger. A screen that will not release this reader without a CSV in hand
-    // turns the trial into a wall, so the three passages are walked and the
-    // only thing that happens is that they end.
+    // A screen that will not release this reader without a CSV in hand turns
+    // the trial into a wall, so the three passages are walked and the only
+    // thing that happens is that they end.
     server.use(
       http.get(ROUTES.runtime, () =>
         HttpResponse.json(

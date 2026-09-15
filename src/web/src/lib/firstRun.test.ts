@@ -25,7 +25,7 @@ describe('the one predicate', () => {
 
   it('is driven by the mark and not by the key that wears it today', () => {
     // The whole of this ticket: a second required dial is a registry line, not
-    // a decision reopened (ADR-0035). The currency is answered here and the
+    // a decision reopened. The currency is answered here and the
     // predicate still stands, which no reading of `base_currency` produces.
     const withASecondRequiredDial = [
       ...defaultSettings(),
@@ -58,12 +58,8 @@ describe('the one predicate', () => {
   })
 
   it('walks again the reader who left having answered, their store being gone', () => {
-    // The half of the browser's memory that is not *been through* (ADR-0035):
-    // a mark saying only that would suppress the question for ever in the very
-    // browser that answered it, so the reader who loses their volume — the
-    // trial install ADR-0015 designs for — would meet an app with no currency
-    // and nothing asking for one. A required dial unanswered under an
-    // *answered* mark can only be a store that no longer holds the answer.
+    // A required dial unanswered under an *answered* mark can only be a store
+    // that no longer holds the answer.
     expect(firstRunStands({ settings: unanswered(), mark: 'answered' })).toBe(true)
     // And nothing changes for the reader who walked away from an open question:
     // an emptied ledger, a reload, a second container — the mark still fits
@@ -78,7 +74,7 @@ describe('the three passages', () => {
   it('are walked in the order the record names', () => {
     // The required settings first — the app cannot convert or compute without
     // the answer — then the accounts, so the notion exists before a file that
-    // names them is handed over, then the events themselves (ADR-0035).
+    // names them is handed over, then the events themselves.
     expect(PASSAGES).toEqual(['settings', 'accounts', 'events'])
     expect(nextPassage('settings')).toBe('accounts')
     expect(nextPassage('accounts')).toBe('events')

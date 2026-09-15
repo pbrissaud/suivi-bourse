@@ -1,5 +1,5 @@
 /**
- * The head of the dashboard (ADR-0018, ADR-0016).
+ * The head of the dashboard.
  *
  * **One head, no discriminated union.** `MODE_MULTI_CURRENCY` is dead and a
  * `default` account is always seeded, so there is nothing to branch the whole
@@ -10,20 +10,13 @@
  * names what a ledger would add.
  *
  * **A read that fails is named by whoever is empty because of it, not here**
- * (#799, then #829). The band used to be mounted in this block and rendered
- * *instead* of it, which was right for the two reads the head is made of and
- * wrong for every other read on the page: a `/api/positions/history` that failed
- * would have wiped the total gain and its four terms to say so. #799 moved it a
- * step up, above both tracks; ADR-0037 removed the strip altogether, and the
- * sentence went down instead of up — the page renders its own empty state when
- * the two reads *it* is made of refuse, and each other block carries the reason
- * its own read did (`pages/DashboardPage.tsx`). The head keeps its figures in
- * every one of those cases, which is the property both tickets bought.
+ * (#799, then #829). The head keeps its figures in every one of those cases,
+ * which is the property both tickets bought.
  *
  * **The block reads nothing of its own** since the same ticket. The five reads
  * it renders are the page's, handed down as props, and the two shapes that can
  * be *not answered yet* cross the boundary as `readonly X[] | null` — never as
- * `[]` (ADR-0026).
+ * `[]`.
  *
  * **The gain is computed, never read.** `portfolio_totals.gain_absolu` rides in
  * the payload and is ignored: it is the same number written down elsewhere, and
@@ -36,32 +29,23 @@
  * quarter of the strip empty, and the four terms folded 3 + 1, orphaning
  * precisely the term whose subordination is the thing being bought.
  *
- * **Four icons, not nine.** ADR-0016's rule applied to the letter puts nine in
- * this one block; a total and its subordinate terms are *one* figure, so the
- * `Gain total` bubble carries the identity **and** its four terms, and the
- * terms themselves carry none. The other three go on `Versé net`, `TRI` and
- * `TWR`.
+ * The other three go on `Versé net`, `TRI` and `TWR`.
  *
  * **The year-to-date is two figures that do not touch**: the euro on a pill
- * beside the head figure, the percentage filed inside the TWR statistic. Measured on the
- * real portfolio, `+40,69 €` and `−1,25 %` over the same period, of opposite
- * signs and both correct — the portfolio grew by 6 673 € of deposits while its
- * holdings lost 1,25 %. Side by side they read as a contradiction; they are
- * not one.
+ * beside the head figure, the percentage filed inside the TWR statistic.
+ * Measured on the real portfolio, `+40,69 €` and `−1,25 %` over the same
+ * period, of opposite signs and both correct — the portfolio grew by 6 673 € of
+ * deposits while its holdings lost 1,25 %. Side by side they read as a
+ * contradiction; they are not one.
  *
  * **There is no range control.** The delta is fixed to year-to-date, on the
  * gain and on the time-weighted return, and **never on the money-weighted
  * one**, which is annualised from the origin and has no window to narrow.
  *
- * **And since #790 the head is a card, with the two periods of the total in
- * it.** *Today* and *since 1 January* are the same figure over two other
- * windows, so they stay **with** the total and never join the row of four:
- * mounted there they would read as two more things to add, which is the exact
- * addition ADR-0018's subordination exists to prevent. That *the same figure*
- * is load-bearing rather than decorative: the day's move is the movement of
- * `gain_absolu` over one day (`lib/dashboard.ts`), which is `_ytd`'s own
- * definition over another window — so the two pills answer one question twice
- * and never two questions once.
+ * That *the same figure* is load-bearing rather than decorative: the day's move
+ * is the movement of `gain_absolu` over one day (`lib/dashboard.ts`), which is
+ * `_ytd`'s own definition over another window — so the two pills answer one
+ * question twice and never two questions once.
  *
  * The series it reduces is the chart's, read once by the page under the chart's
  * own condition and therefore costing no request of its own: one read, two
@@ -172,9 +156,7 @@ export function DashboardHead({
   // about a history not rebuilt that far back — get printed for a figure that
   // simply is not computable on this install. Since #708 that is not a corner
   // case: an install with no cash event has a `twr_index` of `NULL` for ever,
-  // so the collapse would make the sentence permanent. An absent member takes
-  // the bare em dash, which by ADR-0016 says *there is nothing to compute* —
-  // the truth about a time-weighted return with no cash ledger under it.
+  // so the collapse would make the sentence permanent.
   const ytdAbsent = (totalsRow?.ytd ?? null) === null
   const ytdAbsence = (member: number | null) =>
     member === null && ytdAbsent ? `${ABSENT} — ${ytdPending}` : ABSENT
@@ -186,7 +168,7 @@ export function DashboardHead({
   // reconstruct. It is the exact defect `totals: null` had one resource up, and
   // the discriminant is already on screen: `runtime.rebuilding`, which the TWR
   // statistic consumes below for its base date. No fourth kind of absence is
-  // invented for it (ADR-0021) and no field is added to any payload.
+  // invented for it and no field is added to any payload.
   //
   // The second sentence needs a **positive** observation, which is #709's rule
   // about the third answer applied here: a runtime read that has not landed —
@@ -209,16 +191,13 @@ export function DashboardHead({
       ? null
       : (totalsRow.twr_index - 100) / 100
 
-  // **Not `?? 0`.** ADR-0013 seeds a `default` row that is never removed, so
-  // there is always at least one account and `0 compte` is a state the product
-  // declares impossible — printed, as it was, under the consolidated figures as
-  // the statement of their perimeter. A read that has not landed, or one that
-  // failed, means the perimeter is *unknown*, and an unknown perimeter is not
-  // written down at all: the figures above it are exact either way.
+  // A read that has not landed, or one that failed, means the perimeter is
+  // *unknown*, and an unknown perimeter is not written down at all: the figures
+  // above it are exact either way.
 
   // The series reaches here as `readonly PerfPoint[] | null` and the `null` is
   // load-bearing: a series that has not answered is not a day on which nothing
-  // moved (ADR-0026).
+  // moved.
   const today = dayMove(history, new Date())
 
   return (
@@ -240,17 +219,13 @@ export function DashboardHead({
     // put a **meaning** into the chrome: it is `--gain` and `--price`, and a
     // card washed in the colour of a gain is a card that says something about
     // the figure on it. It also survives the light ground, which a hand-written
-    // midnight value would not (ADR-0023).
+    // midnight value would not.
     <Card className="gap-0 bg-linear-160 from-chart-2/9 to-card to-55% py-7">
       <CardContent className="px-7">
-        {/* **The total and its terms, side by side and never at equal weight.**
-            ADR-0016 is amended in its wording and not in its rule (#787): what
-            it refuses is four numeric columns of the *same* weight, where
-            nothing says the last three are inside the first — the twelve-column
-            table it was measured on. Subordination is a **size** as much as a
-            position, and `head` against `term` is a factor of three: read here,
-            nobody adds the four to the one. What the ADR buys is that the
-            reader cannot sum them by accident, and this arrangement buys it. */}
+        {/* Subordination is a **size** as much as a position, and `head` against
+        `term` is a factor of three: read here, nobody adds the four to the one.
+        What the ADR buys is that the reader cannot sum them by accident, and
+        this arrangement buys it. */}
         {/* **A row that wraps, and not a grid of two fixed tracks** (#838).
             The drawing lays the total and the four terms out with
             `flex-wrap: wrap` and `space-between`: at the widths where the four
@@ -265,7 +240,7 @@ export function DashboardHead({
             // Unknown here has **two** causes since #775 and they read apart: a
             // held position whose rate has not resolved is *named*, because the app
             // repairs it by itself, while a fourth term nothing can bound wears the
-            // em dash — a total amputated of a term is not that total (ADR-0018),
+            // em dash — a total amputated of a term is not that total,
             // and *there is nothing to compute* is the truth about it. That second
             // one is also what `totals: null` now produces on a portfolio that has
             // positions: the headline goes out, and the sentence at the foot of the
@@ -337,20 +312,15 @@ export function DashboardHead({
           </div>
         </div>
 
-        {/* The statistics, on a row of their own — and only the ones that
-            exist. They are **not** terms of the total: `Valeur totale` and
-            `Versé net` are what the gain is the difference of, and the two rates
-            are not sums at all, so they keep the full width the four do not.
+        {/* The statistics, on a row of their own — and only the ones that exist.
+        They are **not** terms of the total: `Valeur totale` and `Versé net` are
+        what the gain is the difference of, and the two rates are not sums at
+        all, so they keep the full width the four do not.
 
-            **A row that spreads rather than one that packs left.** `flex
-            flex-wrap` put a fixed gap between the figures and left the rest of
-            the card empty — invisible while the content column was capped at
-            1 280 px, and the whole right half of the card since #792 uncapped it
-            (ADR-0022, amended). `auto-fit` collapses the tracks nothing fills,
-            so the figures that **do** exist share the width whatever their
-            number. The floor is **8rem and not 9**, measured: at 9 the five
-            statistics came to more than the card holds and the row wrapped four
-            and one. */}
+        `auto-fit` collapses the tracks nothing fills, so the figures that
+        **do** exist share the width whatever their number. The floor is **8rem
+        and not 9**, measured: at 9 the five statistics came to more than the
+        card holds and the row wrapped four and one. */}
         <div className="mt-6.5 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4.5">
           {totalsRow?.total_value == null ? null : (
             <Stat
@@ -437,14 +407,12 @@ export function DashboardHead({
         </div>
 
         {/* `totals: null` has **two** causes and they are not the same sentence
-            (#745): no ledger at all, or a reporting currency nobody has answered.
-            The second is the ordinary one here — reaching this line at all means
-            positions exist, so a ledger exists — and it is the actionable one:
-            the perf job writes nothing until the dial is answered (#702), every
-            figure it computes being money. Written as one sentence, the app told
-            a reader with a full portfolio that they had no ledger. The condition
-            is read where ADR-0021 says it is stated, the head's `currency` being
-            `null`, and no fourth kind of absence is invented for it. */}
+        (#745): no ledger at all, or a reporting currency nobody has answered.
+        The second is the ordinary one here — reaching this line at all means
+        positions exist, so a ledger exists — and it is the actionable one: the
+        perf job writes nothing until the dial is answered (#702), every figure
+        it computes being money. Written as one sentence, the app told a reader
+        with a full portfolio that they had no ledger. */}
         {totalsRow === null ? (
           <p className="max-w-prose text-sm text-muted-foreground">
             {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
@@ -459,10 +427,7 @@ export function DashboardHead({
  * One **period of the total** — today, or since 1 January.
  *
  * A pill and not a statistic, deliberately: a `Stat` is a figure of its own,
- * and these two are the head's figure seen through another window. Mounted as
- * statistics they join a row of things to add, which is the reading ADR-0018's
- * subordination exists to prevent; mounted as pills beside the headline they
- * read as what they are.
+ * and these two are the head's figure seen through another window.
  *
  * **It is tinted by its sign, and it carries the arrow of that sign** (#831,
  * the maquette's own pill). The neutral chip it used to be — a hairline border

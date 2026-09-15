@@ -49,8 +49,6 @@ describe('the walking skeleton', () => {
     const { user } = renderApp()
 
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
-    // Five since ADR-0038, in three and two — the portfolio, then what the
-    // owner acts on.
     expect(within(nav()).getAllByRole('link')).toHaveLength(5)
 
     await chooseInMenu(user, 'Thème', 'Sombre')
@@ -81,11 +79,8 @@ describe('the walking skeleton', () => {
     ).toBeInTheDocument()
     // The ground did not move when the language did.
     expect(document.documentElement).toHaveClass('dark')
-    // Headroom, and it is measured rather than defensive: this one walks the
-    // five routes **twice**, and since ADR-0028 the accounts route mounts a
-    // detail reading the positions, the ledger and a perf series on top of the
-    // declaration. Two seconds and a half in a quiet run, and the default five
-    // is not a margin under a loaded worker.
+    // Two seconds and a half in a quiet run, and the default five is not a
+    // margin under a loaded worker.
   }, 20_000)
 })
 
@@ -125,11 +120,7 @@ describe('the five routes', () => {
 describe('a single account', () => {
   it('keeps the entry, the page being a reading of one account and not a comparison', async () => {
     // The entry used to disappear here, and the argument was the accounts
-    // page's own: comparing one term is not comparing. ADR-0028 replaced that
-    // page with a master-detail whose four blocks exist nowhere else, so at one
-    // account it is the **ordinary** reading — and hiding it would put the
-    // composition, the annualised rate, the dividends and the last events out
-    // of reach of most installs.
+    // page's own: comparing one term is not comparing.
     server.use(
       http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload([defaultAccounts()[0]]))),
     )
@@ -211,7 +202,7 @@ describe('when the app is not answering', () => {
   /**
    * Every route the shell and the page read, refusing together — which is what
    * an app that is not answering looks like from a browser. There is no band
-   * left to raise since #829 (ADR-0037): the bell is red, its panel says so in
+   * left to raise since #829: the bell is red, its panel says so in
    * prose, and the page names its own failed reads.
    */
   const unavailable = () =>

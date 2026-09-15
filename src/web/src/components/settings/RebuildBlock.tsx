@@ -1,14 +1,10 @@
 /**
- * The reconstruction, where the bell's card leads (#787, #727, #830, ADR-0021,
- * ADR-0037, ADR-0038).
+ * The reconstruction, where the bell's card leads (#787, #727, #830).
  *
  * It was a **band** — the top of every page, on every route — and that is the
  * most expensive surface the product has. It earned it while the dot could not
- * carry the fact: green meant *the scheduler is running*, which is true during a
- * rebuild, so something else had to say the consolidated figures were behind.
- * Now the bell says it (`lib/status.ts`), and what an icon cannot carry lands
- * here, one click along the link the `reconstruction_running` card already
- * offers — which is this page since ADR-0038 renamed the destination.
+ * carry the fact: green meant *the scheduler is running*, which is true during
+ * a rebuild, so something else had to say the consolidated figures were behind.
  *
  * What it carries is what the band carried, and each half is a decision #727
  * measured:
@@ -19,9 +15,9 @@
  *    off to twenty-four hours, so a promised hour is a promise the app cannot
  *    keep;
  *  - **which account is holding it back**, because the global series is written
- *    only where *every* account is (ADR-0018). Without that name the rule *one
- *    slow account delays the whole home page* is invisible, and its owner reads
- *    the delay as a fault of the whole portfolio.
+ *    only where *every* account is. Without that name the rule *one slow
+ *    account delays the whole home page* is invisible, and its owner reads the
+ *    delay as a fault of the whole portfolio.
  *
  * `ratio: null` is *nothing to draw* — no account reports a horizon, or the
  * ledger's first event is today — and the block then says the reconstruction is
@@ -29,8 +25,7 @@
  *
  * **A block with nothing in it does not exist**: nothing is rebuilding, nothing
  * is rendered. And nothing at all while the runtime read is in flight, which is
- * the same rule one page over (ADR-0026): *not observed yet* is not *not
- * running*.
+ * the same rule one page over: *not observed yet* is not *not running*.
  *
  * **It is not named after the workload, and that is the point** (#830). The
  * card below it in `JobsBlock` is the backfill's *line* — it exists always and

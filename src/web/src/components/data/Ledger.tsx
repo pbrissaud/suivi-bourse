@@ -1,6 +1,6 @@
 /**
  * The ledger — the journal, its reduction and its two destructive gestures
- * (#723, #794, #834, ADR-0020, ADR-0031, ADR-0032).
+ * (#723, #794, #834).
  *
  * The page was a **repair** surface and became a **revocation** one: #662's
  * whole apparatus — the inline editor, the opaque token over `(file, sheet,
@@ -13,12 +13,8 @@
  *
  * What this surface owes is the journal itself, its reduction, the create form
  * that is the onboarding, and — as **one imports bar above the table** since
- * #794 — the drop zone and the export menu. Since #814 the reduction earns a
- * gesture of its own, **deleting everything it retains**, and since #834 the
- * row does too, at the unit: ADR-0032 asks for both by name, the removal being
- * *the* gesture now that no file is ever read again. The declaration of the
- * accounts left at #793 (ADR-0028): a declaration is made where its subject is
- * looked at.
+ * #794 — the drop zone and the export menu. The declaration of the accounts
+ * left at #793: a declaration is made where its subject is looked at.
  *
  * **The reduction is laid out in three places since #834**, and they are three
  * questions: the **panel** on the left, where an axis is chosen and every
@@ -28,20 +24,20 @@
  * lives here is the state they all write to, so a reduction that moves starts
  * its reveal over wherever it was moved from.
  *
- * Since #795 the table is **revealed forty rows at a time** (ADR-0031), and the
- * budget lives here rather than in the table because it is a property of the
+ * Since #795 the table is **revealed forty rows at a time**, and the budget
+ * lives here rather than in the table because it is a property of the
  * *reduction*: the two sentences under the table count what survives it, and
  * say — since #834 — that it *is* a reduction they are counting. Nothing about
  * that is a fetch — `GET /api/events` answered once and handed back the ledger
  * entire — which is why the control may speak while the read never could.
  *
  * **A read that did not answer is said where the journal would have been**
- * (#829, ADR-0037). The banner and the band are retired and not replaced, so a
- * surface that stayed silent over a `503` would make *the store is unreadable*
- * and *you have recorded nothing yet* the same screen, in its worst form, a
- * blank one. `/api/runtime` left the reads here with the band that consulted it
- * — it answers from process memory and never opens the store (#668), so it was
- * in the list to be short-circuited on and nothing else.
+ * (#829). The banner and the band are retired and not replaced, so a surface
+ * that stayed silent over a `503` would make *the store is unreadable* and *you
+ * have recorded nothing yet* the same screen, in its worst form, a blank one.
+ * `/api/runtime` left the reads here with the band that consulted it — it
+ * answers from process memory and never opens the store (#668), so it was in
+ * the list to be short-circuited on and nothing else.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -191,7 +187,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   const all = useMemo(() => byDateDescending(events.data ?? []), [events.data])
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])
 
-  // **The rendering budget** (ADR-0031). It is a number of rows and not a page
+  // **The rendering budget**. It is a number of rows and not a page
   // index, and the difference is the whole record: `GET /api/events` answered
   // once, from the published snapshot in process memory, and handed back the
   // ledger entire — so raising this asks nobody anything.
@@ -236,7 +232,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     offeredMore.current = false
   }, [page.atEnd])
 
-  // **The tab is its ledger, and only its ledger** (#829, ADR-0037). There is no
+  // **The tab is its ledger, and only its ledger** (#829). There is no
   // band left to raise for the second read: `/api/accounts` failing costs this
   // tab the *choice of account* inside the form, and the form says so itself —
   // `accountChoice`'s `failed` branch, one prop below. Naming it again over a
@@ -255,7 +251,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
 
   return (
     <div className="space-y-6">
-      {/* **Above the table, and one bar** (#794, ADR-0030, ADR-0032): the drop
+      {/* **Above the table, and one bar** (#794): the drop
           zone and the export menu. The sources with their revocation were the
           third and left with the population they described (#816) — undoing an
           import is the deletion on the reduction, below. What this renders on
@@ -295,13 +291,9 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
             {
               title: t('data.empty.file.title'),
               body: t('data.empty.file.body'),
-              // **The entry carries the gesture itself** since #811: the bar
-              // above does not render on a ledger with nothing in it, so this
-              // is the whole of the file entrance on a fresh install — which is
-              // exactly the install ADR-0032 exists for, the one that never
-              // mounted anything. `EntryPair`'s *an unavailable entry keeps its
-              // place and says why* loses its one case with it: there is no
-              // mount left to be missing.
+              // `EntryPair`'s *an unavailable entry keeps its place and says
+              // why* loses its one case with it: there is no mount left to be
+              // missing.
               action: <UploadZone upload={upload} compact />,
             },
             {
@@ -320,8 +312,8 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
           {/* **A reduction that came from an address names itself and offers the
               way out** (#797, the clause #724 wrote for the notice's own). What
               it states is what it *retains* — a type, a word and an account —
-              and never the row it was asked about: a ledger row has no address
-              (ADR-0020), so a sentence naming one would promise a reduction the
+              and never the row it was asked about: a ledger row has no address,
+             so a sentence naming one would promise a reduction the
               product cannot make. */}
           {delivered === null ? null : (
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
@@ -365,7 +357,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               <div className="flex flex-wrap items-center gap-3">
                 <LedgerSearch filters={filters} onChange={reduce} shown={shown.length} />
                 {/* **The destructive gesture sits under the reduction it
-                    consumes** (#814, #834, ADR-0032), and not in the bar above
+                    consumes** (#814, #834), and not in the bar above
                     where the export menu is: what it acts on is the reduction,
                     and a button one surface away from its subject is how
                     somebody deletes two hundred rows believing they are
@@ -402,7 +394,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     onRemove={setRemoving}
                   />
 
-                  {/* **The reveal speaks, and the read did not** (ADR-0031).
+                  {/* **The reveal speaks, and the read did not**.
                       Both sentences below describe rows the app already holds —
                       one of them counts what is drawn against what the
                       reduction holds, the other says the last of them is drawn
@@ -422,8 +414,8 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                   >
                     {page.atEnd ? (
                       <p className="text-xs text-muted-foreground">
-                        {/* **True of the reduction, and not of the store**
-                            (ADR-0031): *the end of the ledger*, said over a
+                        {/* **True of the reduction, and not of the store**:
+                           *the end of the ledger*, said over a
                             reduced table, is the sentence that record refuses
                             by name. */}
                         {t('data.ledger.end', {

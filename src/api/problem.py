@@ -48,7 +48,7 @@ def not_found(detail: str):
 
 
 def entry_gone(detail: str):
-    """404 — the event was there and is not any more (#785, ADR-0027).
+    """404 — the event was there and is not any more (#785).
 
     Its own identifier because the two are opposite pieces of news and only the
     server can tell them apart: a key it once issued is never handed to another
@@ -126,7 +126,7 @@ def model_in_use(detail: str, accounts: Sequence[str]):
     """409 — the model cannot go: these accounts carry it (#752).
 
     Its own identifier, and it carries **the accounts**: the front branches on
-    `type` and never on `detail` (ADR-0024), so a refusal that named them in its
+    `type` and never on `detail`, so a refusal that named them in its
     prose alone would reach the reader as the generic conflict sentence — *this
     already exists* about a removal, which is not what happened.
     """

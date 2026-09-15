@@ -1,5 +1,5 @@
 /**
- * The data page (#723, ADR-0020, ADR-0005), at the one seam: the whole app in
+ * The data page (#723), at the one seam: the whole app in
  * jsdom, HTTP the only faked edge.
  *
  * Every case below names the reading it prevents, and three of them are
@@ -60,7 +60,7 @@ describe('one route, one thing', () => {
   it('has no tab bar at all, and renders the ledger', async () => {
     renderData()
 
-    // **Three, then two, then none** (#829, #830, ADR-0037, ADR-0038): the
+    // **Three, then two, then none** (#829, #830): the
     // notices left for the panel behind the bell, the installation left for
     // `/settings`, and a bar holding a choice of one is not a bar.
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
@@ -89,11 +89,10 @@ describe('the columns of the ledger', () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // `Provenance` was the ninth and it left with its subject (#816,
-    // ADR-0032): there is no source to name and no revocation to lead to. What
+    // `Provenance` was the ninth and it left with its subject (#816): there is no source to name and no revocation to lead to. What
     // closes the row since #834 is not a column of that family either — it is
     // the row's **removal**, a control named for the reader who cannot see the
-    // icon in it (ADR-0032).
+    // icon in it.
     expect(columnNames(ledger())).toEqual([
       'Date',
       'Type',
@@ -155,10 +154,7 @@ describe('the columns of the ledger', () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // A ledger is opened to check what has just happened. The table reveals by
-    // packets since ADR-0031, but « page 4 sur 6 » is still nowhere: a place in
-    // a sequence means nothing on an axis of dates, which is why what the
-    // control below the table counts is **rows**.
+    // A ledger is opened to check what has just happened.
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(
       rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[0].textContent),
@@ -172,9 +168,7 @@ describe('the columns of the ledger', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     // The cell that used to close a row said *« Saisie manuelle »* or named a
-    // file; both halves went with the population they told apart (#816). What
-    // closes it now is the account, and the dashes elsewhere on the row are
-    // ADR-0016's own — a grant raises no question of a fee.
+    // file; both halves went with the population they told apart (#816).
     const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
     const cells = within(row).getAllByRole('cell')
     // The last cell is the removal since #834 — a gesture, not a fact about the
@@ -294,15 +288,10 @@ describe('the reduction, which is what pays for no pagination', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // ADR-0013 seeds an account that is never removed, so an install naming one
-    // would get a group with a single option beside its own exit: a filter that
-    // cannot filter, which is the defect a column that cannot discriminate is.
     expect(screen.queryByRole('group', { name: 'Compte' })).not.toBeInTheDocument()
 
     const two = [...ledgerEvents(), anEvent({ id: '12', date: '2026-02-11', account: 'beta' })]
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(two))))
-    // Away and back — a **route** since ADR-0038 took the tab bar away — which
-    // is what makes the table read the second payload.
     await user.click(screen.getByRole('link', { name: 'Réglages' }))
     await user.click(screen.getByRole('link', { name: 'Grand livre' }))
 
@@ -559,7 +548,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
 
     await user.click(within(types).getByRole('button', { name: /^Versement/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
-    // **Of the reduction, never of the store** (#834, ADR-0031): *the end of
+    // **Of the reduction, never of the store** (#834): *the end of
     // the ledger* said over three rows out of a hundred and twenty-three is the
     // sentence that record refuses by name.
     expect(screen.getByText('Fin de la réduction · 3 événements')).toBeInTheDocument()
@@ -576,7 +565,7 @@ describe('a reduction in force always has the chip that releases it', () => {
     // rest back — #724's defect, arrived from the other side.
     //
     // The gesture was *forget this import* until #816; it is the deletion on
-    // the reduction now (ADR-0032), which is a **better** subject for this
+    // the reduction now, which is a **better** subject for this
     // case: the rows that leave are exactly the rows the chip retains.
     const withBeta = [
       ...ledgerEvents(),
@@ -671,7 +660,7 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
   })
 
   it('refuses the gesture with nothing reduced, and points at the other one', async () => {
-    // **The criterion** (#834, ADR-0032, #787): with no reduction the box is a
+    // **The criterion** (#834, #787): with no reduction the box is a
     // **different** box, not the same one with a bigger number. It says no
     // reduction is active and names the gesture that does empty a ledger, which
     // then asks for itself — the whole ledger counted, and what stays said.
@@ -770,7 +759,7 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     // A `422` the reader could not foresee — a client that lost its query
     // string, or a reduction that emptied itself between the render and the
     // click. The sentence is read by `problem.type`, never by the English
-    // `detail` the server wrote for a log (ADR-0024).
+    // `detail` the server wrote for a log.
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
@@ -909,7 +898,7 @@ describe('a row is removed at the unit', () => {
       within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
     ).toBeInTheDocument()
     // What names a row is what the row shows — its type, its identity, its day
-    // — and never its key: a ledger row has no address (ADR-0020).
+    // — and never its key: a ledger row has no address.
     expect(within(box).getByText(/Attribution · ZZC · 24 déc\. 2025/)).toBeInTheDocument()
     // The editor did not open underneath it: the gesture on the cell stops
     // where it was made.
@@ -1260,7 +1249,7 @@ describe('the ledger at zero', () => {
 
     // Not an empty table with a small button over it: dropping a file and
     // typing a first event are two entrances to the same room, and the second
-    // one *is* the onboarding since manual mode died (ADR-0005).
+    // one *is* the onboarding since manual mode died.
     const file = await screen.findByRole('region', { name: 'Importer un fichier' })
     const manual = screen.getByRole('region', { name: 'Saisir un premier événement' })
     expect(file).toBeInTheDocument()
@@ -1288,7 +1277,7 @@ describe('the ledger at zero', () => {
 describe('the page’s own read', () => {
   it('names an unreadable store instead of showing an empty ledger', async () => {
     // Said in the journal's own space, as an empty state, and never as a band
-    // at the top of the tab (#829, ADR-0037).
+    // at the top of the tab (#829).
     server.use(
       problemHandler(ROUTES.events, {
         status: 503,
@@ -1332,7 +1321,7 @@ describe('the page in English', () => {
     // difference of case.
     expect(within(table).getByText('Cash in')).toBeInTheDocument()
     expect(within(table).getByText('Free shares')).toBeInTheDocument()
-    // The reveal speaks English too, and the English is the source (ADR-0024).
+    // The reveal speaks English too, and the English is the source.
     expect(screen.getByRole('group', { name: 'Type' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All types · 4 events' })).toBeInTheDocument()
     expect(screen.getByText('The end of the ledger · 4 events')).toBeInTheDocument()

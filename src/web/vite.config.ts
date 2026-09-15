@@ -38,19 +38,15 @@ export default defineConfig({
   server: {
     port: 5173,
     // The dev loop #655 decision 2 is arguing for: hot reload on the front
-    // while the *real* scheduler runs against the *real* store. The other half
-    // of this proxy is `uv run python -m application.boot` — including on a
-    // Mac, since ADR-0039: the app used to segfault there the moment it scraped
-    // a symbol (gunicorn forked, and libcurl's Curl_macos_init then died in
-    // CoreFoundation), and it does not fork any more. Point `SB_API_URL` at it
-    // if it is not on 8080.
+    // while the *real* scheduler runs against the *real* store. Point
+    // `SB_API_URL` at it if it is not on 8080.
     proxy: {
       '/api': {
         target: process.env.SB_API_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
       // The one route the front reads that carries no `/api` prefix (#819): the
-      // header's bell reads the container's own probe (ADR-0037). Without this
+      // header's bell reads the container's own probe. Without this
       // entry the dev server answers it with `index.html`, and the bell goes
       // **red** against a perfectly well app — the exact reading its red is
       // reserved for.

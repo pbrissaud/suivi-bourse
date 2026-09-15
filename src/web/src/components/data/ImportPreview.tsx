@@ -1,6 +1,6 @@
 /**
  * **Ce que cet import ferait** — the modal that collects the three answers
- * (#835, #813, ADR-0006, ADR-0032).
+ * (#835, #813).
  *
  * The server has served this surface since #813 and the front had never
  * gathered it. `?dry_run=1` judges the file, counts what of it the ledger
@@ -15,8 +15,8 @@
  * file and send the reader off to declare an account by hand — holding a file
  * the app had just refused. It is **consumed at the import and dropped**, and
  * the window says so: it is not the mapping table `reassignment.py` refused,
- * which was a second *persistent* truth about the account an event names
- * (ADR-0006). No `UPDATE`, no window, nothing kept.
+ * which was a second *persistent* truth about the account an event names.
+ *No `UPDATE`, no window, nothing kept.
  *
  * **An answer costs a fresh forecast, and that is not waste.** The duplicate key
  * carries the account, so rows sent from `TR` into `pea` may be rows the ledger
@@ -54,7 +54,7 @@
  * duplicated: the accounts block is one line of affirmation, and the duplicates
  * block does not exist — a block with nothing in it does not exist (#724).
  *
- * **A read in flight is not an absence** (ADR-0026): the window claims nothing
+ * **A read in flight is not an absence**: the window claims nothing
  * about the reader's declaration until the declaration has arrived, so the body
  * waits on both the forecast and the accounts rather than rendering a question
  * against a list nobody has heard from.
@@ -344,7 +344,6 @@ function AccountsBlock({
               />
             ))}
           </ul>
-          {/* ADR-0006, said to the reader rather than only in a record. */}
           <p className="text-xs text-muted-foreground">{t('data.import.accounts.dropped')}</p>
         </>
       )}
@@ -568,7 +567,7 @@ function names(
 }
 
 /**
- * **La devise** — offered, never taken quietly (ADR-0021, #710).
+ * **La devise** — offered, never taken quietly (#710).
  *
  * The app reads a declaration and never asserts one, and this install has never
  * answered the question: the file's answer is the one that makes the round trip

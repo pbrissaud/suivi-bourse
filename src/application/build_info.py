@@ -1,4 +1,4 @@
-"""What this process is running — the build's own name (ADR-0014, ADR-0033)."""
+"""What this process is running — the build's own name."""
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path

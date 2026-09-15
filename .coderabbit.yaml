@@ -10,15 +10,105 @@ reviews:
   # actually matters, lets `@coderabbitai approve` clear its own refusal once
   # the findings are addressed. Without it a PR whose comments are all settled
   # stays blocked on a stale review that nothing but a human dismissal lifts.
+  #
+  # It is also what makes `path_instructions` below a **gate** rather than an
+  # opinion: a convention broken is a refusal, not a comment somebody scrolls
+  # past.
   request_changes_workflow: true
 
   # The walkthrough is the first thing worth reading on a PR. Leave it open.
   collapse_walkthrough: false
 
   auto_review:
+    # `chore` and `refactor` joined `fix` and `feat` with the conventions
+    # below: a convention is broken far more often by a move than by a
+    # feature, and those two labels are exactly the moves. `deps` stays out —
+    # it is Renovate, and Renovate does not write SQL.
     labels:
       - fix
       - feat
+      - chore
+      - refactor
+
+  # The rules that are expensive to break, as review criteria.
+  #
+  # They were eleven greps in `.github/scripts/conventions.sh` until that
+  # script was removed. They are here because they share one property: **a
+  # violation produces code that works**. A second writer of `event` passes
+  # every test in the suite; so does an `ALTER TABLE` in the wrong module, and
+  # so does a naive `datetime.now()` in a branch the tests rarely take. There
+  # is nothing to observe at runtime, which is why they are read rather than
+  # run.
+  #
+  # The twelfth is not here: the pure modules pull their heavy edges through
+  # somebody else's `__init__`, three levels down and invisible in a diff. It
+  # runs instead, in `tests/test_pure_modules.py`.
+  path_instructions:
+    - path: '**/*.py'
+      instructions: |
+        Check these invariants. Each one is a refusal, not a suggestion.
+
+        ONE CLOCK, AND IT IS UTC.
+        - No `datetime.today()`, `datetime.utcnow()`, `time.localtime()`, nor
+          a bare `datetime.now()` with no timezone. Every read of the clock is
+          UTC-qualified.
+        - No `datetime.fromtimestamp(...)` without an explicit timezone.
+        - `application/instants.py` holds the only repair of an instant:
+          `utc` normalizes one, `iso` serializes one and leaves a calendar day
+          a day. Flag any private re-implementation elsewhere, whatever it is
+          named (`_utc`, `_iso`, `_stamp_value`, `_normalise`, ...). There are
+          eight already; a ninth is the defect.
+
+        ONE DOOR TO THE MARKET.
+        - `import yfinance` appears in `src/application/market.py` and nowhere
+          else, tests included.
+        - Reading a key of Yahoo's payload happens in `market_info.py` alone.
+        - No sentinel is written for a field the payload does not carry. The
+          string `'undefined'` must not appear anywhere in `src/` or `tests/`,
+          fixtures included: a fixture naming it re-teaches the belief that
+          produced the defect.
+
+        ONE WRITER PER TABLE. These lists are closed. A new file appearing in
+        one of them is the finding, not the new file's quality.
+        - `event` is written (INSERT / UPDATE / DELETE) by
+          `application/entries.py` and `application/reassignment.py`, and by
+          nothing else. `reassignment.py` is the named exception because it
+          rewrites the `account` column in bulk and addresses no row by key.
+        - `position` and `account_state` are written by
+          `application/positions.py` alone.
+        - `taxation_model` and `account_fact` are written by
+          `application/accounts.py` alone.
+        - A declared fact and a derived one never share a row. Flag a column
+          added to a table whose writer is a job.
+
+        THE SCHEMA MOVES IN ONE PLACE.
+        - `ALTER TABLE` appears in `application/store.py` and nowhere else. A
+          schema change outside it is one no store records having run.
+        - The DDL is `IF NOT EXISTS` and stays the first answer. Dropping a
+          column and renaming one are the two gestures it cannot express, and
+          they are appended to `store.STEPS`, forward only.
+        - A step's name is its identity forever. Flag any edit or rename of a
+          step that has already been released: the stores that ran it will not
+          run it again.
+
+        ONE ALLOCATOR.
+        - `max(id)` appears in `application/store.py` alone; keys come from
+          `Store.reserve`. A key allocated anywhere else can be handed out
+          twice.
+
+    - path: 'src/application/instants.py'
+      instructions: |
+        This module imports the standard library and nothing else — `datetime`
+        and `typing`. It is imported by pure view modules, so a single import
+        of the project from here makes those modules impure. Flag any import
+        that is not stdlib.
+
+    - path: 'tests/test_pure_modules.py'
+      instructions: |
+        `PURE_MODULES` is the list of modules that touch neither the store nor
+        the market and take `now` injected. A module removed from this tuple
+        is a rule being dropped: say so out loud rather than reviewing it as a
+        list edit.
 
   tools:
     # The app lints with `flake8 --ignore=E501` and the repo carries no flake8
@@ -30,13 +120,7 @@ reviews:
     pylint:
       enabled: false
 
-knowledge_base:
-  code_guidelines:
-    # The architecture is written in the nested CLAUDE.md files, the glossary
-    # and the ADRs. CodeRabbit already reaches for them — it cited "Source:
-    # Coding guidelines" on #909 — and naming them makes that deliberate.
-    filePatterns:
-      - CLAUDE.md
-      - '**/CLAUDE.md'
-      - CONTEXT.md
-      - docs/adr/*.md
+# `knowledge_base.code_guidelines` pointed at CLAUDE.md, CONTEXT.md and
+# docs/adr/*.md. Those documents are gone, and what they were consulted for is
+# written above as criteria rather than as reading. A pattern matching nothing
+# is worse than no pattern: it reads as configured and behaves as absent.

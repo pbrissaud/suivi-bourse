@@ -1,4 +1,4 @@
-"""The exchange rate — one pure module with a TTL cache (issue #702, ADR-0002)."""
+"""The exchange rate — one pure module with a TTL cache (issue #702)."""
 import bisect
 import re
 from datetime import date, datetime

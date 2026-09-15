@@ -1,6 +1,6 @@
 /**
  * The four renderings of absence, case by case — a pure function under one
- * rule (ADR-0016): *the em dash means there is nothing to compute; anything
+ * rule: *the em dash means there is nothing to compute; anything
  * merely missing is named instead.*
  */
 import { describe, expect, it } from 'vitest'
@@ -105,10 +105,6 @@ describe('the four absences', () => {
   })
 
   it('says nothing at all about a line whose history is still being rebuilt', () => {
-    // The second term of ADR-0004's predicate, and the whole of #845: the
-    // backward pass has not reached this symbol's first acquisition, so *no
-    // price* means *not yet* and carrying it at its cost would render *not yet*
-    // as *never* — which is the sentence `carrying.py` refuses.
     const rebuilding = input({ price: null, converted: null, terminal: false })
     expect(absenceCase(rebuilding)).toBe('rebuilding')
     expect(positionRenderings(rebuilding)).toEqual({

@@ -1,18 +1,14 @@
 /**
- * Réaffecter, jamais refuser (#725, #793, ADR-0013, ADR-0006, ADR-0028), at the
- * one seam: the whole app in jsdom, HTTP the only faked edge.
+ * Réaffecter, jamais refuser (#725, #793), at the one seam: the whole app in
+ * jsdom, HTTP the only faked edge.
  *
  * **The state under test cannot be reached on the real portfolio.** Its 285
- * events all name an account, so `default` is nowhere in it and every case below
- * is invisible there — which is why `unassignedLedger()` exists and why the
- * ticket makes fabricating it an obligation rather than a convenience. What it
- * guards is an install that ran a month before declaring anything: the blank
+ * events all name an account, so `default` is nowhere in it and every case
+ * below is invisible there — which is why `unassignedLedger()` exists and why
+ * the ticket makes fabricating it an obligation rather than a convenience. What
+ * it guards is an install that ran a month before declaring anything: the blank
  * `account` column meant `default` at the instant those rows were imported
  * (#698), and the seeded row then carries a history its owner never created.
- *
- * Both renderings live on `/accounts` since ADR-0028: the box rides inside the
- * first declaration, and the standing offer sits in the **seeded account's own
- * detail**, whose events it is about.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -169,7 +165,7 @@ describe('and it stands on its own once something is declared', () => {
   })
 
   it('moves them onto the account chosen, and never one event at a time', async () => {
-    // **No correspondence layer** (ADR-0006): what crosses the wire is one
+    // **No correspondence layer**: what crosses the wire is one
     // target id, never a `default → pea` map beside the events — which would be
     // a second truth about the account an event names.
     const { user } = renderAccounts(declaredBesideTheSeed('pea', 'cto'))
@@ -224,8 +220,6 @@ describe('and it stands on its own once something is declared', () => {
 
 describe('the link from the unassigned line lands on the gesture', () => {
   it('leads to the offer itself, not to the page it lives on', async () => {
-    // The link owes its reader the **gesture** (#725), and since ADR-0028 that
-    // gesture is one click away on this very page rather than on another one.
     const { user } = renderAccounts(declaredBesideTheSeed('pea'))
     await rail()
 

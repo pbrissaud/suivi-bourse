@@ -12,7 +12,7 @@ split, and the fetch-success gate (#609).
 The exporter used to be this file's **second observation point**: nine tests
 read the fetch-success gate, the freshness sonde and the departure cleanup off
 the calls a double had received. They read them off the scrape **record** now —
-the one the runtime tab renders (#806, ADR-0033) — and the module they observed
+the one the runtime tab renders (#806) — and the module they observed
 is gone.
 """
 
@@ -117,7 +117,7 @@ def _metrics(shares, store, mocker):
     for: the market writer never invents a declaration, which is the schema rule
     (one writer per row) seen from a test's side.
 
-    **No exporter at all** (#806, ADR-0033): the wiring's proofs are the rows the
+    **No exporter at all** (#806): the wiring's proofs are the rows the
     pass wrote and the record it published, which is also the whole of what the
     app itself carries now.
     """
@@ -958,7 +958,7 @@ def test_reconcile_noop_without_scheduler():
 
 
 # ---------------------------------------------------------------------------
-# The dials come from the registry and then from the store (#701, ADR-0014)
+# The dials come from the registry and then from the store (#701)
 # ---------------------------------------------------------------------------
 
 def test_a_fresh_metrics_carries_the_registry_s_values(store, mocker):
@@ -995,7 +995,6 @@ def test_apply_dials_ignores_the_unanswered_currency(store, mocker):
 
 
 def test_a_retired_environment_variable_is_named_and_not_obeyed(monkeypatch):
-    """ADR-0014's gesture, and it is computed rather than written down."""
     monkeypatch.setenv("SB_REGULAR_INTERVAL", "600")
 
     assert "SB_REGULAR_INTERVAL" in installation_facts.unread_environment()
@@ -1050,14 +1049,11 @@ def test_nothing_is_logged_when_there_is_nothing_to_say(mocker):
 
 def test_a_start_up_that_kept_the_metrics_pair_names_both_of_them(
         monkeypatch, mocker):
-    """ADR-0033, and the reason the pair had to reach this list rather than
-    simply disappear from the inventory.
-
-    An owner who wrote ``SB_PROMETHEUS_ENABLED`` and ``SB_METRICS_PORT`` into a
+    """An owner who wrote ``SB_PROMETHEUS_ENABLED`` and ``SB_METRICS_PORT`` into a
     ``.env`` gets nothing on the second socket and no line about it unless the
-    boot names them — and the clause has to be the deleted one, since the gauges
-    became the health body and the runtime tab rather than a dial to turn back
-    on. One line for the two, like every other retired name.
+    boot names them — and the clause has to be the deleted one, since the
+    gauges became the health body and the runtime tab rather than a dial to
+    turn back on. One line for the two, like every other retired name.
     """
     monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
     monkeypatch.setenv("SB_METRICS_PORT", "8081")

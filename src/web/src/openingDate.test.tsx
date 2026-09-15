@@ -1,5 +1,5 @@
 /**
- * The opening date an account declares (#918, ADR-0006, ADR-0044).
+ * The opening date an account declares (#918).
  *
  * At the one seam every page test here uses: the whole app in jsdom, HTTP the
  * only faked edge, and every assertion on the **accessible rendering** or on
@@ -91,7 +91,7 @@ async function openPanel(user: ReturnType<typeof renderApp>['user']) {
   await user.click(within(detail).getByRole('button', { name: 'Modifier le compte' }))
   const panel = await screen.findByRole('dialog')
   // The catalogue decides whether the field is asked for at all, so nothing is
-  // asserted about it before the read has landed (ADR-0026).
+  // asserted about it before the read has landed.
   await within(panel).findByLabelText(/Modèle d’imposition/)
   return panel
 }

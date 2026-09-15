@@ -1,11 +1,11 @@
 /**
- * One symbol's price, over one of four ranges (#684 D10, ADR-0010) — **and the
- * days its ledger names, under it** (#720).
+ * One symbol's price, over one of four ranges (#684 D10) — **and the days its
+ * ledger names, under it** (#720).
  *
  * **The presets are the rungs of the retention ladder** — `1M / 1A / 2A / MAX`
- * — and not four round numbers. A stored point's resolution is a function of its
- * age: as written under a year, hourly from one to two, daily beyond. `3M` left
- * because it changes nothing visible; these four make the archive's shape
+ * — and not four round numbers. A stored point's resolution is a function of
+ * its age: as written under a year, hourly from one to two, daily beyond. `3M`
+ * left because it changes nothing visible; these four make the archive's shape
  * legible by moving between its rungs.
  *
  * **The resolution has one announcer.** The *aggregated by X* caption reads the
@@ -14,13 +14,10 @@
  * *two announcers for one fact* is the defect the map found independently on
  * four pages. It also stops a sparse far end reading as an outage.
  *
- * The event overlay is **a band under the plot rather than dots inside it**, and
- * that is a decision with two halves:
+ * The event overlay is **a band under the plot rather than dots inside it**,
+ * and that is a decision with two halves:
  *
- *  - **a marker has to be a control.** The link to the list is a *selection*
- *    (#675/D2 as amended by ADR-0016), so it is clicked and it is reached by
- *    keyboard — hover does not exist on a finger and says nothing to a keyboard.
- *    A `<button>` is what carries both; a Recharts dot is a shape.
+ *  A `<button>` is what carries both; a Recharts dot is a shape.
  *  - **it is laid out in the chart's own width, on the chart's own abscissa.**
  *    The `XAxis` below is a **category** axis — Recharts' default, one step per
  *    point whatever the interval before it — so `lib/shares.ts` gives each day
@@ -33,8 +30,8 @@
  *    `LineChart` margin, which are the only two numbers that place the plot.
  *
  * **One marker per day, announcing its count.** A single symbol of the real
- * portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event those
- * points overlap, and three purchases read as one with nothing saying so.
+ * portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event
+ * those points overlap, and three purchases read as one with nothing saying so.
  */
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
@@ -84,7 +81,7 @@ export function PriceChart({
     queryFn: () => api.prices(symbol, window),
   })
   // The axis is money, so it says so — the payload names the reporting currency
-  // (ADR-0002) and a bare ladder of numbers leaves the reader to supply the
+  // and a bare ladder of numbers leaves the reader to supply the
   // unit. `null` while the dial is unanswered, which `formatCurrency` renders as
   // the plain number rather than guessing.
   const currency = series.data?.base_currency ?? null
@@ -115,7 +112,7 @@ export function PriceChart({
       </div>
 
       {/* **A read that did not answer, said where the plot would have been**
-          (#829, ADR-0037): an empty state and never an alert, so that *there is
+          (#829): an empty state and never an alert, so that *there is
           nothing to draw* and *this could not be read* are told apart by the
           sentence and not by a colour. */}
       {series.error ? (
@@ -131,7 +128,7 @@ export function PriceChart({
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={series.data.points}>
-                {/* **The chrome comes from the tokens** (#841, ADR-0023).
+                {/* **The chrome comes from the tokens** (#841).
                     Left to itself Recharts paints a `#ccc` grid and `#666`
                     gradations, and it paints the *same two greys on both
                     grounds* — which is not a light-ground defect but a chart

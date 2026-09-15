@@ -1,4 +1,4 @@
-"""The settings write path — the store's ``setting`` table (issue #701, ADR-0014)."""
+"""The settings write path — the store's ``setting`` table (issue #701)."""
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Tuple
 
@@ -70,7 +70,7 @@ def save(store, values: Mapping[str, Any]) -> Tuple[Change, ...]:
 
 
 def _refuse_a_reinterpretation(store, current, pending) -> None:
-    """Guard the one dial whose second answer would rewrite the past (ADR-0002)."""
+    """Guard the one dial whose second answer would rewrite the past."""
     if 'base_currency' not in pending:
         return
     if current.get('base_currency') is None:

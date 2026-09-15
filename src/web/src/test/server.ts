@@ -67,7 +67,7 @@ export function defaultHandlers() {
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     // The declaration's three gestures (#698, read by a client since #729). They
     // echo the row back the way the two event writes do — three members and no
-    // fourth, an account being born in the app and nowhere else (ADR-0034).
+    // fourth, an account being born in the app and nowhere else.
     http.post(ROUTES.accounts, async ({ request }) => {
       const draft = (await request.json()) as AccountDraft
       return HttpResponse.json(anAccount({ ...echoed(draft), id: draft.id ?? '' }), { status: 201 })
@@ -115,13 +115,13 @@ export function defaultHandlers() {
     // series kept entire, there being no ladder on a daily one.
     http.get(ROUTES.positionsHistory, () => HttpResponse.json(aPositionsHistory())),
     http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload())),
-    // The investment rhythm (#751, ADR-0041). Derived on every read and stored
+    // The investment rhythm (#751). Derived on every read and stored
     // nowhere, so there is nothing to vary by parameter: the handler answers the
     // fixture's own pair — six covered months of twelve — and a test about
     // another rhythm overrides it.
     http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm())),
     // The series answers for the **window it was asked for**, because the
-    // resolution it announces is a function of that window (ADR-0010): a
+    // resolution it announces is a function of that window: a
     // handler serving one frozen payload would make the presets look like four
     // spellings of the same range.
     http.get(ROUTES.prices, ({ params, request }) => {
@@ -129,7 +129,7 @@ export function defaultHandlers() {
       return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
-    // What the bell reads — the status dot's read since #819 (ADR-0036),
+    // What the bell reads — the status dot's read since #819,
     // inherited whole when #829 folded the dot into it. The default is a well
     // install; the amber — a scrape frozen with a `200` — is `aFrozenScrape()`,
     // and the red is the route refusing at all.
@@ -221,7 +221,7 @@ export function defaultHandlers() {
       ),
     ),
     // The advisory's own, and the payload says what makes it a second gesture
-    // rather than the same one: it wears off (#829, ADR-0037).
+    // rather than the same one: it wears off (#829).
     http.post(ROUTES.advisoryAcknowledgement, ({ params }) =>
       HttpResponse.json({
         ...anAdvisory({ key: String(params.key) }),

@@ -1,30 +1,25 @@
 /**
  * The reporting currency's **closed list**, and the suggestion a browser locale
- * is allowed to make (#726, ADR-0002, ADR-0021).
+ * is allowed to make (#726).
  *
  * `base_currency` has no default, so the field always opens on an unanswered
  * dial. Whether that absence is a question the app must ask is the registry's
- * to say and not this file's: the `required` mark carries it (ADR-0035), and
- * the front reads the mark rather than this key. What is decided here is the
- * field itself, and two decisions are encoded rather than described:
+ * to say and not this file's: the `required` mark carries it, and the front
+ * reads the mark rather than this key. What is decided here is the field
+ * itself, and two decisions are encoded rather than described:
  *
  *  - **A closed list, bounded by what the rate source quotes.** A free-text
- *    field accepts `XYZ`, whose pair never resolves; the failure that follows is
- *    total (nothing is converted, so the perf job writes nothing at all) and,
- *    but for #704's `unconvertible` terminal, mute. The full ISO 4217 has the
- *    same defect one notch further out — `XPF`, `SLE`, `MRU` are codes a
- *    validator accepts and Yahoo does not quote. So the list is the venues the
- *    fetcher actually knows, and it is the *field* that is closed: the server
- *    stays the authority on the **shape** (`settings_registry.validate`), which
- *    is what keeps a headless `curl` answering the question at all — the one
- *    non-interactive path ADR-0015 leaves open — and this ticket adds **no API
- *    state**, so the list does not travel over HTTP either.
+ *    field accepts `XYZ`, whose pair never resolves; the failure that follows
+ *    is total (nothing is converted, so the perf job writes nothing at all)
+ *    and, but for #704's `unconvertible` terminal, mute. The full ISO 4217 has
+ *    the same defect one notch further out — `XPF`, `SLE`, `MRU` are codes a
+ *    validator accepts and Yahoo does not quote.
  *  - **A locale pre-fills a suggestion, never a default.** A suggestion poses
  *    nothing: the field is still unanswered, and what it buys is one click
- *    instead of a scroll through thirty codes. The reservation is written on the
- *    screen as well as here, because it is real and no heuristic removes it: a
- *    locale gives the currency of a **country**, not of a portfolio. Somebody
- *    reading in `fr-FR` may perfectly well report in `CHF`.
+ *    instead of a scroll through thirty codes. The reservation is written on
+ *    the screen as well as here, because it is real and no heuristic removes
+ *    it: a locale gives the currency of a **country**, not of a portfolio.
+ *    Somebody reading in `fr-FR` may perfectly well report in `CHF`.
  */
 
 /**

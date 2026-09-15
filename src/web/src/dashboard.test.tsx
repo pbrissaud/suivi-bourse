@@ -1,6 +1,6 @@
 /**
  * The head of the dashboard, and the three primitives it is the first surface
- * to need (#718, ADR-0016, ADR-0018).
+ * to need (#718).
  *
  * Every case below names the wrong figure it prevents. The four terms sum to a
  * gain the reader can check by hand — `+300,00 + 50,00 + 25,00 − 5,00 = 370,00`
@@ -139,10 +139,7 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(within(figure('TWR')).queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
 
-    // **One on the page**, and it is the page's (#838). It used to be two —
-    // the chart's and the comparison's — offering the same four options one row
-    // apart and saying different things; ADR-0019's *one range for every figure
-    // on the surface* is kept by there being one control, not one per card.
+    // **One on the page**, and it is the page's (#838).
     await waitFor(() =>
       expect(
         screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
@@ -171,8 +168,7 @@ describe('the two periods of the total', () => {
     const head = await screen.findByRole('group', { name: 'Gain total' })
 
     // A period is the same figure through another window; a term is a *part* of
-    // it. Mounted among the four they read as two more things to add, which is
-    // the addition ADR-0018's subordination exists to prevent.
+    // it.
     expect(head).toHaveTextContent(/Aujourd’hui/)
     expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
     for (const term of [
@@ -223,7 +219,7 @@ describe('the two periods of the total', () => {
   })
 })
 
-describe('the accounts card, where the comparison moved (ADR-0028)', () => {
+describe('the accounts card, where the comparison moved', () => {
   /** The card's own rows, by the name its list wears. */
   function comparison() {
     return within(screen.getByRole('list', { name: 'Vos comptes, comparés' }))
@@ -241,11 +237,9 @@ describe('the accounts card, where the comparison moved (ADR-0028)', () => {
       'MAX',
     ])
     // The card had four presets of its own until #838, the last of them named
-    // *Depuis l'ouverture*. What ADR-0028 refuses is the **window**, not the
-    // word: a time-weighted index has no bounded amplitude, so one account's
-    // ancient volatility would set the scale for every other. The page's `MAX`
-    // therefore reaches this card as `SINCE_OPENING` — the accounts' common
-    // origin — and `lib/dashboard.test.ts` holds that mapping.
+    // *Depuis l'ouverture*. The page's `MAX` therefore reaches this card as
+    // `SINCE_OPENING` — the accounts' common origin — and
+    // `lib/dashboard.test.ts` holds that mapping.
     expect(ACCOUNT_RANGE.MAX).toBe('SINCE_OPENING')
   })
 
@@ -272,9 +266,6 @@ describe('the accounts card, where the comparison moved (ADR-0028)', () => {
   })
 
   it('is absent where there is one account, and reads no series for it', async () => {
-    // ADR-0013 seeds a `default` row that is never removed, so the
-    // single-account install is the ordinary one: gated on the rendering alone,
-    // every load fetched that account's whole daily series to throw it away.
     let asked = 0
     server.use(
       http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload([anAccount()]))),
@@ -362,10 +353,7 @@ describe('during the reconstruction', () => {
     // — the euro under the head, the percentage inside the TWR statistic —
     // because side by side they read as a contradiction. A reader looking at
     // one therefore never sees the other's caption, so a sentence written once
-    // covers one figure and leaves the other wearing a bare `—`. And by the
-    // rule this ticket installs (`lib/absence.ts`, ADR-0016) a bare dash means
-    // *there is nothing to compute*, which is the opposite of the truth here:
-    // the history simply is not rebuilt that far back yet, and it will be.
+    // covers one figure and leaves the other wearing a bare `—`.
     server.use(
       totalsOf({ ytd: null }),
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
@@ -391,7 +379,7 @@ describe('during the reconstruction', () => {
     // second install is told to wait for something that will never happen, and
     // waiting is precisely what it must not do. The discriminant is already on
     // screen — `runtime.rebuilding`, which the TWR statistic reads for its base
-    // date — so nothing is added to any payload (ADR-0021).
+    // date — so nothing is added to any payload.
     server.use(
       totalsOf({ ytd: null }),
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
@@ -412,7 +400,7 @@ describe('during the reconstruction', () => {
     // absent **member** was indistinguishable from an absent `ytd`, and the
     // head announced a rebuild that had already finished, permanently, to
     // exactly the population #708's per-field rule exists to serve. An absent
-    // member takes the bare em dash: *there is nothing to compute* (ADR-0016).
+    // member takes the bare em dash: *there is nothing to compute*.
     server.use(
       totalsOf({ ytd: { gain: 40.69, twr: null } }),
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
@@ -455,7 +443,7 @@ describe('a read that fails is named, where its content would have been', () => 
     // The exact case, and the reason it had no announcer at all: the block
     // rendered `null`, and *"the store is unreadable"* and *"you own nothing
     // yet"* became one screen — a blank one. Since #829 there is no band left
-    // to raise either (ADR-0037): the two reads the page is *made of* are what
+    // to raise either: the two reads the page is *made of* are what
     // failed, so the page is empty and the page's own empty state says why.
     server.use(
       problemHandler(ROUTES.positions, {
@@ -519,7 +507,7 @@ describe('a read that fails is named, where its content would have been', () => 
  *
  * #829 removed the band and kept the repair: each of those four is handed to the
  * block it belongs to, and the block says it **in the slot the content would have
- * filled** (ADR-0037). The head keeps its figures either way, which is the half
+ * filled**. The head keeps its figures either way, which is the half
  * the repair had to buy.
  *
  * The net in `readsInFlight.test.tsx` makes a read **hang**; it does not make one
@@ -556,7 +544,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     server.use(unreadable(ROUTES.portfolioTotalsHistory))
     renderApp()
 
-    // In the chart's own slot, and as an empty state (#829, ADR-0037).
+    // In the chart's own slot, and as an empty state (#829).
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
@@ -596,7 +584,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
-    // The perimeter is *unknown*, which is not written down (ADR-0026) — and
+    // The perimeter is *unknown*, which is not written down — and
     // the comparison has no list of accounts to be a comparison of. Scoped to
     // the page's own column: the header's search field names what it searches,
     // and *un compte* is one of the two things it does.
@@ -606,7 +594,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
 
   it('names one account’s failed series, the comparison being all of them at once', async () => {
     // The N series are waited for together because the comparison *is* the
-    // object (ADR-0028), so one `503` out of three removes the card — which is
+    // object, so one `503` out of three removes the card — which is
     // right, and used to be the whole of what happened.
     server.use(
       http.get(ROUTES.accountHistory, ({ params }) =>
@@ -628,7 +616,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
 
   it('says nothing at all while that same read is merely in flight', async () => {
     // **The repair distinguishes the failure from the flight, it does not
-    // flatten them** (ADR-0026). The sentence is composed out of an error and
+    // flatten them**. The sentence is composed out of an error and
     // never out of a silence, so a read that has not answered still takes its
     // block away without a word — title and empty state included.
     server.use(http.get(ROUTES.portfolioTotalsHistory, () => new Promise<never>(() => {})))
@@ -670,7 +658,7 @@ describe('the statistics shrink instead of filling with dashes', () => {
     // positions, which are not under the constraint that empties
     // `portfolio_totals` — but **their sum is not the gain** (#775): with no
     // row at all there is nothing to bound the fourth term by, and a four-term
-    // total rendered from three is not that total (ADR-0018). It wears the em
+    // total rendered from three is not that total. It wears the em
     // dash, and the sentence at the foot of the block says why.
     const head = await screen.findByRole('group', { name: 'Gain total' })
     expect(head).toHaveTextContent('—')
@@ -689,11 +677,8 @@ describe('the statistics shrink instead of filling with dashes', () => {
     // `totals: null` has two causes (#745) and they were one sentence. The
     // second is the ordinary one: the perf job writes nothing at all until the
     // base currency is answered (#702), every figure it computes being money.
-    // So the app told a reader holding a full portfolio that they had no
-    // ledger — and said nothing about the one question they can answer.
-    // The condition is *the install has no answered currency*, so both payloads
-    // carry it: ADR-0021 adds no route and no field for the state, it is read
-    // off `base_currency` being null wherever it already travels.
+    // So the app told a reader holding a full portfolio that they had no ledger
+    // — and said nothing about the one question they can answer.
     server.use(
       http.get(ROUTES.positions, () =>
         HttpResponse.json(aPositionsPayload(defaultPositions(), null)),
@@ -747,11 +732,8 @@ describe('the consolidated figures name their perimeter', () => {
   })
 
   it('never claims a perimeter of zero accounts, which cannot exist', async () => {
-    // ADR-0013 seeds a `default` row that is never removed, so `0 compte` is a
-    // state the product declares impossible — and it was printed, under the
-    // consolidated figures, as the statement of their perimeter, whenever the
-    // accounts read failed or had simply not landed yet. An unknown perimeter
-    // is not written down; the figures above it are exact either way.
+    // An unknown perimeter is not written down; the figures above it are exact
+    // either way.
     server.use(
       problemHandler(ROUTES.accounts, {
         status: 503,
@@ -880,8 +862,8 @@ describe('what is merely missing is named, never dashed', () => {
     const head = await screen.findByRole('group', { name: 'Gain total' })
     expect(head).toHaveTextContent(/historique en cours de reconstitution/)
     expect(head).not.toHaveTextContent(/en attente du taux/)
-    // Named and not dashed: the em dash says *there is nothing to compute*
-    // (ADR-0016), and a total refused in silence is a figure gone out with no
+    // Named and not dashed: the em dash says *there is nothing to compute*,
+    //and a total refused in silence is a figure gone out with no
     // explanation under it.
     expect(head).not.toHaveTextContent(/^Gain total\s*—/)
     expect(figure('Plus-value latente')).toHaveTextContent(
@@ -996,7 +978,7 @@ describe('one chart slot, two readings', () => {
     // figure — and it says nothing else. The sentence it used to close on,
     // *l'écart entre les deux courbes est votre gain total*, is a convention of
     // the product, and a convention lives on the bubble the head carries three
-    // cards up, never in a paragraph on the page (ADR-0016).
+    // cards up, never in a paragraph on the page.
     //
     // Scoped to the chart's own card: `Valeur totale` is also one of the head's
     // statistics, and the two saying the same thing about one portfolio is the
@@ -1052,7 +1034,7 @@ describe('one chart slot, two readings', () => {
   })
 })
 
-describe('the page shows figures and never explains itself (ADR-0016, #831)', () => {
+describe('the page shows figures and never explains itself (#831)', () => {
   // The bubbles themselves are asserted above — four of them, on the head's
   // four figures. What is asserted here is the other half of the same decision:
   // the page states **no rule of the product** in prose. The three sentences
@@ -1141,7 +1123,7 @@ describe('the movers', () => {
   })
 
   it('says nothing of a closed line the server serves at 0,00 %', async () => {
-    // `/api/positions` carries a sold line on purpose (ADR-0017) and
+    // `/api/positions` carries a sold line on purpose and
     // `/api/portfolio/movers` compares its frozen quote against a baseline equal
     // to it, so the payload holds a `change_pct: 0` about a line nobody owns.
     // Counted, it inflated *dont N n’a pas bougé* — the qualifier of a set it is
@@ -1199,7 +1181,7 @@ describe('the investment rhythm', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // **One group, two figures** (#751, ADR-0041). The coverage is inside the
+    // **One group, two figures** (#751). The coverage is inside the
     // amount's own group rather than beside it, which is what makes *500 €*
     // impossible to read on its own — and *500 € a month* is what a reader
     // turns into *6 000 € a year* when half of that never went in.
@@ -1216,7 +1198,7 @@ describe('the investment rhythm', () => {
     // it — and a month with no purchase said as such rather than left out,
     // because a gap is a fact about the rhythm. **No label anywhere**: not
     // *régulier*, not *mensuel* — the threshold that would produce one is a
-    // setting nobody asked for (ADR-0036), and the reading belongs to the
+    // setting nobody asked for, and the reading belongs to the
     // reader. The coefficient of variation stays in the payload and is quoted
     // nowhere: `18 %` of a month's own average is not a sentence.
     const strip = await screen.findByRole('list', { name: 'Acheté, mois par mois' })
@@ -1281,9 +1263,6 @@ describe('the investment rhythm', () => {
   })
 
   it('renders nothing at all — title included — while the read is in flight', async () => {
-    // ADR-0026, asserted on this block's own title: the net in
-    // `readsInFlight.test.tsx` observes the empty states and the phrases, and a
-    // heading standing over nothing is neither.
     server.use(
       http.get(ROUTES.investmentRhythm, async () => {
         await delay('infinite')
@@ -1309,7 +1288,7 @@ describe('the time announcers', () => {
     expect(screen.getAllByText(/Depuis la clôture/)).toHaveLength(1)
     // The two transitory ones are absent here: the reconstruction is over, so
     // the base date is not news and the notifications panel raises no card for
-    // it (#829, ADR-0037).
+    // it (#829).
     expect(screen.queryByText(/30 oct\. 2019/)).not.toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
@@ -1319,7 +1298,7 @@ describe('no installation fact lands here', () => {
   it('says nothing of a standing notice, which the installation tab counts', async () => {
     // A notice posted on the dashboard is invisible to whoever lands on another
     // page, and it would compete with the one global indicator — the bell since
-    // #829 (ADR-0037), the banner before it. The badge on the data page is the
+    // #829, the banner before it. The badge on the data page is the
     // counterpart (#724).
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
@@ -1389,7 +1368,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
     // band said the opposite at the top of the same page.
     server.use(
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
-      // It reads `/health` since #819 (ADR-0036), where the same fact is the
+      // It reads `/health` since #819, where the same fact is the
       // backfill job's own verdict.
       http.get(ROUTES.health, () => HttpResponse.json(aRebuilding())),
     )
@@ -1400,7 +1379,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
         name: /Votre historique est en cours de reconstruction/,
       }),
     ).toBeInTheDocument()
-    // And the band is gone with it (#829, ADR-0037): a condition that ends by
+    // And the band is gone with it (#829): a condition that ends by
     // itself does not take the top of every page on every route, and there is
     // no band left anywhere to take it.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
@@ -1408,7 +1387,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
   })
 
   it('carries a bar and names the account holding the global figures back', async () => {
-    // The global series is written only where **every** account is (ADR-0018),
+    // The global series is written only where **every** account is,
     // so without the name *one slow account delays the whole home page* is a
     // rule nothing on screen states — and the owner reads the delay as a fault
     // of the portfolio as a whole. It is on the installation tab now, which is

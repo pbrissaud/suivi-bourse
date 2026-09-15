@@ -1,4 +1,4 @@
-"""The reassignment — *réaffecter, jamais refuser* (issue #725, ADR-0013, ADR-0006).
+"""The reassignment — *réaffecter, jamais refuser* (issue #725).
 
 The seam is :mod:`test_entries`': a **real** DuckDB store in ``tmp_path``, the
 real writer beside it, and every assertion a ``SELECT`` against the store.
@@ -256,7 +256,7 @@ def test_the_name_is_the_whole_of_what_declares_the_seed(store, tmp_path):
     """There was a second half to this rule, and #916 removed it.
 
     ``as_declared`` used to compare **two** seeded columns, so retyping the row
-    declared it as surely as renaming it did. The type is gone (ADR-0043), so the
+    declared it as surely as renaming it did. The type is gone, so the
     name is the whole predicate — and this asserts the half that is left is
     genuinely doing the work alone.
     """
@@ -272,7 +272,7 @@ def test_the_seed_wearing_the_seed_s_own_words_is_not_a_declaration(
     """The other edge: an owner may legitimately name their account exactly
     what the seed named it, and comparing against the seeded word is all the
     store can offer (``accounts.as_declared``). Schema steps exist since #926
-    (ADR-0045) and none of them helps here: no column could hold *was this row
+    and none of them helps here: no column could hold *was this row
     declared*, because the seed writes the row before anybody could have
     answered. Untouched, the row is the one nobody declared and its events are
     the ones to move."""

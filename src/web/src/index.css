@@ -10,25 +10,25 @@
  *
  * Regenerate with, and only with:
  *
- *     pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn
+ *     pnpm dlx shadcn@latest add
+ *     https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn
  *
- * The cut between this block and the next *is* the decision (ADR-0023): the
- * preset owns the chrome and regenerates; the domain layer owns the meaning and
- * does not. Editing a value here is how the two halves stopped being tellable
- * apart in the prototype — a `radix-nova` style nobody chose, with a
- * hand-written layer piled on top and nothing saying which won.
+ * The cut between this block and the next *is* the decision: the preset owns
+ * the chrome and regenerates; the domain layer owns the meaning and does not.
+ * Editing a value here is how the two halves stopped being tellable apart in
+ * the prototype — a `radix-nova` style nobody chose, with a hand-written layer
+ * piled on top and nothing saying which won.
  *
- * ADR-0029 changed **which** preset arrives and nothing about how. The registry
- * held forty-two and none of them said this — so this one is ours, published at
- * the URL above, which is the order that ADR wrote: look first, publish only if
- * nothing approaches. A theme pasted in as JSON would be the same values and a
- * dead file: it stops regenerating, and the three blocks collapse into two.
+ * The registry held forty-two and none of them said this — so this one is ours,
+ * published at the URL above, which is the order that ADR wrote: look first,
+ * publish only if nothing approaches. A theme pasted in as JSON would be the
+ * same values and a dead file: it stops regenerating, and the three blocks
+ * collapse into two.
  *
  * What it keeps from `Vercel`, which it replaces, is not a hue but a property:
  * **the primitives leave the colour to the domain**. Only `--primary`/`--ring`
  * carry the mint, and only `--chart-1` and `--chart-2` carry a mark's hue — the
- * three remaining chart slots are grey, exactly as before. That is ADR-0016's
- * posture, and it is what makes the block below able to stay short.
+ * three remaining chart slots are grey, exactly as before.
  *
  * Two things about it are load-bearing and easy to undo by accident:
  *
@@ -41,7 +41,8 @@
  *    registers `Geist Variable`, not `Geist`; the preset says both, so the
  *    bridge below has nothing to catch up. It used to say them itself, and
  *    every regeneration overwrote it.
- * ========================================================================== */
+ *    ==========================================================================
+ *    */
 
 :root {
   --radius: 0.625rem;
@@ -157,13 +158,12 @@
 /* ==========================================================================
  * 2. The domain — what the preset cannot say, and nothing else.
  *
- * The sizing rule is the block's whole defence (ADR-0023): a token enters only
- * when no preset token already says it. Under ADR-0029 that rule bites harder
- * than it used to — **the three marks are now aliases and nothing else**.
- * `--price` takes `--primary` because the redesign draws every curve in the
- * mint, `--grant` takes `--chart-1` and `--dividend` takes `--chart-2`, and the
- * hand-picked teal that used to sit here is gone. Without that rule the layer
- * grows with every page and becomes the hand-written half we just deleted.
+ * The sizing rule is the block's whole defence: a token enters only when no
+ * preset token already says it. `--price` takes `--primary` because the
+ * redesign draws every curve in the mint, `--grant` takes `--chart-1` and
+ * `--dividend` takes `--chart-2`, and the hand-picked teal that used to sit
+ * here is gone. Without that rule the layer grows with every page and becomes
+ * the hand-written half we just deleted.
  *
  * What remains is what a preset genuinely cannot say: whether a figure is money
  * gained or money lost, and whether something is worth a look. Three tokens.
@@ -214,7 +214,7 @@
 .dark {
   /* Lifted in lightness for the darker ground, which is the legibility
      correction the redesign makes — and **not** in chroma towards the theme's
-     red, which is the correction ADR-0029 refuses. */
+     red, which is the correction this palette refuses. */
   --gain: oklch(0.8500 0.1400 163);
   --loss: oklch(0.7200 0.1500 25);
   --price: var(--primary);
@@ -390,7 +390,7 @@
  * two dozen call sites it is six classes to keep in step, and the first one to
  * drift takes a card out of the system without anything failing.
  *
- * It is **not a fourth block** (ADR-0023): it declares no token and it composes
+ * It is **not a fourth block**: it declares no token and it composes
  * only what the three above already say, so the cut the file is held to — the
  * preset owns the chrome, the domain owns the meaning, the bridge joins them —
  * is untouched. A block is a place values are *decided*; this is a name for

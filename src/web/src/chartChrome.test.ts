@@ -1,6 +1,5 @@
 /**
- * **A chart's chrome comes from the tokens, and it is measured** (#841,
- * ADR-0023).
+ * **A chart's chrome comes from the tokens, and it is measured** (#841).
  *
  * Recharts has a theme of its own and it is not ours: a `CartesianGrid` with no
  * `stroke` is painted `#ccc`, an axis with no `stroke` is painted `#666`, and
@@ -50,7 +49,7 @@ const PORTFOLIO_CHART = path.join(SOURCE, 'components', 'dashboard', 'PortfolioC
  * Every `.tsx` the product writes by hand.
  *
  * `ui/` is out, and for `gridColumns.test.ts`'s reason rather than a new one:
- * it is generated from the registry (ADR-0023) and a rule enforced there would
+ * it is generated from the registry and a rule enforced there would
  * be undone by the next `add`. Nothing under it mounts a chart today.
  */
 function sources(directory: string = SOURCE): string[] {

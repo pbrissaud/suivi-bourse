@@ -1,44 +1,37 @@
 /**
- * One account, read in depth (ADR-0028, ADR-0018, ADR-0019, ADR-0016).
+ * One account, read in depth.
  *
  * What eight columns could never hold: the gain over its four terms, the split
  * between securities and cash, the money-weighted rate, the dividends this
  * account has actually paid, the lines it holds and the last events that name
- * it. As columns they were never going to fit — ADR-0019 had already noted that
- * at three accounts the table's naming problem returns — and as a panel they
- * were behind a click.
+ * it.
  *
  * Five things are decisions rather than layout:
  *
- *  - **No range control, and the head figure is a ratio rather than a rate**
- *    (#833, ADR-0028 corrected). The detail carried a copy of ADR-0019's control
- *    driving a windowed time-weighted rate; the maquette this page takes its
- *    form from defines its range presets and renders them nowhere, and the
- *    correction is not a matter of taste. The rule the control exists to keep is
- *    about **several spans read side by side** — one account's ancient
- *    volatility setting the scale for every other — and it lands on the
- *    dashboard's accounts card, which is the surface that compares accounts.
- *    Here there is one series on one axis, so the defect has no subject and the
- *    control was buying a choice at the price of a second announcer for *how did
- *    this period go*. What stands at the head instead is `Performance totale`,
- *    `gain ÷ versé net` — cumulative, of the same family as the *sur versé*
- *    under the dividends, and covering the account's whole life so that it
- *    implies no window and needs none stated.
- *  - **The total is computed from its four terms and never read** (ADR-0018).
- *    The payload carries `gain_absolu`, which is the same number written down
- *    elsewhere; computing here is what makes the four an identity rather than a
+ *  The rule the control exists to keep is about **several spans read side by
+ *  side** — one account's ancient volatility setting the scale for every other
+ *  — and it lands on the dashboard's accounts card, which is the surface that
+ *  compares accounts. Here there is one series on one axis, so the defect has
+ *  no subject and the control was buying a choice at the price of a second
+ *  announcer for *how did this period go*. What stands at the head instead is
+ *  `Performance totale`, `gain ÷ versé net` — cumulative, of the same family as
+ *  the *sur versé* under the dividends, and covering the account's whole life
+ *  so that it implies no window and needs none stated.
+ *  - **The total is computed from its four terms and never read**. The payload
+ *    carries `gain_absolu`, which is the same number written down elsewhere;
+ *    computing here is what makes the four an identity rather than a
  *    decomposition somebody has to trust.
  *  - **Dividends are promoted, not recomputed.** The block reads the very term
  *    the block above decomposes — one arithmetic, rendered at two altitudes —
  *    because *what has this account paid me* is the one term that answers a
  *    question on its own, and reading it out of a sum is not answering it.
- *  - **A block waiting on a read renders nothing at all, title included**
- *    (ADR-0026), and a block with nothing in it does not exist (#724). The two
- *    are the same absence on screen and they are not the same fact: the first is
- *    `null`, the second is a landed payload with no row in it.
+ *  - **A block waiting on a read renders nothing at all, title included**, and
+ *    a block with nothing in it does not exist (#724). The two are the same
+ *    absence on screen and they are not the same fact: the first is `null`, the
+ *    second is a landed payload with no row in it.
  *  - **Every figure that rests on a convention carries its own bubble, and none
- *    is repeated.** One icon per figure and per surface (ADR-0016) — there is no
- *    prose on this page explaining its own rules.
+ *    is repeated.** One icon per figure and per surface — there is no prose on
+ *    this page explaining its own rules.
  */
 import { useId, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -111,7 +104,7 @@ interface AccountDetailProps {
    * announced a `Gain total` the rail beside it contradicted.
    */
   positions: readonly Position[] | null
-  /** The whole ledger, or **`null` while that read is in flight** (ADR-0026). */
+  /** The whole ledger, or **`null` while that read is in flight**. */
   events: readonly LedgerEvent[] | null
   /**
    * The account's own perf series, whole, or **`null` while its read is in
@@ -124,16 +117,13 @@ interface AccountDetailProps {
   rebuilding: boolean | null
   /**
    * The standing offer to move the events nobody assigned onto a declared
-   * account (#725), or `none` where there is nothing to move — which is what the
-   * detail of every account but the seeded one gets. It is **here** since
-   * ADR-0028 because its subject is *this account's* events: the seeded row is
-   * the one carrying them, and its own detail is where its owner is looking at
-   * them.
+   * account (#725), or `none` where there is nothing to move — which is what
+   * the detail of every account but the seeded one gets.
    */
   reassignment: ReassignmentOffer
   /**
    * **The reads above that refused**, one entry per read, `null` when it
-   * answered or is still in flight (#829, ADR-0037).
+   * answered or is still in flight (#829).
    *
    * The two are not the same news and the difference is what the reader is
    * owed: in flight a block is simply not there yet and claims nothing, refused
@@ -222,8 +212,8 @@ export function AccountDetail({
 
   // **The whole series, and no window at all** (#833). The curve is drawn over
   // the account's own history from end to end: there is no control to ask for
-  // less, and its legend states the extent rather than leaving it implied
-  // (ADR-0028).
+  // less, and its legend states the extent rather than leaving it implied.
+  //
   const curve = useMemo(() => (points === null ? [] : valueSeries(points)), [points])
 
   const lines = useMemo(
@@ -253,17 +243,15 @@ export function AccountDetail({
           out — not this account's composition. */}
       {reassignment.kind === 'standing' ? <Reassignment offer={reassignment} /> : null}
 
-      {/* **One card at the head, and the curve is in it** (#838). The drawing
-          leads an account with what it is worth, states underneath it the two
-          figures that total is the difference of and what the broker took out
-          of the transfers, puts the cumulative ratio at the right, and draws
-          the value against the contribution *inside the same frame* — because
-          the curve is that head's own reading over time and not a second
-          block. What went with the split is the four-term list: the drawing
-          shows the terms where they are read — the dividends have a card, the
-          fees are the line under the gain, and the latent gain is a column of
-          the lines table below. ADR-0018's identity is unchanged; what changed
-          is that this page no longer states it twice. */}
+      {/* **One card at the head, and the curve is in it** (#838). The drawing leads
+      an account with what it is worth, states underneath it the two figures
+      that total is the difference of and what the broker took out of the
+      transfers, puts the cumulative ratio at the right, and draws the value
+      against the contribution *inside the same frame* — because the curve is
+      that head's own reading over time and not a second block. What went with
+      the split is the four-term list: the drawing shows the terms where they
+      are read — the dividends have a card, the fees are the line under the
+      gain, and the latent gain is a column of the lines table below. */}
       {/* The card itself is **not** conditional, and its name is why: it is
           what `aria-labelledby` points at, so a detail whose figures are still
           in flight would otherwise be a region with no name at all. What waits
@@ -284,8 +272,6 @@ export function AccountDetail({
                 <h2 id={heading} className="eyebrow">
                   {name}
                 </h2>
-                {/* The id, where the type used to be — beside the name and
-                    never under it (#916, ADR-0043, reversing #838). */}
                 <span className="eyebrow">· {row.id}</span>
                 {/* **The gesture is a pencil beside the name**, where it was
                     the name itself. One control for one gesture: a heading that
@@ -302,8 +288,8 @@ export function AccountDetail({
               </div>
 
               {/* The figures wait on the positions — nothing at all while the
-                  read is in flight (ADR-0026), the reason in their place where
-                  it refused (#829, ADR-0037) — and the curve below waits on its
+                  read is in flight, the reason in their place where
+                  it refused (#829) — and the curve below waits on its
                   own read. One frame, two waits, neither costing the other. */}
               {terms === null || total === null ? (
                 failures.positions ? <Unreadable failure={failures.positions} /> : null
@@ -351,14 +337,12 @@ export function AccountDetail({
                       </span>
                     </span>
                   </p>
-                  {/* ADR-0018's fourth term belongs to no security, so it is
-                      the one the head says in its own words. Dropped at **zero
-                      and only at zero**: an install whose transfers are free
-                      reads no fourth term and never learns it exists. `null` is
-                      a different sentence — the server has no day to bound the
-                      fees by — and it renders, as a dash, because a total that
-                      goes out incomplete owes the reader the cause under it
-                      (#775). */}
+                  {/* Dropped at **zero and only at zero**: an install whose
+                  transfers are free reads no fourth term and never learns it
+                  exists. `null` is a different sentence — the server has no day
+                  to bound the fees by — and it renders, as a dash, because a
+                  total that goes out incomplete owes the reader the cause under
+                  it (#775). */}
                   {row.transfer_fees === 0 ? null : (
                     <p
                       role="group"
@@ -423,11 +407,11 @@ export function AccountDetail({
           </div>
 
           {/* The curve, inside the head it is the history of. Nothing at all
-              while the series is in flight (ADR-0026), and the reason in its
+              while the series is in flight, and the reason in its
               place where the read refused. The legend states the extent it was
               drawn over, which is the account's whole history: a curve with no
               stated span beside a total is the unbounded-window failure in
-              miniature (ADR-0028). */}
+              miniature. */}
           {points === null ? (
             failures.points ? (
               <div className="mt-4.5">
@@ -574,12 +558,10 @@ export function AccountDetail({
                   t,
                 )}
               </p>
-              {/* What the drawing puts under the figure, and it is a **rate on
-                  the denominator this page already has**: the contribution at
-                  the head is what the ratio beside it divides, so the dividends
-                  divide it too rather than acquiring a base of their own. It
-                  carries no bubble — ADR-0016 puts one icon per figure and per
-                  surface, and the figure above it has one. */}
+              {/* What the drawing puts under the figure, and it is a **rate on the
+              denominator this page already has**: the contribution at the head
+              is what the ratio beside it divides, so the dividends divide it
+              too rather than acquiring a base of their own. */}
               <div
                 role="group"
                 aria-label={t('accounts.detail.dividends.onContributed')}
@@ -662,11 +644,6 @@ export function AccountDetail({
                       <ShareBar
                         share={share}
                         className="min-w-0 flex-1"
-                        // The account's own hue, which is the colour its curve
-                        // and its composition are already drawn in: rank is
-                        // read off the order the list is already sorted in, so
-                        // a ramp would say it a second time — the licence
-                        // ADR-0023 gives and this list does not need.
                         fill={accountColour(hue)}
                       />
                       <span className="tabular w-11 shrink-0 text-right font-mono text-xs text-muted-foreground">
@@ -712,13 +689,8 @@ export function AccountDetail({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* **Which lines pay the dividends** — the question the encashed figure
-            raises and cannot answer (#833). It carries its own extent, for
-            ADR-0028's reason one figure over: `position.dividends` is a
-            lifetime total, so the span is the account's whole history and the
-            block says so rather than leaving it implied — there being no range
-            control above it any more to borrow a window from. Nothing at all
-            while the positions are in flight, and no block where no line has
-            ever paid. */}
+        raises and cannot answer (#833). Nothing at all while the positions are
+        in flight, and no block where no line has ever paid. */}
         {payers === null || payers.length === 0 ? null : (
           <Card>
             <CardHeader className="flex flex-wrap items-baseline justify-between gap-2">
@@ -765,10 +737,6 @@ export function AccountDetail({
                     key={event.id ?? `${event.date}-${index}`}
                     className="flex items-baseline justify-between gap-3 py-2 text-sm"
                   >
-                    {/* The day under the type rather than beside it: the column
-                        this block sits in is narrow at the width ADR-0022
-                        measured, and a date that cannot wrap is what pushes a
-                        row past its edge. */}
                     {/* **What it is about, then what it is.** The type alone
                         read as *Versement · Versement · Retrait* down the
                         block, three rows saying nothing about which security or
@@ -825,11 +793,11 @@ function eventName(event: LedgerEvent): string | null {
 }
 
 /**
- * The standing half of the reassignment (#725, ADR-0006).
+ * The standing half of the reassignment (#725).
  *
  * The other half rides **inside** the first declaration, where there is no list
  * of accounts to choose from yet. This one needs no file at all to be reached
- * (ADR-0034) — events typed into the app before anything was declared land
+ * — events typed into the app before anything was declared land
  * under the seeded row, and the declaration that follows does not claim them —
  * so it stands on its own, with the declared accounts as its targets.
  *

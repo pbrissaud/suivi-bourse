@@ -1,6 +1,6 @@
 /**
  * Turning a failure into a sentence — by `type`, never by `status`, and never
- * by `detail` (ADR-0024).
+ * by `detail`.
  *
  * The server declares stable `type` identifiers and documents them as the thing
  * a client branches on; the prototype branched on `status` and rendered `detail`
@@ -20,7 +20,7 @@ export const PROBLEM_TYPES = {
   storageUnavailable: '/problems/storage-unavailable',
   notFound: '/problems/not-found',
   /**
-   * **The event was there and is not any more** (#785, ADR-0027).
+   * **The event was there and is not any more** (#785).
    *
    * Its own identifier rather than `notFound`'s, and the server is what tells
    * the two apart: a key it issued is not handed to another row for the life of
@@ -81,7 +81,7 @@ export const PROBLEM_TYPES = {
    * thing that is certainly not what happened to a removal — and it carries
    * `accounts`, which is what turns *it is in use* into somewhere to go. The
    * server names them because this front branches on `type` and never on
-   * `detail` (ADR-0024), so prose alone would have reached nobody.
+   * `detail`, so prose alone would have reached nobody.
    */
   taxationModelInUse: '/problems/taxation-model-in-use',
   internal: '/problems/internal-error',

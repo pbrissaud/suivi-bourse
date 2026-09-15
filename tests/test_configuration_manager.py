@@ -1,30 +1,29 @@
-"""
-Unit tests for main.ConfigurationManager.
+"""Unit tests for main.ConfigurationManager.
 
 These tests exercise ConfigurationManager in isolation:
-  * naming the two v4 files this version no longer reads — `config.yaml`
-    (issue #711) and `settings.yaml` (issue #698)
-  * the ledger stamp the snapshot is keyed on (the store's stamp, and no file at all)
+  * naming the two v4 files this version no longer reads — `config.yaml` (issue
+    #711) and `settings.yaml` (issue #698)
+  * the ledger stamp the snapshot is keyed on (the store's stamp, and no file
+    at all)
   * the caching contract of the snapshot build (identity reuse, force reload,
     invalidation on file change)
   * the snapshot: first_acquisition_date / events
   * publication (issue #658): one immutable snapshot, validated before it is
     published, swapped by a single rebind — the null window and the split-brain
 
-Every ConfigurationManager is built with ``config_dir=str(tmp_path)`` so nothing
-ever touches the real ~/.config/SuiviBourse. No network, no real InfluxDB, no
-yfinance.
+Every ConfigurationManager is built with ``config_dir=str(tmp_path)`` so
+nothing ever touches the real ~/.config/SuiviBourse. No network, no real
+InfluxDB, no yfinance.
 
 There is **one loading path** since #711 — the event ledger — so no test here
 selects a mode, and none can.
 
-And since ADR-0032 the manager **reads no directory at all**: a file is handed
-to the app, written through ``entries``, and the manager replays the store. The
-three tests that asked *where does it look* and *can a v4 file move it* went
-with the question; what a v4 ``settings.yaml`` must not be able to do is still
-held, on the ledger it would change (``test_a_v4_accounts_block_declares_nothing``)
-and on the cache key it must not move. ``seeded`` below is how a test that wants
-a populated ledger gets one.
+The three tests that asked *where does it look* and *can a v4 file move it*
+went with the question; what a v4 ``settings.yaml`` must not be able to do is
+still held, on the ledger it would change
+(``test_a_v4_accounts_block_declares_nothing``) and on the cache key it must
+not move. ``seeded`` below is how a test that wants a populated ledger gets
+one.
 """
 
 import os
@@ -50,11 +49,8 @@ def _write_settings(config_dir, text):
 def seeded(config_dir, drop=None):
     """A manager over its own store, holding whatever ``drop`` contains.
 
-    The rows are put in the **store**, because that is where the manager reads
-    them from and, since ADR-0032, the only place they can come from: a file is
-    handed to the app and written through ``entries``, and nothing scans a
-    directory on a build. Which door wrote the rows is not this file's subject —
-    every test below is about what a snapshot does with a ledger that is there.
+    Which door wrote the rows is not this file's subject — every test below is
+    about what a snapshot does with a ledger that is there.
     """
     cm = ConfigurationManager(config_dir=str(config_dir))
     if drop is not None:
@@ -66,7 +62,7 @@ def seeded(config_dir, drop=None):
 def _correct_one_row(cm, symbol='AAPL', quantity=11.0):
     """Rewrite the ledger's first row of ``symbol``, as ``PATCH`` would.
 
-    The gesture that replaced *re-drop the corrected file* (ADR-0032): a
+    The gesture that replaced *re-drop the corrected file*: a
     correction addresses **one row by its key** now, whatever laid it down.
     """
     from application import ledger as ledger_module
@@ -83,7 +79,7 @@ def test_a_config_yaml_is_named_at_startup(tmp_path, mocker):
     """Four empty pages read as "the update erased my portfolio" without this.
 
     The file itself is left exactly where its owner put it: nothing is migrated,
-    renamed or deleted (ADR-0008).
+    renamed or deleted.
     """
     legacy = tmp_path / "config.yaml"
     legacy.write_text("shares:\n- name: Apple\n  symbol: AAPL\n", encoding="utf-8")
@@ -95,7 +91,7 @@ def test_a_config_yaml_is_named_at_startup(tmp_path, mocker):
     warn.assert_called_once()
     message = warn.call_args.args[0]
     assert "config.yaml" in message
-    # It names no folder any more (ADR-0032): there is nowhere to look, so the
+    # It names no folder any more: there is nowhere to look, so the
     # sentence says what a portfolio is made of instead of where it is found.
     assert str(tmp_path / "events") not in message
     assert legacy.exists()                       # and touches nothing

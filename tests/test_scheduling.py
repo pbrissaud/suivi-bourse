@@ -250,7 +250,7 @@ def test_decide_sequence_closed_then_short_retry_resolves_forward():
 
 
 # ---------------------------------------------------------------------------
-# The perf gate is gone (issue #707, ADR-0011)
+# The perf gate is gone (issue #707)
 # ---------------------------------------------------------------------------
 
 def test_scheduling_exposes_no_perf_gate():
@@ -891,11 +891,6 @@ def test_forward_window_multi_chunk_long_gap_advances_one_chunk():
 
 
 def test_a_forward_window_that_straddles_the_ceiling_is_cut_on_it():
-    # The forward pass reads its interval off the window's oldest day exactly as
-    # the backward one does, so a gap wider than two years — an install rallied
-    # after a long stop, a line bought back after years out of the portfolio —
-    # buys ADR-0010's hourly band in daily bars, and past the ceiling there is
-    # nowhere left to buy it again (#783).
     newest = NOW - timedelta(days=1000)
 
     start, end = forward_backfill_window(newest, NOW, chunk_days=365)
@@ -963,9 +958,6 @@ def test_the_interval_is_read_off_the_windows_oldest_day():
 
 
 def test_a_chunk_that_straddles_the_ceiling_is_cut_on_it():
-    # The bug of #783, in one line: the default chunk on an anchor that starts
-    # at today runs [today − 730, today − 365] and misses the ceiling by a day,
-    # so ADR-0010's whole hourly band came back in daily bars.
     start, end = NOW - timedelta(days=730), NOW - timedelta(days=365)
 
     cut = clip_to_hourly_ceiling(start, end, NOW)

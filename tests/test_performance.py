@@ -276,18 +276,15 @@ def test_a_day_with_no_value_suspends_the_chain_it_never_zeroes_it():
     """The first launch's own day, and it used to cost the account everything.
 
     Between the purchase landing in the ledger and the first price arriving,
-    the account holds ten shares worth nothing yet: cash 0, holdings 0, so
-    ``V = 0`` with no external flow. Chained, that day reads ``(0 − 0) / 1000``
-    and the index goes to **0** — then ``prev_v == 0`` skips the next day and
-    ``0 × x`` is 0 for ever after. The series was
-    ``[100, 0, 0, 0, …]`` against a ``total_value`` of ``[1000, 0, 1100, …]``,
-    and ADR-0019 rebases on that column: a healthy portfolio published at
-    **−100 %**, on the shape every install passes through on day one.
+    the account holds ten shares worth nothing yet: cash 0, holdings 0, so ``V
+    = 0`` with no external flow. Chained, that day reads ``(0 − 0) / 1000`` and
+    the index goes to **0** — then ``prev_v == 0`` skips the next day and ``0 ×
+    x`` is 0 for ever after.
 
     A day carrying no value is not a loss, it is a day with nothing to chain —
-    treated exactly like the ``prev_v == 0`` beside it: the index holds, and the
-    chain resumes on the first pair of days that both have a value. The price
-    move across the hole is not recovered, which is the same conservatism
+    treated exactly like the ``prev_v == 0`` beside it: the index holds, and
+    the chain resumes on the first pair of days that both have a value. The
+    price move across the hole is not recovered, which is the same conservatism
     ``account_horizon`` documents for a gap: a flow landing inside it would
     otherwise be published as performance (#766).
     """
@@ -312,14 +309,12 @@ def test_a_day_with_no_value_suspends_the_chain_it_never_zeroes_it():
 # External vs internal classification
 # --------------------------------------------------------------------------- #
 def test_no_external_flow_takes_the_xirr_and_leaves_the_gain():
-    """Only internal flows (BUY): no xirr, but a gain — ADR-0018, issue #708.
-
-    The opt-in guard travelled with ``xirr`` by accident and took ``gain_absolu``
-    with it. With no ``DEPOSIT`` at all, ``cash = −invested`` and
-    ``net_contributed = 0``, so ``gain_absolu = holdings − invested`` is **exact**
-    — here 120 − 100 — and it is the only figure an owner who never recorded a
-    deposit can still be told. What genuinely has no meaning is the money-weighted
-    return: there is no flow to weight.
+    """The opt-in guard travelled with ``xirr`` by accident and took
+    ``gain_absolu`` with it. With no ``DEPOSIT`` at all, ``cash = −invested``
+    and ``net_contributed = 0``, so ``gain_absolu = holdings − invested`` is
+    **exact** — here 120 − 100 — and it is the only figure an owner who never
+    recorded a deposit can still be told. What genuinely has no meaning is the
+    money-weighted return: there is no flow to weight.
     """
     events = [
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=1,
@@ -550,19 +545,14 @@ def _horizon(windows, oldest_priced, settled=(), start=LEDGER_START,
 
 
 def test_a_carried_symbol_blocks_from_its_first_quote_and_not_its_acquisition():
-    """ADR-0004's predicate, clipped to the days it is true of (issue #861).
-
-    A terminal symbol held since 2019 and first quoted in June of that year, in
+    """A terminal symbol held since 2019 and first quoted in June of that year, in
     a unit nobody has ever converted: from the first quote on, a number *is*
-    known and its conversion is what is missing, so those days are blocked — the
-    *waiting* state :func:`carrying.carrying_price` refuses to carry. Before it
-    there is no number and none is coming, which is exactly the domain ADR-0004
-    names, and :func:`compute_account` already values those days at the unit
-    cost.
+    known and its conversion is what is missing, so those days are blocked —
+    the *waiting* state :func:`carrying.carrying_price` refuses to carry.
 
-    Blocking from the acquisition threw them away with the rest: the account had
-    **no writable day at all**, where the truth is that it has every day up to
-    the first quote.
+    Blocking from the acquisition threw them away with the rest: the account
+    had **no writable day at all**, where the truth is that it has every day up
+    to the first quote.
     """
     quoted = date(2019, 6, 1)
 
@@ -592,7 +582,7 @@ def test_the_horizon_is_the_day_after_the_last_unpriced_held_day():
 def test_a_symbol_priced_from_the_day_it_was_acquired_constrains_nothing():
     """The window's **lower** end, and the case that makes it load-bearing.
 
-    A backward pass never overshoots the first acquisition (ADR-0004), so a
+    A backward pass never overshoots the first acquisition, so a
     symbol's oldest price *is* its acquisition day once its reconstruction has
     concluded. Without this end of the bound the formula would take the horizon
     of a portfolio that bought a new line this morning to *this morning* — every
@@ -769,7 +759,7 @@ def test_a_horizon_is_one_interval_and_the_twr_is_what_decides_it():
     proposes, and nothing in #765 or here dissolves it. The two ways out are
     refused with it: re-anchoring at the gap makes ``twr_index`` two incomparable
     series in one column, which the accounts page then rebases on a visible
-    window (ADR-0019) and draws as a discontinuity; and keeping the *left* run
+    window and draws as a discontinuity; and keeping the *left* run
     instead abandons today's figures, which is the whole of the sliding horizon.
 
     The assertion below is the defect itself, and it is a **wrong** figure and
@@ -856,9 +846,6 @@ def test_the_horizon_is_bounded_by_each_symbols_holding_window():
     Read literally as *"the most recent of the oldest available prices"*, the
     sold symbol's oldest available price is dated this year and would pin the
     **whole account** at today, while it constrains no day after its last exit.
-    ADR-0009 driving the backfill from the replay is what made the case ordinary:
-    a position sold four years ago is reconstructed, and its reconstruction
-    starts from the present.
     """
     horizon = _horizon(
         {"SOLD": (date(2020, 3, 2), date(2022, 5, 4)), "HELD": LONG_HELD},
@@ -962,9 +949,6 @@ def test_the_global_is_written_only_where_every_account_is():
     assert total.daily[0].total_value == pytest.approx(1500.0)
 
 
-# --------------------------------------------------------------------------- #
-# The per-field rule (issue #708, spec #695 § 11, ADR-0018)
-# --------------------------------------------------------------------------- #
 
 def test_the_rule_is_by_field_and_never_by_account():
     """The table of spec #695 § 11, spelled once and read by both writers."""
@@ -1005,11 +989,8 @@ def test_a_purchase_is_not_a_cash_event():
 
 
 def test_the_global_loses_its_cash_half_when_one_account_has_no_ledger():
-    """ADR-0018 seen from the other side: *a global figure is written only where
-    it is writable for every account*.
-
-    One account's ``cash_balance = −invested`` is **inside** the global sum, so a
-    global ``total_value`` carrying it is the very figure the per-field rule
+    """One account's ``cash_balance = −invested`` is **inside** the global sum, so
+    a global ``total_value`` carrying it is the very figure the per-field rule
     exists to remove, at the level of the whole portfolio.
     """
     cto = Account("CTO", "My CTO")
@@ -1039,10 +1020,6 @@ def test_the_global_loses_its_cash_half_when_one_account_has_no_ledger():
 
 def test_an_account_declared_and_never_used_does_not_veto_the_global():
     """``all`` is folded over the accounts that **produce a series**.
-
-    An account with no event contributes nothing to the sum, so it has no figure
-    to make unwritable — and ADR-0013's seeded row would otherwise take the cash
-    half off every install that declared its accounts by hand.
     """
     cto = Account("CTO", "My CTO")
     tl = EventAggregator().replay([
@@ -1064,7 +1041,7 @@ def test_an_account_declared_and_never_used_does_not_veto_the_global():
 
 
 # --------------------------------------------------------------------------- #
-# The gain's fourth term (issue #708, ADR-0018)
+# The gain's fourth term (issue #708)
 # --------------------------------------------------------------------------- #
 
 def test_the_four_terms_sum_to_the_absolute_gain_closed_positions_included():
@@ -1105,7 +1082,7 @@ def test_the_four_terms_sum_to_the_absolute_gain_closed_positions_included():
 
     # The three position terms, over **every** position the replay holds — the
     # sold one included, which is where a header that folds its closed lines
-    # rather than hiding them comes from (ADR-0017).
+    # rather than hiding them comes from.
     positions = tl.current()
     latent = sum(p['quantity'] * (price_at(p['symbol'], date(2024, 6, 5)) or 0.0)
                  - p['cost_basis'] for p in positions)
@@ -1127,7 +1104,7 @@ def test_the_four_terms_sum_to_the_absolute_gain_closed_positions_included():
 
 
 def test_a_transfer_fee_is_never_absorbed_into_the_contributions():
-    """The refusal, pinned (issue #708, ADR-0018).
+    """The refusal, pinned (issue #708).
 
     Absorbing the fee into ``net_contributed`` restores three terms and makes the
     figure vanish from the product entirely. It is refused: the money left the

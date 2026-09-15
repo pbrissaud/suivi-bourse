@@ -2,17 +2,12 @@
 
 ``perf_job`` derives ``settled`` — the set of symbols whose absence of a price
 is *permanent* rather than transitory — and hands it to
-:func:`performance.account_horizon`, which drops those symbols from the blocking
-population altogether. The two questions that meet there are asked on different
-grains, and that is the whole subject of this module: the horizon reasons **per
-day** (a symbol blocks the days it was held and no price answers for), while the
-set it is handed can only say *yes* or *no* about a whole symbol. A predicate
-that reads *some day of this symbol carries a converted price* therefore settles
-a line that is priced from January while the ledger has held it since 2019, and
-the six unpriced years are not blocked, not carried, and not skipped: they are
-**written with the position counted at nothing** beside a cash ledger that has
-already paid for it — ADR-0004's crater, dug by the very set that exists to
-avoid it.
+:func:`performance.account_horizon`, which drops those symbols from the
+blocking population altogether. The two questions that meet there are asked on
+different grains, and that is the whole subject of this module: the horizon
+reasons **per day** (a symbol blocks the days it was held and no price answers
+for), while the set it is handed can only say *yes* or *no* about a whole
+symbol.
 
 The seam is the suite's usual one: a real DuckDB store in ``tmp_path``, a real
 :class:`workloads.Workloads`, and every assertion on the rows the pass wrote.
@@ -194,15 +189,14 @@ def test_a_line_converted_late_blocks_the_years_before_the_conversion(
 
 def test_a_terminal_line_quoted_late_carries_the_days_before_its_first_quote(
         store, mocker, declare_ledger):
-    """ADR-0004 applied to its own domain: no price, and none is coming (#861).
-
-    A security bought on the 2nd whose market has no session before the 16th —
+    """A security bought on the 2nd whose market has no session before the 16th —
     the backward pass has been *tried* back to the acquisition and came back
     empty, which is what makes it terminal. Those fourteen days will **never**
     have a price, so they are carried at the unit cost, which is exactly what
-    :func:`performance.compute_account` already does with them. Only the horizon
-    refused: ``settled`` excluded any carried symbol carrying a first quote, so
-    the days between the acquisition and that quote were written nowhere at all.
+    :func:`performance.compute_account` already does with them. Only the
+    horizon refused: ``settled`` excluded any carried symbol carrying a first
+    quote, so the days between the acquisition and that quote were written
+    nowhere at all.
 
     The series therefore opens on the ledger's own first day, and the days
     before the first quote value the ten shares at what they cost.
@@ -261,12 +255,8 @@ def test_a_line_nobody_ever_quoted_in_a_nameable_unit_is_still_carried(
         store, mocker, declare_ledger):
     """The branch the repair must not narrow: never quoted, hence never waiting.
 
-    ``settled``'s other half (#773): a terminal symbol absent from
-    :func:`quotes.first_quoted_days` — no ``price_native``, or one in a unit
-    Yahoo names none for — is priceless **permanently**, so ADR-0004 carries it
-    at its own cost and every day it was held carries a real figure. It must go
-    on settling: made to block, a portfolio holding one such line would have no
-    series at all rather than a series drawn at cost.
+    It must go on settling: made to block, a portfolio holding one such line
+    would have no series at all rather than a series drawn at cost.
     """
     declare_ledger(store, _LEDGER)
     # A native observation with no ``symbol_quote`` unit beside it: a number no

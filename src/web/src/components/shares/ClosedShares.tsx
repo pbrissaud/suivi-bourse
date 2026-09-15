@@ -1,5 +1,5 @@
 /**
- * The closed positions — they **fold**, they are never filtered out (ADR-0017).
+ * The closed positions — they **fold**, they are never filtered out.
  *
  * The fold is a fold: the header above the live table goes on summing them, so
  * the identity holds without the reader having to know it exists. A *hide the
@@ -15,15 +15,12 @@
  *    table those five cells are an em dash on every row of the section. It is
  *    not the same table; it is the same vocabulary.
  *  - **It sorts on the closing date, descending.** Market value is zero across
- *    the whole section, and a column of zeros orders nothing. That column is the
- *    only one that discriminates these rows, and the live table does not have it.
- *  - **It is closed on load, and its summary line already carries `Réalisée` and
- *    `Dividendes`** — so the figure that matters is legible folded, and opening
- *    it is an intention rather than a discovery.
- *
- * **No icon lives here.** ADR-0016 is *one per figure and per surface*, and the
- * folded section is not a surface but a part of the page (#684 D7) — which is
- * what takes the page's eleven candidate icons down to nine.
+ *    the whole section, and a column of zeros orders nothing. That column is
+ *    the only one that discriminates these rows, and the live table does not
+ *    have it.
+ *  - **It is closed on load, and its summary line already carries `Réalisée`
+ *    and `Dividendes`** — so the figure that matters is legible folded, and
+ *    opening it is an intention rather than a discovery.
  */
 import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'

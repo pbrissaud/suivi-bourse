@@ -1,6 +1,6 @@
 /**
  * The bell, and the panel behind it — **the app's one global indicator**
- * (#829, ADR-0037, ADR-0022).
+ * (#829).
  *
  * It replaces three things at once: the status dot, whose colour it wears; the
  * sidebar's status card, whose sentence it says in prose one click away; and the
@@ -21,7 +21,7 @@
  * Four reads, and each is one the shell already made or one the panel is: the
  * health the icon is, the installation facts, the advisories, and the config the
  * currency entry is read off. Nothing here is rendered until they land —
- * *a read in flight is not an absence* (ADR-0026) — which is what makes
+ * *a read in flight is not an absence* — which is what makes
  * *Nothing to report* a statement about the panel rather than about a silence.
  */
 import { useState } from 'react'
@@ -86,7 +86,7 @@ const SUBJECT_LABELS: Record<Subject, MessageKey> = {
  * line each is a table of contents for three lines.
  *
  * The tone is the subject's, not the register's — the register decides what a
- * card *offers* and is never a word on screen (ADR-0037). Health takes the
+ * card *offers* and is never a word on screen. Health takes the
  * bell's own colour, since a health card is only ever raised on `attention` or
  * `unreachable`; the two that ask the owner to look at something take the
  * attention colour; the accounts take the one mark of the preset that is
@@ -224,11 +224,7 @@ export function Notifications() {
               variant="ghost"
               size="sm"
               className="ml-auto"
-              // **It cannot reach zero, so it states its own scope.** Three of
-              // the four sources never decrement on their own, which ADR-0037
-              // accepts with the objection in view; what it owes in exchange is
-              // a control that says what it clears rather than promising a
-              // clean slate. Disabled, it says **why** in prose underneath.
+              // Disabled, it says **why** in prose underneath.
               disabled={ackable.length === 0 || acknowledgeAll.isPending}
               onClick={() => acknowledgeAll.mutate()}
             >
@@ -312,7 +308,7 @@ export function Notifications() {
 
           {/* **Said only when the panel is truly empty**, and never over a read
               that has not landed or one that failed: a pinned red card and this
-              sentence cannot be on screen together (ADR-0037). */}
+              sentence cannot be on screen together. */}
           {pending || failure !== null || count > 0 ? null : (
             <div className="px-3 py-10 text-center">
               <p className="text-sm">{t('notification.empty.title')}</p>
@@ -326,7 +322,7 @@ export function Notifications() {
 }
 
 /**
- * A card's link — **onto the figure, never onto the page** (ADR-0037).
+ * A card's link — **onto the figure, never onto the page**.
  *
  * The four destinations are the four the panel can name, and each is spelled as
  * the router spells it rather than as a query string: the account *selected*,

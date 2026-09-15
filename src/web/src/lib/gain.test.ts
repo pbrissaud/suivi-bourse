@@ -1,6 +1,4 @@
 /**
- * The identity of ADR-0018, pinned to the cent.
- *
  * The measured counter-example is the reason the fourth term exists: on the
  * real portfolio `gain_absolu` reads 957,48 € while the three position terms
  * sum to 971,43 € — a gap of exactly 13,95 €, six `DEPOSIT` rows carrying a
@@ -49,7 +47,7 @@ describe('the four terms and their sum', () => {
     // fees by* (#722), and counted as zero it produced exactly the 971,43 that
     // disagrees with `gain_absolu` by 13,95 — a total amputated of a term, with
     // nothing on the page able to say so. It is an absence now, and it is the
-    // em dash: *there is nothing to compute* (ADR-0016), never a fifth form.
+    // em dash: *there is nothing to compute*, never a fifth form.
     const terms = {
       unrealised: known(461.46),
       realised: -599.01,
@@ -66,7 +64,7 @@ describe('the four terms and their sum', () => {
   })
 
   it('sums three terms where the fourth has no subject at all', () => {
-    // A security is not a place money is transferred to (ADR-0017), so the
+    // A security is not a place money is transferred to, so the
     // shares page's header can never carry that term — which is `0` and not
     // `null`: the sum of three **is** the gain it announces, and the term is
     // dropped rather than printed as `0,00 €`.
@@ -131,7 +129,7 @@ describe('the four terms and their sum', () => {
     // **Named on screen**, and that is half the repair: this function falls
     // back on the em dash for a reason it does not know, so a third one added
     // in silence would have gone out as *there is nothing to compute* about a
-    // portfolio that is simply not finished being read (ADR-0016).
+    // portfolio that is simply not finished being read.
     expect(sumRendering(total)).toBe(REBUILDING)
     expect(sumRendering(total)).not.toBe(DASH)
     expect(sumRendering(total)).not.toBe(AWAITING_RATE)
@@ -214,9 +212,6 @@ describe('what the terms are allowed to do on screen', () => {
 
   it('names the latent term instead of dashing it when a rate is missing', () => {
     // The rendering comes from `lib/absence.ts` and the key lives there alone.
-    // A caller holding `number | null` could only write a dash, which by
-    // ADR-0016 says *there is nothing to compute* — the opposite of a rate the
-    // app is about to fetch.
     const waiting = portfolioTerms([aPosition({ price: 125, currency: 'USD', rate: null })], -5)
     expect(termRendering(waiting, 'unrealised')).toBe(AWAITING_RATE)
     expect(termAmount(waiting, 'unrealised')).toBeNull()

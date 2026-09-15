@@ -1,6 +1,5 @@
 /**
- * The ledger's own rules, pure — in the taste of `lib/shares.ts` (#723,
- * ADR-0020, ADR-0005).
+ * The ledger's own rules, pure — in the taste of `lib/shares.ts` (#723).
  *
  * Four things live here rather than in a component, and each is a decision the
  * page would otherwise re-take per cell:
@@ -11,7 +10,7 @@
  *    missing values but questions the event does not raise. Written twice, the
  *    copy would eventually let a quantity through on a transfer.
  *  - **the identity of a row.** Ticker first, label second, and the label alone
- *    on a cash movement (ADR-0020): one column doing the work for **both**
+ *    on a cash movement: one column doing the work for **both**
  *    families of event, in place of a `Symbole` column empty 105 times out of
  *    285 doubled by a truncated `Notes`.
  *  - **the reduction.** Full-text search is not a convenience here: on nineteen
@@ -19,7 +18,7 @@
  *    It is also why *« page 4 sur 6 »* was never on the table: what reduces is
  *    named — a type, an account, a word — and a page number means nothing on an
  *    axis of dates. What the ledger does instead is **reveal**, below.
- *  - **the reveal.** Forty rows at a time (ADR-0031), which is a rendering
+ *  - **the reveal.** Forty rows at a time, which is a rendering
  *    budget and not a fetch: the whole ledger is already in memory when the
  *    first row is drawn.
  *  - **the facets, and the count each of them carries** (#834). A facet answers
@@ -35,12 +34,7 @@
 import { EVENT_TYPES, type LedgerEvent, type LedgerEventType } from '@/lib/api'
 
 /**
- * What a type asks for. `unitPrice` is three-valued rather than a boolean
- * because a `GRANT`'s is the one field in the product whose **emptiness is a
- * statement**: left blank the award is a dilution (contribution and cost basis
- * both nil), filled it feeds the two together — which is what ADR-0016's second
- * bubble on this page exists to say, at the moment the reader is leaving it
- * blank.
+ * What a type asks for.
  */
 interface FieldSet {
   security: boolean
@@ -78,7 +72,7 @@ export function identityOf(event: LedgerEvent): Identity {
 /**
  * **A blank account is `default`**, which is the aggregator's own rule and not a
  * rendering nicety: an install that has declared nothing writes its events under
- * a seeded row nobody named (ADR-0013), and the payload reports the blank it
+ * a seeded row nobody named, and the payload reports the blank it
  * resolved. Left blank on screen the column would read as *no account*, which is
  * a state the product declares impossible.
  */
@@ -87,10 +81,9 @@ export function accountOf(event: LedgerEvent): string {
 }
 
 /**
- * A key for the render, and **not an address** — which is the whole of
- * ADR-0020. A row that has a key says so; the rest are identified by their
- * position in a list the store sorted, which is exactly as durable as the render
- * that consumes it and no more.
+ * A row that has a key says so; the rest are identified by their position in a
+ * list the store sorted, which is exactly as durable as the render that
+ * consumes it and no more.
  */
 export function rowKey(event: LedgerEvent, index: number): string {
   return event.id ?? `row-${index}`
@@ -341,7 +334,7 @@ export function reduces(filters: LedgerFilters): boolean {
 
 /**
  * **The reduction that covers the ledger entire** — what *empty the ledger* is
- * made of (#834, ADR-0032).
+ * made of (#834).
  *
  * `DELETE /api/events` refuses a request with no parameter at all, on purpose,
  * and says what to do instead in as many words: *reduce on something that
@@ -404,9 +397,9 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
  *
  * The ⌘K palette leads to an event, and it leads there from another route — so
  * the reduction has to cross a navigation. It does it in the URL rather than in
- * a state a link would have to carry, which is the reason `?account=` is a search
- * parameter on the two other pages: it survives a reload, it can be handed to
- * somebody else, and the way back is the browser's own button.
+ * a state a link would have to carry, which is the reason `?account=` is a
+ * search parameter on the two other pages: it survives a reload, it can be
+ * handed to somebody else, and the way back is the browser's own button.
  *
  * **All five dimensions since #829**, under the names {@link selectionParams}
  * already gives them — so the address of a reduced ledger *is* the query string
@@ -414,11 +407,7 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
  *
  * The set of securities was the one exception, and its argument was that it
  * *"arrives from a gesture made on the page itself — the assumed-currency
- * notice, one tab away"*. There is no tab and no page: the notice is a card in
- * the notifications panel, which is mounted in the shell and reachable from all
- * five routes, and ADR-0037 requires its link to land on **the figure** — the
- * ledger reduced to the events concerned, the reduction naming itself and
- * offering the way out. A reduction that has to cross a navigation travels in
+ * notice, one tab away"*. A reduction that has to cross a navigation travels in
  * the URL, which is the whole of `?account=`'s own reasoning one page over.
  */
 export interface LedgerSearch {
@@ -548,7 +537,7 @@ export function byDateDescending(events: readonly LedgerEvent[]): LedgerEvent[] 
 }
 
 /**
- * **The rendering budget** (ADR-0031): how many rows a first reveal draws, and
+ * **The rendering budget**: how many rows a first reveal draws, and
  * how many each *show more* adds.
  *
  * Forty is not a page size in the usual sense, because nothing is fetched a
@@ -593,7 +582,7 @@ export function accountsNamed(events: readonly LedgerEvent[]): string[] {
 }
 
 /**
- * **Every row is editable** (ADR-0032, #816) — provided it is *addressable*,
+ * **Every row is editable** (#816) — provided it is *addressable*,
  * which is all that is left of the predicate. The other half was
  * `source_id === null`: a row a mounted file had provisioned was refused by the
  * server in `409`, so offering the editor on it was offering a refusal. There is

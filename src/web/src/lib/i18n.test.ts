@@ -1,5 +1,5 @@
 /**
- * The two catalogues and the machinery that reads them (ADR-0024).
+ * The two catalogues and the machinery that reads them.
  */
 import { IntlMessageFormat } from 'intl-messageformat'
 import { describe, expect, it } from 'vitest'
@@ -97,13 +97,13 @@ describe('ICU is the format, and it is needed', () => {
 
   it('says `Total P&L` in English, never `Total gain`', () => {
     // `Total gain` and `Total return` start with the same word and cohabit on
-    // the dashboard head; the French pair has no such collision (ADR-0024).
+    // the dashboard head; the French pair has no such collision.
     expect(formatMessage('en', 'dashboard.gainTotal')).toBe('Total P&L')
     expect(formatMessage('fr', 'dashboard.gainTotal')).toBe('Gain total')
   })
 
   it('writes the bell’s five states in both catalogues, as two sources', () => {
-    // The vocabulary the bell is said in (#819, #829, ADR-0036, ADR-0037).
+    // The vocabulary the bell is said in (#819, #829).
     // Both catalogues carry all five branches, and neither is a rendering of
     // the other: the word `attention` used to say *scheduler stopped* in both,
     // which stopped being true the day it started reading `/health` — one

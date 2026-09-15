@@ -96,10 +96,6 @@ def _build(tmp_path, mocker):
     path.write_text(_LEDGER, encoding='utf-8')
 
     opened = store_module.open_store(tmp_path / 'store.duckdb')
-    # The rows land in the store before the first publication, by the road the
-    # upload takes: the manager scans no directory since ADR-0032, and what
-    # every test below asserts on is what a *write through a route* does to the
-    # series afterwards.
     entries.create_many(opened, EventLoader(str(path)).load())
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
@@ -208,7 +204,7 @@ def test_a_bulk_removal_carries_the_series_and_the_positions_with_it(
 
 
 # --------------------------------------------------------------------------- #
-# Integral, and that is the decision (ADR-0011)
+# Integral, and that is the decision
 # --------------------------------------------------------------------------- #
 
 def test_the_whole_series_is_rewritten_and_not_only_its_tail(tmp_path, mocker):
@@ -249,10 +245,6 @@ def test_the_whole_series_is_rewritten_and_not_only_its_tail(tmp_path, mocker):
 def test_a_runtime_with_no_metrics_still_replays_and_writes_no_series(
         tmp_path, mocker):
     """Before the ``fork``, and in a test holding only a manager (#697).
-
-    The branch that republishes the snapshot stays what it is: it has no perf
-    machinery to reach for, and inventing one here would be a second writer of
-    the two tables ADR-0006 gives exactly one.
     """
     _fixed_today(mocker)
     events_dir = tmp_path / 'events'
@@ -298,7 +290,7 @@ def test_a_file_that_declares_the_currency_gets_a_series_from_that_write(
     landed and the process went on holding ``None``, which made this recompute
     *and every later tick* write no series at all. An install whose first gesture
     is an import had an empty dashboard until a restart. There is no scan left to
-    be the exception (ADR-0032): the refresh is unconditional.
+    be the exception: the refresh is unconditional.
     """
     _fixed_today(mocker)
     opened = store_module.open_store(tmp_path / 'store.duckdb')

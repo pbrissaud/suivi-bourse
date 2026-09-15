@@ -228,7 +228,7 @@ def test_the_price_series_keeps_the_last_point_of_each_day(store):
 
 
 def test_account_metrics_are_upserted_on_the_day_they_describe(store):
-    """The write is an ``UPSERT`` on the primary key (ADR-0011): a second cycle
+    """The write is an ``UPSERT`` on the primary key: a second cycle
     rewrites the row rather than appending one. Measured on a thousand cycles, a
     ``DELETE``+``INSERT`` replacement takes the file to 44,8 MB for a 1,6 MB
     table."""
@@ -250,12 +250,10 @@ def test_account_metrics_are_upserted_on_the_day_they_describe(store):
 
 
 def test_a_field_that_was_never_computable_is_null_not_missing(store):
-    """ADR-0001, and the death of ``_ABSENT_SCHEMA`` with it.
-
-    In InfluxDB a field never written was a *column that did not exist*, so
+    """In InfluxDB a field never written was a *column that did not exist*, so
     naming ``xirr`` in a SELECT turned "this account has no deposits" into a
-    query error — and, after #696, into a 503 that took the whole table with it.
-    Here the column is declared at creation and reads ``NULL``.
+    query error — and, after #696, into a 503 that took the whole table with
+    it. Here the column is declared at creation and reads ``NULL``.
     """
     store.execute("INSERT INTO account (id, label) VALUES "
                   "('PEA', 'Mon PEA')")
@@ -294,7 +292,7 @@ def test_portfolio_totals_is_keyed_by_the_day_alone(store):
 def _metrics(store, declare_ledger, events, accounts):
     declare_ledger(store, events, accounts.accounts if accounts else None)
     metrics = workloads.Workloads(PerfConfigManager(store))
-    # The one question the app asks (#702, ADR-0021). Without an answer the perf
+    # The one question the app asks (#702). Without an answer the perf
     # job writes **nothing at all** — not zeros, not NULLs — because every figure
     # it computes is money and an amount with no settled unit is not a figure.
     # ``test_no_base_currency_writes_no_performance_at_all`` is where that is
@@ -315,12 +313,9 @@ def test_the_seeded_default_account_gets_a_series_like_any_other(
         store, declare_ledger):
     """**The opt-in guard is gone** (issue #708), and this is what it hid.
 
-    It read ``declared_portfolio``, whose ``None`` means *"nothing beyond the
-    seed"* — and ADR-0013 seeds a ``default`` row at the creation of the schema
-    and never removes it, so the condition had lost its subject. What it produced
-    meanwhile was not an opt-in: a single-account install, the ordinary shape of
-    a v4 coming over, had **no performance series at all**, with nothing on
-    screen and nothing in the log to say why.
+    What it produced meanwhile was not an opt-in: a single-account install, the
+    ordinary shape of a v4 coming over, had **no performance series at all**,
+    with nothing on screen and nothing in the log to say why.
     """
     m = _metrics(store, declare_ledger, events=[
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=100.0)],
@@ -336,7 +331,7 @@ def test_the_seeded_default_account_gets_a_series_like_any_other(
 
 def test_an_account_with_no_cash_event_writes_holdings_and_gain_and_nothing_else(
         store, declare_ledger, mocker):
-    """The per-field rule, through the writer (issue #708, ADR-0018).
+    """The per-field rule, through the writer (issue #708).
 
     A ledger of purchases alone: the replay debits the cash on every buy without
     touching the contributions, so ``cash_balance = −invested`` and
@@ -685,7 +680,7 @@ def test_two_accounts_are_pooled_because_they_cannot_disagree_on_a_currency(
 
 def test_no_base_currency_writes_no_performance_at_all(
         store, declare_ledger, mocker):
-    """Not zeros, not `NULL`s, not a partial series — **nothing** (#702, ADR-0002).
+    """Not zeros, not `NULL`s, not a partial series — **nothing** (#702).
 
     Prices go on being collected natively the whole time, so answering late
     costs nothing; writing a total with no unit would cost a chart that means
@@ -759,7 +754,7 @@ def test_the_gain_is_written_on_every_day_and_the_rate_only_on_the_last(
 
 # --------------------------------------------------------------------------- #
 # The series is a cache: integral recompute, block upsert, bounded prune
-# (issue #707, ADR-0011). The incremental write window #597 introduced is gone,
+# (issue #707). The incremental write window #597 introduced is gone,
 # and so is the gate that decided whether to run at all — what replaces both is
 # a cycle that costs 0,4 % of its own tick and can always be thrown away.
 # --------------------------------------------------------------------------- #
@@ -797,7 +792,7 @@ def test_every_cycle_rewrites_the_whole_series(store, declare_ledger, mocker):
 
     The incremental window's replacement is nothing at all: the recompute is
     integral and unconditional, and an upsert on a primary key is what makes
-    that affordable (ADR-0011).
+    that affordable.
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "Mon PEA")])
@@ -875,10 +870,8 @@ def test_deleting_the_rows_is_enough_to_rebuild(store, declare_ledger, mocker):
 def test_the_file_does_not_drift_over_many_cycles(store, declare_ledger, mocker):
     """N cycles must not grow the file: the write is an upsert, not a replace.
 
-    ADR-0011 measured a ``DELETE``+``INSERT`` replacement at **44,8 MB for a
-    1,6 MB table** over a thousand cycles (~11 GB a year, which a checkpoint does
-    not give back). This is that measurement in miniature — a real store on a
-    real file, which is the whole reason the fixture refuses ``:memory:``.
+    This is that measurement in miniature — a real store on a real file, which
+    is the whole reason the fixture refuses ``:memory:``.
     """
     events = [
         Event(date(2023, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),

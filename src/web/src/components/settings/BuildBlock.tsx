@@ -13,7 +13,7 @@
  * card stays and says that nothing stamped this build — which is also the
  * sentence that stops them from inventing one in the ticket.
  *
- * What does not render is the read *in flight* (ADR-0026): `null` is a runtime
+ * What does not render is the read *in flight*: `null` is a runtime
  * that has not answered yet, and a block that waits renders nothing at all,
  * title included.
  */
@@ -33,7 +33,7 @@ const BUILD_HEADING = 'settings-build'
 const SHORT = 12
 
 interface BuildBlockProps {
-  /** **`null` until `GET /api/runtime` has landed** (#777, ADR-0026). */
+  /** **`null` until `GET /api/runtime` has landed** (#777). */
   build: RuntimeBuild | null
 }
 

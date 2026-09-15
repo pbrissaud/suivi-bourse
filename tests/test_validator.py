@@ -325,10 +325,6 @@ def test_dividend_accepts_a_fee_that_is_not_negative(validator):
 
 def test_dividend_negative_fee(validator):
     """The withholding is a subtraction, and a subtraction of a negative is not.
-
-    ``_process_dividend`` books ``amount - fee``, so ``-1000`` on a dividend of
-    ten made ``received_dividend`` 1010 — one of ADR-0018's four named terms,
-    inflated by a figure the owner never received.
     """
     ev = Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple Inc",
                amount=10.0, fee=-1000.0)
@@ -501,7 +497,7 @@ def test_an_undeclared_account_names_the_account_column():
 
 
 def test_the_undeclared_account_is_sent_to_the_app_and_nowhere_else():
-    """An account is born in the app, and the refusal says only that (ADR-0034).
+    """An account is born in the app, and the refusal says only that.
 
     This sentence reaches the owner both ways — as the ``detail`` of a ``422``
     on an uploaded file and under the create form's account field — so naming an

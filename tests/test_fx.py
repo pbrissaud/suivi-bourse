@@ -1,4 +1,4 @@
-"""The reporting currency and the rate that reaches it (issue #702, ADR-0002).
+"""The reporting currency and the rate that reaches it (issue #702).
 
 Two halves, and they are tested at two different heights on purpose.
 
@@ -417,9 +417,7 @@ def test_the_answer_is_stored_upper_cased_so_one_dial_has_one_spelling(store):
 
 
 def test_it_can_be_answered_after_an_import_and_is_fixed_from_the_first_event(store):
-    """The amendment ADR-0021 makes to ADR-0002, and the direction matters.
-
-    Locking on *any event exists* would shut an owner who imported before
+    """Locking on *any event exists* would shut an owner who imported before
     answering out of their own currency for good. What is unrecoverable is
     **reinterpreting** amounts, never answering late — so: free until answered,
     free while the ledger is empty, fixed once both are true.
@@ -691,16 +689,15 @@ def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
         store, mocker, monkeypatch, fake_ticker):
     """The **third** path the sentinel used to reach `fx` by (issue #845).
 
-    The ticket named the conversion of the live scrape and the attributes at the
-    write; this one is the backfill's, and it is the one nobody had looked at.
-    It reads the unit out of the `.info` cache the fetch fills, and the cache
-    used to be filled with a word for a payload that named no currency — so the
-    prefetch asked Yahoo for `UNDEFINEDEUR=X`, the very ticker the lateral
-    pass's own comment forbids, once per chunk for the life of the rebuild.
+    The ticket named the conversion of the live scrape and the attributes at
+    the write; this one is the backfill's, and it is the one nobody had looked
+    at. It reads the unit out of the `.info` cache the fetch fills, and the
+    cache used to be filled with a word for a payload that named no currency —
+    so the prefetch asked Yahoo for `UNDEFINEDEUR=X`, the very ticker the
+    lateral pass's own comment forbids, once per chunk for the life of the
+    rebuild.
 
-    The chunk is still written. Losing a price over a currency is the one
-    outcome ADR-0002 rules out, so the points land with `price_converted NULL`
-    and the lateral pass repairs them once the unit is known.
+    The chunk is still written.
     """
     metrics = _metrics(store, base_currency='EUR')
     # What the translation now answers for a payload that carries no key at
@@ -1258,13 +1255,9 @@ def _sold_before_the_install(store, mocker, monkeypatch, closes, info=None):
     """The staging state, rebuilt: a line sold before the first boot.
 
     Its quantity is zero, so ``_held_symbols`` filters it out of the scrape by
-    design (#699) and the cache the rebuild reads is empty for it; its window is
-    in the backfill's set all the same (ADR-0009), so Yahoo is asked for its
-    prices — and answers.
-
-    ``info`` is the second population of the ticket's fifth criterion: ``{}`` is
-    Yahoo answering **cours and no currency at all**, which the repair cannot
-    dissolve and which ADR-0004 takes instead.
+    design (#699) and the cache the rebuild reads is empty for it; its window
+    is in the backfill's set all the same, so Yahoo is asked for its prices —
+    and answers.
     """
     frame = pd.DataFrame(
         {'Close': list(closes)},
@@ -1444,12 +1437,12 @@ def test_a_line_yahoo_names_no_unit_for_is_carried_at_its_cost(
     worth ten shares.
 
     So the third state joins one of the two existing conventions rather than
-    inventing a fourth (ADR-0021), and it is the **carrying** one: a number with
+    inventing a fourth, and it is the **carrying** one: a number with
     no unit is not a cours. #706 refuses to carry *quoted with no rate* because
     that absence is transitory; here Yahoo has been asked and names none, so
     there is no pair, no rate coming, and nothing to wait for. The cost is
     defined in the right unit already — event amounts are the debit in the
-    reporting currency (ADR-0002) — so the PMP needs no conversion.
+    reporting currency — so the PMP needs no conversion.
 
     The two terms are read **from the store**, which is the constraint that
     decided the implementation: the perf job's only inputs are the store and the
@@ -1491,9 +1484,6 @@ def test_a_line_yahoo_names_no_unit_for_is_carried_at_its_cost(
         'SELECT count(*) FROM price_point WHERE price_converted IS NULL')[0] \
         == (3,)
 
-    # The second term of ADR-0004's predicate holds — the backward pass has
-    # nothing left to fetch — so the absence is permanent and the day is carried
-    # at the position's own cost rather than counted at nothing.
     assert quotes.terminal_symbols(store, window, datetime.now(UTC)) == {'AAPL'}
     assert value_on(date(2024, 6, 2)) == (pytest.approx(10 * 100.0), True)
 
@@ -1838,7 +1828,7 @@ def test_a_row_written_before_the_fix_learns_its_real_unit(
     the pass does what it does for any symbol with no unit: it asks, it writes,
     and the condition empties itself as the rows go through it.
 
-    Steps exist since #926 (ADR-0045) and this is still the right answer: what
+    Steps exist since #926 and this is still the right answer: what
     is wrong here is a **row's value**, not the schema's shape, and a store that
     repairs itself as it runs needs nothing done to it at boot.
     """

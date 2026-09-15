@@ -1,7 +1,6 @@
 /**
  * The reduction, said above the table — **the search, the count, and the
- * pastilles that name what is retained** (#723, #795, #834, ADR-0020,
- * ADR-0031).
+ * pastilles that name what is retained** (#723, #795, #834).
  *
  * The reduction is made in three places since #834 and they are three
  * questions, not three copies:
@@ -9,21 +8,15 @@
  *  - the **panel** (`LedgerFacets.tsx`) is where an axis is *chosen*, and every
  *    option there carries the count it would leave;
  *  - the **search** is here, because it is the one dimension with no vocabulary
- *    at all to lay out. It is not a convenience either: on nineteen purchases of
- *    the same ETF the free-text label is the only discriminant a row owns, and
- *    on a cash movement it is the only name there is. It reads the ticker, the
- *    label and the account — everything the identity and account columns show —
- *    with accents folded;
+ *    at all to lay out. It is not a convenience either: on nineteen purchases
+ *    of the same ETF the free-text label is the only discriminant a row owns,
+ *    and on a cash movement it is the only name there is. It reads the ticker,
+ *    the label and the account — everything the identity and account columns
+ *    show — with accents folded;
  *  - the **pastilles** are here too, and they are where a reduction is *read
  *    back and let go of*. One per dimension in force, each stating what it
  *    retains and clearing itself, which is #724's rule applied to all five at
  *    once rather than to the one dimension that had arrived from a gesture.
- *
- * **The count is the reduction's, and it says so.** *Réduction · 47 événements*
- * where something is in force, the bare count where nothing is: ADR-0031 asks
- * that both sentences under this table be true of the reduction rather than of
- * the store, and a number that does not say which of the two it counts is the
- * defect that record names — a table silently shorter than expected.
  *
  * The securities are a pastille like the rest since #834. They were a line of
  * their own, in a dashed box, because they arrive from a gesture and have no

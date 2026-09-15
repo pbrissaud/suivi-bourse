@@ -1,41 +1,32 @@
 /**
- * The first run — **a predicate, never a moment** (#726, ADR-0021, ADR-0005),
- * and **three passages** since ADR-0035 (#823).
- *
  * Everything a first launch could once have asked has been deleted or answered
- * elsewhere: the mode is dead (#711), the accounts seed themselves (ADR-0013),
- * the store's location is *observed* rather than demanded (#741), the drop
- * folder may legitimately not exist (ADR-0015), and the display format follows
- * the reader's language (ADR-0024). What is left is **the reporting currency**,
- * the one dial with no default and therefore the only one whose absence means
- * *nobody has ever answered here*.
+ * elsewhere: the mode is dead (#711), the accounts seed themselves, the store's
+ * location is *observed* rather than demanded (#741), the drop folder may
+ * legitimately not exist, and the display format follows the reader's language.
+ * What is left is **the reporting currency**, the one dial with no default and
+ * therefore the only one whose absence means *nobody has ever answered here*.
  *
- * **The predicate is a class and not a name** (ADR-0035). It reads *a required
- * setting is unanswered*, off the `required` mark the registry publishes with
- * every other property of a dial — not off `base_currency` spelled out here.
- * The currency is what wears the mark today, and nothing on screen moves for
- * it; what the seam buys is that the second required dial is a line in
+ * **The predicate is a class and not a name**. It reads *a required setting is
+ * unanswered*, off the `required` mark the registry publishes with every other
+ * property of a dial — not off `base_currency` spelled out here. The currency
+ * is what wears the mark today, and nothing on screen moves for it; what the
+ * seam buys is that the second required dial is a line in
  * `settings_registry.py` rather than this file reopened.
  *
- * **The memory of the traversal is browser-side only.** The predicate stays
- * entirely derived from the server, so a wiped volume re-arms it and a second
- * browser sees it again; what `localStorage` holds is *this reader has been
- * through, in this browser*, which is a property of the reader exactly as the
- * theme and the language are (ADR-0024, same mechanism, absence meaning *not
- * yet*). There is **no `onboarding_done` row**: recording server-side what can
- * be derived is precisely what the predicate was written against, and it is
- * that severed link — not the number of passages — that answers #726's refusal
- * on its merits. A ledger emptied after six months reopens nothing, because
+ * There is **no `onboarding_done` row**: recording server-side what can be
+ * derived is precisely what the predicate was written against, and it is that
+ * severed link — not the number of passages — that answers #726's refusal on
+ * its merits. A ledger emptied after six months reopens nothing, because
  * nothing about this screen is derived from the data it is about to collect.
  */
 import type { SettingDescription } from '@/lib/api'
 import { browserStorage, rememberPreference } from '@/lib/storage'
 
-/** Same shape as the theme and language keys, deliberately (ADR-0024). */
+/** Same shape as the theme and language keys, deliberately. */
 export const FIRST_RUN_STORAGE_KEY = 'sb.firstRun'
 
 /**
- * The three passages, **in order** (ADR-0035): the required settings, the
+ * The three passages, **in order**: the required settings, the
  * accounts, the first events.
  *
  * They are a list rather than three booleans because that is the whole of what
@@ -85,7 +76,7 @@ export const CURRENCY_KEY = 'base_currency'
 
 /**
  * Whether a dial the registry marks **required** is still unanswered — the
- * first run's one predicate, derived from the mark (ADR-0035, #726).
+ * first run's one predicate, derived from the mark (#726).
  *
  * *Unanswered* is `stored` being false and not `value === null`: `stored` is
  * what the store actually holds, so the reading stays true of the whole class
@@ -93,8 +84,8 @@ export const CURRENCY_KEY = 'base_currency'
  * on `base_currency` today, which is the point — nothing on screen moves.
  *
  * `undefined` is *not observed from here*: the read has not landed, or the
- * registry carries no required dial at all. A read in flight is not a fact
- * (ADR-0026), and the modal is a claim about the reader's own installation — so
+ * registry carries no required dial at all. A read in flight is not a fact,
+ *and the modal is a claim about the reader's own installation — so
  * it waits for a positive observation rather than opening on a silence. The
  * second case is the same caution one step further: a payload with no mark
  * anywhere is a server this front has not understood, and reading that as *every
@@ -114,23 +105,16 @@ export function requiredUnanswered(
  * already publishes (**no new API state**, #726).
  *
  * This one *is* about the currency, and legitimately names it: it feeds the
- * pinned card that says *answer the currency*, the empty state each of the three
- * valued pages renders in its place (#829, ADR-0037), and the sentence that says
+ * pinned card that says *answer the currency*, the empty state each of the
+ * three valued pages renders in its place (#829), and the sentence that says
  * the answer cannot be taken back — all of which are about this dial and no
  * other. The modal's predicate is `requiredUnanswered`, and the two coincide
  * only because the currency is the one dial marked required today.
  *
  * `undefined` is *not observed from here*: the read has not landed, or the
- * registry does not carry the dial. A read in flight is not a fact (ADR-0026),
- * and each of those surfaces is a claim about the reader's own installation — so
- * it waits for a positive observation rather than appearing on a silence.
- *
- * The absence it takes is `undefined` and **not `null`**, which is what every
- * caller produces (`config.data?.settings`) and what keeps this parameter out
- * of ADR-0026's `readonly X[] | null` family: one of its two callers has the
- * read in hand by construction — `Installation` mounts the settings block only
- * once the config has landed — and a slot declaring *this may be in flight*
- * handed a value that cannot be is exactly what `inFlightShape.test.ts` is for.
+ * registry does not carry the dial. A read in flight is not a fact, and each of
+ * those surfaces is a claim about the reader's own installation — so it waits
+ * for a positive observation rather than appearing on a silence.
  */
 export function currencyUnanswered(
   settings: readonly SettingDescription[] | undefined,
@@ -144,9 +128,6 @@ export function currencyUnanswered(
 }
 
 /**
- * Whether the base currency is **fixed** — answered, and therefore no longer
- * something this app draws a field for (#794, ADR-0002, `CONTEXT.md`).
- *
  * *Immutable once set: the answer can be given late, it just cannot be taken
  * back.* The screen said something else and it said it twice: *you can still
  * change this: your ledger is empty*, over a dial whose second answer does not
@@ -158,13 +139,13 @@ export function currencyUnanswered(
  * first one was never converted. The one thing the app owes here is the
  * sentence, said before the answer rather than on the refusal.
  *
- * It is a rename of the predicate and not a second reading of it: *answered*
- * is what the dial publishes (`currencyUnanswered`), and this is its name on
+ * It is a rename of the predicate and not a second reading of it: *answered* is
+ * what the dial publishes (`currencyUnanswered`), and this is its name on
  * screen.
  *
  * `undefined` is *not observed from here*: with the settings read not landed,
  * neither *it is fixed the moment you answer* nor *it is fixed* is a sentence
- * this screen has the standing to write (ADR-0026).
+ * this screen has the standing to write.
  */
 export function currencyFixed(settings: readonly SettingDescription[] | undefined) {
   const unanswered = currencyUnanswered(settings)
@@ -185,15 +166,12 @@ const ANSWERED = 'answered'
  * What the browser remembers of the walk: **that the reader has been through,
  * and what was still unanswered when they left.**
  *
- * The second half is what makes *a wiped store asks again* true (ADR-0035)
- * rather than merely true of a second browser. A mark saying only *been through*
- * would suppress the question for ever in the browser that answered it — and the
- * reader who loses their volume, which is the trial install ADR-0015 designs
- * for, would land on an app whose currency is gone with nothing asking for it
- * again. So the mark is compared against what the server says **now**: a reader
- * who left with the question still open is left alone, and a reader who left
- * having answered is asked again the day the store no longer holds the answer,
- * because that is a different installation wearing the same address.
+ * The second half is what makes *a wiped store asks again* true rather than
+ * merely true of a second browser. So the mark is compared against what the
+ * server says **now**: a reader who left with the question still open is left
+ * alone, and a reader who left having answered is asked again the day the store
+ * no longer holds the answer, because that is a different installation wearing
+ * the same address.
  *
  * `'unanswered'` is written as `dismissed`, the string every browser that has
  * already closed this modal holds. That is deliberate: the old modal only ever
@@ -220,8 +198,8 @@ export function readFirstRunMark(): FirstRunMark | null {
 /**
  * Remember the traversal — **however the reader left**, the cross, a door and
  * the last passage writing the same kind of mark: what is recorded is *this
- * reader has been through*, and the way out never had the weight of the answer
- * (ADR-0021).
+ * reader has been through*, and the way out never had the weight of the answer.
+ *
  *
  * A browser that refuses storage simply shows the modal again next time — the
  * reader still leaves it, it just is not remembered, which is `lib/storage.ts`'s
@@ -235,7 +213,7 @@ export function rememberFirstRunWalked(mark: FirstRunMark) {
 /**
  * Does the modal stand? The predicate and the browser's memory, composed.
  *
- * The predicate is the registry's mark and not a key (ADR-0035), so the day a
+ * The predicate is the registry's mark and not a key, so the day a
  * second dial is marked required the modal opens for it with nothing changed
  * here. **The browser's memory is the other half and it is the only other
  * half**: no read of the accounts and no read of the ledger reaches this

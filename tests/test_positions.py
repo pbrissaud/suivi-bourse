@@ -39,9 +39,8 @@ SOLD_CSV = EVENTS_CSV + (
 def _manager(store, tmp_path, csv_text=EVENTS_CSV):
     """A real manager over a store that already holds one file's rows.
 
-    The rows are read in here rather than by the manager, which scans no
-    directory since ADR-0032. What the replay is asserted on below is the
-    ledger, and the ledger is in the store either way.
+    What the replay is asserted on below is the ledger, and the ledger is in
+    the store either way.
     """
     events = tmp_path / "events"
     events.mkdir(exist_ok=True)
@@ -112,7 +111,7 @@ def test_an_account_with_no_cash_event_has_no_state_row(store, tmp_path):
 def test_emptying_the_ledger_takes_the_positions_with_it(store, tmp_path):
     """What forgetting an import used to do, done by the gesture that replaced it.
 
-    The bulk deletion over the ledger's own reduction (ADR-0032, #814): the rows
+    The bulk deletion over the ledger's own reduction (#814): the rows
     go, and the two tables the replay owns go with them.
     """
     manager = _manager(store, tmp_path)
@@ -132,7 +131,7 @@ def test_a_position_the_ledger_no_longer_names_leaves(store, tmp_path):
 
     # The ledger stops naming AAPL: the rows it holds are removed and the
     # corrected ones written — which is what *re-drop the corrected file*
-    # became once a row could be reached one at a time (ADR-0032).
+    # became once a row could be reached one at a time.
     entries.remove_selection(store, events_export.Selection())
     _write(store, tmp_path / "events" / "2024.csv",
            EVENTS_CSV.replace("AAPL,Apple Inc", "MSFT,Microsoft"))

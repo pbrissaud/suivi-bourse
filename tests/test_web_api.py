@@ -57,9 +57,6 @@ class FakeMetrics:
     these tests give it for real, so there is nothing left here to stand in for.
     """
 
-    #: The real one, borrowed rather than re-implemented: it is a loop over the
-    #: registry and a ``setattr``, so a copy here would be the second list
-    #: ADR-0014 forbids — and the one that stops matching first.
     apply_dials = workloads.Workloads.apply_dials
 
     def __init__(self, config_manager=None):
@@ -135,16 +132,13 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
                            break_store=False, with_scheduler=True):
     """As above, plus the open store so a test can read the rows back.
 
-    ``with_scheduler=False`` leaves ``runtime.workloads`` **unset**, which is the
-    shape of a worker whose ``start_runtime`` has not run: it is the one state in
-    which the reconstruction is genuinely *unobservable* (issue #709), and it is
-    a missing object rather than a metrics object answering ``None``.
+    ``with_scheduler=False`` leaves ``runtime.workloads`` **unset**, which is
+    the shape of a worker whose ``start_runtime`` has not run: it is the one
+    state in which the reconstruction is genuinely *unobservable* (issue #709),
+    and it is a missing object rather than a metrics object answering ``None``.
 
-    ``accounts`` and ``events`` are **files**, and they are read into the store
-    before the first publication rather than by it: the manager scans no
-    directory since ADR-0032, so a fixture that wants rows puts them there
-    itself. What a route then reads is the store, which is the only thing these
-    tests ever assert on.
+    What a route then reads is the store, which is the only thing these tests
+    ever assert on.
 
     They go in **through the roads the product has** since #816 — the accounts
     are declared as the app declares them, the events written by
@@ -185,7 +179,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     runtime = main.Runtime(manager, None)
     runtime.store = opened
     # The first publication, as ``build_runtime`` performs it at boot. It
-    # reads the store and nothing else (ADR-0032), so what the fixture wrote
+    # reads the store and nothing else, so what the fixture wrote
     # above is what a route reading the ledger reads.
     manager.reload()
     if seed is not None:
@@ -202,10 +196,6 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
 
 def _declared_rows(path):
     """The fixture file's ``id,type,label`` rows, read here and nowhere else.
-
-    Reading it is the fixture's own business since ADR-0034: no accounts file
-    enters the app any more, so the parser that used to live in :mod:`accounts`
-    is gone and what a test writes for its own convenience it also reads.
     """
     with open(path, newline='', encoding='utf-8') as handle:
         return [
@@ -219,7 +209,7 @@ def _declared_rows(path):
 def declare_accounts(opened, path):
     """The accounts a fixture wants, declared the way the app declares them.
 
-    Accounts are born in the app (ADR-0034) and no file imports them, so this
+    Accounts are born in the app and no file imports them, so this
     reads the fixture's file and makes the same three calls a reader clicking
     *declare* would. The seeded ``default`` row exists already and is relabelled
     rather than inserted — which is also the one way an install with a page and
@@ -373,9 +363,7 @@ def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
 # otherwise is a `404`'s worth of difference to a page that mounts both.
 # --------------------------------------------------------------------- #
 
-#: A ledger carrying a transfer fee, which no other fixture here has. The `BUY`
-#: fee is the discriminating half: it is absorbed into the cost basis (ADR-0003)
-#: and must **not** appear in ADR-0018's fourth term.
+#: A ledger carrying a transfer fee, which no other fixture here has.
 FEE_EVENTS = (
     "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
     "2024-01-10,DEPOSIT,,,,,1.50,1000.00,pea\n"
@@ -523,7 +511,7 @@ def test_a_fundamental_json_cannot_spell_never_reaches_the_body(tmp_path):
 def test_a_sold_line_and_a_never_quoted_one_are_rows_and_never_absences(tmp_path):
     """Both halves of the second criterion, on the same payload.
 
-    A sold position stays in the table (ADR-0017) — its realized gain is the
+    A sold position stays in the table — its realized gain is the
     figure it has left to say — and a position whose symbol was never fetched is
     a row with `null` market objects, which is P1's LEFT join: an inner one
     answers *"you own nothing"* to somebody who has just declared everything they
@@ -550,7 +538,7 @@ def test_a_quote_with_no_rate_keeps_its_price_and_loses_its_conversion(tmp_path)
     """*Waiting for a rate* and *no price at all* are two rows, not one.
 
     The first keeps the quote the reader's broker shows them and has no figure
-    in the reporting currency; the second is carried at its cost (ADR-0004).
+    in the reporting currency; the second is carried at its cost.
     """
     def seed(opened):
         seed_position(opened, account='pea')
@@ -652,12 +640,10 @@ def test_portfolio_totals_with_no_figures_at_all_is_200_and_null(tmp_path):
 
 
 def test_the_head_keeps_its_positions_while_the_currency_is_unanswered(tmp_path):
-    """The direct benefit of ADR-0018, proved across the two resources.
-
-    The perf job writes nothing at all until the reporting currency is answered,
-    so `portfolio_totals` is empty — and three of the four terms of the gain are
-    read off `/api/positions`, which is under no such constraint. A field absent
-    for the global row can no longer blank the headline.
+    """The perf job writes nothing at all until the reporting currency is
+    answered, so `portfolio_totals` is empty — and three of the four terms of
+    the gain are read off `/api/positions`, which is under no such constraint.
+    A field absent for the global row can no longer blank the headline.
     """
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
@@ -671,12 +657,10 @@ def test_the_head_keeps_its_positions_while_the_currency_is_unanswered(tmp_path)
 
 
 def test_transfer_fees_are_negative_as_they_enter_the_sum(tmp_path):
-    """ADR-0018's fourth term, signed where it is produced (issue #763).
-
-    Naming it as a cost and subtracting it at the point of use is one inversion
+    """Naming it as a cost and subtracting it at the point of use is one inversion
     too many for a figure whose entire interest is that the four terms add up.
-    And a `BUY`'s fee is **not** in it: that one is absorbed into the cost basis
-    (ADR-0003) and would otherwise be counted twice.
+    And a `BUY`'s fee is **not** in it: that one is absorbed into the cost
+    basis and would otherwise be counted twice.
     """
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=FEE_EVENTS,
                           seed=seed_totals)
@@ -800,7 +784,7 @@ def test_the_year_to_date_gain_survives_an_install_with_no_cash_event(tmp_path):
     is complete, permanently, and only for the population the rule was written
     to serve.
 
-    `gain_absolu` is written **always** (ADR-0018) and *is* value minus
+    `gain_absolu` is written **always** and *is* value minus
     contributions, so the euro figure is not merely rescued here: it is the same
     quantity, computed from the one column that survives. The percentage is not,
     and must not be faked — `twr_index` follows `total_value`, so a `null` there
@@ -940,10 +924,6 @@ def test_positions_history_is_valuation_versus_investment(tmp_path):
 def test_positions_publishes_the_terminality_of_each_symbol(tmp_path):
     """`terminal` per row, and it is the **fact** rather than the verdict.
 
-    ADR-0004's predicate has two terms — no quote observed **and** none is
-    coming — and only the first of them crossed the wire until #845: the front
-    held the quote and substituted the failure counter of `/api/runtime` for the
-    second, so it carried at its cost a line the curves still refuse to value.
     The set is `quotes.terminal_symbols`, read once for the whole payload.
 
     Two symbols, one install: `AAPL`'s backward pass has been tried back past
@@ -974,8 +954,8 @@ def test_two_dashboard_reads_scan_the_price_table_once(tmp_path, mocker):
     `_carried()` asks `quotes.terminal_symbols` which symbols the backward pass
     has finished with, and that used to run
     `SELECT symbol, min(ts) FROM price_point GROUP BY symbol` on **every**
-    `/api/positions` — a full scan, `price_point` carrying no index by design
-    (ADR-0007). Its answer moves at the backfill's rhythm, never at the
+    `/api/positions` — a full scan, `price_point` carrying no index by design.
+   Its answer moves at the backfill's rhythm, never at the
     reader's.
 
     Asserted **on the call**, which is the suite's rule for what the app decided
@@ -1055,13 +1035,13 @@ def test_the_table_and_the_curve_agree_on_a_line_being_rebuilt(tmp_path):
 
 
 def test_a_terminal_line_with_no_quote_is_carried_at_both_ends(tmp_path):
-    """The other half of the pair, and it is what keeps the fix from over-shooting.
+    """The other half of the pair, and it is what keeps the fix from
+    over-shooting.
 
     Once the backward pass has reached the first acquisition there is nothing
     left to come, so the priceless line is **carried at its cost** — the curve
     values the day at the position's own basis, and the payload says `terminal`
-    so the table does the same. A repair that made every priceless line
-    unvaluable would have deleted ADR-0004 rather than completing it.
+    so the table does the same.
     """
     def seed(opened):
         # A quote for the day the curve is drawn on, and the priceless line's
@@ -1142,14 +1122,12 @@ def test_positions_history_storage_failure_is_503_problem_json(tmp_path):
 
 def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
         tmp_path):
-    """ADR-0018's identity, **through the API**, on a ledger with a fee (#763).
-
-    The residual risk of deriving `transfer_fees` from `event` while
+    """The residual risk of deriving `transfer_fees` from `event` while
     `net_contributed` is computed in `performance.py` from the `Timeline`: two
     modules state what a cash movement is, and two statements eventually
     disagree — the symptom being an identity that quietly stops holding, on the
-    page that exists to show that it holds. The sign alone is pinned above; this
-    is the sum, and it is what would catch the drift.
+    page that exists to show that it holds. The sign alone is pinned above;
+    this is the sum, and it is what would catch the drift.
 
     Nothing here is seeded: the ledger is a file, the perf cache is written by
     the **real** job, and the four terms are read off the two resources exactly
@@ -1210,14 +1188,11 @@ def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
 def test_the_identity_holds_when_the_dividend_itself_carries_a_fee(tmp_path):
     """The same identity, on the line the fourth term cannot reach.
 
-    ADR-0018's fourth term is named for what a broker takes from a **transfer**,
-    and `store_reads.transfer_fees` sums it over `DEPOSIT`/`WITHDRAWAL` alone —
-    so a fee on a `DIVIDEND` row belongs to no term, while `_apply_share_cash`
-    still takes it out of cash. It therefore landed inside `gain_absolu` and
-    inside none of the four, and the head — which *computes* the total from the
-    four — disagreed with `portfolio_totals` by exactly the withholding. The
-    ledger below is the one above with a 4,00 withholding on the dividend, the
-    commonest way this arrives: a PFU deducted at source, typed into `fee`.
+    It therefore landed inside `gain_absolu` and inside none of the four, and
+    the head — which *computes* the total from the four — disagreed with
+    `portfolio_totals` by exactly the withholding. The ledger below is the one
+    above with a 4,00 withholding on the dividend, the commonest way this
+    arrives: a PFU deducted at source, typed into `fee`.
 
         latente +118,20 · réalisée +36,80 · dividendes +8,00 · frais −2,25
                                                           = gain_absolu 160,75
@@ -1386,7 +1361,7 @@ def test_the_year_to_date_gain_crosses_the_year_without_a_cash_ledger_too(
     assert totals['gain_absolu'] == pytest.approx(165.00, abs=5e-3)
     assert totals['ytd']['gain'] == pytest.approx(45.00, abs=5e-3)
     # And the percentage stays absent: `twr_index` follows `total_value`, so
-    # *there is nothing to compute* is the truth here (ADR-0016) and no fifth
+    # *there is nothing to compute* is the truth here and no fifth
     # kind of absence is invented to say it.
     assert totals['ytd']['twr'] is None
 
@@ -1532,10 +1507,6 @@ def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
 
     Letting the front infer it from `[]` is what would eventually make "no
     declared accounts" and "the config failed to load" render the same screen.
-    And the list holds the one account ADR-0013 gives every install: `[]` was a
-    resource answering *none* to a question the product says cannot be answered
-    that way, which left the declaration block with nothing to render on a fresh
-    install — no row to rename, and no way to declare a first account (#729).
     """
     payload = build_client(tmp_path).get('/api/accounts').get_json()
 
@@ -1547,11 +1518,11 @@ def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
     # that rule is guarded.
     seeded = payload['accounts'][0]
     assert seeded['label'] is None
-    # And no `type` at all since #916 (ADR-0043): the column is written by the
+    # And no `type` at all since #916: the column is written by the
     # app, read by nobody, and therefore served to nobody.
     assert 'type' not in seeded
-    # And nothing says where the row came from: an account is born in the app
-    # (ADR-0034), so the rename is an ordinary `PATCH` with no rule to consult.
+    # And nothing says where the row came from: an account is born in the app,
+    #so the rename is an ordinary `PATCH` with no rule to consult.
     assert not {'source_id', 'editable'} & set(seeded)
 
 
@@ -1582,24 +1553,22 @@ def test_renaming_the_seeded_account_is_visible_on_the_resource(tmp_path):
 def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
     """What nobody declared goes out as ``null``, and the recognising is here.
 
-    ``store.DEFAULT_ACCOUNT_ROW`` writes ``Default account`` into the label of a
-    row every install owns and nobody asked for. The front must not render it —
-    it is the *server's* English, and ADR-0024 puts every rendering in the
-    reader's language — so one side has to recognise it, and it is the side that
-    writes it. (The seed's other word, ``OTHER``, no longer crosses anything:
-    #916 took the type off the wire entirely.)
+    ``store.DEFAULT_ACCOUNT_ROW`` writes ``Default account`` into the label of
+    a row every install owns and nobody asked for. (The seed's other word,
+    ``OTHER``, no longer crosses anything: #916 took the type off the wire
+    entirely.)
 
     Recognising them in the client was written first and undone: it put a third
     copy of this string across HTTP, where nothing spans both ends. The front's
     only faked edge is MSW, so its fixtures would have gone on agreeing with
     themselves; reworded here for a typo, the seed would have started rendering
-    as a name its owner had typed, with every gate green. This assertion is that
-    guard, and it is the one place both halves of the sentence run in one
+    as a name its owner had typed, with every gate green. This assertion is
+    that guard, and it is the one place both halves of the sentence run in one
     process.
 
-    The store is **not** what changes: ``read_accounts`` keeps serving the row as
-    written, which is what the export and the replay want. It is the wire that
-    carries the declaration alone.
+    The store is **not** what changes: ``read_accounts`` keeps serving the row
+    as written, which is what the export and the replay want. It is the wire
+    that carries the declaration alone.
     """
     client = build_client(tmp_path)
 
@@ -1617,16 +1586,14 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
     named = [(a['id'], a['label'])
              for a in client.get('/api/accounts').get_json()['accounts']]
     assert ('pea', seeded_label) in named
-    # The seeded row leaves the list here for its own reason and not this one:
-    # nothing names it, so ADR-0013 keeps it out of a declaration it did not
-    # join (#698). What is asserted above is that its *words* are not the guard.
+    # What is asserted above is that its *words* are not the guard.
 
 
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     """Reading the declaration rather than a DISTINCT on the tag (#652 déc. 4)
     hands over the label — the one identity field left since #916 took the type
     away, and one zero Grafana panels ever read. An account is declared in the
-    app and nowhere else (ADR-0034), so there is nothing beside it saying where
+    app and nowhere else, so there is nothing beside it saying where
     the row came from."""
     accounts = (
         "id,type,label\n"
@@ -1693,7 +1660,7 @@ def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
 
 def test_an_absent_field_reaches_the_wire_as_null_and_never_as_a_zero(
         tmp_path, mocker):
-    """#708's per-field rule, said on an API response (#806, ADR-0033).
+    """#708's per-field rule, said on an API response (#806).
 
     The rule was written against a *zero*, not against an absence: a zero makes
     *"no cash ledger"* and *"a ledger at zero"* the same figure, so anything
@@ -1752,9 +1719,7 @@ def test_an_absent_field_reaches_the_wire_as_null_and_never_as_a_zero(
 
 
 def test_accounts_carry_the_fourth_term_of_the_gain_per_account(tmp_path):
-    """ADR-0018's identity **per account**, through the API (#722).
-
-    The account's own panel shows `Gain total` dominating its four terms, and
+    """The account's own panel shows `Gain total` dominating its four terms, and
     three of them come off `/api/positions`. The fourth belongs to no position
     at all — it is what a broker takes out of a *transfer* — so the account
     resource derives it the way `/api/portfolio-totals` derives the global one.
@@ -1896,7 +1861,7 @@ def test_account_history_without_any_declaration_is_404(tmp_path):
 
 def test_the_seeded_account_has_a_history_on_an_install_that_declared_nothing(
         tmp_path):
-    """The two resources decide against the same declaration (ADR-0013).
+    """The two resources decide against the same declaration.
 
     `list_accounts` falls back to the seeded `default` row when nothing was
     declared — that is what a fresh install shows — while this route decided
@@ -2003,7 +1968,7 @@ def test_every_api_answer_is_problem_json_whatever_the_verb(tmp_path):
         assert response.mimetype == 'application/problem+json'
         assert response.get_json()['type'] == '/problems/internal-error'
 
-    # And the door closed to a scraper stays closed the way it was (ADR-0033):
+    # And the door closed to a scraper stays closed the way it was:
     # outside `/api`, werkzeug's own page is the right answer. `/apiary` is
     # there because `/api` is a **segment**: a prefix match would answer a page
     # of the front in the API's vocabulary.
@@ -2124,8 +2089,8 @@ def test_no_event_carries_a_provenance_on_the_wire(tmp_path):
     """*"row 14 of 2024.csv"* is gone, and so is everything behind it (#816).
 
     The triplet and the sentence composed from it described a row a **mounted**
-    file had provisioned, and they existed because that file was re-read
-    (ADR-0032). A file is a payload now, so what the API can say about where a
+    file had provisioned, and they existed because that file was re-read.
+   A file is a payload now, so what the API can say about where a
     row came from is nothing — asserted as an absence on the payload, which is
     the only place a client would have looked.
     """
@@ -2210,7 +2175,7 @@ def test_a_ledger_already_holding_an_unspellable_number_stays_deletable(tmp_path
 
 
 # --------------------------------------------------------------------- #
-# The reassignment (issue #725, ADR-0013, ADR-0006)
+# The reassignment (issue #725)
 #
 # **The state is fabricated here and cannot be reached on the real portfolio**,
 # whose 285 events all name an account — so `default` is nowhere in it. The
@@ -2251,7 +2216,7 @@ def test_declaring_the_first_account_reassigns_in_the_same_gesture(tmp_path):
 
 
 def test_the_trap_is_reached_from_the_keyboard_and_repaired_there(tmp_path):
-    """The reassignment never had the import for a subject (ADR-0034).
+    """The reassignment never had the import for a subject.
 
     Its trap — a run of months under the seeded ``default`` row, then a real
     account — is reached by **typing** events exactly as it was by handing over
@@ -2296,7 +2261,7 @@ def test_after_that_instant_an_imported_row_is_not_writable(tmp_path):
     A second reassignment moves nothing: the population is the column's own
     value, so once the rows name ``pea`` there is nothing left for it to reach.
     What *is* still reachable is each row on its own — the row-level ``PATCH``
-    takes it, which since #816 is true of every row (ADR-0032) — so moving one
+    takes it, which since #816 is true of every row — so moving one
     of them back is a correction and never a second reassignment.
     """
     client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS)
@@ -2334,7 +2299,7 @@ def test_an_undeclared_target_is_a_404(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The ledger's write path (issue #764, ADR-0005, ADR-0020, ADR-0021)
+# The ledger's write path (issue #764)
 #
 # The population is the whole subject: a row a file provisioned is read-only and
 # revoked with its import, a row somebody typed here is reachable by no
@@ -2344,7 +2309,7 @@ def test_an_undeclared_target_is_a_404(tmp_path):
 
 #: What the create form sends — its exact shape, with **no ``name``**: a
 #: security's name is an attribute of the security and not of each of its
-#: events, which is the reason ``Nom`` left the ledger table (ADR-0020).
+#: events, which is the reason ``Nom`` left the ledger table.
 def _draft(**overrides) -> dict:
     body = {
         'date': '2024-06-03',
@@ -2593,9 +2558,7 @@ def test_a_patch_is_a_rewrite_and_never_a_merge(tmp_path):
 
 
 def test_an_uploaded_row_is_taken_by_both_row_gestures(tmp_path):
-    """**The ticket's seam, on the API** (ADR-0032, #816, stories 13 and 14).
-
-    Both gestures used to answer ``409`` on a row a file had laid down, naming
+    """Both gestures used to answer ``409`` on a row a file had laid down, naming
     the import to forget. A file is handed over once and never re-read now, so
     the argument for that refusal is gone: the row is corrected in place, and
     then removed on its own, and the two rows beside it stay exactly where they
@@ -2636,7 +2599,7 @@ def test_an_unaddressable_event_is_a_named_404(tmp_path):
 
 
 def test_a_row_that_left_the_ledger_has_its_own_type(tmp_path):
-    """*It was there* and *it never was* are opposite news (#785, ADR-0027).
+    """*It was there* and *it never was* are opposite news (#785).
 
     The server is the only side that can tell them apart — a key it issued is
     not handed to another row for the life of its process — so it says which
@@ -2686,7 +2649,7 @@ def test_a_removal_that_would_leave_an_oversell_is_refused(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The oversell says its own name (issue #824, ADR-0024)
+# The oversell says its own name (issue #824)
 #
 # Four write paths meet a ledger that does not replay, and all four used to
 # answer ``/problems/conflict`` — the type whose one sentence was written for
@@ -2734,7 +2697,7 @@ def test_the_oversell_names_the_account_its_count_is_about(tmp_path):
     pointing at placement.
 
     The English ``detail`` does not move. The fact travels beside it, as data,
-    for the front to say in the reader's language (ADR-0024).
+    for the front to say in the reader's language.
     """
     client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
     client.post('/api/events', json=_draft(quantity=10, account='pea'))
@@ -2902,7 +2865,7 @@ def test_the_export_is_reachable_over_http(tmp_path):
 
 
 def test_there_is_no_accounts_file_to_export(tmp_path):
-    """The export drops its second file, and the route with it (ADR-0034).
+    """The export drops its second file, and the route with it.
 
     It is the worst of the residues while it stands: nothing reads an accounts
     file back in since the upload started refusing one, so a
@@ -3018,7 +2981,6 @@ def test_a_blank_parameter_is_no_reduction_at_all(tmp_path):
 
     Read as one, it would answer a file with no row in it under the *selection*
     name — a reader told that a reduction they never made retained nothing.
-    ADR-0014's rule about the environment, one level out.
     """
     client, opened = build_client_and_store(
         tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
@@ -3065,7 +3027,7 @@ def test_a_reduction_that_retains_nothing_is_a_header_and_not_an_error(tmp_path)
 def test_the_export_serves_the_period_bounds_included(tmp_path):
     """The fifth parameter, on both event routes (issue #810).
 
-    Bounds **inclusive**: the ledger is dated to the day (ADR-0008), so
+    Bounds **inclusive**: the ledger is dated to the day, so
     ``?since=2024-01-15&until=2024-03-01`` is the two days it names and
     everything between them — a half-open reading would drop the last day of
     every year a reader extracts, in a file that looks complete.
@@ -3160,7 +3122,7 @@ def test_a_reduction_on_the_period_alone_takes_the_selection_name(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The bulk removal — the reduction is the subject (issue #814, ADR-0032)
+# The bulk removal — the reduction is the subject (issue #814)
 # --------------------------------------------------------------------- #
 
 #: Each of the five reductions, and the days the ledger is left holding.
@@ -3229,11 +3191,6 @@ def test_a_bulk_delete_with_no_reduction_is_refused_and_writes_nothing(tmp_path)
 
 def test_blank_parameters_are_no_reduction_and_are_refused_too(tmp_path):
     """``?type=&account=&since=`` is a client with empty fields.
-
-    Blank counts as absent on this resource — ADR-0014's rule one level out, and
-    the one the export already follows — so a form submitted with nothing in it
-    reaches exactly the refusal an empty query string reaches, rather than
-    deleting the ledger it retained by reducing on nothing.
     """
     client, opened = build_client_and_store(
         tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
@@ -3299,7 +3256,7 @@ def test_a_bulk_delete_that_would_leave_an_oversell_is_refused_whole(tmp_path):
 
 
 def test_the_bulk_delete_reaches_an_uploaded_row(tmp_path):
-    """*The removal is the gesture* (ADR-0032), on a row a file laid down.
+    """*The removal is the gesture*, on a row a file laid down.
 
     What replaces losing ``forget_import`` has to reach those rows, and it does
     so without asking any of them where they came from — which since #816 is not
@@ -3400,13 +3357,11 @@ def test_the_report_takes_no_reduction_because_it_has_no_ledger(tmp_path):
 
 
 def test_the_report_does_not_resurrect_the_accounts_declaration(tmp_path):
-    """``/api/export/accounts.csv`` is still a ``404`` (ADR-0034).
+    """``/api/export/accounts.csv`` is still a ``404``.
 
     The two files are not the same file under two names. What that record
-    retired was a *declaration* nothing reads back — a file its owner keeps with
-    their backup believing they can restore from it. What this serves is
-    valuations, and the import refuses it by name, so the trap ADR-0034 closed
-    stays closed.
+    retired was a *declaration* nothing reads back — a file its owner keeps
+    with their backup believing they can restore from it.
     """
     client, opened = build_client_and_store(
         tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
@@ -3488,7 +3443,7 @@ def test_the_spa_catch_all_does_not_swallow_an_api_404(tmp_path):
 def test_the_catch_all_does_not_serve_html_at_metrics(tmp_path, monkeypatch):
     """Found by an existing #651 test the moment the SPA landed.
 
-    The endpoint is gone (ADR-0033) and this is the seam where its absence
+    The endpoint is gone and this is the seam where its absence
     could be hidden: an unknown path is answered with the shell, so a leftover
     scraper would read **200 with HTML** and keep reporting nothing wrong.
     The bundle is present on purpose — that is the install the owner runs, and
@@ -3610,7 +3565,7 @@ def test_the_file_era_routes_are_gone_rather_than_refusing(tmp_path):
     for its origin — see
     ``test_an_uploaded_row_is_taken_by_both_row_gestures``.
 
-    **The two import routes join the list at #816** (criterion 3, ADR-0032).
+    **The two import routes join the list at #816** (criterion 3).
     ``GET /api/imports`` listed the sources and ``DELETE /api/imports/<id>``
     revoked one; nothing persists that could be named any more, so they are
     demolished rather than answering an empty collection — which would be a
@@ -3695,7 +3650,7 @@ def test_a_runtime_with_no_scheduler_does_not_claim_a_rebuild(tmp_path):
 
 
 def test_the_runtime_publishes_the_mount_observation_to_the_front(tmp_path):
-    """`store.persistence` (issue #741, ADR-0015) — *the fact is published for
+    """`store.persistence` (issue #741) — *the fact is published for
     the front by the same path as the rest of the runtime state*.
 
     Here rather than on a resource of its own, for the reason that put
@@ -3847,8 +3802,7 @@ def test_a_sold_position_is_not_an_orphan(tmp_path):
     A line the owner closed years ago still has every one of its events in the
     ledger, so it is still declared — and offering to purge it would offer to
     throw away the history of a position whose realised gain the product still
-    shows. ADR-0003 spent a table on that distinction; this is the one place it
-    could quietly be lost.
+    shows.
     """
     sold = ('date,event_type,account,symbol,name,quantity,unit_price\n'
             '2024-01-02,BUY,pea,AAPL,Apple Inc,10,150.00\n'
@@ -4255,8 +4209,6 @@ def test_the_health_code_is_the_store_and_the_store_alone(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     runtime = _arm_the_scheduler(api_module.current_runtime())
-    # A record a reader would have wanted — and it goes with the store, which
-    # is the trade ADR-0036 makes by name: the colour that survives is red.
     runtime.recorder.record_perf(runtime_state.PerfRecord(
         at=HEALTH_PASS, verdict=runtime_state.PERF_RAN))
     opened.close()
@@ -4306,10 +4258,9 @@ def test_the_config_route_carries_what_the_process_had_to_know_first(
     screen that asks it — while putting it on the runtime resource would start
     that resource down the road to a junk drawer.
 
-    What is left in the list is ADR-0014's line: what the process must know
-    **before** it can open the store. The three ``INFLUXDB_*`` names left with
-    the database (#700) and are reported as set-and-unread instead, which is
-    what stops an operator concluding their token is wrong.
+    The three ``INFLUXDB_*`` names left with the database (#700) and are
+    reported as set-and-unread instead, which is what stops an operator
+    concluding their token is wrong.
     """
     monkeypatch.setenv('INFLUXDB_TOKEN', 'apiv3_supersecret')
     client = build_client(tmp_path)
@@ -4346,7 +4297,6 @@ def test_the_config_route_lists_the_dials_through_the_registry(tmp_path):
 
 def test_the_config_route_names_what_is_set_and_no_longer_read(
         tmp_path, monkeypatch):
-    """ADR-0014's gesture, published where the page that explains it can show it."""
     monkeypatch.setenv('SB_REGULAR_INTERVAL', '600')
 
     body = build_client(tmp_path).get('/api/config').get_json()
@@ -4374,7 +4324,7 @@ def test_the_dials_are_readable_on_the_resource_that_writes_them(tmp_path):
     assert payload.status_code == 200
 
     read = {row['key']: row for row in payload.get_json()['settings']}
-    # The registry is the list, and there is no seventh key (ADR-0014).
+    # The registry is the list, and there is no seventh key.
     assert set(read) == {spec.key for spec in settings_registry.SETTINGS}
     assert read['regular_interval']['default'] == 120
 
@@ -4385,7 +4335,7 @@ def test_the_dials_are_readable_on_the_resource_that_writes_them(tmp_path):
 
 
 def test_the_reporting_currency_is_a_dial_and_its_absence_is_a_state(tmp_path):
-    """How the API says *"nothing here has a unit yet"* (#702, ADR-0021).
+    """How the API says *"nothing here has a unit yet"* (#702).
 
     Nothing new is published for it and no route changes: the reporting currency
     is what every figure on a page is labelled with, so an absent one is the
@@ -4401,7 +4351,7 @@ def test_the_reporting_currency_is_a_dial_and_its_absence_is_a_state(tmp_path):
     assert dial['stored'] is False
     # And it is published as *required* rather than recognised by its key: the
     # first run reads the mark, so a second required dial is a registry line
-    # and not a second predicate (ADR-0035).
+    # and not a second predicate.
     assert dial['required'] is True
     assert _dials(client)['regular_interval']['required'] is False
 
@@ -4643,12 +4593,12 @@ def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The advisories (issue #829, ADR-0037)
+# The advisories (issue #829)
 # --------------------------------------------------------------------- #
 
 def _cash_heavy_account(opened) -> None:
     """One account whose newest perf day is a quarter cash — the worked example
-    ADR-0037 and ``CONTEXT.md`` both use."""
+    """
     opened.execute(
         'INSERT INTO account (id, label) VALUES (?, ?) '
         'ON CONFLICT (id) DO NOTHING',
@@ -4729,7 +4679,7 @@ def test_what_the_reconstruction_withholds_cannot_be_acknowledged(tmp_path):
 
 
 def test_a_get_writes_no_row_at_all(tmp_path):
-    """An advisory is derived on every read and stored nowhere (ADR-0036)."""
+    """An advisory is derived on every read and stored nowhere."""
     client, opened = build_client_and_store(tmp_path)
     _cash_heavy_account(opened)
 
@@ -4749,19 +4699,14 @@ def test_acknowledging_puts_it_to_sleep_and_the_row_carries_the_expiry(tmp_path)
     assert client.get('/api/advisories').get_json() == []
     stored, expires = opened.query(
         'SELECT acknowledged_at, expires_at FROM advisory_ack')[0]
-    # Thirty days, and never for good: the window is what answers ADR-0036's
-    # objection, so it is asserted as a duration rather than as *not null*.
     assert expires - stored == advisories.ACK_WINDOW
 
 
 def test_the_reading_keeps_an_advisory_the_inventory_has_put_to_sleep(tmp_path):
     """``?asleep=include`` is the chip's read, and the chip is the reading.
 
-    ADR-0037 draws the line — *the chip beside the figure is the reading, the
-    panel is the inventory* — and it has an effect only if the two can answer
-    differently about the same instant. *Acknowledge for thirty days* is **not
-    now**, said to the inventory; the cash is still sitting in that account
-    while the card sleeps.
+    *Acknowledge for thirty days* is **not now**, said to the inventory; the
+    cash is still sitting in that account while the card sleeps.
     """
     client, opened = build_client_and_store(tmp_path)
     _cash_heavy_account(opened)
@@ -4794,7 +4739,7 @@ def test_acknowledging_an_advisory_that_does_not_stand_is_a_404(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The investment rhythm (issue #751, ADR-0041)
+# The investment rhythm (issue #751)
 # --------------------------------------------------------------------- #
 
 def _months_ago(count: int) -> date:
@@ -4825,9 +4770,6 @@ def _monthly_buys(count: int, unit_price: float, *, account: str = '',
 
 def test_the_rhythm_is_the_amount_and_the_coverage_together(tmp_path):
     """The route publishes the pair, never the amount on its own.
-
-    The reporting currency rides with them because ``monthly_amount`` is money
-    and ADR-0002 states the unit once for the whole payload.
     """
     client = build_client(
         tmp_path, events=_monthly_buys(6, 500.0),
@@ -4901,7 +4843,6 @@ def test_the_breakdown_names_every_account_the_ledger_touches(tmp_path):
 
 
 def test_a_sale_does_not_lower_the_month_that_holds_it(tmp_path):
-    """ADR-0041's named limitation, asserted over the real ledger."""
     header = ('date,event_type,symbol,name,quantity,unit_price,fee,amount,'
               'notes\n')
     client = build_client(tmp_path, events=(
@@ -4923,9 +4864,9 @@ def test_a_sale_does_not_lower_the_month_that_holds_it(tmp_path):
 def test_an_account_is_declared_here_renamed_here_and_removed_here(tmp_path):
     """The one place an account is born, and **two** members on the wire.
 
-    It was three: the type left with #916 (ADR-0043), read by nothing and
+    It was three: the type left with #916, read by nothing and
     therefore served to nobody. No ``source_id`` and no ``editable`` either — an
-    account is declared in the app and nowhere else (ADR-0034), so there is no
+    account is declared in the app and nowhere else, so there is no
     second population to tell this row from and no rule about it for the front
     to re-implement.
     """
@@ -4962,12 +4903,7 @@ def test_declaring_an_id_twice_is_a_409(tmp_path):
 
 
 def test_a_declared_account_is_renamed_and_removed_from_the_app(tmp_path):
-    """An account is born in the app, so it is editable there (ADR-0034).
-
-    The ``409`` that used to answer here was about a row an accounts **file**
-    had provisioned; no file declares an account any more, and the refusal that
-    stands is the one ADR-0013 has always held — an account an event names,
-    which is the test below.
+    """An account is born in the app, so it is editable there.
     """
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE)
 
@@ -4977,7 +4913,6 @@ def test_a_declared_account_is_renamed_and_removed_from_the_app(tmp_path):
 
 
 def test_deleting_an_account_an_event_names_is_a_409(tmp_path):
-    """ADR-0013's construction, on the wire: no orphan historical residue."""
     client = build_client(tmp_path, events=ACCOUNTS_EVENTS,
                           accounts=ACCOUNTS_FILE)
 
@@ -4995,8 +4930,8 @@ def test_the_row_gestures_and_the_bulk_one_are_the_whole_map(tmp_path):
     """**Criterion 3 of #816**: the imports are not a resource any more.
 
     The URL map is where the decision reads. ``GET /api/imports`` and
-    ``DELETE /api/imports/<id>`` are gone with the population they existed for
-    (ADR-0032): nothing persists that could be named, so there is nothing to
+    ``DELETE /api/imports/<id>`` are gone with the population they existed for:
+   nothing persists that could be named, so there is nothing to
     list and nothing to revoke. What is left is the four gestures on the
     collection an import writes — one row in, one row rewritten, one row out,
     and the reduction — plus the upload itself.
@@ -5024,7 +4959,7 @@ def test_the_row_gestures_and_the_bulk_one_are_the_whole_map(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The origin guard — one interface, one socket, and one page (ADR-0033)
+# The origin guard — one interface, one socket, and one page
 #
 # `/api` is the front's interface and the front is served by this same Flask on
 # this same socket, so a legitimate write is **same-origin** by construction.
@@ -5149,7 +5084,7 @@ def test_a_foreign_origin_may_still_read(tmp_path):
     """The guard is about writing, and reading is not a write.
 
     A cross-origin `GET` hands the calling page an opaque response it cannot
-    read — there is no CORS header on this app and there never was (ADR-0033) —
+    read — there is no CORS header on this app and there never was —
     so refusing it would protect nothing and would turn every misconfigured
     proxy into a blank page.
     """
@@ -5161,7 +5096,7 @@ def test_a_foreign_origin_may_still_read(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# The taxation models over `/api` (#752, ADR-0042, ADR-0043, ADR-0044)
+# The taxation models over `/api` (#752)
 # --------------------------------------------------------------------------- #
 
 def _a_flat_model(client, name='Flat', rate=0.3):
@@ -5174,7 +5109,7 @@ def _a_flat_model(client, name='Flat', rate=0.3):
 
 
 def test_the_models_read_carries_the_catalogue_and_the_owner_s_own(tmp_path):
-    """The kinds are code and the templates ship no money (ADR-0042).
+    """The kinds are code and the templates ship no money.
 
     Served rather than duplicated in the front: a second copy of the enumeration
     over there would drift the day a kind is added.
@@ -5250,7 +5185,7 @@ def test_an_account_declares_the_model_it_carries_and_the_read_publishes_it(
 
 
 def test_an_account_with_no_model_publishes_no_member_at_all(tmp_path):
-    """**An absence reaches the reader as one** (#845, ADR-0044).
+    """**An absence reaches the reader as one** (#845).
 
     No `null`, no *not set*: the account is ordinary, and #919 is what publishes
     nothing rather than a plausible zero for it.
@@ -5437,7 +5372,7 @@ def test_an_account_declares_the_day_it_was_opened(tmp_path):
 
 def test_an_account_with_no_opening_date_publishes_no_member(tmp_path):
     """An account without one is normal — and the absence reaches the reader
-    as an absence (#845, ADR-0044)."""
+    as an absence (#845)."""
     client, opened = build_client_and_store(tmp_path)
 
     declared = client.post('/api/accounts', json={'id': 'pea', 'label': 'PEA'})
@@ -5454,7 +5389,7 @@ def test_the_read_carries_the_earliest_payment_the_form_pre_fills_with(
 
     It is the account's earliest declared payment, which the form offers as the
     opening date and the owner accepts or corrects. Nothing writes it anywhere:
-    a declared fact and a derived one do not share a row (ADR-0006).
+    a declared fact and a derived one do not share a row.
     """
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=_PEA_PAYMENTS)

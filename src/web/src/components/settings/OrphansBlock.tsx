@@ -1,20 +1,14 @@
 /**
  * *The orphaned securities* — what no event declares any more, and the one
- * gesture that removes them (#724, #830, ADR-0021, ADR-0038).
- *
- * It was the last block of the store card and it is a card of its own since
- * #830: ADR-0038 enumerates the page as *the settings, the store with its path,
- * its size and its last write, the orphans, the workloads*, and a securities
- * list carrying a destructive button is not a fifth row of a key/value list
- * about a file.
+ * gesture that removes them (#724, #830).
  *
  * Two things it keeps, and both are decisions:
  *
  *  - **It is absent at zero.** Not a maintenance table with an empty state: it
  *    is the visible consequence of a gesture the reader has just made —
  *    deleting the events that named a security — and a block with nothing in it
- *    does not exist. A **sold position is not one of them**, its events being in
- *    the ledger still.
+ *    does not exist. A **sold position is not one of them**, its events being
+ *    in the ledger still.
  *  - **The count is said and the list is named.** The count alone would leave
  *    the reader to accept a purge on trust; the list alone would leave them
  *    counting rows. Each line carries how many quotes are being kept for it,
@@ -22,7 +16,7 @@
  *
  * **`null` is a read that has not landed**, and it renders exactly as zero does
  * — nothing at all — because the two are the same screen here and only one of
- * them is a claim (ADR-0026). The page passes `?? null`, never `?? []`.
+ * them is a claim. The page passes `?? null`, never `?? []`.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -35,7 +29,7 @@ import { useI18n } from '@/lib/i18n'
 const ORPHANS_HEADING = 'settings-orphans'
 
 interface OrphansBlockProps {
-  /** The list, or `null` while `GET /api/store` has not answered (ADR-0026). */
+  /** The list, or `null` while `GET /api/store` has not answered. */
   orphans: readonly OrphanSymbol[] | null
 }
 

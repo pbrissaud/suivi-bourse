@@ -1,8 +1,8 @@
 /**
- * The live table — **nine columns** (#684 D3, #791, #831, ADR-0016, ADR-0017).
+ * The live table — **nine columns** (#684 D3, #791, #831).
  *
- *     Titre · Cours · Détenu · PRU · Valorisation · Latente ·
- *     Réalisée · Dividendes · Compte
+ *     Titre · Cours · Détenu · PRU · Valorisation · Latente · Réalisée ·
+ *     Dividendes · Compte
  *
  * with the percentage on a **second line under the latent gain** rather than in
  * a column of its own. Three columns are absent on purpose and each for its own
@@ -15,18 +15,19 @@
  *  - **`Investi` does not come in**: it is `Valorisation − latente`, and it
  *    stays on the sheet.
  *  - **There is no fourth `Gain total` column.** The header *is* their sum, and
- *    a total never shares a row with its terms (ADR-0016): five numeric columns
- *    of equal weight say nothing about the last four being *inside* the first.
+ *    a total never shares a row with its terms: five numeric columns of equal
+ *    weight say nothing about the last four being *inside* the first.
  *
- * **And `Poids` is not a column either, on the maquette's own evidence** (#831).
- * It was one at #791, was taken out on sight, and came back as a bar at #832 —
- * read off the *source* of the drawing rather than off the drawing. Rendered,
- * the maquette's table has these nine headers and no tenth: the word `Poids`
- * appears three times in it and never once on this page, twice in the account's
- * own surface (#833's *Poids des comptes* and its sortable column) and nowhere
- * else. What the maquette answers the weight with **here** is the `Répartition`
- * above the table — a ring and a legend of bars, a figure of the whole rather
- * than a tenth cell on every line — and that block is mounted on this page now.
+ * **And `Poids` is not a column either, on the maquette's own evidence**
+ * (#831). It was one at #791, was taken out on sight, and came back as a bar at
+ * #832 — read off the *source* of the drawing rather than off the drawing.
+ * Rendered, the maquette's table has these nine headers and no tenth: the word
+ * `Poids` appears three times in it and never once on this page, twice in the
+ * account's own surface (#833's *Poids des comptes* and its sortable column)
+ * and nowhere else. What the maquette answers the weight with **here** is the
+ * `Répartition` above the table — a ring and a legend of bars, a figure of the
+ * whole rather than a tenth cell on every line — and that block is mounted on
+ * this page now.
  *
  * `placedValue`, `weightShare` and `weightRendering` stay in `lib/shares.ts`:
  * they outlived this column once already, and `AccountDetail`'s held lines read
@@ -39,19 +40,16 @@
  *
  * **Grouping by account is a partition and not a filter**: each group's
  * subtotal is in the **group header**, never in a footer row, because a total
- * and its terms do not share a row (ADR-0016) — here one level down, the terms
- * being the rows underneath.
+ * and its terms do not share a row — here one level down, the terms being the
+ * rows underneath.
  *
  * **The market-state pill is not a column.** Eleven rows rendered ten identical
  * *Marché ouvert* and one *Cours figé*: a per-row marker that does not
- * discriminate is noise however correct it is. What is left is an icon glued to
- * the `Titre` cell of a share **the app** cannot price — never one the market
- * simply has closed — which is the single exception ADR-0016 allows to *icons
- * never go on a cell*, its text being a repair rather than a convention.
+ * discriminate is noise however correct it is.
  *
  * **And there is no date column.** One mention at the level of the page says
- * *Cours au …*; the rows that depart from it already say so by the absence rule,
- * the em dash in `Cours` being the signal itself.
+ * *Cours au …*; the rows that depart from it already say so by the absence
+ * rule, the em dash in `Cours` being the signal itself.
  */
 import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react'
 
@@ -219,7 +217,7 @@ export function SharesTable({
 }
 
 /**
- * A group's own header — **the subtotal, and never a footer row** (ADR-0016).
+ * A group's own header — **the subtotal, and never a footer row**.
  *
  * A total and its terms are not read at equal weight; in a table subordination
  * is vertical, so the account's figures go *above* the lines they sum exactly
@@ -236,11 +234,9 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
   const valuation = valuationTotal(group.rows)
   return (
     <TableRow className="bg-background hover:bg-background">
-      {/* **The subtotal is in the header, never in a footer row** (ADR-0016
-          one level down: a total and its terms never share a row). It is the
-          account's **valuation** and nothing else since #838 — the drawing puts
-          one figure here, and the strip above the table is where the four
-          totals of the whole are read. */}
+      {/* It is the account's **valuation** and nothing else since #838 — the
+      drawing puts one figure here, and the strip above the table is where the
+      four totals of the whole are read. */}
       <th
         scope="rowgroup"
         colSpan={9}
@@ -300,12 +296,10 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
           {isAnomalous(row) ? (
             <span className="inline-flex items-center text-attention">
               <TriangleAlert className="size-4" aria-hidden />
-              {/* **The repair, and not the count again** (ADR-0016: the one
-                  icon allowed on a cell is one whose text *is* a repair). The
-                  count is already written in the price cell, where *no price*
-                  is what is true (#845); a second copy of it would be the
-                  marker saying nothing new, where what the reader is missing
-                  is that the line is theirs to mend. */}
+              {/* The count is already written in the price cell, where *no price*
+              is what is true (#845); a second copy of it would be the marker
+              saying nothing new, where what the reader is missing is that the
+              line is theirs to mend. */}
               <span className="sr-only">{t('shares.anomaly.repair')}</span>
             </span>
           ) : null}
@@ -327,7 +321,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
       <TableCell className="text-right tabular">{f.quantity(row.quantity)}</TableCell>
 
       {/* Undefined on a closed position, which is the truth: it has a
-          realised gain instead (ADR-0003). */}
+          realised gain instead. */}
       <TableCell className="text-right tabular">{f.currency(unitCost(row), currency)}</TableCell>
 
       <TableCell className={`text-right tabular ${toneOf(renderings.valuation, value)}`}>

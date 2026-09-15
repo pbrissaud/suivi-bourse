@@ -1,11 +1,8 @@
 /**
- * The allocation ramp: twelve stops, **generated**, and the rules that make the
- * generation worth having (ADR-0023, recomputed by ADR-0029).
- *
- * The rules are asserted rather than the values: a test pinning
- * `oklch(0.4200 0.1600 262)` would go red on a rounding change and stay green if
- * the two ramps were swapped between the grounds — which is the failure that
- * matters, because it encodes rank backwards in one theme out of two.
+ * The rules are asserted rather than the values: a test pinning `oklch(0.4200
+ * 0.1600 262)` would go red on a rounding change and stay green if the two
+ * ramps were swapped between the grounds — which is the failure that matters,
+ * because it encodes rank backwards in one theme out of two.
  *
  * Two of them need something `alloc.ts` does not have. *Rank 1 is the most
  * contrasted* is a claim about the ramp **against its ground**, and the ground
@@ -124,11 +121,9 @@ describe('the allocation ramp', () => {
   it('makes rank 1 the most contrasted against the ground it is drawn on', () => {
     // The two tests above compare the ramp with *itself*, which is one claim
     // short of the decision: rank 1 is not the most contrasted because it sits
-    // at an end, but because it is furthest from the ground. On black and white
-    // those two readings coincide; on a midnight ground at `oklch(0.155 …)`
-    // they stop coinciding, and ADR-0029 changes exactly that value. So the
-    // ground is read from `index.css` — the file that owns it — rather than
-    // copied here, where a copy would go stale the day the preset is regenerated.
+    // at an end, but because it is furthest from the ground. So the ground is
+    // read from `index.css` — the file that owns it — rather than copied here,
+    // where a copy would go stale the day the preset is regenerated.
     for (const theme of ['light', 'dark'] as const) {
       const surface = ground(theme)
       const distances = allocationRamp(theme)

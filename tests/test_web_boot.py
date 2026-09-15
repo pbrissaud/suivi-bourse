@@ -1,9 +1,7 @@
-"""
-Tests for the web process and its boot sequence (issue #838, ADR-0039).
+"""Tests for the web process and its boot sequence (issue #838).
 
-The scheduler and the Flask app share one process, and since ADR-0039 that
-process does not fork. What is worth pinning here is not that Flask serves JSON
-— it is the **sequence**:
+What is worth pinning here is not that Flask serves JSON — it is the
+**sequence**:
 
 * :func:`boot.sequence` takes five steps in one order — the environment, the
   store and the ledger, the application, the jobs, the socket — and gives the
@@ -11,12 +9,12 @@ process does not fork. What is worth pinning here is not that Flask serves JSON
 * :func:`boot.run` turns a failure at *any* of them into **one** non-zero exit.
   That used to differ by side of the fork: the master exited 1 before forking
   and ``post_fork`` re-raised so gunicorn would halt the arbiter rather than
-  respawn a worker that would fail identically. There is no arbiter, so there is
-  one answer;
+  respawn a worker that would fail identically. There is no arbiter, so there
+  is one answer;
 * :func:`main.build_runtime` opens the store **once**, for the life of the
-  process. The second connection existed because a DuckDB file descriptor cannot
-  cross a ``fork()`` — the master proved the file openable and closed it again,
-  the worker opened its own — and there is no fork.
+  process. The second connection existed because a DuckDB file descriptor
+  cannot cross a ``fork()`` — the master proved the file openable and closed it
+  again, the worker opened its own — and there is no fork.
 
 What is deliberately gone: a module executed as configuration.
 ``gunicorn.conf.py`` had tests of its own here — a bind list, a one-worker
@@ -58,7 +56,7 @@ class _FakeConfigManager:
         self._load_error = load_error
         self.load_calls = 0
         self.named_unread = 0
-        # The store the ledger is read through (issue #697, ADR-0039): handed in
+        # The store the ledger is read through (issue #697): handed in
         # at construction, and taken away again only by a boot that will not
         # finish. Recorded rather than used, so the boot's handling of it stays
         # observable here — two entries used to be the ordinary case, one per
@@ -136,7 +134,7 @@ def fake_config(monkeypatch):
 def _close_what_the_boot_opened(monkeypatch):
     """Close every store a boot opened in this module.
 
-    ``build_runtime`` **keeps** its connection now (ADR-0039), which is the whole
+    ``build_runtime`` **keeps** its connection now, which is the whole
     point of the ticket and a nuisance for exactly one caller: a test session,
     which goes on after the boot it provoked. In production the process exits
     and the file descriptor goes with it.
@@ -192,12 +190,9 @@ def test_build_runtime_validates_the_config_without_starting_anything(
 
 
 def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
-    """One connection, for the life of the process (#696, ADR-0039).
+    """One connection, for the life of the process (#696).
 
     Opening it here is what makes an unreadable store a single named exit.
-    *Keeping* it is what ADR-0039 changed: the file descriptor used to be closed
-    again because it could not cross a ``fork()``, and the worker opened a second
-    one on the far side.
     """
     runtime = main.build_runtime()
 
@@ -257,13 +252,13 @@ def test_a_boot_that_will_not_finish_gives_the_file_back(monkeypatch):
 
 def test_build_runtime_reads_the_environment_once_and_hands_no_folder_on(
         monkeypatch, tmp_path):
-    """#740, ADR-0032. **One** read of ``os.environ``, and one path in it.
+    """**One** read of ``os.environ``, and one path in it.
 
     Two reads at two moments would be two readings of one mapping, and the
-    manager reading its own would put a second place in the process reaching for
-    the environment — the thing #740 exists to make exactly one. The second path
-    left with the drop folder: the manager is handed a store and nothing else,
-    so there is no directory for it to be told about.
+    manager reading its own would put a second place in the process reaching
+    for the environment — the thing #740 exists to make exactly one. The second
+    path left with the drop folder: the manager is handed a store and nothing
+    else, so there is no directory for it to be told about.
     """
     monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
     monkeypatch.setenv("SB_IMPORT_DIR", str(tmp_path / "drop"))
@@ -294,7 +289,7 @@ def test_build_runtime_stops_on_an_unopenable_store(fake_config, mocker):
 
 
 # ---------------------------------------------------------------------------
-# The mount observation and the three lines (issue #741, ADR-0015)
+# The mount observation and the three lines (issue #741)
 # ---------------------------------------------------------------------------
 
 def _conditions_said(caplog):
@@ -345,7 +340,7 @@ def test_an_unobservable_mount_prints_nothing_and_answers_unknown(
     what the runtime and store resources publish, and it says ``unknown``
     rather than picking one of the two real answers. The gauge that said the
     same thing by being absent was the redundant half, and it has since gone
-    (#806, #808, ADR-0033).
+    (#806, #808).
     """
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: main.mounts.UNKNOWN)
@@ -487,9 +482,7 @@ def test_the_boot_names_every_fatal_branch_and_exits_one(
     """A fatal configuration is one named line and one non-zero exit.
 
     The branch list is the one ``__main__`` carried before gunicorn and it
-    outlived it. What ADR-0039 removed is the *second* answer: the master exited
-    1 and ``post_fork`` re-raised, because an exit code in a worker read as an
-    ordinary death and was respawned forever, failing identically each time.
+    outlived it.
     """
     monkeypatch.setattr(
         main, "ConfigurationManager",
@@ -528,17 +521,14 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     # scheduler starts — the same order the blocking boot had.
     assert order == ["ingest", "start"]
     # ... plus the fixed-cadence interval jobs, of which there are now **two**:
-    # the ``ingest`` job left with SB_INGESTION_INTERVAL (issue #697). The
-    # ingestion still happens — it is the ``ingest()`` above and the replay that
-    # follows a write — but nothing polls anything on a timer, and since
-    # ADR-0032 there is no folder left to poll.
+    # the ``ingest`` job left with SB_INGESTION_INTERVAL (issue #697).
     assert {c.kwargs["id"] for c in scheduler.add_job.call_args_list} == \
         {"backfill", "perf"}
 
 
 def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
         mocker, tmp_path):
-    """It opened one, and that was the fork's doing (ADR-0039).
+    """It opened one, and that was the fork's doing.
 
     Its first act used to be ``store.open_store``, because the connection
     ``build_runtime`` had proved openable was closed before the fork. There is
@@ -618,7 +608,7 @@ def test_health_answers_when_the_store_answers(open_store):
     response = app.test_client().get("/health")
 
     assert response.status_code == 200
-    # The two registers, on the one answer (#818, ADR-0036): the code above is
+    # The two registers, on the one answer (#818): the code above is
     # the orchestrator's, and the body below names the three jobs for a person.
     body = response.get_json()
     assert set(body["jobs"]) == {"scrape", "backfill", "performance"}
@@ -672,7 +662,7 @@ def test_a_body_that_cannot_be_built_does_not_fail_the_probe(open_store):
 
 
 def test_healthz_is_not_the_name_of_this_route(open_store):
-    """`/healthz` was examined and declined (ADR-0036).
+    """`/healthz` was examined and declined.
 
     A Kubernetes idiom addressed to a reader this product does not have: it
     ships as one self-hosted container whose probe is written into its own
@@ -721,7 +711,7 @@ def test_health_fails_when_no_store_is_open():
 
 
 def test_metrics_is_not_served(open_store):
-    """`/metrics` is nothing to this app any more (ADR-0033).
+    """`/metrics` is nothing to this app any more.
 
     The seam is the highest one there is — the Flask app by its test client, on
     the single socket — because the 404 is the only fact about the departure
@@ -739,7 +729,7 @@ def test_metrics_is_not_served(open_store):
 
 
 # ---------------------------------------------------------------------------
-# boot.py — the sequence (issue #838, ADR-0039)
+# boot.py — the sequence (issue #838)
 # ---------------------------------------------------------------------------
 #
 # Five steps and an order. It is one of the seven places this suite reaches for
@@ -986,7 +976,7 @@ def _noop():
 
 
 def test_serve_binds_the_web_port_on_every_interface(served):
-    """One socket, and the port comes from the environment (ADR-0033, #740)."""
+    """One socket, and the port comes from the environment (#740)."""
     boot.serve("the app", boot_env.read({"SB_WEB_PORT": "9000"}), _noop)
 
     assert served.call_args.kwargs["host"] == "0.0.0.0"
@@ -1013,7 +1003,7 @@ def test_serve_binds_nothing_beyond_the_web_port(served):
 
 
 def test_serve_asks_for_no_second_process(served):
-    """The ``--workers`` door, shut by there being no command line (ADR-0039).
+    """The ``--workers`` door, shut by there being no command line.
 
     ``on_starting`` and ``control_socket_disable`` were two guards spent
     forbidding a second worker — *N workers are N schedulers* — and uvicorn has a
@@ -1040,7 +1030,7 @@ def test_serve_ignores_a_log_level_uvicorn_does_not_understand(served):
 
 
 def test_serve_hands_the_flask_app_over_unchanged(served, open_store):
-    """No route is rewritten (ADR-0039): the WSGI app is wrapped, not ported.
+    """No route is rewritten: the WSGI app is wrapped, not ported.
 
     The adapter is the whole of the change, and ``create_app()`` stays the seam
     the rest of this suite is written against — which is why the assertion is
@@ -1118,7 +1108,7 @@ def test_the_teardown_survives_being_asked_twice(mocker, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The agent's interface, mounted on the one socket (ADR-0040, issue #749)
+# The agent's interface, mounted on the one socket (issue #749)
 # ---------------------------------------------------------------------------
 #
 # Two applications, one bind, no fork. The branch in ``Serving`` is the whole of
@@ -1393,7 +1383,7 @@ def test_a_localhost_host_is_not_a_special_case_either():
 
 
 def test_a_post_that_is_not_json_is_still_refused():
-    """The structural defence the disabled host check leans on (ADR-0040).
+    """The structural defence the disabled host check leans on.
 
     ``Content-Type`` is validated **before** the DNS-rebinding setting is even
     read, so it holds whatever that setting says — and it is what a browser

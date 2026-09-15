@@ -1,4 +1,4 @@
-"""A stored point's resolution is a function of its **age** (issue #705, ADR-0010)."""
+"""A stored point's resolution is a function of its **age** (issue #705)."""
 
 from datetime import datetime, timedelta
 from typing import Optional, Tuple

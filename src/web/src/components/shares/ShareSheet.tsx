@@ -1,26 +1,17 @@
 /**
- * A share's own surface — **the one place ADR-0016's form appears naked**
- * (#720).
+ * Here the total is the head, the three terms hang **under** it, inside its own
+ * group, and the nesting is the statement.
  *
- * `Gain total` visually dominating its three terms is possible here and nowhere
- * else on the page, for a reason of geometry rather than of taste: **a block is
- * the only place subordination can be expressed.** A table row has the
- * horizontal axis and nothing else, so a total mounted beside its terms is five
- * numeric columns of equal weight and nothing says the last three are *inside*
- * the first — which is the addition ADR-0018 exists to prevent. Here the total
- * is the head, the three terms hang **under** it, inside its own group, and the
- * nesting is the statement.
- *
- * The position facts — `Cours · PRU · Détenu · Valorisation · Investi` — drop to
- * a second rank behind it. They are what the position *is*; the gain is what the
- * page is about.
+ * The position facts — `Cours · PRU · Détenu · Valorisation · Investi` — drop
+ * to a second rank behind it. They are what the position *is*; the gain is what
+ * the page is about.
  *
  * **The sheet shrinks, and the room is not filled back in.** Three things left
  * and each for its own reason:
  *
- *  - **`RuntimeDetail`** — a per-account backfill readout on a **share**'s card.
- *    It answered a question about the app's own progress on a surface about a
- *    security, and `/api/runtime` has a page where that belongs.
+ *  - **`RuntimeDetail`** — a per-account backfill readout on a **share**'s
+ *    card. It answered a question about the app's own progress on a surface
+ *    about a security, and `/api/runtime` has a page where that belongs.
  *  - **the per-account breakdown at one account**, which repeated the header
  *    line for line. It comes back the moment a share is held on two accounts
  *    (`lib/shares.ts`'s `accountBreakdown`), which is the ordinary case of the
@@ -31,7 +22,7 @@
  *
  * What stays is the chart, the event list and the fundamentals — and the chart
  * and the list are now **one object**: the liaison between them is a selection
- * of a **day**, never a hover (ADR-0016).
+ * of a **day**, never a hover.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -187,19 +178,18 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
         </SheetHeader>
 
         <div className="space-y-8 px-4 pb-8">
-          {/* **ADR-0016's form, in the drawer's own type** (#838). The total,
-              then its three terms **under** it and inside its own group —
-              subordination is vertical, and the drawer keeps it. What changed
-              with the redesign is the setting: a drawer is a column of data
-              beside a page, so every figure in it is in the mono face, the
-              total is 30 px rather than the page's 52, and the three terms are
-              three boxes on one row instead of three lines down one.
+          {/* The total, then its three terms **under** it and inside its own group
+          — subordination is vertical, and the drawer keeps it. What changed
+          with the redesign is the setting: a drawer is a column of data beside
+          a page, so every figure in it is in the mono face, the total is 30 px
+          rather than the page's 52, and the three terms are three boxes on one
+          row instead of three lines down one.
 
-              It is written here rather than through `Stat` because it is not
-              the same object: `Stat` is a figure on a page, at one of three
-              distances, and these are cells of a drawer. The accessible shape
-              is identical — a group named by its label, the terms inside the
-              total's own group — which is what the tests take hold of. */}
+          It is written here rather than through `Stat` because it is not the
+          same object: `Stat` is a figure on a page, at one of three distances,
+          and these are cells of a drawer. The accessible shape is identical — a
+          group named by its label, the terms inside the total's own group —
+          which is what the tests take hold of. */}
           <div role="group" aria-label={t('shares.gainTotal')} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <span className="eyebrow flex items-center gap-1.5">
@@ -313,7 +303,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
               symbol={row.symbol}
               window={window}
               onWindowChange={setWindow}
-              // **An optional read, so the `?? []` survives** (ADR-0026): with
+              // **An optional read, so the `?? []` survives**: with
               // no ledger the chart draws no marker rail — *a band with nothing
               // in it does not exist* — which removes a line rather than
               // falsifying one, and the price series under it is this block's
@@ -329,7 +319,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             />
 
             {/* The events could not be read — said in their own space, as an
-                empty state rather than an alert (#829, ADR-0037). */}
+                empty state rather than an alert (#829). */}
             {ledger.error ? (
               <Unreadable failure={{ message: problemMessageKey(ledger.error) }} />
             ) : !ledger.data ? null : (

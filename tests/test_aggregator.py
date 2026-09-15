@@ -203,14 +203,9 @@ def test_dividend_increases_only_received_dividend(aggregator):
 def test_a_dividend_fee_is_absorbed_into_the_dividend(aggregator):
     """The fee comes off the named term, because it comes off the cash.
 
-    A gross ``received_dividend`` beside a net cash balance puts the fee inside
-    ``gain_absolu`` and inside none of ADR-0018's four terms — and the head
-    *computes* the total from the four, so the two headline figures disagreed by
-    exactly the withholding on the line. The fourth term cannot carry it: it is
-    named for what a broker takes from a **transfer**, and ``store_reads`` sums
-    it over ``DEPOSIT``/``WITHDRAWAL`` alone. So it is absorbed where its
-    counterpart already goes, exactly as ADR-0003 absorbs an acquisition fee
-    into the basis. The common case is a withholding tax typed into ``fee``.
+    The fourth term cannot carry it: it is named for what a broker takes from a
+    **transfer**, and ``store_reads`` sums it over ``DEPOSIT``/``WITHDRAWAL``
+    alone. The common case is a withholding tax typed into ``fee``.
     """
     events = [
         Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
@@ -230,13 +225,9 @@ def test_a_dividend_fee_is_absorbed_into_the_dividend(aggregator):
 def test_a_grant_fee_is_debited_and_absorbed_into_the_basis(aggregator):
     """A grant is cash-neutral in its award, never in its fee.
 
-    The validator accepts a `fee` on a `GRANT` row — unlike `symbol` on a cash
-    event, which it refuses — the loader parses it, and it reached neither the
-    cash, nor the basis, nor any of ADR-0018's four terms: the money simply did
-    not exist anywhere in the product. It is an acquisition cost like a `BUY`'s,
-    so ADR-0003 absorbs it into the basis, and the cash pays for it. That pairing
-    is what keeps the identity closed — the cash falls by the fee and so does the
-    latent gain — where crediting the basis alone would have moved one side only.
+    That pairing is what keeps the identity closed — the cash falls by the fee
+    and so does the latent gain — where crediting the basis alone would have
+    moved one side only.
     """
     events = [
         Event(date(2024, 1, 15), EventType.DEPOSIT, amount=1000.0),
@@ -371,7 +362,7 @@ def test_a_position_sold_and_bought_back_comes_back_on_its_own(aggregator):
 
 
 def test_broker_dust_is_normalised_to_exact_zero(aggregator):
-    """A real export: 0.348984 bought, 0.34898399999999996 sold (ADR-0017)."""
+    """A real export: 0.348984 bought, 0.34898399999999996 sold."""
     events = [
         Event(date(2024, 1, 15), EventType.BUY, "BTC", "Bitcoin",
               quantity=0.348984, unit_price=40000.0),

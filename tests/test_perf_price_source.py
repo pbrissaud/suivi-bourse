@@ -3,7 +3,7 @@
 One table, read **once** for every symbol at once. The recompute used to call
 :func:`quotes.price_series` in a comprehension over the ledger's symbols, and
 each of those is a ``WHERE symbol = ?`` on ``price_point`` — a table with
-neither index nor key (ADR-0007), not clustered by symbol, so every call reads
+neither index nor key, not clustered by symbol, so every call reads
 it whole. Forty lines meant forty full scans, every 120 s and again after every
 ``/api`` write, each of them holding the single connection's ``RLock``.
 

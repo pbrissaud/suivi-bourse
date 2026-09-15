@@ -1,10 +1,10 @@
-"""The agent's five tools (ADR-0040, issue #749).
+"""The agent's five tools (issue #749).
 
 **The store is real**, under ``tmp_path``, as it is everywhere else in this
 suite; the one faked external edge is still yfinance and nothing here needs it.
 The surface is exercised through the SDK's **in-memory client**, which is what
 proves a description exists at all — a tool called as a Python function would
-pass with an empty one, and the description is payload (ADR-0040).
+pass with an empty one, and the description is payload.
 
 No test binds a socket. Speaking Streamable HTTP over a real port would re-test
 the SDK's transport and nothing of ours; what is ours is the routing, and that is
@@ -27,7 +27,7 @@ def build_runtime(tmp_path, events=None, currency='EUR', break_store=False):
     """A runtime over a real store — ``build_runtime``'s shape, in miniature.
 
     The events go in through :func:`entries.create_many`, which is the ledger's
-    one writer (ADR-0032) and the function the upload route calls: a fixture that
+    one writer and the function the upload route calls: a fixture that
     wrote rows itself would be writing through a road the product does not have.
 
     ``manager.reload()`` is the first publication, as the boot performs it. It
@@ -72,7 +72,7 @@ def listed(runtime):
 
     Through the client and not through the server object: a description read off
     a Python attribute would pass whatever the wire carries, and the wire is what
-    a tool description is *for* (ADR-0040).
+    a tool description is *for*.
     """
     async def _run():
         """One session, opened and closed around the listing."""
@@ -117,14 +117,11 @@ LEDGER = [
 def test_the_surface_is_six_tools_and_nothing_else(tmp_path):
     """Six, named, and no seventh arriving by accident.
 
-    The list is asserted **whole** rather than by membership: ADR-0040 makes
-    these names a contract, so a tool appearing here is a promise made and a
-    tool leaving is a promise broken. Either should fail a test rather than a
-    user's setup.
+    Either should fail a test rather than a user's setup.
 
-    The sixth is the investment rhythm (#751, ADR-0041), and it arrived with a
-    route of its own: this module's opening promise — *it computes nothing* —
-    is kept at the word rather than gaining a second exception.
+    The sixth is the investment rhythm (#751), and it arrived with a route of
+    its own: this module's opening promise — *it computes nothing* — is kept at
+    the word rather than gaining a second exception.
     """
     runtime, _ = build_runtime(tmp_path)
 
@@ -135,7 +132,7 @@ def test_the_surface_is_six_tools_and_nothing_else(tmp_path):
 
 
 def test_every_description_states_the_absence_rule(tmp_path):
-    """A description is payload, not documentation (ADR-0040).
+    """A description is payload, not documentation.
 
     This is the test that stops a description from being trimmed to a stub the
     day somebody finds them long. What it holds is the **one** convention every
@@ -154,11 +151,6 @@ def test_every_description_states_the_absence_rule(tmp_path):
 
 def test_the_positions_description_carries_both_terms_of_the_carrying_convention(tmp_path):
     """``terminal`` is useless to a model that is not told what it separates.
-
-    ADR-0004's second term (#845) is the difference between *not priced yet* and
-    *never priced*, and a reader that has the field but not the sentence reports
-    an unpriced holding as worth nothing — which is the defect the field was
-    added against, met one layer further out.
     """
     runtime, _ = build_runtime(tmp_path)
 
@@ -175,7 +167,7 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
 # --------------------------------------------------------------------- #
 
 def test_positions_name_the_reporting_currency_in_the_head(tmp_path):
-    """One reporting currency, on the payload and never on a row (ADR-0002)."""
+    """One reporting currency, on the payload and never on a row."""
     runtime, _ = build_runtime(tmp_path, events=LEDGER, currency='EUR')
 
     body = payload(call(runtime, 'list_positions'))
@@ -187,7 +179,7 @@ def test_positions_name_the_reporting_currency_in_the_head(tmp_path):
 
 
 def test_a_null_currency_is_how_the_unanswered_question_is_said(tmp_path):
-    """No fourth kind of absence for it, and no error either (ADR-0021)."""
+    """No fourth kind of absence for it, and no error either."""
     runtime, _ = build_runtime(tmp_path, events=LEDGER, currency=None)
 
     assert payload(call(runtime, 'list_positions'))['base_currency'] is None
@@ -206,9 +198,6 @@ def test_terminal_rides_on_every_position(tmp_path):
 
 def test_an_empty_ledger_is_a_successful_answer_that_still_names_the_currency(tmp_path):
     """``200`` + nothing held, never an error and never a null head.
-
-    The distinction this holds is the one ADR-0040 says an agent cannot be
-    allowed to lose: owning nothing and being unable to read are two answers.
     """
     runtime, _ = build_runtime(tmp_path, events=None, currency='EUR')
 
@@ -219,12 +208,6 @@ def test_an_empty_ledger_is_a_successful_answer_that_still_names_the_currency(tm
 
 
 def test_the_accounts_list_always_holds_at_least_one_row(tmp_path):
-    """ADR-0013: an install that declared nothing still has the seeded account.
-
-    ``declared`` is a designed state and not an empty one, and it is served
-    rather than left to a client to synthesise — a model asked *which accounts
-    are there* must not be answered *none*, which ADR-0013 says is impossible.
-    """
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
 
     body = payload(call(runtime, 'list_accounts'))
@@ -259,7 +242,7 @@ def test_the_history_defaults_to_a_year_and_honours_a_window(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The ledger — the one departure from /api (ADR-0040)
+# The ledger — the one departure from /api
 # --------------------------------------------------------------------- #
 
 def test_the_ledger_is_bounded_and_says_how_much_it_left_out(tmp_path):
@@ -319,7 +302,7 @@ def test_the_ledger_narrows_by_calendar_day(tmp_path):
 
 
 def test_the_ledgers_rows_come_from_the_snapshot_and_not_from_the_store(tmp_path):
-    """``/api/events``' contract for the rows, inherited whole (ADR-0031).
+    """``/api/events``' contract for the rows, inherited whole.
 
     The portfolio's tables are gone here and the ledger still answers, because
     the rows are the ones the aggregator ran on rather than a fresh query — so
@@ -381,10 +364,8 @@ def test_a_storage_fault_arrives_in_words_and_not_as_a_bare_failure(tmp_path):
 @pytest.mark.parametrize('tool', ['list_positions', 'get_portfolio_totals',
                                   'get_portfolio_history', 'list_accounts'])
 def test_a_store_that_cannot_answer_is_an_error_and_never_an_empty_payload(tmp_path, tool):
-    """The distinction ADR-0040 will not let a model lose.
-
-    An agent handed ``[]`` reports that the owner holds nothing. Every tool that
-    opens the store therefore fails loudly when it cannot.
+    """An agent handed ``[]`` reports that the owner holds nothing. Every tool
+    that opens the store therefore fails loudly when it cannot.
     """
     runtime, _ = build_runtime(tmp_path, events=LEDGER, break_store=True)
 
@@ -472,7 +453,7 @@ def test_a_negative_bound_is_refused_in_words(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The investment rhythm (issue #751, ADR-0041)
+# The investment rhythm (issue #751)
 # --------------------------------------------------------------------- #
 
 def rhythmic(count, unit_price, *, account=None, symbol='AAPL'):
@@ -511,10 +492,8 @@ def test_the_rhythm_tool_answers_the_amount_with_its_coverage(tmp_path):
 def test_the_rhythm_tool_and_the_route_answer_the_same_figures(tmp_path):
     """One store, one primitive, two surfaces — and they cannot disagree.
 
-    ADR-0041 gives the figures a route *so that* the tool has one to mirror, and
-    this is where that holds: the same runtime is served over HTTP and over the
-    tool surface, and the two payloads are compared whole. A figure computed a
-    second way on either side fails here rather than in front of a reader.
+    A figure computed a second way on either side fails here rather than in
+    front of a reader.
     """
     from api import create_app
 
@@ -541,7 +520,7 @@ def test_a_portfolio_that_bought_nothing_reports_no_amount(tmp_path):
 
 
 def test_the_rhythm_description_carries_the_three_things_it_must(tmp_path):
-    """The description is payload (ADR-0040), and this is what it has to say.
+    """The description is payload, and this is what it has to say.
 
     Three sentences a model gets wrong by default, and each of them produces a
     confident-and-wrong statement about the reader's own money: quoting the

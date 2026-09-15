@@ -6,7 +6,7 @@
  * one entry per symbol, the events are the ledger's own search, and the
  * reduction an event leads to is built out of the ledger's own dimensions.
  *
- * **The three sections that read are optional** (ADR-0026): the palette opens
+ * **The three sections that read are optional**: the palette opens
  * with its pages and its actions while all three are in flight, and a read that
  * has not landed **removes a section** instead of holding the surface. That is
  * one of the rare places `?? []` is legitimate, and it is annotated as such at
@@ -124,8 +124,8 @@ export function eventsMatching(events: readonly LedgerEvent[], query: string): L
  * The reduction an event result leads to — the event's **three coordinates**.
  *
  * Not the row itself, and that is a decision rather than an approximation: a
- * ledger row is identified by its position in a list the store sorted
- * (ADR-0020), an imported one carries no key at all, and a reduction that
+ * ledger row is identified by its position in a list the store sorted,
+ *an imported one carries no key at all, and a reduction that
  * pretended to hold one event would be an address the product refuses to give.
  * What the ledger can retain is what the ledger can *name* — a type, an account
  * and a word — so that is what the reduction says it retains, and it says it in

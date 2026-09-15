@@ -1,5 +1,5 @@
 /**
- * **Import et export** (#728, #811, #813, ADR-0020, ADR-0032), at the one seam:
+ * **Import et export** (#728, #811, #813), at the one seam:
  * the whole app in jsdom, HTTP the only faked edge.
  *
  * The imports bar above the ledger held three things and holds two: the drop zone and
@@ -93,7 +93,7 @@ describe('one population, and no source to act on', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     // The bar is still there — it holds the zone and the export — and what it
-    // no longer holds is a table of files (#816, ADR-0032).
+    // no longer holds is a table of files (#816).
     expect(screen.getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Import et export' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Oublier/ })).toBeNull()
@@ -163,18 +163,17 @@ describe('the export', () => {
     ])
     // And the menu says once what its four entries answer.
     expect(within(menu).getByText('Ce que vous exportez')).toBeInTheDocument()
-    // Nothing announces that a round trip takes two files: it does not
-    // (ADR-0034). A label saying so would send the reader looking for a second
+    // Nothing announces that a round trip takes two files: it does not.
+    //A label saying so would send the reader looking for a second
     // file the menu no longer has.
     expect(within(menu).queryByText(/deux fichiers/)).not.toBeInTheDocument()
   })
 
   it('offers no accounts declaration, whatever this install has declared', async () => {
-    // ADR-0034, and the fourth entry does not reopen it. Nothing reads an
-    // accounts *file* back in, so one offered here would be a backup that
-    // restores nothing — the residue that is worst because it *looks* like half
-    // a round trip. What the menu offers instead is a **report**, named after
-    // what is in it, and the import refuses it by name.
+    // Nothing reads an accounts *file* back in, so one offered here would be a
+    // backup that restores nothing — the residue that is worst because it
+    // *looks* like half a round trip. What the menu offers instead is a
+    // **report**, named after what is in it, and the import refuses it by name.
     const declared = await openExport(renderImports({ accounts: [anAccount({ id: 'zeta' })] }).user)
     expect(within(declared).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
     expect(
@@ -352,7 +351,7 @@ describe('the export', () => {
     renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    // One bar above the table (#794, ADR-0030, ADR-0032): the zone and the
+    // One bar above the table (#794): the zone and the
     // menu, and **no list of files** since #816. Getting one's data out is a
     // question of files, not of the ledger.
     const bar = block()
@@ -372,10 +371,8 @@ describe('the export', () => {
 
 describe('an install that has imported nothing', () => {
   it('offers the file entrance once, with a declaration and nothing recorded', async () => {
-    // An install with something declared and no event. The bar stood here while
-    // the declaration was itself a file worth handing back; ADR-0034 took that
-    // file away, so what there is to hand back is the ledger — and there is
-    // none. The gesture is then offered once, by the empty state's own entry.
+    // An install with something declared and no event. The gesture is then
+    // offered once, by the empty state's own entry.
     renderImports({ events: [], accounts: [anAccount({ id: 'zeta' })] })
     await screen.findByText('Importer un fichier')
 
@@ -416,7 +413,7 @@ describe('the file handed over', () => {
   }
 
   it('previews the file before writing it, and writes on the confirmation', async () => {
-    // **The criterion, in the order the reader lives it** (#813, ADR-0032): the
+    // **The criterion, in the order the reader lives it** (#813): the
     // file is read back *before* it costs anything, in the same sentence the
     // fact will be said in — only the tense moves — and the write happens when
     // the reader says so.
@@ -642,7 +639,7 @@ describe('the file handed over', () => {
       await screen.findByText(/L’application a refusé ce fichier et n’a rien écrit/),
     ).toBeInTheDocument()
     // The server's own sentence is a diagnostic for a log, and English: it is
-    // carried, and rendered nowhere (ADR-0024).
+    // carried, and rendered nowhere.
     expect(screen.queryByText(/is not declared/)).not.toBeInTheDocument()
   })
 
@@ -683,7 +680,7 @@ describe('the file handed over', () => {
       ),
     ).toBeInTheDocument()
     // Neither the sentence of `problem.conflict` — the one this refusal used to
-    // borrow — nor a word of the server's English (ADR-0024).
+    // borrow — nor a word of the server's English.
     expect(screen.queryByText(/existe déjà/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Cannot sell/)).not.toBeInTheDocument()
   })
@@ -902,8 +899,6 @@ describe('what this import would do', () => {
   })
 
   it('says the correspondence is dropped with the gesture', async () => {
-    // ADR-0006 said to the reader and not only in a record: this is not the
-    // mapping table `reassignment.py` refused, and the next file asks again.
     watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
@@ -1170,7 +1165,7 @@ describe('what this import would do', () => {
   })
 
   it('offers the currency the file declares, and lets it be declined', async () => {
-    // The app reads a declaration and never asserts one (ADR-0021). The box is
+    // The app reads a declaration and never asserts one. The box is
     // ticked, because the round trip is the whole point of the column — upload
     // the export and the install is the install it came from — and it is a box,
     // because the answer cannot be taken back.
@@ -1207,7 +1202,7 @@ describe('what this import would do', () => {
 
   it('keeps the window open on a refusal, with the button beside it', async () => {
     // A file the server turned back is still in the reader's hands. The window
-    // stays, the sentence is the front's own (ADR-0024), and the gesture that
+    // stays, the sentence is the front's own, and the gesture that
     // leaves nothing behind is the one on offer.
     server.use(
       http.post(ROUTES.eventsImport, () =>

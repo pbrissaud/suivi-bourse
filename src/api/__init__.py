@@ -37,7 +37,7 @@ def create_app(runtime: main.Runtime) -> Flask:
 
         Everywhere else werkzeug's own page stands: returning ``exc`` is Flask's
         way of saying *the default was right* — the ``404`` on ``/metrics`` is a
-        door closed to a scraper (ADR-0033), not a problem+json for a reader.
+        door closed to a scraper, not a problem+json for a reader.
 
         ``/api`` is read as a **path segment**, which is the whole of the test
         below it: a prefix match claims ``/apiary`` too, and the SPA serves

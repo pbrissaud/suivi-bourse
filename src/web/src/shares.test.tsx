@@ -1,5 +1,5 @@
 /**
- * The shares page (#719, ADR-0017, ADR-0016), at the one seam: the whole app in
+ * The shares page (#719), at the one seam: the whole app in
  * jsdom, HTTP the only faked edge.
  *
  * *The header sums the lines it sits above* is not a property of a table
@@ -122,11 +122,8 @@ describe('the header sums the lines it sits above', () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
-    // The strip carries no bubble: it names its figures with the same four
-    // words the columns under it do, and ADR-0016's *one per figure and per
-    // surface* is what makes one of the two the place to explain them. The
-    // column keeps it — a table is read scrolled, and the strip is what scrolls
-    // away first.
+    // The column keeps it — a table is read scrolled, and the strip is what
+    // scrolls away first.
     const strip = screen.getByRole('group', { name: 'Valorisation' })
     expect(within(strip).queryByRole('button')).not.toBeInTheDocument()
   })
@@ -220,12 +217,10 @@ describe('the nine columns of the live table', () => {
 
     // `Écart unitaire` is `Cours − PRU`, two columns already on the same line,
     // and nil by construction on a line carried at its cost. `Investi` is
-    // `Valorisation − latente` and stays on the sheet. And a fourth column would
-    // put a total beside its own terms, which is the addition ADR-0018 exists
-    // to prevent.
-    // And `Poids` is in the list since #831: the weight of a line is answered
-    // on this page by the `Répartition` above the table — a figure of the whole
-    // — and never by a tenth cell on every row (`components/shares/Allocation`).
+    // `Valorisation − latente` and stays on the sheet. And `Poids` is in the
+    // list since #831: the weight of a line is answered on this page by the
+    // `Répartition` above the table — a figure of the whole — and never by a
+    // tenth cell on every row (`components/shares/Allocation`).
     for (const absent of ['Écart unitaire', 'Investi', 'Gain total', 'Variation', 'Poids']) {
       expect(
         within(liveTable()).queryByRole('columnheader', { name: absent }),
@@ -260,7 +255,7 @@ describe('the nine columns of the live table', () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
-    // Carried at its cost (ADR-0004): an em dash in the price — which **is**
+    // Carried at its cost: an em dash in the price — which **is**
     // the signal, so the row gets no marker of its own — a value, and a latent
     // gain of exactly zero rather than a total loss.
     const carried = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
@@ -329,11 +324,10 @@ describe('the nine columns of the live table', () => {
   })
 
   it('says nothing at all about a line whose history is still being rebuilt', async () => {
-    // ADR-0004's **second** term, on the page (#845). The backward pass has not
-    // reached this symbol's first acquisition, so *no price* means *not yet*:
-    // the line has no valuation, and carrying it at its PMP is *not yet*
-    // rendered *never* — which is what the page did, while the dashboard's own
-    // curve left the same day hollow.
+    // The backward pass has not reached this symbol's first acquisition, so *no
+    // price* means *not yet*: the line has no valuation, and carrying it at its
+    // PMP is *not yet* rendered *never* — which is what the page did, while the
+    // dashboard's own curve left the same day hollow.
     renderShares([
       ...defaultPositions(),
       aPosition({
@@ -371,7 +365,7 @@ describe('the nine columns of the live table', () => {
     )
     expect(head()).not.toHaveTextContent(/en attente du taux/)
     // Named, never dashed: an em dash says *there is nothing to compute*
-    // (ADR-0016) about a portfolio that is simply not finished being read.
+    // about a portfolio that is simply not finished being read.
     expect(head()).not.toHaveTextContent(/—/)
     expect(figure('Latente')).toHaveTextContent(/historique en cours de reconstitution/)
   })
@@ -473,11 +467,6 @@ describe('the exception marker and the date', () => {
   })
 
   it('says nothing about anomalies while either read is still in flight', async () => {
-    // ADR-0026's fourth occurrence, and the one the net cannot see: the phrase
-    // is in the baseline — the default fixture reports no failing symbol — so
-    // *appeared because a read did not answer* and *true of the fixture* are
-    // the same string here.
-    //
     // Two reads compose the count and each of them breaks it on its own.
     // Without the positions there are no rows, so nought is nought before
     // anything is known. Without `/api/runtime` every counter reads zero, so a
@@ -498,7 +487,7 @@ describe('the exception marker and the date', () => {
     // used to short-circuit `readConditions` to nothing at all, on the argument
     // that the shell's own band was saying it — so the page had nothing to show
     // for the failure *and* went on saying nothing was wrong. The short-circuit
-    // left with the band (#829, ADR-0037); the counter waits either way.
+    // left with the band (#829); the counter waits either way.
     server.use(http.get(ROUTES.runtime, () => HttpResponse.error()))
     renderShares()
 
@@ -574,9 +563,6 @@ describe('four icons on the page', () => {
   })
 
   it('keeps every one of them on a column header and none on a cell', async () => {
-    // ADR-0016's rule, and the one exception to it is not a bubble: the icon on
-    // an unquotable `Titre` cell carries a **repair**, which is why it is not
-    // named *Ce que veut dire …* and does not enter this count.
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
@@ -645,7 +631,7 @@ describe('the page’s own reads', () => {
     // page that rendered nothing would still make *the store is unreadable* and
     // *you own nothing yet* one screen, in its worst form: a blank one. Since
     // #829 the sentence is the page's **empty state** — where the table would
-    // have been — and never a band at the top of the column (ADR-0037).
+    // have been — and never a band at the top of the column.
     server.use(
       problemHandler(ROUTES.positions, {
         status: 503,
@@ -906,7 +892,7 @@ describe('the grouping by account', () => {
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
     await user.click(groupToggle())
 
-    // A total and its terms are not read at equal weight (ADR-0016) — here one
+    // A total and its terms are not read at equal weight — here one
     // level down: the account's figures sit **above** the lines they sum,
     // exactly as the page's own header does.
     // One figure per group header since #838, and it is the **valuation** of
@@ -917,7 +903,7 @@ describe('the grouping by account', () => {
     expect(alpha).not.toHaveTextContent(/Gain total/)
 
     expect(screen.getByRole('rowheader', { name: /beta/ })).toHaveTextContent(/400,00/)
-    // `gamma` holds a line that was never quoted, carried at its cost (ADR-0004).
+    // `gamma` holds a line that was never quoted, carried at its cost.
     expect(screen.getByRole('rowheader', { name: /gamma/ })).toHaveTextContent(/600,00/)
   })
 
@@ -1014,9 +1000,6 @@ describe('the allocation', () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
-    // 1 300 / 600 / 400 out of 2 300 — and the legend is in the slices' own
-    // descending order, which is what pairs a legend row to its slice and what
-    // licenses the rank ramp of ADR-0023.
     const list = await screen.findByRole('list', { name: 'Répartition' })
     const rows = within(list)
       .getAllByRole('listitem')
@@ -1100,7 +1083,7 @@ describe('the allocation', () => {
 describe('the absences of this page, one screen apart', () => {
   it('gives a share carried at its cost an em dash and no triangle', async () => {
     // Nothing is broken: no price was ever observed, the line is carried at
-    // what it cost (ADR-0004), and the em dash in `Cours` **is** the signal.
+    // what it cost, and the em dash in `Cours` **is** the signal.
     // The attention mark is reserved for what is genuinely repairable.
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
@@ -1125,9 +1108,6 @@ describe('the absences of this page, one screen apart', () => {
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
     const row = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
-    // Named — the count, which is a fact the reader can act on and never a
-    // verdict — and then what to do about it, which is what ADR-0016 gives the
-    // one icon allowed on a cell for a job.
     expect(row).toHaveTextContent(/3 relevés consécutifs, aucun cours/)
     expect(within(row).getByText(/Vérifiez le symbole/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '1 titre en anomalie' })).toBeInTheDocument()

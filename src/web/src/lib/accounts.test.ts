@@ -1,15 +1,11 @@
 /**
- * The account's arithmetic, pinned (#721, ADR-0019, ADR-0028).
+ * The account's arithmetic, pinned (#721).
  *
  * The measured counter-example is the reason the rebasing exists: the store
  * answers `alpha 171,5` against `beta 115,0`, and read as they stand those are
  * a figure counted from 2019 beside one counted from 2025. Rebased on a common
  * window the two **swap places between one month and one year**, every figure
  * correct along the way. Those numbers are the test.
- *
- * Since ADR-0028 the surface that reads them is a master-detail, so the rail's
- * two derivations are here too: what an account weighs, and which one the URL
- * opens.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -295,14 +291,14 @@ describe('a row with no figures names its reason', () => {
 })
 
 // ------------------------------------------------------------------------- //
-// The detail (#722, ADR-0028)
+// The detail (#722)
 // ------------------------------------------------------------------------- //
 
 describe('what one account’s detail is about', () => {
   it('keeps its closed lines in the set the four terms are summed over', () => {
     // A sold position has a realised gain and dividends, and dropping it here
     // produces the *other correct figure* — the one the shares page spent a
-    // session refusing to show as the owner's gain (ADR-0017).
+    // session refusing to show as the owner's gain.
     const held = accountPositions(sharesPortfolio(), 'alpha')
     expect(held.map((one) => one.symbol)).toEqual(['ZZA', 'ZZD'])
     expect(held.some((one) => one.quantity === 0)).toBe(true)
@@ -318,8 +314,6 @@ describe('what one account’s detail is about', () => {
   })
 
   it('reads the curve off the whole series, not off the visible window', () => {
-    // The range control drives the *comparison*; an account's own history is
-    // not one, and ADR-0019 says this surface is where it lives whole.
     const points = valueSeries(series('alpha'))
     expect(points).toHaveLength(series('alpha').length)
     expect(points[0].t).toBe('2019-10-30')
@@ -348,7 +342,7 @@ describe('what one account’s detail is about', () => {
 
   it('reads a blank account as the seeded row, which is the aggregator’s rule', () => {
     // An install that recorded events before declaring anything writes them
-    // under a row nobody named (ADR-0013) — the population #725 exists for, and
+    // under a row nobody named — the population #725 exists for, and
     // the one a strict `event.account === id` would show as an empty detail.
     expect(accountEvents(unassignedLedger(), 'default')).toHaveLength(3)
     expect(accountEvents([anEvent({ account: '  ' })], 'default')).toHaveLength(1)
@@ -427,7 +421,7 @@ describe('a removal that cannot happen names its reason', () => {
   it('follows `accounts.delete_account`’s own order', () => {
     // The seeded row first — there is always at least one account — then the
     // events naming it. A third refusal stood between them while a file could
-    // declare a row and be forgotten; the file is gone (ADR-0034) and it with
+    // declare a row and be forgotten; the file is gone and it with
     // it, so what is left is two answers and the offer.
     expect(removalOf(theSeededAccount(), 0)).toEqual({ kind: 'seeded' })
     expect(removalOf(anAccount({ id: 'beta' }), 71)).toEqual({
@@ -529,8 +523,8 @@ describe('réaffecter, jamais refuser (#725)', () => {
     expect(reassignmentOf(named, unassignedLedger())).toEqual({ kind: 'none' })
 
     // The other seeded column says as much. There was a third road — a file
-    // taking the row over — and it left with the accounts file (ADR-0034). Of
-    // the two that remained, the type left with #916 (ADR-0043), so **the name
+    // taking the row over — and it left with the accounts file. Of
+    // the two that remained, the type left with #916, so **the name
     // is the whole predicate**: a renamed seed is a declaration, and its events
     // are no longer anybody's to move.
     const renamed = anAccountsPayload([theSeededAccount({ label: 'Mon PEA' })], false)

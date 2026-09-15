@@ -1,5 +1,5 @@
 /**
- * One rule, and it is the whole file: **zero is not absence** (ADR-0016).
+ * One rule, and it is the whole file: **zero is not absence**.
  */
 import { describe, expect, it } from 'vitest'
 

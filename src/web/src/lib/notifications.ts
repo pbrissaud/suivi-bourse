@@ -1,10 +1,9 @@
 /**
- * What the notifications panel holds, in one pure function (#829, ADR-0037).
+ * What the notifications panel holds, in one pure function (#829).
  *
  * The panel is the app's **one** place to say what it has to say, and it holds
  * three registers together: **health**, **installation facts** and
- * **advisories**. What makes that arrangement work is a split ADR-0037 states
- * and this module is the whole of:
+ * **advisories**.
  *
  *  - the **register** — `health` · `fact` · `advisory` — is **never a word on
  *    screen**. It decides what a card *offers*: health offers a link and no
@@ -15,24 +14,20 @@
  *    heading and the destination of the card's link. The reader sees subjects
  *    and infers the rest from what each card lets them do.
  *
- * It is pure — payloads in, entries out — for the reason `lib/installationFacts.ts`
- * is: the badge, the group headings and the *Acknowledge the N acknowledgeable*
- * control are one question asked three times, and a component answering it per
- * render is how a badge and the list under it end up disagreeing.
+ * It is pure — payloads in, entries out — for the reason
+ * `lib/installationFacts.ts` is: the badge, the group headings and the
+ * *Acknowledge the N acknowledgeable* control are one question asked three
+ * times, and a component answering it per render is how a badge and the list
+ * under it end up disagreeing.
  *
- * **The banner's three conditions are here now, and they are pinned.** ADR-0021
- * gave the app one interruption and three surfaces; ADR-0037 takes the banner
- * away without replacing it, so *a missing base currency*, *a reconstruction
- * under way* and *a stopped scheduler* are entries like any others — the first
- * two as installation facts, the third as health. What descends instead of the
- * band is its **sentence**, one floor down, into the empty state of each page it
- * used to explain.
+ * What descends instead of the band is its **sentence**, one floor down, into
+ * the empty state of each page it used to explain.
  *
  * **One fact has one announcer.** `rebuilding` is a state of the bell's colour
  * *and* the subject of the `reconstruction_running` installation fact, so the
- * health entry is raised for `attention` and `unreachable` only: the colour is a
- * channel and the card is a sentence, and two cards about one reconstruction is
- * the defect the banner-and-badge rule existed against.
+ * health entry is raised for `attention` and `unreachable` only: the colour is
+ * a channel and the card is a sentence, and two cards about one reconstruction
+ * is the defect the banner-and-badge rule existed against.
  */
 import type { Advisory, InstallationFact } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
@@ -57,7 +52,7 @@ export type Said =
   | { text: string }
 
 /**
- * Where a card's link lands. **On the figure, never on the page** (ADR-0037):
+ * Where a card's link lands. **On the figure, never on the page**:
  * the account *selected*, the security's sheet *open*, the ledger *reduced* to
  * the events concerned.
  *
@@ -209,7 +204,7 @@ interface NotificationsInput {
   /**
    * What the bell's colour says, or `null` while the read has not landed. A
    * card is a claim about the reader's installation and a read in flight is not
-   * one (ADR-0026), so `null` produces nothing at all rather than *unknown*.
+   * one, so `null` produces nothing at all rather than *unknown*.
    */
   health: InstallationState | null
   /** `null` — not landed. `[]` is an install with nothing to say, which is a fact. */
@@ -326,13 +321,12 @@ export function grouped(entries: readonly Entry[]): Group[] {
 }
 
 /**
- * What the badge counts: **every open entry**, and not the acknowledgeable ones.
+ * What the badge counts: **every open entry**, and not the acknowledgeable
+ * ones.
  *
- * ADR-0037 accepts the objection this answers rather than going round it: three
- * of the four sources never decrement on their own, so this count can sit at two
- * for a week. The alternative is a badge that counts *some* of what the panel
- * holds, and a reader who opens a panel expecting three things and finds five
- * has been lied to by a number. What is owed in exchange is the control below.
+ * The alternative is a badge that counts *some* of what the panel holds, and a
+ * reader who opens a panel expecting three things and finds five has been lied
+ * to by a number. What is owed in exchange is the control below.
  */
 export function openCount(entries: readonly Entry[]): number {
   return entries.length
