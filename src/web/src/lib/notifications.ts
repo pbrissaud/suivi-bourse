@@ -190,6 +190,16 @@ function sentences(advisory: Advisory, label: string): Pick<Entry, 'title' | 'bo
       },
     }
   }
+  // **The sentence #919's silence rests on.** An account's panel shows no
+  // projection where no model was declared, and an empty block cannot explain
+  // its own emptiness without appearing on every account for ever. This says it
+  // once, in the place built for saying it, and links to the account.
+  if (advisory.kind === 'no_taxation_model') {
+    return {
+      title: { key: 'notification.advisory.no_taxation_model', values: { label } },
+      body: { key: 'notification.advisory.no_taxation_model.body' },
+    }
+  }
   return null
 }
 

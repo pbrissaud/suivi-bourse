@@ -23,6 +23,7 @@ from pathlib import Path
 PURE_MODULES = (
     'scheduling', 'performance', 'carrying', 'retention', 'fx', 'boot_env',
     'mounts', 'market_info', 'build_info', 'rhythm', 'taxation',
+    'taxation_projection',
 )
 
 #: The four edges a pure module may not reach, directly or through anybody.

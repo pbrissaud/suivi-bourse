@@ -477,6 +477,51 @@ export interface Account {
    * nothing re-derives it afterwards.
    */
   first_payment?: string
+  /**
+   * What this account would owe if everything in it were sold today, at the
+   * rates its model declares (#919) — and **absent** wherever there is no
+   * figure to state.
+   *
+   * Absent covers four cases and they reach the reader as one member's
+   * absence, not four: no model carried, a model of a kind with no realised
+   * gain (`none`, `withholding_income`), an aged wrapper with no date to age it
+   * from, and an assiette one unvalued line makes unknown. The panel tells them
+   * apart by the **model**, which it already holds — never by this member's
+   * value, because a projected zero and a zero nobody could compute are two
+   * different sentences.
+   *
+   * Optional and never `| null`: `buildAccountRows` must not map it `?? null`
+   * like its neighbours. That idiom collapses *absent* into *null* and erases
+   * the distinction the server exists to preserve.
+   */
+  projected_tax?: number
+  /**
+   * The `kind` of the model this account carries — **the words, not the
+   * arithmetic** (#919).
+   *
+   * It rides beside the figure so the panel can tell a declared exemption
+   * (`none`, worth `0 €` because the model says so) from a measured zero and
+   * from a model that taxes something else entirely (`withholding_income`),
+   * without a second read of the model catalogue. Absent exactly where
+   * `taxation_model` is.
+   */
+  taxation_kind?: string
+  /**
+   * The rate or rates that produced `projected_tax`, as fractions — one for the
+   * two flat families, one per rung for a ladder.
+   *
+   * Published rather than derived here: the rule is *which side of the
+   * threshold, levy folded in*, and a second reading of it in TypeScript drifts
+   * on exactly the accounts nobody tests — the card would name a rate the
+   * figure beside it contradicts, and neither would look wrong.
+   */
+  projected_rates?: number[]
+  /**
+   * The day the rate changes, where an age threshold is still ahead. Absent
+   * where the model is not aged, has no date to age from, or is already past
+   * its threshold — three cases, one absence.
+   */
+  projected_rate_changes_on?: string
 }
 
 export interface AccountsResponse {

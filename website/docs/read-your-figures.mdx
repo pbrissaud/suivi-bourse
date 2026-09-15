@@ -6,10 +6,10 @@ description: One convention per figure — the rules the app links to from the f
 {/*
   THE ANCHORS ON THIS PAGE ARE A CONTRACT WITH THE APPLICATION.
 
-  Every figure in SuiviBourse carries an information icon whose link points at
-  one of the anchors below, version included (ADR-0016, ADR-0025). The twelve
-  anchors are fixed — they are `DOCS_ANCHORS` in `src/web/src/lib/docs.ts`, and
-  the two lists are the same list:
+  Every information icon in SuiviBourse points at one of the anchors below,
+  version included. The twelve linked anchors are fixed — they are
+  `DOCS_ANCHORS` in `src/web/src/lib/docs.ts`, and the two lists are the same
+  list:
 
     #avg-cost  #total-gain  #latent-gain  #realized-gain  #dividends
     #net-contributed  #deposit-fees  #total-performance  #twr  #xirr
@@ -23,6 +23,11 @@ description: One convention per figure — the rules the app links to from the f
 
   So: reword the headings freely, but do not rename, merge or drop an anchor
   without changing the front in the same breath.
+
+  A heading no bubble links to still writes its anchor by hand and stays OUT of
+  `DOCS_ANCHORS` — `#projected-tax` is the first of those. The list above is the
+  linked twelve, not every anchor on the page; the day a bubble points at one of
+  the others, it joins the twelve and this comment says thirteen.
 */}
 
 This page holds the **conventions** the app's figures rest on — one rule per
@@ -250,6 +255,60 @@ ever paid in there is no schedule to solve, and the app leaves the figure
 **Returns are computed from the dates of your events.** The sentence is the same
 one as under the time-weighted return, deliberately: both rates are read off the
 dates you recorded, and the two are far more often misread together than apart.
+
+## What you would owe if you sold today {#projected-tax}
+
+An account carrying a **taxation model** states, on its own panel, what you would
+owe if everything in it were sold today. Nothing has been sold, nothing is
+declared to anybody, and this is not a tax return: it is the model *you*
+recorded, applied to today's prices.
+
+**What is taxed is the account's [latent gain](#latent-gain)** — what its
+positions are worth today, less what they cost you — and that is the base
+whatever shape your model has. Only the rate changes between shapes. A
+[realized gain](#realized-gain) from a sale you made years ago is not in it: that
+gain is settled, and the question here is about the shares you still hold.
+
+**The floor is at zero, taken per account.** An account whose positions are worth
+less than they cost owes nothing; it does not carry a negative that another
+account could absorb. Each account answers for itself.
+
+**The rate is the one you recorded**, and the card names it under the figure so
+you never have to go and look it up. Where your model carries a social levy, the
+levy is already folded into the rate shown — naming the income rate alone would
+contradict the figure directly above it.
+
+| Your model | What the figure is | What the card names |
+|---|---|---|
+| One rate on the gain | the latent gain at that rate | the rate, levy included |
+| A rate that changes with the wrapper's age | the latent gain at the rate in force **today** | that rate, and the day it changes while the threshold is still ahead |
+| Brackets on the gain | the gain walked slice by slice, each bracket taxing only the part that falls inside it | every rung, so you can place your own gain among them |
+
+**Where the age is counted from depends on what your model says it runs from**,
+and the two answers are not the same. A model counting from *the day the wrapper
+was opened* uses the date you declared and nothing else: declare no date and
+there is no figure, because your first payment is not an opening. A model
+counting from *the first payment into it* uses your declared date where you gave
+one and your earliest payment otherwise — which is what makes a PEA work, its
+five years running from the first payment and the form never asking for an
+opening date. The rate changes **on** the anniversary, not the day after.
+
+**Two shapes state no figure, and they say so in words.** *Not taxed* shows
+`0.00`, and that zero is the model saying so rather than something the app
+computed. *A withholding on income* shows no figure at all: it is charged on what
+you receive, never on a gain, so there is nothing here for it to project.
+
+**An account carrying no model shows no card.** The app does not guess a rate,
+and it does not leave you to wonder why the panel is short: the bell carries one
+advisory per such account, with a link back to it — see
+[the bell](./get-started.mdx).
+
+**A figure it cannot compute is [absent](#absence), never approximate.** One line
+the app could not value makes the whole account's base unknown, and the card
+shows an em dash rather than a tax computed off the lines that happened to have a
+price. A line [carried at its cost](#carrying-price) is not that case: it has a
+value, its latent gain is exactly zero, and the account's base stays known. So
+does an account holding nothing at all, whose base is zero.
 
 ## A position with no price {#carrying-price}
 

@@ -143,7 +143,24 @@ def validate(kind: Any, parameters: Any) -> Dict[str, Any]:
                 raise ModelRejected(f"{kind!r} needs {name!r}")
             continue
         checked[name] = _CHECKS[type_](name, value)
+    _refuse_more_than_everything(checked)
     return checked
+
+
+def _refuse_more_than_everything(checked: Dict[str, Any]) -> None:
+    """A gain cannot owe more than itself, and the levy adds to the rate.
+
+    :func:`_rate` bounds each value to ``[0, 1]`` on its own and nothing bounds
+    the sum, so ``rate 0,9`` beside ``social_rate 0,9`` is two ordinary-looking
+    entries that project **180 %** of a gain and print it as a fact.
+    """
+    levy = checked.get('social_rate', 0.0)
+    for name in ('rate', 'rate_before', 'rate_after'):
+        rate = checked.get(name)
+        if rate is not None and rate + levy > 1.0:
+            raise ModelRejected(
+                f"{name} and social_rate come to {(rate + levy) * 100:.1f}% "
+                f"together, and a gain cannot owe more than itself")
 
 
 def _rate(name: str, value: Any) -> float:
@@ -155,11 +172,22 @@ def _rate(name: str, value: Any) -> float:
     return number
 
 
+#: The longest threshold a wrapper may declare. No schedule surveyed goes past
+#: thirty, and the bound is what keeps a typo out of date arithmetic: an
+#: anniversary a hundred thousand years out overflows the calendar of every
+#: reader downstream rather than producing a wrong answer.
+MAX_THRESHOLD_YEARS = 200
+
+
 def _years(name: str, value: Any) -> int:
     number = _number(name, value)
     if number < 0 or number != int(number):
         raise ModelRejected(
             f"{name} is a whole number of years, and {value!r} is not one")
+    if number > MAX_THRESHOLD_YEARS:
+        raise ModelRejected(
+            f"{name} is at most {MAX_THRESHOLD_YEARS} years, and {value!r} is "
+            f"not")
     return int(number)
 
 
@@ -201,6 +229,14 @@ def _brackets(name: str, value: Any) -> List[Dict[str, Any]]:
             raise ModelRejected(
                 f"only the top bracket of {name} may have no upper bound")
         number = _number(f"{name}[{index}].upper_bound", bound)
+        # **The first rung is checked too.** The climbing test below compares
+        # against the rung before, so index 0 has nothing to be refused by — and
+        # a ceiling at or below zero makes the slice under it negative, which
+        # #919's walk turns into a *negative* tax on a real gain.
+        if number <= 0:
+            raise ModelRejected(
+                f"the brackets of {name} climb from zero: {number} is not a "
+                f"ceiling")
         if previous is not None and number <= previous:
             raise ModelRejected(
                 f"the brackets of {name} climb: {number} does not come after "
@@ -239,7 +275,7 @@ _CHECKS = {
 __all__ = [
     'NONE', 'FLAT_REALISED', 'AGED_FLAT_REALISED', 'BRACKETED_REALISED',
     'WITHHOLDING_INCOME',
-    'OPENING', 'FIRST_PAYMENT', 'AGE_BASES',
+    'OPENING', 'FIRST_PAYMENT', 'AGE_BASES', 'MAX_THRESHOLD_YEARS',
     'KINDS', 'TEMPLATES',
     'ModelRejected', 'catalogue', 'validate',
 ]
