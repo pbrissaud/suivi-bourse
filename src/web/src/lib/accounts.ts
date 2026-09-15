@@ -322,6 +322,13 @@ export interface AccountRow {
    */
   taxation_kind?: string
   /**
+   * The gain the figure was computed on — the latent gain of the held lines,
+   * which is **not** the `Gain` the head states. Published so the card can name
+   * its own base rather than leaving the reader to reconcile two figures that
+   * share a word and differ by a factor of three.
+   */
+  projected_base?: number
+  /**
    * The rate or rates that produced the figure, as fractions. **Read, never
    * derived**: the rule lives in `application/taxation_projection.py` and a
    * second reading of it here would drift on the accounts nobody tests.
@@ -376,6 +383,9 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     ...(account.taxation_kind === undefined
       ? {}
       : { taxation_kind: account.taxation_kind }),
+    ...(account.projected_base === undefined
+      ? {}
+      : { projected_base: account.projected_base }),
     ...(account.projected_rates === undefined
       ? {}
       : { projected_rates: account.projected_rates }),

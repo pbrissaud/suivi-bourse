@@ -680,25 +680,48 @@ export function AccountDetail({
                     one: four rungs on a phone wrap, and without them they wrap
                     ragged-left under a label that stays on the first line. */}
                 {row.projected_rates === undefined ? null : (
-                  <div
-                    role="group"
-                    aria-label={t(
-                      row.projected_rates.length > 1
-                        ? 'accounts.detail.projectedTax.rates'
-                        : 'accounts.detail.projectedTax.rate',
+                  <div className="mt-auto space-y-1.5 border-t pt-3">
+                    {/* **The base the rate was applied to** — because the head
+                        four paces up states a `Gain` that is a different
+                        quantity: latent *plus* realised, dividends and fees.
+                        Multiply the rate below by the gain above and you miss
+                        by a factor of three on a real account. Naming the base
+                        is what lets a reader get from what they can see to the
+                        figure. */}
+                    {row.projected_base === undefined ? null : (
+                      <div
+                        role="group"
+                        aria-label={t('accounts.detail.projectedTax.base')}
+                        className="flex flex-wrap items-baseline justify-between gap-2.5"
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          {t('accounts.detail.projectedTax.base')}
+                        </span>
+                        <span className="tabular min-w-0 text-right font-mono text-sm">
+                          {f.currency(row.projected_base, currency)}
+                        </span>
+                      </div>
                     )}
-                    className="mt-auto flex flex-wrap items-baseline justify-between gap-2.5 border-t pt-3"
-                  >
-                    <span className="text-xs text-muted-foreground">
-                      {t(
+                    <div
+                      role="group"
+                      aria-label={t(
                         row.projected_rates.length > 1
                           ? 'accounts.detail.projectedTax.rates'
                           : 'accounts.detail.projectedTax.rate',
                       )}
-                    </span>
-                    <span className="tabular min-w-0 text-right font-mono text-lg font-semibold">
-                      {row.projected_rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
-                    </span>
+                      className="flex flex-wrap items-baseline justify-between gap-2.5"
+                    >
+                      <span className="text-xs text-muted-foreground">
+                        {t(
+                          row.projected_rates.length > 1
+                            ? 'accounts.detail.projectedTax.rates'
+                            : 'accounts.detail.projectedTax.rate',
+                        )}
+                      </span>
+                      <span className="tabular min-w-0 text-right font-mono text-lg font-semibold">
+                        {row.projected_rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
+                      </span>
+                    </div>
                   </div>
                 )}
               </>

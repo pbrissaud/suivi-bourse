@@ -435,11 +435,21 @@ def _projection(row: dict, carried: dict, opened_on: dict, payments: dict,
     facts = dict(kind=model.kind, parameters=model.parameters,
                  opened_on=opened_on.get(row['id']),
                  first_payment=payments.get(row['id']), now=today)
+    tax = taxation_projection.projected_tax(
+        latent_gain=latent.get(row['id']), **facts)
     changes_on = taxation_projection.rate_changes_on(**facts)
     return {
         'taxation_kind': model.kind,
-        'projected_tax': taxation_projection.projected_tax(
-            latent_gain=latent.get(row['id']), **facts),
+        'projected_tax': tax,
+        # **The base rides with the figure**, and only where there is a figure.
+        # The panel states a `Gain` of its own four paces up — latent *plus*
+        # realised, dividends and fees — and the projection reads the latent
+        # term alone. Two figures called a gain, one screen, and applying the
+        # rate this card names to the gain the head names misses by a factor of
+        # three on a real account. Published rather than re-derived from
+        # `projected_tax / rate`, which is not the base on a ladder and is a
+        # division by zero on a mature wrapper.
+        'projected_base': None if tax is None else latent.get(row['id']),
         'projected_rates': taxation_projection.applied_rates(**facts),
         'projected_rate_changes_on': instants.iso(changes_on),
     }

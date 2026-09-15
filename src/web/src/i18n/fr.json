@@ -326,6 +326,7 @@
   "accounts.detail.lines.link": "{count, plural, one {Voir la ligne de ce compte dans Titres} other {Voir les # lignes de ce compte dans Titres}}",
   "accounts.detail.projectedTax": "Impôt projeté",
   "accounts.detail.projectedTax.caveat": "Ce que vous devriez si vous cédiez tout ce compte aujourd’hui, aux taux que vous avez déclarés. Rien n’a été cédé, et ceci n’est pas une déclaration.",
+  "accounts.detail.projectedTax.base": "Sur une plus-value latente de",
   "accounts.detail.projectedTax.rate": "Taux appliqué",
   "accounts.detail.projectedTax.rates": "Taux appliqués",
   "accounts.detail.projectedTax.changesOn": "Le taux change le {day}",

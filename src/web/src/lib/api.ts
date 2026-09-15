@@ -507,6 +507,17 @@ export interface Account {
    */
   taxation_kind?: string
   /**
+   * The gain `projected_tax` was computed on — the latent gain of the lines the
+   * account still holds, and **absent wherever the figure is**.
+   *
+   * It rides because the panel states a `Gain` of its own four paces up, and it
+   * is a different quantity: the head's is latent *plus* realised, dividends
+   * and fees, while the projection reads the latent term alone. Without this,
+   * applying the rate this card names to the gain the head names misses by a
+   * factor of three on a real account, and nothing on screen closes the gap.
+   */
+  projected_base?: number
+  /**
    * The rate or rates that produced `projected_tax`, as fractions — one for the
    * two flat families, one per rung for a ladder.
    *
