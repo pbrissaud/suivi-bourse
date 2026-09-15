@@ -83,20 +83,6 @@ def listed(runtime):
     return asyncio.run(_run()).tools
 
 
-def instructions(runtime):
-    """The server's own instructions, as a client receives them on initialize.
-
-    Through the client for the same reason :func:`listed` is: the instructions
-    are the one piece of text every tool inherits, and what a model reads is the
-    copy that crossed the wire.
-    """
-    async def _run():
-        """One session, opened and closed around the handshake."""
-        async with Client(mcp_server.build_server(runtime)) as client:
-            return client.instructions or ''
-    return asyncio.run(_run())
-
-
 def payload(result):
     """The structured payload of a successful call.
 
@@ -193,7 +179,13 @@ def test_the_server_states_the_set_its_answers_are_drawn_from(tmp_path):
     """
     runtime, _ = build_runtime(tmp_path)
 
-    said = instructions(runtime)
+    async def _handshake():
+        """Through the client, as :func:`listed` is: what a model reads is the
+        copy that crossed the wire."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            return client.instructions or ''
+
+    said = asyncio.run(_handshake())
     assert 'listed instruments' in said
     assert 'not a sale' in said
     assert 'net worth' in said

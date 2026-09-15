@@ -433,15 +433,7 @@ export interface Account {
    * `lib/accounts.ts` from {@link AccountHistoryResponse}.
    */
   twr_index?: number | null
-  /**
-   * The calendar day `twr_index` is based at 100 on — absent where the app has
-   * computed no series for the account (#887).
-   *
-   * **Served for the agent, and not read here.** The comparison table rebases
-   * onto the visible window instead, which is a stronger answer than an anchor
-   * the reader has to do arithmetic with; the MCP surface has no history tool
-   * per account and so has nothing to rebase with, and states the anchor.
-   */
+  /** The day the index counts from. Served for the agent; the table rebases. */
   twr_since?: string | null
   /**
    * It is the one member of this row that is not a column of `account_metrics`:

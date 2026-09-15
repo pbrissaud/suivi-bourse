@@ -323,12 +323,6 @@ def list_accounts():
         _store(), _snapshot(), datetime.now(timezone.utc)))
 
 
-def _seeded_only():
-    """The ``default`` row as the store holds it — the whole declaration."""
-    return [row for row in accounts_module.read_accounts(_store())
-            if row.id == accounts_module.DEFAULT_ACCOUNT]
-
-
 @api_bp.get('/accounts/<account_id>/history')
 def get_account_history(account_id: str):
     """One account's perf series — the TWR chart and the detail sheet's curve."""
@@ -336,7 +330,8 @@ def get_account_history(account_id: str):
     if accounts is not None:
         known = accounts.get(account_id) is not None
     else:
-        known = any(row.id == account_id for row in _seeded_only())
+        known = any(row.id == account_id
+                    for row in accounts_module.seeded_only(_store()))
     if not known:
         return not_found(f"No declared account {account_id!r}")
 

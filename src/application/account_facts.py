@@ -39,10 +39,8 @@ _NEEDS_POSITIONS = taxation_projection.PROJECTED_KINDS
 def accounts_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
     """The **declared** accounts, each with its newest perf figures and facts."""
     accounts = snapshot.accounts
-    declaration = (
-        accounts.accounts if accounts is not None
-        else [row for row in accounts_module.read_accounts(store)
-              if row.id == accounts_module.DEFAULT_ACCOUNT])
+    declaration = (accounts.accounts if accounts is not None
+                   else accounts_module.seeded_only(store))
     declaration = [accounts_module.as_declared(row) for row in declaration]
 
     reader = PortfolioReader(store)
@@ -96,13 +94,8 @@ def _latent_gains(reader, store, snapshot, now: datetime, declaration,
     and it turns the read into something proportional to the feature being in
     use.
     """
-    wanted = False
-    for account in declaration:
-        model = models.get(carried.get(account.id))
-        if model is not None and model.kind in _NEEDS_POSITIONS:
-            wanted = True
-            break
-    if not wanted:
+    if not any(getattr(models.get(carried.get(account.id)), 'kind', None)
+               in _NEEDS_POSITIONS for account in declaration):
         return {}
     terminal = quotes.terminal_symbols(store, snapshot.backfill_windows(), now)
     return portfolio_view.latent_gains_by_account(

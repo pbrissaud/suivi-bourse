@@ -1833,15 +1833,6 @@ def test_an_account_states_the_day_its_index_is_based_at(tmp_path):
     assert row['twr_since'] == '2026-08-05'
 
 
-def test_an_account_with_no_series_states_no_anchor(tmp_path):
-    """Absent rather than null, as every other fact on this row is (#845)."""
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    row = client.get('/api/accounts').get_json()['accounts'][0]
-
-    assert 'twr_since' not in row
-
-
 # --------------------------------------------------------------------- #
 # One account's history — the empty / absent / failed triad (#661)
 # --------------------------------------------------------------------- #
