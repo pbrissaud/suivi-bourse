@@ -126,6 +126,20 @@ class PortfolioReader:
             'SELECT min(day) FROM portfolio_totals WHERE twr_index IS NOT NULL')
         return rows[0][0] if rows else None
 
+    def twr_origin_by_account(self) -> Dict[str, date]:
+        """The same anchor day, **per account** — one query, not one each (#887).
+
+        The accounts do not share it: a series is based at 100 on its own first
+        day, so a wrapper opened in 2019 and one opened last month carry indexes
+        that are not on the same base. The day is what lets a reader rebase them
+        onto a window they do share.
+        """
+        rows = self._store.query(
+            'SELECT account, min(day) FROM account_metrics '
+            ' WHERE twr_index IS NOT NULL AND account IS NOT NULL '
+            ' GROUP BY account')
+        return {account: day for account, day in rows if day is not None}
+
     def transfer_fees(self, through: date) -> float:
         rows = self._store.query(
             'SELECT sum(fee) FROM event '

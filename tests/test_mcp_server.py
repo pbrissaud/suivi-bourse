@@ -16,6 +16,8 @@ from datetime import date, datetime, timezone
 import pytest
 from mcp import Client
 
+from api import create_app
+from application import accounts as accounts_module
 from application import entries
 from application import main
 from application import mcp_server
@@ -214,6 +216,40 @@ def test_the_accounts_list_always_holds_at_least_one_row(tmp_path):
 
     assert body['declared'] is False
     assert len(body['accounts']) >= 1
+
+
+def test_the_agent_and_the_browser_are_served_the_same_account(tmp_path):
+    """One store, two surfaces, **the same members on a row** (#920).
+
+    The tool used to re-assemble this payload by hand and stopped where the perf
+    figures stop, so every member #752, #918 and #948 hung on an account reached
+    the panel and not the agent — eight of them by the time anybody counted, the
+    taxation model among them, which is why an agent could say nothing about a
+    wrapper it could see.
+
+    What is held here is **not the list of eight**. It is that the two key sets
+    are equal, so a ninth member added to one surface and not the other fails
+    here rather than in the next ticket. The account carries a model so the
+    comparison is not made between two rows that both lost the same thing.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    model = accounts_module.create_model(opened, 'Flat', 'flat_realised',
+                                         {'rate': 0.3})
+    accounts_module.set_taxation_model(
+        opened, accounts_module.DEFAULT_ACCOUNT, model.id)
+
+    served = create_app(runtime).test_client().get('/api/accounts').get_json()
+    read = payload(call(runtime, 'list_accounts'))
+
+    assert read['declared'] == served['declared']
+    by_id = {row['id']: row for row in served['accounts']}
+    assert {row['id'] for row in read['accounts']} == set(by_id)
+    for row in read['accounts']:
+        assert set(row) == set(by_id[row['id']]), row['id']
+
+    carrying = by_id[accounts_module.DEFAULT_ACCOUNT]
+    assert carrying['taxation_model'] == model.id
+    assert carrying['taxation_kind'] == 'flat_realised'
 
 
 def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):
