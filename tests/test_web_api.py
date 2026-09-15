@@ -5542,6 +5542,10 @@ def test_a_flat_account_publishes_what_it_would_owe_on_its_latent_gain(tmp_path)
     assert row['taxation_kind'] == 'flat_realised'
     assert row['projected_rates'] == pytest.approx([0.30])
     assert 'projected_rate_changes_on' not in row
+    # **The base rides with the figure.** The panel states a `Gain` of its own
+    # that is a different quantity — latent plus realised, dividends and fees —
+    # so the card names the gain the rate was actually applied to.
+    assert row['projected_base'] == pytest.approx(500.0, abs=5e-3)
 
 
 def test_a_pea_declared_through_the_shipped_template_still_gets_a_figure(
@@ -5704,8 +5708,8 @@ def test_an_account_carrying_no_model_publishes_none_of_the_three(tmp_path):
 
     row = _pea_row(client)
 
-    for member in ('taxation_kind', 'projected_tax', 'projected_rates',
-                   'projected_rate_changes_on'):
+    for member in ('taxation_kind', 'projected_tax', 'projected_base',
+                   'projected_rates', 'projected_rate_changes_on'):
         assert member not in row
 
 
@@ -5809,3 +5813,32 @@ def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
     # And the account beside it is untouched: 4 AAPL at 150, quoted at 200.
     assert rows['cto']['taxation_kind'] == 'flat_realised'
     assert rows['cto']['projected_tax'] == pytest.approx(60.0, abs=5e-3)
+
+
+def test_a_kind_that_states_no_figure_states_no_base_either(tmp_path):
+    """A base under a card with no figure is a label with nothing to say.
+
+    `none` and `withholding_income` publish no `projected_tax`, so they publish
+    no `projected_base`: the row exists to let a reader get from what they see
+    to the figure, and there is no figure.
+    """
+    client, _ = _valued_pea(tmp_path)
+
+    _carry(client, name='Exonéré', kind='none', parameters={})
+    assert 'projected_base' not in _pea_row(client)
+
+    _carry(client, name='Retenue', kind='withholding_income',
+           parameters={'rate': 0.30})
+    assert 'projected_base' not in _pea_row(client)
+
+
+def test_an_unknown_assiette_states_no_base_either(tmp_path):
+    """One unvalued held line makes the assiette unknown. Nothing to name."""
+    events = ACCOUNTS_EVENTS + "2024-02-01,BUY,MSFT,Microsoft,5,300.00,pea\n"
+    client, _ = _valued_pea(tmp_path, events=events)
+    _carry(client, name='CTO', kind='flat_realised', parameters={'rate': 0.30})
+
+    row = _pea_row(client)
+
+    assert 'projected_tax' not in row
+    assert 'projected_base' not in row

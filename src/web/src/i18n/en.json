@@ -326,6 +326,7 @@
   "accounts.detail.lines.link": "{count, plural, one {See this account’s line on Shares} other {See this account’s # lines on Shares}}",
   "accounts.detail.projectedTax": "Projected tax",
   "accounts.detail.projectedTax.caveat": "What you would owe if you sold everything in this account today, at the rates you recorded. Nothing has been sold, and this is not a tax return.",
+  "accounts.detail.projectedTax.base": "On a latent gain of",
   "accounts.detail.projectedTax.rate": "Rate applied",
   "accounts.detail.projectedTax.rates": "Rates applied",
   "accounts.detail.projectedTax.changesOn": "The rate changes on {day}",

@@ -198,6 +198,35 @@ describe('a read that refused is named, never summed over', () => {
 })
 
 describe('the footing names the rate that produced the figure', () => {
+  it('names the base too, because the head states a different gain', async () => {
+    // **The reading this row exists to prevent.** The panel's head states a
+    // `Gain` that is latent *plus* realised, dividends and fees; the projection
+    // reads the latent term alone. On a real account the rate applied to the
+    // head's gain misses the figure by a factor of three, and nothing else on
+    // screen carries the base.
+    renderAccounts({
+      taxation_kind: 'flat_realised',
+      projected_tax: 116.6,
+      projected_base: 371.34,
+      projected_rates: [0.314],
+    })
+
+    const base = await screen.findByRole('group', { name: 'Sur une plus-value latente de' })
+
+    expect(base).toHaveTextContent('371,34')
+  })
+
+  it('names no base where the server could not compute one', async () => {
+    // An unknown assiette publishes no figure and no base: a row reading
+    // `Sur une plus-value latente de —` would be a label with nothing to say.
+    renderAccounts({ taxation_kind: 'flat_realised', projected_rates: [0.3] })
+
+    await theCard()
+    expect(
+      screen.queryByRole('group', { name: 'Sur une plus-value latente de' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('folds the levy in on a flat model', async () => {
     renderAccounts({ taxation_kind: 'flat_realised', projected_tax: 96, projected_rates: [0.3] })
 
