@@ -1,32 +1,30 @@
 /**
- * The value-against-contributed curve, **per account and nowhere else** (#722,
- * ADR-0019).
+ * The value-against-contributed curve, **per account and nowhere else** (#722).
  *
  * It is the one shape the comparison above refuses. Mounted there it is four
  * curves at two accounts and ten at five, the pairs overlap and **no surface is
  * anybody's gain**; here there is one account, two lines, and the space between
- * them is exactly what the block over it decomposes into four terms. That is the
- * whole reason this surface exists rather than a second copy of the table row.
+ * them is exactly what the block over it decomposes into four terms. That is
+ * the whole reason this surface exists rather than a second copy of the table
+ * row.
  *
  * Two decisions about the drawing itself:
  *
  *  - **The contributed line is dashed and in the colour of text**, never a
  *    second mark of its own. It is the reference the value is read against, not
- *    a second measurement — and a second saturated hue on a two-line chart makes
- *    the reader choose which one to look at.
+ *    a second measurement — and a second saturated hue on a two-line chart
+ *    makes the reader choose which one to look at.
  *  - **A day with no contribution is a hole, never a zero** (`connectNulls`
  *    false), the same rule the price chart follows one page over: an install
  *    with no cash event has `net_contributed` at `null` for ever (#708), and a
  *    line drawn along the floor would say the owner put nothing in.
- *  - **The drawing states the span it covers** (ADR-0028, #833). The clause is
- *    *carry the period or carry no figure*, and nothing above the chart says it
- *    any more: the range control left with ADR-0028's correction, and what is
- *    drawn is the account's history end to end. The legend is therefore the one
- *    place the extent is stated, at the end of the very row the maquette puts it
- *    on — a curve with no stated extent beside a total is the unbounded-window
- *    failure in miniature. It is a **word** and not a stamp of the two dates: the
- *    span is a fact about the account rather than a choice, and two dates would
- *    date a drawing whose whole subject is that it is not cut.
+ *  - **The drawing states the span it covers** (#833). The legend is therefore
+ *    the one place the extent is stated, at the end of the very row the
+ *    maquette puts it on — a curve with no stated extent beside a total is the
+ *    unbounded-window failure in miniature. It is a **word** and not a stamp of
+ *    the two dates: the span is a fact about the account rather than a choice,
+ *    and two dates would date a drawing whose whole subject is that it is not
+ *    cut.
  */
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 

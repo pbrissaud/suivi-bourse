@@ -1,67 +1,37 @@
 /**
- * The accounts, compared — on the dashboard now (ADR-0028, ADR-0019).
+ * The accounts, compared — on the dashboard now.
  *
- * ADR-0019 built the comparison as an eight-column table under one range
- * control, on a page that has since become a master-detail: **a page showing
- * one account at a time cannot compare accounts**, so the comparison changes
- * address and this card is the new one. What travels with it is not the table,
- * it is the rule — and the rule is the whole of why this file exists rather
- * than a `<Sparkline>` beside a name:
+ * What travels with it is not the table, it is the rule — and the rule is the
+ * whole of why this file exists rather than a `<Sparkline>` beside a name:
  *
  *  - **One range for every figure drawn on the card, sparkline included.** The
  *    curve and the percentage beside it are read off the *same* rebasing
  *    (`lib/accounts.ts`), so they cannot answer *how did this period go* twice.
- *    A thirty-day sparkline beside a one-year percentage is the defect ADR-0019
- *    measured, one surface further along.
- *  - **`MAX` is not offered**, for ADR-0019's own reason and not by
- *    inheritance: a time-weighted index has no bounded amplitude, so one
- *    account's ancient volatility sets the scale for every other. The longest
- *    window is the youngest account's opening, which only the series states —
- *    hence one whole series read per account and the bound applied to the
- *    *drawing*.
+ *  The longest window is the youngest account's opening, which only the series
+ *  states — hence one whole series read per account and the bound applied to
+ *  the *drawing*.
  *  - **The N series are waited for together.** The comparison *is* the object:
  *    an account landing after the others moves the day every curve is rebased
  *    on, and the whole card would be redrawn under the reader's eyes. Until
- *    they have all landed the card renders **nothing at all, title included**
- *    (ADR-0026).
+ *    they have all landed the card renders **nothing at all, title included**.
+ *
  *  - **At one account there is no card, and no read either.** A comparison of
  *    one account against nothing is the head's own figure with a border around
- *    it, and *a block with nothing in it does not exist*. The guard is on the
- *    **queries** — in the page, with them — rather than on the rendering here,
- *    because ADR-0013 seeds a `default` row that is never removed: the
- *    single-account install is the ordinary one, and gated on the rendering
- *    alone every dashboard load fetched that account's whole daily series —
- *    some 2 500 points — to throw it away.
- *  - **Nothing drawable is said, not dashed.** `windowStart` answers `null` on
- *    `SINCE_OPENING` alone, so an empty perf cache — a fresh install whose
- *    backfill has not run — left the other three presets rendering an em dash
- *    per account, which by ADR-0016 says *there is nothing to compute* about a
- *    history that is merely not rebuilt yet. The block's emptiness is therefore
- *    decided on what came back and not on the window: no account with a
- *    performance is *nothing to compare over this range*, which is a named
- *    absence. Per row the em dash stands, and there it is right — an account
- *    with no cash movement has no index at all (#708).
+ *    it, and *a block with nothing in it does not exist*.
+ *  The block's emptiness is therefore decided on what came back and not on the
+ *  window: no account with a performance is *nothing to compare over this
+ *  range*, which is a named absence. Per row the em dash stands, and there it
+ *  is right — an account with no cash movement has no index at all (#708).
  *  - **A series that failed to read empties the card, and the card says why**
- *    (#799, then #829). The card cannot draw a comparison it has not read — but
- *    vanishing used to be *all* that happened: the head's band named the two
- *    reads the head is made of and nothing else, so a
- *    `/api/accounts/:id/history` coming back `503` removed the comparison from
- *    the dashboard for ever, without a word. #799 gave those N reads a band;
- *    ADR-0037 retires the band and hands them to this component instead, so the
- *    reason stands in the slot the comparison would have taken.
- *  - **The reads are the page's** for that reason, and they cross as
- *    `readonly PerfPoint[] | null` per account: *failed* and *in flight* are one
- *    silence in the block, and are told apart one level up.
+ *    (#799, then #829).
+ *  - **The reads are the page's** for that reason, and they cross as `readonly
+ *    PerfPoint[] | null` per account: *failed* and *in flight* are one silence
+ *    in the block, and are told apart one level up.
  *
  * The curve is stroked in `--foreground` and never in the mint, which is the
  * rule the dashboard's own performance reading already holds: a rebased index
  * crosses its base, and a portfolio down 8 % would draw its whole descent in
  * the colour the app uses for a gain.
- *
- * It carries **no convention bubble of its own**: ADR-0016 puts one icon per
- * figure *and per surface*, and the head's `TWR` bubble — four figures up the
- * same page — is where the time-weighted convention is stated, warning about
- * the period in the sentence this card's percentage rests on.
  */
 import { useMemo } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -89,9 +59,7 @@ import { cn } from '@/lib/utils'
 
 interface AccountsCardProps {
   /**
-   * What is declared. `null` while `/api/accounts` has not answered — in flight
-   * or failed — and never `[]`, which would be an install with no account at
-   * all, a state ADR-0013 declares impossible.
+   * What is declared.
    */
   accounts: readonly Account[] | null
   /**
@@ -101,10 +69,7 @@ interface AccountsCardProps {
    */
   series: readonly (readonly PerfPoint[] | null)[]
   /**
-   * The page's period. The card had a control of its own until #838 — four
-   * options identical to the chart's, one row up, saying a different thing —
-   * and ADR-0019's *one range for every figure on the surface* is kept by there
-   * being one control on the page rather than one per card.
+   * The page's period.
    */
   range: Range
   /** The reporting currency the values are said in. */
@@ -112,7 +77,7 @@ interface AccountsCardProps {
   /**
    * The card's own reads, refused — the declaration or any of the series. In
    * flight the card draws nothing and claims nothing; refused, it says so where
-   * the comparison would have been (#829, ADR-0037).
+   * the comparison would have been (#829).
    */
   failure?: ReadFailure | null
 }
@@ -149,7 +114,7 @@ export function AccountsCard({
     return accounts.map((account, index) => rebase(account.id, settled[index] ?? [], from))
   }, [series, accounts, from])
 
-  // Nothing at all while any of it is in flight, title included (ADR-0026),
+  // Nothing at all while any of it is in flight, title included,
   // and nothing where there is only one account to compare — a comparison of
   // one is the head's own figure with a border round it.
   //

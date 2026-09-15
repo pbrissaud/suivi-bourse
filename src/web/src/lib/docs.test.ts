@@ -1,5 +1,5 @@
 /**
- * The link contract (ADR-0016, ADR-0025). It is one string, and both of its
+ * The link contract. It is one string, and both of its
  * moving parts are the kind that fails silently.
  */
 import { describe, expect, it } from 'vitest'

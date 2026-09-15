@@ -1,4 +1,4 @@
-"""The three lines a bare container says at start-up (issue #741, ADR-0015).
+"""The three lines a bare container says at start-up (issue #741).
 
 Pure, so every test here reads arguments: *which* lines stand is asserted
 without a runtime, a store, or a captured logger. The wiring — that
@@ -82,7 +82,7 @@ def test_the_persistence_line_names_the_directory_to_mount():
 
 
 def test_the_currency_line_carries_the_one_non_interactive_path():
-    """*Headless means without an interface, not without HTTP* (ADR-0015):
+    """*Headless means without an interface, not without HTTP*:
     ``PUT /api/settings`` is the only way to answer the reporting currency
     without a page, so the line spells the call out on this container's own
     port rather than naming a screen an operator has chosen not to serve."""
@@ -94,7 +94,7 @@ def test_the_currency_line_carries_the_one_non_interactive_path():
 
 
 def test_the_empty_portfolio_line_names_the_page_and_no_folder():
-    """**It names where the gesture is made, and nothing else** (ADR-0032).
+    """**It names where the gesture is made, and nothing else**.
 
     The line used to offer a drop folder as its second half; the folder is gone,
     and a sentence that still sent a reader to a directory would be sending them

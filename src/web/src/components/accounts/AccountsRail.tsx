@@ -1,32 +1,18 @@
 /**
- * The rail — **the weights, and the way into one account** (ADR-0028).
- *
- * It is what is left of the comparison on this page, and the shape is the whole
- * of the trade ADR-0028 made: *how much of my portfolio is this* is a question
- * a list of names beside a bar answers at a glance, at any N, without a column
- * per figure. *Which account is working* is the other question, and it moved to
- * the dashboard's accounts card with ADR-0019's rule.
+ * The rail — **the weights, and the way into one account**.
  *
  * Four things about it are decisions:
  *
- *  - **It draws a weight and a cumulative ratio, and never a rate.** ADR-0028
- *    allows a sparkline here on the condition that it carry its period, and the
- *    second half of the same clause is *or carry no figure*. Neither of the two
- *    figures on a card is a period: a **share of a total on a stated day** is
- *    not one, and `Performance totale` — `gain ÷ versé net`, the same figure the
- *    detail leads with since #833 — covers the account's whole life, which is
- *    what *totale* says. So no window is implied and none has to be stated, and
- *    that is precisely why the maquette's `perf` can stand here now while it
- *    could not before: what it puts on these cards is that cumulative ratio and
- *    never the windowed rate ADR-0028 refused. A **curve** is still not drawn:
- *    it would need a range control of its own, and one control per page is what
- *    is left of ADR-0019's rule.
- *  - **The ratio is divided out of `gain_absolu`**, where the detail divides the
- *    total it computes from four terms (ADR-0018). That is not two producers for
- *    one number: the fourth term is what closes the gap between the sum and the
- *    stored figure (`lib/gain.ts`), so the two land on the same percentage — and
- *    the rail reads no positions at all, which is the whole reason it costs one
- *    request for the page rather than one per account.
+ *  Neither of the two figures on a card is a period: a **share of a total on a
+ *  stated day** is not one, and `Performance totale` — `gain ÷ versé net`, the
+ *  same figure the detail leads with since #833 — covers the account's whole
+ *  life, which is what *totale* says.
+ *  - **The ratio is divided out of `gain_absolu`**, where the detail divides
+ *    the total it computes from four terms. That is not two producers for one
+ *    number: the fourth term is what closes the gap between the sum and the
+ *    stored figure (`lib/gain.ts`), so the two land on the same percentage —
+ *    and the rail reads no positions at all, which is the whole reason it costs
+ *    one request for the page rather than one per account.
  *  - **The weights' legend carries neither.** The maquette puts its `perf` on
  *    the *accounts* — the cards, and the sticky strip that is those same cards
  *    at a narrow width — and never on the bar's legend, whose one figure is the
@@ -89,8 +75,7 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
 
 
 /**
- * The advisory a rail entry wears, **as a chip and never as a gesture** (#829,
- * ADR-0037).
+ * The advisory a rail entry wears, **as a chip and never as a gesture** (#829).
  *
  * An advisory is read twice: here, beside the figure it comments on, which is
  * the **reading**; and in the notifications panel, which is the **inventory**.
@@ -99,7 +84,7 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
  * to the panel and to the panel alone.
  *
  * `null` is *the read has not landed*, and it draws nothing: a chip is a claim
- * about the reader's own account (ADR-0026). An empty array is an answer — this
+ * about the reader's own account. An empty array is an answer — this
  * portfolio has nothing to say about itself — and draws nothing either, which
  * is the same rendering for two different truths and legitimately so: an
  * absent chip asserts nothing at all.
@@ -130,13 +115,13 @@ interface AccountsRailProps {
    */
   offer: ReassignmentOffer
   /**
-   * Declaring an account — **here, because this is where the accounts are**
-   * (ADR-0028). It is the one control of the rail, at its foot rather than in
+   * Declaring an account — **here, because this is where the accounts are**.
+   *It is the one control of the rail, at its foot rather than in
    * its header: the header names what the rail shows, and a button beside a
    * title reads as acting on it.
    */
   onDeclare: () => void
-  /** The one currency everything is reported in (ADR-0002). */
+  /** The one currency everything is reported in. */
   currency: string | null
   /**
    * What this portfolio says about itself, or `null` while the read is in
@@ -268,7 +253,7 @@ export function AccountsRail({
                     />
                     <span className="truncate">{name}</span>
                     {/* The advisory, **read beside its figure and offering
-                        nothing** (ADR-0037). It says what the panel's card
+                        nothing**. It says what the panel's card
                         says in one line; what it does not carry is the
                         acknowledgement. Beside the name since #838, which is
                         where the drawing puts it — under the card it read as a
@@ -280,26 +265,18 @@ export function AccountsRail({
                     )}
                   </span>
                   {/* The id, in the slot the type held since #838 — opposite
-                      the name, never beneath it (#916, ADR-0043). */}
+                      the name, never beneath it (#916). */}
                   <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.id}</span>
                 </span>
 
-                {/* **What the account is worth, and what it has done with it.**
-                    The maquette pairs the two on this card and ADR-0028 lets it
-                    since #833: the figure beside the value is `Performance
-                    totale`, a cumulative ratio whose extent is the account's own
-                    life, and not the windowed rate a rail with no range control
-                    could never have stated a period for. The value is the
-                    absolute the share above is a share *of*. */}
+                {/* The value is the absolute the share above is a share *of*. */}
                 <span className="mt-1 flex items-baseline justify-between gap-3">
                   <span className="tabular text-xl font-heavy tracking-tight">
                     {f.currency(accountWorth(row), currency)}
                   </span>
-                  {/* The name is announced and not drawn: the card already
-                      carries a value and a type, so a bare percentage read out
-                      after them says nothing about which figure it is. It
-                      carries no bubble — ADR-0016 puts one icon per figure and
-                      per surface, and this page's is on the detail's own head. */}
+                  {/* The name is announced and not drawn: the card already carries
+                  a value and a type, so a bare percentage read out after them
+                  says nothing about which figure it is. */}
                   <span
                     className={cn(
                       'tabular shrink-0 font-mono text-xs',

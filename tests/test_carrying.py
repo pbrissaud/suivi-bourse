@@ -1,16 +1,14 @@
-"""The carrying price — issue #706, ADR-0004, spec #695 § 9.
-
-A position held on a day nothing priced, and nothing ever will, is valued at its
-own cost. Everything below pins one of the ticket's criteria, and three of them
-are the ones that rot silently if left untested:
+"""A position held on a day nothing priced, and nothing ever will, is valued at
+its own cost. Everything below pins one of the ticket's criteria, and three of
+them are the ones that rot silently if left untested:
 
 * the predicate has **two** terms, so the convention must *not* fire while a
   reconstruction is running;
 * the two readings of the same portfolio — the shares page and the valuation —
   must reconcile to the cent, which is what one shared implementation buys;
 * the backward anchor must not overshoot the first acquisition, or the
-  forward-fill would supply a price on the purchase day and the rule would never
-  fire at all.
+  forward-fill would supply a price on the purchase day and the rule would
+  never fire at all.
 
 The store is real, as everywhere in the v5 suite: terminality is derived from
 rows, so a fake would be asserting the derivation against itself.
@@ -174,7 +172,7 @@ def test_there_is_one_implementation():
 # --------------------------------------------------------------------------- #
 
 def test_a_reconstruction_in_progress_is_not_terminal(store):
-    """Half a window fetched is not a finished history (issue #706, ADR-0009)."""
+    """Half a window fetched is not a finished history (issue #706)."""
     _declare_symbol(store, 'AAPL')
     quotes.record_window_tried(store, 'AAPL', date(2022, 6, 1))
     windows = {'AAPL': (date(2020, 1, 2), None)}
@@ -570,14 +568,11 @@ def test_the_perf_recompute_carries_a_symbol_quoted_in_no_nameable_unit(
     A number with no currency beside it is not a quote a valuation can spend:
     every figure the perf job computes is money in the reporting currency, and
     nothing turns an unnamed unit into one — there is no pair to fetch a rate
-    for. Left in the *waiting* state the position counted **zero** on every day
-    it was held while the cash ledger had already paid for it, which is the
-    crater ADR-0004 exists to fill; measured on staging as two accounts reading
-    −99,98 % and −29 120,25 %.
+    for.
 
     So the third state joins the **carrying** convention rather than becoming a
-    fourth kind of absence (ADR-0021), and #706's second term is what makes the
-    reading permanent rather than premature: the symbol is terminal here, and a
+    fourth kind of absence, and #706's second term is what makes the reading
+    permanent rather than premature: the symbol is terminal here, and a
     terminal symbol with no recorded unit is one Yahoo has been asked about.
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
@@ -625,17 +620,15 @@ def test_a_symbol_waiting_for_a_rate_holds_the_horizon_back(
 
     Quoted, in a nameable unit, and not converted: ``price_at`` answers nothing
     and ``carrying_price`` refuses to invent one (#706 — the app owes a
-    conversion rather than a convention). A day whose only position can be given
-    no figure is a day nothing honest can be said about, so the horizon holds and
-    no row is written.
+    conversion rather than a convention). A day whose only position can be
+    given no figure is a day nothing honest can be said about, so the horizon
+    holds and no row is written.
 
     It used to settle, on the argument that blocking would pin the horizon at
-    today for ever, the repair being #704's lateral pass rather than any cycle of
-    the reconstruction. The argument is sound and the conclusion was not: what it
-    bought was every one of those days written with the position counted at
-    **zero**, which is the crater the test above now pins. Between a figure that
-    is wrong and no figure, this repository answers the same way everywhere else
-    (ADR-0026, and the recompute's own rule under the horizon).
+    today for ever, the repair being #704's lateral pass rather than any cycle
+    of the reconstruction. The argument is sound and the conclusion was not:
+    what it bought was every one of those days written with the position
+    counted at **zero**, which is the crater the test above now pins.
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     store.execute(

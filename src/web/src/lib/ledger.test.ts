@@ -77,7 +77,7 @@ describe('the identity of a row', () => {
   })
 
   it('says which rows the app may edit, and it is the key that decides', () => {
-    // **Every** row is editable since #816 (ADR-0032): the other half of the
+    // **Every** row is editable since #816: the other half of the
     // predicate was `source_id === null`, and there is no second population for
     // it to have named. What is left is *addressable*.
     expect(isEditable(anEvent())).toBe(true)

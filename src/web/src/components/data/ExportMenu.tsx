@@ -1,26 +1,21 @@
 /**
- * **The way back out — four entries** (#710, #794, #796, #836, ADR-0020,
- * ADR-0030, ADR-0034, spec #787).
- *
  * Every event as an importable `.csv`, the same ledger as a **workbook with one
  * sheet per year**, the **filtered selection** — what the chips retain at the
  * instant of the click — and the **accounts with their positions**. The fourth
- * had left with the accounts file (ADR-0034) and comes back a different thing
- * altogether: #787 puts it in the menu on an argument that is not the one that
- * removed it, *declaring an account is a gesture of the domain, exporting is a
- * gesture on data* — so the way out of the accounts lives where the data are
- * looked at, and what leaves is a **report** (balances, PMP, valuations) rather
- * than a declaration nothing reads back. The trap ADR-0034 closed stays closed
- * because the import refuses this file **by name**, for want of `date` and
- * `event_type`: it cannot be filed beside a backup and mistaken for one.
+ * had left with the accounts file and comes back a different thing altogether:
+ * #787 puts it in the menu on an argument that is not the one that removed it,
+ * *declaring an account is a gesture of the domain, exporting is a gesture on
+ * data* — so the way out of the accounts lives where the data are looked at,
+ * and what leaves is a **report** (balances, PMP, valuations) rather than a
+ * declaration nothing reads back.
  *
  * **Every entry states its own perimeter**, and the menu is laid out so that it
- * does: a label, the note under it saying what is in the file, and the format on
- * the right. The workbook is the ledger *entire*, deliberately — the resource
- * takes the reduction in either shape, so a workbook of the selection is one
- * parameter away, and what stops the menu from offering it is that the reader
- * was promised entries they can tell apart. The perimeter is named by the one
- * entry that reduces, and by no other.
+ * does: a label, the note under it saying what is in the file, and the format
+ * on the right. The workbook is the ledger *entire*, deliberately — the
+ * resource takes the reduction in either shape, so a workbook of the selection
+ * is one parameter away, and what stops the menu from offering it is that the
+ * reader was promised entries they can tell apart. The perimeter is named by
+ * the one entry that reduces, and by no other.
  *
  * **Nothing here narrows anything.** The selection is the ledger's own
  * reduction, carried to the server as the five names the chips hold (`q`,
@@ -41,10 +36,10 @@
  *
  * **The confirmation is the receipt, and it lasts as long as the operation.**
  * That is why the entries are gestures rather than `<a download>` links: a link
- * hands the request to the browser, which reports nothing back, so anything said
- * over it would be a guess with a timer on it — the three-second confirmation
- * the criterion refuses by name. Fetched, the gesture has an end, and the
- * sentence leaves when the file is there.
+ * hands the request to the browser, which reports nothing back, so anything
+ * said over it would be a guess with a timer on it — the three-second
+ * confirmation the criterion refuses by name. Fetched, the gesture has an end,
+ * and the sentence leaves when the file is there.
  *
  * The receipt shows the library's own indicator while it stands, and that is
  * not the spinner the product refuses: `noSpinner.test.ts` holds a rule about
@@ -149,7 +144,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
             {/* The count is part of the label: it is what the entry will
                 produce, said before the click rather than discovered in a file.
                 It is the reduction's own count and **not** the number of rows
-                drawn — the table reveals forty at a time (ADR-0031), so *what
+                drawn — the table reveals forty at a time, so *what
                 is on screen* would be a sentence the file contradicts. With
                 nothing pressed the reduction is the whole ledger, which is what
                 the chips retain then — and the receipt then says *your events*,

@@ -1,9 +1,6 @@
 /**
- * **One row, removed** (#834, ADR-0032).
+ * **One row, removed** (#834).
  *
- * The bulk gesture beside it undoes an import; this one repairs the event
- * somebody entered twice, or on the wrong day — and ADR-0032 asks for both by
- * name, the removal being *the* gesture now that no file is ever read again.
  * There is one population of rows, so nothing here asks where the row came
  * from: `DELETE /api/events/<id>` refuses nothing the editor does not.
  *
@@ -12,8 +9,7 @@
  * gesture has to be readable *in* the box, because the table behind it is
  * `aria-hidden` the moment the overlay is up. What names a row is what the row
  * shows — its type, its identity and its day — and never its key: a ledger row
- * has no address (ADR-0020), so a sentence naming one would say nothing to
- * anybody.
+ * has no address, so a sentence naming one would say nothing to anybody.
  *
  * It is mounted **once, by the ledger**, and handed the row: a box per row
  * would be 285 dialogs in the document, and the state *which row is being

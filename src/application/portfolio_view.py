@@ -375,7 +375,6 @@ def valuation_series(
 def _valued_at(position: Dict[str, Any], observed: Optional[float],
                carried: Collection[str], day: date,
                first_quoted: Mapping[str, date]) -> Optional[float]:
-    """The price one day of one position is valued at — ADR-0004's two terms."""
     symbol = position.get('symbol')
     if symbol not in carried:
         return observed

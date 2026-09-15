@@ -1,10 +1,8 @@
-"""The installation facts (issue #709, spec #695 § 14, ADR-0021).
-
-Everything here runs against a **real store** — the suite's one rule — and the
-assertions go on the rows and on what the module answers, never on a call having
-happened. That matters more than usual here: the whole feature is *"the table
-holds only what the code cannot recompute"*, which is a claim about rows and can
-only be checked on rows.
+"""Everything here runs against a **real store** — the suite's one rule — and the
+assertions go on the rows and on what the module answers, never on a call
+having happened. That matters more than usual here: the whole feature is *"the
+table holds only what the code cannot recompute"*, which is a claim about rows
+and can only be checked on rows.
 """
 import logging
 from datetime import date, datetime, timezone
@@ -47,14 +45,9 @@ def _row_count(opened) -> int:
 # --------------------------------------------------------------------------- #
 
 def test_the_registry_is_closed_at_three_keys():
-    """ADR-0021 amends spec #695 § 14: the currency is a condition, not an
-    installation fact.
-
-    And ADR-0032 took two: ``legacy_config_file`` and ``legacy_settings_file``
-    were a ``stat`` on a v4 file found in the folder the app read, and there is
-    no folder. Their sentence is said at the refusal of the upload instead, at
-    the instant of the gesture — so the keys are gone from the catalogue and
-    from the listing alike, rather than moved.
+    """Their sentence is said at the refusal of the upload instead, at the instant
+    of the gesture — so the keys are gone from the catalogue and from the
+    listing alike, rather than moved.
     """
     assert [spec.key for spec in facts.SPECS] == [
         facts.UNREAD_ENVIRONMENT,
@@ -98,8 +91,8 @@ def test_a_retired_variable_arms_and_its_unsetting_disarms(store):
 
     Nothing of the installation fact survives its own predicate — the property
     the two ``stat``-based installation facts used to carry, held here by the
-    one derivable observation that is left with a subject the owner can end
-    (ADR-0032).
+    one derivable observation that is left with a subject the owner can end.
+
     """
     context = facts.Context(unread_variables=('SB_EXECUTOR_POOL',))
 
@@ -359,7 +352,7 @@ def test_nothing_is_asserted_while_the_reporting_currency_is_unanswered(store):
 
 
 def test_pence_and_pounds_are_one_currency_at_two_scales(store):
-    """``GBp`` is a unit problem the conversion owns (ADR-0002), not a mismatch."""
+    """``GBp`` is a unit problem the conversion owns, not a mismatch."""
     store.execute("INSERT INTO setting (key, value) VALUES ('base_currency', 'GBP') "
                   "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
     _quote(store, 'VOD.L', 'GBp')
@@ -397,7 +390,7 @@ def test_forgetting_the_events_takes_the_notice_with_them(store):
 def test_the_table_never_grows_with_the_imports(store, tmp_path):
     """This table is not a trace of what happened, and three imports prove it.
 
-    ``import_source`` was the trace and it is gone (ADR-0032); merged into this
+    ``import_source`` was the trace and it is gone; merged into this
     one, the installation fact box would have grown by a row per import and
     stopped being read — both failures at once. The check is on the row count,
     because that is what "not a journal" means, and it holds for the gesture

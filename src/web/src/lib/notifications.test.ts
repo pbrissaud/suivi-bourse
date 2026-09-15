@@ -1,5 +1,5 @@
 /**
- * What the notifications panel holds, and in what order (#829, ADR-0037).
+ * What the notifications panel holds, and in what order (#829).
  *
  * Under the page seam, and it is not a second seam: payloads in, entries out.
  * What is pinned here is the arrangement — the **two axes**, the ordering, and
@@ -92,7 +92,7 @@ describe('the two axes, and only one of them is a word on screen', () => {
 
   it('never offers one on the currency, because *seen* is not an answer to it', () => {
     // Acknowledging *I have no currency* means nothing, which is why this was
-    // never one of the acknowledgement table's keys (ADR-0021).
+    // never one of the acknowledgement table's keys.
     const [entry] = notifications({ ...QUIET, currencyUnanswered: true })
 
     expect(entry.acknowledge).toBeNull()
@@ -196,9 +196,6 @@ describe('the panel groups by subject, and pins inside a group', () => {
 
 describe('the badge counts every open entry, and the control says what it clears', () => {
   it('counts the ones that never decrement too, with the objection in view', () => {
-    // ADR-0037 accepts it rather than going round it: a badge that counted
-    // *some* of what the panel holds would lie to a reader who opens it
-    // expecting three things and finds five.
     const entries = notifications({
       ...QUIET,
       health: 'attention',

@@ -1,17 +1,10 @@
 /**
  * Settings — **the fifth page, and now a page rather than a copy of a tab**
- * (#830, ADR-0038).
+ * (#830).
  *
- * ADR-0030 cut the data page into three tabs and defended ADR-0020's four-page
- * cut with one sentence: *a tab is not a page*. Two records took tabs off that
- * page afterwards — ADR-0036 withdrew the notices' exception, ADR-0037 moved
- * them behind the header's bell — and what was left was the ledger and the
- * installation. **A two-tab bar is a bar that should not exist**: it spends a
- * control and a level of nesting on a choice between two things that have
- * nothing to do with each other, what the owner *declared* and what the
- * installation *is*. So the installation is an address of its own, the bar goes
- * with it, and ADR-0020's cut is amended in its count and kept in its
- * principle.
+ * **A two-tab bar is a bar that should not exist**: it spends a control and a
+ * level of nesting on a choice between two things that have nothing to do with
+ * each other, what the owner *declared* and what the installation *is*.
  *
  * **The block is the page now.** #828 gave this route the `Installation`
  * component unchanged, deliberately, and left the surface mounted twice; what
@@ -24,18 +17,18 @@
  *
  * **One column, and it is narrower than the shell** (#787). The column itself
  * is uncapped since #792, because a dashboard and a table of nine columns want
- * every pixel; a form of six fields and four key/value lists wants the opposite,
- * and the mock-up bounds this page at 880 px for the reason any prose surface
- * is bounded — a label at the far left of a 2 560 px screen and its value at
- * the far right are one row nobody reads across. The bound is the *page's*, in
- * the same way the shares table's own is the table's.
+ * every pixel; a form of six fields and four key/value lists wants the
+ * opposite, and the mock-up bounds this page at 880 px for the reason any prose
+ * surface is bounded — a label at the far left of a 2 560 px screen and its
+ * value at the far right are one row nobody reads across. The bound is the
+ * *page's*, in the same way the shares table's own is the table's.
  *
- * **A read that did not answer is said where its block would have been** (#829,
- * ADR-0037). There is no band above this page: the dials are a *read* as much
- * as a form, so `/api/config` refusing leaves the space they would have filled
- * and that space is where it says so — a page that rendered nothing would make
- * *the store is unreadable* and *there is nothing to say about this
- * installation* the same screen, in its worst form, a blank one.
+ * **A read that did not answer is said where its block would have been**
+ * (#829). There is no band above this page: the dials are a *read* as much as a
+ * form, so `/api/config` refusing leaves the space they would have filled and
+ * that space is where it says so — a page that rendered nothing would make *the
+ * store is unreadable* and *there is nothing to say about this installation*
+ * the same screen, in its worst form, a blank one.
  *
  * **`/health` obeys that rule too, and it is the one where it matters most**
  * (#830). It is the read the bell is made of, and the state where it refuses is
@@ -49,8 +42,8 @@
  * The store block is the exception that proves it: its two facts about the file
  * ride on the runtime, so they stay on screen through exactly that failure —
  * and through that read being merely **in flight**, which is why the block
- * waits a row at a time rather than whole (#777, ADR-0026). Both reads reach it
- * as `?? null`, the shape a read that has not landed crosses a prop as.
+ * waits a row at a time rather than whole (#777). Both reads reach it as `??
+ * null`, the shape a read that has not landed crosses a prop as.
  */
 import { useQuery } from '@tanstack/react-query'
 
@@ -90,7 +83,7 @@ export default function SettingsPage() {
   // **The same read the bell makes**, under the same key: the panel's health
   // card is one word and this page is that word developed, so a second query
   // would be a second observation of one installation — and the two would
-  // disagree the moment one of them refetched (ADR-0037).
+  // disagree the moment one of them refetched.
   const health = useQuery({ queryKey: ['health'], queryFn: api.health })
   // The reconstruction's two other facts (#787). Both are **optional** to it:
   // the ledger gives the bar its denominator and the declaration gives the
@@ -120,7 +113,7 @@ export default function SettingsPage() {
   // **Narrowed with the bell's own validator, and that is the whole rule.**
   // `installationState` folds *two* answers onto `unreachable`: a request that
   // refused, and a `200` whose body is not a health payload — a proxy's own
-  // JSON, a stale bundle, the SPA catch-all (ADR-0036, #819). The bell shouts
+  // JSON, a stale bundle, the SPA catch-all (#819). The bell shouts
   // identically in both and its one link lands here in both, so this page owes
   // the same sentence in both. Reading only `health.error` would leave the
   // second answer handing `JobsBlock` an object it would tabulate three
@@ -158,7 +151,7 @@ export default function SettingsPage() {
         <DialsBlock config={config.data} runtime={runtime.data} />
       ) : null}
 
-      {/* What the bell's colour is a fold of, one line per workload (ADR-0037)
+      {/* What the bell's colour is a fold of, one line per workload
           — and, when that read is the one that refused, the reason said in the
           card the bell's link named. */}
       <JobsBlock health={readableHealth} failure={healthFailure} />

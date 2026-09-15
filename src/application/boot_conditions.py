@@ -1,4 +1,4 @@
-"""The three lines a bare container says at start-up (issue #741, ADR-0015)."""
+"""The three lines a bare container says at start-up (issue #741)."""
 import logging
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple

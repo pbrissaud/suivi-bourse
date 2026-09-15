@@ -1,6 +1,5 @@
 /**
- * What an installation fact **says** and what gesture it carries (#724, #768,
- * ADR-0021, ADR-0024).
+ * What an installation fact **says** and what gesture it carries (#724, #768).
  *
  * Under the page seam, and it is not a second seam: a fact in, a sentence and a
  * destination out. What is pinned here is **the sentence itself**, on all three
@@ -108,8 +107,7 @@ describe('the sentence a notice is read in', () => {
   it('says all three in the reader’s language, and none of them in the other’s', () => {
     // Three keys, not the one that is easy to provoke: the whole block was
     // English on a French installation, and most of these sentences had no
-    // rendering surface at all before #724 gave them one. It was five until
-    // ADR-0032 took the two that were a `stat` on a folder nothing reads.
+    // rendering surface at all before #724 gave them one.
     expect(FACT_KEYS).toEqual([
       'unread_environment',
       'reconstruction_running',
@@ -234,7 +232,7 @@ describe('the sentence a notice is read in', () => {
   })
 
   it('leaves a key it has never heard of to the server’s own sentence', () => {
-    // The list is closed (ADR-0021), so this cannot happen against a server of
+    // The list is closed, so this cannot happen against a server of
     // the same generation — and against one of another, an English sentence is
     // better than an empty notice in a block that exists to be read.
     expect(factText(fact({ key: 'a_sixth_notice' }), (list) => list.join(', '))).toBeNull()

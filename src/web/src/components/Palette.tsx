@@ -1,10 +1,10 @@
 /**
- * The ⌘K palette — **five sections, three of which read** (#797, ADR-0026).
+ * The ⌘K palette — **five sections, three of which read** (#797).
  *
  * It is mounted in the content header bar, which is where the visible button
  * that opens it lives: a keyboard shortcut is not an interface on a phone, and
- * that bar is the one surface surviving the three sidebar states (ADR-0022).
- * One component holds both ways in, so they cannot drift apart.
+ * that bar is the one surface surviving the three sidebar states. One component
+ * holds both ways in, so they cannot drift apart.
  *
  * **It reads on open, and never on mount.** The three resources — the
  * positions, the accounts and the ledger — are armed by `enabled: open`, so a
@@ -12,12 +12,9 @@
  * client's own thirty seconds of freshness (`main.tsx`) makes a second opening
  * free. That is the whole reason the reads sit here rather than in the shell.
  *
- * **The three sections that read are optional.** The palette opens with its
- * pages and its actions while all three are in flight, and a read that has not
- * landed **removes its section** instead of holding the surface — the case
- * ADR-0026 keeps `?? []` for, annotated at each of the three sites. What is not
- * said on a silence is the sentence about nothing matching: that one is a claim
- * about the reader's own portfolio, so it waits like any other claim.
+ * []` for, annotated at each of the three sites. What is not said on a silence
+ * is the sentence about nothing matching: that one is a claim about the
+ * reader's own portfolio, so it waits like any other claim.
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -53,12 +50,6 @@ import {
   titlesMatching,
 } from '@/lib/palette'
 
-/**
- * The five pages, named by the catalogue that names them in the navigation: the
- * palette is a second way to the same five routes, never a second vocabulary —
- * which is why the settings arrived here the day ADR-0038 gave them an address,
- * and not a ticket later.
- */
 const PAGES = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/shares', label: 'nav.shares', icon: Coins },
@@ -110,7 +101,7 @@ export function Palette() {
     run()
   }
 
-  // **The first of the three optional `?? []`** (ADR-0026): the positions absent
+  // **The first of the three optional `?? []`**: the positions absent
   // remove the titles section, they falsify no line of the four that remain.
   const titles = useMemo(() => heldTitles(positions.data?.positions ?? []), [positions.data])
   // The second. The name is the reader's fold — the seeded row reads its own

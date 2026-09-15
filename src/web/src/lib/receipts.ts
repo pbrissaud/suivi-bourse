@@ -6,20 +6,18 @@
  *
  *  - **It never states a condition.** The conditions this product carries do
  *    not resolve, they persist until somebody acts — an unanswered reporting
- *    currency, a reconstruction still running — and a toast at
- *    `duration: Infinity` is a strip that covers the page for as long as one
- *    holds. So a receipt is short-lived by construction, and what states a
- *    condition is a card of the notifications panel (#829, ADR-0037), the
- *    banner's three having landed there when it was retired.
+ *    currency, a reconstruction still running — and a toast at `duration:
+ *    Infinity` is a strip that covers the page for as long as one holds. So a
+ *    receipt is short-lived by construction, and what states a condition is a
+ *    card of the notifications panel (#829), the banner's three having landed
+ *    there when it was retired.
  *  - **It is never the trace of an import** — and since #811 that sentence has
  *    changed sides rather than gone. It was written about the *drop folder*,
  *    which is watched at all times (#697): an import could start with no click,
- *    no promise and no browser open at all, so a receipt would have been a trace
- *    with holes in it. An **upload is a gesture**, made by somebody who is
- *    waiting for its end, and the receipt is what the app owes them for it
- *    (ADR-0032, `CONTEXT.md` § Receipt). What is still refused is the receipt
- *    that pretends to be a *record*: this one is said once, to the reader who
- *    made the gesture, and nothing keeps it.
+ *    no promise and no browser open at all, so a receipt would have been a
+ *    trace with holes in it. What is still refused is the receipt that pretends
+ *    to be a *record*: this one is said once, to the reader who made the
+ *    gesture, and nothing keeps it.
  *
  * **Four gestures have one.** The currency answered, from the modal and from
  * the settings form alike; the export, since #796; the import, since #811; and

@@ -32,12 +32,11 @@ CREATE TABLE IF NOT EXISTS account (
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 
--- The owner's own taxation models (#752, ADR-0042). Reusable across accounts,
+-- The owner's own taxation models (#752). Reusable across accounts,
 -- so they have an identity of their own rather than living on the account.
--- `parameters` is **one JSON value in one column** and not a column per field:
--- ADR-0042 refuses a new nullable column per parameter, which would make the
--- absent case indistinguishable from the unset one — and it is what makes a
--- kind added in version n+1 an addition rather than a schema step to write.
+-- `parameters` is **one JSON value in one column** and not a column per field,
+-- which is what makes a kind added in version n+1 an addition rather than a
+-- schema step to write.
 CREATE TABLE IF NOT EXISTS taxation_model (
     id          VARCHAR PRIMARY KEY,
     name        VARCHAR NOT NULL,
@@ -45,7 +44,7 @@ CREATE TABLE IF NOT EXISTS taxation_model (
     parameters  VARCHAR NOT NULL);                   -- the kind's own, as JSON
 
 -- What its owner declares **about an account** and no computation can produce
--- (#752, ADR-0044). Keyed by the account, one writer, and an **absent row is an
+-- (#752). Keyed by the account, one writer, and an **absent row is an
 -- absence**: no model declared is not a model of nothing.
 CREATE TABLE IF NOT EXISTS account_fact (
     account         VARCHAR PRIMARY KEY REFERENCES account(id),
@@ -136,7 +135,7 @@ CREATE TABLE IF NOT EXISTS advisory_ack (
     acknowledged_at  TIMESTAMPTZ NOT NULL,
     expires_at       TIMESTAMPTZ NOT NULL);
 
--- **What generation this store is** (#926, ADR-0045). One row per applied step,
+-- **What generation this store is** (#926). One row per applied step,
 -- and the *absence* of a row is the first generation: every store in the wild
 -- predates this table, so no mark is the mark. Created by the DDL like any
 -- other table, which is what lets :func:`apply_steps` ask the question a line
@@ -178,8 +177,8 @@ class Store:
         self.path = path
         self._connection = connection
         self._lock = threading.RLock()
-        #: The high-water mark per keyed table — memory, never a row
-        #: (ADR-0027), and read **at the open**: seeded on first use instead,
+        #: The high-water mark per keyed table — memory, never a row,
+        #: and read **at the open**: seeded on first use instead,
         #: a row deleted before this store had written anything would seed the
         #: mark *below its own key* and hand it straight back — which is the
         #: defect, inside the very window the mark exists to hold.
@@ -189,7 +188,7 @@ class Store:
             for table in KEYED_TABLES}
 
     def reserve(self, table: str, count: int = 1) -> int:
-        """The first of ``count`` fresh keys for ``table`` (ADR-0027, #785).
+        """The first of ``count`` fresh keys for ``table`` (#785).
 
         **The one allocator, and it only ever climbs.** ``max(id) + 1`` handed
         the highest deleted row's key straight to the next writer, so a client
@@ -221,9 +220,7 @@ class Store:
 
         The other half of :meth:`reserve`, and the reason a refusal can say
         *which* refusal it is: a key at or below the mark named a row once, and
-        a key above it has never named anything. The bound is the mark's own —
-        a store reopened has forgotten the keys it retired, so an old one reads
-        as never issued, which is the window ADR-0027 declines to buy.
+        a key above it has never named anything.
         """
         with self._lock:
             return 0 < key <= self._reserved.get(table, 0)
@@ -315,14 +312,14 @@ def file_size(path: Path) -> Optional[int]:
 
 
 # --------------------------------------------------------------------------- #
-# The steps: how this store moves from one generation to the next (ADR-0045)
+# The steps: how this store moves from one generation to the next
 # --------------------------------------------------------------------------- #
 
 @contextmanager
 def rebuilding(connection, table: str):
     """Make ``table`` alterable, run the caller's ``ALTER``, put it back.
 
-    **The one gesture a schema step cannot avoid** (ADR-0045). DuckDB refuses to
+    **The one gesture a schema step cannot avoid**. DuckDB refuses to
     alter a table another one references, and almost every table worth altering
     here is referenced by something. So the tables holding a foreign key on
     ``table`` are copied aside and dropped, the caller does its work, the DDL
@@ -397,7 +394,7 @@ def _drop_account_type(connection) -> None:
         connection.execute('ALTER TABLE account DROP COLUMN IF EXISTS type')
 
 
-#: The schema steps, oldest first (#926, ADR-0045). A step is the one thing the
+#: The schema steps, oldest first (#926). A step is the one thing the
 #: ``IF NOT EXISTS`` DDL cannot express — dropping a column, renaming one — and
 #: the list is append-only in both directions: **a name is an identity forever**
 #: (renaming one runs it a second time) and a step already released is never

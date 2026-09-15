@@ -1,10 +1,7 @@
 /**
- * The accounts page — **master-detail, in read only** (ADR-0028, ADR-0026).
+ * The accounts page — **master-detail, in read only**.
  *
- * The eight-column table is gone. ADR-0019 built it to answer *which of my
- * accounts is working* and that question moved to the dashboard's accounts card
- * with its one range control; what is here now is the other question — *what is
- * in this one* — which eight columns could never have answered.
+ * The eight-column table is gone.
  *
  * Four page-level objects, and each is a decision:
  *
@@ -20,17 +17,17 @@
  *    are a **day**, and a page of money with no date reads as *now*. The window
  *    is not written in words anywhere: the detail's range control carries it,
  *    and a sentence repeating it would be a second announcer.
- *  - **A failed read is said where its content would have been** (#829,
- *    ADR-0037). There is no band and no strip at the top of the column: the
- *    declaration is what the page is *made of*, so a refusal on it empties the
- *    page and the page says why; the four other reads compose the **detail**,
- *    so a refusal on one of those leaves the rail standing and says why the
- *    detail is not there. Rendering nothing would make *the store is
- *    unreadable* and *you own nothing yet* the same screen.
+ *  - **A failed read is said where its content would have been** (#829). There
+ *    is no band and no strip at the top of the column: the declaration is what
+ *    the page is *made of*, so a refusal on it empties the page and the page
+ *    says why; the four other reads compose the **detail**, so a refusal on one
+ *    of those leaves the rail standing and says why the detail is not there.
+ *    Rendering nothing would make *the store is unreadable* and *you own
+ *    nothing yet* the same screen.
  *
- * **And the declaration lives here** (#793, ADR-0028): declared from the rail,
- * renamed and removed from the panel the account's own name opens. The panel is
- * the page's, not the rail's and not the detail's, because both open it — and a
+ * **And the declaration lives here** (#793): declared from the rail, renamed
+ * and removed from the panel the account's own name opens. The panel is the
+ * page's, not the rail's and not the detail's, because both open it — and a
  * component mounted twice would be two panels, one of which the reader cannot
  * see closing.
  */
@@ -86,7 +83,7 @@ export default function AccountsPage() {
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
-  // **The reading, and not the inventory** (#829, ADR-0037). The panel asks
+  // **The reading, and not the inventory** (#829). The panel asks
   // what is left to act on and drops an advisory the owner has put to sleep;
   // the chip beside the figure asks what is *true of this account*, and thirty
   // days of *not now* changes nothing about the cash sitting in it. Read under
@@ -127,7 +124,7 @@ export default function AccountsPage() {
 
   const currency = totals.data?.base_currency ?? null
   // `?? null` and never `?? []`: an empty payload is a **fact** about the
-  // reader's data and a request in flight is not one (ADR-0026). The three
+  // reader's data and a request in flight is not one. The three
   // flattenings are here because this is where the reads are.
   const heldPositions: readonly Position[] | null = positions.data?.positions ?? null
   const ledger: readonly LedgerEvent[] | null = events.data ?? null
@@ -138,9 +135,7 @@ export default function AccountsPage() {
   // panel, and the two are one function so they cannot disagree about whether
   // there is anything to move.
   //
-  // `?? []` is the legitimate one ADR-0026 leaves open: an absent read removes
-  // the offer instead of falsifying it, and claiming there are unassigned events
-  // before the ledger has answered would be the opposite mistake.
+  // `??
   const offer = reassignmentOf(accounts.data, ledger ?? [])
 
   // **The page's name, and nothing beside it** (#787).
@@ -149,7 +144,7 @@ export default function AccountsPage() {
   // argument that these figures are a **day** and that a page of money with no
   // date reads as *now*. The argument was right about the risk and wrong about
   // the answer, because the product answers it better elsewhere — and since
-  // #829 (ADR-0037) it answers it in **one** place, which is the bell:
+  // #829 it answers it in **one** place, which is the bell:
   //
   //  - its **icon carries the health colour**, so whether the installation is
   //    reading quotes and rebuilding history on its cadence is one glance;
@@ -168,21 +163,17 @@ export default function AccountsPage() {
   // which is the surface built for exactly that question.
   usePageHeading(t('page.accounts'))
 
-  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
-  // currency nothing is converted and the perf job writes nothing at all, so
-  // this page would be a column of em dashes with no reason given anywhere. It
-  // says why instead, and the ledger — where the events are *declared* — stays
-  // readable throughout.
-  //
-  // `=== true` and never a truthy test: `undefined` is *the config has not
-  // landed*, and a page emptied on a silence would be the claim ADR-0026
-  // forbids.
+  // **The band's sentence, one floor down** (#829). With no reporting currency
+  // nothing is converted and the perf job writes nothing at all, so this page
+  // would be a column of em dashes with no reason given anywhere. It says why
+  // instead, and the ledger — where the events are *declared* — stays readable
+  // throughout.
   if (currencyUnanswered(config.data?.settings) === true) {
     return <NoBaseCurrency />
   }
 
   // **The declaration is what this page is made of**, so its refusal is the
-  // page's own emptiness and is said as one (#829, ADR-0037).
+  // page's own emptiness and is said as one (#829).
   if (pageFailure !== null) {
     return <Unreadable failure={pageFailure} />
   }
@@ -192,11 +183,7 @@ export default function AccountsPage() {
       {/* A read that has not landed is not a fact: nothing is claimed while the
           declaration is in flight, and above all not that there is none. */}
       {!accounts.data ? null : opened === null ? (
-        // A state `/api/accounts` does not produce — ADR-0013 gives every
-        // install one account and the resource publishes the seeded row while
-        // nothing else is declared — so the sentence says that rather than
-        // *you have none*, and the one way out is the declaration itself. It
-        // used to send the reader to the data page, which is where the form
+        // It used to send the reader to the data page, which is where the form
         // was until #793.
         <EmptyState
           title={t('accounts.empty.title')}
@@ -208,10 +195,6 @@ export default function AccountsPage() {
           }
         />
       ) : (
-        // Two tracks from `lg`, one below it: at the width ADR-0022 measured as
-        // the worst realistic case the page is the **stacked** one and cannot
-        // overflow sideways, and the rail only becomes a rail where there is
-        // room for a detail beside it.
         // `grid-cols-1` is not decoration: with a column named at `lg` alone,
         // the implicit track below it is `auto` — `minmax(min-content,
         // max-content)` — so one long event label took this column past the
@@ -235,15 +218,12 @@ export default function AccountsPage() {
               onDeclare={() => setEditing(null)}
               currency={currency}
               // Whether there is anything to reassign — the module's own answer
-              // (#725), which is *events still naming a row nobody declared* and
-              // not *a row called `default` exists*: renamed, retyped or taken
-              // over by a file, that row is an ordinary account and the offer
-              // would be about nothing.
+              // (#725), which is *events still naming a row nobody declared*
+              // and not *a row called `default` exists*: renamed, retyped or
+              // taken over by a file, that row is an ordinary account and the
+              // offer would be about nothing.
               //
-              // `?? []` here is the legitimate one ADR-0026 leaves open: an
-              // absent read **removes the offer** instead of falsifying it, and
-              // claiming there are unassigned events before the ledger has
-              // answered would be the opposite mistake.
+              // `??
               offer={offer}
               // `?? null` and never `?? []`: a chip is a claim about the
               // reader's own account, and a read in flight is not one.
@@ -265,8 +245,7 @@ export default function AccountsPage() {
               // detail that is about that account. Everywhere else it is `none`
               // and the block does not exist.
               reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
-              // **One entry per read, handed to the block it composes** (#829,
-              // ADR-0037). There is no band above the column any more, and one
+              // **One entry per read, handed to the block it composes** (#829). There is no band above the column any more, and one
               // condition for the three would have taken a detail that read two
               // of them off the screen to report the third — the exact
               // disappearance #799 repaired on the dashboard.
@@ -287,7 +266,7 @@ export default function AccountsPage() {
         // panel waits for the answer before it lets a declaration go, which is
         // what keeps the flag and the declaration one gesture (#725).
         offer={ledger === null ? null : offer}
-        // `null` while the ledger has not landed (ADR-0026): the count a refusal
+        // `null` while the ledger has not landed: the count a refusal
         // is made of comes off it, and a removal offered before it lands offers
         // a gesture the server is about to refuse.
         removal={editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))}

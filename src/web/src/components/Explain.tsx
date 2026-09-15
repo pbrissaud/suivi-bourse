@@ -1,5 +1,5 @@
 /**
- * The convention bubble (ADR-0016) — the first of the three shared primitives,
+ * The convention bubble — the first of the three shared primitives,
  * and the one that did not exist at all.
  *
  * Until now the product's only mechanism for explaining a figure was two

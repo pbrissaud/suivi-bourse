@@ -1,5 +1,5 @@
 /**
- * **The rectangle becomes a target** (#811, ADR-0032).
+ * **The rectangle becomes a target** (#811).
  *
  * What stood here named a folder, and it was right to: there was no upload
  * route, the drop folder was the mechanism, and a rectangle that swallowed a
@@ -19,35 +19,34 @@
  * **The receipt lasts as long as the operation, and it therefore does not live
  * in this component** (`CONTEXT.md` § Receipt). It says what the gesture
  * produced — lines written, the period covered, the accounts and securities
- * touched — which is more than a passing sentence carries. A toast would have to
- * be read in three seconds and would leave nowhere for the forecast to stand.
+ * touched — which is more than a passing sentence carries. A toast would have
+ * to be read in three seconds and would leave nowhere for the forecast to
+ * stand.
  *
  * **And since #835 the forecast is a window** (`ImportPreview`), because it
  * stopped being a sentence: it collects where each account of the file goes,
  * what becomes of the lines the ledger already holds, and whether the reporting
- * currency the file declares is taken up. This hook is where all three are held,
- * for the same reason the receipt is — it survives the swap the first import
- * makes.
+ * currency the file declares is taken up. This hook is where all three are
+ * held, for the same reason the receipt is — it survives the swap the first
+ * import makes.
  *
  * **And since #813 the gesture has two halves.** Handing a file over *previews*
  * it: the server judges it, counts what of it the ledger already holds, and
- * answers the receipt having written nothing. What writes is the reader pressing
- * *Import*, which **re-uploads the same file** — the `File` is held in the hook
- * for as long as the forecast stands, and no identifier is held anywhere else.
- * That double upload is deliberate and it is ADR-0032's: a pending-import id
- * would be the table this lot deleted, under another name, with a lifetime and a
- * sweeper to write. A few hundred kilobytes on a local hop is the price of *the
+ * answers the receipt having written nothing. What writes is the reader
+ * pressing *Import*, which **re-uploads the same file** — the `File` is held in
+ * the hook for as long as the forecast stands, and no identifier is held
+ * anywhere else. A few hundred kilobytes on a local hop is the price of *the
  * server remembers no import, ever*.
  *
  * The reason it is not held here is the **first import**, which is the gesture
  * this whole ticket exists for: an empty ledger renders the zone inside
  * `EntryPair`, the import fills the ledger, the pair unmounts and a second zone
- * mounts in the imports bar above the table. A receipt held by the component would be
- * destroyed by the very write it is announcing — it would flash and vanish for
- * the one reader who has never seen this app work. So the mutation is a hook
- * (`useEventUpload`) held by `Ledger`, which survives that swap, and the
- * sentence is rendered by `UploadReceipt` there; what is mounted twice is only
- * the control.
+ * mounts in the imports bar above the table. A receipt held by the component
+ * would be destroyed by the very write it is announcing — it would flash and
+ * vanish for the one reader who has never seen this app work. So the mutation
+ * is a hook (`useEventUpload`) held by `Ledger`, which survives that swap, and
+ * the sentence is rendered by `UploadReceipt` there; what is mounted twice is
+ * only the control.
  *
  * **The wait is dressed, and that is not the spinner rule's business.**
  * `noSpinner.test.ts` is about a **read**: nothing may be claimed about a
@@ -56,9 +55,9 @@
  * the app owes them its end — the same argument #796 made for the export.
  *
  * **A refusal is read by `problem.type`, never by the sentence the server
- * wrote** (ADR-0024). The server's `detail` names the account, the missing
- * column or the v4 file for whoever reads a log or a `curl`; the front says, in
- * the reader's own language, that the file was refused and nothing was written.
+ * wrote**. The server's `detail` names the account, the missing column or the
+ * v4 file for whoever reads a log or a `curl`; the front says, in the reader's
+ * own language, that the file was refused and nothing was written.
  */
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -132,7 +131,7 @@ export interface EventUpload {
    */
   hand: (file: File | null | undefined) => void
   /**
-   * Write the file that was previewed — by **re-uploading it** (ADR-0032).
+   * Write the file that was previewed — by **re-uploading it**.
    *
    * The `File` the reader chose is held in this hook for exactly as long as
    * their forecast stands, and it is sent again. There is no import id to
@@ -193,7 +192,7 @@ export function useEventUpload(): EventUpload {
   const [held, setHeld] = useState<File | null>(null)
   // The answer the reader has given so far, held beside the file and for the
   // file's own lifetime: it is a parameter of *this* gesture and it is dropped
-  // with it (ADR-0006), which is what keeps the correspondence from becoming a
+  // with it, which is what keeps the correspondence from becoming a
   // second truth about the account an event names.
   const [answer, setAnswer] = useState<Answer>(NO_ANSWER)
   // **The forecast standing on screen**, held here rather than read off the

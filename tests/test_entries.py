@@ -4,12 +4,10 @@ The seam is :mod:`test_ledger`'s: a **real** DuckDB store in ``tmp_path`` and
 every assertion a ``SELECT`` against it — never the fact that a function was
 called.
 
-What this file was about was the **population**, and since #816 there is one.
-A row a file laid down and a row somebody typed are the same row: one writer
+What this file was about was the **population**, and since #816 there is one. A
+row a file laid down and a row somebody typed are the same row: one writer
 wrote them, they carry the same columns, and the three gestures that address a
-row by its key reach both. So the tests that used to prove the *split* prove its
-absence instead — an uploaded row is corrected and removed exactly like a typed
-one, which is ADR-0032's whole point and this ticket's own seam.
+row by its key reach both.
 """
 from datetime import date
 
@@ -39,7 +37,7 @@ TWO_MORE = (
 
 
 def _draft(**overrides) -> Event:
-    """A draft in the shape the create form sends — **no name** (ADR-0020)."""
+    """A draft in the shape the create form sends — **no name**."""
     fields = {
         'date': date(2024, 6, 3),
         'event_type': EventType.BUY,
@@ -66,7 +64,7 @@ def _upload(store, tmp_path, body=ONE_BUY, name='2024.csv'):
 
 
 def _declare(store, account_id='pea', label="Plan d'épargne en actions"):
-    """One account, declared the way the app declares it (ADR-0034)."""
+    """One account, declared the way the app declares it."""
     return accounts_module.create_account(store, account_id, label)
 
 
@@ -75,7 +73,7 @@ def _declare(store, account_id='pea', label="Plan d'épargne en actions"):
 # --------------------------------------------------------------------------- #
 
 def test_a_row_carries_no_provenance_at_all(store):
-    """There is no column left to carry one (ADR-0032, #816).
+    """There is no column left to carry one (#816).
 
     Asserted on the **schema** and not on a value: three provenance columns all
     reading ``NULL`` is what a typed row used to be, and what this states is that
@@ -248,12 +246,10 @@ def test_a_removal_that_oversells_is_refused_the_same_way(store):
 # --------------------------------------------------------------------------- #
 
 def test_an_uploaded_row_is_corrected_and_removed_like_any_other(store, tmp_path):
-    """**The ticket's seam** (ADR-0032, #816, stories 13 and 14).
-
-    A row a file laid down used to be refused by both gestures — ``409``, naming
-    the import to forget — so a typo in one line cost the revocation of every
-    other line of the file. It is corrected in place now, and removed on its own,
-    and the two rows beside it are not consulted.
+    """A row a file laid down used to be refused by both gestures — ``409``,
+    naming the import to forget — so a typo in one line cost the revocation of
+    every other line of the file. It is corrected in place now, and removed on
+    its own, and the two rows beside it are not consulted.
     """
     _upload(store, tmp_path, body=ONE_BUY + TWO_MORE)
     keys = [row[0] for row in store.query('SELECT id FROM event ORDER BY id')]
@@ -316,11 +312,9 @@ def test_a_draft_cannot_choose_its_own_key(store):
 # --------------------------------------------------------------------------- #
 
 def test_the_bulk_removal_takes_an_uploaded_row_like_any_other(store, tmp_path):
-    """The whole of ADR-0032's *the removal is the gesture*.
-
-    Undoing an import reaches the rows the import laid down without asking any of
-    them where they came from. The typed row beside them is untouched, so what is
-    asserted is the **reduction** and not *everything*.
+    """Undoing an import reaches the rows the import laid down without asking any
+    of them where they came from. The typed row beside them is untouched, so
+    what is asserted is the **reduction** and not *everything*.
     """
     _upload(store, tmp_path)
     entries.create(store, _draft(date=date(2024, 8, 1), symbol='MSFT'))
@@ -508,7 +502,7 @@ def test_the_duplicate_key_is_declared_in_no_constraint_of_the_store(store):
 
 
 # --------------------------------------------------------------------------- #
-# A key names a row for as long as the row lives (ADR-0027, #785)
+# A key names a row for as long as the row lives (#785)
 # --------------------------------------------------------------------------- #
 
 def test_a_deleted_key_is_not_reissued_to_the_next_row(store):
@@ -547,9 +541,7 @@ def test_a_deleted_key_is_not_reissued_to_the_next_file(store, tmp_path):
 
 
 def test_the_mark_is_the_process_and_a_reopen_re_seeds_it(store):
-    """The bound ADR-0027 accepted, asserted rather than left to be assumed.
-
-    The mark is memory: a second :class:`Store` over the same file starts from
+    """The mark is memory: a second :class:`Store` over the same file starts from
     the highest key the table still holds, and the one the first store retired
     is issued again. That is the window a client loses by holding a key across
     a restart — which is holding it across an app that went down.

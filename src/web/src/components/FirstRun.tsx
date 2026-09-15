@@ -1,18 +1,18 @@
 /**
  * The first run — **one question, three passages, and it opens on a predicate**
- * (#726, #823, ADR-0021, ADR-0035, ADR-0005, ADR-0015).
+ * (#726, #823).
  *
  * It is mounted by the shell rather than by a route, because *first run* is not
  * a place: the predicate is `lib/firstRun.ts`'s, a **required** dial being
  * unanswered, and it is as true on `/shares` as on `/`. No launch counter, no
  * redirection, and `/` stays the dashboard unconditionally.
  *
- * **What it walks** (ADR-0035): the required settings, the accounts, the first
- * events — in that order, the last one opening by either of two doors. What it
- * asks is still **one thing**, and the two passages after the question ask for
- * nothing at all: a bare `docker run` is a trial run by design, and a screen
- * that will not release somebody without a CSV in hand turns the trial into a
- * wall. *Mandatory* here means **traversed, never answered**.
+ * **What it walks**: the required settings, the accounts, the first events — in
+ * that order, the last one opening by either of two doors. What it asks is
+ * still **one thing**, and the two passages after the question ask for nothing
+ * at all: a bare `docker run` is a trial run by design, and a screen that will
+ * not release somebody without a CSV in hand turns the trial into a wall.
+ * *Mandatory* here means **traversed, never answered**.
  *
  * **The drawing was read again** (`docs/design-revamp-v2-onboarding.html`), and
  * what it decided that this screen did not do is four things:
@@ -21,22 +21,24 @@
  *    fact and states it only to whoever reads that one line; the rail states it
  *    as a shape — three marks on one rule, each one filling as it is crossed —
  *    so a reader who opens the modal knows before reading a word how long this
- *    is and where they are in it. Numbered markers are the one structural device
- *    that has to earn itself, and here they do: the passages **are** a sequence,
- *    walked in order, and the order is what the reader needs. The sentence stays
- *    underneath as the eyebrow, because a shape is not something a screen reader
- *    can be given (`aria-current` says *which*, the eyebrow says *how far*);
+ *    is and where they are in it. Numbered markers are the one structural
+ *    device that has to earn itself, and here they do: the passages **are** a
+ *    sequence, walked in order, and the order is what the reader needs. The
+ *    sentence stays underneath as the eyebrow, because a shape is not something
+ *    a screen reader can be given (`aria-current` says *which*, the eyebrow
+ *    says *how far*);
  *  - **the way out is spelt** — `Échap pour fermer`, beside the control that
  *    walks on, and on the first passage alone. The three ways out were always
  *    there and none of them was written down: a reader looking for a *Later*
  *    button found the cross only by not finding anything else;
  *  - **the body holds one height.** Three passages of three different lengths
- *    made the footer jump under the cursor between one `Continuer` and the next;
- *  - **the accounts passage offers what it was only naming.** It comes second so
- *    the notion exists *before* a file naming accounts is handed over — and a
- *    reader who already knows how their holdings are split had, until here, to
- *    take that knowledge to another page and come back. The offer is an offer:
- *    the button opens a form, and the passage is satisfied without it.
+ *    made the footer jump under the cursor between one `Continuer` and the
+ *    next;
+ *  - **the accounts passage offers what it was only naming.** It comes second
+ *    so the notion exists *before* a file naming accounts is handed over — and
+ *    a reader who already knows how their holdings are split had, until here,
+ *    to take that knowledge to another page and come back. The offer is an
+ *    offer: the button opens a form, and the passage is satisfied without it.
  *
  * Six things about it are decisions:
  *
@@ -45,52 +47,42 @@
  *    the same visual weight as the answer, and the answer is the one thing this
  *    surface exists for. That is also why the control that walks the passages
  *    carries no colour and the answer does: continuing is the walk, never a
- *    second spelling of the escape hatch, and on the one passage that carries an
- *    answer it must not weigh what the answer weighs. It is `secondary` and not
- *    `ghost` since the drawing was read: a ghost control at the one corner every
- *    reader is looking for reads as nothing at all, and *quieter than the
+ *    second spelling of the escape hatch, and on the one passage that carries
+ *    an answer it must not weigh what the answer weighs. It is `secondary` and
+ *    not `ghost` since the drawing was read: a ghost control at the one corner
+ *    every reader is looking for reads as nothing at all, and *quieter than the
  *    answer* is what the argument asks for — not *invisible*. Closing leaves an
  *    app that **works**: the scrape runs and stores the quote in its own
- *    currency, and the ledger is writable — what waits is the conversion and the
- *    performance series, which the notifications panel's pinned card and each
- *    valued page's empty state then say (#829, ADR-0037).
- *  - **Three sentences on what the app *is*, and no rule of calculation.**
- *    Explaining the weighted average cost here is exactly what ADR-0016 gives
- *    the convention bubble for: a rule is read beside the figure it governs, not
- *    in a modal read once before any figure exists. They are the frame of the
- *    whole walk and not of its first passage, so they stay put while the body
- *    underneath changes. The third one is about **the walk** rather than about
- *    the currency: the currency is now said where it is asked, one block down,
- *    and what a reader needs at the top is how long this is and that it releases
- *    them.
- *  - **The ephemeral-store warning is here**, and it is the only surface *every*
- *    trial user meets: the installation tab is two clicks down, and the boot
- *    lines are at a terminal nobody watching a browser is reading. It does not
- *    leave the tab either — the ceiling loses nothing (#724).
- *  - **The accounts passage demands nothing.** It is satisfied by the seeded row
- *    every install owns — a declaration the owner may decline to add to — and
- *    its whole job is that the notion exists *before* a file naming accounts is
- *    handed over. It reads them to name them, and while that read is in flight
- *    it says nothing at all about them (ADR-0026): neither the rows, nor the
+ *    currency, and the ledger is writable — what waits is the conversion and
+ *    the performance series, which the notifications panel's pinned card and
+ *    each valued page's empty state then say (#829).
+ *  They are the frame of the whole walk and not of its first passage, so they
+ *  stay put while the body underneath changes. The third one is about **the
+ *  walk** rather than about the currency: the currency is now said where it is
+ *  asked, one block down, and what a reader needs at the top is how long this
+ *  is and that it releases them.
+ *  - **The ephemeral-store warning is here**, and it is the only surface
+ *    *every* trial user meets: the installation tab is two clicks down, and the
+ *    boot lines are at a terminal nobody watching a browser is reading. It does
+ *    not leave the tab either — the ceiling loses nothing (#724).
+ *  - **The accounts passage demands nothing.** It is satisfied by the seeded
+ *    row every install owns — a declaration the owner may decline to add to —
+ *    and its whole job is that the notion exists *before* a file naming
+ *    accounts is handed over. It reads them to name them, and while that read
+ *    is in flight it says nothing at all about them: neither the rows, nor the
  *    offer to add one, a form opening onto a list nobody can see being a way of
  *    asking for a name against nothing.
- *  - **The last passage is the ledger's own pair of entrances**, the same
- *    component at equal weight and with no primary action (`EntryPair`), and it
- *    is named for the **events** rather than for the import: naming it *first
- *    import* would tell a reader with no file that they cannot come in, and
- *    ADR-0005 decided the opposite when it removed manual mode — typing a
- *    position *is* creating dated events. Each door is a way through: taking one
- *    ends the walk and lands the reader where that gesture is made. The marker
- *    that says *this reader has recorded nothing* stays with the ledger's mount
- *    and not with this one: here the pair states no emptiness, it offers two
- *    doors.
- *  - **The memory of the traversal is the browser's alone.** The predicate stays
- *    derived server-side and reads no data this screen is about to collect, so a
- *    second browser sees the walk again and an emptied ledger reopens nothing.
- *    What `localStorage` holds is *been through, and this is what was still
- *    unanswered when I left* — the second half being what makes a **wiped
- *    volume ask again** in the browser that answered, rather than only in some
- *    other one. No `onboarding_done` row anywhere.
+ *  Each door is a way through: taking one ends the walk and lands the reader
+ *  where that gesture is made. The marker that says *this reader has recorded
+ *  nothing* stays with the ledger's mount and not with this one: here the pair
+ *  states no emptiness, it offers two doors.
+ *  - **The memory of the traversal is the browser's alone.** The predicate
+ *    stays derived server-side and reads no data this screen is about to
+ *    collect, so a second browser sees the walk again and an emptied ledger
+ *    reopens nothing. What `localStorage` holds is *been through, and this is
+ *    what was still unanswered when I left* — the second half being what makes
+ *    a **wiped volume ask again** in the browser that answered, rather than
+ *    only in some other one. No `onboarding_done` row anywhere.
  */
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -341,8 +333,8 @@ export function FirstRun() {
               which is the whole reason this passage comes before the file.
               Nothing at all is rendered about them while the read is in flight:
               *this is what you own* is a claim about the reader's own
-              installation, and a read that has not landed is not an absence
-              (ADR-0026). */}
+              installation, and a read that has not landed is not an absence.
+             */}
           {passage === 'accounts' ? (
             <>
               <h3 className="text-lg font-semibold tracking-tight">
@@ -369,7 +361,7 @@ export function FirstRun() {
                             {/* The id alone since #916, in the column it
                                 already shared with the type: it is what the
                                 owner's own files name, and the word it used to
-                                sit beside is gone (ADR-0043). */}
+                                sit beside is gone. */}
                             {account.id}
                           </span>
                         </li>
@@ -383,7 +375,7 @@ export function FirstRun() {
           ) : null}
 
           {/* Passage three — the two doors, at equal weight and with no primary
-              action. Both are **available on every install** (ADR-0032): a file
+              action. Both are **available on every install**: a file
               is handed to the app by a gesture, so there is no mount left whose
               absence could take an entrance away, and the sentence names no
               folder there being none left to name. Taking either one ends the
@@ -429,11 +421,8 @@ export function FirstRun() {
           ) : null}
         </div>
 
-        {/* The walk itself, and never the answer: quieter than the filled
-            answer on the one passage that carries one, and never a second
-            spelling of the escape hatch (ADR-0021's argument, one control
-            over). The way out is **written** beside it, on the passage where a
-            reader is still deciding whether to be here at all. */}
+        {/* The way out is **written** beside it, on the passage where a reader is
+        still deciding whether to be here at all. */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
           {back === null ? (
             <span />
@@ -544,24 +533,22 @@ function PassageRail({ current }: { current: Passage }) {
 /**
  * **Declaring an account from inside the walk** — an offer, and never a demand.
  *
- * The passage exists so the notion of an account is there *before* a file naming
- * accounts is handed over, and until the drawing was read it stopped at naming
- * them: a reader who already knew their holdings were split across a PEA and a
- * brokerage account had to leave the walk, find the accounts page, declare, and
- * come back. The button repairs that and nothing more — it is closed by default,
- * the passage is satisfied without it, and `Continuer` never waits on it.
+ * The passage exists so the notion of an account is there *before* a file
+ * naming accounts is handed over, and until the drawing was read it stopped at
+ * naming them: a reader who already knew their holdings were split across a PEA
+ * and a brokerage account had to leave the walk, find the accounts page,
+ * declare, and come back. The button repairs that and nothing more — it is
+ * closed by default, the passage is satisfied without it, and `Continuer` never
+ * waits on it.
  *
  * **It is not `AccountForm`, and the difference is the reason.** That panel is
  * the accounts page's, and two of the three things it carries have no referent
  * here: a removal, of a row that does not exist yet, and #725's reassignment
  * offer — a box that says *move the N events naming no account onto this one*,
- * whose N comes off the ledger. This walk does not read the ledger, deliberately
- * (`lib/firstRun.ts`: nothing about the modal is derived from the data it is
- * about to collect), so the count is not in hand and ADR-0026 forbids stating
- * it. What is left of that panel once both are gone is these three fields, and
- * they are the store's own: the identifier events name, the type, the name. The
- * catalogue is shared with it down to the key, so the two forms cannot drift
- * into saying two different things about one rule.
+ * whose N comes off the ledger. What is left of that panel once both are gone
+ * is these three fields, and they are the store's own: the identifier events
+ * name, the type, the name. The catalogue is shared with it down to the key, so
+ * the two forms cannot drift into saying two different things about one rule.
  *
  * The label falls back to the identifier, which is `accounts.create_account`'s
  * own rule for a file's empty cell — one rule for the two roads in.

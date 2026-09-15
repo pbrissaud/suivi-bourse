@@ -27,8 +27,6 @@ export function App({
   return (
     <ThemeProvider>
       <I18nProvider>
-        {/* The reader's third preference, in the same shape as the two ADR-0024
-            decided (#789) — three keys in the browser, no dial in the store. */}
         <DensityProvider>
           {/* Query outside Router: the router carries no loaders, so nothing in
               the route tree needs the client in its context — components reach it

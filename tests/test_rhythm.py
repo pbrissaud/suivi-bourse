@@ -1,4 +1,4 @@
-"""The investment rhythm (issue #751, ADR-0041).
+"""The investment rhythm (issue #751).
 
 A **pure** module, so these tests are pure too: a list of events and an instant
 in, four numbers out. There is no store here and nothing is faked — the seam the
@@ -127,7 +127,7 @@ def test_several_purchases_in_one_month_are_that_month_once():
 def test_two_symbols_in_alternating_months_are_one_rhythm():
     """An ETF in one month and bitcoin in the next is one habit, not two.
 
-    The grain is the portfolio (ADR-0041): per symbol these are two rhythms
+    The grain is the portfolio: per symbol these are two rhythms
     covering one month each, which is the reading the record refuses.
     """
     events = [buy(date(2026, 8, 10), 500.0, symbol='ETF'),
@@ -176,10 +176,6 @@ def test_only_the_buys_are_a_rhythm():
 
 def test_a_sale_is_not_subtracted_from_the_month_that_holds_it():
     """Selling and rebuying leaves the month at the buy's full value.
-
-    The named limitation of ADR-0041, asserted rather than merely written: an
-    arbitrage inflates the rhythm, and it does so **upwards** — no figure this
-    module publishes is ever negative.
     """
     events = [
         Event(date(2026, 9, 5), EventType.SELL, 'AAPL', 'Apple Inc',

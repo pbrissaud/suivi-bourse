@@ -1,6 +1,5 @@
 /**
- * What the *installation* tab decides before anything is rendered (#724,
- * ADR-0014, ADR-0015). Pure: payloads in, verdicts out.
+ * What the *installation* tab decides before anything is rendered (#724). Pure: payloads in, verdicts out.
  *
  * Two of the three are quantifications, and both exist for the same reason: a
  * portfolio-wide gesture that reaches part of the portfolio has to say so, or

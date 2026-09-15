@@ -2,23 +2,22 @@
  * The shell: the sidebar, the content header bar and the content column —
  * everything that outlives a page.
  *
- * **There is no band any more** (#829, ADR-0037). The strip at the top of the
- * column held three live conditions — a missing base currency, a running
- * reconstruction, a stopped scheduler — and it is retired rather than replaced:
- * they are entries of the notifications panel behind the header's bell, and the
- * *sentence* the band carried descends one floor, into the empty state of each
- * page it used to explain.
+ * **There is no band any more** (#829). The strip at the top of the column held
+ * three live conditions — a missing base currency, a running reconstruction, a
+ * stopped scheduler — and it is retired rather than replaced: they are entries
+ * of the notifications panel behind the header's bell, and the *sentence* the
+ * band carried descends one floor, into the empty state of each page it used to
+ * explain.
  *
- * **The column is uncapped** (ADR-0022, amended by #792). `max-w-7xl` was a
- * measured decision and its measurement expired: the two pages it was taken on
- * — the twelve-slice allocation and the eight-column accounts table — were
- * rebuilt into a plateau and deleted outright by the redesign, and the
- * dashboard head that *visibly loosened* at 1 616 px was rewritten in the same
- * session. What the cap did on the branch was the cost this file already
- * recorded and never corrected: nothing at all below 1 536 px, where the
- * sidebar has taken the width first, and above it an **off-centre** page —
- * 472 px of margin on the left against 216 on the right, `mx-auto` centring
- * inside a `SidebarInset` already offset by the column.
+ * `max-w-7xl` was a measured decision and its measurement expired: the two
+ * pages it was taken on — the twelve-slice allocation and the eight-column
+ * accounts table — were rebuilt into a plateau and deleted outright by the
+ * redesign, and the dashboard head that *visibly loosened* at 1 616 px was
+ * rewritten in the same session. What the cap did on the branch was the cost
+ * this file already recorded and never corrected: nothing at all below 1 536
+ * px, where the sidebar has taken the width first, and above it an
+ * **off-centre** page — 472 px of margin on the left against 216 on the right,
+ * `mx-auto` centring inside a `SidebarInset` already offset by the column.
  *
  * Width is answered by **tracks and not by longer rows**: the dashboard and the
  * accounts page gain a column where there is room for one. The bound a dense
@@ -52,8 +51,8 @@ import { SIDEBAR_COOKIE_NAME, SidebarInset, SidebarProvider } from '@/components
  * landed and nothing ever looked at it, and the fold was lost on every reload.
  *
  * So the read is the product's, and it is the **same cookie** rather than a
- * fourth `sb.*` key: the reader's preferences are three, one mechanism
- * (ADR-0024), and the fold of a menu is not one of them — it is chrome, it is
+ * fourth `sb.*` key: the reader's preferences are three, one mechanism,
+ *and the fold of a menu is not one of them — it is chrome, it is
  * the component's own memory, and a second spelling of it here would leave two
  * places disagreeing about one menu the day the component's name for it moves.
  *

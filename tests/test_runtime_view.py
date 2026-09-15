@@ -987,7 +987,7 @@ def test_the_payload_says_whether_the_reconstruction_still_has_windows():
 
 
 def test_the_payload_carries_the_mount_observation_verbatim():
-    """``store.persistence`` (issue #741, ADR-0015), published by the **same
+    """``store.persistence`` (issue #741), published by the **same
     path as the rest of the runtime state** and for the same reason
     ``rebuilding`` is here: it is a fact about *this process* — its mount
     namespace — answered from memory with no query, so it survives the one
@@ -1038,7 +1038,7 @@ def test_an_unobserved_runtime_defaults_to_unknown_rather_than_kept():
 
 
 # ===================================================================== #
-# Health — the fold from N symbols to one word (issue #818, ADR-0036)
+# Health — the fold from N symbols to one word (issue #818)
 # ===================================================================== #
 
 def _health(shares=None, scrape=None, backfill=None, perf=None,

@@ -1,5 +1,5 @@
 """The taxation model — a closed ``kind``, its typed parameters, and the little
-structure the app is allowed to ship (#752, ADR-0042, ADR-0043).
+structure the app is allowed to ship (#752).
 
 **Pure**, in the sense ``CLAUDE.md`` gives the word: no store, no yfinance, no
 clock. It says what a model *is* and refuses what is not one; writing a model
@@ -8,30 +8,18 @@ one is #919's.
 
 Three things live here and nothing else:
 
-- **the kinds**, a closed enumeration (ADR-0042). A row carrying an unknown kind
-  is a store written by a newer version, and it is refused rather than projected
-  as zero;
+- **the kinds**, a closed enumeration. A row carrying an unknown kind is a
+  store written by a newer version, and it is refused rather than projected as
+  zero;
 - **each kind's parameters**, declared beside its constant, so a reader of the
-  enumeration knows what a row of that kind must carry. They are one JSON value
-  in one column rather than a column apiece: ADR-0042 refuses *"a new nullable
-  column on the existing parameters, which would make the absent case
-  indistinguishable from the unset one"*, and a kind added later is then an
-  addition and not a schema step to write (ADR-0045);
-- **the wrapper templates**, and they carry **no money**. ADR-0042 ships no rates
-  — every one of them is per tax year and several move with a budget law — so
-  what may ship is only what is not money, which is `threshold_years` and
-  `age_basis`, which is one kind of five. A template is *not stored*: it fills
-  two fields of a form and does not survive the submission (ADR-0043).
+  enumeration knows what a row of that kind must carry.
+- **the wrapper templates**, and they carry **no money**. A template is *not
+  stored*: it fills two fields of a form and does not survive the submission.
 
-**The Portuguese unit-linked is named in ADR-0042 and is not shipped here.** That
-record lists it beside the PEA and the assurance-vie under `aged_flat_realised`,
-and #752 asks in as many words that the figure be confirmed before it ships. It
-does not survive the check: the Portuguese regime has **two** thresholds, five
-years and eight, and the reduced rates are conditional on 35 % of the premiums
-having been paid in the first half of the contract. One `threshold_years` cannot
-say that, and shipping `8` would silently drop the five-year tier — a stale
-bundled figure of exactly the kind ADR-0042 says is worse than an absent one. The
-owner reaches it through `bracketed_realised`, or types the shape they are in.
+It does not survive the check: the Portuguese regime has **two** thresholds,
+five years and eight, and the reduced rates are conditional on 35 % of the
+premiums having been paid in the first half of the contract. The owner reaches
+it through `bracketed_realised`, or types the shape they are in.
 """
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -46,8 +34,8 @@ BRACKETED_REALISED = 'bracketed_realised'
 #: A withholding on income received — all eight countries surveyed.
 WITHHOLDING_INCOME = 'withholding_income'
 
-#: The age a threshold is counted from. **Not always the opening date**
-#: (ADR-0042): a PEA's five years run from the *first payment*, and the two
+#: The age a threshold is counted from. **Not always the opening date**:
+#: a PEA's five years run from the *first payment*, and the two
 #: coincide often enough to hide the mistake and not always enough to make it
 #: safe. #918 is what writes the date itself.
 OPENING = 'opening'
@@ -91,10 +79,8 @@ PARAMETERS: Dict[str, Tuple[Tuple[str, str, bool], ...]] = {
 
 KINDS = tuple(PARAMETERS)
 
-#: The wrappers whose *structure* ships, nested under the one kind that has any.
-#: An id, and the two fields picking it fills. The label is the front's, in both
-#: catalogues, expanded before it is abbreviated and with its country in it
-#: (ADR-0043, WCAG 3.1.4) — a sigle is not a word every reader can expand.
+#: The wrappers whose *structure* ships, nested under the one kind that has
+#: any. An id, and the two fields picking it fills.
 TEMPLATES: Tuple[Dict[str, Any], ...] = (
     {'id': 'fr_pea', 'kind': AGED_FLAT_REALISED,
      'values': {'threshold_years': 5, 'age_basis': FIRST_PAYMENT}},
@@ -109,7 +95,7 @@ def catalogue() -> Dict[str, Any]:
     Served rather than duplicated in the front: the enumeration is code and has
     one home, and a second copy over there would drift the day a kind is added.
     What the front holds is the *words* — one message key per kind and per
-    template, in both catalogues (ADR-0024).
+    template, in both catalogues.
     """
     return {
         'kinds': [
@@ -127,7 +113,7 @@ def validate(kind: Any, parameters: Any) -> Dict[str, Any]:
     """The parameters of ``kind``, checked and normalised — or ``ModelRejected``.
 
     Checked **when it is written**, which is the half a closed enumeration buys
-    over a formula field (ADR-0042): what comes back is what goes in the column,
+    over a formula field: what comes back is what goes in the column,
     so a reader never meets a rate that is a string or a ladder out of order.
     """
     # **The type is checked before the lookup.** A JSON body may carry anything

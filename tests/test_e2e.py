@@ -97,10 +97,8 @@ def _no_sleep(monkeypatch):
 def _config_with_a_ledger(tmp_path, csv_text=EVENTS_CSV, imported=True):
     """A real ConfigurationManager over a store holding one file's rows.
 
-    The manager scans no directory since ADR-0032, so the file is read into the
-    store here — which is what a ``POST /api/events/import`` does before the
-    replay it triggers. ``imported=False`` leaves the file unread, for the one
-    test whose subject is a file the ledger refuses.
+    ``imported=False`` leaves the file unread, for the one test whose subject
+    is a file the ledger refuses.
     """
     config_dir = tmp_path / "config"
     events_dir = config_dir / "events"
@@ -127,7 +125,7 @@ def test_the_full_chain_writes_the_position_and_the_quote(
     config_manager = _config_with_a_ledger(tmp_path)
 
     sb = Workloads(config_manager)
-    # The one question the app asks (#702, ADR-0021). The fake quotes in USD and
+    # The one question the app asks (#702). The fake quotes in USD and
     # this install reports in USD, so the conversion is the identity: the chain
     # is asserted end to end without a second faked fetch, and the point still
     # carries the three columns rather than two.

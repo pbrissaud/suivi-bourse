@@ -7,15 +7,15 @@ the product. Nothing reads or writes domain rows yet; what is pinned is what the
 tickets that follow will build on and could silently break:
 
 * the fifteen tables exist on a brand-new file, and a second boot on the same
-  file adds nothing to it — nor does it re-run a schema step (#926, ADR-0045);
+  file adds nothing to it — nor does it re-run a schema step (#926);
 * ``price_point`` carries no key of any kind while the others keep theirs
-  (ADR-0007) — a primary key here costs +563 MB of *resident* memory on a 319 MB
+  — a primary key here costs +563 MB of *resident* memory on a 319 MB
   base, because a DuckDB ART index is a second copy whose buffers the buffer
   manager does not own;
 * an observed instant is ``TIMESTAMPTZ`` and a calendar day is ``DATE``, never
   the reverse — and the connection is pinned to UTC, which the type does not
   buy: a bare literal is read in the *host's* zone;
-* a setting absent from the table reads as the code's default (ADR-0014), and
+* a setting absent from the table reads as the code's default, and
   the boot completes the table without ever overwriting an answer.
 """
 
@@ -37,12 +37,12 @@ def test_a_new_file_carries_the_fifteen_tables(store):
     assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
     # **Fifteen since #926** — ``schema_step``, which is the one table that is
     # about the store rather than about the portfolio: it says what generation
-    # this file is (ADR-0045). The fourteenth was #752's ``account_fact``.
+    # this file is. The fourteenth was #752's ``account_fact``.
     assert len(store_module.TABLES) == 15
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):
-    """**Criterion 2 of #816**, on a store the DDL has just created (ADR-0032).
+    """**Criterion 2 of #816**, on a store the DDL has just created.
 
     ``import_source`` existed because a mounted file was re-read and had to be
     named to be revoked; the three columns on ``event`` existed to point at it.
@@ -50,7 +50,7 @@ def test_a_new_file_declares_no_provenance_at_all(store):
     kept them as inert residue that nothing reads and nothing writes, and #926
     wrote no step for them — but the three on ``event`` went all the same, swept
     up by ``drop_account_type``: that step rebuilds ``event`` from the current
-    DDL, and a table recreated from the DDL is the DDL's table (ADR-0045).
+    DDL, and a table recreated from the DDL is the DDL's table.
     ``account.source_id`` survives, because ``account`` is altered rather than
     rebuilt. The asymmetry is real and costs nothing: nobody reads either.
     """
@@ -66,16 +66,14 @@ def test_a_new_file_declares_no_provenance_at_all(store):
 
 
 def test_a_new_file_declares_no_provenance_on_an_account_either(store):
-    """The accounts' own half of that, and it is ADR-0034's (#817).
-
-    ``account.source_id`` said which accounts file had declared a row; there is
+    """``account.source_id`` said which accounts file had declared a row; there is
     no accounts file, so a fresh store declares no such column.
 
-    On an **older** store it survives as inert residue, and since #926 that is a
-    decision rather than a fatality: a schema step could drop it (ADR-0045), and
-    none does, because nobody reads it and a step that buys nothing is a step
-    that can only cost. The column ``type`` is the one that earned a step — it
-    was ``NOT NULL``, so the writer had to keep feeding it a word no reader had.
+    On an **older** store it survives as inert residue, and since #926 that is
+    a decision rather than a fatality: a schema step could drop it, and none
+    does, because nobody reads it and a step that buys nothing is a step that
+    can only cost. The column ``type`` is the one that earned a step — it was
+    ``NOT NULL``, so the writer had to keep feeding it a word no reader had.
     """
     columns = {row[0] for row in store.query(
         "SELECT column_name FROM information_schema.columns "
@@ -162,7 +160,7 @@ def test_the_default_account_is_not_resurrected_at_the_next_boot(store, tmp_path
 
 
 # --------------------------------------------------------------------------- #
-# The constraints, and the one table that has none (ADR-0007)
+# The constraints, and the one table that has none
 # --------------------------------------------------------------------------- #
 
 def _constraints(store):
@@ -342,7 +340,7 @@ def test_ping_fails_once_the_store_is_closed(store):
 
 
 # --------------------------------------------------------------------------- #
-# The generation, and the steps that move between two (#926, ADR-0045)
+# The generation, and the steps that move between two (#926)
 # --------------------------------------------------------------------------- #
 
 #: The schema as it stood before ``schema_step`` existed: ``account`` carries a

@@ -179,7 +179,7 @@ def _haystack(event: Event) -> str:
                          (event.symbol, event.notes, account_of(event)) if part))
 
 
-# **No `account_type`** since #916 (ADR-0043): the column it rendered is written
+# **No `account_type`** since #916: the column it rendered is written
 # by the app and read by nobody, so exporting it would ship a field whose every
 # row carries the same seeded word.
 PORTFOLIO_COLUMNS = (

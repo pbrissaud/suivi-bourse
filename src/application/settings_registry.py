@@ -1,4 +1,3 @@
-"""The one list of dials in the product (issue #696 then #701, ADR-0014)."""
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -95,7 +94,7 @@ def seeded_defaults() -> Dict[str, str]:
 
 
 def required_keys() -> Tuple[str, ...]:
-    """The dials the app must be told, in the registry's order (ADR-0035)."""
+    """The dials the app must be told, in the registry's order."""
     return tuple(spec.key for spec in SETTINGS if spec.required)
 
 

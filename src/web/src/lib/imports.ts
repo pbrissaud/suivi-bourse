@@ -1,5 +1,5 @@
 /**
- * What there is to hand back out (#728, #796, ADR-0032, ADR-0034).
+ * What there is to hand back out (#728, #796).
  *
  * **The rest of this module left with the sources** (#816). It held the order
  * imported files were listed in, what a revocation would take with it counted
@@ -11,9 +11,7 @@
  * reaches the twelve rows somebody mistyped as well.
  *
  * What is left is the one question that was never about a source: **is there
- * anything to export**. It is asked of the events alone, and that is ADR-0034:
- * the declaration has no file, so *is there an accounts file worth offering*
- * has stopped being a question at all.
+ * anything to export**.
  */
 import { DEFAULT_ACCOUNT_ID } from '@/lib/accounts'
 import type { FileAccount, LedgerEvent } from '@/lib/api'

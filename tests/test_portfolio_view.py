@@ -78,8 +78,9 @@ def test_unit_cost_is_quantity_weighted_not_averaged():
 
 
 def test_a_sold_position_has_no_unit_cost_rather_than_a_zero_one():
-    """ADR-0003. Quantity zero, basis zero — the phantom −932 € has no
-    expression left, and the unit price is honestly undefined."""
+    """Quantity zero, basis zero — the phantom −932 € has no
+        expression left, and the unit price is honestly undefined.
+    """
     share, = build_shares([row(quantity=0.0, cost_basis=0.0)])
 
     assert share.unit_cost is None
@@ -485,8 +486,8 @@ def test_a_mover_carries_no_currency_of_its_own():
 def declared(id='pea', label='PEA Bourso'):
     """A declared account — the shape `Portfolio.accounts` holds.
 
-    No `currency`: `Account.currency` is deleted (#702, ADR-0002). No `type`
-    either since #916 (ADR-0043): the column was read by nothing, so the
+    No `currency`: `Account.currency` is deleted (#702). No `type`
+    either since #916: the column was read by nothing, so the
     declaration has one identity field left and it is the name.
     """
     return SimpleNamespace(id=id, label=label)

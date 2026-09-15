@@ -1,7 +1,7 @@
 /**
  * *What the container imposes* — a **description**, and the test of that is
  * mechanical: nothing in it is an `input`, and nothing in it can be focused
- * (#724, #830, ADR-0014).
+ * (#724, #830).
  *
  * It was the second half of the settings block and it is a card of its own
  * since #830, for the reason the mock-up puts it last: it is the only thing on
@@ -12,7 +12,7 @@
  *
  * It rides on the same read as the dials, which is why the page draws it under
  * the same condition: a description of a configuration nobody has read yet is
- * not a description of anything (ADR-0026).
+ * not a description of anything.
  */
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { ConfigResponse } from '@/lib/api'

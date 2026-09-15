@@ -114,7 +114,7 @@ def test_event_optional_fields_accept_values():
 
 
 # ---------------------------------------------------------------------------
-# unit_cost — the one place the matching convention divides (ADR-0003)
+# unit_cost — the one place the matching convention divides
 # ---------------------------------------------------------------------------
 
 def test_unit_cost_is_the_basis_divided_by_the_quantity():

@@ -1,13 +1,9 @@
 /**
  * The two ways in, at **equal weight** — the fourth shared primitive, and the
- * only one that exists to be mounted twice on purpose (#723, #726, ADR-0005).
+ * only one that exists to be mounted twice on purpose (#723, #726).
  *
  * It replaces the shape everything else on this page refuses: an empty table
- * with a small button over it. That arrangement states an order of preference
- * the product does not have — dropping a broker export and typing a first
- * purchase are two entrances to the same room, and the second one *is* the
- * product's onboarding since manual mode died (ADR-0005: typing a position means
- * creating dated events).
+ * with a small button over it.
  *
  * Three properties are the component rather than its usage:
  *
@@ -15,28 +11,25 @@
  *    recommendation, and the recommendation would be wrong for whichever reader
  *    it is not addressed to.
  *  - **an unavailable entry keeps its place and says why**, instead of
- *    disappearing. A pair that renders as one entry reads as a breakage, and the
- *    reader cannot tell an entrance this install happens to lack from a product
- *    that never offered it at all. It has **no case left** since ADR-0032 — the
- *    one it had was a drop folder nobody mounted, and both entrances are now
- *    available on every install — and the property stays because it is the
- *    component's, not because something is using it today.
+ *    disappearing. A pair that renders as one entry reads as a breakage, and
+ *    the reader cannot tell an entrance this install happens to lack from a
+ *    product that never offered it at all.
  *  - **it is not an `EmptyState`.** That primitive says *this is empty* in one
- *    sentence with at most one way out; here emptiness is not the news — the two
- *    ways out are.
+ *    sentence with at most one way out; here emptiness is not the news — the
+ *    two ways out are.
  *
  * The first-run modal's last step is this component, mounted as it is (#726).
- * That is why it lives beside `Stat`, `EmptyState` and `Refusal` rather than under
- * `components/data/`: a second design of it is exactly what the criterion
+ * That is why it lives beside `Stat`, `EmptyState` and `Refusal` rather than
+ * under `components/data/`: a second design of it is exactly what the criterion
  * forbids.
  *
- * `data-empty` is the reason `EmptyState` carries one (ADR-0026) — *this reader
- * has recorded nothing* is a claim about their own data, and never one to make
- * on a read in flight — and it is **the mount's, not the component's** (#726).
- * The first-run modal mounts this same pair while stating no emptiness at all:
- * it offers two doors before anything has been read. So the marker is a prop
- * the ledger sets and the modal does not, rather than a property travelling
- * with the component into a surface where it would be false.
+ * `data-empty` is the reason `EmptyState` carries one — *this reader has
+ * recorded nothing* is a claim about their own data, and never one to make on a
+ * read in flight — and it is **the mount's, not the component's** (#726). The
+ * first-run modal mounts this same pair while stating no emptiness at all: it
+ * offers two doors before anything has been read. So the marker is a prop the
+ * ledger sets and the modal does not, rather than a property travelling with
+ * the component into a surface where it would be false.
  */
 import type { ReactNode } from 'react'
 

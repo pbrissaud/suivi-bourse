@@ -1,8 +1,7 @@
 /**
- * What an installation fact **says**, and what gesture it carries (#724, #768,
- * ADR-0021, ADR-0037).
+ * What an installation fact **says**, and what gesture it carries (#724, #768).
  *
- * **The word changed here and the notion did not** (ADR-0036, #820). *Advisory*
+ * **The word changed here and the notion did not** (#820). *Advisory*
  * was carrying three things at once; it is freed for what the owner's **data**
  * says about itself — `lib/advisories` on the server, and the third register of
  * the notifications panel — and what this file decides about is an
@@ -15,7 +14,7 @@
  * **What left with #829 is the selection, not the sentence.** `shownFacts` and
  * `unacknowledgedCount` filtered a block and counted a tab badge; there is no
  * notices tab and no per-tab badge any more, and the panel counts *every open
- * entry* across three registers rather than the facts alone (ADR-0037), so both
+ * entry* across three registers rather than the facts alone, so both
  * belonged to `lib/notifications.ts` the day the surfaces merged. `BANNER_FACT`
  * left with the banner: `reconstruction_running` was excluded from the block
  * because the band announced it, and now nothing does but its own card.
@@ -29,30 +28,26 @@ import type { MessageKey, MessageValues } from '@/lib/i18n'
  * One key has one today, and it is the only one that can: the assumed-currency
  * notice *names the events it was made about* — the join is re-derived on every
  * read, which is the whole trick — so the gesture is to go and look at them,
- * with the ledger already reduced to **every** security it names. The others are
- * about things that live outside the app (a file on disk, variables in the
+ * with the ledger already reduced to **every** security it names. The others
+ * are about things that live outside the app (a file on disk, variables in the
  * container's environment), and their sentence already says what to do out
  * there; inventing a button for them would be inventing a power the app does
  * not have.
  *
  * **The whole set, never the first of it.** A portfolio reporting in EUR and
  * holding USD, GBP and CHF lines is the ordinary case, not a corner:
- * `_observe_assumed_base_currency` builds `symbols` as
- * `sorted({event['symbol'] for event in events})`, and the sentence rendered two
- * lines above the button enumerates all of them. Landing on one of the three,
- * with a reduction bar that names a single security, would state a repair
- * perimeter smaller than the one the notice just announced — on the one notice
- * the app cannot recompute, and which this ticket protects from being swept
- * away unread.
+ * `_observe_assumed_base_currency` builds `symbols` as `sorted({event['symbol']
+ * for event in events})`, and the sentence rendered two lines above the button
+ * enumerates all of them. Landing on one of the three, with a reduction bar
+ * that names a single security, would state a repair perimeter smaller than the
+ * one the notice just announced — on the one notice the app cannot recompute,
+ * and which this ticket protects from being swept away unread.
  *
  * **The unit is the security and not the event**, for two independent reasons.
  * `GET /api/events` publishes no `event.id` today (#723's deferral, carried by
  * #764), so the ids in `detail.events` address nothing the ledger renders; and
  * the server names the symbols beside them precisely because they *are* the
- * actionable unit — one re-export repairs every line of a security. Rebuilding
- * an address out of `(date, type, symbol, account)` to be exact instead would
- * be #662's opaque token over `(file, sheet, row)` under another name, which
- * ADR-0020 removed.
+ * actionable unit — one re-export repairs every line of a security.
  */
 type FactGesture = { kind: 'ledger'; symbols: string[] } | null
 
@@ -66,7 +61,7 @@ export function factGesture(fact: InstallationFact): FactGesture {
 }
 
 /* -------------------------------------------------------------------------- *
- * The sentence itself (#768, ADR-0024, ADR-0021)
+ * The sentence itself (#768)
  * -------------------------------------------------------------------------- */
 
 /**
@@ -79,27 +74,26 @@ export function factGesture(fact: InstallationFact): FactGesture {
  *
  *  - **removing `message` from the payload** is cleaner on paper and takes from
  *    a client with no interface the one sentence that says what to do — and
- *    *headless means without an interface, not without HTTP* (ADR-0015). The
- *    three keys are stable identifiers a client may branch on, but a key is
- *    not a sentence, and asking every consumer to write three of its own is
- *    asking each of them to redo this file;
+ *    *headless means without an interface, not without HTTP*. The three keys
+ *    are stable identifiers a client may branch on, but a key is not a
+ *    sentence, and asking every consumer to write three of its own is asking
+ *    each of them to redo this file;
  *  - **negotiating the language on the server** (`Accept-Language`) has no
  *    subject: the reader's language is a three-state `localStorage` preference
- *    with **no dial in the store** (ADR-0024), so the server does not have that
- *    information and the product decided it never would. It is the same cost
- *    ADR-0024 already refused to pay for `problem.py`.
+ *    with **no dial in the store**, so the server does not have that
+ *    information and the product decided it never would.
  *
- * The cost accepted is that one sentence is written twice, which this repository
- * otherwise refuses. What defends it is that the two are not one sentence in two
- * places but **two texts for two audiences under two contracts**: a logfmt line
- * an operator greps, in one language for ever because a log has no reader
- * preference, against a paragraph a reader reads in theirs. #709 made *logged
- * once, in English, at the instant the row is created* a property of the
- * mechanism; nothing here touches it.
+ * The cost accepted is that one sentence is written twice, which this
+ * repository otherwise refuses. What defends it is that the two are not one
+ * sentence in two places but **two texts for two audiences under two
+ * contracts**: a logfmt line an operator greps, in one language for ever
+ * because a log has no reader preference, against a paragraph a reader reads in
+ * theirs. #709 made *logged once, in English, at the instant the row is
+ * created* a property of the mechanism; nothing here touches it.
  *
  * What crosses the boundary is therefore **data, never prose**: an array of
- * variables rather than `', '.join(...)`, a count rather than a `(s)`. The `(s)`
- * is exactly the approximate pluralisation ICU exists to replace, and a
+ * variables rather than `', '.join(...)`, a count rather than a `(s)`. The
+ * `(s)` is exactly the approximate pluralisation ICU exists to replace, and a
  * separator is not how a language enumerates — English closes on *and*, French
  * on *et*, and `formatList` (`Intl.ListFormat`) is what says so.
  */
@@ -146,15 +140,13 @@ function items(detail: Record<string, unknown>, member: string): string[] | null
 }
 
 /**
- * The three keys and their two sentences each. A closed list (ADR-0021), written
- * out rather than derived: `MessageKey` is `keyof typeof en`, so a catalogue key
- * that does not exist — or a French catalogue that drifts from the English one —
- * is a compile error rather than a notice rendering as its own key.
+ * The three keys and their two sentences each. A closed list, written out
+ * rather than derived: `MessageKey` is `keyof typeof en`, so a catalogue key
+ * that does not exist — or a French catalogue that drifts from the English one
+ * — is a compile error rather than a notice rendering as its own key.
  *
- * It was five, and the two that left are ADR-0032's: `legacy_config_file` and
- * `legacy_settings_file` were a `stat` on a v4 file found in a folder the app
- * read, and there is no folder. Their sentence is said at the refusal of the
- * upload instead, where it is read at the instant of the gesture.
+ * Their sentence is said at the refusal of the upload instead, where it is read
+ * at the instant of the gesture.
  */
 const SENTENCES: Record<string, Sentence> = {
   unread_environment: {

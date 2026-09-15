@@ -1,22 +1,17 @@
 /**
- * The taxation model, on the account's own panel (#752, ADR-0042, ADR-0043).
+ * The taxation model, on the account's own panel (#752).
  *
- * It is a field of `AccountForm` and a little CRUD at the same time, and that is
- * a decision rather than a shortcut: a model is written **where it is
+ * It is a field of `AccountForm` and a little CRUD at the same time, and that
+ * is a decision rather than a shortcut: a model is written **where it is
  * attached**. Anywhere else — a card on the settings page, a route of its own —
- * the owner declares an account, discovers the question, leaves to answer it and
- * comes back, which is the shape of gesture #725 is named after refusing.
+ * the owner declares an account, discovers the question, leaves to answer it
+ * and comes back, which is the shape of gesture #725 is named after refusing.
  *
  * Four decisions of its own:
  *
- *  - **The kind comes first, and the wrapper shortcut is nested inside one of
- *    them.** The app ships no rates (ADR-0042: *"the owner types their rate"*),
- *    so the only thing shippable is structure, and exactly one kind of five has
- *    any — `aged_flat_realised`, whose `threshold_years` and `age_basis`
- *    describe the PEA and the assurance-vie. Nested, the shortcut is never met
- *    by someone it is not for: no Danish regime has an age threshold, so a
- *    Danish owner picks a shape, types brackets, and the word *PEA* appears on
- *    no screen they cross.
+ *  Nested, the shortcut is never met by someone it is not for: no Danish regime
+ *  has an age threshold, so a Danish owner picks a shape, types brackets, and
+ *  the word *PEA* appears on no screen they cross.
  *  - **The abbreviation is expanded before it is abbreviated**, and the country
  *    is in the label — *Plan d'épargne en actions (PEA) — France · 5 ans depuis
  *    le premier versement*. A bare sigle leans on knowledge a reader outside
@@ -29,9 +24,9 @@
  *    conversion happens here, at the one edge that knows which of the two the
  *    reader is looking at.
  *
- * **A model is never fabricated.** *No model* is an option of the select and the
- * value the panel opens on, because an account with none is ordinary — every
- * store that predates this, the seeded row, and anyone who declined the
+ * **A model is never fabricated.** *No model* is an option of the select and
+ * the value the panel opens on, because an account with none is ordinary —
+ * every store that predates this, the seeded row, and anyone who declined the
  * question — and #919 publishes nothing at all for it.
  */
 import { useEffect, useState, type ReactNode } from 'react'
@@ -168,7 +163,7 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
 
   const selected = models.find((model) => model.id === value) ?? null
 
-  // **Nothing at all until the catalogue has landed** (ADR-0026), and the same
+  // **Nothing at all until the catalogue has landed**, and the same
   // for a read that refused. A `<select>` whose options have not arrived cannot
   // render the model this account carries — its value matches no option — so it
   // would show *no model* about an account that has one, which is the reading
@@ -285,7 +280,7 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
           </p>
 
           {/* The shortcut, **nested** under the one kind that has structure to
-              pre-fill, and absent everywhere else (ADR-0043). */}
+              pre-fill, and absent everywhere else. */}
           {templates.length === 0 ? null : (
             <Labelled id="taxation-template" label="taxation.template">
               <select

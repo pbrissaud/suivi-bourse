@@ -1,35 +1,27 @@
 /**
- * *What you can change* — **the dials, and only the dials** (#724, #830,
- * ADR-0014, ADR-0020, ADR-0038).
+ * *What you can change* — **the dials, and only the dials** (#724, #830).
  *
- * The line between this card and `EnvironmentBlock` is ADR-0014's boot test
- * transposed to the render: what the process had to know before it could open
- * the store can never be a dial, and what lives in the store can never need a
- * restart. The **effective-configuration card disappears as an object** — it was
- * drawn twice from the same source on the same page, and it answered a
- * precedence problem that no longer exists: there is one place that says what a
- * setting is worth.
+ * The **effective-configuration card disappears as an object** — it was drawn
+ * twice from the same source on the same page, and it answered a precedence
+ * problem that no longer exists: there is one place that says what a setting is
+ * worth.
  *
  * **The two halves are two cards now** (#830). They were one `<section>` headed
- * *Réglages*, which is the name of the page they sit on: a page whose `<h1>` and
- * whose first `<h2>` read the same word says its title twice and names nothing.
- * What they are called is what each one is — *what you can change* against *what
- * the container imposes* — and the sentence ADR-0020 defends is untouched: one
- * place says what a setting is worth, and the other card is a description.
+ * *Réglages*, which is the name of the page they sit on: a page whose `<h1>`
+ * and whose first `<h2>` read the same word says its title twice and names
+ * nothing.
  *
  * Three things here are decisions rather than layout:
  *
- *  - **The form is drawn by the registry.** `settings_registry.py` is the single
- *    list — key, type, bounds, effect — and this component iterates what the API
- *    hands over. The catalogue supplies one sentence per key and nothing else;
- *    a hard-written list of six fields would be the fourth list ADR-0014 exists
- *    against, and the first to fall out of step. **`staleness_horizon` is on
- *    this page because it is in that list** and for no other reason, which is
- *    the whole of what makes it impossible for the redesign to drop it again.
+ *  - **The form is drawn by the registry.** `settings_registry.py` is the
+ *    single list — key, type, bounds, effect — and this component iterates what
+ *    the API hands over. **`staleness_horizon` is on this page because it is in
+ *    that list** and for no other reason, which is the whole of what makes it
+ *    impossible for the redesign to drop it again.
  *  - **The cadence says who it reaches.** A portfolio-wide dial that reaches
  *    three symbols out of twelve has to say so, or the reader concludes the
- *    other nine are misconfigured. The count comes from `/api/runtime` and it is
- *    the same split the write path applies (`lib/installation.ts`).
+ *    other nine are misconfigured. The count comes from `/api/runtime` and it
+ *    is the same split the write path applies (`lib/installation.ts`).
  *  - **The trap is stated, because no interface can hide it.** The dead-ticker
  *    back-off waits `regular_interval × 2^(n−3)`; no absolute delay is stored
  *    anywhere, so changing this number **rescales retroactively** the wait of a

@@ -1,31 +1,18 @@
 /**
- * **The cut of `index.css` is held on the source** (ADR-0023, ADR-0029).
+ * **The cut of `index.css` is held on the source**.
  *
- * ADR-0023 put the whole decision in a cut — *the preset owns the chrome, the
- * product owns the meaning* — and ADR-0029 changed which preset arrives without
- * touching how it arrives. Neither half of that is true by construction: the
- * file is three blocks because someone kept it three blocks, and the moment a
- * value is convenient to type in by hand, the two halves stop being tellable
- * apart. That is not a hypothesis — it is what the prototype did, with a
- * `radix-nova` style nobody chose and a hand-written layer piled on top.
+ * Neither half of that is true by construction: the file is three blocks
+ * because someone kept it three blocks, and the moment a value is convenient to
+ * type in by hand, the two halves stop being tellable apart. That is not a
+ * hypothesis — it is what the prototype did, with a `radix-nova` style nobody
+ * chose and a hand-written layer piled on top.
  *
  * So the rules are asserted where they live, which is the file. Four of them:
  *
- *  - **Three blocks.** A fourth block, or a missing one, is the collapse
- *    ADR-0029 names in as many words: *a theme vendored as JSON stops
- *    regenerating, and the three-block cut collapses into two*.
- *  - **The domain layer holds only what the preset cannot say.** This is
- *    ADR-0023's sizing rule, and it is the one that decays silently: every page
- *    has a reason to add just one token. Asserted as a set relation — a name
- *    the preset already declares may not be redeclared below it — which is
- *    exactly the sentence the ADR wrote.
- *  - **`--loss` is not `--destructive`**, and stays lower in chroma. The theme's
- *    red says *this failed*; an unrealised loss is not an error. ADR-0029 adds
- *    the half this test exists for: the redesign's lift in **lightness** for the
- *    darker ground is the right correction and must not be applied to chroma.
- *  - **The light theme has its own accent.** A ground chosen for one of the two
- *    states is a preset that only half exists (ADR-0024 gives the theme three
- *    states, so both grounds are real).
+ *  Asserted as a set relation — a name the preset already declares may not be
+ *  redeclared below it — which is exactly the sentence the ADR wrote.
+ *  - **`--loss` is not `--destructive`**, and stays lower in chroma. The
+ *    theme's red says *this failed*; an unrealised loss is not an error.
  *
  * Three more are about what must be **absent**, and absence is exactly what no
  * screen can show: no theme JSON anywhere in the repository, no colour literal
@@ -71,10 +58,10 @@ describe('the cut of index.css', () => {
   })
 
   it('never redeclares below the preset a name the preset already says', () => {
-    // ADR-0023's sizing rule, as a set relation. `--price` and `--grant` may
-    // *take* a preset token — `var(--chart-1)` is an alias, not a second
-    // opinion — but a name declared in block 1 may not reappear in block 2 with
-    // a different value, because then nothing in the file says which wins.
+    // `--price` and `--grant` may *take* a preset token — `var(--chart-1)` is
+    // an alias, not a second opinion — but a name declared in block 1 may not
+    // reappear in block 2 with a different value, because then nothing in the
+    // file says which wins.
     const [preset, domain] = blocks()
     for (const ground of ['light', 'dark'] as const) {
       const said = declarations(preset, ground)
@@ -86,10 +73,7 @@ describe('the cut of index.css', () => {
 
   it('keeps --loss lower in chroma than --destructive, by a margin that shows', () => {
     // A bare `<` would pass at 0,2095 against 0,2096, and the claim is not that
-    // the two differ — it is that a reader can **see** they differ. The margin
-    // is the one ADR-0023 shipped with and #788 restored after briefly halving
-    // it: below it the theme's *this failed* and an unrealised −0,4 % start
-    // reading as the same red.
+    // the two differ — it is that a reader can **see** they differ.
     const [preset, domain] = blocks()
     for (const ground of ['light', 'dark'] as const) {
       const destructive = oklch(declarations(preset, ground).get('--destructive')!)
@@ -102,10 +86,9 @@ describe('the cut of index.css', () => {
   })
 
   it('states --loss as its own value and never as the theme’s red', () => {
-    // ADR-0023: *`--loss` is not `--destructive` despite two degrees of hue
-    // between them*. An alias would make the two move together, and the whole
-    // reason they are two tokens is that they must not — the lift in lightness
-    // the darker ground needs applies to one of them and not to the other.
+    // An alias would make the two move together, and the whole reason they are
+    // two tokens is that they must not — the lift in lightness the darker
+    // ground needs applies to one of them and not to the other.
     const [, domain] = blocks()
     for (const ground of ['light', 'dark'] as const) {
       const loss = declarations(domain, ground).get('--loss')!
@@ -139,11 +122,6 @@ describe('the controls the browser paints itself', () => {
    * measured green on one Mac, and the mint by coincidence rather than by
    * decision. On the light ground the bar's *track*, which no accent reaches,
    * read as a mid-grey rule drawn across a white card.
-   *
-   * Both are stated in `@layer base`, which is where the file already puts what
-   * an element is rather than what a token means — so ADR-0023's three blocks
-   * are untouched and the sizing rule is not tested: no token is added, two
-   * existing ones are spent.
    */
   it('states the accent rather than inheriting the reader’s desktop', () => {
     expect(read()).toMatch(/accent-color:\s*var\(--primary\)/)
@@ -212,9 +190,8 @@ describe('the controls the browser paints itself', () => {
 
 describe('what the theme must not bring with it', () => {
   it('versions no theme JSON anywhere in the repository', () => {
-    // ADR-0023 refused pasting, and ADR-0029 kept that half on its own: a theme
-    // vendored as JSON stops regenerating. The failure is invisible until the
-    // domain layer has grown back, so it is caught at the moment it lands.
+    // The failure is invisible until the domain layer has grown back, so it is
+    // caught at the moment it lands.
     const vendored = versionedJson().filter(looksLikeATheme)
     expect(vendored.map((file) => path.relative(REPO_ROOT, file))).toEqual([])
   })

@@ -1,39 +1,33 @@
 /**
- * The create form, **which is the onboarding** (#723, ADR-0005, ADR-0016).
+ * The create form, **which is the onboarding** (#723).
  *
  * Manual mode died with v5: a position with no history cannot carry a realised
- * gain or a historical weighted average cost, so typing a position *is* creating
- * dated events. That promotes this form from a convenience to the first thing a
- * new owner does, and four decisions follow from it:
+ * gain or a historical weighted average cost, so typing a position *is*
+ * creating dated events. That promotes this form from a convenience to the
+ * first thing a new owner does, and four decisions follow from it:
  *
- *  - **The type comes first, and nothing else is on screen until it is chosen.**
- *    Six labels that state their **effect** — `Achat`, `Vente`, `Attribution`,
- *    `Dividende`, `Versement`, `Retrait` — and never the six codes, which are a
- *    decoding exercise at the exact moment the reader has nothing to decode them
- *    against.
- *  - **Then only the fields of that type.** `BUY`/`SELL` take a quantity, a unit
- *    price and a fee; `GRANT` a quantity and an **optional** price; `DIVIDEND`
- *    an amount and a fee; `DEPOSIT`/`WITHDRAWAL` an amount and a fee and **no
- *    security at all** — a transfer names none, and an empty ticker field on a
- *    transfer is a question the event does not raise.
- *  - **A lateral panel, not a modal and not an editable row.** The form *changes
- *    shape* after the first choice, and a row edited in place cannot: it has the
- *    columns of the table it sits in, which is the shape of every type at once.
- *  - **Two explanation icons, and the page's only two.** One on the `date`
- *    label, because extending ADR-0016's instrument from *the figure displayed*
- *    to *the entry that produces it* is the single place where *returns are
- *    computed from the dates of your events* arrives while it can still change a
- *    behaviour; one on a grant's unit price, where **leaving the field empty is
- *    a statement** — empty is a dilution, filled feeds the contribution and the
- *    cost basis together.
+ *  - **The type comes first, and nothing else is on screen until it is
+ *    chosen.** Six labels that state their **effect** — `Achat`, `Vente`,
+ *    `Attribution`, `Dividende`, `Versement`, `Retrait` — and never the six
+ *    codes, which are a decoding exercise at the exact moment the reader has
+ *    nothing to decode them against.
+ *  - **Then only the fields of that type.** `BUY`/`SELL` take a quantity, a
+ *    unit price and a fee; `GRANT` a quantity and an **optional** price;
+ *    `DIVIDEND` an amount and a fee; `DEPOSIT`/`WITHDRAWAL` an amount and a fee
+ *    and **no security at all** — a transfer names none, and an empty ticker
+ *    field on a transfer is a question the event does not raise.
+ *  - **A lateral panel, not a modal and not an editable row.** The form
+ *    *changes shape* after the first choice, and a row edited in place cannot:
+ *    it has the columns of the table it sits in, which is the shape of every
+ *    type at once.
  *
  * **And `<input type="date">` stops silently discarding what it cannot parse.**
- * The browser hands back an empty string for a date it does not understand, which
- * reads as *the reader left it blank* one line later; here every value is parsed
- * by `lib/ledger.ts` and a refusal is **named** beside its field. The same is
- * true of the numbers, which is why they are text inputs with a decimal input
- * mode: `<input type="number">` discards a decimal comma exactly as silently, in
- * a form whose French reader types one.
+ * The browser hands back an empty string for a date it does not understand,
+ * which reads as *the reader left it blank* one line later; here every value is
+ * parsed by `lib/ledger.ts` and a refusal is **named** beside its field. The
+ * same is true of the numbers, which is why they are text inputs with a decimal
+ * input mode: `<input type="number">` discards a decimal comma exactly as
+ * silently, in a form whose French reader types one.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -207,13 +201,9 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
     const day = parseDay(draft.date.trim())
     if (day === null) found.date = 'data.form.date.unreadable'
 
-    // **A blank account means `default` until something is declared** (#698),
-    // and the form reflects that rule instead of demanding a choice from an
-    // empty list — which is what made the onboarding form unusable on exactly
-    // the install ADR-0005 wrote it for. The blank travels as a blank: the
-    // server resolves it at the write, where the file road resolves its own
-    // empty cell, so the two roads keep one rule and this one cannot grow the
-    // phantom account the other refuses.
+    // The blank travels as a blank: the server resolves it at the write, where
+    // the file road resolves its own empty cell, so the two roads keep one rule
+    // and this one cannot grow the phantom account the other refuses.
     const submitted = submittedAccount(choice, draft.account)
     if ('error' in submitted) found.account = submitted.error
 
@@ -325,26 +315,22 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 )}
               </Field>
 
-              {/* **Four renderings and not one control**, because the four are
-                  four different repairs and exactly one of them is the
-                  reader's (#729, #764's deferral):
+              {/* **Four renderings and not one control**, because the four are four
+              different repairs and exactly one of them is the reader's (#729,
+              #764's deferral):
 
-                    - a single declared account answers itself, and a select of
-                      one entry is a question whose answer is known — the field
-                      is not shown and `submit()` fills it in;
-                    - **nothing declared at all** is #698's rule, not a missing
-                      answer: the event lands on the seeded row, the panel says
-                      which one, and the save goes through. Rendered as an empty
-                      `<select>` under a required-field refusal, this state made
-                      the onboarding form refuse before a request ever left, on
-                      exactly the install ADR-0005 wrote it for;
-                    - the read **in flight** and the read **failed** say nothing
-                      about a declaration either way, so neither is allowed to
-                      claim the first state; the field names what is going on
-                      and withholds the save with that same sentence — never
-                      with *this kind of event needs this field*, which sends
-                      the reader looking for a control that is empty for reasons
-                      of its own. */}
+              - a single declared account answers itself, and a select of one
+                entry is a question whose answer is known — the field is not
+                shown and `submit()` fills it in;
+              - **nothing declared at all** is #698's rule, not a missing
+                answer: the event lands on the seeded row, the panel says which
+                one, and the save goes through.
+              - the read **in flight** and the read **failed** say nothing about
+                a declaration either way, so neither is allowed to claim the
+                first state; the field names what is going on and withholds the
+                save with that same sentence — never with *this kind of event
+                needs this field*, which sends the reader looking for a control
+                that is empty for reasons of its own. */}
               {choice.kind === 'single' ? null : choice.kind === 'choose' ? (
                 <Field name="account" label="data.form.account" error={errors.account}>
                   {(id, described) => (
@@ -360,7 +346,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                       {/* The seeded row is in this list whenever an event names
                           it, so the same rule as the declaration table applies:
                           `Default account` is the server's English and is never
-                          rendered (ADR-0024), and the two surfaces have to name
+                          rendered, and the two surfaces have to name
                           one account one way. */}
                       {choice.accounts.map((account) => (
                         <option key={account.id} value={account.id}>
@@ -488,7 +474,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
               ) : null}
 
               {/* The label, and it is not decoration: on a cash movement it is
-                  the whole identity the ledger will show (ADR-0020). */}
+                  the whole identity the ledger will show. */}
               <Field name="notes" label="data.form.notes" error={errors.notes} optional>
                 {(id, described) => (
                   <Input

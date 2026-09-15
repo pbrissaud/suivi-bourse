@@ -1,13 +1,13 @@
 /**
- * The bottom of the dashboard, pure (#727, ADR-0018, ADR-0023, ADR-0016).
+ * The bottom of the dashboard, pure (#727).
  *
  * Four rules live here rather than in the three components below them, and each
  * of them is one the components would otherwise re-decide:
  *
  *  - **One chart slot, two readings, and the second reading is a *fallback*.**
  *    *Amounts* is value against net contributed, whose area **is** the gain —
- *    the clearest answer to *did I gain because it went up or because I put more
- *    in*. On an install with no cash event both those members are `NULL`
+ *    the clearest answer to *did I gain because it went up or because I put
+ *    more in*. On an install with no cash event both those members are `NULL`
  *    (#708's per-field rule), so the reading falls back to valuation against
  *    cost, whose area is the **latent** gain — a different figure, therefore a
  *    different name, and there `Performance` is not offered at all: `twr_index`
@@ -15,28 +15,26 @@
  *  - **The performance curve is rebased on the visible window and carries no
  *    base date.** The head's scalar counts from the series' own origin, which
  *    walks backwards while the reconstruction runs; a curve read against the
- *    first day of the window the reader chose does not move when history appears
- *    before it. At `MAX` the two coincide — the window's first day *is* the
- *    origin — which is the check the ticket asks for: the curve ends exactly on
- *    the head's figure instead of contradicting it.
+ *    first day of the window the reader chose does not move when history
+ *    appears before it. At `MAX` the two coincide — the window's first day *is*
+ *    the origin — which is the check the ticket asks for: the curve ends
+ *    exactly on the head's figure instead of contradicting it.
  *  - **The allocation is not here any more** (#831). It divided the *shares*
  *    page's own table from the day the maquette was read rendered, so
  *    `allocation` moved to `lib/shares.ts` with the block that draws it. What
  *    stays behind is the one line of it this file still needs: `moversSplit`
- *    reduces the payload with `isClosed`, which was `lib/shares.ts`'s all along.
+ *    reduces the payload with `isClosed`, which was `lib/shares.ts`'s all
+ *    along.
  *  - **The movers count what they do not show.** Measured: the portfolio's
  *    second line, at 16,6 % of it, moved 0,00 % — so it entered neither column
  *    and vanished from both. Silence on the second line of a portfolio reads as
  *    *nothing to say*; counting it costs one sentence. And **the sentence's two
  *    members describe one set**: `moversSplit` reduces the payload to the held
  *    lines with the allocation's own predicate — `isClosed`, one module over —
- *    before counting either of them, a sold line being served on purpose
- *    (ADR-0017) and comparing equal to its own frozen baseline.
+ *    before counting either of them, a sold line being served on purpose and
+ *    comparing equal to its own frozen baseline.
  *
- * The valuation of a position is **not** re-derived here: `lib/shares.ts` owns
- * it, ADR-0004's carrying convention included, so nothing on this page can
- * disagree with the shares page about what a line is worth. `isClosed` comes
- * from there for the same reason.
+ * `isClosed` comes from there for the same reason.
  */
 import type {
   Mover,
@@ -70,7 +68,7 @@ import { isClosed, type ShareRow } from '@/lib/shares'
  *    are read side by side at the scale of the portfolio.
  *
  * `pending` renders nothing at all — a read that has not landed is not a fact —
- * and `failed` is the page's own empty state since #829 (ADR-0037): the two
+ * and `failed` is the page's own empty state since #829: the two
  * reads it is made of refused, so there is nothing to draw and the page says
  * why, where the figures would have been. There is no band above it.
  */
@@ -95,7 +93,7 @@ export function dashboardState(input: {
  * Four presets, and **`3M` is not one of them**: from February to December
  * `YTD` either covers it or contains it, and five buttons on the page's only
  * range control is one too many. `MAX` is offered here — unlike the accounts
- * page, which refuses it (ADR-0019) — because there is **one** series to draw:
+ * page, which refuses it — because there is **one** series to draw:
  * the amplitude of a single curve is its own subject, and nothing is being
  * crushed into the bottom sixth of a plot by a neighbour's spike.
  */
@@ -111,11 +109,9 @@ export const DEFAULT_DASHBOARD_RANGE: DashboardRange = '1Y'
  *
  * The chart's window and the accounts comparison's are the same four choices,
  * and the comparison names its last one after what it actually is: the oldest
- * *opening* among the accounts rather than the oldest day of one series. What
- * ADR-0028 refuses is that unbounded window, not the word on the button — a
- * time-weighted index has no bounded amplitude, so one account's ancient
- * volatility would set the scale for every other. One control, so the mapping
- * is stated once here rather than a second control being drawn.
+ * *opening* among the accounts rather than the oldest day of one series. One
+ * control, so the mapping is stated once here rather than a second control
+ * being drawn.
  */
 export const ACCOUNT_RANGE: Record<DashboardRange, AccountRange> = {
   '1M': '1M',
@@ -131,10 +127,7 @@ export type Reading = (typeof READINGS)[number]
 /**
  * The first day the window shows, or `null` for *everything the series holds*.
  *
- * The series is daily and dense over the calendar, and it is kept **whole**:
- * there is no ladder here (ADR-0010 is about observed prices, of which five
- * years is tens of thousands of points), so a window is a filter and never a
- * bucketing. That is also why the domain below is read off the data.
+ * That is also why the domain below is read off the data.
  */
 export function windowFloor(range: DashboardRange, now: Date): string | null {
   if (range === '1M') return shifted(now, 0, 1)
@@ -319,7 +312,7 @@ export function moversList(movers: readonly Mover[], rows: readonly ShareRow[]):
 
 export function dayMove(points: readonly PerfPoint[] | null, now: Date): number | null {
   // A read in flight is not an absence, and it reaches here as `null` rather
-  // than as an empty array (ADR-0026). One point is not a difference.
+  // than as an empty array. One point is not a difference.
   if (points === null || points.length < 2) return null
 
   const last = points[points.length - 1]

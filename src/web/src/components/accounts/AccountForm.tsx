@@ -1,16 +1,13 @@
 /**
- * The declaration form — **the ledger's form, for an account** (#729, ADR-0013,
- * ADR-0002, ADR-0028).
+ * The declaration form — **the ledger's form, for an account** (#729).
  *
  * Nothing about it is invented: a lateral panel, opened from the account's own
  * name, one field per thing the row carries, a `Refusal` for what the server
- * refuses — beside the button that asked, never as a strip at the top of a page.
- * That sameness is the criterion rather than a convenience — one shape for one
- * rule, a second shape for it being the defect *individually right, collectively
- * unreadable* by definition.
+ * refuses — beside the button that asked, never as a strip at the top of a
+ * page. That sameness is the criterion rather than a convenience — one shape
+ * for one rule, a second shape for it being the defect *individually right,
+ * collectively unreadable* by definition.
  *
- * It lives on `/accounts` since ADR-0028, with the page that reads the accounts,
- * and it is where an account is **removed** as well as declared and renamed.
  * That move is the point of the removal rather than a side effect of it: the
  * two refusals are **prose** — the account every install owns, and the *n*
  * events that name it — and prose in a table cell is a sentence nobody has room
@@ -18,11 +15,8 @@
  *
  * Three decisions of its own:
  *
- *  - **It has no `currency` field.** ADR-0002 deleted `Account.currency` rather
- *    than guarding it: there are two currency levels — the reporting currency,
- *    and the security's own quote — and not three, so *a EUR account holding a
- *    USD security* has no referent to be a bug about. The page built during the
- *    prototype still carried the field, which is why the criterion names it.
+ *  The page built during the prototype still carried the field, which is why
+ *  the criterion names it.
  *  - **The identifier is fixed once the row exists.** It is the value events
  *    name, and an event is addressed by its own key rather than by a column
  *    somebody else may rewrite. The panel says so where the field would be,
@@ -64,7 +58,7 @@ import { problemMessageKey, problemSentence } from '@/lib/problem'
  * The two refusals, in `accounts.delete_account`'s own order.
  *
  * There was a third — a row an accounts **file** had declared, revoked by
- * forgetting that import — and it left with the file (ADR-0034). What the map
+ * forgetting that import — and it left with the file. What the map
  * mirrors is the server's classification, so it holds exactly what that
  * classification now holds.
  */
@@ -90,7 +84,7 @@ interface AccountFormProps {
   account: Account | null
   /**
    * The reassignment as the page reads it, or **`null` while the ledger has not
-   * landed** (ADR-0026).
+   * landed**.
    *
    * The offer rides on the declaration rather than beside it because *in the
    * same gesture* is the criterion: at this instant there is no list to pick
@@ -108,7 +102,7 @@ interface AccountFormProps {
    * Whether this account may be removed, and the reason it may not — the
    * module's own classification, in `accounts.delete_account`'s order.
    *
-   * **`null` is the ledger read still in flight** (ADR-0026), never *no reason*:
+   * **`null` is the ledger read still in flight**, never *no reason*:
    * the count a refusal is made of comes off the ledger, and a removal offered
    * before it lands would offer a gesture the server is about to refuse. The
    * block renders nothing at all until then, title included.
@@ -147,7 +141,7 @@ export function AccountForm({
   // what `taxation.py` warns is not the opening date — has an age threshold and
   // still no use for this date. Asked on the kind, that reader would be filling
   // in a day that moves no figure, under a hint telling them it moves one.
-  // Nothing at all while the read is in flight (ADR-0026).
+  // Nothing at all while the read is in flight.
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: api.taxationModels })
   const carried = catalogue.data?.models.find((model) => model.id === taxationModel)
   const ageMatters = carried?.parameters.age_basis === 'opening'
@@ -202,7 +196,7 @@ export function AccountForm({
             // *server* wrote about a row nobody declared, so it is not a value
             // the reader typed — and handing it back had them typing over it and
             // saving a name the form had given them. There was a second column
-            // under this rule until #916 took the type away (ADR-0043).
+            // under this rule until #916 took the type away.
             label: declaredLabel(account) ?? '',
           },
     )

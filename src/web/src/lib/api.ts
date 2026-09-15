@@ -33,21 +33,18 @@ export const ROUTES = {
   /**
    * The events nobody assigned, moved onto one declared account (#725).
    *
-   * A **collection** gesture and never a row one: no event id crosses the wire,
-   * the population is the `account` column's own value, and the mapping table a
-   * client might send instead is refused by ADR-0006 — it would be a second
-   * truth about the account an event names. It is a resource of the account
-   * rather than of the ledger because the target is what bounds the exception:
-   * an account that is neither the seeded row nor unknown *is* the first
-   * declaration, which is the one instant those rows may be rewritten at.
+   * It is a resource of the account rather than of the ledger because the
+   * target is what bounds the exception: an account that is neither the seeded
+   * row nor unknown *is* the first declaration, which is the one instant those
+   * rows may be rewritten at.
    */
   accountReassignment: '/api/accounts/:id/reassignment',
   /**
    * The owner's taxation models, **and the shape one may take** (#752).
    *
    * One read for the two, deliberately: the kinds are a closed enumeration in
-   * the server's code (ADR-0042) and the two wrapper templates are the only
-   * structure the app ships (ADR-0043), so a second copy of either over here
+   * the server's code and the two wrapper templates are the only
+   * structure the app ships, so a second copy of either over here
    * would drift the day a kind is added. What this front holds is the *words* —
    * one message key per kind and per template, in both catalogues.
    */
@@ -63,17 +60,13 @@ export const ROUTES = {
   prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
   /**
-   * **The one route with no `/api` prefix**, and it is not an oversight (#819,
-   * ADR-0036): it is the container's own probe, written into the image's
-   * `HEALTHCHECK` long before a browser read it, and renaming it to please this
-   * table would break the one reader the app is sure to have.
+   * **The one route with no `/api` prefix**, and it is not an oversight (#819):
+   * it is the container's own probe, written into the image's `HEALTHCHECK`
+   * long before a browser read it, and renaming it to please this table would
+   * break the one reader the app is sure to have.
    *
-   * It is what the **bell** reads (ADR-0037, which inherited the dot's read
-   * whole). The trade is stated in ADR-0036: the dot used to read
-   * `/api/runtime`, which touches no store and therefore survives one that has
-   * failed, and health is now said in one place. The cost is that the body goes
-   * when the store goes — and what survives that is the half that matters then,
-   * a `503` the bell renders **red**.
+   * The cost is that the body goes when the store goes — and what survives that
+   * is the half that matters then, a `503` the bell renders **red**.
    */
   health: '/health',
   /** The ledger itself — read, and written one row at a time (#723). */
@@ -81,8 +74,7 @@ export const ROUTES = {
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
   event: '/api/events/:id',
   /**
-   * A file handed over, read once, and written as ordinary events (#811,
-   * ADR-0032).
+   * A file handed over, read once, and written as ordinary events (#811).
    *
    * It is `/api/events/import` and not `/api/imports` because **an import is no
    * longer a resource**: nothing persists that could be named, so it is a
@@ -92,7 +84,7 @@ export const ROUTES = {
   eventsImport: '/api/events/import',
   /**
    * The ledger back out, in the format it came in by (#710) — **the events, and
-   * only them** (ADR-0034). There was a second file, the declaration, because a
+   * only them**. There was a second file, the declaration, because a
    * round trip needed both; no accounts file is read back in any more, so one
    * that left would look like half a restore without being one. The accounts
    * are redeclared in the app, which is the only place they are ever declared.
@@ -111,7 +103,7 @@ export const ROUTES = {
    * spec #787). Balances, weighted-average unit costs and valuations: what the
    * replay made of the ledger, rather than the ledger.
    *
-   * It is not `accounts.csv`, which is a `404` and stays one (ADR-0034). That
+   * It is not `accounts.csv`, which is a `404` and stays one. That
    * file was a *declaration* nothing reads back, and it looked like half a
    * restore; this one the import refuses by name, for want of `date` and
    * `event_type`, so it cannot be filed beside a backup and mistaken for one.
@@ -130,7 +122,7 @@ export const ROUTES = {
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
   installationFactAcknowledgement: '/api/installation-facts/:key/acknowledgement',
   /**
-   * What the owner's **data** says about itself (#829, ADR-0037) — derived on
+   * What the owner's **data** says about itself (#829) — derived on
    * every read and stored nowhere, so this is a collection with no ids to come
    * back to and no dates but the instant it was derived at.
    */
@@ -159,17 +151,12 @@ export const ROUTES = {
   /**
    * What moved since the last session close (#727).
    *
-   * It keeps its `/portfolio/` prefix, which is the one v4 name a v5 page reads,
-   * and that is a decision rather than an oversight: the payload is **already**
-   * the v5 shape — no `?mode=` discriminator, no per-row currency since #702,
-   * the carrying convention of ADR-0004 applied — so a second route serving the
-   * identical body would be two resources over one computation. What the rule
-   * *"a resource carries the name of the store's table"* forbids is reusing a v4
-   * name for a **different** payload, and this is the same one.
+   * What the rule *"a resource carries the name of the store's table"* forbids
+   * is reusing a v4 name for a **different** payload, and this is the same one.
    */
   movers: '/api/portfolio/movers',
   /**
-   * How much the owner buys in a month, and how often (#751, ADR-0041).
+   * How much the owner buys in a month, and how often (#751).
    *
    * Derived on every read and stored nowhere, like {@link ROUTES.advisories}:
    * there is no table behind it and no id to come back to. It is served from
@@ -207,7 +194,7 @@ function advisoryAcknowledgementPath(key: string): string {
 
 /**
  * The window a chart asks for. The four are the **rungs of the retention
- * ladder** (ADR-0010, #684 D10) and not four round numbers: as written under a
+ * ladder** (#684 D10) and not four round numbers: as written under a
  * year, hourly from one to two, daily beyond — so changing the range changes
  * the resolution *visibly*, which is the whole reason `3M` left.
  */
@@ -222,8 +209,8 @@ function pricesPath(symbol: string, window: ChartWindow): string {
 /**
  * An RFC 9457 problem.
  *
- * `type` is the discriminant and the **only** member the interface branches on
- * (ADR-0024). `title` and `detail` are English diagnostics the server writes for
+ * `type` is the discriminant and the **only** member the interface branches on.
+ *`title` and `detail` are English diagnostics the server writes for
  * a log: they are carried here so a report can quote them, and rendered
  * nowhere — that is what put a French title over an English sentence in the
  * prototype's most consequential alert.
@@ -311,7 +298,7 @@ async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unk
 }
 
 /**
- * One file on its way in (#811, ADR-0032).
+ * One file on its way in (#811).
  *
  * `Content-Type` is deliberately **not** set: the browser writes it, boundary
  * included, and a hand-written one is a multipart body no server can split. The
@@ -336,15 +323,13 @@ async function upload<T>(path: string, file: File, params: string[] = []): Promi
 }
 
 /**
- * The four files a reader can ask for (#796, #836, ADR-0034), named so a
- * receipt can say which one is being made. They are names of *files*, not of
- * routes: three of them are one resource — two reductions of it, and one of
- * those in the other shape — and the fourth is a different subject altogether.
+ * The four files a reader can ask for (#796, #836), named so a receipt can say
+ * which one is being made. They are names of *files*, not of routes: three of
+ * them are one resource — two reductions of it, and one of those in the other
+ * shape — and the fourth is a different subject altogether.
  *
  * `portfolio` is that fourth, and it is **the one that is not a backup**: the
- * accounts and their positions, balances and valuations included. It is not the
- * declaration file ADR-0034 retired, which nothing reads back and which
- * therefore looked like half a restore; this one the import refuses by name.
+ * accounts and their positions, balances and valuations included.
  */
 const EXPORT_FILES = ['events', 'workbook', 'selection', 'portfolio'] as const
 
@@ -398,7 +383,7 @@ async function remove<T>(path: string): Promise<T> {
 }
 
 // ------------------------------------------------------------------------- //
-// Accounts (ADR-0013)
+// Accounts
 // ------------------------------------------------------------------------- //
 
 export interface Account {
@@ -441,7 +426,7 @@ export interface Account {
   xirr?: number | null
   /**
    * Time-weighted, base 100 since the account's own first day — and the
-   * comparison table **never renders it** (ADR-0019). Two indices counted from
+   * comparison table **never renders it**. Two indices counted from
    * two origins share a unit without being a comparison: `pea 171,5` against
    * `TR 115,0` puts 6,8 years beside 2,4. What the `perf` column shows is the
    * series rebased to 100 at the start of the visible window, computed in
@@ -449,12 +434,11 @@ export interface Account {
    */
   twr_index?: number | null
   /**
-   * ADR-0018's fourth term for **this** account (#722), signed as it enters the
-   * sum — negative, the money having left. It is the one member of this row
-   * that is not a column of `account_metrics`: it belongs to no position, so
-   * the account's panel could not read it off `/api/positions` with the other
-   * three, and the server derives it from `event` bounded by this row's own
-   * day, exactly as `/api/portfolio-totals` derives the global one.
+   * It is the one member of this row that is not a column of `account_metrics`:
+   * it belongs to no position, so the account's panel could not read it off
+   * `/api/positions` with the other three, and the server derives it from
+   * `event` bounded by this row's own day, exactly as `/api/portfolio-totals`
+   * derives the global one.
    *
    * `null` where no cycle has written this account a day: there is nothing to
    * bound the fees by, and a term measured over another period does not belong
@@ -469,7 +453,7 @@ export interface Account {
    *
    * An account with no model is ordinary: every store that predates this, the
    * seeded `default` row, and anyone who declined the question. The absence
-   * reaches the reader as an absence (#845, ADR-0044) and #919 is what publishes
+   * reaches the reader as an absence (#845) and #919 is what publishes
    * nothing rather than a zero for it.
    */
   taxation_model?: string
@@ -490,7 +474,7 @@ export interface Account {
    * It is here for one consumer: the form offers it as the opening date it
    * pre-fills, where the account has declared none. A *suggestion made by the
    * interface* — accepted it becomes a declaration and stops moving, and
-   * nothing re-derives it afterwards (ADR-0006).
+   * nothing re-derives it afterwards.
    */
   first_payment?: string
 }
@@ -508,21 +492,16 @@ export interface AccountsResponse {
 }
 
 /**
- * What the declaration form sends (#729, ADR-0013, ADR-0002).
+ * What the declaration form sends (#729).
  *
- * **There is no `currency` member and there will not be one.** ADR-0002 deleted
- * `Account.currency` rather than converting it: there are two currency levels —
- * the reporting currency, and the security's quote currency — and not three, so
- * *an account whose positions disagree with its currency* stops being a sentence
- * with a referent. A field for it here would put the third level back on the one
- * surface that creates the rows.
+ * A field for it here would put the third level back on the one surface that
+ * creates the rows.
  *
  * `id` is sent on a creation and **never on an edit**: it is the value events
  * name, so changing it would rewrite every event that names it. An event is
  * addressed by its own key and never by a column somebody else may rewrite
- * (#816, ADR-0032) — the server refuses it for that reason, and the form does
- * not offer it. Reassignment is the gesture that moves events, and it names its
- * subject.
+ * (#816) — the server refuses it for that reason, and the form does not offer
+ * it. Reassignment is the gesture that moves events, and it names its subject.
  */
 export interface AccountDraft {
   id?: string
@@ -556,7 +535,7 @@ export interface AccountDraft {
 }
 
 // ------------------------------------------------------------------------- //
-// The taxation models (#752, ADR-0042, ADR-0043)
+// The taxation models (#752)
 // ------------------------------------------------------------------------- //
 
 /** What a parameter is. The four the server's enumeration knows. */
@@ -590,11 +569,11 @@ export interface TaxationModel {
 }
 
 /**
- * A wrapper whose **structure** ships — and no money whatsoever (ADR-0042).
+ * A wrapper whose **structure** ships — and no money whatsoever.
  *
  * Picking one fills two fields of the form. It is not stored, does not survive
  * the submission, and nothing reads it back: the taxation model is what is
- * written (ADR-0043).
+ * written.
  */
 export interface TaxationTemplate {
   id: string
@@ -651,19 +630,18 @@ export interface PortfolioTotalsHistoryResponse {
 
 /**
  * The day a perf series is asked from, and it is the **origin of time** on
- * purpose (#721, ADR-0019).
+ * purpose (#721).
  *
  * `MAX` is not offered as a *range* — a time-weighted index has no bounded
  * amplitude, and one account's spike at +542 % crushes every other curve into
  * the bottom sixth of the plot. But the longest window offered, *since the
  * opening*, is `max` over the accounts' first days, and no payload states an
- * account's first day: the only place it is written is the series itself. So
- * the page reads each series whole and applies the bound to the **drawing**,
- * which is where ADR-0019 puts it. Asking the server for a bounded window
- * instead would mean knowing the bound before reading what defines it.
+ * account's first day: the only place it is written is the series itself.
+ * Asking the server for a bounded window instead would mean knowing the bound
+ * before reading what defines it.
  *
- * The cost is stated rather than hidden: on a 6,8-year account the series is
- * ~2 500 days, dense over calendar days, five numbers each — and it is read
+ * The cost is stated rather than hidden: on a 6,8-year account the series is ~2
+ * 500 days, dense over calendar days, five numbers each — and it is read
  * **once** for the four presets rather than once per preset, which is the same
  * property that makes the chart and the table's scalar column one announcer
  * instead of two.
@@ -693,7 +671,7 @@ function positionsHistoryPath(from: string = SERIES_ORIGIN): string {
  * by giving them two names.
  *
  * `null` on either is a day whose sum could not be taken at all — never a zero,
- * which would draw a crater the portfolio never had (ADR-0004).
+ * which would draw a crater the portfolio never had.
  */
 export interface ValuationPoint {
   /** The calendar day — a bare `YYYY-MM-DD`, like every other series. */
@@ -743,7 +721,7 @@ export interface MoversResponse {
 }
 
 /**
- * One investment rhythm — the portfolio's, or one account's (#751, ADR-0041).
+ * One investment rhythm — the portfolio's, or one account's (#751).
  *
  * **`monthly_amount` and `months_covered` are one figure in two members**, and
  * nothing on any surface may show the first without the second: `500 €` alone
@@ -788,11 +766,11 @@ interface AccountRhythm extends RhythmFigures {
 export interface InvestmentRhythmResponse extends RhythmFigures {
   base_currency: string | null
   /**
-   * The breakdown, **by account and never by symbol** (ADR-0041). No block
+   * The breakdown, **by account and never by symbol**. No block
    * renders it today: the dashboard states the habit at the portfolio grain,
    * and the breakdown is what the MCP tool reaches over the same route — the
    * surface being a contract in which a field is added safely and removed
-   * never (ADR-0040).
+   * never.
    */
   accounts: AccountRhythm[]
 }
@@ -814,7 +792,7 @@ export interface Quote {
    * it would turn *quoted* into *never quoted*, the one distinction this pair of
    * objects exists to carry — and it is `lib/absence.ts` that reads the pair,
    * because **a number with no unit is not a price**: no pair to fetch a rate
-   * for, nothing on its way, so the line is carried at its cost (ADR-0004) and
+   * for, nothing on its way, so the line is carried at its cost and
    * never left *waiting*. Typed `string` it read as always present, and every
    * client that only tested `price !== null` inherited the wrong absence.
    */
@@ -844,12 +822,10 @@ export interface Converted {
  * been observed about this symbol — and the sheet then renders no block at all.
  */
 export interface Fundamentals {
-  /** The security's own quote currency, not the reporting one (ADR-0002). */
+  /** The security's own quote currency, not the reporting one. */
   currency: string | null
   /**
-   * The place the quote comes from. Not decoration: ADR-0004's one surviving
-   * mis-valuation is an Amsterdam execution priced against the NASDAQ quote of
-   * the same company, and the sheet is where a reader can see it.
+   * The place the quote comes from.
    */
   exchange: string | null
   quote_type: string | null
@@ -863,9 +839,9 @@ export interface Position {
   account: string
   symbol: string
   name: string | null
-  /** Owned. Zero is a closed position, which stays in the table (ADR-0017). */
+  /** Owned. Zero is a closed position, which stays in the table. */
   quantity: number
-  /** What the position cost — the carrying price of ADR-0004. */
+  /** What the position cost — the carrying price. */
   cost_basis: number
   realised: number
   dividends: number
@@ -887,7 +863,7 @@ export interface Position {
   /**
    * Has the backward pass reached this symbol's first acquisition? (#845)
    *
-   * The **second** term of the carrying convention (ADR-0004), and the one that
+   * The **second** term of the carrying convention, and the one that
    * did not cross the wire until this ticket: the front held *no quote
    * observed* and put the failure counter of `/api/runtime` in the place of
    * *and none is coming*, so during every rebuild the shares table valued at its
@@ -905,7 +881,7 @@ export interface Position {
 }
 
 export interface PositionsResponse {
-  /** The single currency everything is reported in (ADR-0002). */
+  /** The single currency everything is reported in. */
   base_currency: string | null
   positions: Position[]
 }
@@ -935,14 +911,13 @@ export interface PortfolioTotals {
   /** The day the index counts from. It moves while the rebuild runs. */
   twr_since: string | null
   /**
-   * ADR-0018's fourth term, **signed as it enters the sum** — negative, the
-   * money having left. It belongs to no position, which is why it is here and
-   * not on `/api/positions`.
+   * It belongs to no position, which is why it is here and not on
+   * `/api/positions`.
    */
   transfer_fees: number | null
   /**
    * The same number written down elsewhere. **The head never reads it** — it
-   * computes the total from the four terms (ADR-0018), and a divergent value
+   * computes the total from the four terms, and a divergent value
    * here changes nothing on screen. Carried so a report can quote both.
    */
   gain_absolu: number | null
@@ -955,20 +930,17 @@ export interface PortfolioTotals {
 }
 
 export interface PortfolioTotalsResponse {
-  /** The single currency everything is reported in (ADR-0002). */
+  /** The single currency everything is reported in. */
   base_currency: string | null
   /** `null` — no figures at all: no ledger, or no answered currency. */
   totals: PortfolioTotals | null
 }
 
-// ------------------------------------------------------------------------- //
-// One symbol's price series (#712 §11, ADR-0010)
-// ------------------------------------------------------------------------- //
 
 /**
  * What the store actually served, **announced rather than guessed**.
  *
- * A price point's resolution is a function of its age (ADR-0010) — as written
+ * A price point's resolution is a function of its age — as written
  * under a year, hourly to two, daily beyond — so a five-year window comes back
  * sparse at its far end. Announced, that is a property of the archive; guessed
  * by the reader, it is an outage. And it is announced **once**: the chart's
@@ -987,7 +959,7 @@ export interface SeriesPoint {
 
 export interface PriceSeriesResponse {
   symbol: string
-  /** The single currency everything is reported in (ADR-0002). */
+  /** The single currency everything is reported in. */
   base_currency: string | null
   resolution: Resolution
   points: SeriesPoint[]
@@ -1048,7 +1020,7 @@ export interface RuntimeAccount {
 }
 
 /**
- * Does the store outlive the container? (issue #741, ADR-0015)
+ * Does the store outlive the container? (issue #741)
  *
  * Observed once at boot from `/proc/self/mountinfo` and answered from process
  * memory, which is why it travels on this resource and not beside the figures.
@@ -1128,7 +1100,7 @@ export interface RuntimeState {
 }
 
 // ------------------------------------------------------------------------- //
-// Health — the register whose reader is a person (#818, #819, ADR-0036)
+// Health — the register whose reader is a person (#818, #819)
 //
 // **Two registers, and they never mix.** The status code is for the
 // orchestrator and asks one question, *should this container be restarted*: the
@@ -1188,11 +1160,8 @@ export interface HealthState {
   status: HealthStatus
   now: string
   /**
-   * The one problem the dot could already detect before ADR-0036, and it
-   * survives it: a worker whose scheduler has stopped will not run any of the
-   * three jobs again, however well their last pass went. It is folded into
-   * `status` by the server — it is read here by nobody, and carried so a
-   * `curl` and the installation tab read the same object.
+   * It is folded into `status` by the server — it is read here by nobody, and
+   * carried so a `curl` and the installation tab read the same object.
    */
   scheduler_running: boolean
   /** `null` when the fold itself failed, with `error` saying what it could not
@@ -1202,7 +1171,7 @@ export interface HealthState {
 }
 
 // ------------------------------------------------------------------------- //
-// The ledger (#723, ADR-0020, ADR-0005)
+// The ledger (#723)
 //
 // **The shape below is the one `GET /api/events` already serves**, field for
 // field, and that is deliberate: #718 mounted a head over two routes nobody had
@@ -1223,24 +1192,20 @@ export interface HealthState {
 //    address, and a file was re-read. A key is not safe because keys cannot go
 //    stale — this one went stale for a whole release, `max(id) + 1` handing a
 //    deleted row's key to the next writer. It is safe because the server's
-//    allocator only climbs (ADR-0027, #785), for the life of its process, and
-//    refuses a write aimed at a row that has gone instead of landing it on the
-//    row that took the key. Absent, the editor is not offered on that row — a
-//    shape today's server never sends, and one the type has to allow all the
-//    same.
+//    allocator only climbs (#785), for the life of its process, and refuses a
+//    write aimed at a row that has gone instead of landing it on the row that
+//    took the key. Absent, the editor is not offered on that row — a shape
+//    today's server never sends, and one the type has to allow all the same.
 //
-// **And the provenance is gone** (#816, ADR-0032): the three columns and the
-// sentence composed from them described a row a *mounted* file had provisioned,
-// and they existed because that file was re-read. A file is a payload now, so
-// there is one population of rows and nothing on the wire that could tell two
-// apart.
+// **And the provenance is gone** (#816): the three columns and the sentence
+// composed from them described a row a *mounted* file had provisioned, and they
+// existed because that file was re-read. A file is a payload now, so there is
+// one population of rows and nothing on the wire that could tell two apart.
 //
 // And one route is genuinely new: **`POST /api/events`**, without which the
-// create form has nowhere to write. It is ADR-0005's onboarding rather than a
-// convenience — manual mode is gone, so typing a position *is* creating dated
-// events — and it is announced here, in the one module that knows a URL.
-// `PATCH` is its sibling, and since #816 it is bounded by nothing: the `409`
-// that refused a row a file had laid down went with the mount that justified it.
+// create form has nowhere to write. `PATCH` is its sibling, and since #816 it
+// is bounded by nothing: the `409` that refused a row a file had laid down went
+// with the mount that justified it.
 // ------------------------------------------------------------------------- //
 
 /**
@@ -1263,7 +1228,7 @@ export interface LedgerEvent {
   /** The security's name. Read by no column of the ledger — see #723. */
   name: string | null
   quantity: number | null
-  /** In the reporting currency — an event amount is a debit (ADR-0002). */
+  /** In the reporting currency — an event amount is a debit. */
   unit_price: number | null
   fee: number | null
   amount: number | null
@@ -1315,22 +1280,15 @@ interface BulkRemoval {
 }
 
 // ------------------------------------------------------------------------- //
-// The installation (#724, ADR-0014, ADR-0020, ADR-0021)
+// The installation (#724)
 //
-// The second tab of the data page reads four resources and writes two, and the
-// split between them is **ADR-0014's boot test**, not a grouping of
-// convenience: what the process had to know before it could open the store
-// (`environment`) can never be a dial, and what lives in the store (`settings`)
-// can never need a restart. That line is why the two halves render as two
-// sections of **one** surface, the second a description rather than a form.
+// That line is why the two halves render as two sections of **one** surface,
+// the second a description rather than a form.
 // ------------------------------------------------------------------------- //
 
 /**
  * One dial, as the registry describes it — `settings_registry.py` is the single
- * list, and this is that list crossing HTTP. The form is **drawn from it**
- * rather than written out: a second enumeration of the dials in a component
- * would agree with the registry on the day it was written and not much longer,
- * which is the whole argument of ADR-0014.
+ * list, and this is that list crossing HTTP.
  */
 export interface SettingDescription {
   key: string
@@ -1345,7 +1303,7 @@ export interface SettingDescription {
   /** The registry's own English note. Diagnostic, like `problem.detail`. */
   doc: string
   /**
-   * Whether the app must be told before it can do its work (ADR-0035). The
+   * Whether the app must be told before it can do its work. The
    * first run is a predicate over **this mark and `stored`** — *a required dial
    * nobody has answered* — which is why the front carries no key of its own:
    * `base_currency` wears it today, and the second one to wear it will not need
@@ -1362,7 +1320,7 @@ export interface SettingDescription {
 
 /**
  * One boot variable — what the process had to know before it could open the
- * store (ADR-0014). **Four and no fifth** (#740, ADR-0033).
+ * store. **Four and no fifth** (#740).
  *
  * It is a *description*: rendered as greyed-out fields it invites the click and
  * reads as a form that refused, when the honest statement is that nothing here
@@ -1404,42 +1362,34 @@ export interface SettingsWriteResponse {
 }
 
 /**
- * One standing installation fact (#709, ADR-0021, ADR-0024).
+ * One standing installation fact (#709).
  *
- * **`message` is the server's sentence, in English, and no reader is served it
- * for a key the catalogues answer.** This docstring used to say the opposite —
- * that rendering `message` verbatim was not a hole in ADR-0024, and that *a
- * catalogue key per installation fact would be a second authority on what each one
- * says*. **#768 reversed it**, on a measurement rather than on taste: the whole
+ * **#768 reversed it**, on a measurement rather than on taste: the whole
  * content of the *Notices* block was English on a French installation, beside a
  * title, a date and a button that were not, and the sentences interpolated
  * their plurals with `(s)` and their enumerations with `', '.join(...)` —
  * neither of which is how a language counts or lists. The repair **is** the
- * refused form: ten catalogue keys, two per notice, in `lib/installationFacts.ts`.
+ * refused form: ten catalogue keys, two per notice, in
+ * `lib/installationFacts.ts`.
  *
  * What `message` is still good for, and why it stays on the payload:
  *
  *  - **a client with no interface**, which is the reason it was not simply
- *    removed — *headless means without an interface, not without HTTP*
- *    (ADR-0015). A key is a stable identifier, not a sentence, and asking every
- *    such consumer to write five of its own is asking each of them to redo
+ *    removed — *headless means without an interface, not without HTTP*. A key
+ *    is a stable identifier, not a sentence, and asking every such consumer to
+ *    write five of its own is asking each of them to redo
  *    `lib/installationFacts.ts`;
  *  - **the log**, whose line `message` is: #709's *logged once, in English, at
  *    the instant the row is created* is a property of the mechanism and is
  *    untouched by any of this;
  *  - **this front's fallback for a key outside the closed list of five** — a
- *    sixth installation fact shipping before its catalogue entry says its English
- *    sentence rather than nothing at all, and an empty notice is the one
- *    outcome a block that exists to be read cannot afford. That is the only
+ *    sixth installation fact shipping before its catalogue entry says its
+ *    English sentence rather than nothing at all, and an empty notice is the
+ *    one outcome a block that exists to be read cannot afford. That is the only
  *    path on which the interface still renders a string it did not write.
  *
- * **It is not a second authority, and the split is exactly ADR-0024's.** The
- * server stays the authority on the **predicate** — whether an installation fact stands
- * at all — and on the **parameters**: `key` is a closed list of five (ADR-0021)
- * and `detail` is re-derived per read, so the paths, the variables, the symbols
- * and the counts a sentence names are the server's observations and nothing
- * else. The catalogue is the authority on the **phrase** those parameters are
- * poured into, which is what follows the reader (a three-state `localStorage`
+ * The catalogue is the authority on the **phrase** those parameters are poured
+ * into, which is what follows the reader (a three-state `localStorage`
  * preference with **no dial in the store**, so this process could not know it
  * and `Accept-Language` has no subject here). What crosses this boundary is
  * therefore **data, never prose**: an array of variables rather than a joined
@@ -1458,14 +1408,14 @@ export interface InstallationFact {
 type InstallationFactsResponse = InstallationFact[]
 
 /**
- * One standing advisory (#829, ADR-0037) — what the owner's **data** says about
+ * One standing advisory (#829) — what the owner's **data** says about
  * itself, as opposed to what is true of the install or of the app.
  *
  * Three members carry the whole of what the panel does with it, and the split
  * is deliberately the installation fact's:
  *
  *  - **`kind`** is the family, and the front holds the *phrase* it is poured
- *    into (ADR-0024): `message` is the log line and the headless payload, in
+ *    into: `message` is the log line and the headless payload, in
  *    English for ever, and the reader is served a catalogue key instead;
  *  - **`subject`** is the panel's heading, and it is the **server's** answer.
  *    A front deriving it from the key would be a second authority on the
@@ -1511,7 +1461,7 @@ export interface StoreState {
   size_bytes: number | null
   /**
    * The newest import, and never the newest observed price: that second one is
-   * liveness, which the bell answers (#829, ADR-0037), and here it would make a
+   * liveness, which the bell answers (#829), and here it would make a
    * store whose last import was a year ago read as freshly written.
    */
   ledger_last_write: string | null
@@ -1527,7 +1477,7 @@ interface PurgeResult {
 }
 
 // ------------------------------------------------------------------------- //
-// The import — a gesture, and no resource behind it (#811, #813, ADR-0032)
+// The import — a gesture, and no resource behind it (#811, #813)
 //
 // There was a `GET /api/imports` and a `DELETE /api/imports/<id>` here, with a
 // record type and a revocation to go with them. They left with the population
@@ -1606,7 +1556,7 @@ export interface DuplicateRow extends LedgerEvent {
 }
 
 /**
- * The reporting currency a file declares (#710, ADR-0021) and what this import
+ * The reporting currency a file declares (#710) and what this import
  * would do with it: `adopting` is true when the install has never answered the
  * question and this gesture writes the file's answer into the dial. A file that
  * **contradicts** the dial never reaches here — that is a refusal in prose.
@@ -1667,7 +1617,7 @@ export const api = {
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
   /**
-   * **One row, removed** (#834, ADR-0032).
+   * **One row, removed** (#834).
    *
    * The pair of the edit above, and the gesture the bulk one is not: an event
    * recorded twice, or on the wrong day, is removed rather than corrected — and
@@ -1678,7 +1628,7 @@ export const api = {
    */
   removeEvent: (id: string) => remove<{ id: string; removed: boolean }>(eventPath(id)),
   /**
-   * The reduction, deleted whole (#814, ADR-0032).
+   * The reduction, deleted whole (#814).
    *
    * It carries the **five export parameters** and never a list of ids: what the
    * table shows is what the server retains, arrived at once over one contract —
@@ -1721,7 +1671,7 @@ export const api = {
   advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
   /**
    * **The reading**: every advisory this portfolio raises right now, an
-   * acknowledged one included (#829, ADR-0037).
+   * acknowledged one included (#829).
    *
    * The two are one route and one derivation, told apart by a query parameter,
    * because they answer two questions about the same instant. *Acknowledge for

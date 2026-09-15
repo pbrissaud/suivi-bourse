@@ -10,11 +10,11 @@ import { cn } from "@/lib/utils"
 // of the shares page (#791) never make the page itself scroll sideways.
 //
 // The reader's third preference reaches every table through the one attribute
-// below (#789, ADR-0024): the cells key their padding on an ancestor carrying
+// below (#789): the cells key their padding on an ancestor carrying
 // it, so a table written on these primitives obeys the density by being written
 // on them — no prop to thread, and no second place to forget.
 // A **bounded** table scrolls in that same container and not in one of its own
-// (#795, ADR-0031): `position: sticky` on a header cell resolves against the
+// (#795): `position: sticky` on a header cell resolves against the
 // nearest scrolling ancestor, and `overflow-x-auto` already makes this div one —
 // so a `max-height` wrapped around the whole thing would scroll the outer box
 // while the header stayed stuck to an inner one that never moves. The ceiling

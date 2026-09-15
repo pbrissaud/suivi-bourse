@@ -51,7 +51,7 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
 
     ``settled`` names the symbols that block nothing at all: their backfill is
     terminal and no quote of them was ever observed, so every day they were held
-    is carried at cost (ADR-0004) and none of them is a hole.
+    is carried at cost and none of them is a hole.
 
     ``carried_from`` is the same rule applied to the **other half** of that set
     — a terminal symbol whose first quote is *later* than its acquisition

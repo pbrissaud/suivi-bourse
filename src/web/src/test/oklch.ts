@@ -52,9 +52,7 @@ export function inSrgb(lightness: number, chroma: number, hue: number): boolean 
  * `alloc.ts` states a ramp in OKLCH lightness, and OKLCH lightness is not what
  * a screen emits: chroma falls with rank on both grounds, and chroma carries
  * light of its own, so the *rendered* order of the twelve is a different claim
- * from the declared one. This is what lets the ramp's own test ask the question
- * ADR-0023 answers — *can the rank be read without the hue?* — of the colours
- * that are actually painted.
+ * from the declared one.
  */
 export function luminance(lightness: number, chroma: number, hue: number): number {
   const [red, green, blue] = linearSrgb(lightness, chroma, hue).map((channel) =>

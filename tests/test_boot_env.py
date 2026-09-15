@@ -1,4 +1,4 @@
-"""The three boot variables, and the names that went quiet (#740, ADR-0033).
+"""The three boot variables, and the names that went quiet (#740).
 
 Every test here reads a **dict**. That is the point of the module being pure:
 "nothing is set", "a blank value" and "a v4 ``.env`` in full" are three ordinary
@@ -57,7 +57,7 @@ def test_a_blank_value_counts_as_unset_for_every_one_of_the_three(name):
 
 def test_there_is_no_reader_of_booleans_left():
     """The one name that was a flag was the metrics one, and it left with the
-    exporter (ADR-0033). A reader kept for the boolean variable that may never
+    exporter. A reader kept for the boolean variable that may never
     come is a rule nothing exercises — the same reason the redaction rule left
     with ``INFLUXDB_TOKEN`` rather than waiting for a second secret."""
     assert not hasattr(boot_env, 'flag')
@@ -70,15 +70,11 @@ def test_a_value_that_is_not_an_integer_names_the_variable_it_came_from():
 
 
 def test_there_is_no_variable_that_turns_the_page_off():
-    """ADR-0015. Headless is a **usage, not a setting**: the page has no port of
-    its own — it is served on the API's socket — so a switch for it would be a
-    dial *of the store*, in a product that has just deleted its only
-    restart-scoped dial. What an operator stops serving is the page; never the
-    API, which is the only non-interactive path to answering the currency.
-
-    The one name that ever looked like the counter-example decided a **socket
-    to bind**, and the list of binds is fixed at boot — ADR-0033 took that
-    socket, so there is no longer even that to argue with.
+    """Headless is a **usage, not a setting**: the page has no port of its own —
+    it is served on the API's socket — so a switch for it would be a dial *of
+    the store*, in a product that has just deleted its only restart-scoped
+    dial. What an operator stops serving is the page; never the API, which is
+    the only non-interactive path to answering the currency.
     """
     for name in boot_env.READ:
         assert 'WEB_ENABLED' not in name

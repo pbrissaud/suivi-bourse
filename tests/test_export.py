@@ -66,11 +66,9 @@ _DECLARING_HEADER = (
 def install(root, files, currency=None):
     """A real install: a store with those files' rows in it, and one publication.
 
-    ``currency`` writes the dial the way ``PUT /api/settings`` would, before the
-    rows land, so a test can set up an install that has already answered the
-    question. The files are read into the store here rather than by the manager,
-    which scans no directory since ADR-0032 — what is asserted downstream is the
-    ledger, and the ledger is in the store either way.
+    ``currency`` writes the dial the way ``PUT /api/settings`` would, before
+    the rows land, so a test can set up an install that has already answered
+    the question.
     """
     root.mkdir(parents=True, exist_ok=True)
     drop = root / 'events'
@@ -88,7 +86,7 @@ def install(root, files, currency=None):
             'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
             ['base_currency', currency])
     # **The header decides which road a file takes**, exactly as the product
-    # decides it (ADR-0032): a declaration is written by the accounts gestures,
+    # decides it: a declaration is written by the accounts gestures,
     # a ledger by :func:`entries.create_many` — which is what the upload route
     # calls. The folder is a fixture's shape and nothing reads it on its own.
     for path in written.values():
@@ -104,10 +102,6 @@ def install(root, files, currency=None):
 
 def _declared_rows(path):
     """The fixture file's ``id,type,label`` rows, read here and nowhere else.
-
-    Reading it is the fixture's own business since ADR-0034: no accounts file
-    enters the app any more, so the parser that used to live in :mod:`accounts`
-    is gone and what a test writes for its own convenience it also reads.
     """
     with open(path, newline='', encoding='utf-8') as handle:
         return [
@@ -119,7 +113,7 @@ def _declared_rows(path):
 
 
 def _declare_from(opened, path):
-    """The file's accounts, declared the way the app declares them (ADR-0034)."""
+    """The file's accounts, declared the way the app declares them."""
     for account_id, _, label in _declared_rows(path):
         if account_id in accounts_module.account_ids(opened):
             opened.execute('UPDATE account SET label = ? WHERE id = ?',
@@ -140,8 +134,6 @@ def _write_events(opened, path):
 def export_of(opened):
     """The **one** file an install exports, exactly as the route renders it.
 
-    One and not two since ADR-0034: there is no accounts file to read back, so
-    an ``accounts.csv`` beside the events would be a backup nothing restores.
     The accounts are redeclared by hand, which is what the restores below do.
     """
     return events_export.render_events(ledger.read_events(opened),
@@ -322,7 +314,7 @@ def test_the_round_trip_is_idempotent(tmp_path):
 # --------------------------------------------------------------------- #
 
 def test_a_declared_currency_is_taken_by_a_store_that_has_none(tmp_path):
-    """The app *reads* a declaration rather than *asserting* one (ADR-0021).
+    """The app *reads* a declaration rather than *asserting* one.
 
     Which is what distinguishes it from the "your v4 amounts are in your
     reporting currency" installation fact, and what makes the headless round
@@ -452,8 +444,6 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
         _DECLARING_HEADER +
         "2024-11-02,BUY,default,AI.PA,Air Liquide,1,170.00,,,,CHF\n",
         encoding='utf-8')
-    # The shape of a write through the API since ADR-0032: the rows land in the
-    # store, and the replay that follows carries the dial into the process.
     _write_events(opened, landing)
     metrics.ingest(force=True)
 
@@ -711,7 +701,7 @@ def test_a_selected_export_is_importable_like_any_other(tmp_path):
 def test_the_period_retains_the_two_days_it_names(tmp_path):
     """Both bounds are **inclusive**, which is what the chip states.
 
-    A ledger dated to the day (ADR-0008) has no instant to be before or after,
+    A ledger dated to the day has no instant to be before or after,
     so a half-open interval would drop the last day of every year a reader asks
     for — silently, in a file that looks complete.
     """
@@ -837,7 +827,7 @@ def test_a_figure_appears_once_and_a_name_repeats(tmp_path):
     # to reach the holdings and not the balance line alone.
     assert account['account_label'] == 'PEA Boursorama'
     assert position['account_label'] == 'PEA Boursorama'
-    # **And there is no `account_type` column at all** (#916, ADR-0043): the
+    # **And there is no `account_type` column at all** (#916): the
     # value it carried is written by the app and read by nobody, so every row
     # of it would have said the same seeded word.
     assert 'account_type' not in position
@@ -846,7 +836,7 @@ def test_a_figure_appears_once_and_a_name_repeats(tmp_path):
 
 
 def test_an_account_with_no_cash_ledger_has_empty_cells_never_zeros(tmp_path):
-    """``0.00`` and *no cash has ever moved here* are two states (ADR-0006).
+    """``0.00`` and *no cash has ever moved here* are two states.
 
     The seeded ``default`` account is the one every install owns and nobody has
     used, so the store holds no ``account_state`` row for it — and the file says
@@ -880,12 +870,12 @@ def test_the_valuation_is_the_quantity_at_the_observed_price(tmp_path):
     assert float(held['quantity']) == pytest.approx(quantity)
     assert float(held['price']) == pytest.approx(200.00)
     assert float(held['market_value']) == pytest.approx(quantity * 200.00)
-    # The PMP, and it is the one division the product makes (ADR-0003).
+    # The PMP, and it is the one division the product makes.
     assert float(held['unit_cost']) == pytest.approx(cost_basis / quantity)
 
 
 def test_a_position_nobody_has_priced_has_no_valuation(tmp_path):
-    """No quote, no price, no market value — and never a zero (ADR-0004).
+    """No quote, no price, no market value — and never a zero.
 
     The carrying convention is a *rendering* of the page and stays there: it
     needs the published snapshot's holding windows to know that no price is
@@ -931,14 +921,9 @@ def test_an_unanswered_install_reports_a_blank_currency_column(tmp_path):
 
 
 def test_the_report_is_refused_by_the_import_rather_than_half_read(tmp_path):
-    """It is a **report**, and the import says so in one sentence (ADR-0034).
+    """It is a **report**, and the import says so in one sentence.
 
-    This is the property that lets the fourth entry exist at all. ADR-0034
-    retired ``accounts.csv`` because a file nothing reads back *looks* like a
-    restorable backup; a file the loader turns away by name — for want of
-    ``date`` and ``event_type`` — cannot be mistaken for half a restore, and
-    nothing about the declaration has moved: an account is still born in the app
-    and nowhere else.
+    This is the property that lets the fourth entry exist at all.
     """
     _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
                                          'accounts.csv': _ACCOUNTS},
@@ -959,7 +944,7 @@ def test_the_report_is_refused_by_the_import_rather_than_half_read(tmp_path):
 def test_an_install_with_nothing_in_it_reports_its_one_account(tmp_path):
     """A header and the seeded row: the file exists and says what there is.
 
-    Not an empty file — every install owns the ``default`` account (ADR-0013),
+    Not an empty file — every install owns the ``default`` account,
     so a report with no row at all would be one that had failed to look.
     """
     opened = empty_store(tmp_path / 'a')

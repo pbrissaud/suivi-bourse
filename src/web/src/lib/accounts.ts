@@ -1,20 +1,17 @@
 /**
- * The account's arithmetic, pure (ADR-0028, ADR-0019, ADR-0016).
+ * The account's arithmetic, pure.
  *
  * The page this serves used to be a comparison — eight columns under one range
- * control, answering *which of my accounts is working*. ADR-0028 moved that
- * question to the dashboard's accounts card and made this page a
- * **master-detail**: a rail carrying the accounts' relative weight and their
- * names, and beside it **one** account read in depth. The trade is a loss before
- * it is a gain, and it is stated in the record rather than here.
+ * control, answering *which of my accounts is working*. The trade is a loss
+ * before it is a gain, and it is stated in the record rather than here.
  *
  * What stayed, because the dashboard's card inherited it and the detail's own
  * chart re-applies it one account down:
  *
  *  - **Rebasing is the reading.** A drawn curve starts at 100 on the first day
- *    of the *visible* window, and the rate shown beside it is read off that same
- *    rebasing — so a curve and a percentage cannot answer *how did this period
- *    go* twice.
+ *    of the *visible* window, and the rate shown beside it is read off that
+ *    same rebasing — so a curve and a percentage cannot answer *how did this
+ *    period go* twice.
  *  - **The longest window is the youngest opening, never `MAX`.** A
  *    time-weighted index has no bounded amplitude, so one account's ancient
  *    volatility would set the scale for every other.
@@ -24,43 +21,35 @@
  * otherwise re-decide:
  *
  *  - **An account's weight is what it is worth** — `total_value`, or the
- *    securities alone where no cash ledger was ever recorded (#708). Left out of
- *    the weights, an account holding six hundred euros of shares would draw a
- *    portfolio smaller than it is.
+ *    securities alone where no cash ledger was ever recorded (#708). Left out
+ *    of the weights, an account holding six hundred euros of shares would draw
+ *    a portfolio smaller than it is.
  *  - **A row with no figures names its reason.** *Without a cash ledger* and
  *    *being rebuilt* look alike — every figure absent — and the sentences do
  *    not. A reason, never a progress with a target date, which belongs to the
- *    reconstruction's own card in the notifications panel (#829, ADR-0037).
+ *    reconstruction's own card in the notifications panel (#829).
  *  - **Which account the detail shows is a URL**, so it survives a reload and
  *    can be handed to somebody else; an id naming nothing falls back to the
  *    first declared account rather than to an empty page.
  *
- * **And since #722 the account's own block** (ADR-0018): the positions it sums
- * are **this account's, closed lines included**, and its
- * value-against-contributed curve is the one surface in the product where that
- * shape exists per account.
+ * **And since #722 the account's own block**: the positions it sums are **this
+ * account's, closed lines included**, and its value-against-contributed curve
+ * is the one surface in the product where that shape exists per account.
  *
- * **And since #729 the declaration's own rules** (ADR-0013, ADR-0002), because
- * they are rules about the same rows and a second module would be a second
- * authority on them. Three of them, each already stated by the server somewhere:
+ * **And since #729 the declaration's own rules**, because they are rules about
+ * the same rows and a second module would be a second authority on them. Three
+ * of them, each already stated by the server somewhere:
  *
  *  - **The row set is what `/api/accounts` serves, and nothing else.** It holds
  *    `default` under the server's own rule — as soon as an event names it, and
  *    always while nothing else is declared — so the block joins the ledger's
- *    counts to those rows and synthesises none. Rebuilding the seeded row in the
- *    client was the copy losing a branch in its worst form: the one field the
- *    copy could not invent was the one the block exists to change.
- *  - **Why a removal is not offered.** ADR-0013 refuses three of them, and the
- *    interface's obligation is the opposite of the API's: a control that is
- *    present and refuses teaches nothing, so it is **absent and names its
- *    reason** — *« 71 événements nomment ce compte »* — which generalises *a row
- *    with no figures names its reason* one notch.
+ *    counts to those rows and synthesises none. Rebuilding the seeded row in
+ *    the client was the copy losing a branch in its worst form: the one field
+ *    the copy could not invent was the one the block exists to change.
  *  - **What the create form may offer as an account.** Its states are different
- *    repairs and exactly one of them is the reader's (#764's deferral): *you have
- *    declared none* is not *the list has not arrived* is not *the list could not
- *    be read*. Rendered as one empty `<select>` under a required-field refusal,
- *    the onboarding form was unusable on precisely the install ADR-0005 wrote it
- *    for.
+ *    repairs and exactly one of them is the reader's (#764's deferral): *you
+ *    have declared none* is not *the list has not arrived* is not *the list
+ *    could not be read*.
  */
 import type {
   Account,
@@ -131,27 +120,19 @@ export function declaredLabel(account: NamedAccount): string | null {
 // ------------------------------------------------------------------------- //
 
 /**
- * The four presets — and **`MAX` is not among them** (ADR-0019). Nothing is
- * hidden by the bound: the dashboard's own series is drawn over the whole
- * history and has no scale problem, where a time-weighted index read across
- * accounts does.
+ * The four presets — and **`MAX` is not among them**. Nothing is hidden by the
+ * bound: the dashboard's own series is drawn over the whole history and has no
+ * scale problem, where a time-weighted index read across accounts does.
  *
- * **One consumer since #833**, and it is the dashboard's accounts card. The
- * accounts detail carried a second copy of this control until ADR-0028 was
- * corrected against the maquette it takes its form from: the detail draws one
- * series on one axis, where the rule these presets exist to keep is about
- * several spans read side by side. What the detail carries instead is a
- * cumulative ratio ({@link onContributed}), which implies no window at all.
+ * **One consumer since #833**, and it is the dashboard's accounts card. What
+ * the detail carries instead is a cumulative ratio ({@link onContributed}),
+ * which implies no window at all.
  */
 export const RANGES = ['1M', 'YTD', '1Y', 'SINCE_OPENING'] as const
 
 export type Range = (typeof RANGES)[number]
 
-// There is **no default here** (#862). A `DEFAULT_RANGE` stood beside `RANGES`
-// and was read by nobody: since #838 the card has no control of its own, so the
-// preset it opens on is the page's — `DEFAULT_DASHBOARD_RANGE`, mapped through
-// `ACCOUNT_RANGE` — and a second default under this name would be a second
-// answer to a question ADR-0019 settles with one control on the surface.
+// There is **no default here** (#862).
 
 /** A calendar day in UTC — the shape every perf point carries. */
 function day(at: Date): string {
@@ -187,8 +168,8 @@ export function firstDay(points: readonly PerfPoint[]): string | null {
 }
 
 /**
- * The N series, or `null` while **any one of them** is still in flight
- * (ADR-0026).
+ * The N series, or `null` while **any one of them** is still in flight.
+ *
  *
  * *Tout ou rien par objet*: the comparison **is** the object here, and an
  * account landing after the others moves `windowStart` — so every curve is
@@ -319,8 +300,8 @@ export interface AccountRow {
   gain_absolu: number | null
   xirr: number | null
   /**
-   * ADR-0018's fourth term for this account (#722). It belongs to no position,
-   * so the detail could not read it off `/api/positions` with the other three.
+   * It belongs to no position, so the detail could not read it off
+   * `/api/positions` with the other three.
    */
   transfer_fees: number | null
   /**
@@ -405,7 +386,7 @@ export function degradedReason(
  *
  * It is a **cumulative ratio and not a rate**: it covers the account's whole
  * life, which is what *totale* says, so it implies no window and needs none
- * stated (ADR-0028). That is the whole of why it can stand where a time-weighted
+ * stated. That is the whole of why it can stand where a time-weighted
  * return could not.
  *
  * `null` on all three of *no numerator yet*, *nothing paid in* and *more taken
@@ -508,11 +489,11 @@ export function accountEvents(
 }
 
 // ------------------------------------------------------------------------- //
-// The detail (#722, ADR-0028) — what eight columns could not hold
+// The detail (#722) — what eight columns could not hold
 // ------------------------------------------------------------------------- //
 
 /**
- * The positions this account holds, closed lines included (ADR-0017).
+ * The positions this account holds, closed lines included.
  *
  * The three position terms are summed over **this** set, and a sold line stays
  * in it: its realised gain and its dividends are the two figures it has left to
@@ -600,12 +581,12 @@ export interface ValuePoint {
  *
  * The comparison chart above draws one rebased index per account and refuses
  * this shape at N accounts — four curves at two accounts, ten at five, the
- * pairs overlapping and no surface being anybody's gain (ADR-0019). At one
+ * pairs overlapping and no surface being anybody's gain. At one
  * account the surface between the two lines *is* the gain, which is why the
  * shape has exactly two homes: the dashboard, and here.
  *
  * **It answers the whole series, and the caller windows it.** The rebasing and
- * this curve are two readings of one range control (ADR-0028), so the window is
+ * this curve are two readings of one range control, so the window is
  * applied once — where the control's value is — and not twice, in two functions
  * that could then disagree about which days are on screen. A day with no
  * `total_value` is a day this account has no value to state — #708 writes it
@@ -636,14 +617,14 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
  * (`accounts.default_is_declared`), read off the two fields the payload carries
  * it in: `as_declared` nulls the two seeded columns exactly when they still hold
  * the seed's own words. There was a third road — a file taking the row over —
- * and it left with the accounts file (ADR-0034). It cannot be the same function
+ * and it left with the accounts file. It cannot be the same function
  * object — that one is Python, in another process — so what travels is the rule,
  * and this is the one place the front spells it (`lib/absence.ts`'s `isQuoted`
  * is the precedent, #774).
  *
  * **The label alone**, and it used to be two. An owner who *retyped* the seeded
  * row had declared it as surely as one who renamed it, so this read both seeded
- * columns; #916 removed the type (ADR-0043), and the name is the whole of what
+ * columns; #916 removed the type, and the name is the whole of what
  * *has anybody declared this* can now be read off — server-side too
  * (`accounts.default_is_declared`).
  */
@@ -669,14 +650,14 @@ export function removalOf(account: Account, events: number): Removal {
   // `accounts.delete_account`'s order: the seeded row first (there is always at
   // least one account), then the events that name it. A third stood between
   // them while a file could declare a row and be forgotten; the file is gone
-  // (ADR-0034) and the refusal with it.
+  // and the refusal with it.
   if (isDefaultAccount(account.id)) return { kind: 'seeded' }
   if (events > 0) return { kind: 'namedByEvents', count: events }
   return { kind: 'offered' }
 }
 
 // ------------------------------------------------------------------------- //
-// The reassignment — réaffecter, jamais refuser (#725, ADR-0013, ADR-0006)
+// The reassignment — réaffecter, jamais refuser (#725)
 // ------------------------------------------------------------------------- //
 
 /**
@@ -694,7 +675,7 @@ export function removalOf(account: Account, events: number): Removal {
  *    picker here would be asking the reader to choose between an empty list and
  *    the account they are in the middle of creating.
  *  - **`standing`** — something is declared and rows are still under the seeded
- *    row. That state needs **no file at all** to reach (ADR-0034): months of
+ *    row. That state needs **no file at all** to reach: months of
  *    events typed into the app before anything was declared leave the `account`
  *    column blank and land under the seeded row, and the declaration made
  *    afterwards does not claim them — the back proves exactly that trap from
@@ -703,12 +684,12 @@ export function removalOf(account: Account, events: number): Removal {
  *
  * **No correspondence layer** is built here, and that is the criterion rather
  * than an omission: a `default → pea` map beside the events would be a second
- * truth about the account an event names (ADR-0006). What crosses the wire is
+ * truth about the account an event names. What crosses the wire is
  * one target id, and the population is the column's own value.
  *
  * `none` covers *the read has not landed* as well as *there is nothing to move*,
  * which is safe **because the block above renders nothing at all** while the
- * accounts read is in flight (ADR-0026) — this function is never asked the
+ * accounts read is in flight — this function is never asked the
  * question on a silence.
  */
 export type Reassignment =

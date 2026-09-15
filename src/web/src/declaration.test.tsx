@@ -1,27 +1,12 @@
 /**
- * The declaration of the accounts (#729, #793, ADR-0013, ADR-0002, ADR-0028), at
- * the one seam: the whole app in jsdom, HTTP the only faked edge.
- *
- * It lives on `/accounts` since ADR-0028 — with the page that reads the accounts
- * — and the removal came with it, out of a table cell and into the panel, where
- * its refusals are the prose they always were — **two of them, and this file
- * once said three**. The third was *a file declares this account*, and it
- * stopped being knowable when ADR-0032 took `account.source_id` with the rest of
- * the provenance apparatus: `account` carries `id`, `type` and `label`, and
- * nothing in the store can say which row came from a file. ADR-0028 records the
- * correction rather than applying it silently, and the count is written here for
- * the same reason — a refusal a reader looks for and cannot find reads as a
- * defect.
+ * The declaration of the accounts (#729, #793), at the one seam: the whole app
+ * in jsdom, HTTP the only faked edge.
  *
  * Every case below names the reading it prevents, and two of them are the
  * measurements the ticket rests on:
  *
  *  - **a removal present and refused** — the interface's obligation is the
  *    opposite of the API's, so it is absent and names its reason;
- *  - **an onboarding form that cannot record anything** — measured on the dev
- *    stack at #764: with nothing declared, `GET /api/accounts` answered `[]`,
- *    the `<select>` was empty and the save was refused before a request left, on
- *    exactly the install ADR-0005 wrote the form for.
  */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -91,10 +76,8 @@ describe('the same form as the ledger, not a second one', () => {
     }
     expect(screen.queryByText('🔒')).not.toBeInTheDocument()
 
-    // **Every** account is editable, since ADR-0034: one was read-only while a
-    // file could declare a row the app must not correct, and there is no such
-    // row any more. The control is the pencil beside the name (#838), and the
-    // name itself is a heading and not a button — one gesture, one control.
+    // The control is the pencil beside the name (#838), and the name itself is
+    // a heading and not a button — one gesture, one control.
     await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
     const beta = await detail('Beta')
     expect(within(beta).getByRole('button', { name: 'Modifier le compte' })).toBeInTheDocument()
@@ -124,13 +107,11 @@ describe('the form loses `currency`', () => {
     const panel = await screen.findByRole('dialog')
     expect(within(panel).getByLabelText('Identifiant')).toBeInTheDocument()
     expect(within(panel).getByLabelText('Nom')).toBeInTheDocument()
-    // **And no type** (#916, ADR-0043): the column was read by nothing, so the
+    // **And no type** (#916): the column was read by nothing, so the
     // declaration is two fields — what the events name, and what it is called.
     expect(within(panel).queryByLabelText('Type')).not.toBeInTheDocument()
 
-    // ADR-0002 deleted `Account.currency` rather than guarding it: two currency
-    // levels and not three, so *a EUR account holding a USD security* has no
-    // referent. The page built during the prototype still carried the field.
+    // The page built during the prototype still carried the field.
     for (const absent of ['Devise', 'Currency', 'Devise du compte']) {
       expect(within(panel).queryByLabelText(absent)).not.toBeInTheDocument()
     }
@@ -185,10 +166,10 @@ describe('a removal that cannot happen is absent and names its reason', () => {
   })
 
   it('offers the panel on every account, a file declaring none of them', async () => {
-    // What ADR-0034 takes off this page. `Beta` had no panel at all — a file
-    // declared it, and what a file declared was corrected in the file — so the
-    // refusal was the absence of the affordance. No file declares an account
-    // now, so the row that could not be edited has stopped existing.
+    // `Beta` had no panel at all — a file declared it, and what a file declared
+    // was corrected in the file — so the refusal was the absence of the
+    // affordance. No file declares an account now, so the row that could not be
+    // edited has stopped existing.
     const { user } = renderAccounts()
     const panel = await openPanel(user, 'Beta')
 
@@ -278,7 +259,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // a row nobody declared.
     const opened = await detail('Non affecté')
     expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
-    // **The id is back on this page** (#916, ADR-0043), and this reverses #838
+    // **The id is back on this page** (#916), and this reverses #838
     // deliberately. That ticket took it off saying the line heads an account
     // with *what the owner called it and what kind it is* — and the type is
     // gone, so only one of the two is left. The id is the half that does
@@ -371,10 +352,8 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
 
 describe('the declaration is reachable at every N', () => {
   it('is there at N = 1, which is what the true first run is', async () => {
-    // ADR-0013 gives every install one account, so *nothing declared and nothing
-    // recorded* is N = 1 — and this page carries the **only** *« Déclarer un
-    // compte »* in the product. Absent, it left the install with a page and no
-    // file unable to declare a first account at all.
+    // Absent, it left the install with a page and no file unable to declare a
+    // first account at all.
     renderAccounts(noAccountsDeclared(), [])
 
     expect(await detail('Non affecté')).toBeInTheDocument()
@@ -479,7 +458,7 @@ describe('the create form on an install that has declared nothing', () => {
     // events, the filters and the only button that opens the form away for a
     // fault they read no ledger about.
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
-    // And nothing is said above the journal about it (#829, ADR-0037): there is
+    // And nothing is said above the journal about it (#829): there is
     // no band, and the one surface this failure costs anything is the account
     // field — which names it itself, in its own three-state sentence.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()

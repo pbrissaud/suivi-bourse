@@ -1,24 +1,24 @@
 /**
  * Where the money is — **twelve slices, above the table they divide** (#727,
- * #831, ADR-0023).
+ * #831).
  *
- * **It is the shares page's block, and it always was the shares page's figure.**
- * It shipped on the dashboard at #727 and stayed there for five tickets; what
- * moved it is the maquette, read *rendered* for the first time — the ring and
- * its legend are drawn in the `Titres` branch and there is nothing of them in
- * the dashboard's. The reading holds on its own arithmetic too: the divisor is
- * the value of the lines that can be placed, which is what the page header
- * above the table sums, so the figure in the ring's hole and that header's
- * `Valorisation` are one number said twice — *wherever every line on screen
- * has a value* — rather than two figures that agree. They part on exactly one
- * case, and it is inherited rather than this block's: a held line quoted in a
- * currency whose rate has not resolved empties the **header** outright
- * (`valuationTotal` leaves at the first null, `lib/shares.ts`), while the ring
- * goes on dividing the lines it could place and names the others under it — an
- * em dash above a figure, for the one quantity. That tension was the `Poids`
- * column's before it was this one's, and settling it is a ticket of its own.
- * That is also how the reduction and the anomaly lens are answered
- * without a rule of their own: the block is handed the rows on screen, so a page
+ * **It is the shares page's block, and it always was the shares page's
+ * figure.** It shipped on the dashboard at #727 and stayed there for five
+ * tickets; what moved it is the maquette, read *rendered* for the first time —
+ * the ring and its legend are drawn in the `Titres` branch and there is nothing
+ * of them in the dashboard's. The reading holds on its own arithmetic too: the
+ * divisor is the value of the lines that can be placed, which is what the page
+ * header above the table sums, so the figure in the ring's hole and that
+ * header's `Valorisation` are one number said twice — *wherever every line on
+ * screen has a value* — rather than two figures that agree. They part on
+ * exactly one case, and it is inherited rather than this block's: a held line
+ * quoted in a currency whose rate has not resolved empties the **header**
+ * outright (`valuationTotal` leaves at the first null, `lib/shares.ts`), while
+ * the ring goes on dividing the lines it could place and names the others under
+ * it — an em dash above a figure, for the one quantity. That tension was the
+ * `Poids` column's before it was this one's, and settling it is a ticket of its
+ * own. That is also how the reduction and the anomaly lens are answered without
+ * a rule of their own: the block is handed the rows on screen, so a page
  * reduced to one account draws that account's split under a header that sums
  * that account's lines.
  *
@@ -38,36 +38,31 @@
  *
  * Three more things are decisions:
  *
- *  - **The legend is in the slices' own order**, descending. Position is what
- *    pairs a legend row to its slice, and that is exactly what licenses the
- *    lightness ramp of ADR-0023: colour here encodes *rank*, redundantly with
- *    the angle, and never identity. A legend in another order would fall
- *    outside the ADR and have to reopen it.
+ *  - **The legend is in the slices' own order**, descending. A legend in
+ *    another order would fall outside the ADR and have to reopen it.
  *  - **No breakdown by account and none by type.** The question *which account
  *    is working* has a page of its own, and this page already answers *by
  *    account* with a gesture that is not a selector: the grouping under it,
  *    which is a partition of the very same lines. A selector here would be a
  *    second, disagreeing one.
- *  - **The total is at the centre of the donut** (#790), which is the one
- *    place on the figure where it is not a fourteenth line competing with the
- *    twelve slices and the tail. It is **one object and two lines**: #790 wrote
- *    it as one sentence so that the figure and what it is the amount *of* could
- *    not be separated, and a sentence does not fit a hole — `2 300,00 € de
- *    titres` measured 144 px inside a 139 px ring and was drawn over the slices
- *    it divides. `Stat` keeps the pair whole where it matters, which is the
+ *  - **The total is at the centre of the donut** (#790), which is the one place
+ *    on the figure where it is not a fourteenth line competing with the twelve
+ *    slices and the tail. It is **one object and two lines**: #790 wrote it as
+ *    one sentence so that the figure and what it is the amount *of* could not
+ *    be separated, and a sentence does not fit a hole — `2 300,00 € de titres`
+ *    measured 144 px inside a 139 px ring and was drawn over the slices it
+ *    divides. `Stat` keeps the pair whole where it matters, which is the
  *    accessible tree: one named group, read *Titres, 2 300,00 €*. That is why
  *    the primitive gained an alignment rather than this file gaining a fifth
  *    copy of it.
  *  - **Each legend row draws its share as well as writing it** (#800). The
  *    percentage is exact and comparing two of them is arithmetic; the bar is
- *    the glance. It is `ShareBar`, the one component that draws a share, and it
- *    is handed the slice's own rank stop — the ramp is ADR-0023's and the bar
- *    picks no colour of its own.
- *  - **It names what it could not place.** A position quoted in a currency whose
- *    rate has not resolved has no value in the reporting currency, so summing it
- *    would make every other percentage silently wrong — the exclusion was
- *    already right and its own comment said why, **without ever saying it on
- *    screen**. Excluded from the arithmetic, named beside it.
+ *    the glance.
+ *  - **It names what it could not place.** A position quoted in a currency
+ *    whose rate has not resolved has no value in the reporting currency, so
+ *    summing it would make every other percentage silently wrong — the
+ *    exclusion was already right and its own comment said why, **without ever
+ *    saying it on screen**. Excluded from the arithmetic, named beside it.
  */
 import type { CSSProperties } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
@@ -185,25 +180,22 @@ export function Allocation({ rows, currency }: AllocationProps) {
             </div>
 
             {/* Two columns, and the reading order is the slices' own — **down the
-                first column, then down the second** (#831). The comment said so
-                from #727 and the grid did the opposite: a default `grid-flow-row`
-                fills across, so twelve slices were laid out 1·2 / 3·4 / 5·6 and
-                the eye read the second-biggest beside the biggest, the third
-                under it. That is a *ranking* the ramp then coloured against
-                itself, which is the one thing ADR-0023 licenses the ramp on —
-                the list being sorted and legended, position has to pair a row to
-                its slice. The maquette flows by column and this now does too:
-                `grid-flow-col` with an explicit row count, since an implicit one
-                would let the browser choose the split.
+            first column, then down the second** (#831). The comment said so
+            from #727 and the grid did the opposite: a default `grid-flow-row`
+            fills across, so twelve slices were laid out 1·2 / 3·4 / 5·6 and the
+            eye read the second-biggest beside the biggest, the third under it.
+            The maquette flows by column and this now does too: `grid-flow-col`
+            with an explicit row count, since an implicit one would let the
+            browser choose the split.
 
-                It is two columns at **every** width, because the drawing
-                is: the maquette's legend carries `grid-template-columns:1fr 1fr`
-                under no condition at all, and the one split that does have a
-                condition is ring-beside-legend — its `donutCols`, at 768 px,
-                which is the `md:` on the grid above. Under `xl:` this rendered
-                a single column from 768 to 1279 px, a shape the drawing never
-                takes. The row count stays explicit for the same reason as the
-                flow: an implicit one would let the browser choose the split. */}
+            It is two columns at **every** width, because the drawing is: the
+            maquette's legend carries `grid-template-columns:1fr 1fr` under no
+            condition at all, and the one split that does have a condition is
+            ring-beside-legend — its `donutCols`, at 768 px, which is the `md:`
+            on the grid above. Under `xl:` this rendered a single column from
+            768 to 1279 px, a shape the drawing never takes. The row count stays
+            explicit for the same reason as the flow: an implicit one would let
+            the browser choose the split. */}
             <ul
               aria-label={t('shares.allocation.title')}
               style={{ '--legend-rows': Math.ceil(slices.length / 2) } as CSSProperties}

@@ -120,15 +120,13 @@ export const BASE_CURRENCY = 'EUR'
  * accounts added up to the totals would quietly license the arithmetic
  * `build_accounts` refuses to do.
  *
- * What each row **does** hold is ADR-0018's identity about itself (#722):
- * `gain_absolu` is the sum of that account's own four terms, and
- * `net_contributed` is `total_value − gain_absolu`. The account's panel computes
- * the head from the four rather than reading the fifth, so a fixture where the
- * two disagreed would put a contradiction on screen and call it a test.
+ * The account's panel computes the head from the four rather than reading the
+ * fifth, so a fixture where the two disagreed would put a contradiction on
+ * screen and call it a test.
  *
  * There is one kind of account and no second: it is declared in the app and
- * nowhere else (ADR-0034), so nothing on it says where it came from and every
- * row is one #729's declaration block can act on.
+ * nowhere else, so nothing on it says where it came from and every row is one
+ * #729's declaration block can act on.
  */
 export function anAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -152,10 +150,7 @@ export function anAccount(overrides: Partial<Account> = {}): Account {
 }
 
 /**
- * One taxation model, as its owner wrote it (#752). A `flat_realised` at 30 %,
- * which is the shape four of the five kinds share — and **no real schedule**: a
- * fixture naming a country's actual rate would be a tax table shipped in the
- * suite, which is the thing ADR-0042 declines to ship at all.
+ * One taxation model, as its owner wrote it (#752).
  */
 export function aTaxationModel(overrides: Partial<TaxationModel> = {}): TaxationModel {
   return {
@@ -249,7 +244,7 @@ export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Accoun
 }
 
 /**
- * The row the schema seeds and never removes (ADR-0013), **as the API serves
+ * The row the schema seeds and never removes, **as the API serves
  * it**: `label` and `type` are `null` while nobody has named it. The seed's own
  * English (`Default account` / `OTHER`) never crosses the wire —
  * `accounts.as_declared` recognises it beside the constant that writes it — so
@@ -323,7 +318,7 @@ export function aPosition(options: PositionOptions = {}): Position {
     closed_at: null,
     // **Terminal by default**, which is the steady state and not the first
     // hour: the backward pass has reached this symbol's first acquisition, so
-    // a line with no price is carried at its cost (ADR-0004). A test about the
+    // a line with no price is carried at its cost. A test about the
     // rebuild says `terminal: false` and gets the other verdict — `null`, and
     // three named cells (#845).
     terminal: true,
@@ -336,12 +331,6 @@ export function aPosition(options: PositionOptions = {}): Position {
   return { ...base, ...rest }
 }
 
-/**
- * A position the owner has sold out of — `quantity` and `cost_basis` at exactly
- * zero (the dust clamp of ADR-0017 is the store's job), the realised gain and
- * the dividends surviving it, and a **closing date**, which is the one column
- * the folded section can sort on.
- */
 export function aClosedPosition(options: PositionOptions & { closed_at: string }): Position {
   return aPosition({ quantity: 0, cost_basis: 0, price: null, ...options })
 }
@@ -366,22 +355,20 @@ export function noAccountsDeclared(overrides: Partial<Account> = {}): AccountsRe
 /**
  * THE THREE ACCOUNTS, AND WHAT EACH ONE IS THERE FOR (#721)
  *
- *   id     opened      stored index   what it exercises
- *   -----  ----------  ------------   -------------------------------------
- *   alpha  2019-10-30      171,5      the old account, the one whose stored
+ *   id     opened      stored index   what it exercises -----  ----------
+ *   ------------   ------------------------------------- alpha  2019-10-30
+ *   171,5      the old account, the one whose stored
  *                                     index is 6,8 years long
  *   beta   2025-09-01      115,0      the young one — it **enters mid-chart**
  *                                     on a one-year window, and it is what
  *                                     bounds *since the opening*
  *   gamma  —                   —      no cash movement: `total_value`,
- *                                     `cash_balance`, `net_contributed`,
- *                                     `xirr` and `twr_index` are `NULL` by
- *                                     #708's per-field rule, `holdings_value`
- *                                     and `gain_absolu` are written. **Five
- *                                     dashes out of eight**, which is the
- *                                     degraded shape the page has to name.
- *
- * `171,5` beside `115,0` is the pair ADR-0019 was written on, to the tenth.
+ *                                     `cash_balance`, `net_contributed`, `xirr`
+ *                                     and `twr_index` are `NULL` by #708's
+ *                                     per-field rule, `holdings_value` and
+ *                                     `gain_absolu` are written. **Five dashes
+ *                                     out of eight**, which is the degraded
+ *                                     shape the page has to name.
  *
  * Their fourth terms are `−3,00`, `−2,00` and `0,00`, which is the global
  * `−5,00` (#722): the fees a broker takes belong to an account, and the panel
@@ -543,17 +530,15 @@ export function aTotalsPayload(
 // counted from two different origins. Rebased to 100 at the start of each
 // window they give:
 //
-//   window            alpha                          beta
-//   ----------------  -----------------------------  -----------------------
-//   1M   (02-02→)     171,5 / 165   = +3,94 %        115 / 112 = +2,68 %
-//   YTD  (01-01→)     171,5 / 180   = −4,72 %        115 / 110 = +4,55 %
-//   1A   (2025-03-02) 171,5 / 150   = +14,33 %       115 / 100 = +15,00 %
-//   opening (09-01)   171,5 / 180   = −4,72 %        115 / 100 = +15,00 %
+//   window            alpha                          beta ----------------
+//   -----------------------------  ----------------------- 1M   (02-02→)
+//   171,5 / 165   = +3,94 %        115 / 112 = +2,68 % YTD  (01-01→)     171,5
+//   / 180   = −4,72 %        115 / 110 = +4,55 % 1A   (2025-03-02) 171,5 / 150
+//   = +14,33 %       115 / 100 = +15,00 % opening (09-01)   171,5 / 180   =
+//   −4,72 %        115 / 100 = +15,00 %
 //
-// **The ranking inverts between `1M` and `1A`**, with every figure correct —
-// which is the whole subject of ADR-0019, and what the `perf` bubble warns
-// about. Read raw, the stored pair would have rendered `+71,50 %` beside
-// `+15,00 %`: 6,8 years beside 2,4.
+// Read raw, the stored pair would have rendered `+71,50 %` beside `+15,00 %`:
+// 6,8 years beside 2,4.
 //
 // `beta` opens on 2025-09-01, so on a one-year window it **enters in the middle
 // of the drawing** — the case the dated marker exists for — and it is what
@@ -688,7 +673,7 @@ export function aMover(overrides: Partial<Mover> = {}): Mover {
 }
 
 /**
- * THE INVESTMENT RHYTHM (#751, ADR-0041) — **six covered months of twelve**.
+ * THE INVESTMENT RHYTHM (#751) — **six covered months of twelve**.
  *
  * The pair the record is about, chosen so the two wrong readings are both
  * visible in a fixture: `500 €` a month over six months of twelve is neither
@@ -787,7 +772,7 @@ export function sharesPortfolio(): Position[] {
 }
 
 /**
- * The rung the ladder serves for a window (ADR-0010) — as written under a year,
+ * The rung the ladder serves for a window — as written under a year,
  * hourly from one to two, daily beyond. The handler answers this so a test can
  * see the resolution **change** with the range, which is the whole reason the
  * presets are `1M / 1A / 2A / MAX` and not four round numbers.
@@ -827,7 +812,7 @@ export function aPriceSeries(
  *    portfolio). Its label is its whole identity, which is why the identity
  *    column is not `Titre`.
  *  - **a row addressed by a key**, which since #816 is every row and therefore
- *    every row the app may edit (ADR-0032). The fourth used to be *a row with no
+ *    every row the app may edit. The fourth used to be *a row with no
  *    provenance*, told apart from the other three by a column that is gone.
  */
 export function anEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
@@ -853,7 +838,7 @@ export function anEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
  * It is a shape today's server never sends — every row of `event` has a primary
  * key — and the type allows it, so the fixture exists to prove the editor is not
  * offered on a row it could not address. What it is *not* any more is *a row a
- * file laid down*: there is one population (ADR-0032).
+ * file laid down*: there is one population.
  */
 export function anUnaddressableEvent(
   overrides: Partial<LedgerEvent> = {},
@@ -976,7 +961,7 @@ export function shareLedger(): LedgerEvent[] {
 }
 
 /**
- * A ledger **longer than one rendering budget** (#795, ADR-0031).
+ * A ledger **longer than one rendering budget** (#795).
  *
  * The four events above settled every column of the table and none of its
  * paging: forty is the reveal, and a fixture of four can never be on the wrong
@@ -1082,8 +1067,8 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
 
 /**
  * The body of `GET /health` (#818), which is what the **bell** reads — the
- * status dot's read since #819 (ADR-0036), inherited whole when #829 folded the
- * dot into the bell (ADR-0037).
+ * status dot's read since #819, inherited whole when #829 folded the
+ * dot into the bell.
  *
  * The default is a well install: the three jobs have each had a pass, none of
  * them asks to be looked at, and the reconstruction has reached every first
@@ -1208,17 +1193,17 @@ export function defaultSettings(): SettingDescription[] {
       effect: 'next_cycle',
       doc: 'The reporting currency, as an ISO-4217 code.',
       // The one dial the registry marks required, and the fixture says so
-      // rather than letting the predicate recognise it by name (ADR-0035).
+      // rather than letting the predicate recognise it by name.
       required: true,
     }),
   ]
 }
 
 /**
- * The three boot variables — a **description**, never a form (ADR-0014, #740).
+ * The three boot variables — a **description**, never a form (#740).
  *
  * Three and not six: the metrics flag and its port left with the exporter
- * (ADR-0033) and the drop folder's own with the mount (ADR-0032), and this
+ * and the drop folder's own with the mount, and this
  * fixture is the API's answer, so it is where the tab's list shortens.
  */
 export function defaultEnvironment(): EnvironmentVariable[] {
@@ -1284,10 +1269,9 @@ export function anInstallationFact(overrides: Partial<InstallationFact> = {}): I
 /**
  * A notice about the environment: outside the app's reach, so no gesture in it.
  *
- * It was a v4 `config.yaml` found on disk until ADR-0032 took the folder that
- * made finding one possible. The kind is what these tests need — a standing,
- * acknowledgeable notice the block renders and the badge counts — and this is
- * the one that is left with an owner able to end it.
+ * The kind is what these tests need — a standing, acknowledgeable notice the
+ * block renders and the badge counts — and this is the one that is left with an
+ * owner able to end it.
  */
 export function anEnvironmentFact(overrides: Partial<InstallationFact> = {}): InstallationFact {
   return anInstallationFact({
@@ -1300,13 +1284,8 @@ export function anEnvironmentFact(overrides: Partial<InstallationFact> = {}): In
 }
 
 /**
- * One standing advisory (#829, ADR-0037) — what the owner's **data** says about
- * itself, which is the third register of the notifications panel.
- *
- * The default is the cash share of an account, which is the worked example
- * ADR-0037 and `CONTEXT.md` both use, and it names an account the accounts
- * fixture declares: a card's link lands **on the figure**, and a fixture
- * pointing at nothing would make that untestable.
+ * One standing advisory (#829) — what the owner's **data** says about itself,
+ * which is the third register of the notifications panel.
  *
  * `message` keeps the server's own English for the reason `anInstallationFact`
  * does: it is the log line and what a client with no interface reads, and a

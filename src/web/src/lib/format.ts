@@ -5,16 +5,13 @@
  * — the last possible moment where a `?? 0` would otherwise sneak in and put a
  * confident `0,00 €` where the honest answer is "we have never observed this".
  *
- * **The format follows the language, not the currency** (ADR-0024). `const
- * LOCALE = 'fr-FR'` is gone: every `Intl` site below takes the locale as its
- * first argument, and the ten of them — six numbers, three dates and one list
- * (#768, #834) — read the
- * reader's current language through `useFormatters()`. ADR-0002's *a currency is
- * a unit, not a locale* is what licenses this rather than what contradicts it:
- * precisely because a currency is a unit, it cannot dictate a decimal
- * separator. The same amount in the same currency is `1 234,56 €` for a French
- * reader and `€1,234.56` for an English one — the separators are the language's,
- * the symbol's position is the locale's own convention and not ours to place.
+ * **The format follows the language, not the currency**. `const LOCALE =
+ * 'fr-FR'` is gone: every `Intl` site below takes the locale as its first
+ * argument, and the ten of them — six numbers, three dates and one list (#768,
+ * #834) — read the reader's current language through `useFormatters()`. The
+ * same amount in the same currency is `1 234,56 €` for a French reader and
+ * `€1,234.56` for an English one — the separators are the language's, the
+ * symbol's position is the locale's own convention and not ours to place.
  */
 import { useMemo } from 'react'
 
@@ -246,7 +243,7 @@ function formatMonth(locale: string, year: string, month: number): string {
  * of a machine-readable list wearing a sentence's clothes. The notices are what
  * put three securities and two currencies inside one sentence, and the server's
  * own `', '.join(...)` stays where it belongs, in the log line and in the
- * headless payload, English being the language of both (ADR-0024).
+ * headless payload, English being the language of both.
  *
  * An empty list renders as the em dash the rest of this module uses for absence
  * — never as an empty gap inside a sentence — though no caller can reach it: an

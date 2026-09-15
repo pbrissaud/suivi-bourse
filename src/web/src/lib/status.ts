@@ -3,16 +3,10 @@
  *
  * `installationState` folds `/health` into the five words the bell wears: its
  * icon carries the colour, its badge carries the count, and its panel says the
- * state in prose (ADR-0037). There is **one** global indicator in the whole
- * app, which is what ADR-0022 asked for and what the sidebar's status card was
- * a fourth rendering of until #829 took it away.
+ * state in prose.
  *
- * **The banner's half of this module left with the banner.** `shellConditions`
- * built an ordered list of live conditions for a band at the top of every page;
- * ADR-0037 retires that band and does not replace it — the conditions are
- * entries of the panel now (`lib/notifications.ts`) and the sentence descends
- * into each page's empty state. What is left below is the *page's own* failed
- * read, which is a different claim and has nowhere else to be said.
+ * What is left below is the *page's own* failed read, which is a different
+ * claim and has nowhere else to be said.
  */
 import {
   BACKFILL_RUNNING,
@@ -24,7 +18,7 @@ import type { MessageKey, MessageValues } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 
 /**
- * A state, never a count (ADR-0021). A counter stuck at "1" for the life of an
+ * A state, never a count. A counter stuck at "1" for the life of an
  * install is the noise the rule was written against.
  */
 export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 'unreachable'
@@ -35,14 +29,11 @@ export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 
  * **Exported since #830, because the bell is no longer its only reader.** The
  * settings page tabulates the three workloads out of this object, and
  * `api.health` is a bare `get<HealthState>` — the cast is the caller's promise,
- * not the wire's. A `200` carrying something else is a real state, named in
- * ADR-0036: a proxy answering with its own JSON, a stale image whose body has
- * moved on, a route the SPA catch-all served. `get` throws on anything that is
- * not JSON at all, so what is left for this to catch is JSON that is not *this*
- * object — read at the wire and not at the compiler, which is the only place
- * the question is actually asked. Every reader has to refuse the same payloads
- * or two surfaces disagree about one installation, which is the one thing the
- * bell exists to prevent.
+ * not the wire's. `get` throws on anything that is not JSON at all, so what is
+ * left for this to catch is JSON that is not *this* object — read at the wire
+ * and not at the compiler, which is the only place the question is actually
+ * asked. Every reader has to refuse the same payloads or two surfaces disagree
+ * about one installation, which is the one thing the bell exists to prevent.
  *
  * A **word this front does not know** is refused here too, and deliberately:
  * `unknown` means *nothing has been observed yet*, so borrowing it for *the
@@ -90,7 +81,7 @@ function isRebuilding(health: HealthState): boolean {
  * in, one glance answers it — and three pages lost the dated mention they
  * carried to answer it themselves, because the dot now does.
  *
- * **And it reads `/health` since #819** (ADR-0036), which repairs the half
+ * **And it reads `/health` since #819**, which repairs the half
  * #787 could not reach. The five states were derived from `/api/runtime`, whose
  * only detectable problem is the **scheduler being stopped** — so a scrape
  * frozen since Tuesday, a backfill wedged on yfinance, a perf pass raising
@@ -117,9 +108,7 @@ export function installationState(input: {
   health?: unknown
   error?: unknown
 }): InstallationState {
-  // The `503` of a store that will not open, and every other failed read. This
-  // is the trade ADR-0036 states in as many words: the body goes when the store
-  // goes, and red is the one colour that needs no body to be true.
+  // The `503` of a store that will not open, and every other failed read.
   if (input.error) return 'unreachable'
   if (input.health === undefined) return 'unknown'
   const health = readHealth(input.health)
@@ -138,7 +127,7 @@ export function installationState(input: {
  * The bar is `(horizon → today) / (first event → today)`, and the two ends are
  * the two facts the reader has: today, and the oldest day their own ledger
  * names. The **max** of the horizons is what the bar reports, because the global
- * series is written only where *every* account is written (ADR-0018) — so
+ * series is written only where *every* account is written — so
  * without naming that account the rule *"one slow account delays the whole home
  * page"* is invisible, and the owner reads the delay as a fault of the whole
  * portfolio.
@@ -186,7 +175,7 @@ export function rebuildProgress(
 /**
  * A read that failed, and the sentence that names it.
  *
- * **It is not a band, and there is none left anywhere** (#829, ADR-0037). The
+ * **It is not a band, and there is none left anywhere** (#829). The
  * banner is retired: its three conditions — a missing base currency, a running
  * reconstruction, a stopped scheduler — are entries of the notifications panel
  * now, and its *sentence* descends one floor, into the empty state of the

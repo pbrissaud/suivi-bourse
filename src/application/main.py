@@ -357,7 +357,7 @@ def log_fatal(exc: BaseException) -> None:
 
 
 def build_runtime() -> Runtime:
-    """The store and the configuration — the boot's second step (ADR-0039)."""
+    """The store and the configuration — the boot's second step."""
     build = build_info.describe(os.environ, build_info.checkout_revision())
     app_logger.info(
         f'SuiviBourse {build_info.said(build)} is running !',
@@ -394,7 +394,7 @@ def build_runtime() -> Runtime:
 
 
 def start_runtime(runtime: Runtime) -> Runtime:
-    """The scheduler and its jobs — the boot's fourth step (ADR-0039)."""
+    """The scheduler and its jobs — the boot's fourth step."""
     dials = settings_registry.defaults() if runtime.store is None \
         else settings_module.read_all(runtime.store)
     backfill_interval = dials['backfill_interval']

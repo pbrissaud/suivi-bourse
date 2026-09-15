@@ -10,7 +10,7 @@
  * Three weights, one component, because they are the same object seen from
  * three distances: `head` is the one figure a page leads with, `term` is what
  * is subordinate to it, `stat` everything else. Subordination is **vertical**
- * and it is a size — a total and its terms never share a line (ADR-0016), and
+ * and it is a size — a total and its terms never share a line, and
  * mounted at equal weight nothing says the terms are *inside* the total.
  *
  * The group is a landmark with the label as its accessible name, which is what

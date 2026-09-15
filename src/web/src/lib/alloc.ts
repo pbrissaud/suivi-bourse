@@ -1,5 +1,5 @@
 /**
- * The allocation ramp — eight stops, generated, never enumerated (ADR-0023).
+ * The allocation ramp — eight stops, generated, never enumerated.
  *
  * The allocation is **sorted descending and legended**, so position already
  * pairs a legend row to its slice and the legend already carries the name and
@@ -22,11 +22,10 @@
  *    several ranks as one colour while every declared value still looks right.
  *
  * The first two are rules; the third is a constraint the first two have to be
- * satisfied *within*, and it is what sets the chroma ends apart between grounds.
+ * satisfied *within*, and it is what sets the chroma ends apart between
+ * grounds.
  *
- * The ramp holds *only because* the allocation is sorted and legended. A
- * surface that drew these eight shares without a legend, or in another order,
- * falls outside ADR-0023 and has to reopen it.
+ * The ramp holds *only because* the allocation is sorted and legended.
  *
  * Pure, and deliberately not CSS: the eight tokens are the one place in the
  * product where the *value* depends on the ground rather than merely adapting
@@ -35,7 +34,7 @@
  * writes `bg-alloc-3` and never learns where they came from.
  */
 
-/** How many slices the allocation draws before it stops answering (ADR-0018). */
+/** How many slices the allocation draws before it stops answering. */
 /**
  * **Seven ranked slices and the fold, which is eight** (#838). The drawing caps
  * the ring at seven arcs and gives the rest one slice of its own — *Autres · 13
@@ -62,39 +61,26 @@ interface RampEnds {
 }
 
 /**
- * **The hue is the product's own** (#787, amending ADR-0029).
- *
- * ADR-0023 took the preset's `--chart-2` because that preset was near monochrome
- * and the slot was the only blue in it. ADR-0029 then *chose* 262 on the
- * argument that mint, purple and teal were spoken for by a state or a mark, and
- * that a share of a total is neither — so the ramp went to the blue nobody
- * claimed. That reasoning protects the marks and forgets the reader: it leaves
- * the one figure drawn largest on the page in a hue the product uses nowhere
- * else, beside a chart stroked in `--price`, which *is* `--primary`. The
- * allocation ended up the only surface that did not look like the application.
+ * That reasoning protects the marks and forgets the reader: it leaves the one
+ * figure drawn largest on the page in a hue the product uses nowhere else,
+ * beside a chart stroked in `--price`, which *is* `--primary`. The allocation
+ * ended up the only surface that did not look like the application.
  *
  * So the ramp is eight lightnesses of the **accent's own hue**, `165` — the
  * value `--primary` carries on both grounds. What the mint is spoken for is a
  * *state* (`--gain`) and a *mark* (`--price`), and neither is a slice: a share
  * of a whole is unsigned and always positive, it is legended, and it never sits
- * beside a gain figure it could be mistaken for. The collision ADR-0029 feared
- * is between a **signed** figure and a curve, and this ramp draws neither.
+ * beside a gain figure it could be mistaken for.
  *
  * **And the gamut stops being the binding constraint**, which is the measured
- * half of the change. Blue keeps almost no chroma where the dark ramp needs it —
- * at `L 0.86` the screen can show `0.069` — so ADR-0029 had to cap the dark
- * ramp's rank 1 there and let chroma fall from it, leaving a travel of `0.055`
- * to `0.018` that it admitted no reader would see. **The mint holds `0.181` at
- * that same lightness.** The chroma cue comes back, and rank stops resting on
- * lightness alone.
+ * half of the change. **The mint holds `0.181` at that same lightness.** The
+ * chroma cue comes back, and rank stops resting on lightness alone.
  *
  * The two rules that shape the ramps do not move: rank 1 is the most contrasted
  * on **each** ground, which is what forces two opposite lightness ramps, and
- * chroma falls with rank on both. The light ramp is the one the mint constrains
- * — green holds less chroma dark than blue does (`0.101` at `L 0.48` against
- * `0.209`) — so its rank 1 is a touch lighter and a touch less saturated than
- * ADR-0029's. Every stop is asserted in sRGB in `lib/alloc.test.ts`, which is
- * what makes these four pairs measurements rather than tastes.
+ * chroma falls with rank on both. Every stop is asserted in sRGB in
+ * `lib/alloc.test.ts`, which is what makes these four pairs measurements rather
+ * than tastes.
  */
 const ALLOCATION_RAMP: Record<Ground, RampEnds> = {
   light: { lightness: [0.48, 0.84], chroma: [0.09, 0.028], hue: 165 },

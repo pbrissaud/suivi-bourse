@@ -1,4 +1,4 @@
-"""SuiviBourse's boot sequence and container entrypoint (issue #838, ADR-0039)."""
+"""SuiviBourse's boot sequence and container entrypoint (issue #838)."""
 import contextlib
 import os
 import sys

@@ -1,13 +1,11 @@
 /**
  * **A gesture the server refused**, in prose — what did not happen, and why
- * (#829, ADR-0037).
+ * (#829).
  *
  * It is what is left of `Band` once the band is gone, and the narrowing is the
- * decision rather than the rename. A *band* was a strip across the top of the
- * content column saying what was true of the whole installation; ADR-0037
- * retires it without replacement, and **there is no band anywhere**. Its three
- * conditions are entries of the notifications panel now, and the sentence they
- * carried descends one floor into each page's empty state.
+ * decision rather than the rename. Its three conditions are entries of the
+ * notifications panel now, and the sentence they carried descends one floor
+ * into each page's empty state.
  *
  * What is left has one subject and one place, and the rule is checkable on the
  * source:

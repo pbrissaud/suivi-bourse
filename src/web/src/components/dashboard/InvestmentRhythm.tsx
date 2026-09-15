@@ -1,5 +1,5 @@
 /**
- * How much the owner buys in a month, and how often (#751, ADR-0041).
+ * How much the owner buys in a month, and how often (#751).
  *
  * **The amount never appears without its coverage**, and here that is
  * structural rather than a rule somebody remembers: the two are one `Stat` —
@@ -14,21 +14,21 @@
  * twelve observed months as twelve columns answer it without a figure: the
  * gaps are the coverage, the heights are the spread, and a month with nothing
  * bought is a tick on the baseline rather than an absence. The coefficient
- * stays in the payload for the agent (ADR-0040); the screen shows what it
+ * stays in the payload for the agent; the screen shows what it
  * reduces.
  *
  * **No label and no verdict.** Not *monthly*, not *regular*, not *irregular*:
  * the word is a judgement, the threshold producing it is a setting nobody asked
- * for (ADR-0036), and the reading is the reader's.
+ * for, and the reading is the reader's.
  *
- * **Nothing at all while the read is in flight** (ADR-0026): `rhythm === null`
+ * **Nothing at all while the read is in flight**: `rhythm === null`
  * is *not answered yet*, and an empty state on it would be a claim about the
  * reader's own ledger made on a silence.
  *
  * **The per-account breakdown is in the payload and not on the screen.** The
  * grain the record argues for is the portfolio — an ETF in January and bitcoin
  * in February are one habit — and the split is what the agent reaches over the
- * same route (ADR-0040). Its home on a page is the `Projections` one, the day
+ * same route. Its home on a page is the `Projections` one, the day
  * #757 or #758 gives that page a second occupant.
  */
 import { EmptyState } from '@/components/EmptyState'

@@ -113,9 +113,7 @@ def test_the_currency_can_still_be_reconsidered_while_the_ledger_is_empty(store)
 
 
 def test_the_currency_is_fixed_from_the_first_event(store):
-    """ADR-0002's unrecoverable act, refused where it would enter.
-
-    Amounts are recorded *in* the base currency, so a second answer converts
+    """Amounts are recorded *in* the base currency, so a second answer converts
     nothing — it silently re-reads three years of euros as dollars.
     """
     settings.save(store, {'base_currency': 'EUR'})
@@ -200,7 +198,7 @@ def test_describe_is_the_registry_and_not_a_second_enumeration(store):
 
 
 def test_the_required_mark_travels_with_the_dial_it_belongs_to(store):
-    """The front reads a mark, never a key (ADR-0035).
+    """The front reads a mark, never a key.
 
     Published like the bounds and the effect, because it is the same kind of
     thing: part of what a dial *is*. Paired with ``stored`` it is the whole of

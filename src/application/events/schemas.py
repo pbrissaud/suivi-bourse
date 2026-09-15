@@ -27,7 +27,7 @@ CASH_EVENT_TYPES = frozenset({EventType.DEPOSIT, EventType.WITHDRAWAL})
 
 @dataclass
 class Event:
-    """One dated line of the ledger — and ``id`` is its **address** (ADR-0027).
+    """One dated line of the ledger — and ``id`` is its **address**.
 
     A key names one row for as long as that row lives, and promises nothing
     beyond it: the id is absent from the CSV export, so an event exported and
@@ -71,7 +71,7 @@ def unit_cost(quantity: float, cost_basis: float) -> Optional[float]:
 
 @dataclass
 class ShareState:
-    """One position: **a quantity and a cost basis**, and nothing else (ADR-0003)."""
+    """One position: **a quantity and a cost basis**, and nothing else."""
     name: str
     symbol: str
     account: str = DEFAULT_ACCOUNT
@@ -251,8 +251,8 @@ class Timeline:
 class Account:
     """A declared account — a row of the store's ``account`` table (issue #698).
 
-    **No ``type``** (#916, ADR-0043), and since #926 none in the store either:
-    it was the first schema step's whole errand (ADR-0045). Nothing asks for it,
+    **No ``type``** (#916), and since #926 none in the store either:
+    it was the first schema step's whole errand. Nothing asks for it,
     nothing serves it and nothing renders it.
 
     ``ACCOUNT_FILE_COLUMNS`` above still names one, and that is not a leftover:

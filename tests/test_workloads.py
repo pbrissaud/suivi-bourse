@@ -1,8 +1,4 @@
-"""
-Tests for :class:`workloads.Workloads` and the passes it carries.
-
-It was ``test_metrics.py`` until #850, named after a class that had stopped
-measuring anything when ADR-0033 took ``/metrics`` out of the product.
+"""Tests for :class:`workloads.Workloads` and the passes it carries.
 
 Everything here is network-free, and since #700 there is **one** faked edge:
 yfinance. The store is real — a DuckDB file in ``tmp_path`` with the DDL
@@ -899,7 +895,7 @@ def test_backfill_empty_window_marks_complete(store, mocker):
 
 
 # ---------------------------------------------------------------------------
-# backfill — driven by the replay, over holding windows (issue #703, ADR-0009)
+# backfill — driven by the replay, over holding windows (issue #703)
 # ---------------------------------------------------------------------------
 
 def _window_recorder(metrics, mocker, prices=None):
@@ -915,7 +911,7 @@ def _window_recorder(metrics, mocker, prices=None):
 
 
 def test_a_share_bought_in_2020_and_sold_in_2022_is_reconstructed(store, mocker):
-    """The permanent wrong figure #703 exists to fix (ADR-0009).
+    """The permanent wrong figure #703 exists to fix.
 
     The backfill used to iterate over *current* positions, so a line bought in
     2020 and sold in 2022 had no reconstructed price at all and the account's
@@ -1034,7 +1030,7 @@ def test_the_backfill_takes_the_whole_timeline_and_the_scrape_only_holdings(
 
 def test_a_mute_symbol_walks_back_to_its_acquisition_and_stops_asking(
         store, mocker):
-    """The silent infinite loop, closed (issue #703, ADR-0009).
+    """The silent infinite loop, closed (issue #703).
 
     A delisted symbol stores no point, so an anchor read off the *series* never
     moves: the stop condition is never reached and the same window is asked of
@@ -1125,7 +1121,7 @@ def test_a_failed_fetch_leaves_the_anchor_where_it_was(store, mocker):
 
 
 def test_the_backward_pass_never_reaches_into_the_stored_series(store, mocker):
-    """The geometry ``price_point`` has instead of a uniqueness key (ADR-0007).
+    """The geometry ``price_point`` has instead of a uniqueness key.
 
     The backward pass works strictly before the oldest stored point and the
     forward one only starts past a day of anchor, so a range writer that deletes

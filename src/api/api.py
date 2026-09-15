@@ -80,7 +80,7 @@ def _snapshot():
 
 
 def _carried():
-    """The symbols a position may be carried at cost on (issue #706, ADR-0004)."""
+    """The symbols a position may be carried at cost on (issue #706)."""
     return quotes.terminal_symbols(
         _store(), _snapshot().backfill_windows(), datetime.now(timezone.utc))
 
@@ -178,8 +178,8 @@ def refused(exc: HTTPException):
     an oversized JSON body would name a limit that body never crossed, so
     anywhere but the upload the generic translation answers.
 
-    That one keeps the status rather than flattening it to ``500``, under
-    :data:`TYPE_INTERNAL`: the front branches on ``type`` alone (ADR-0024) and
+    That one keeps the status rather than flattening it to ``500``, under:
+    data:`TYPE_INTERNAL`: the front branches on ``type`` alone and
     has no sentence for a refusal nothing here arranged, so it says *an
     unexpected error* — which is true of it — over a status that is not.
 
@@ -326,13 +326,13 @@ def list_accounts():
     # It is a *declaration*, so it is read off the store rather than off the
     # published snapshot — and an account carrying none gets no member at all
     # rather than a `null` the front would have to tell from *not yet read*
-    # (#845, ADR-0044).
+    # (#845).
     carried = accounts_module.taxation_models_by_account(_store())
     opened_on = accounts_module.opening_dates_by_account(_store())
     # **The pre-fill, served and never stored** (#918). It is the ledger's own
     # figure — the earliest declared payment — and the form offers it where the
     # account has declared no opening date. Derived here rather than written
-    # anywhere: a declared fact and a derived one do not share a row (ADR-0006).
+    # anywhere: a declared fact and a derived one do not share a row.
     payments = ledger.first_payments(_store())
     return jsonify({
         'declared': accounts is not None,
@@ -355,8 +355,7 @@ def _with_account_facts(row: dict, carried: dict, opened_on: dict,
 
 
 def _declared(facts: dict) -> dict:
-    """The facts there are — **an absence reaches the reader as one** (#845,
-    ADR-0044), never as a `null` it would have to tell from *not yet read*."""
+    """The facts there are — **an absence reaches the reader as one** (#845), never as a `null` it would have to tell from *not yet read*."""
     return {name: value for name, value in facts.items() if value is not None}
 
 
@@ -402,7 +401,7 @@ def get_account_history(account_id: str):
 
 @api_bp.post('/accounts')
 def create_account():
-    """Declare an account — the one place one is born (ADR-0034)."""
+    """Declare an account — the one place one is born."""
     body = _json_object()
     if body is None:
         return bad_request("a JSON object is required")
@@ -476,9 +475,8 @@ def update_account(account_id: str):
     runtime = current_runtime()
     try:
         with runtime.config_manager.writing() as opened:
-            # A `type` member is **read by nothing** rather than refused (#916,
-            # ADR-0043): `/api` is the front's interface and not a contract held
-            # for anybody else (ADR-0033), so a refusal written for a client that
+            # A `type` member is **read by nothing** rather than refused (#916): `/api` is the front's interface and not a contract held
+            # for anybody else, so a refusal written for a client that
             # does not exist is code for nobody.
             # **One transaction**, since #752 put a second write in here: a model
             # reference matching nothing is refused *after* the rename has been
@@ -573,10 +571,10 @@ def list_taxation_models():
     """The models their owner wrote, and the shape a model may take.
 
     **The catalogue rides on this read** rather than living a second time in the
-    front: the kinds are a closed enumeration in code (ADR-0042) and the
-    templates are two structural values the app is allowed to ship (ADR-0043).
+    front: the kinds are a closed enumeration in code and the
+    templates are two structural values the app is allowed to ship.
     What the front holds is the *words* — one message key per kind and per
-    template, in both catalogues (ADR-0024).
+    template, in both catalogues.
     """
     return jsonify({
         **taxation.catalogue(),
@@ -672,7 +670,7 @@ def _event_to_dict(event) -> dict:
 
 @api_bp.post('/events')
 def create_event():
-    """Record one event typed in the app (issue #764, ADR-0005)."""
+    """Record one event typed in the app (issue #764)."""
     body = _json_object()
     if body is None:
         return bad_request("a JSON object is required")
@@ -852,7 +850,7 @@ def _receipt_to_dict(receipt: uploads.Receipt, *,
 
 @api_bp.patch('/events/<event_id>')
 def update_event(event_id: str):
-    """Rewrite one event — **whatever laid it down** (ADR-0032, #816)."""
+    """Rewrite one event — **whatever laid it down** (#816)."""
     key = _entry_key(event_id)
     if key is None:
         return not_found(f"No event with id {event_id!r}")
@@ -882,7 +880,7 @@ def update_event(event_id: str):
 
 @api_bp.delete('/events/<event_id>')
 def delete_event(event_id: str):
-    """Remove one event — **whatever laid it down** (ADR-0032, #816)."""
+    """Remove one event — **whatever laid it down** (#816)."""
     key = _entry_key(event_id)
     if key is None:
         return not_found(f"No event with id {event_id!r}")
@@ -902,7 +900,7 @@ def delete_event(event_id: str):
 
 @api_bp.delete('/events')
 def delete_events():
-    """Remove every event the ledger's own reduction retains (#814, ADR-0032)."""
+    """Remove every event the ledger's own reduction retains (#814)."""
     try:
         selection = _selection()
     except _InvalidParameter as exc:

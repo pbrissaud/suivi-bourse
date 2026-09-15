@@ -1,5 +1,5 @@
 /**
- * One account's detail (ADR-0028, ADR-0018, ADR-0019, ADR-0016), at the one
+ * One account's detail, at the one
  * seam: the whole app in jsdom, HTTP the only faked edge.
  *
  * Two of its criteria exist nowhere else. *`Gain total` dominates its four
@@ -96,9 +96,6 @@ describe('the head states the account, and the curve is in it', () => {
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    // ADR-0018's fourth term belongs to no security, so it is the one the head
-    // says in its own words rather than in a column — and it says it against
-    // the same denominator the ratio beside it divides.
     const fees = within(detail).getByRole('group', { name: /Frais/ })
     expect(fees).toHaveTextContent(/3,00/)
     expect(fees).toHaveTextContent(/du versé/)
@@ -130,8 +127,7 @@ describe('the head states the account, and the curve is in it', () => {
   })
 
   it('drops the fourth term where the broker took nothing', async () => {
-    // ADR-0018: an install whose transfers are free reads three terms and never
-    // learns the fourth exists. `0,00 €` there is not a figure worth a line.
+    // `0,00 €` there is not a figure worth a line.
     const { user } = renderAccounts()
     const detail = await open(user, 'Gamma')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
@@ -140,8 +136,8 @@ describe('the head states the account, and the curve is in it', () => {
   })
 
   it('computes the head instead of reading the figure written beside it', async () => {
-    // ADR-0018: the sum **is** the definition. A `gain_absolu` that disagrees
-    // is the same number written down elsewhere, and it changes nothing here.
+    // A `gain_absolu` that disagrees is the same number written down elsewhere,
+    // and it changes nothing here.
     const { user } = renderAccounts(
       defaultAccounts().map((account) =>
         account.id === 'alpha' ? { ...account, gain_absolu: 99999 } : account,
@@ -156,7 +152,7 @@ describe('the head states the account, and the curve is in it', () => {
   it('refuses a four-term total rendered from three (#775)', async () => {
     // `transfer_fees: null` is the server's own sentence — *no day to bound the
     // fees by*, so no coherent statement to make (#722) — and a total missing a
-    // term is not that total (ADR-0018). **And the term renders, as a dash**: a
+    // term is not that total. **And the term renders, as a dash**: a
     // headline that goes out with no visible cause under it is worse than the
     // wrong number it replaces.
     const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
@@ -247,7 +243,7 @@ describe('the five blocks', () => {
     expect(rows[1]).toHaveTextContent(/28,57\s?%/)
     // **Its own extent, and not the range control's**: `position.dividends` is
     // a lifetime total, so a block sitting silently under that control would
-    // borrow a window it does not obey (ADR-0028).
+    // borrow a window it does not obey.
     expect(detail).toHaveTextContent('Depuis l’ouverture de ce compte')
   })
 
@@ -291,7 +287,7 @@ describe('the five blocks', () => {
     expect(lines).toHaveTextContent('ZZA')
     // The link counts what the page it leads to shows — **symbols**, closed
     // lines included, since that page folds them rather than filtering them
-    // (ADR-0017) — which is why it says *lines* and not *held positions*: the
+    // — which is why it says *lines* and not *held positions*: the
     // list above it is the held ones and the two counts are two subjects. And
     // the reduction is a URL, so it survives a reload.
     expect(
@@ -342,7 +338,7 @@ describe('the five blocks', () => {
 
   it('reads a blank account as the seeded row', async () => {
     // An install that recorded events before declaring anything writes them
-    // under a row nobody named (ADR-0013), and the payload reports the blank it
+    // under a row nobody named, and the payload reports the blank it
     // resolved.
     server.use(
       http.get(ROUTES.events, () =>
@@ -385,10 +381,8 @@ describe('no range control, and a cumulative ratio in its place', () => {
   })
 
   it('offers no window to read it over, on this page or anywhere in it', async () => {
-    // ADR-0028 corrected: the control is the dashboard accounts card's, and the
-    // detail draws one series on one axis — where the rule the control keeps is
-    // about several spans read side by side. The maquette this page takes its
-    // form from defines its presets and renders them nowhere.
+    // The maquette this page takes its form from defines its presets and
+    // renders them nowhere.
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
@@ -398,8 +392,6 @@ describe('no range control, and a cumulative ratio in its place', () => {
   })
 
   it('states on the drawing itself the extent it covers', async () => {
-    // ADR-0028's sparkline clause is *carry the period or carry no figure*, and
-    // with no control above the chart the legend is the one place it is said.
     // What is drawn is the account's history end to end.
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
@@ -497,8 +489,7 @@ describe('a read in flight is not an absence', () => {
     )
     renderApp({ url: '/accounts' })
 
-    // Said where the detail would have been, as an empty state (#829,
-    // ADR-0037): there is no band left at the top of the column, and the rail
+    // Said where the detail would have been, as an empty state (#829): there is no band left at the top of the column, and the rail
     // beside it keeps what it did read.
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()

@@ -1,20 +1,15 @@
 /**
  * The content header bar — an **object of the product**, not a mount for a
- * trigger (ADR-0022). It is on all five pages and carries the page's own name
- * on the left, beside the collapse trigger; the **bell** and the reader's three
- * preferences on the right.
+ * trigger. It is on all five pages and carries the page's own name on the left,
+ * beside the collapse trigger; the **bell** and the reader's three preferences
+ * on the right.
  *
  * It exists because it is the one surface that survives the **three** sidebar
- * states: shadcn hides `SidebarMenuBadge` in icon mode, and the drawer takes the
- * whole navigation with it — so anything mounted in the column disappears twice.
- * That is also why the page's `<h1>` came up here (#789): a bar that carried
- * four controls and no name left the reader deducing which page they were on
- * from the navigation, which is exactly what the drawer takes away.
- *
- * The status dot stood here until #829 and the bell is where it was: ADR-0037
- * folds the dot, the sidebar's status card and the banner into **one** global
- * indicator, whose icon carries the health colour and whose badge carries the
- * count of everything the panel holds.
+ * states: shadcn hides `SidebarMenuBadge` in icon mode, and the drawer takes
+ * the whole navigation with it — so anything mounted in the column disappears
+ * twice. That is also why the page's `<h1>` came up here (#789): a bar that
+ * carried four controls and no name left the reader deducing which page they
+ * were on from the navigation, which is exactly what the drawer takes away.
  */
 import { Languages, MonitorCog, Moon, Rows3, Sun } from 'lucide-react'
 
@@ -44,21 +39,16 @@ export function ContentHeader() {
           English (#713). */}
       <SidebarTrigger />
       {/* An empty `<h1>` is worse than none, so the pair is drawn only once the
-          page has declared it — one render, and never a blank heading.
+      page has declared it — one render, and never a blank heading.
 
-          **Neither half is dropped by a breakpoint.** The subtitle is the
-          instant the page's figures are of, and that mention exists to stop a
-          reader reading them as *now* — a phone is where a stale figure is most
-          likely to be read, not where the safeguard can be spared. So both
-          truncate and neither hides: narrow degrades the sentence, it does not
-          remove it.
+      **Neither half is dropped by a breakpoint.** The subtitle is the instant
+      the page's figures are of, and that mention exists to stop a reader
+      reading them as *now* — a phone is where a stale figure is most likely to
+      be read, not where the safeguard can be spared. So both truncate and
+      neither hides: narrow degrades the sentence, it does not remove it.
 
-          **But the title does not pay for it** (#787). Sharing the space evenly,
-          390 px gave `Compt…` beside `Chiffres arrêtés au 2…` — two truncations
-          where one was owed, and the one that broke is the page's own name,
-          which is the whole reason ADR-0022 moved it into this bar. The name is
-          short and fixed, so it takes the room it needs and the sentence takes
-          what is left. */}
+      **But the title does not pay for it** (#787). The name is short and fixed,
+      so it takes the room it needs and the sentence takes what is left. */}
       <div className="flex min-w-0 items-baseline gap-3">
         {title === '' ? null : (
           <h1 className="shrink-0 text-base font-semibold tracking-tight">{title}</h1>

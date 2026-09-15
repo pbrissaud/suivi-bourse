@@ -1,5 +1,5 @@
 /**
- * The four renderings of absence, under one rule (ADR-0016):
+ * The four renderings of absence, under one rule:
  *
  *   **The em dash means *there is nothing to compute*. Anything that is merely
  *   missing is named instead.**
@@ -45,19 +45,16 @@ import { ABSENT } from '@/lib/format'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 
 export interface PositionAbsenceInput {
-  /** Zero is a **sold** position, which stays in the table (ADR-0017). */
+  /** Zero is a **sold** position, which stays in the table. */
   quantity: number
   price: Quote | null
   converted: Converted | null
   /**
-   * Has the backward pass reached this symbol's first acquisition? — the
-   * **second** term of ADR-0004's predicate, off `/api/positions` (#845).
-   *
    * A *fact*, not a verdict: it says the history is complete, not that the line
    * may be carried. It rides on the positions and not on `/api/runtime`, where
-   * the counter below lives, because that read is **optional** (ADR-0026) — a
-   * terminality inherited from it would turn every line non-terminal the moment
-   * a diagnostic probe fell over, and the table's valuation would change because
+   * the counter below lives, because that read is **optional** — a terminality
+   * inherited from it would turn every line non-terminal the moment a
+   * diagnostic probe fell over, and the table's valuation would change because
    * of a failure that has nothing to do with the portfolio.
    */
   terminal: boolean
@@ -74,12 +71,9 @@ export interface PositionAbsenceInput {
  * The four absences, plus the state that is not one. `quoted` is here so a
  * caller switches over a closed set rather than falling through a default.
  *
- * `rebuilding` is the fifth **name** and not a fifth rendering (#845): it is
- * the arithmetic ADR-0004 refuses to state — no quote, and the backfill has not
- * finished — and it wears the cells `noQuote` already wears. A name it had to
- * have, because the sum it produces is `null` where the other two priceless
- * cases produce the cost, and a case a caller cannot switch on is a case a
- * caller re-derives.
+ * A name it had to have, because the sum it produces is `null` where the other
+ * two priceless cases produce the cost, and a case a caller cannot switch on is
+ * a case a caller re-derives.
  */
 export type AbsenceCase =
   | 'carriedAtCost'
@@ -103,10 +97,10 @@ export type AbsenceCase =
  * same screen: *waiting* in the table while the curves valued it at its PMP.
  *
  * The absence is **permanent**, which is what lets it join `carriedAtCost`
- * rather than found a fifth rendering (ADR-0021): #706 refuses to carry *quoted
+ * rather than found a fifth rendering: #706 refuses to carry *quoted
  * with no rate* because that absence is transitory and repairs itself (#704),
  * and here there is nothing to repair. The cost is already in the right unit,
- * event amounts being the debit in the reporting currency (ADR-0002).
+ * event amounts being the debit in the reporting currency.
  */
 export function isQuoted(price: Quote | null): boolean {
   return price !== null && Boolean(price.currency)
@@ -123,7 +117,7 @@ export function absenceCase(input: PositionAbsenceInput): AbsenceCase {
   // backward pass is still walking towards this symbol's first acquisition, so
   // there is no figure to state and none to carry either.
   if (!input.terminal) return 'rebuilding'
-  // Terminal: nothing is coming, so the line is carried at its cost (ADR-0004).
+  // Terminal: nothing is coming, so the line is carried at its cost.
   // The counter decides how that *reads* and not what it is worth — a ticker
   // the app has asked N times reports its count in the price cell, a line
   // nothing was ever asked about is simply carried.
@@ -173,18 +167,16 @@ type Translate = (key: MessageKey, values?: MessageValues) => string
 
 /**
  * A figure's text: the number when there is one, the em dash when there is
- * nothing to compute, and the **name** of what is missing otherwise (ADR-0016).
+ * nothing to compute, and the **name** of what is missing otherwise.
  *
- * A switch over a closed set rather than a `value === null ? ABSENT : …`
- * written at each site: written per site, the dash won every time — including
- * where the rule says something must be named, which is the whole of ADR-0016.
+ * A switch over a closed set rather than a `value === null ?
  *
  * It lives here rather than once per file. Five components had it, byte for
  * byte, each with a comment claiming the copy was deliberate — and the
  * repository's own rule is that *a rule is written once*, `lib/gain.ts` calling
- * `absenceCase` rather than holding a second copy because written twice the copy
- * loses a branch (it did). Five copies of a four-branch switch is four branches
- * with five chances of losing one.
+ * `absenceCase` rather than holding a second copy because written twice the
+ * copy loses a branch (it did). Five copies of a four-branch switch is four
+ * branches with five chances of losing one.
  */
 export function renderFigure(rendering: Rendering, format: () => string, t: Translate): string {
   switch (rendering.kind) {
@@ -200,10 +192,8 @@ export function renderFigure(rendering: Rendering, format: () => string, t: Tran
 export function positionRenderings(input: PositionAbsenceInput): PositionRenderings {
   switch (absenceCase(input)) {
     case 'carriedAtCost':
-      // The dash in the price column **is** the signal, and a rebuild makes the
-      // case common enough that a badge of its own would be noise across the
-      // whole page (ADR-0004 held). The latent gain is exactly zero, not a
-      // loss: valuing at cost makes the purchase day come out neutral.
+      // The latent gain is exactly zero, not a loss: valuing at cost makes the
+      // purchase day come out neutral.
       //
       // The dash covers the line quoted in no nameable unit too (#774), and
       // there it is a statement rather than an absence of data: the number

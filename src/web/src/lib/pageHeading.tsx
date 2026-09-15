@@ -1,6 +1,6 @@
 /**
  * Where a page says its name, now that the name is the **shell's** to draw
- * (#789, ADR-0022).
+ * (#789).
  *
  * Each page used to open with an `<h1>` of its own, under a header bar that
  * carried the collapse trigger and the three controls and said nothing about

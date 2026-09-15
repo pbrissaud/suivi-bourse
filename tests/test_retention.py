@@ -1,4 +1,4 @@
-"""The resolution ladder: what age does to a stored point (issue #705, ADR-0010).
+"""The resolution ladder: what age does to a stored point (issue #705).
 
 Two halves, and the seam between them is the one the rest of the suite uses.
 :mod:`retention` is pure — the rungs, the two walls, and the arithmetic that
@@ -168,7 +168,7 @@ def test_a_bucket_between_two_rungs_has_no_honest_name_to_be_announced_under():
 
 
 def test_nothing_about_the_ladder_is_a_dial():
-    """Neither the walls nor the rungs enter the registry (ADR-0014, #705).
+    """Neither the walls nor the rungs enter the registry (#705).
 
     An install whose retention differs is an install whose pages do not mean the
     same thing — and the resolution the API announces would describe a policy no
@@ -294,7 +294,7 @@ def test_running_it_twice_designates_nothing_the_second_time(store):
 
 
 def test_a_gap_filled_at_nine_months_arrives_hourly_and_stays_hourly(store):
-    """The ladder is a **ceiling, never a floor** (ADR-0010).
+    """The ladder is a **ceiling, never a floor**.
 
     The reconstruction can only buy hourly bars past sixty days, so a hole
     filled at nine months of age lands hourly while its band still allows the
@@ -357,7 +357,7 @@ def test_the_latest_row_is_left_exactly_as_it_was_found(store):
 def test_two_symbols_are_aged_apart_by_one_statement(store):
     """The partition carries the symbol, so one scan does the whole table.
 
-    ``price_point`` has no index of any kind (ADR-0007), so ``WHERE symbol = ?``
+    ``price_point`` has no index of any kind, so ``WHERE symbol = ?``
     is a full scan and N symbols would be N of them. The property that has to
     hold for one statement to be allowed is this one: a bucket belongs to a
     symbol, and the last point of MSFT's hour never stands in for AAPL's.
@@ -681,13 +681,8 @@ def test_a_rebuild_started_today_buys_the_one_to_two_year_band_by_the_hour(
         store, mocker):
     """The chunk is cut on the ceiling, so no window straddles it (issue #783).
 
-    The interval is chosen once for the whole chunk, from its **oldest** day, and
-    the backward pass walks a year at a time from its anchor — so a rebuild
-    anchored on today asks ``[today − 730 j, today − 365 j]`` on its second
-    cycle, which misses the ceiling by a single day and buys ADR-0010's whole
-    hourly band in daily bars. Cutting the chunk on the ceiling costs no extra
-    request and one more cycle for the symbol, on a pass that already does one
-    chunk per cycle.
+    Cutting the chunk on the ceiling costs no extra request and one more cycle
+    for the symbol, on a pass that already does one chunk per cycle.
 
     The assertion is on the **window actually asked of yfinance**, not on the
     number of points a fake returned: what is wrong here is the request, and a

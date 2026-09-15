@@ -1,23 +1,12 @@
 /**
- * The ledger page — **one route, one thing, and no tab bar** (#794, #830,
- * ADR-0030, ADR-0037, ADR-0038).
+ * The ledger page — **one route, one thing, and no tab bar** (#794, #830).
  *
- * It held three tabs, then two, and now none. ADR-0020 cut it in two — what the
- * user *declared* against what the installation *is* — and the two halves left
- * one at a time: the **accounts** at #793, so the first half stopped being *what
- * the owner declared* and became the ledger; the **notices** at #829, into the
- * panel behind the header's bell, a notice being prose that a card in a column
- * beside the store has nowhere to say; and the **installation** here, to
- * `/settings`. What is left is *the ledger*, which is what the page is now
- * called — `Grand livre`, the word the glossary and every French record already
- * use, never a third one.
+ * It held three tabs, then two, and now none. What is left is *the ledger*,
+ * which is what the page is now called — `Grand livre`, the word the glossary
+ * and every French record already use, never a third one.
  *
- * **The hash goes with the bar it named.** `#installation` was an *address* on a
- * tab, read and never written, so a bookmark taken on that tab opened it; a tab
- * that no longer exists has no address to keep, and the surface it named has a
- * path of its own — which is the whole of what ADR-0038 bought. A hash typed by
- * hand now lands on the ledger, which is what every hash but that one already
- * did.
+ * A hash typed by hand now lands on the ledger, which is what every hash but
+ * that one already did.
  *
  * The reduction the assumed-currency notice leads to is not composed here
  * either: it arrives as an **address** (`?symbol=`), because the card that asks

@@ -1,6 +1,6 @@
 /**
  * What colour a money figure takes — and the one bug this module exists to
- * remove: **zero is not absence** (ADR-0016).
+ * remove: **zero is not absence**.
  *
  * The prototype's `signClass` greyed `0` exactly as it greyed `null`, and a
  * sold-out position carries both side by side — `Valorisation 0,00 €` beside

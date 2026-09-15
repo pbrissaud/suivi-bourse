@@ -51,10 +51,8 @@ describe('the bell’s colour is a state, never a count', () => {
   })
 
   it('is red on a route that answers with no body it can read', () => {
-    // ADR-0036's trade, and the half of it that is not a `503`: the body goes
-    // when the store goes, and the colour has to stay true when the detail
-    // disappears. A proxy's own JSON, an image whose body has moved on — the
-    // dot says *the app is not answering*, which is what has happened.
+    // A proxy's own JSON, an image whose body has moved on — the dot says *the
+    // app is not answering*, which is what has happened.
     expect(installationState({ health: null })).toBe('unreachable')
     expect(installationState({ health: 'ok' })).toBe('unreachable')
     expect(installationState({ health: {} })).toBe('unreachable')
@@ -127,7 +125,7 @@ describe('the bell’s colour is a state, never a count', () => {
   })
 })
 
-describe('the banner is retired, and nothing replaces it (#829, ADR-0037)', () => {
+describe('the banner is retired, and nothing replaces it (#829)', () => {
   it('keeps the first failure of the causal order, never two', () => {
     // The cap is what is left of *one band on screen or none*, applied to a
     // **surface** rather than to a screen: an unreadable store fails every read
@@ -141,10 +139,9 @@ describe('the banner is retired, and nothing replaces it (#829, ADR-0037)', () =
 
   it('has no shell conditions left to build, the three being entries now', () => {
     // `shellConditions` composed a missing currency, a running reconstruction
-    // and a stopped scheduler into a strip at the top of every page. ADR-0037
-    // takes the strip away: the three are cards behind the bell, and the
-    // sentence descends into each page's own empty state. What is left in this
-    // module is the page's failed read, which the panel cannot say.
+    // and a stopped scheduler into a strip at the top of every page. What is
+    // left in this module is the page's failed read, which the panel cannot
+    // say.
     expect(Object.keys(status)).not.toContain('shellConditions')
     expect(Object.keys(status)).not.toContain('oneBand')
   })
@@ -169,7 +166,7 @@ describe('a surface names its own failed read, and nothing above it can do it', 
     // not answering* as a fact about the installation is the bell, which reads
     // `/health` — a stricter route that falls wherever this one falls.
     // `SettingsPage` joined the list at #830, the surface it names having
-    // become a page of its own (ADR-0038) — and it is the one that reads the
+    // become a page of its own — and it is the one that reads the
     // runtime for something, which is exactly why it is worth asserting.
     const pages = ['DashboardPage', 'SharesPage', 'AccountsPage', 'SettingsPage']
     for (const page of pages) {

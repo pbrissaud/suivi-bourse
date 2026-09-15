@@ -1,7 +1,4 @@
-"""
-The settings registry — a pure module, so a pure test (#696/#701, ADR-0014).
-
-Values in, values out, no store and no clock: the same seam
+"""Values in, values out, no store and no clock: the same seam
 ``test_scheduling.py`` and ``test_performance.py`` have. What is worth pinning
 is the direction of the arrow — **the code says what a dial is worth, and the
 table is its mirror** — because the failure it prevents is silent: a boot that
@@ -34,17 +31,13 @@ def test_the_registry_is_the_single_list_of_dials():
 
 def test_the_reporting_currency_has_no_default_and_is_never_seeded():
     """"Not answered yet" and "answered" are two states, and must stay two.
-
-    A default here would silently interpret every amount already imported, and
-    ADR-0002 makes the currency immutable once posed — so the wrong guess would
-    be permanent.
     """
     assert registry.default_for('base_currency') is None
     assert 'base_currency' not in registry.seeded_defaults()
 
 
 def test_the_required_mark_is_the_registry_s_and_not_a_key_in_the_front():
-    """*First run* is a class, not a name (ADR-0035, ADR-0021).
+    """*First run* is a class, not a name.
 
     The predicate was *the reporting currency is unanswered* and the browser
     spelled that key out. It is now *a required dial is unanswered*, and the

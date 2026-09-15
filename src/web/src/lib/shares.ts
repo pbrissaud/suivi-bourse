@@ -1,5 +1,5 @@
 /**
- * The shares page's arithmetic, pure (#719, ADR-0017, ADR-0003, ADR-0004).
+ * The shares page's arithmetic, pure (#719).
  *
  * Four things live here rather than in a component, and each of them is a rule
  * the page would otherwise re-decide per cell:
@@ -11,27 +11,24 @@
  *    portfolio is held on two accounts, and the fact is **contingent** rather
  *    than structural, so the column keeps a list and renders one account as
  *    plain text (#684 D11).
- *  - **The unit cost is derived, and it is undefined on a closed position.**
- *    `Σ cost_basis / Σ quantity` *is* the weighted mean and falls out of one
- *    division because the basis is stored as an amount (ADR-0003); a plain mean
- *    of per-account unit prices produces a plausible-looking wrong price. At
+ *  - **The unit cost is derived, and it is undefined on a closed position.** `Σ
+ *    cost_basis / Σ quantity` *is* the weighted mean and falls out of one
+ *    division because the basis is stored as an amount; a plain mean of
+ *    per-account unit prices produces a plausible-looking wrong price. At
  *    quantity zero the basis is zero too, so the division is `0 / 0` and the
  *    honest answer is *there is nothing to compute* — the row has a realised
  *    gain instead.
  *  - **The counter is a rendering concern and never an arithmetic one.** A
  *    symbol the app has asked for N times and got nothing from renders *N
  *    consecutive readings, no price* in its price cell (`lib/absence.ts`), and
- *    is still **carried at its cost** in every sum (ADR-0004) — as long as its
- *    backfill is terminal, which is the term #845 brought over the wire.
- *    Written the other way round, a failing ticker would subtract its whole
- *    basis from the portfolio's value the day its quote went missing; written
- *    with the counter standing in for terminality, a line still being rebuilt
- *    was valued at its cost while the dashboard's curve left it hollow.
+ *    is still **carried at its cost** in every sum — as long as its backfill is
+ *    terminal, which is the term #845 brought over the wire. Written the other
+ *    way round, a failing ticker would subtract its whole basis from the
+ *    portfolio's value the day its quote went missing; written with the counter
+ *    standing in for terminality, a line still being rebuilt was valued at its
+ *    cost while the dashboard's curve left it hollow.
  *  - **The header's total is the same function the dashboard's is**
- *    (`lib/gain.ts`), minus its fourth term. The fees a broker takes out of a
- *    transfer belong to no security, so a table whose header sums its rows can
- *    never show them — which is the one line ADR-0017's identity had to be
- *    corrected on (ADR-0018) and the one thing this page's bubble has to say.
+ *    (`lib/gain.ts`), minus its fourth term.
  *
  * **The sheet's two rules grow this module rather than a second one beside it**
  * (#720, the way `lib/accounts.ts` took the declaration at #729): the
@@ -91,7 +88,7 @@ export interface ShareRow extends PositionAbsenceInput {
   fundamentals: Fundamentals | null
 }
 
-/** Closed is a derivation over `quantity` — there is no stored flag (ADR-0003). */
+/** Closed is a derivation over `quantity` — there is no stored flag. */
 export function isClosed(row: ShareRow): boolean {
   return row.quantity === 0
 }
@@ -118,7 +115,7 @@ function arithmeticCase(row: ShareRow): Exclude<AbsenceCase, 'noQuote'> {
  * `null` has **two** causes and they are the two transitory absences: the rate
  * has not resolved, or the symbol's history is still being rebuilt (#845). A
  * position with no quote and nothing left to fetch is **carried at its cost**
- * (ADR-0004) rather than valued at zero, and a sold one is worth exactly zero,
+ * rather than valued at zero, and a sold one is worth exactly zero,
  * which is a figure.
  *
  * The second cause is what this function used to answer *the cost* for, on the
@@ -142,7 +139,7 @@ export function marketValue(row: ShareRow): number | null {
 
 /**
  * The latent gain — `market value − cost basis`, and neither dividends nor
- * fees, which are the two other named figures (ADR-0018).
+ * fees, which are the two other named figures.
  *
  * `null` on a closed position, where there is nothing to compute, and on one
  * waiting for its rate. Carried at its cost it is exactly **zero**, not a loss:
@@ -169,8 +166,7 @@ export function unitCost(row: ShareRow): number | null {
 
 /**
  * A share the app cannot price and **the app is the answer**, never the market
- * (#684 D6). It is the one exception ADR-0016 allows to *icons never go on a
- * cell*: the text is a repair, not a convention.
+ * (#684 D6).
  *
  * It is `noQuote` and therefore **terminal** since #845, which narrows the lens
  * rather than widening it: a symbol whose backward pass is still running has
@@ -405,13 +401,6 @@ export interface ShareGroup {
  * The live table split by account — **a partition, and never a filter**.
  *
  * That is the whole difficulty and it is the page's own rule met one axis over.
- * A row of this table is a *symbol* across its accounts, so splitting it by
- * account has to put every part of every line somewhere: a symbol still held on
- * one account and sold out on another carries that second account's **realised
- * gain and dividends**, and a group built out of *the accounts that still hold
- * something* would drop that slice — leaving the page header summing a figure
- * no row on screen accounts for, which is the second correct figure ADR-0017
- * exists to prevent, one level down.
  *
  * So the split is over the symbols the table is showing, and an account named
  * by one of them gets a row for it whatever its own quantity is. Summed over
@@ -576,13 +565,10 @@ export function allocation(rows: readonly ShareRow[]): Allocation {
  *
  * A held line whose valuation has no figure — its rate has not resolved, or its
  * history is still being rebuilt (#845) — has no value in the reporting
- * currency. Counting it as nothing would make every other percentage silently
- * wrong; refusing the whole figure for it would put one line's absence on every
- * row, which is the noise ADR-0016 deletes markers for. So it is left out of
- * the whole and **named on its own row**, by the rendering below. The omission
- * covers **any** nullity, which is why the second cause changes nothing here
- * while it changes the two totals: those state a sum of the lines, and this
- * states a divisor.
+ * currency. So it is left out of the whole and **named on its own row**, by the
+ * rendering below. The omission covers **any** nullity, which is why the second
+ * cause changes nothing here while it changes the two totals: those state a sum
+ * of the lines, and this states a divisor.
  */
 export function placedValue(rows: readonly ShareRow[]): number {
   let total = 0

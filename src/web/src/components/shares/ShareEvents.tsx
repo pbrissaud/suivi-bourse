@@ -1,21 +1,17 @@
 /**
- * The events of one security, and **the other half of the selection** (#720,
- * ADR-0016).
+ * The events of one security, and **the other half of the selection** (#720).
  *
- * #675/D2 described *hovering a line lights its point*. ADR-0016 was written
- * after it and refuses hover on exactly the argument that applies here: hover
- * does not exist on a finger and says nothing to a keyboard, so a link carried
- * by it alone is a link half the readers do not have. The substance is
+ * #675/D2 described *hovering a line lights its point*. The substance is
  * unchanged, the mechanism is not — **the liaison is a selection**: clicking a
  * line selects its day, clicking a marker selects that day and brings the list
  * to it. Pointing still enriches, and never alone.
  *
  * **The unit of the selection is the day, not the event.** That is what makes
  * *several lines when the marker announces `×3`* true by construction rather
- * than by a second rule: a day is what the marker counts, so selecting one marks
- * every line it counted. Selecting one line of a `×3` day therefore marks its
- * two neighbours, which is the truth of what the reader pointed at — a marker
- * cannot grow for a third of itself.
+ * than by a second rule: a day is what the marker counts, so selecting one
+ * marks every line it counted. Selecting one line of a `×3` day therefore marks
+ * its two neighbours, which is the truth of what the reader pointed at — a
+ * marker cannot grow for a third of itself.
  */
 import { useEffect, useRef } from 'react'
 

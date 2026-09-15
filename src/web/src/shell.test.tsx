@@ -7,17 +7,17 @@
  *    for itself is one object of the shell now, so a reader reads the name of
  *    the page they are on without deducing it from the navigation, and a screen
  *    reader still finds a title on every route;
- *  - **the navigation opens to five, in three and two** (ADR-0038) — the
+ *  - **the navigation opens to five, in three and two** — the
  *    portfolio at the top, what the owner acts on at the foot, and the fold
  *    survives a reload;
- *  - **the bell is the one global indicator** (#829, ADR-0037) — its icon
+ *  - **the bell is the one global indicator** (#829) — its icon
  *    carries the health colour, its badge the count, and it is in the content
  *    header because that is the one surface surviving all three sidebar states.
  *    The sidebar's status card is gone: it was a fourth rendering of one fact,
  *    and the one that vanished in the rail and in the drawer;
  *  - **the density is the reader's third preference** — same shape of key as
  *    the theme and the language, two states because a density has no `auto`,
- *    and nothing of it reaches the store (ADR-0024).
+ *    and nothing of it reaches the store.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -102,7 +102,7 @@ describe('the page title, now the header’s', () => {
   })
 })
 
-describe('the navigation, five entries in three and two (ADR-0038)', () => {
+describe('the navigation, five entries in three and two', () => {
   /** The nav's links, in the order a reader — and a screen reader — meets them. */
   const entries = () => within(nav()).getAllByRole('link').map((link) => link.textContent)
 
@@ -138,8 +138,6 @@ describe('the navigation, five entries in three and two (ADR-0038)', () => {
   it('answers on its own address, so a bookmark on the settings survives', async () => {
     renderApp({ url: '/settings' })
 
-    // It is not `/ledger#installation` under a shorter name: a hash names a
-    // tab, and ADR-0038 took the tab bar away.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
   })
 
@@ -180,7 +178,7 @@ describe('the navigation, five entries in three and two (ADR-0038)', () => {
   })
 })
 
-describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () => {
+describe('the bell is the one global indicator (#829)', () => {
   const bell = (hidden = false) =>
     screen.getByRole('button', { name: /^Notifications/, hidden })
 
@@ -194,8 +192,7 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
     // The behaviour #819 added and this ticket inherits. Reading `/api/runtime`
     // the indicator had one detectable problem in it — the scheduler — so this
     // install, whose scheduler is running and whose scrape has written nothing
-    // for days, was **green**. The route answers `200` and the body carries the
-    // fault, which is exactly the register split ADR-0036 draws.
+    // for days, was **green**.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     renderApp()
 
@@ -208,8 +205,7 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
   })
 
   it('is red when the app is not answering at all', async () => {
-    // The store went, so the body went with it — the trade ADR-0036 states in
-    // as many words. What survives is the colour that needs no body to be true.
+    // What survives is the colour that needs no body to be true.
     server.use(
       problemHandler(ROUTES.health, {
         status: 503,
@@ -233,7 +229,7 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
   })
 
   it('carries the health colour on the icon and the count on the badge', async () => {
-    // **Two channels, one control** (ADR-0037). The badge is deliberately
+    // **Two channels, one control**. The badge is deliberately
     // neutral in colour so the two do not compete for the same signal, and the
     // count is in the accessible name because the badge itself is `aria-hidden`.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
@@ -260,9 +256,6 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
   })
 
   it('has no sidebar card left to disagree with it', async () => {
-    // ADR-0037 removes the fourth rendering of one fact — and it was the one
-    // that vanished in the rail and in the drawer, which is to say on the
-    // widths where a reader has least to look at.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     renderApp()
 
@@ -299,7 +292,7 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
   })
 
   it('leaves no band anywhere, and no component named for one', () => {
-    // `Banner.tsx`, `Band.tsx` and `StatusDot.tsx` are gone (#829, ADR-0037):
+    // `Banner.tsx`, `Band.tsx` and `StatusDot.tsx` are gone (#829):
     // the banner is retired without replacement, its conditions are cards in
     // the panel, and its sentence descends into each page's empty state.
     for (const gone of ['components/Banner.tsx', 'components/Band.tsx', 'components/StatusDot.tsx']) {

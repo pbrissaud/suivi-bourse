@@ -1,6 +1,5 @@
 /**
- * The ledger — **eight columns and one gesture** (#723, #834, ADR-0020,
- * ADR-0032).
+ * The ledger — **eight columns and one gesture** (#723, #834).
  *
  *     Date · Type · De quoi il s'agit · Quantité · Prix unitaire · Frais ·
  *     Montant · Compte
@@ -26,26 +25,23 @@
  *    security, not of each of its 285 events; repeating it is declaration
  *    duplicated, and the ticker already identifies the line.
  *
- * **And there is no padlock column**, which the table proved before ADR-0032
- * settled it: rendered, read-only-per-row gave 285 rows out of 285 carrying an
- * identical lock, and a per-row marker that does not discriminate is noise
- * however correct it is (ADR-0016). Since #816 there is nothing left for it to
- * have discriminated on — **every** row is editable — so the lock, and the
- * `Provenance` column that carried the same fact more usefully, are both gone.
+ * Since #816 there is nothing left for it to have discriminated on — **every**
+ * row is editable — so the lock, and the `Provenance` column that carried the
+ * same fact more usefully, are both gone.
  *
- * Since #795 the table is also **bounded and revealed** (ADR-0031): the header
- * is sticky, the body scrolls inside its own container, and how many rows are in
- * it is the caller's business — this component draws what it is handed and
- * says nothing about what it was not. The type is a coloured badge and the four
- * money columns are set in the mono face, both for the same reason: forty rows
- * are read by scanning down a column, not across a row.
+ * Since #795 the table is also **bounded and revealed**: the header is sticky,
+ * the body scrolls inside its own container, and how many rows are in it is the
+ * caller's business — this component draws what it is handed and says nothing
+ * about what it was not. The type is a coloured badge and the four money
+ * columns are set in the mono face, both for the same reason: forty rows are
+ * read by scanning down a column, not across a row.
  *
  * **The ninth column left with its subject** (#816). It said *"row 14 of
  * 2024.csv"* and linked to the file's revocation, and both halves rested on the
  * same thing: a mounted file was re-read, so its rows had to be named and
  * revoked whole rather than corrected. A file is handed over once now. There is
- * no source to name, no revocation to lead to, and a row that came out of a file
- * is a row — so what the column would carry on all 285 lines is the same
+ * no source to name, no revocation to lead to, and a row that came out of a
+ * file is a row — so what the column would carry on all 285 lines is the same
  * nothing the padlock carried.
  *
  * **Zero explanation icons.** The page's two live on the create form, where the
@@ -68,7 +64,7 @@ import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, identityOf, isEditable, rowKey } from '@/lib/ledger'
 import { cn } from '@/lib/utils'
 
-/** The six, named by their **effect** and never by their code (ADR-0024). */
+/** The six, named by their **effect** and never by their code. */
 export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
   BUY: 'event.type.BUY',
   SELL: 'event.type.SELL',
@@ -79,15 +75,12 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
 }
 
 /**
- * The badge's hue, and **it is spent where the product already spends it**
- * (#787, ADR-0016's rationing one notch down).
- *
  * The attribution and the dividend own a colour already — `--grant` and
  * `--dividend` are the two marks the share's chart draws its events with — so
  * they wear the same one here and a reader crossing from one surface to the
  * other reads the same mark twice. The purchase takes the quotation's own mint
- * and the sale the loss's red, which is the pair the redesign drew; the two cash
- * movements name no security at all and take an unhued pill, because the
+ * and the sale the loss's red, which is the pair the redesign drew; the two
+ * cash movements name no security at all and take an unhued pill, because the
  * product's colour vocabulary has nothing to say about a transfer.
  *
  * **The hue is the ground and the word is the foreground**, which is the one
@@ -98,15 +91,15 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
  * lowering it converges on the token alone, which is 4,77:1 for `--primary` and
  * 4,85:1 for `--attention`. Measured on the light ground, a hovered row
  * included: 4,06 for the purchase and 4,30 for the dividend. Put the hue under
- * the foreground instead and the same six pills read at **12:1 or better on both
- * grounds**, the wash carrying the whole of the colour — which is also the more
- * honest reading of *the badge is coloured*.
+ * the foreground instead and the same six pills read at **12:1 or better on
+ * both grounds**, the wash carrying the whole of the colour — which is also the
+ * more honest reading of *the badge is coloured*.
  *
  * The risk the other way round would have run — a green pill read as *this row
- * gained* — was never open here either: **no figure in this table is coloured**.
- * The amounts are the plain foreground (`f.currency`, never `signClass`), so
- * `lib/sign.ts` keeps its monopoly on colouring a *figure*, which is the
- * invariant `index.css` states.
+ * gained* — was never open here either: **no figure in this table is
+ * coloured**. The amounts are the plain foreground (`f.currency`, never
+ * `signClass`), so `lib/sign.ts` keeps its monopoly on colouring a *figure*,
+ * which is the invariant `index.css` states.
  */
 const TYPE_BADGE: Record<LedgerEventType, string> = {
   BUY: 'bg-price/20',
@@ -196,11 +189,9 @@ export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableP
                 ) : null}
               </TableCell>
 
-              {/* An em dash here is ADR-0016's own: a transfer has no quantity
-                  to be missing, and a dividend no unit price. The four money
-                  columns are set in the **mono** face on top of the tabular
-                  figures: read down a column of forty rows, the two together are
-                  what lets a comma line up with a comma. */}
+              {/* The four money columns are set in the **mono** face on top of the
+              tabular figures: read down a column of forty rows, the two
+              together are what lets a comma line up with a comma. */}
               <TableCell className="text-right font-mono tabular">
                 {f.quantity(event.quantity)}
               </TableCell>
@@ -223,7 +214,7 @@ export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableP
                 </span>
               </TableCell>
 
-              {/* The removal, at the unit (ADR-0032). It stops the click from
+              {/* The removal, at the unit. It stops the click from
                   reaching the row: the two gestures live on one line, and a
                   reader who asks to delete must not be handed the editor
                   underneath the box that asks them to confirm. */}

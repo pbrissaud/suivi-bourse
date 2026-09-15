@@ -1,5 +1,5 @@
 /**
- * The two catalogues, and the reader's other preference (ADR-0024).
+ * The two catalogues, and the reader's other preference.
  *
  * Three decisions are encoded here rather than described:
  *
@@ -13,18 +13,16 @@
  *    carries gendered agreement (`latente`, `réalisée`, `soldée`) that English
  *    does not — so a string shared between two contexts is *not available*, and
  *    the message format has to do selects and plurals rather than `%s`.
- *  - **The language lives in the browser, never in the store.** It is a property
- *    of the *reader*: the product has no authentication, so a dial in the store
- *    would impose one language on two people reading the same portfolio. It also
- *    keeps ADR-0021's *one question at first run* at exactly one, and the
- *    settings registry purely about the engine (ADR-0014).
+ *  - **The language lives in the browser, never in the store.** It is a
+ *    property of the *reader*: the product has no authentication, so a dial in
+ *    the store would impose one language on two people reading the same
+ *    portfolio.
  *
- * The library is a choice ADR-0024 left open (`react-i18next`, `Lingui`,
- * `Paraglide` — all three emit JSON). What is here is `intl-messageformat`, the
- * ICU runtime the three of them wrap, plus the sixty lines below. It buys one
- * thing the wrappers do not: `MessageKey` is `keyof typeof en`, so a key that
- * does not exist, or a French catalogue that drifts from the English one, is a
- * **compile error** rather than a string that renders as itself.
+ * What is here is `intl-messageformat`, the ICU runtime the three of them wrap,
+ * plus the sixty lines below. It buys one thing the wrappers do not:
+ * `MessageKey` is `keyof typeof en`, so a key that does not exist, or a French
+ * catalogue that drifts from the English one, is a **compile error** rather
+ * than a string that renders as itself.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -37,7 +35,7 @@ import { browserStorage, rememberPreference } from '@/lib/storage'
 export type Language = 'fr' | 'en'
 export type LanguageChoice = Language | 'auto'
 
-/** Same shape as the theme key, deliberately (ADR-0024: one mechanism). */
+/** Same shape as the theme key, deliberately: one mechanism. */
 export const LANGUAGE_STORAGE_KEY = 'sb.lang'
 
 const CHOICES: LanguageChoice[] = ['fr', 'en', 'auto']
@@ -52,11 +50,6 @@ type Catalogue = Record<MessageKey, string>
 
 const CATALOGUES: Record<Language, Catalogue> = { en, fr }
 
-/**
- * The BCP 47 tag each language formats with — numbers and dates follow the
- * **language**, never the currency (ADR-0002 is what licenses this: precisely
- * because a currency is a unit, it cannot dictate a decimal separator).
- */
 export const LOCALES: Record<Language, string> = { fr: 'fr-FR', en: 'en-GB' }
 
 /** Absence — and anything unrecognised — means `auto`. */

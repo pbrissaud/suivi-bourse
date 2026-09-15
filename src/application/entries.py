@@ -25,7 +25,7 @@ class UnknownEntry(Exception):
     """No event has that id — and ``issued`` says whether one ever did.
 
     *It was there* and *it never was* are opposite pieces of news, and the store
-    is the only side that can tell them apart (#785, ADR-0027): a key it handed
+    is the only side that can tell them apart (#785): a key it handed
     out named a row once, a key past its mark has never named anything.
     """
 
@@ -129,7 +129,7 @@ def create_many(store, drafts: Sequence[Event], *,
 
 
 def update(store, event_id: int, draft: Event) -> Event:
-    """Rewrite one event, in place — **whatever laid it down** (ADR-0032)."""
+    """Rewrite one event, in place — **whatever laid it down**."""
     with store.transaction():
         _require_known(store, event_id)
         event = _settled(store, draft)
@@ -153,7 +153,7 @@ def update(store, event_id: int, draft: Event) -> Event:
 
 
 def remove(store, event_id: int) -> None:
-    """Delete one event — **whatever laid it down** (ADR-0032)."""
+    """Delete one event — **whatever laid it down**."""
     with store.transaction():
         _require_known(store, event_id)
         store.execute('DELETE FROM event WHERE id = ?', [event_id])

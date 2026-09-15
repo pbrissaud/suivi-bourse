@@ -192,7 +192,7 @@ describe('the movers', () => {
   })
 
   it('leaves a closed line out of the sentence it is not part of', () => {
-    // `/api/positions` serves a sold line on purpose (ADR-0017), `buildShareRows`
+    // `/api/positions` serves a sold line on purpose, `buildShareRows`
     // folds it with its last frozen quote, and the server compares that quote
     // against a baseline equal to it — so a position closed years ago comes back
     // as `change_pct: 0`. Counted, it swelled `unchanged` while `others` was

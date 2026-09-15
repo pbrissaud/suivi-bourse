@@ -1,5 +1,5 @@
 /**
- * The navigation (ADR-0022), and **width was never the question**.
+ * The navigation, and **width was never the question**.
  *
  * Measured on the real portfolio, a 256 px column costs the two decisions taken
  * at full width — the twelve-slice allocation and the eight-column accounts
@@ -10,10 +10,10 @@
  * overflows its row with no scroll and no drawer, taking the global indicator
  * with it.
  *
- * So: shadcn's `Sidebar`, `collapsible="icon"` when wide, a drawer under 768 px.
- * **Nothing is hand-written for the narrow case** — the rail, the drawer, the
- * ⌘B shortcut and the persisted state come with the component, which is what
- * removed the last open question instead of answering it.
+ * So: shadcn's `Sidebar`, `collapsible="icon"` when wide, a drawer under 768
+ * px. **Nothing is hand-written for the narrow case** — the rail, the drawer,
+ * the ⌘B shortcut and the persisted state come with the component, which is
+ * what removed the last open question instead of answering it.
  *
  * **It carries routes and nothing else since #829.** The status card at its
  * foot was the dot's *development where there was room*, back when the dot was
@@ -21,17 +21,13 @@
  * its state in its accessible name, and it opens onto a health card that says
  * that state in prose. The card was a fourth rendering of one fact, and it was
  * the one that vanished in the rail and in the drawer, which is to say on the
- * widths where a reader has least to look at (ADR-0037). The scrape cadence it
- * alone used to show was never health: it is a setting, and it is a field on
- * the settings page.
+ * widths where a reader has least to look at. The scrape cadence it alone used
+ * to show was never health: it is a setting, and it is a field on the settings
+ * page.
  *
- * **Five entries since ADR-0038, in three and two.** Settings left the data
- * page and the tab bar left with it, so the list grew — and it groups, because
- * a flat five that groups by nothing is worse than a three-and-two that groups
- * by one. The top is the **portfolio**, what the owner looks at; the foot is
- * what they *act on* — the ledger, where events are declared, corrected and
- * deleted, and the settings. The ledger has a claim to the top on that first
- * count and it is declined on the second, which is ADR-0038's own arbitration.
+ * The top is the **portfolio**, what the owner looks at; the foot is what they
+ * *act on* — the ledger, where events are declared, corrected and deleted, and
+ * the settings.
  */
 import { Link, useRouterState } from '@tanstack/react-router'
 import { CircleDollarSign, Database, LayoutDashboard, Settings, Wallet } from 'lucide-react'
@@ -65,8 +61,8 @@ const PORTFOLIO: Entry[] = [
 /**
  * What the owner acts on — and the page is `Grand livre`, never *Registre*:
  * the concept has a word in `CONTEXT.md` and every French record uses it, so a
- * label inventing a second one puts two names on one thing (ADR-0038). The
- * source string is `Ledger`, English being decided first (ADR-0024).
+ * label inventing a second one puts two names on one thing. The
+ * source string is `Ledger`, English being decided first.
  */
 const WORKINGS: Entry[] = [
   { to: '/ledger', label: 'nav.ledger', icon: Database },
@@ -78,13 +74,8 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
   // **The five entries are five, at every N.** The accounts entry used to
-  // disappear at one account, and the argument was the page's own: comparing one
-  // term is not comparing. ADR-0028 made that page a master-detail — five blocks
-  // about *one* account, four of which exist nowhere else — so at one account it
-  // is not a degenerate comparison, it is the ordinary reading, and hiding it
-  // would put the composition, the annualised rate, the dividends and the last
-  // events out of reach of the install that has exactly one account, which is
-  // most of them.
+  // disappear at one account, and the argument was the page's own: comparing
+  // one term is not comparing.
 
   return (
     <Sidebar collapsible="icon">

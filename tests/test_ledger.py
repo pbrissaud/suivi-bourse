@@ -1,4 +1,4 @@
-"""The ledger in the store, and the one door a file has (#697, #811, ADR-0032).
+"""The ledger in the store, and the one door a file has (#697, #811).
 
 The seam is the one #695's Testing Decisions name: a **real** DuckDB store in
 ``tmp_path``. Nothing here asserts that a method was called; every assertion is
@@ -174,7 +174,7 @@ def test_validation_lives_in_the_ddl_and_in_validator_py_and_nowhere_else():
     ``events/loader.py``, ``events/schemas.py`` and ``events/validator.py``
     survive; what checked the *aggregated* share list — ``schema.yaml`` and
     Cerberus — left with #696, and no third checker replaced it. A constraint
-    now goes where the error enters (ADR-0007): in the DDL, or in the row
+    now goes where the error enters: in the DDL, or in the row
     validator that reads the file.
     """
     from application.events import loader, schemas, validator
@@ -194,7 +194,7 @@ def test_validation_lives_in_the_ddl_and_in_validator_py_and_nowhere_else():
 
 
 # --------------------------------------------------------------------------- #
-# The one door a file has: POST /api/events/import (issue #811, ADR-0032)
+# The one door a file has: POST /api/events/import (issue #811)
 #
 # What used to sit above this line was the **drop folder**, and it left with the
 # mount (#815, #816). What survived the move is here: the header decides the
@@ -306,7 +306,7 @@ def test_an_uploaded_line_is_then_read_by_the_events_resource(tmp_path):
     assert event['symbol'] == "AAPL"
     assert event['quantity'] == 10.0
     # Nothing on the wire says where the row came from, because nothing in the
-    # store does (ADR-0032).
+    # store does.
     assert set(event).isdisjoint(
         {'source_id', 'source_sheet', 'source_row', 'source_filename',
          'provenance'})
@@ -370,7 +370,7 @@ def test_a_dry_run_answers_the_receipt_and_writes_nothing(tmp_path):
     ``?dry_run=1`` reads, judges and answers; the store is exactly as it stood.
     The status is ``200`` and not ``201`` for the plainest of reasons: nothing
     was created, and there is nothing to come back to — the preview holds no
-    server state at all (ADR-0032).
+    server state at all.
     """
     client, opened = build_client_and_store(tmp_path)
 
@@ -392,7 +392,7 @@ def test_a_dry_run_answers_the_receipt_and_writes_nothing(tmp_path):
 
 def test_the_forecast_and_the_fact_are_the_same_object(tmp_path):
     """One shape, read twice — so the reader recognises after what they read
-    before (ADR-0032). The two payloads are compared member for member."""
+    before. The two payloads are compared member for member."""
     client = build_client(tmp_path)
 
     forecast = _upload(client, THREE_LINES, query="?dry_run=1").get_json()
@@ -419,7 +419,7 @@ def test_the_preview_refuses_what_the_write_would_refuse(tmp_path):
     assert response.status_code == 422
     detail = response.get_json()['detail']
     assert "'pea' is not declared" in detail
-    # And it names the **one** place an account is born (ADR-0034). A sentence
+    # And it names the **one** place an account is born. A sentence
     # sending the reader to an accounts file would send them at a refusal this
     # same road opposes them: the header reader turns such a file back.
     assert 'the app' in detail
@@ -477,8 +477,6 @@ def test_an_oversold_file_is_refused_in_its_own_words(tmp_path):
     assert (refusal['symbol'], refusal['wanted'], refusal['owned']) == (
         'AAPL', 25.0, 10.0)
     assert refusal['day'] == '2024-02-01'
-    # The server's own English, word for word — the ``detail`` a log and a
-    # ``curl`` read, and the one string ADR-0024 keeps off a page.
     assert refusal['detail'] == (
         'Cannot sell 25.0 shares of AAPL (only 10.0 owned) on 2024-02-01')
     assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
@@ -505,7 +503,7 @@ def test_a_second_upload_of_the_same_file_writes_nothing(tmp_path):
 
 
 def test_two_overlapping_files_write_only_the_difference(tmp_path):
-    """What the filename could never see (ADR-0032).
+    """What the filename could never see.
 
     The replaced-by-name rule the drop folder had would have taken these for two
     unrelated files and recorded the January row twice. The content key sees the
@@ -593,7 +591,7 @@ def test_the_preview_counts_the_duplicates_without_writing_either(tmp_path):
 
 
 def test_the_name_and_the_notes_are_not_part_of_the_key(tmp_path):
-    """Annotating a row must not make it re-importable (ADR-0032).
+    """Annotating a row must not make it re-importable.
 
     The second file is the first with a note added and the security renamed —
     the two members the key deliberately leaves out. It is the same purchase, and
@@ -712,9 +710,6 @@ def test_a_declared_account_is_written_as_the_file_named_it(tmp_path):
 def test_a_v4_config_file_is_refused_by_its_name_and_points_at_the_migration(tmp_path):
     """The sentence the two ``legacy_*`` installation facts said later, and
     elsewhere.
-
-    It is said at the instant of the gesture now (story 10, ADR-0032), which is
-    the only moment at which the owner is holding the file.
     """
     client, opened = build_client_and_store(tmp_path)
 
@@ -729,7 +724,7 @@ def test_a_v4_config_file_is_refused_by_its_name_and_points_at_the_migration(tmp
 
 
 def test_an_accounts_file_is_refused_naming_what_it_recognised(tmp_path):
-    """Accounts are born in the app and nowhere else (ADR-0034).
+    """Accounts are born in the app and nowhere else.
 
     Read off the **header**, never off the name, which is the rule that does
     not move: the file below is called after the events and declares accounts.
@@ -866,10 +861,8 @@ def test_an_uploaded_file_declaring_a_currency_is_taken_at_its_word(tmp_path):
 def test_a_currency_this_install_can_no_longer_take_is_refused_whole(tmp_path):
     """The dial's own mutability rule, not a second one invented at the door.
 
-    Free while the ledger is empty, fixed from the first recorded event: adopting
-    here would re-read every stored amount in another unit, which is the
-    unrecoverable act ADR-0002 names. So the file is refused, and its rows with
-    it — the refusal is about the file, and the file is one thing.
+    So the file is refused, and its rows with it — the refusal is about the
+    file, and the file is one thing.
     """
     client, opened = build_client_and_store(tmp_path)
     _upload(client, (
@@ -891,8 +884,8 @@ def test_a_security_named_once_in_a_file_is_named_on_every_row_of_it(tmp_path):
     """``create`` called N times would find the name; the batch must too.
 
     ``entries._settled`` reads the name off the ledger when a row leaves it
-    blank — an attribute of the *security*, not of each of its events
-    (ADR-0020). The batch prefetches that index for the scan it saves, and the
+    blank — an attribute of the *security*, not of each of its events.
+   The batch prefetches that index for the scan it saves, and the
     index has to move as the file is walked or the tenth row of a file would be
     named differently from the first.
     """
@@ -1017,7 +1010,7 @@ def test_a_file_of_exactly_the_bound_is_not_refused_by_its_envelope(tmp_path):
 
 # --------------------------------------------------------------------------- #
 # The account correspondence: a parameter of the gesture, consumed and dropped
-# (#835, ADR-0006, ADR-0032)
+# (#835)
 #
 # It is **not** the mapping table ``reassignment.py`` refused. That one was a
 # second, persistent truth about the account an event names; this one is read off
@@ -1214,7 +1207,7 @@ def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
 
     *Declare « TR » as a new account* is a target like any other, and it is the
     entry that stops a file being rejected whole. The account is born in the app
-    (ADR-0034) — the file did not declare it, the reader did, in the modal — and
+    — the file did not declare it, the reader did, in the modal — and
     it is named after its id, relabelling being the Accounts page's one gesture
     on a declared row.
     """
@@ -1229,8 +1222,8 @@ def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
     # **And its name is its id**, which is what a row nobody named must carry.
     # There used to be a seeded word beside it, in the column nothing read, and
     # the moment it reached the *label* instead this account was called `OTHER`
-    # on every screen with the whole suite green. #926 dropped that column
-    # (ADR-0045), so the trap is gone; the assertion stays, because what it
+    # on every screen with the whole suite green. #926 dropped that column,
+    #so the trap is gone; the assertion stays, because what it
     # actually guards is that an unnamed account is named after its id.
     assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
         [('TR',)]
@@ -1290,9 +1283,7 @@ def test_without_the_correspondence_the_same_file_duplicates_nothing(tmp_path):
 
 
 def test_the_correspondence_is_consumed_and_kept_nowhere(tmp_path):
-    """ADR-0006 intact: no second truth about the account an event names.
-
-    The correspondence is a parameter of *this* gesture. Nothing records that
+    """The correspondence is a parameter of *this* gesture. Nothing records that
     ``TR`` once meant ``pea``, so the next file naming ``TR`` asks the question
     again — which is the property that separates this from the mapping layer
     :mod:`reassignment` refused, and it is asserted as the absence of memory
@@ -1394,7 +1385,7 @@ def test_a_label_declared_between_the_forecast_and_the_button_is_not_refused(
     assert response.status_code == 201
     assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
     # And it is still the account the reader declared. The `type` member they
-    # sent is **read by nothing** (#916, ADR-0043) and there is no longer a
+    # sent is **read by nothing** (#916) and there is no longer a
     # column for it to land in either (#926): the request is not refused for
     # carrying it, and the row holds the two fields an account has.
     assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
@@ -1512,11 +1503,6 @@ def test_the_preview_refuses_the_duplicates_the_write_would_refuse(tmp_path):
 def test_the_receipt_says_what_the_file_declares_and_what_becomes_of_it(
         tmp_path):
     """The currency is an **offer** on an install that has never answered.
-
-    The file states the unit its amounts are recorded in (ADR-0021: the app
-    reads a declaration, it never asserts one), and the receipt says both halves
-    — what was declared, and whether this gesture takes it up — so the modal can
-    put the question rather than adopting behind the reader's back.
     """
     client, opened = build_client_and_store(tmp_path)
     body = (
@@ -1536,9 +1522,7 @@ def test_the_offer_is_one_the_reader_may_decline(tmp_path):
     """An offer whose default is *yes* is still an offer.
 
     ``?adopt_currency=0`` is the box unticked in the modal: the rows land, and
-    the dial is left unanswered. A client that says nothing takes it up, which is
-    the round trip ADR-0021 exists for — upload the export, and the install is
-    the install it came from.
+    the dial is left unanswered.
     """
     client, opened = build_client_and_store(tmp_path)
     body = (
@@ -1555,11 +1539,6 @@ def test_the_offer_is_one_the_reader_may_decline(tmp_path):
 
 def test_declining_does_not_reach_the_disagreement(tmp_path):
     """The refusal is not an offer, and it is not declinable.
-
-    A file recorded in another unit than this install's is refused in prose
-    whatever the flag says: declining to adopt does not make those amounts
-    re-readable, and reinterpreting every stored figure is the unrecoverable act
-    ADR-0002 names.
     """
     client, opened = build_client_and_store(tmp_path)
     _upload(client, ONE_BUY.encode('utf-8'))

@@ -6,19 +6,17 @@ rules about *rows*, and about which gestures the store refuses:
 
 1. an event file naming an undeclared account is not written **at all**, and
    the message names the account to declare;
-2. a blank ``account`` column means ``default`` until something is declared, and
-   is an error afterwards;
-3. an account is undeletable while an event names it (ADR-0013);
+2. a blank ``account`` column means ``default`` until something is declared,
+   and is an error afterwards;
+3. an account is undeletable while an event names it;
 4. the v4 ``settings.yaml`` is named, never read (that half lives in
    ``test_configuration_manager.py``, next to ``config.yaml``'s);
 5. the seeded ``default`` row is always there, so nothing branches on *"are
    accounts declared"*.
 
-**The accounts-file half of this file left with ADR-0032** (#816): there is no
-``import_source`` to hang a declaration off, no revocation by source, and no
-re-drop that replaces. What survived the move is the **header reader** — the
-upload has to recognise a declaration in order to refuse it by name — and every
-rule above, which was never about the folder.
+What survived the move is the **header reader** — the upload has to recognise a
+declaration in order to refuse it by name — and every rule above, which was
+never about the folder.
 
 The first test in the file is a v4 install's file landing untouched, and it is
 deliberately first: it is the one a user meets.
@@ -78,7 +76,7 @@ def _upload(store, tmp_path, text, name='2024.csv'):
 def _declare(store, text):
     """The accounts a fixture wants, declared the way the app declares them.
 
-    An account is born in the app and nowhere else (ADR-0034), so what a file
+    An account is born in the app and nowhere else, so what a file
     used to do in one gesture is three calls here. The file stays the fixture's
     shape because it is what these tests spell — nothing reads it on its own.
     """
@@ -137,7 +135,7 @@ def test_a_multi_account_file_without_a_declaration_is_refused_whole(store, tmp_
 def test_declaring_the_accounts_lets_the_same_file_in(store, tmp_path):
     """The gesture the refusal above asks for, and its effect on the ledger.
 
-    It names the app because that is where an account is born (ADR-0034): the
+    It names the app because that is where an account is born: the
     refusal above says *declare it*, and this is what declaring it is.
     """
     _declare(store, ACCOUNTS_FILE)
@@ -182,7 +180,7 @@ def test_the_header_says_what_a_file_is_not_its_name(store, tmp_path):
     """No filename has a special meaning in v5 (spec #695 § 6).
 
     The rule the upload still leans on: a declaration is recognised by its
-    header so it can be **refused by name** (ADR-0034), and ``ui.csv`` is a file
+    header so it can be **refused by name**, and ``ui.csv`` is a file
     like any other.
     """
     assert accounts_module.is_accounts_file(
@@ -194,7 +192,7 @@ def test_the_header_says_what_a_file_is_not_its_name(store, tmp_path):
 def test_a_declaration_is_recognised_in_a_workbook_too(store, tmp_path):
     """The events' format has two halves, and the guard holds on both.
 
-    ``is_accounts_file`` survives one job (ADR-0034, criterion 2): letting the
+    ``is_accounts_file`` survives one job (criterion 2): letting the
     upload **refuse a declaration by name**. A ``.xlsx`` is handed over exactly
     as a ``.csv`` is, so the recognition has to reach through the workbook
     reader too — and it is the only road left to it. Asserted on the ``.csv``
@@ -235,11 +233,10 @@ def test_the_label_falls_back_to_the_id(store):
 
 
 # --------------------------------------------------------------------------- #
-# Undeletable while an event names it (ADR-0013)
+# Undeletable while an event names it
 # --------------------------------------------------------------------------- #
 
 def test_an_account_an_event_names_cannot_be_removed(store, tmp_path):
-    """ADR-0013's rule, and it is the one that does **not** move (#816)."""
     _declare(store, ACCOUNTS_FILE)
     _upload(store, tmp_path, TWO_ACCOUNTS_UNDECLARED)
 
@@ -302,12 +299,9 @@ def test_two_accounts_cannot_share_an_id(store):
 def test_an_id_no_route_can_carry_is_refused_before_it_is_written(store):
     """An id is an address, and one no route matches is a row nobody can reach.
 
-    ``/api/accounts/<account_id>/…`` stops at a slash, so ``pea/2024`` inserted
-    and was then unreachable by all four of its routes — no history, no
-    reassignment, no rename, **no delete** — and ADR-0013 refuses the cascade
-    that would have cleaned it up. ``.`` and ``..`` arrive at the same place by
-    another road: a URL resolves its dot segments away before the request is
-    sent, so ``/api/accounts/../history`` asks for ``/api/history`` (#861).
+    ``.`` and ``..`` arrive at the same place by another road: a URL resolves
+    its dot segments away before the request is sent, so
+    ``/api/accounts/../history`` asks for ``/api/history`` (#861).
     """
     for unaddressable in ('pea/2024', '.', '..'):
         with pytest.raises(accounts_module.AccountSourceError):
@@ -337,7 +331,7 @@ def test_creating_an_account_makes_a_blank_column_an_error(store, tmp_path):
 # --------------------------------------------------------------------------- #
 
 def test_the_declaration_is_none_until_something_is_declared(store):
-    """``None`` is ergonomics, not a discriminant (ADR-0013).
+    """``None`` is ergonomics, not a discriminant.
 
     The table is never empty — the pages ask "is there a declaration to show",
     and the seeded row is not one.
@@ -371,10 +365,6 @@ def test_a_default_bucket_that_holds_events_is_published(store, tmp_path):
 
 def test_the_manager_publishes_the_declaration_from_the_store(tmp_path):
     """End to end through ``ConfigurationManager``: a ledger, then a snapshot.
-
-    The rows reach the store first and the manager replays them: it scans no
-    directory since ADR-0032, so what a snapshot is built from is the store and
-    only the store.
     """
     cm = ConfigurationManager(config_dir=str(tmp_path))
     _declare(cm.store, ACCOUNTS_FILE)

@@ -1,4 +1,4 @@
-"""Réaffecter, jamais refuser (issue #725, ADR-0013, ADR-0006)."""
+"""Réaffecter, jamais refuser (issue #725)."""
 from logfmt_logger import getLogger
 
 from application import accounts as accounts_module

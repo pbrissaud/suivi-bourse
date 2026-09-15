@@ -1,5 +1,5 @@
 /**
- * The gain has four terms, and their sum **is** its definition (ADR-0018).
+ * The gain has four terms, and their sum **is** its definition.
  *
  * The head therefore **computes** `Gain total` here and never reads
  * `portfolio_totals.gain_absolu`, which is the same number written down
@@ -35,16 +35,12 @@ export type GainTermName = (typeof GAIN_TERMS)[number]
  *
  * `number | null` was the shape, and it is one bit short: the nullity survived
  * the return and the *case* did not, so every caller could do nothing but write
- * an em dash — which by this product's own rule (ADR-0016) says *there is
- * nothing to compute* about a rate that simply has not resolved yet. Carrying
- * the reason is what lets the head name it, and it costs one discriminant.
+ * an em dash — which by this product's own rule says *there is nothing to
+ * compute* about a rate that simply has not resolved yet. Carrying the reason
+ * is what lets the head name it, and it costs one discriminant.
  *
  * It was called `Unrealised` while there was one reason (#718); there are two
- * since #775, and neither of them is about the latent term alone. The two are
- * rendered differently and that is the whole of why they are two: a rate on its
- * way is **named**, and a fourth term nothing can bound wears the em dash —
- * *there is nothing to compute* — which is one of ADR-0016's four and not a
- * fifth (ADR-0021).
+ * since #775, and neither of them is about the latent term alone.
  *
  * `rebuilding` is the third, and it is a **mechanical** consequence of #845
  * rather than a new idea: a position's valuation gained a second cause of
@@ -65,11 +61,10 @@ interface GainTerms {
    * It decides one thing and only one: how the latent term *reads* when every
    * line has been sold. The sum over closed positions is exactly `0`, which is
    * arithmetically right and reads as a statement — *your holdings have gained
-   * nothing* — about holdings that do not exist. By ADR-0016 that is precisely
-   * what the em dash is for: **there is nothing to compute**. The gain total is
-   * untouched, because zero is what a term with no subject contributes to a
-   * sum: an owner who has sold everything still has a realised gain, dividends
-   * and transfer fees, and that sum is their gain.
+   * nothing* — about holdings that do not exist. The gain total is untouched,
+   * because zero is what a term with no subject contributes to a sum: an owner
+   * who has sold everything still has a realised gain, dividends and transfer
+   * fees, and that sum is their gain.
    */
   holdsPosition: boolean
   /**
@@ -89,19 +84,16 @@ interface GainTerms {
    * `0` is a **figure**: the broker moved the money for free, and the term is
    * then not rendered at all rather than printed as `0,00 €`.
    *
-   * `null` is *there is no day to bound the fees by* — the server's own
-   * sentence, `transfer_fees` being bounded by the row's own day so that
-   * ADR-0018's identity holds between figures measured at the same instant
-   * (#722). It counted as zero here until #775, which made a **four-term total
-   * render from three**, amputated of a term, with nothing on screen saying so.
-   * The two meanings were one value; they are two states now, and only the
-   * first is worth zero.
+   * It counted as zero here until #775, which made a **four-term total render
+   * from three**, amputated of a term, with nothing on screen saying so. The
+   * two meanings were one value; they are two states now, and only the first is
+   * worth zero.
    */
   transferFees: number | null
 }
 
 /**
- * Colour goes only to the terms that can **change sign** (ADR-0018). A dividend
+ * Colour goes only to the terms that can **change sign**. A dividend
  * received is never negative and a transfer fee never positive, so colouring
  * them is decoration that steals the signal from the red of a realised loss.
  */
@@ -199,7 +191,7 @@ export function portfolioTerms(
 }
 
 /**
- * The three terms a **security** carries, and nothing else (ADR-0017).
+ * The three terms a **security** carries, and nothing else.
  *
  * The fourth is `0` here and never `null`, and the distinction is the point:
  * on this surface the term has **no subject** — the fee a broker takes out of a
@@ -224,9 +216,7 @@ export function securityTerms(positions: readonly Position[]): GainTerms {
  * headline names what is missing. `transferFees` `null` is *nothing to bound
  * the fees by*, and until #775 it was read as a broker moving money for free —
  * so a **four-term total was rendered from three**, amputated of a term, with
- * nothing on screen saying so. A total missing a term is not that total
- * (ADR-0018), so it is an absence, and it is the em dash: *there is nothing to
- * compute*, which is one of ADR-0016's four and not a fifth.
+ * nothing on screen saying so.
  */
 export function gainTotal(terms: GainTerms): Sum {
   if (!terms.unrealised.known) return terms.unrealised
@@ -248,11 +238,6 @@ export function gainTotal(terms: GainTerms): Sum {
 export function sumRendering(sum: Sum): Rendering {
   if (sum.known) return FIGURE
   if (sum.because === 'awaitingRate') return AWAITING_RATE
-  // Named too, and adding the case here is half of #845's repair rather than a
-  // detail of it: this function falls back on the em dash for anything it does
-  // not recognise, so a third reason added in silence would have been rendered
-  // *there is nothing to compute* about a portfolio that is simply not finished
-  // being read — invisible, and against ADR-0016.
   if (sum.because === 'rebuilding') return REBUILDING
   return DASH
 }

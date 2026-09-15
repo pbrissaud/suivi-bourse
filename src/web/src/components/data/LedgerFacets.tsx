@@ -1,5 +1,5 @@
 /**
- * **The facets** — the panel on the left of the ledger (#834, ADR-0031).
+ * **The facets** — the panel on the left of the ledger (#834).
  *
  * The reduction was six controls in a bar until this ticket: two groups of
  * chips, a search, two date fields and a chip that appeared once a bound was in
@@ -25,11 +25,8 @@
  * they remain the one control here that is not a facet: the days are all of
  * them, so there is no vocabulary to lay out and nothing to count.
  *
- * **The account facets appear at N ≥ 2 only**, which is #795's rule kept whole:
- * ADR-0013 seeds a `default` row that is never removed, so a single-account
- * install would get a group holding one option beside its own exit — a filter
- * that cannot filter. The exception is a reduction already in force, because a
- * filter with no way out is worse than a filter that cannot filter.
+ * The exception is a reduction already in force, because a filter with no way
+ * out is worse than a filter that cannot filter.
  *
  * **Under 768 px the panel folds**, and the fold is a class rather than a
  * measurement: `hidden md:flex` on the body means the state can only ever hide

@@ -211,7 +211,7 @@ class Workloads:
         return self._recompute.update_account_metrics()
 
     def recompute_perf(self) -> None:
-        """Rebuild the perf cache, in full, every cycle — **guarded** (ADR-0011)."""
+        """Rebuild the perf cache, in full, every cycle — **guarded**."""
         return self._recompute.recompute()
 
     def ingest(self, force: bool = False):

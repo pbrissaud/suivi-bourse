@@ -79,7 +79,7 @@ def first_payments(store) -> Dict[str, date]:
 
     Derived on every read and stored nowhere (#918): it is a figure the ledger
     already says, and a column holding it would be a derived value in a declared
-    row (ADR-0006). Two readers ask it — the account form, which offers it as the
+    row. Two readers ask it — the account form, which offers it as the
     opening date it pre-fills, and the advisory that contradicts a declared date
     later than it — and they ask it here so the two cannot disagree.
 

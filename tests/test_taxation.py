@@ -1,4 +1,4 @@
-"""A taxation model is a closed ``kind`` plus typed parameters (#752, ADR-0042).
+"""A taxation model is a closed ``kind`` plus typed parameters (#752).
 
 Two halves, and the seam between them is the point of the ticket:
 
@@ -26,14 +26,13 @@ from application import taxation
 # --------------------------------------------------------------------------- #
 
 def test_the_five_kinds_are_the_record_s_five():
-    """ADR-0042's own table, on the source rather than in prose."""
     assert taxation.KINDS == (
         'none', 'flat_realised', 'aged_flat_realised', 'bracketed_realised',
         'withholding_income')
 
 
 def test_a_shipped_template_carries_structure_and_never_a_rate():
-    """The whole of what the app is allowed to ship (ADR-0042, ADR-0043).
+    """The whole of what the app is allowed to ship.
 
     Every rate, bracket bound and social rate in the survey is *per tax year* and
     several move with a budget law, so the owner types theirs. What ships is what
@@ -51,22 +50,18 @@ def test_a_shipped_template_carries_structure_and_never_a_rate():
 def test_the_portuguese_unit_linked_is_not_shipped():
     """#752 asked that the figure be confirmed, and it does not survive the check.
 
-    ADR-0042 lists *PT unit-linked* beside the PEA and the assurance-vie under
-    ``aged_flat_realised``. The Portuguese regime has **two** thresholds — five
-    years and eight — and its reduced rates are conditional on 35 % of the
-    premiums having been paid in the first half of the contract. One
-    ``threshold_years`` cannot say that, and shipping ``8`` would silently drop
-    the five-year tier: a stale bundled figure of exactly the kind that record
-    says is worse than an absent one.
+    The Portuguese regime has **two** thresholds — five years and eight — and
+    its reduced rates are conditional on 35 % of the premiums having been paid
+    in the first half of the contract. One ``threshold_years`` cannot say that,
+    and shipping ``8`` would silently drop the five-year tier: a stale bundled
+    figure of exactly the kind that record says is worse than an absent one.
     """
     assert [template['id'] for template in taxation.TEMPLATES] == [
         'fr_pea', 'fr_assurance_vie']
 
 
 def test_the_pea_counts_from_the_first_payment_and_not_from_the_opening():
-    """ADR-0042's own warning, held on the constant.
-
-    *"A PEA's five years run from the first payment."* The two coincide often
+    """*"A PEA's five years run from the first payment."* The two coincide often
     enough to hide the mistake and not always enough to make it safe.
     """
     pea = next(t for t in taxation.TEMPLATES if t['id'] == 'fr_pea')
@@ -165,7 +160,7 @@ def test_none_is_a_model_and_carries_nothing():
 
 
 # --------------------------------------------------------------------------- #
-# The two tables (ADR-0044): one writer, and an absent row is an absence
+# The two tables: one writer, and an absent row is an absence
 # --------------------------------------------------------------------------- #
 
 def test_a_store_created_before_this_ticket_opens_reads_and_writes(tmp_path):
@@ -203,7 +198,7 @@ def test_a_store_created_before_this_ticket_opens_reads_and_writes(tmp_path):
 
 
 def test_an_account_with_no_model_has_no_row_at_all(store):
-    """**An absent row is an absence** (ADR-0044, #845): no sentinel, no null."""
+    """**An absent row is an absence** (#845): no sentinel, no null."""
     accounts_module.create_account(store, 'pea', 'PEA')
     assert store.query('SELECT count(*) FROM account_fact')[0][0] == 0
     assert accounts_module.taxation_models_by_account(store) == {}
@@ -223,7 +218,7 @@ def test_detaching_a_model_leaves_no_row_behind(store):
 
 
 def test_the_account_fact_table_declares_its_opening_date_column(store):
-    """#918 writes it; this ticket declares it (ADR-0044).
+    """#918 writes it; this ticket declares it.
 
     A column added later would exist on no store created between the two
     releases, so the table is declared once with the columns the settled design
@@ -241,7 +236,7 @@ def test_a_shipped_template_is_never_a_row(store):
 
 
 def test_a_model_is_written_with_its_parameters_as_one_json_value(store):
-    """One column, not a column per parameter (ADR-0042).
+    """One column, not a column per parameter.
 
     A nullable column per field would make *this kind has no such parameter*
     indistinguishable from *this row has not set it*, and it is what makes a kind
@@ -444,7 +439,7 @@ def test_the_earliest_payment_is_a_deposit_and_nothing_else(store):
     A `BUY` is money moving inside the wrapper and a `WITHDRAWAL` is money
     leaving it; neither opens anything. And it is derived on every read: no
     column holds it, because a declared fact and a derived one do not share a
-    row (ADR-0006).
+    row.
     """
     accounts_module.create_account(store, 'pea', 'PEA')
     accounts_module.create_account(store, 'cto', 'CTO')

@@ -1,6 +1,4 @@
-"""The advisories (issue #829, ADR-0036 / ADR-0037).
-
-Everything runs against a **real store** — the suite's one rule — and the
+"""Everything runs against a **real store** — the suite's one rule — and the
 assertions go on the rows and on what the module answers. That matters
 particularly here, because the whole feature is a claim about *what is stored
 and what is not*: an advisory has no row, the acknowledgement has one, and the
@@ -45,22 +43,18 @@ def _keys(found):
 # --------------------------------------------------------------------------- #
 
 def test_the_product_declares_fifteen_tables_and_one_of_them_is_the_ack():
-    """ADR-0037's own clause, on the source rather than in prose.
-
-    The acknowledgement is a **table** and not a column on ``installation_fact``:
-    a declared fact is its own thing, with its own writer, its own absence and
-    its own lifetime (ADR-0044).
+    """The acknowledgement is a **table** and not a column on
+    ``installation_fact``: a declared fact is its own thing, with its own
+    writer, its own absence and its own lifetime.
 
     **Fifteen since #926**, and the count is a number this suite states
     deliberately rather than a constant nobody may change: #752 added
-    ``taxation_model`` and ``account_fact``, #926 added ``schema_step``, and each
-    said by how much in its own acceptance criteria.
+    ``taxation_model`` and ``account_fact``, #926 added ``schema_step``, and
+    each said by how much in its own acceptance criteria.
 
-    ADR-0037's clause survives #926 intact, and that is the point worth pinning
-    here: schema steps exist now (ADR-0045), so ``acknowledged_at`` *could* be a
-    column on ``installation_fact``. It is still a table, because the reason was
-    never that a column was impossible — it was that a declared fact has its own
-    writer, its own absence and its own lifetime.
+    It is still a table, because the reason was never that a column was
+    impossible — it was that a declared fact has its own writer, its own
+    absence and its own lifetime.
     """
     assert len(store_module.TABLES) == 15
     assert 'advisory_ack' in store_module.TABLES
@@ -160,12 +154,9 @@ def _pocket(store):
 def test_a_reconstruction_withholds_what_it_would_say_about_an_account(store):
     """*100 % of its value in cash*, about a day seven years old.
 
-    The figure is arithmetically right and the sentence is a falsehood: it reads
-    a series that is not about now, and it tells the owner their account holds
-    no securities while the shares page shows them the securities. A judgement
-    passed on figures still being reconstructed is withheld until they are
-    figures — ADR-0026's rule one table over, and it needs no threshold and no
-    second reading of the horizon.
+    The figure is arithmetically right and the sentence is a falsehood: it
+    reads a series that is not about now, and it tells the owner their account
+    holds no securities while the shares page shows them the securities.
     """
     _pocket(store)
 
@@ -236,12 +227,10 @@ def test_acknowledging_puts_it_to_sleep_for_thirty_days(store):
 
 
 def test_the_expiry_brings_it_back_with_nobody_observing_anything(store):
-    """ADR-0037's answer to ADR-0036's objection, and the whole of it.
-
-    0036 refused an acknowledgement because *"an acknowledgement that outlived
+    """0036 refused an acknowledgement because *"an acknowledgement that outlived
     its condition would silence the app the second time the cash piled up"*.
-    Bounded, it cannot: nothing has to notice the condition going false, because
-    the expiry needs no observer.
+    Bounded, it cannot: nothing has to notice the condition going false,
+    because the expiry needs no observer.
     """
     _sleeping_account(store)
     advisories.acknowledge(store, 'cash_share:cto', NOW)

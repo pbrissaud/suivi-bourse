@@ -1,19 +1,15 @@
 /**
- * The share's sheet (#720, ADR-0016, ADR-0017), at the one seam: the whole app
- * in jsdom, HTTP the only faked edge.
+ * The share's sheet (#720), at the one seam: the whole app in jsdom, HTTP the
+ * only faked edge.
  *
  * Two of its criteria cannot be attested anywhere else. *`Gain total` dominates
- * its three terms, in a block and not in a row* is a statement about **nesting**
- * — the terms live inside the total's own group — and it only exists once the
- * real `Stat`, the real catalogue and the real payload are mounted together.
- * And *the liaison is a selection, not a hover* is a statement about the two
- * objects at once: the marker on the chart and the line in the list are one
- * state, and a component test of either would attest half of it.
- *
- * **Every gesture here is a click or a key, and never a hover.** ADR-0016
- * refuses hover on the argument this ticket inherits: it does not exist on a
- * finger and says nothing to a keyboard, so a test that drove the selection with
- * `user.hover` would attest a link half the readers do not have.
+ * its three terms, in a block and not in a row* is a statement about
+ * **nesting** — the terms live inside the total's own group — and it only
+ * exists once the real `Stat`, the real catalogue and the real payload are
+ * mounted together. And *the liaison is a selection, not a hover* is a
+ * statement about the two objects at once: the marker on the chart and the line
+ * in the list are one state, and a component test of either would attest half
+ * of it.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -58,19 +54,16 @@ function sheetHead(sheet: HTMLElement) {
   return within(sheet).getByRole('group', { name: 'Gain total' })
 }
 
-describe('ADR-0016’s form, naked', () => {
+describe('The bubble’s form, naked', () => {
   it('mounts the three terms **inside** the total rather than beside it', async () => {
     const { user } = renderShares()
     const sheet = await openSheet(user)
     const head = sheetHead(sheet)
 
-    // The nesting **is** the subordination. In a row there is only the
-    // horizontal axis, so a total beside its terms is four numeric figures of
-    // equal weight and nothing says the last three are inside the first — the
-    // addition ADR-0018 exists to prevent. Here they are literally inside.
-    // The drawer names them as the table does — `Latente`, `Réalisée`,
-    // `Dividendes` (#838): three boxes a third of a drawer wide, where the
-    // portfolio's long names wrap onto two lines.
+    // The nesting **is** the subordination. Here they are literally inside. The
+    // drawer names them as the table does — `Latente`, `Réalisée`, `Dividendes`
+    // (#838): three boxes a third of a drawer wide, where the portfolio's long
+    // names wrap onto two lines.
     for (const term of ['Latente', 'Réalisée', 'Dividendes']) {
       expect(within(head).getByRole('group', { name: term })).toBeInTheDocument()
     }
@@ -275,7 +268,7 @@ describe('the chart, the list and the fundamentals stay', () => {
     const sheet = await openSheet(user)
 
     // An empty state where the list would have been, and never a red strip
-    // somewhere else in the sheet (#829, ADR-0037).
+    // somewhere else in the sheet (#829).
     expect(await within(sheet).findByText('Lecture impossible')).toBeInTheDocument()
     expect(within(sheet).queryByRole('status')).not.toBeInTheDocument()
     expect(within(sheet).queryByText('Événements')).not.toBeInTheDocument()
@@ -299,8 +292,6 @@ describe('the liaison is a selection, not a hover', () => {
   })
 
   it('selects nothing on hover', async () => {
-    // The mechanism changed and the substance did not (#675/D2 as amended by
-    // ADR-0016): pointing enriches, it never carries the state.
     const { user } = renderShares()
     const sheet = await openSheet(user)
     const band = await within(sheet).findByRole('group', { name: 'Jours portant un événement' })

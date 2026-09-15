@@ -1,5 +1,5 @@
 /**
- * What there is to hand back out (#728, #796, ADR-0032, ADR-0034).
+ * What there is to hand back out (#728, #796).
  *
  * **The rest of this file left with the sources** (#816). It held the order of
  * the imported-files list, what a revocation would take with it counted before
@@ -12,7 +12,7 @@
  * They disappear without replacement, which #803 says of them by name: their
  * subject no longer exists.
  *
- * **And the accounts file left too** (ADR-0034, #817). It was the second half of
+ * **And the accounts file left too** (#817). It was the second half of
  * a round trip, and nothing reads one back in since the upload started refusing
  * a declaration by name — so what remains is one question about one file.
  */
