@@ -63,13 +63,13 @@ GET_PORTFOLIO_TOTALS_DESCRIPTION = f"""\
 The portfolio as a whole, on the most recent day the app has computed.
 
 Carries the market value, the net amount contributed, the money-weighted return
-(xirr, annualised), the time-weighted return (twr, an index based at 100), the
+(xirr, annualised), the time-weighted return (twr_index, based at 100), the
 year-to-date figures, and the gain broken into its four terms — the unrealised
 gain, the realised gain, the dividends received, and the transfer fees paid.
 Those four terms sum to the total gain by definition: do not recombine them some
 other way, and do not treat their sum as an independent check.
 
-twr is based at 100 on twr_since, the day this series starts — which is the
+twr_index is based at 100 on twr_since, the day this series starts — which is the
 latest horizon among the accounts it sums, and so is later than the day an
 individual account's index starts at. The two are not on the same base: a global
 index below every account's measures a shorter period and is not a sign that the
@@ -133,10 +133,29 @@ and you cannot rank them: say which period each one covers, and do not call the
 lower one the worse performer. twr_since is absent on an account the app has
 computed no series for.
 
-Where an account carries a taxation model it also carries taxation_model,
-opened_on, first_payment, taxation_kind, projected_tax, projected_base,
-projected_rates and projected_rate_changes_on. An account with no model carries
-none of them: the absence is the answer, and not a gap in this read.
+A row carries three families of member, and they are absent independently of
+one another. Do not read one family's absence as another's.
+
+- opened_on and first_payment ride on their own facts and NOT on any taxation
+  model: opened_on where the owner declared an opening day, first_payment where
+  the ledger holds a payment into the account. An account with no model can
+  carry both; an account with a model can carry neither.
+- taxation_model is the owner's declaration of which model the account carries,
+  served as written wherever there is one. It is an internal identifier, not a
+  name: no tool here resolves it, so do not read it aloud — say *which account*
+  needs its model looked at, in the app.
+- taxation_kind and the four projected_* members are the projection, and they
+  are served only where that declared model still passes this version's own
+  check on it. A model an older version accepted and this one refuses publishes
+  NOTHING beyond its name. So taxation_model present with taxation_kind absent
+  means the declaration needs repairing in the app — not that the tax is zero,
+  and not that the read failed.
+
+AND taxation_kind CAN RIDE WITHOUT A FIGURE. A model can be perfectly valid and
+still project nothing: a kind that taxes no realised gain, an aged wrapper with
+no date to age it from, and an account one unvalued position makes unmeasurable
+each give you the kind and no projected_tax. That is an honest absence, not a
+broken declaration and not a zero.
 
 projected_tax IS A PROJECTION AND NOT A TAX. It is what the account would owe if
 it were emptied today under a model THE OWNER DECLARED THEMSELVES — they entered
@@ -146,11 +165,20 @@ household situation and no year of any actual return. Say it is a projection
 under a model the owner declared, every time you quote it, and never use it to
 advise what is owed, what is due, or when to sell.
 
-projected_base is the gain that rate was applied to, and it is the LATENT gain
-alone — not gain_absolu, which also holds the realised gain, the dividends and
-the fees. Applying projected_rates to gain_absolu gives a number this app did
-not publish and does not agree with. projected_rates is a list of fractions: one
-for a flat model, the rungs of the ladder for a bracketed one.
+projected_base is the LATENT gain — not gain_absolu, which also holds the
+realised gain, the dividends and the fees. Applying projected_rates to
+gain_absolu gives a number this app did not publish and does not agree with.
+
+DO NOT RECOMPUTE projected_tax FROM THE OTHER TWO. The arithmetic behind it is
+not rate times base, and multiplying them yourself gives a wrong answer in two
+ordinary cases. A LOSING ACCOUNT carries a negative projected_base and a
+projected_tax of 0: nothing is owed on a loss, and the rate was applied to zero
+rather than to the negative figure you can see. A BRACKETED model carries one
+fraction per rung and NOT the gain bounds that place a gain among them, so its
+figure cannot be reconstructed from what is served at all. Quote projected_tax
+as the app computed it; use projected_rates to say which rate or rates are in
+force, never to derive the figure.
+
 projected_rate_changes_on is the day the rate would next change for this
 wrapper, absent when nothing is coming.
 
@@ -273,7 +301,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             return work()
         except ToolError:
             raise
-        except (store_module.StoreUnavailable, duckdb.Error) as exc:
+        except (store_module.StoreUnavailable, duckdb.Error,
+                ValueError) as exc:
             raise ToolError(
                 f"the portfolio store could not answer this read, so there is "
                 f"no figure to give: {exc}") from exc

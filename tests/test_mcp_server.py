@@ -21,8 +21,11 @@ from application import accounts as accounts_module
 from application import entries
 from application import main
 from application import mcp_server
+from application import perf_series
 from application import store as store_module
-from application.events.schemas import Event, EventType
+from application.events.schemas import (
+    AccountMetricPoint, Event, EventType, PortfolioTotalPoint,
+)
 
 
 def build_runtime(tmp_path, events=None, currency='EUR', break_store=False):
@@ -211,18 +214,53 @@ def test_the_accounts_description_frames_the_tax_and_the_index(tmp_path):
     """
     runtime, _ = build_runtime(tmp_path)
 
-    described = {tool.name: tool.description or ''
-                 for tool in listed(runtime)}['list_accounts']
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)}['list_accounts'].split())
 
     assert 'projection' in described
     assert 'OWNER DECLARED THEMSELVES' in described
     assert 'no allowance' in described and 'loss carry-forward' in described
     assert 'when to sell' in described
     assert 'projected_base' in described
+    # The two groups come apart on a model this version refuses: the name is
+    # served, the kind and the figures are not. A description promising the
+    # eight together leaves that account looking like a failed read.
+    # The three families are absent independently, and the description has to
+    # say so: opened_on and first_payment do not consult the model at all, and
+    # a valid model can still project nothing.
+    assert 'absent independently' in described
+    assert 'NOT on any taxation model' in described
+    assert 'taxation_kind CAN RIDE WITHOUT A FIGURE' in described
+    # And the figure is not rate times base: a loss floors the tax at 0 while
+    # the base stays negative, and a ladder does not serve its bounds.
+    assert 'DO NOT RECOMPUTE projected_tax' in described
+    assert 'negative projected_base and a' in described
 
     assert 'twr_since' in described
     # The sentence that sold the comparison the payload cannot support.
     assert 'the figure that compares two accounts of different sizes' not in described
+
+
+def test_the_totals_description_names_the_day_its_own_index_counts_from(tmp_path):
+    """The other half of #887, and the half nothing held.
+
+    ``list_accounts`` now warns a model off ranking two indexes — but the
+    comparison a model actually reaches for is the portfolio against one of its
+    accounts, and that figure comes from **this** tool. The aggregate is based
+    at the *latest* horizon among the accounts it sums, so it sits below every
+    one of them as a matter of arithmetic. A description that does not say so
+    leaves a model free to report the portfolio as the worst performer in it.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    # Unwrapped before it is read, as above: a rewrap to 79 columns is a
+    # property of the margin and not of the sentence.
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)
+                          }['get_portfolio_totals'].split())
+
+    assert 'twr_index is based at 100 on twr_since' in described
+    assert 'is not a sign that the accounts outperformed' in described
 
 
 # --------------------------------------------------------------------- #
@@ -313,6 +351,40 @@ def test_the_agent_and_the_browser_are_served_the_same_account(tmp_path):
     assert carrying['taxation_kind'] == 'flat_realised'
 
 
+def test_the_agent_reads_the_day_each_accounts_index_is_based_at(tmp_path):
+    """``twr_since`` **on the wire**, and not merely in the description (#887).
+
+    The shared-payload test above computes no series, so the member is absent on
+    both surfaces and their key sets agree on its absence — which is agreement
+    about nothing. The description tells a model to read ``twr_since`` before it
+    puts two indexes in one sentence, so a model that cannot find the member has
+    been given an instruction it cannot follow; this is what holds the member
+    there.
+
+    Anchored on the first day the index **exists** and not on the first row of
+    the series: a day the perf job wrote with a null index is not a base of 100.
+    The per-account claim itself — that two wrappers carry two anchors — is held
+    on the browser's side of the same payload, where accounts can be declared.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    perf_series.write_account_metrics(opened, [
+        AccountMetricPoint(account=accounts_module.DEFAULT_ACCOUNT,
+                           day=date(2019, 10, 30), total_value=1000.0,
+                           twr_index=None),
+        AccountMetricPoint(account=accounts_module.DEFAULT_ACCOUNT,
+                           day=date(2024, 1, 15), total_value=1100.0,
+                           twr_index=100.0),
+        AccountMetricPoint(account=accounts_module.DEFAULT_ACCOUNT,
+                           day=date(2024, 9, 15), total_value=1200.0,
+                           twr_index=120.0),
+    ])
+
+    rows = {row['id']: row
+            for row in payload(call(runtime, 'list_accounts'))['accounts']}
+
+    assert rows[accounts_module.DEFAULT_ACCOUNT]['twr_since'] == '2024-01-15'
+
+
 def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):
     """One shape for two causes, and the head keeps its subject either way."""
     runtime, _ = build_runtime(tmp_path, events=None, currency='EUR')
@@ -321,6 +393,41 @@ def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):
 
     assert body['totals'] is None
     assert body['base_currency'] == 'EUR'
+
+
+def test_the_agent_reads_the_day_the_portfolio_index_is_based_at(tmp_path):
+    """``twr_since`` on the totals, **on the wire** (#887).
+
+    `list_accounts`' description sends the agent here — it says this tool
+    carries the same member for the portfolio-wide index, and that reading both
+    anchors is what stands between it and ranking two figures that measure
+    different periods. A description pointing at a member the payload does not
+    carry is worse than no description: it is an instruction that cannot be
+    followed.
+
+    Anchored on the first day the index exists, like the per-account one: a day
+    the perf job wrote with a null index is not a base of 100.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    perf_series.write_portfolio_totals(opened, [
+        PortfolioTotalPoint(day=date(2019, 10, 30), cash_balance=0.0,
+                            holdings_value=1000.0, total_value=1000.0,
+                            net_contributed=1000.0, xirr=None,
+                            gain_absolu=0.0, twr_index=None),
+        PortfolioTotalPoint(day=date(2024, 1, 15), cash_balance=0.0,
+                            holdings_value=1100.0, total_value=1100.0,
+                            net_contributed=1000.0, xirr=0.1,
+                            gain_absolu=100.0, twr_index=100.0),
+        PortfolioTotalPoint(day=date(2024, 9, 15), cash_balance=0.0,
+                            holdings_value=1200.0, total_value=1200.0,
+                            net_contributed=1000.0, xirr=0.12,
+                            gain_absolu=200.0, twr_index=120.0),
+    ])
+
+    totals = payload(call(runtime, 'get_portfolio_totals'))['totals']
+
+    assert totals['twr_since'] == '2024-01-15'
+    assert totals['twr_index'] == 120.0
 
 
 def test_the_history_defaults_to_a_year_and_honours_a_window(tmp_path):

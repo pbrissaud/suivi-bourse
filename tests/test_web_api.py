@@ -1833,6 +1833,58 @@ def test_an_account_states_the_day_its_index_is_based_at(tmp_path):
     assert row['twr_since'] == '2026-08-05'
 
 
+def test_each_account_is_based_at_100_on_a_day_of_its_own(tmp_path):
+    """**The accounts do not share the anchor**, which is the whole of #887.
+
+    One test with one account cannot tell `twr_origin_by_account` from
+    `twr_origin`: a single `min(day)` over the table would pass it. The claim
+    the payload actually makes is that a wrapper opened in 2019 and one opened
+    last month carry indexes based at 100 on *different* days, so the reader who
+    compares them point to point is comparing periods — and the `GROUP BY` is
+    the only thing standing between that claim and a figure that lies.
+
+    The third account is declared and has no series at all: `twr_since` is then
+    **absent rather than null** (#845), which is the sentence `list_accounts`'
+    description gives a model in so many words.
+    """
+    accounts = (ACCOUNTS_FILE + "cto,CTO,CTO Degiro\n"
+                + "titres,CTO,Titres Boursorama\n")
+
+    def seed(opened):
+        seed_account_metrics(opened, account='pea', day=date(2019, 10, 30))
+        seed_account_metrics(opened, account='pea', day=date(2026, 8, 5))
+        seed_account_metrics(opened, account='cto', day=date(2026, 8, 5))
+
+    client = build_client(tmp_path, seed=seed, accounts=accounts,
+                          events=ACCOUNTS_EVENTS)
+    rows = {row['id']: row
+            for row in client.get('/api/accounts').get_json()['accounts']}
+
+    assert rows['pea']['twr_since'] == '2019-10-30'
+    assert rows['cto']['twr_since'] == '2026-08-05'
+    assert 'twr_since' not in rows['titres']
+
+
+def test_the_accounts_read_is_503_rather_than_a_list_it_could_not_build(
+        tmp_path):
+    """The accounts list is read by the dashboard, the settings, the ledger and
+    the palette, and a store that cannot answer has to reach all four as the
+    storage fault it is: an empty list would tell this owner they declared
+    nothing.
+
+    The route had no 503 coverage at all before this, which is what the test is
+    for. It does **not** pin the query #887 added: `latest_account_metrics`
+    runs first in `accounts_payload` and raises before `twr_origin_by_account`
+    is reached, so this would pass with the new read deleted."""
+    response = build_client(tmp_path, break_store=True,
+                            accounts=ACCOUNTS_FILE,
+                            events=ACCOUNTS_EVENTS).get('/api/accounts')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == '/problems/storage-unavailable'
+
+
 # --------------------------------------------------------------------- #
 # One account's history — the empty / absent / failed triad (#661)
 # --------------------------------------------------------------------- #
@@ -5834,6 +5886,11 @@ def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
     # wrong is the model.
     for member in ('taxation_kind', 'projected_tax', 'projected_rates'):
         assert member not in rows['pea'], member
+    # **But the name survives the refusal**, and the MCP description leans on
+    # it: taxation_model present with taxation_kind absent is how a reader is
+    # told the declaration needs repairing rather than that the read failed.
+    # Drop the name and that sentence points at nothing.
+    assert rows['pea']['taxation_model'] == 'legacy'
     # And the account beside it is untouched: 4 AAPL at 150, quoted at 200.
     assert rows['cto']['taxation_kind'] == 'flat_realised'
     assert rows['cto']['projected_tax'] == pytest.approx(60.0, abs=5e-3)

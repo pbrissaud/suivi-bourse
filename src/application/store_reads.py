@@ -136,9 +136,8 @@ class PortfolioReader:
         """
         rows = self._store.query(
             'SELECT account, min(day) FROM account_metrics '
-            ' WHERE twr_index IS NOT NULL AND account IS NOT NULL '
-            ' GROUP BY account')
-        return {account: day for account, day in rows if day is not None}
+            ' WHERE twr_index IS NOT NULL GROUP BY account')
+        return dict(rows)
 
     def transfer_fees(self, through: date) -> float:
         rows = self._store.query(

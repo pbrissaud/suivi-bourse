@@ -45,10 +45,7 @@ def accounts_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
 
     reader = PortfolioReader(store)
     rows = reader.latest_account_metrics()
-    through = {
-        row['account']: row['day'] for row in rows
-        if row.get('account') is not None and row.get('day') is not None
-    }
+    through = {row['account']: row['day'] for row in rows}
     # **The model rides on the account, and only where there is one** (#752).
     # It is a *declaration*, so it is read off the store rather than off the
     # published snapshot — and an account carrying none gets no member at all
@@ -63,27 +60,61 @@ def accounts_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
     payments = ledger.first_payments(store)
     # **The projection is computed here, not in the browser** (#919): the rates
     # are a declaration the front never holds, and a figure this load-bearing is
-    # not re-derived in two languages. The assiette for the two kinds that read
+    # not re-derived in two languages. The assiette for the kinds that read
     # one is folded off `build_shares`, so the tax rests on the valuation the
     # shares table already renders rather than on a second opinion of it.
     models = {model.id: model
               for model in accounts_module.read_models(store)}
-    latent = _latent_gains(reader, store, snapshot, now, declaration, carried,
-                           models)
+    usable = _usable(models, carried, declaration)
+    latent = _latent_gains(reader, store, snapshot, now, declaration, usable)
     twr_since = reader.twr_origin_by_account()
     return {
         'declared': accounts is not None,
         'accounts': [
             _with_account_facts(summary.to_dict(), carried, opened_on, payments,
-                                models, latent, twr_since, now.date())
+                                usable, latent, twr_since, now.date())
             for summary in portfolio_view.build_accounts(
                 declaration, rows, reader.transfer_fees_by_account(through))
         ],
     }
 
 
+def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
+    """The declared models this version still accepts, by account id.
+
+    **Checked once, and checked before the positions are read.** The gate below
+    and the projection both need this answer, and `taxation.validate` used to be
+    asked twice — the second time too late. The gate read the *kind* alone, so an
+    account carrying a model an earlier version wrote and this one refuses paid
+    the whole `reader.positions()` read on every load of every page that lists
+    the accounts, and `_projection` threw the result away at the end of it. The
+    account that is slowest to answer was the one its owner had to open to
+    repair the model.
+
+    A refused row is logged here, once, and then simply is not in this map: the
+    payload cannot tell *refused* from *never declared*, and does not need to —
+    both publish no projection, and `taxation_model` rides on the declaration
+    either way.
+    """
+    usable: Dict[str, Any] = {}
+    for account in declaration:
+        model = models.get(carried.get(account.id))
+        if model is None:
+            continue
+        try:
+            taxation.validate(model.kind, model.parameters)
+        except taxation.ModelRejected as exc:
+            logger.warning(
+                f"account {account.id} carries taxation model {model.id} "
+                f"({model.kind}), which this version refuses: {exc}. No "
+                f"projection is published for it.")
+            continue
+        usable[account.id] = model
+    return usable
+
+
 def _latent_gains(reader, store, snapshot, now: datetime, declaration,
-                  carried: dict, models: dict) -> dict:
+                  usable: dict) -> dict:
     """The per-account assiette — **read only where something reads it**.
 
     `reader.positions()` is the portfolio's hot read, and this payload is asked
@@ -94,7 +125,7 @@ def _latent_gains(reader, store, snapshot, now: datetime, declaration,
     and it turns the read into something proportional to the feature being in
     use.
     """
-    if not any(getattr(models.get(carried.get(account.id)), 'kind', None)
+    if not any(getattr(usable.get(account.id), 'kind', None)
                in _NEEDS_POSITIONS for account in declaration):
         return {}
     terminal = quotes.terminal_symbols(store, snapshot.backfill_windows(), now)
@@ -104,7 +135,7 @@ def _latent_gains(reader, store, snapshot, now: datetime, declaration,
 
 
 def _with_account_facts(row: dict, carried: dict, opened_on: dict,
-                        payments: dict, models: dict, latent: dict,
+                        payments: dict, usable: dict, latent: dict,
                         twr_since: dict, today: date) -> dict:
     """The facts an account carries where there is one to carry: the three it
     was declared with, the day its index counts from, and the projection where
@@ -122,12 +153,12 @@ def _with_account_facts(row: dict, carried: dict, opened_on: dict,
         # the figure — the only way a reader can rebase them onto a window they
         # do share, and the reason the tool's description can now tell it to.
         'twr_since': instants.iso(twr_since.get(row['id'])),
-        **_projection(row, carried, opened_on, payments, models, latent, today),
+        **_projection(row, opened_on, payments, usable, latent, today),
     })}
 
 
-def _projection(row: dict, carried: dict, opened_on: dict, payments: dict,
-                models: dict, latent: dict, today: date) -> dict:
+def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
+                latent: dict, today: date) -> dict:
     """What this account would owe if it were emptied today, the kind that says
     how to read it, and the rates that produced it.
 
@@ -142,24 +173,16 @@ def _projection(row: dict, carried: dict, opened_on: dict, payments: dict,
     whose kind needs the positions read this request did not take.
 
     **A model the record would no longer accept publishes nothing at all**, not
-    even its kind. The arithmetic already refuses it (`taxation_projection`
-    checks what it reads, the store holding whatever an earlier version wrote),
-    so the figure would be absent either way — but an absent figure under a
-    present card renders as *the em dash of an unknown assiette*, which tells the
-    owner their positions are unvalued when what is actually wrong is the model.
-    No card, and the log names the row so there is a trail; the model stays
+    even its kind — and it is :func:`_usable` that decided so, before the
+    positions were read. What arrives here is a model this version accepts, or
+    nothing, and both produce no card. That matters on screen: an absent figure
+    under a *present* card renders as the em dash of an unknown assiette, which
+    tells the owner their positions are unvalued when what is actually wrong is
+    the model. The log names the row so there is a trail; the model stays
     visible and repairable in the form, which reads it unchecked on purpose.
     """
-    model = models.get(carried.get(row['id']))
+    model = usable.get(row['id'])
     if model is None:
-        return {}
-    try:
-        taxation.validate(model.kind, model.parameters)
-    except taxation.ModelRejected as exc:
-        logger.warning(
-            f"account {row['id']} carries taxation model {model.id} "
-            f"({model.kind}), which this version refuses: {exc}. No projection "
-            f"is published for it.")
         return {}
     facts = dict(kind=model.kind, parameters=model.parameters,
                  opened_on=opened_on.get(row['id']),
