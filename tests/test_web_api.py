@@ -4613,15 +4613,12 @@ def _cash_heavy_account(opened) -> None:
         '                             holdings_value, total_value) '
         'VALUES (?, ?, ?, ?, ?)',
         ['cto', date(2026, 8, 26), 1430.56, 4335.66, 5766.22])
-    opened.execute(
-        "INSERT INTO taxation_model (id, name, kind, parameters) "
-        "VALUES ('flat', 'Flat', 'flat_realised', '{\"rate\": 0.3}') "
-        "ON CONFLICT (id) DO NOTHING")
-    opened.execute(
-        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?) '
-        'ON CONFLICT (account) DO UPDATE SET '
-        '  taxation_model = EXCLUDED.taxation_model',
-        ['cto', 'flat'])
+    # **Through the writer, not around it.** `application.accounts` is where a
+    # model is born and it checks the kind on the way in; a raw `INSERT` would
+    # seed a row the application itself would refuse.
+    model = accounts_module.create_model(
+        opened, 'Flat', 'flat_realised', {'rate': 0.3})
+    accounts_module.set_taxation_model(opened, 'cto', model.id)
 
 
 def test_a_portfolio_with_nothing_to_say_answers_an_empty_collection(tmp_path):
@@ -5493,7 +5490,7 @@ def test_a_declared_date_later_than_the_first_payment_stands_as_an_advisory(
 # --------------------------------------------------------------------- #
 
 def _valued_pea(tmp_path, events=ACCOUNTS_EVENTS, price=200.0, converted=200.0,
-                rate=1.0):
+                rate=1.0, accounts=ACCOUNTS_FILE):
     """One PEA holding 10 AAPL bought at 150 and quoted at 200 — a latent 500."""
     def seed(opened):
         seed_quote(opened, price=price, currency='EUR', converted=converted,
@@ -5502,7 +5499,7 @@ def _valued_pea(tmp_path, events=ACCOUNTS_EVENTS, price=200.0, converted=200.0,
         opened.execute(
             "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
 
-    return build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE,
+    return build_client_and_store(tmp_path, accounts=accounts,
                                   events=events, seed=seed)
 
 
@@ -5765,3 +5762,50 @@ def test_a_rate_and_its_levy_may_not_come_to_more_than_the_gain(tmp_path):
         json={'name': 'Real', 'kind': 'flat_realised',
               'parameters': {'rate': 0.128, 'social_rate': 0.172}}
     ).status_code == 201
+
+
+def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
+        tmp_path):
+    """**One unreadable row may not take the route down with it.**
+
+    `/api/accounts` is read by the dashboard, the accounts page, the settings,
+    the ledger and the palette. A model written by an earlier version — missing
+    a parameter that became required — reached the arithmetic raw and raised, so
+    one legacy row served a 500 to every page, including the one its owner would
+    have repaired it from.
+
+    The raw `INSERT` here is the point: it writes what the application itself
+    would now refuse, which is exactly the row a past version could leave
+    behind and no writer can reproduce.
+    """
+    accounts = ACCOUNTS_FILE + "cto,CTO,CTO Degiro\n"
+    events = (ACCOUNTS_EVENTS
+              + "2024-01-15,BUY,AAPL,Apple Inc,4,150.00,cto\n")
+    client, opened = _valued_pea(tmp_path, accounts=accounts, events=events)
+
+    # `pea` carries a model this version cannot read.
+    opened.execute(
+        "INSERT INTO taxation_model (id, name, kind, parameters) "
+        "VALUES ('legacy', 'Legacy', 'aged_flat_realised', "
+        "        '{\"rate_before\": 0.3, \"threshold_years\": 5, "
+        "          \"age_basis\": \"opening\"}')")
+    opened.execute(
+        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
+        ['pea', 'legacy'])
+    # `cto` carries a sound one.
+    _carry(client, account='cto', name='CTO', kind='flat_realised',
+           parameters={'rate': 0.30})
+
+    listed = client.get('/api/accounts')
+
+    assert listed.status_code == 200
+    rows = {row['id']: row for row in listed.get_json()['accounts']}
+    # **Nothing at all for the unreadable one, not even its kind.** An absent
+    # figure under a present card renders as the em dash of an unknown assiette,
+    # which would tell this owner their positions are unvalued when what is
+    # wrong is the model.
+    for member in ('taxation_kind', 'projected_tax', 'projected_rates'):
+        assert member not in rows['pea'], member
+    # And the account beside it is untouched: 4 AAPL at 150, quoted at 200.
+    assert rows['cto']['taxation_kind'] == 'flat_realised'
+    assert rows['cto']['projected_tax'] == pytest.approx(60.0, abs=5e-3)

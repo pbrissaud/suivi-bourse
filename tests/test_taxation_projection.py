@@ -359,8 +359,59 @@ def test_the_footing_and_the_figure_read_one_threshold_rule():
 # --------------------------------------------------------------------------- #
 
 def test_the_walk_floors_at_zero_even_on_a_ladder_the_record_would_refuse():
-    """The belt. `taxation._brackets` refuses a first ceiling at or below zero,
-    and the floor at zero is this module's own stated rule — it may not rest on
-    a validator one import away."""
-    assert bracketed([{'upper_bound': -100.0, 'rate': 1.0},
-                      {'upper_bound': None, 'rate': 0.0}], 1_000.0) == 0.0
+    """**Two layers, and each is asserted on its own.**
+
+    The public entry never sees such a ladder: what it reads is checked against
+    the record on every call, so a first ceiling at or below zero is refused and
+    the figure does not exist. The walk underneath still floors at zero anyway —
+    this module's own stated rule may not rest on a validator one import away,
+    and a future caller reaching past the check must not get a negative tax.
+    """
+    ladder = [{'upper_bound': -100.0, 'rate': 1.0},
+              {'upper_bound': None, 'rate': 0.0}]
+
+    assert bracketed(ladder, 1_000.0) is None
+    assert projection._bracketed({'brackets': ladder}, 1_000.0) == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# A row the record would no longer accept
+# --------------------------------------------------------------------------- #
+
+def test_a_model_this_version_refuses_projects_nothing_rather_than_raising():
+    """**The write is checked once; the read happens for ever after.**
+
+    The store holds whatever an earlier version accepted, and this arithmetic
+    indexes and multiplies it — so a row missing a parameter that became
+    required reached the caller as a ``KeyError``, and one whose parameters are
+    not an object at all as a ``TypeError``. On the route every page reads,
+    that is a 500 served over one bad row.
+    """
+    missing = {'rate_before': 0.3, 'threshold_years': 5,
+               'age_basis': taxation.OPENING}
+    assert aged(missing, 10_000.0, opened_on=date(2010, 1, 1),
+                now=date(2026, 9, 15)) is None
+    assert rates(missing, taxation.AGED_FLAT_REALISED,
+                 opened_on=date(2010, 1, 1)) is None
+    assert projection.rate_changes_on(
+        kind=taxation.AGED_FLAT_REALISED, parameters=missing,
+        opened_on=date(2010, 1, 1), now=date(2026, 9, 15)) is None
+
+    assert flat([], 10_000.0) is None
+    assert bracketed('not a ladder', 10_000.0) is None
+
+
+def test_a_bound_this_version_added_is_applied_to_what_it_already_holds():
+    """A rate and a levy coming to 180 % were writable before the sum was
+    bounded. The row survives; the figure does not — and stating 1 800 € of tax
+    on a 1 000 € gain would be worse than stating nothing."""
+    assert flat({'rate': 0.9, 'social_rate': 0.9}, 1_000.0) is None
+    assert rates({'rate': 0.9, 'social_rate': 0.9},
+                 taxation.FLAT_REALISED) is None
+
+
+def test_the_check_normalises_on_the_way_through():
+    """It is :func:`taxation.validate`, the same check the write ran — so a rate
+    a hand edit left as a string is a rate, not a refusal and not a
+    ``str * float``."""
+    assert flat({'rate': '0.3'}, 10_000.0) == pytest.approx(3_000.0)

@@ -11,6 +11,7 @@ import pytest
 
 from application import accounts
 from application import advisories
+from application import taxation
 from application import store as store_module
 
 
@@ -30,15 +31,21 @@ def _account(opened, identifier: str, label: str, *, model: bool = True) -> None
         'ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label',
         [identifier, label])
     if model:
-        opened.execute(
-            "INSERT INTO taxation_model (id, name, kind, parameters) "
-            "VALUES ('flat', 'Flat', 'flat_realised', '{\"rate\": 0.3}') "
-            "ON CONFLICT (id) DO NOTHING")
-        opened.execute(
-            'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?) '
-            'ON CONFLICT (account) DO UPDATE SET '
-            '  taxation_model = EXCLUDED.taxation_model',
-            [identifier, 'flat'])
+        accounts.set_taxation_model(opened, identifier, _flat_model(opened).id)
+
+
+def _flat_model(opened):
+    """The one flat model this file declares, written **through its writer**.
+
+    :mod:`application.accounts` is where a model is born, and it checks the kind
+    on the way in; a raw ``INSERT`` here would seed a row the application would
+    refuse and quietly stop exercising that check. Reused rather than re-created
+    because a model belongs to no account and this file only ever needs one.
+    """
+    for existing in accounts.read_models(opened):
+        return existing
+    return accounts.create_model(opened, 'Flat', taxation.FLAT_REALISED,
+                                 {'rate': 0.3})
 
 
 def _metrics(opened, account: str, day: date, cash: float,

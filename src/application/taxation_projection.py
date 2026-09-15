@@ -28,7 +28,7 @@ but that zero is *the model saying so*, not an arithmetic result, and the two
 must not be told apart by their value.
 """
 from datetime import date
-from typing import Any, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from application import taxation
 
@@ -37,6 +37,30 @@ from application import taxation
 #: screen says why rather than showing a figure derived from nothing.
 PROJECTED_KINDS = (taxation.FLAT_REALISED, taxation.AGED_FLAT_REALISED,
                    taxation.BRACKETED_REALISED)
+
+
+def _checked(kind: str,
+             parameters: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """The parameters as the record would accept them **today**, or ``None``.
+
+    **A row is checked when it is written, and read back for ever after.** The
+    store holds what some earlier version accepted: a model missing a parameter
+    that became required, a rate a hand edit left as a string, a bound this
+    version added. None of those is hypothetical — the arithmetic below indexes
+    and multiplies them, so an unreadable row reaches a caller as ``KeyError``
+    or ``TypeError`` rather than as an answer, and :mod:`api` serves that on the
+    route every page reads.
+
+    So the guard is here rather than at each call site: three public functions
+    read these parameters, and a fourth will when the MCP surface grows one.
+    :func:`taxation.validate` is the same check the write ran, which is what
+    makes *unreadable* mean exactly *the record would refuse it now* — and it
+    normalises on the way through, so a rate stored as ``"0.3"`` is a rate.
+    """
+    try:
+        return taxation.validate(kind, parameters)
+    except taxation.ModelRejected:
+        return None
 
 
 def projected_tax(*, kind: str, parameters: Mapping[str, Any],
@@ -52,13 +76,16 @@ def projected_tax(*, kind: str, parameters: Mapping[str, Any],
     """
     if kind not in PROJECTED_KINDS:
         return None
+    checked = _checked(kind, parameters)
+    if checked is None:
+        return None
 
     if kind == taxation.AGED_FLAT_REALISED:
-        return _aged(parameters, latent_gain,
-                     age_date(parameters, opened_on, first_payment), now)
+        return _aged(checked, latent_gain,
+                     age_date(checked, opened_on, first_payment), now)
     if kind == taxation.FLAT_REALISED:
-        return _flat(parameters, latent_gain)
-    return _bracketed(parameters, latent_gain)
+        return _flat(checked, latent_gain)
+    return _bracketed(checked, latent_gain)
 
 
 def age_date(parameters: Mapping[str, Any],
@@ -212,16 +239,19 @@ def applied_rates(*, kind: str, parameters: Mapping[str, Any],
     One rate for the two flat families. A ladder has no single rate to name, so
     it names its rungs and the reader places their own gain among them.
     """
+    checked = _checked(kind, parameters)
+    if checked is None:
+        return None
     if kind == taxation.FLAT_REALISED:
-        return [_with_levy(parameters['rate'], parameters)]
+        return [_with_levy(checked['rate'], checked)]
     if kind == taxation.AGED_FLAT_REALISED:
-        start = age_date(parameters, opened_on, first_payment)
+        start = age_date(checked, opened_on, first_payment)
         if start is None:
             return None
-        rate = _aged_rate(parameters, start, now)
+        rate = _aged_rate(checked, start, now)
         return None if rate is None else [rate]
     if kind == taxation.BRACKETED_REALISED:
-        return [rung['rate'] for rung in parameters['brackets']]
+        return [rung['rate'] for rung in checked['brackets']]
     return None
 
 
@@ -239,8 +269,11 @@ def rate_changes_on(*, kind: str, parameters: Mapping[str, Any],
     """
     if kind != taxation.AGED_FLAT_REALISED:
         return None
-    day = threshold_day(parameters,
-                        age_date(parameters, opened_on, first_payment))
+    checked = _checked(kind, parameters)
+    if checked is None:
+        return None
+    day = threshold_day(checked,
+                        age_date(checked, opened_on, first_payment))
     if day is None or day <= now:
         return None
     return day

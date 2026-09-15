@@ -407,14 +407,30 @@ def _projection(row: dict, carried: dict, opened_on: dict, payments: dict,
     read of the model catalogue; the rates ride so no second implementation of
     *which side of the threshold* exists to drift from this one.
 
-    The figure itself is absent in five cases and they reach the reader as one
-    member's absence: no model carried, a kind with no realised gain, an aged
-    wrapper with no date to age it from, an assiette one unvalued line makes
-    unknown, and a model whose kind needs the positions read this request did not
-    take.
+    The figure itself is absent in four cases and they reach the reader as one
+    member's absence: a kind with no realised gain, an aged wrapper with no date
+    to age it from, an assiette one unvalued line makes unknown, and a model
+    whose kind needs the positions read this request did not take.
+
+    **A model the record would no longer accept publishes nothing at all**, not
+    even its kind. The arithmetic already refuses it (`taxation_projection`
+    checks what it reads, the store holding whatever an earlier version wrote),
+    so the figure would be absent either way — but an absent figure under a
+    present card renders as *the em dash of an unknown assiette*, which tells the
+    owner their positions are unvalued when what is actually wrong is the model.
+    No card, and the log names the row so there is a trail; the model stays
+    visible and repairable in the form, which reads it unchecked on purpose.
     """
     model = models.get(carried.get(row['id']))
     if model is None:
+        return {}
+    try:
+        taxation.validate(model.kind, model.parameters)
+    except taxation.ModelRejected as exc:
+        logger.warning(
+            f"account {row['id']} carries taxation model {model.id} "
+            f"({model.kind}), which this version refuses: {exc}. No projection "
+            f"is published for it.")
         return {}
     facts = dict(kind=model.kind, parameters=model.parameters,
                  opened_on=opened_on.get(row['id']),
