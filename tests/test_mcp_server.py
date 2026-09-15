@@ -83,6 +83,20 @@ def listed(runtime):
     return asyncio.run(_run()).tools
 
 
+def instructions(runtime):
+    """The server's own instructions, as a client receives them on initialize.
+
+    Through the client for the same reason :func:`listed` is: the instructions
+    are the one piece of text every tool inherits, and what a model reads is the
+    copy that crossed the wire.
+    """
+    async def _run():
+        """One session, opened and closed around the handshake."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            return client.instructions or ''
+    return asyncio.run(_run())
+
+
 def payload(result):
     """The structured payload of a successful call.
 
@@ -162,6 +176,61 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
     assert 'not fetched a price yet' in described
     assert 'no price will ever come' in described
     assert 'worth zero' in described
+
+
+def test_the_server_states_the_set_its_answers_are_drawn_from(tmp_path):
+    """**What is not here**, said once for the six tools (#889).
+
+    Every field says which absence it is, and the payload as a whole said
+    nothing about the set it is drawn from. An unlisted holding — private
+    equity, an SPV, anything without a ticker — cannot be in the ledger, and the
+    first outside agent to use this server nearly reported a position as sold
+    when it had simply never been in scope.
+
+    The perimeter is stated in the instructions, which every tool inherits, and
+    again on ``list_positions``, which is the table an agent reads when it goes
+    looking for a line that is not there.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    said = instructions(runtime)
+    assert 'listed instruments' in said
+    assert 'not a sale' in said
+    assert 'net worth' in said
+
+    # Unwrapped before it is read: these are sentences, and a paragraph
+    # reflowed to 79 columns puts a line break wherever it lands. An assertion
+    # that a rewrap breaks is an assertion about the margin, not about the words.
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)}['list_positions'].split())
+    assert 'A SYMBOL ABSENT FROM THIS TABLE WAS NEVER IN IT' in described
+    assert 'was never declared, and reading it as a sale' in described
+
+
+def test_the_accounts_description_frames_the_tax_and_the_index(tmp_path):
+    """Two figures a model will misread unless the words stop it.
+
+    ``projected_tax`` is a number called *tax*, and a model reading one will
+    present it as one (#920): the description has to say it is a projection
+    under a model the owner declared, and name what it does not express.
+    ``twr_index`` is an index whose base day differs per row (#887), so the
+    description has to send the reader to ``twr_since`` rather than invite the
+    comparison — which is what it used to do.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    described = {tool.name: tool.description or ''
+                 for tool in listed(runtime)}['list_accounts']
+
+    assert 'projection' in described
+    assert 'OWNER DECLARED THEMSELVES' in described
+    assert 'no allowance' in described and 'loss carry-forward' in described
+    assert 'when to sell' in described
+    assert 'projected_base' in described
+
+    assert 'twr_since' in described
+    # The sentence that sold the comparison the payload cannot support.
+    assert 'the figure that compares two accounts of different sizes' not in described
 
 
 # --------------------------------------------------------------------- #

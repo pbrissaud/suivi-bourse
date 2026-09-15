@@ -48,6 +48,14 @@ Two things about a row will mislead you if you do not know them:
   both cases the honest answer is that it is not priced, and terminal is what
   lets you say which of the two it is.
 
+A SYMBOL ABSENT FROM THIS TABLE WAS NEVER IN IT. The ledger holds listed
+instruments only, so a holding with no ticker — private equity, an SPV,
+property — could not be entered and does not appear here. A sold position stays
+as a row with quantity 0, which is the only shape a disposal takes: nothing
+leaves this table. So a position you expected and cannot find was never
+declared, and reading it as a sale is the mistake this paragraph exists to
+prevent.
+
 {_ABSENCE}
 """
 
@@ -234,6 +242,14 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             "is a dated ledger of what its owner did; everything else — the "
             "positions, the prices, the returns — is derived from it. These "
             "tools read that data and cannot change it.\n\n"
+            "THIS IS NOT THE OWNER'S WHOLE WEALTH. The ledger holds listed "
+            "instruments, valued from market data: anything held outside that "
+            "— private equity, an SPV, property, a holding with no ticker — "
+            "cannot be entered here and is therefore not in any answer these "
+            "tools give. A holding you expected and cannot find was very "
+            "probably never in scope, and its absence is not a sale. Say what "
+            "this app covers before you characterise what the owner owns, and "
+            "never present these figures as their net worth.\n\n"
             "Advise on strategy and allocation. Do not recommend individual "
             "securities to buy or sell.\n\n"
             "Read each tool's description before using its figures: this app "
