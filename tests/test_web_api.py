@@ -5693,6 +5693,47 @@ def test_the_positions_are_not_read_where_no_model_projects(tmp_path, mocker):
     assert 'projected_tax' not in row
 
 
+def test_a_model_this_version_refuses_does_not_pay_for_the_positions_read(
+        tmp_path, mocker):
+    """**The account slowest to answer was the one its owner had to open.**
+
+    The gate above read the declared model's *kind* alone, so an account
+    carrying a model an earlier version wrote and this one refuses took the
+    whole `reader.positions()` read — on every load of every page that lists the
+    accounts — and `_projection` threw the result away at the end of it.
+    `account_facts._usable` now decides the refusal before the read, and this is
+    the only test that would notice the decision moving back after it.
+
+    One account and one refused model on purpose: the test four below declares a
+    sound model on `cto` beside the refused one, which keeps the positions read
+    alive and would let this regression through unseen.
+    """
+    client, opened = _valued_pea(tmp_path)
+    # The raw `INSERT` writes what the application itself would now refuse:
+    # `aged_flat_realised` without the `rate_after` that became required.
+    opened.execute(
+        "INSERT INTO taxation_model (id, name, kind, parameters) "
+        "VALUES ('legacy', 'Legacy', 'aged_flat_realised', "
+        "        '{\"rate_before\": 0.3, \"threshold_years\": 5, "
+        "          \"age_basis\": \"opening\"}')")
+    opened.execute(
+        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
+        ['pea', 'legacy'])
+    # Both halves made fatal, for the reason the test above gives.
+    mocker.patch.object(PortfolioReader, 'positions',
+                        side_effect=AssertionError('the positions were read'))
+    mocker.patch.object(portfolio_view, 'build_shares',
+                        side_effect=AssertionError('the positions were folded'))
+
+    listed = client.get('/api/accounts')
+
+    assert listed.status_code == 200
+    row = _pea_row(client)
+    assert 'taxation_kind' not in row
+    # And the declaration is still named, so its owner can go and repair it.
+    assert row['taxation_model'] == 'legacy'
+
+
 def test_an_account_carrying_no_model_publishes_no_projection(tmp_path):
     """No model is no figure, and the absence reaches the reader as one (#845):
     the member is missing, not `null`."""

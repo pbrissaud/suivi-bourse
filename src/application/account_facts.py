@@ -82,13 +82,14 @@ def accounts_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
 def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
     """The declared models this version still accepts, by account id.
 
-    **Checked once, and checked before the positions are read.** The gate below
-    and the projection both need this answer, and `taxation.validate` used to be
-    asked twice — the second time too late. The gate read the *kind* alone, so an
-    account carrying a model an earlier version wrote and this one refuses paid
-    the whole `reader.positions()` read on every load of every page that lists
-    the accounts, and `_projection` threw the result away at the end of it. The
-    account that is slowest to answer was the one its owner had to open to
+    **Checked early, which is the whole of it** — not checked fewer times.
+    :mod:`taxation_projection` still validates what it reads at each of its own
+    entry points, and should: it is reached from elsewhere. What moved is *when*
+    the first check happens. The gate below read the declared model's **kind**
+    alone, so an account carrying a model an earlier version wrote and this one
+    refuses paid the whole `reader.positions()` read on every load of every page
+    that lists the accounts, and `_projection` threw the result away at the end
+    of it. The account slowest to answer was the one its owner had to open to
     repair the model.
 
     A refused row is logged here, once, and then simply is not in this map: the
@@ -167,10 +168,12 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
     read of the model catalogue; the rates ride so no second implementation of
     *which side of the threshold* exists to drift from this one.
 
-    The figure itself is absent in four cases and they reach the reader as one
-    member's absence: a kind with no realised gain, an aged wrapper with no date
-    to age it from, an assiette one unvalued line makes unknown, and a model
-    whose kind needs the positions read this request did not take.
+    The figure itself is absent in several cases and they reach the reader as
+    one member's absence: a kind with no realised gain, an aged wrapper with no
+    date to age it from, a threshold day that runs off the end of the calendar,
+    and an assiette one unvalued line makes unknown. The list is open on
+    purpose — the arithmetic decides, and the reader is told only that there is
+    no figure.
 
     **A model the record would no longer accept publishes nothing at all**, not
     even its kind — and it is :func:`_usable` that decided so, before the

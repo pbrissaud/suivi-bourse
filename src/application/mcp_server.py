@@ -33,10 +33,28 @@ _CURRENCY = (
 LIST_POSITIONS_DESCRIPTION = f"""\
 What the owner currently holds, one row per (account, symbol).
 
-Each row carries quantity, unit_cost (a weighted average over everything bought,
-never a purchase price), market_value, and the unrealised gain.
+Each row carries quantity, cost_basis, realised, dividends, price, converted,
+terminal, closed_at (the day a quantity-0 row was sold) and fundamentals.
+
+READ cost_basis AS A TOTAL. It is what the whole holding cost, summed over every
+purchase — NOT a unit price and not a purchase price. The weighted average paid
+per unit is cost_basis / quantity, and you must do that division yourself.
+
+THERE IS NO market_value MEMBER AND NO UNREALISED-GAIN MEMBER. Both are yours to
+compute: the holding is worth quantity x converted.value, and its unrealised gain
+is that figure minus cost_basis. Say you computed them; do not attribute them to
+this app.
 
 {_CURRENCY}
+
+THIS TOOL IS THE ONE THAT HAS EXCEPTIONS TO THAT PARAGRAPH, and there are two.
+price and converted are the same price twice: price.value is in the instrument's
+OWN currency, which price.currency names on the row, and converted.value is that
+same price in base_currency at converted.rate. Use converted for anything you add
+up or compare; use price only to quote the instrument on its own exchange, and
+name price.currency when you do. And fundamentals — what the instrument is rather
+than what the holding is worth — is quoted in fundamentals.currency, its own:
+market_cap especially is NOT in base_currency and must never be added to one.
 
 Two things about a row will mislead you if you do not know them:
 - quantity 0 is a SOLD position, not a mistake and not an empty row. It stays in
@@ -62,19 +80,31 @@ prevent.
 GET_PORTFOLIO_TOTALS_DESCRIPTION = f"""\
 The portfolio as a whole, on the most recent day the app has computed.
 
-Carries the market value, the net amount contributed, the money-weighted return
-(xirr, annualised), the time-weighted return (twr_index, based at 100), the
-year-to-date figures, and the gain broken into its four terms — the unrealised
-gain, the realised gain, the dividends received, and the transfer fees paid.
-Those four terms sum to the total gain by definition: do not recombine them some
-other way, and do not treat their sum as an independent check.
+Carries day, total_value, holdings_value, cash_balance, net_contributed, the
+money-weighted return (xirr, annualised), the time-weighted return (twr_index,
+based at 100, with its twr_since), gain_absolu, transfer_fees, and ytd.
 
-twr_index is based at 100 on twr_since, the day this series starts — which is the
-latest horizon among the accounts it sums, and so is later than the day an
-individual account's index starts at. The two are not on the same base: a global
-index below every account's measures a shorter period and is not a sign that the
-accounts outperformed the portfolio holding them. Compare it to an account's
-figure only after reading both twr_since, and say which period each covers.
+ytd IS A PAIR AND ITS twr IS NOT AN INDEX. ytd.gain is an amount; ytd.twr is a
+RETURN FRACTION — 0.019 means 1.9% — and not a figure based at 100 like
+twr_index three paragraphs down. Do not read the two as the same unit. ytd is
+null when the series does not reach back to the end of the previous year.
+
+THE GAIN ARRIVES WHOLE, NOT BROKEN DOWN. gain_absolu is the total, and the only
+term served beside it is transfer_fees. The unrealised gain, the realised gain
+and the dividends are NOT members here: they sum into gain_absolu and this tool
+does not take them apart. If you need the breakdown, list_positions carries
+realised and dividends per holding — say that you summed them yourself, and
+never present a difference between your sum and gain_absolu as a discrepancy in
+the app.
+
+twr_index is based at 100 on twr_since, the day this series starts. It is NOT
+the same day as an account's own anchor, and THERE IS NO RULE ABOUT WHICH COMES
+FIRST — it depends on which accounts the app last recomputed together, so do not
+derive one from the other. Read both twr_since. Where they differ, the two
+figures measure different periods and cannot be ranked: a global index below
+every account's is arithmetically ordinary, not a sign that the accounts
+outperformed the portfolio holding them. Say which period each figure covers.
+Where the two anchors are the same day, they are comparable and you may say so.
 
 {_CURRENCY}
 
@@ -89,8 +119,8 @@ error and neither means the portfolio is worth zero.
 GET_PORTFOLIO_HISTORY_DESCRIPTION = f"""\
 The portfolio's value and return, one point per calendar day, over a window.
 
-Each point carries cash_balance, holdings_value, total_value, net_contributed
-and twr_index. Defaults to the last 365 days when no window is given; pass
+Each point carries day (an ISO calendar day), cash_balance, holdings_value,
+total_value, net_contributed and twr_index. Defaults to the last 365 days when no window is given; pass
 from_day and to_day as ISO calendar days (YYYY-MM-DD) to narrow it.
 
 twr_index is an index, not a percentage: it is based at 100 at the start of the
@@ -111,8 +141,10 @@ LIST_ACCOUNTS_DESCRIPTION = f"""\
 The declared accounts, each with its newest figures — the allocation primitive.
 
 Use this to answer how the portfolio is split, and to compare accounts. Each
-account carries its own value, net contribution, returns and the four terms of
-its gain.
+account carries its own value, net contribution, returns, gain_absolu and
+transfer_fees. As on the portfolio totals, gain_absolu is the WHOLE gain and is
+not broken down here: there is no unrealised, realised or dividend member on
+these rows.
 
 declared=false means the owner has never declared an account, so what you are
 looking at is the single account every install is given. It is a designed state
@@ -122,10 +154,10 @@ Comparing accounts by value tells you about size, not about performance. But
 twr_index IS NOT COMPARABLE ACROSS ROWS AS IT STANDS: it is an index based at
 100 on the first day of its own series, and these series do not start on the
 same day. An account opened in 2019 has been indexing for six years; one opened
-last month has been indexing for one, and the portfolio-wide index served by the
-other tools starts later still, at the latest horizon among the accounts it
-sums. So a global index below every account's is arithmetically ordinary and not
-a bug — it measures a shorter period. Each row carries twr_since, the calendar
+last month has been indexing for one, and the portfolio-wide index served by
+get_portfolio_totals starts on a day of its own that follows neither rule — so a
+global index sitting below every account's is arithmetically ordinary and not a
+bug. Each row carries twr_since, the calendar
 day its index is based at, and get_portfolio_totals carries the same member for
 the portfolio-wide index. READ twr_since BEFORE YOU PUT TWO OF THESE FIGURES IN
 ONE SENTENCE. Where two of them differ, the figures measure different periods
@@ -152,10 +184,10 @@ one another. Do not read one family's absence as another's.
   and not that the read failed.
 
 AND taxation_kind CAN RIDE WITHOUT A FIGURE. A model can be perfectly valid and
-still project nothing: a kind that taxes no realised gain, an aged wrapper with
-no date to age it from, and an account one unvalued position makes unmeasurable
-each give you the kind and no projected_tax. That is an honest absence, not a
-broken declaration and not a zero.
+still project nothing — a kind that taxes no realised gain, an aged wrapper with
+no date to age it from, an account one unvalued position makes unmeasurable, and
+others: the list is not closed, and you are told only that there is no figure.
+That is an honest absence, not a broken declaration and not a zero.
 
 projected_tax IS A PROJECTION AND NOT A TAX. It is what the account would owe if
 it were emptied today under a model THE OWNER DECLARED THEMSELVES — they entered

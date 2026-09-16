@@ -167,6 +167,38 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
     assert 'worth zero' in described
 
 
+def test_the_positions_description_names_the_members_the_row_actually_has(
+        tmp_path):
+    """**A description is the only schema an agent gets**, so a member it names
+    and the payload does not carry is worse than silence.
+
+    This one promised `unit_cost`, `market_value` and an unrealised gain. None
+    of the three is on the row: what is there is `cost_basis`, which is a TOTAL
+    over the holding. An agent told `unit_cost` is a weighted average reads that
+    total as a price per unit and is wrong by a factor of the quantity held —
+    the same shape as the two figures called a gain that #951 had to separate on
+    screen.
+    """
+    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)
+                          }['list_positions'].split())
+    served = payload(call(runtime, 'list_positions'))['positions']
+
+    assert served, 'the ledger must hold a position for this to mean anything'
+    for absent in ('unit_cost', 'market_value', 'plus_value_latente'):
+        assert absent not in served[0], absent
+    assert 'READ cost_basis AS A TOTAL' in described
+    assert 'THERE IS NO market_value MEMBER' in described
+    # And the currency exception, which contradicts the shared paragraph unless
+    # it says so: price.value is the only amount here not in base_currency.
+    assert 'EXCEPTIONS TO THAT PARAGRAPH' in described
+    assert 'market_cap especially is NOT in base_currency' in described
+    assert set(served[0]) >= {'quantity', 'cost_basis', 'realised',
+                              'dividends', 'price', 'converted'}
+
+
 def test_the_server_states_the_set_its_answers_are_drawn_from(tmp_path):
     """**What is not here**, said once for the six tools (#889).
 
@@ -222,9 +254,6 @@ def test_the_accounts_description_frames_the_tax_and_the_index(tmp_path):
     assert 'no allowance' in described and 'loss carry-forward' in described
     assert 'when to sell' in described
     assert 'projected_base' in described
-    # The two groups come apart on a model this version refuses: the name is
-    # served, the kind and the figures are not. A description promising the
-    # eight together leaves that account looking like a failed read.
     # The three families are absent independently, and the description has to
     # say so: opened_on and first_payment do not consult the model at all, and
     # a valid model can still project nothing.
@@ -260,7 +289,15 @@ def test_the_totals_description_names_the_day_its_own_index_counts_from(tmp_path
                           }['get_portfolio_totals'].split())
 
     assert 'twr_index is based at 100 on twr_since' in described
-    assert 'is not a sign that the accounts outperformed' in described
+    assert 'not a sign that the accounts outperformed' in described
+    # **And no claim about which anchor comes first.** The aggregate is clipped
+    # to `max([start] + bounds)`, but `bounds` covers only the accounts that
+    # pass rewrote, and `_fill_twr` anchors on the first day of value rather
+    # than the first day of the list — so the order is a property of the last
+    # recompute, not an invariant. A description asserting one teaches the agent
+    # a rule the data breaks.
+    assert 'THERE IS NO RULE ABOUT WHICH COMES' in described
+    assert 'latest horizon' not in described
 
 
 # --------------------------------------------------------------------- #
@@ -428,6 +465,30 @@ def test_the_agent_reads_the_day_the_portfolio_index_is_based_at(tmp_path):
 
     assert totals['twr_since'] == '2024-01-15'
     assert totals['twr_index'] == 120.0
+
+
+def test_a_hand_edited_model_row_fails_in_words_like_any_other_fault(tmp_path):
+    """The shared payload took this tool somewhere ``break_store`` cannot reach.
+
+    ``list_accounts`` now runs `read_models`, whose `json.loads` raises
+    `ValueError` on a row no writer in this app could have produced — and the
+    SDK reports anything that is not a `ToolError` as *"Error executing tool
+    <name>"*, with the cause discarded. Every other fault test here drops a
+    table and gets a `duckdb.Error`, so that arm of :func:`reading` had nothing
+    standing on it.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    # The raw `INSERT` is the point: parameters that are not JSON at all, which
+    # only a hand edit of the store file can leave behind.
+    opened.execute(
+        "INSERT INTO taxation_model (id, name, kind, parameters) "
+        "VALUES ('legacy', 'Legacy', 'flat_realised', 'not json')")
+
+    result = call(runtime, 'list_accounts')
+
+    assert result.is_error is True
+    assert 'could not answer this read' in _text(result)
+    assert 'no figure to give' in _text(result)
 
 
 def test_the_history_defaults_to_a_year_and_honours_a_window(tmp_path):
