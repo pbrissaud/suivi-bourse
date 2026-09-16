@@ -242,6 +242,31 @@ def oldest_window_tried(store, symbol: str) -> Optional[date]:
     return rows[0][0] if rows and rows[0][0] is not None else None
 
 
+def record_forward_window_tried(store, symbol: str, newest: date) -> None:
+    """Remember that the forward pass has attempted a window **ending** at ``newest``.
+
+    The far edge in the direction of travel, which is what makes it an anchor:
+    recording the near one would pin it on ``newest_ts`` and change nothing
+    (issue #854).
+    """
+    with store.transaction():
+        _ensure_row(store, symbol)
+        store.execute(
+            'UPDATE symbol_quote '
+            '   SET newest_window_tried = ? '
+            ' WHERE symbol = ? '
+            '   AND (newest_window_tried IS NULL OR ? > newest_window_tried)',
+            [newest, symbol, newest])
+
+
+def newest_window_tried(store, symbol: str) -> Optional[date]:
+    """The newest window the forward pass has attempted, or ``None``."""
+    rows = store.query(
+        'SELECT newest_window_tried FROM symbol_quote WHERE symbol = ?',
+        [symbol])
+    return rows[0][0] if rows and rows[0][0] is not None else None
+
+
 _generation = 0
 
 
@@ -406,6 +431,7 @@ __all__ = [
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
+    'record_forward_window_tried', 'newest_window_tried',
     'forget_oldest_stored',
     'first_quoted_days',
     'quote_currency',

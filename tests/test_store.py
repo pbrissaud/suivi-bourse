@@ -19,6 +19,7 @@ tickets that follow will build on and could silently break:
   the boot completes the table without ever overwriting an answer.
 """
 
+from datetime import date
 import time
 from pathlib import Path
 
@@ -219,6 +220,7 @@ def test_an_observed_instant_is_timestamptz_and_a_calendar_day_is_a_date(store):
     ]
     days = [
         ('event', 'date'), ('symbol_quote', 'oldest_window_tried'),
+        ('symbol_quote', 'newest_window_tried'),
         ('account_metrics', 'day'), ('portfolio_totals', 'day'),
     ]
 
@@ -413,6 +415,50 @@ def test_an_older_store_is_brought_forward_without_losing_a_row(tmp_path):
         assert {row[0] for row in opened.query(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name = 'account'")} == {'id', 'label'}
+    finally:
+        opened.close()
+
+
+#: ``symbol_quote`` as it was shipped before #854 — every column of today's
+#: DDL but the forward pass's anchor. It is the shape the step exists for, and
+#: the one no fresh file can ever have.
+_PRE_854_SYMBOL_QUOTE = """
+CREATE TABLE symbol_quote (
+    symbol                VARCHAR PRIMARY KEY REFERENCES symbol(symbol),
+    currency              VARCHAR, exchange VARCHAR, quote_type VARCHAR,
+    dividend_yield        DOUBLE, pe_ratio DOUBLE, market_cap DOUBLE,
+    fetched_at            TIMESTAMPTZ,
+    last_price_native     DOUBLE, last_price_converted DOUBLE,
+    last_fx_rate          DOUBLE, last_price_ts TIMESTAMPTZ,
+    oldest_window_tried   DATE);
+"""
+
+
+def test_a_store_that_predates_the_forward_anchor_gets_the_column(tmp_path):
+    """The gesture the ``IF NOT EXISTS`` DDL cannot make (issue #854).
+
+    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds, so a column
+    added to the DDL reaches a **new** file and no other — and CI creates only
+    new files, where the DDL *is* the whole schema. Left to the DDL alone, every
+    store in circulation would open cleanly here and raise a Binder Error on the
+    first forward pass, with nothing in the suite able to see it.
+    """
+    path = tmp_path / 'old.duckdb'
+    _generation_zero(path)
+    connection = duckdb.connect(str(path))
+    connection.execute(_PRE_854_SYMBOL_QUOTE)
+    connection.execute(
+        "INSERT INTO symbol_quote (symbol, last_price_native, "
+        "oldest_window_tried) VALUES ('AAPL', 187.0, DATE '2021-05-04')")
+    connection.close()
+
+    opened = store_module.open_store(path)
+    try:
+        # The column is there, and the backward anchor beside it is untouched.
+        assert opened.query(
+            'SELECT last_price_native, oldest_window_tried, '
+            '       newest_window_tried FROM symbol_quote') == [
+                (187.0, date(2021, 5, 4), None)]
     finally:
         opened.close()
 

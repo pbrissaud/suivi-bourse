@@ -270,6 +270,51 @@ def test_a_symbol_with_no_anchor_says_so(declared):
 
 
 # --------------------------------------------------------------------------- #
+# The forward pass's persisted anchor (issue #854)
+# --------------------------------------------------------------------------- #
+
+def test_the_forward_anchor_is_the_sibling_column_and_moves_the_other_way(
+        declared):
+    """The same device as the backward anchor, in the other direction.
+
+    The forward pass had none at all: a market shut for the weekend answers
+    ``[]``, an empty answer is a gap and not a failure (#606) so nothing backs
+    off, and with nothing persisted the same window is asked every 60 s until
+    Monday — for a delisted line still held, for ever.
+    """
+    quotes.record_forward_window_tried(declared, 'AAPL', date(2024, 3, 2))
+
+    assert quotes.newest_window_tried(declared, 'AAPL') == date(2024, 3, 2)
+
+
+def test_the_forward_anchor_only_ever_moves_forwards(declared):
+    """A window re-asked over ground already covered — a chunk clipped at the
+    hourly ceiling, a store whose newest point was aged off — must not walk the
+    anchor back and set the pass fetching a weekend it has already tried."""
+    quotes.record_forward_window_tried(declared, 'AAPL', date(2024, 3, 2))
+    quotes.record_forward_window_tried(declared, 'AAPL', date(2024, 1, 5))
+
+    assert quotes.newest_window_tried(declared, 'AAPL') == date(2024, 3, 2)
+
+    quotes.record_forward_window_tried(declared, 'AAPL', date(2024, 5, 9))
+    assert quotes.newest_window_tried(declared, 'AAPL') == date(2024, 5, 9)
+
+
+def test_the_two_anchors_are_independent_on_the_same_row(declared):
+    """One row, two watermarks, two directions: neither writer reads the other's
+    column and a pass that moves one leaves the other where it was."""
+    quotes.record_window_tried(declared, 'AAPL', date(2021, 5, 4))
+    quotes.record_forward_window_tried(declared, 'AAPL', date(2024, 3, 2))
+
+    assert quotes.oldest_window_tried(declared, 'AAPL') == date(2021, 5, 4)
+    assert quotes.newest_window_tried(declared, 'AAPL') == date(2024, 3, 2)
+
+
+def test_a_symbol_with_no_forward_anchor_says_so(declared):
+    assert quotes.newest_window_tried(declared, 'AAPL') is None
+
+
+# --------------------------------------------------------------------------- #
 # The range writer — deleting its own span, and only its own
 # --------------------------------------------------------------------------- #
 

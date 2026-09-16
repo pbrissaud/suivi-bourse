@@ -188,6 +188,9 @@ class Workloads:
     def _record_window_tried(self, symbol: str, oldest: date) -> None:
         return self._backfill.record_window_tried(symbol, oldest)
 
+    def _record_forward_window_tried(self, symbol: str, newest: date) -> None:
+        return self._backfill.record_forward_window_tried(symbol, newest)
+
     def _backfill_forward(self, symbol: str,
                           now: Optional[datetime] = None) -> int:
         return self._backfill.forward(symbol, now)
