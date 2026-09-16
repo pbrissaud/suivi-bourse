@@ -226,46 +226,65 @@ class Store:
         with self._lock:
             return 0 < key <= self._reserved.get(table, 0)
 
+    @property
+    def closed(self) -> bool:
+        """Whether :meth:`close` has already given the connection back."""
+        return self._connection is None
+
+    def _live(self):
+        """The connection, or the refusal a closed store owes its callers (#858).
+
+        The shutdown closes the store while jobs are still in flight —
+        ``scheduler.shutdown(wait=False)`` does not interrupt them — so a read
+        or a write arriving late is the ordinary case, not a defect. It gets a
+        named error, the one the blueprint already answers ``503`` to, instead
+        of ``'NoneType' object has no attribute 'execute'``.
+        """
+        if self._connection is None:
+            raise StoreUnavailable(f"The store at {self.path} is closed")
+        return self._connection
+
     @contextmanager
     def transaction(self):
         """``BEGIN`` … ``COMMIT``, with every other thread kept outside it."""
         with self._lock:
-            self._connection.execute('BEGIN TRANSACTION')
+            connection = self._live()
+            connection.execute('BEGIN TRANSACTION')
             try:
                 yield self
             except Exception:
-                self._connection.execute('ROLLBACK')
+                connection.execute('ROLLBACK')
                 raise
-            self._connection.execute('COMMIT')
+            connection.execute('COMMIT')
 
     def execute(self, sql: str, parameters: Optional[Sequence[Any]] = None):
         """Run one statement. Errors propagate — this is not a read layer."""
         with self._lock:
             if parameters is None:
-                return self._connection.execute(sql)
-            return self._connection.execute(sql, list(parameters))
+                return self._live().execute(sql)
+            return self._live().execute(sql, list(parameters))
 
     def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
         """Run one statement over many parameter sets, in one round trip."""
         if not rows:
             return
         with self._lock:
-            self._connection.executemany(sql, [list(row) for row in rows])
+            self._live().executemany(sql, [list(row) for row in rows])
 
     def query(self, sql: str,
               parameters: Optional[Sequence[Any]] = None) -> List[tuple]:
         """Run one statement and materialise its rows as tuples."""
         with self._lock:
             if parameters is None:
-                return self._connection.execute(sql).fetchall()
-            return self._connection.execute(sql, list(parameters)).fetchall()
+                return self._live().execute(sql).fetchall()
+            return self._live().execute(sql, list(parameters)).fetchall()
 
     def arrow(self, sql: str, parameters: Optional[Sequence[Any]] = None):
         """Run one statement and materialise its rows as an Arrow table."""
         with self._lock:
             if parameters is None:
-                return self._connection.execute(sql).fetch_arrow_table()
-            return self._connection.execute(
+                return self._live().execute(sql).fetch_arrow_table()
+            return self._live().execute(
                 sql, list(parameters)).fetch_arrow_table()
 
     def ping(self) -> None:

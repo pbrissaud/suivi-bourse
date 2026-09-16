@@ -616,6 +616,34 @@ def test_shutdown_runtime_tolerates_a_boot_that_never_got_that_far():
     main.shutdown_runtime(main.Runtime(_FakeConfigManager()))
 
 
+def test_a_read_after_the_shutdown_arrives_as_a_named_error(tmp_path):
+    """#858: ``wait=False`` lets a job outlive the close, so it must land on a name.
+
+    ``'NoneType' object has no attribute 'execute'`` was the last thing an owner
+    read before their container stopped. The store says it is closed instead,
+    and the manager refuses rather than opening a second file on the way out.
+    """
+    opened = store.open_store(tmp_path / "leaving.duckdb")
+    manager = main.ConfigurationManager(config_dir=str(tmp_path),
+                                        opened_store=opened)
+    runtime = main.Runtime(manager, opened_store=opened)
+
+    main.shutdown_runtime(runtime)
+
+    with pytest.raises(store.StoreUnavailable):
+        opened.query('SELECT count(*) FROM setting')
+    with pytest.raises(store.StoreUnavailable):
+        opened.execute('DELETE FROM setting')
+    with pytest.raises(store.StoreUnavailable):
+        with opened.transaction():
+            pass
+    with pytest.raises(store.StoreUnavailable):
+        _ = manager.store
+    with pytest.raises(store.StoreUnavailable):
+        with manager.writing():
+            pass
+
+
 # ---------------------------------------------------------------------------
 # The served surface
 # ---------------------------------------------------------------------------

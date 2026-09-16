@@ -220,7 +220,17 @@ class ConfigurationManager:
         self._store = opened_store
 
     def _require_store(self):
-        """The attached store, opening one under ``config_dir`` if there is none."""
+        """The attached store, opening one under ``config_dir`` if there is none.
+
+        A store that has been **closed** is refused by name rather than handed
+        back (#858): the only thing that closes one under a live manager is
+        :func:`shutdown_runtime`, and re-opening here would put a fresh file
+        under ``config_dir`` — never the store dir the boot read — while the
+        process is on its way out.
+        """
+        if self._store is not None and self._store.closed:
+            raise store.StoreUnavailable(
+                f"The store at {self._store.path} is closed")
         if self._store is None:
             self._store = store.open_store(
                 self.config_dir / store.STORE_FILENAME)
@@ -437,7 +447,13 @@ def replay_after_write(runtime: Runtime) -> None:
 
 
 def shutdown_runtime(runtime: Runtime) -> None:
-    """The teardown — ``boot.sequence``'s ``finally``, and the heir of ``__main__``'s."""
+    """The teardown — ``boot.sequence``'s ``finally``, and the heir of ``__main__``'s.
+
+    Idempotent, and it closes over jobs that are still running: ``wait=False``
+    lets an in-flight scrape outlive the close, so whatever it reads or writes
+    next meets a closed :class:`store.Store` and gets a ``StoreUnavailable``
+    naming it (#858), not an ``AttributeError`` on ``NoneType``.
+    """
     if runtime.scheduler is not None and runtime.scheduler.running:
         runtime.scheduler.shutdown(wait=False)
     if runtime.store is not None:
