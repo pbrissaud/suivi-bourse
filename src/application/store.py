@@ -96,7 +96,8 @@ CREATE TABLE IF NOT EXISTS symbol_quote (
     last_price_converted  DOUBLE,
     last_fx_rate          DOUBLE,
     last_price_ts         TIMESTAMPTZ,
-    oldest_window_tried   DATE);                    -- the persisted backward-pass anchor
+    oldest_window_tried   DATE,                     -- the persisted backward-pass anchor
+    newest_window_tried   DATE);                    -- and the forward pass's own (#854)
 """
 
 _DDL_PRICE_POINT = """
@@ -394,8 +395,25 @@ def _drop_account_type(connection) -> None:
         connection.execute('ALTER TABLE account DROP COLUMN IF EXISTS type')
 
 
-#: The schema steps, oldest first (#926). A step is the one thing the
-#: ``IF NOT EXISTS`` DDL cannot express — dropping a column, renaming one — and
+def _add_newest_window_tried(connection) -> None:
+    """Give an already-created store the forward pass's anchor (issue #854).
+
+    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds, so the new
+    column reaches a **new** file and no other — and CI only ever creates new
+    files, where the DDL is the whole schema. Without this step every store in
+    circulation opens cleanly and then raises a Binder Error on the first
+    forward pass, which is the failure no test could have caught.
+
+    No :func:`rebuilding`: nothing holds a foreign key on ``symbol_quote``, and
+    an added column has none of the dependency cost a dropped one has.
+    """
+    connection.execute('ALTER TABLE symbol_quote '
+                       'ADD COLUMN IF NOT EXISTS newest_window_tried DATE')
+
+
+#: The schema steps, oldest first (#926). A step is what the ``IF NOT EXISTS``
+#: DDL cannot express — dropping a column, renaming one, **adding one to a table
+#: that already exists** (the DDL only builds a table it does not find) — and
 #: the list is append-only in both directions: **a name is an identity forever**
 #: (renaming one runs it a second time) and a step already released is never
 #: edited, because the stores that ran it will not run it again.
@@ -408,6 +426,7 @@ def _drop_account_type(connection) -> None:
 #: promise nobody can keep about data a newer version wrote.
 STEPS = (
     ('drop_account_type', _drop_account_type),
+    ('add_newest_window_tried', _add_newest_window_tried),
 )
 
 

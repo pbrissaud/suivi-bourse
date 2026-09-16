@@ -75,10 +75,28 @@ def backward_anchor(ceiling: datetime, oldest_stored: Optional[datetime],
     return min(candidates)
 
 
+def forward_anchor(newest_stored: Optional[datetime],
+                   newest_tried: Optional[date]) -> Optional[datetime]:
+    """Where the forward pass resumes from — the **later** of the two (#854).
+
+    The mirror of :func:`backward_anchor`, and it exists for the same reason: a
+    symbol Yahoo no longer answers about stores nothing, so an anchor read off
+    the series never moves and the same window is asked every cycle for the life
+    of the process. There is no target here — the "under a day old" guard of
+    ``scheduling.forward_backfill_window`` *is* the stop condition, once fed this
+    instead of the newest stored point.
+    """
+    if newest_tried is None:
+        return newest_stored
+    tried = datetime.combine(newest_tried, datetime.min.time(),
+                             tzinfo=timezone.utc)
+    return tried if newest_stored is None else max(newest_stored, tried)
+
+
 def is_terminal(anchor: datetime, target: datetime) -> bool:
     """Has the backward pass nothing left to fetch for this symbol?"""
     return anchor.date() <= target.date()
 
 
 __all__ = ['carrying_price', 'was_quoted', 'is_quoted', 'holding_bounds',
-           'backward_anchor', 'is_terminal']
+           'backward_anchor', 'forward_anchor', 'is_terminal']

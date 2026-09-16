@@ -253,10 +253,22 @@ class BackfillWorkload:
             app_logger.error(
                 f"Failed to persist the backfill anchor for {symbol}: {e}")
 
+    def record_forward_window_tried(self, symbol: str, newest: date) -> None:
+        """Persist the forward pass's anchor, guarded like every other write."""
+        try:
+            with self.facade.config_manager.writing() as opened:
+                quotes.record_forward_window_tried(opened, symbol, newest)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to persist the forward backfill anchor for {symbol}: {e}")
+
     def forward(self, symbol: str, now: Optional[datetime] = None) -> int:
-        """Forward pass: recover a session missed while the app was down by fetching ``[newest, now]`` (issue #627)."""
+        """Forward pass: recover a session missed while the app was down by fetching ``[anchor, now]`` (issue #627, #854)."""
         now = now or datetime.now(timezone.utc)
-        newest = quotes.newest_ts(self.facade.config_manager.store, symbol)
+        store = self.facade.config_manager.store
+        newest = quotes.newest_ts(store, symbol)
+        anchor = carrying.forward_anchor(
+            newest, quotes.newest_window_tried(store, symbol))
 
         def publish(**fields) -> None:
             self.facade.recorder.record_backfill(runtime_state.BackfillRecord(
@@ -266,9 +278,9 @@ class BackfillWorkload:
                 newest=newest, **fields))
 
         window = scheduling.forward_backfill_window(
-            newest, now, self.facade.backfill_chunk_days)
+            anchor, now, self.facade.backfill_chunk_days)
         if window is None:
-            publish(skipped=(runtime_state.SKIP_NO_SERIES if newest is None
+            publish(skipped=(runtime_state.SKIP_NO_SERIES if anchor is None
                              else runtime_state.SKIP_TOO_RECENT))
             return 0
         start_date, end_date = window
@@ -292,6 +304,8 @@ class BackfillWorkload:
                           f"{start_date.date()} → {end_date.date()} was fetched "
                           f"but could not be written to the store")
             return 0
+
+        self.facade._record_forward_window_tried(symbol, end_date.date())
 
         if not prices:
             app_logger.debug(

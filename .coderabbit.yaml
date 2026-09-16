@@ -79,14 +79,23 @@ reviews:
         - `taxation_model` and `account_fact` are written by
           `application/accounts.py` alone.
         - A declared fact and a derived one never share a row. Flag a column
-          added to a table whose writer is a job.
+          added to a table whose writer is a job. The **backfill anchors**
+          (`symbol_quote.oldest_window_tried` / `newest_window_tried`) are the
+          one named exception (#703, #854): a watermark is derived because it
+          recomputes itself from the rows, which is exactly what a symbol with
+          no rows cannot do — so those two are stored, on the row the module
+          that owns them already writes.
 
         THE SCHEMA MOVES IN ONE PLACE.
         - `ALTER TABLE` appears in `application/store.py` and nowhere else. A
           schema change outside it is one no store records having run.
         - The DDL is `IF NOT EXISTS` and stays the first answer. Dropping a
-          column and renaming one are the two gestures it cannot express, and
-          they are appended to `store.STEPS`, forward only.
+          column, renaming one and adding one to a table that already exists
+          are the three gestures it cannot express — the DDL only builds a
+          table it does not find — and they are appended to `store.STEPS`,
+          forward only. Flag a column added to the DDL with no step beside it:
+          a new file gets it, every store in circulation raises a Binder Error,
+          and CI creates only new files.
         - A step's name is its identity forever. Flag any edit or rename of a
           step that has already been released: the stores that ran it will not
           run it again.

@@ -1191,6 +1191,140 @@ def test_the_forward_pass_fills_the_gap_of_a_position_bought_back(
 
 
 # ---------------------------------------------------------------------------
+# The forward pass's persisted anchor (issue #854)
+# ---------------------------------------------------------------------------
+
+def _held_since(store, symbol, acquired, seeded):
+    """A held line whose backward pass is already terminal, so only forward acts.
+
+    The oldest stored point *is* the first acquisition, so ``backward_anchor``
+    reaches the target on the first cycle and returns without fetching — the
+    same state ``_backfill_complete`` names, reached through the store rather
+    than poked into memory.
+    """
+    events = [Event(acquired, EventType.BUY, symbol, symbol,
+                    quantity=10, unit_price=150.0)]
+    metrics, _ = _build_metrics(
+        [_valid_shares(symbol, symbol, quantity=10)], store,
+        mode="events", events=events)
+    _seed_prices(store, symbol, seeded)
+    return metrics
+
+
+def test_a_shut_market_is_asked_once_a_day_and_not_once_a_cycle(store, mocker):
+    """The weekend, which is every weekend (issue #854).
+
+    The live scrape writes nothing while a market is shut, so ``newest_ts``
+    stays at Friday's last point and, from a day after it until Monday's open,
+    ``forward_backfill_window`` sizes a window on **every** cycle. The answer is
+    ``[]`` — it is a weekend — and an empty answer is a gap and not a failure
+    (#606), so nothing backs off and, with nothing persisted, the next cycle
+    60 s later asks for the very same window. That is a few hundred requests per
+    symbol per weekend, for rows that cannot exist, and the door Yahoo shuts on
+    the app afterwards never presents itself as one.
+
+    Note the assertion is on the **count** and on the window's *start*: the end
+    of the window travels with ``now``, so two cycles a day apart do not ask the
+    same window — they ask from the same place.
+    """
+    friday = datetime(2024, 3, 1, 16, 0, tzinfo=timezone.utc)
+    metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
+    windows = _window_recorder(metrics, mocker)
+
+    for day in (2, 3):
+        for hour in (0, 6, 12, 18, 23):
+            metrics.backfill(datetime(2024, 3, day, hour, 30,
+                                      tzinfo=timezone.utc))
+
+    # Ten cycles across two shut days: one fetch each, not one per cycle.
+    assert len(windows) == 2
+    assert [start for start, _ in windows] == [
+        friday, datetime(2024, 3, 2, tzinfo=timezone.utc)]
+    assert quotes.newest_window_tried(store, "AAPL") == date(2024, 3, 3)
+
+
+def test_a_held_symbol_yahoo_stopped_answering_about_stops_being_asked(
+        store, mocker):
+    """The unbounded case, and it is ADR-0009's word for word on the other pass.
+
+    A security delisted but still held never advances ``newest_ts``, so an
+    anchor read off the series is pinned for the life of the process. With the
+    window **tried** persisted, the pass walks forward one chunk per cycle,
+    reaches the day the "under a day old" guard covers, and stops asking.
+    """
+    now = datetime(2024, 6, 3, 12, 0, tzinfo=timezone.utc)
+    metrics = _held_since(store, "DEAD", date(2024, 2, 4),
+                          datetime(2024, 2, 4, 12, 0, tzinfo=timezone.utc))
+    metrics.backfill_chunk_days = 30
+    fetch = mocker.patch.object(
+        metrics, "_fetch_historical_data", return_value=[])
+
+    for _ in range(20):
+        metrics.backfill(now)
+
+    # 120 days over 30-day chunks: four windows, then nothing, for ever.
+    assert fetch.call_count == 4
+    # And not one row came back, which is the whole of the symbol being mute.
+    assert len(_points(store, "DEAD")) == 1
+    assert quotes.newest_window_tried(store, "DEAD") == date(2024, 6, 3)
+    assert metrics.recorder.backfill_of(
+        "DEAD", main.runtime_state.FORWARD).skipped == \
+        main.runtime_state.SKIP_TOO_RECENT
+
+
+def test_the_forward_anchor_survives_the_process_that_wrote_it(store, mocker):
+    """Asserted on the store, because the store is the point.
+
+    An anchor kept in a dict is one a restart erases, and a restart is exactly
+    what the weekend gives it — the pass would come back on Sunday morning and
+    ask Saturday's window all over again.
+    """
+    friday = datetime(2024, 3, 1, 16, 0, tzinfo=timezone.utc)
+    metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill(datetime(2024, 3, 2, 18, 0, tzinfo=timezone.utc))
+    assert quotes.newest_window_tried(store, "AAPL") == date(2024, 3, 2)
+
+    # A fresh process over the same store: no in-memory watermark at all.
+    revived = _held_since(store, "AAPL", date(2024, 3, 1), friday)
+    again = mocker.patch.object(
+        revived, "_fetch_historical_data", return_value=[])
+
+    revived.backfill(datetime(2024, 3, 2, 23, 0, tzinfo=timezone.utc))
+
+    again.assert_not_called()
+    assert revived.recorder.backfill_of(
+        "AAPL", main.runtime_state.FORWARD).skipped == \
+        main.runtime_state.SKIP_TOO_RECENT
+
+
+def test_neither_a_failed_fetch_nor_a_failed_write_moves_the_forward_anchor(
+        store, mocker):
+    """*Tried* means the window was fetched **and** landed.
+
+    A failure has attempted nothing the app is entitled to skip: persisting it
+    would let one Yahoo hiccup — or one store that refused the write — make the
+    pass walk past a session it never got, and the forward pass has no second
+    chance at a window it has stepped over.
+    """
+    friday = datetime(2024, 3, 1, 16, 0, tzinfo=timezone.utc)
+    saturday = datetime(2024, 3, 2, 18, 0, tzinfo=timezone.utc)
+    metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
+
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=None)
+    metrics.backfill(saturday)
+    assert quotes.newest_window_tried(store, "AAPL") is None
+
+    # Fetched, but nothing of it reached the store (#853).
+    mocker.patch.object(
+        metrics, "_fetch_and_store",
+        return_value=([{"timestamp": saturday, "price": 175.0}], None))
+    metrics.backfill(saturday)
+    assert quotes.newest_window_tried(store, "AAPL") is None
+
+
+# ---------------------------------------------------------------------------
 # The installation facts, and the one the reconstruction produces (issue #709)
 # ---------------------------------------------------------------------------
 
