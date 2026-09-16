@@ -159,6 +159,54 @@ def test_a_fetch_that_raises_is_a_missing_rate_and_never_an_exception():
     assert fx.Rates(explode, clock=_Clock()).rate('USD', 'EUR') is None
 
 
+def test_a_fetch_that_fails_does_not_cache_none_over_the_last_good_rate():
+    """A swallowed timeout used to be written down as an *answer*, and every
+    conversion for the next TTL read `None` off a pair Yahoo had just quoted
+    correctly — five minutes of *waiting for the exchange rate* on perfectly
+    quoted lines. A failure is transitory; the last good rate stands."""
+    answers = {'USDEUR=X': 0.92}
+
+    def fetch(pair):
+        if answers[pair] is None:
+            raise RuntimeError('Yahoo said no')
+        return answers[pair]
+
+    clock = _Clock()
+    rates = fx.Rates(fetch, ttl=300.0, clock=clock)
+
+    assert rates.rate('USD', 'EUR') == 0.92
+
+    answers['USDEUR=X'] = None
+    clock.at = 301.0
+    assert rates.rate('USD', 'EUR') == 0.92
+
+    # And the failure is remembered, so the wave behind it does not re-ask.
+    answers['USDEUR=X'] = 0.95
+    assert rates.rate('USD', 'EUR') == 0.92
+
+    # It stays a TTL, not a memory: once it expires the pair is asked again.
+    clock.at = 602.0
+    assert rates.rate('USD', 'EUR') == 0.95
+
+
+def test_a_thread_that_fails_never_overwrites_a_thread_that_succeeded():
+    """The caches carry no lock, deliberately (#668), so a market-open wave has
+    several threads inside `_live_rate` at once. The failing one writing nothing
+    to `_live` is what makes that race harmless — the fetch below fails *after*
+    the thread that succeeded has filled the cache in, which is the interleaving
+    a lock would otherwise be there to forbid."""
+    clock = _Clock()
+
+    def fetch_that_loses_the_race(pair):
+        rates._live[pair] = (0.92, clock.at)
+        raise RuntimeError('Yahoo said no')
+
+    rates = fx.Rates(fetch_that_loses_the_race, ttl=300.0, clock=clock)
+
+    assert rates.rate('USD', 'EUR') == 0.92
+    assert rates._live['USDEUR=X'] == (0.92, 0.0)
+
+
 def test_the_reporting_currency_needs_no_pair_and_therefore_cannot_fail():
     """The common case — a portfolio reported in the currency its securities are
     quoted in — must not depend on Yahoo answering anything."""

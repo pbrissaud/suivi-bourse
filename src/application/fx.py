@@ -64,6 +64,7 @@ class Rates:
         self._daily: Dict[str, Dict[date, float]] = {}
         self._windows: Dict[str, List[Tuple[date, date]]] = {}
         self._failed_at: Dict[str, float] = {}
+        self._live_failed_at: Dict[str, float] = {}
 
     def rate(self, from_ccy: Optional[str], to_ccy: Optional[str],
              at: Optional[date] = None) -> Optional[float]:
@@ -110,17 +111,38 @@ class Rates:
                    for known in self._windows.get(pair, ()))
 
     def _live_rate(self, pair: str) -> Optional[float]:
-        """The pair's live rate, refetched at most once per ``ttl``."""
+        """The pair's live rate, refetched at most once per ``ttl``.
+
+        A fetch that **answers** ``None`` — a pair that does not exist — is
+        cached like any other answer, for the same span: that is the herd the
+        TTL is there against, in the one case where the answer cannot change.
+
+        A fetch that **fails** is the other thing entirely, and is cached the
+        way :meth:`_ensure_window` caches its own failures: what is written down
+        is *when* it failed, never ``None`` as an answer. The last good rate
+        stands until a fetch succeeds — which is also what makes the missing
+        lock harmless, since a thread that fails no longer writes over the rate
+        a thread that succeeded has just filled in.
+        """
         cached = self._live.get(pair)
         now = self._clock()
         if cached is not None and now - cached[1] < self._ttl:
             return cached[0]
 
+        failed_at = self._live_failed_at.get(pair)
+        if failed_at is not None and now - failed_at < self._ttl:
+            return cached[0] if cached is not None else None
+
         try:
             fetched = self._fetch_live(pair)
         except Exception as exc:
             logger.warning(f"Could not fetch the {pair} rate: {exc}")
-            fetched = None
+            self._live_failed_at[pair] = now
+            # Reread: a thread that succeeded may have filled the cache in while
+            # this one was in flight, which is the whole race.
+            cached = self._live.get(pair)
+            return cached[0] if cached is not None else None
+        self._live_failed_at.pop(pair, None)
         self._live[pair] = (fetched, now)
         return fetched
 
