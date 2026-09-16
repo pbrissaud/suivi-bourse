@@ -22,6 +22,7 @@ from application import entries
 from application import main
 from application import mcp_server
 from application import perf_series
+from application import quotes
 from application import store as store_module
 from conftest import write_legacy_taxation_model
 from application.events.schemas import (
@@ -198,6 +199,52 @@ def test_the_positions_description_names_the_members_the_row_actually_has(
     assert 'market_cap especially is NOT in base_currency' in described
     assert set(served[0]) >= {'quantity', 'cost_basis', 'realised',
                               'dividends', 'price', 'converted'}
+
+
+def test_a_row_says_what_the_instrument_is_and_where_it_is_from(tmp_path):
+    """The complaint that motivated the classification, asserted on the wire.
+
+    The first outside agent driven against this server had to know by itself
+    that Air Liquide, BNP and Engie are French to answer what the portfolio
+    holds in France — the payload said nothing, and a model less well read on
+    the CAC cannot answer at all.
+
+    The assertion is on **what crossed the client**, not on the store, and that
+    distinction is not ceremony: a symbol attribute is kept by hand in six
+    separate lists between Yahoo and this payload, and the one that publishes it
+    — ``store_reads.QUOTE_COLUMNS`` — was left out once on this very branch. The
+    columns were written, stored, and read back correctly; ``fundamentals``
+    carried none of them and nothing raised. Only a test on the payload sees it.
+
+    The ETF beside the equity is the other half: Yahoo publishes no ``sector``
+    for a fund, and that absence reaches the agent as an absent member rather
+    than as an invented bucket (#845).
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    quotes.record_quote(opened, 'AAPL', datetime(2024, 9, 16, tzinfo=timezone.utc),
+                        190.0, {'currency': 'USD', 'quote_type': 'EQUITY',
+                                'sector': 'Technology',
+                                'industry': 'Consumer Electronics',
+                                'country': 'United States'}, 190.0, 1.0)
+    quotes.record_quote(opened, 'MSFT', datetime(2024, 9, 16, tzinfo=timezone.utc),
+                        410.0, {'currency': 'USD', 'quote_type': 'ETF'},
+                        410.0, 1.0)
+
+    served = {row['symbol']: row
+              for row in payload(call(runtime, 'list_positions'))['positions']}
+
+    fundamentals = served['AAPL']['fundamentals']
+    assert fundamentals['sector'] == 'Technology'
+    assert fundamentals['industry'] == 'Consumer Electronics'
+    assert fundamentals['country'] == 'United States'
+
+    # The fund: the block still stands on what was observed, and the three
+    # unobserved members are null — never 'Unknown', which would be a bucket
+    # an allocation could sum.
+    fund = served['MSFT']['fundamentals']
+    assert fund['quote_type'] == 'ETF'
+    assert (fund['sector'], fund['industry'], fund['country']) == \
+        (None, None, None)
 
 
 def test_the_server_states_the_set_its_answers_are_drawn_from(tmp_path):

@@ -13,6 +13,7 @@ POSITION_COLUMNS = (
 QUOTE_COLUMNS = (
     'currency', 'exchange', 'quote_type',
     'dividend_yield', 'pe_ratio', 'market_cap',
+    'sector', 'industry', 'country',
 )
 PRICE_COLUMNS = ('price', 'price_native', 'fx_rate', 'price_time')
 

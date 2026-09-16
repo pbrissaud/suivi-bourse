@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS symbol_quote (
     dividend_yield        DOUBLE,
     pe_ratio              DOUBLE,
     market_cap            DOUBLE,
+    sector                VARCHAR,                   -- what it does (#964)
+    industry              VARCHAR,
+    country               VARCHAR,                   -- *not* Yahoo's `region`
     fetched_at            TIMESTAMPTZ,
     last_price_native     DOUBLE,                   -- the `latest` row
     last_price_converted  DOUBLE,
@@ -430,6 +433,24 @@ def _add_newest_window_tried(connection) -> None:
                        'ADD COLUMN IF NOT EXISTS newest_window_tried DATE')
 
 
+def _add_symbol_classification(connection) -> None:
+    """Give an already-created store what an instrument *is* (issue #964).
+
+    Same shape as :func:`_add_newest_window_tried` and for the same reason:
+    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds, so the three
+    columns added to the DDL reach a **new** file and no other — and CI only
+    ever creates new files, where the DDL is the whole schema. Without this step
+    every store in circulation opens cleanly and then raises a Binder Error on
+    the first read of a quote, which is the failure no test could have caught.
+
+    No :func:`rebuilding`: nothing holds a foreign key on ``symbol_quote``, and
+    an added column has none of the dependency cost a dropped one has.
+    """
+    for column in ('sector', 'industry', 'country'):
+        connection.execute(f'ALTER TABLE symbol_quote '
+                           f'ADD COLUMN IF NOT EXISTS {column} VARCHAR')
+
+
 #: The schema steps, oldest first (#926). A step is what the ``IF NOT EXISTS``
 #: DDL cannot express — dropping a column, renaming one, **adding one to a table
 #: that already exists** (the DDL only builds a table it does not find) — and
@@ -446,6 +467,7 @@ def _add_newest_window_tried(connection) -> None:
 STEPS = (
     ('drop_account_type', _drop_account_type),
     ('add_newest_window_tried', _add_newest_window_tried),
+    ('add_symbol_classification', _add_symbol_classification),
 )
 
 

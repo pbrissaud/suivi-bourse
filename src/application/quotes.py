@@ -16,6 +16,7 @@ logger = getLogger("quotes")
 QUOTE_ATTRIBUTES = (
     'currency', 'exchange', 'quote_type',
     'dividend_yield', 'pe_ratio', 'market_cap',
+    'sector', 'industry', 'country',
 )
 
 
