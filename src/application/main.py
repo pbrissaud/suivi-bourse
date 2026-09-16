@@ -371,20 +371,25 @@ def build_runtime() -> Runtime:
     store_path = boot.store_dir / store.STORE_FILENAME
     opened = store.open_store(store_path)
 
-    persistence = mounts.store_persistence(boot.store_dir)
-
-    config_manager = ConfigurationManager(opened_store=opened)
-
-    config_manager.report_unread_files()
-
+    # Everything past the open runs under the guard (issue #857): a boot that
+    # will not finish gives the file back before it raises, and a statement
+    # added here must not be able to escape that.
+    config_manager = None
     try:
+        persistence = mounts.store_persistence(boot.store_dir)
+
+        config_manager = ConfigurationManager(opened_store=opened)
+
+        config_manager.report_unread_files()
+
         config_manager.reload()
         report_boot_conditions(
             boot, persistence,
             base_currency=opened.setting('base_currency'),
             recorded_events=len(config_manager.current().events))
     except BaseException:
-        config_manager.attach_store(None)
+        if config_manager is not None:
+            config_manager.attach_store(None)
         opened.close()
         raise
 

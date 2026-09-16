@@ -250,6 +250,27 @@ def test_a_boot_that_will_not_finish_gives_the_file_back(monkeypatch):
         handed[0].ping()
 
 
+def test_the_guard_covers_every_statement_past_the_open(fake_config, mocker):
+    """The store is given back even when the failure is *before* the reload (#857).
+
+    The mount reading and the manager's construction used to sit between the
+    open and the ``try``: an exception there travelled up to ``boot.run`` with
+    nobody left to close the file, and DuckDB exits on a ``.wal`` nobody
+    checkpointed. The failure is provoked at the first of those statements,
+    and the assertion is the connection's own state.
+    """
+    opens = mocker.spy(store, "open_store")
+    mocker.patch.object(main.mounts, "store_persistence",
+                        side_effect=OSError("/proc/self/mountinfo vanished"))
+
+    with pytest.raises(OSError):
+        main.build_runtime()
+
+    # Closed, said the way ``/health`` says it: the store no longer answers.
+    with pytest.raises(Exception):
+        opens.spy_return.ping()
+
+
 def test_build_runtime_reads_the_environment_once_and_hands_no_folder_on(
         monkeypatch, tmp_path):
     """**One** read of ``os.environ``, and one path in it.
