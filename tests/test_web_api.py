@@ -43,6 +43,7 @@ from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from api import create_app, problem
+from conftest import write_legacy_taxation_model
 
 
 class FakeMetrics:
@@ -5709,16 +5710,9 @@ def test_a_model_this_version_refuses_does_not_pay_for_the_positions_read(
     alive and would let this regression through unseen.
     """
     client, opened = _valued_pea(tmp_path)
-    # The raw `INSERT` writes what the application itself would now refuse:
-    # `aged_flat_realised` without the `rate_after` that became required.
-    opened.execute(
-        "INSERT INTO taxation_model (id, name, kind, parameters) "
-        "VALUES ('legacy', 'Legacy', 'aged_flat_realised', "
-        "        '{\"rate_before\": 0.3, \"threshold_years\": 5, "
-        "          \"age_basis\": \"opening\"}')")
-    opened.execute(
-        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
-        ['pea', 'legacy'])
+    # The row `accounts.create_model` refuses: `aged_flat_realised` without the
+    # `rate_after` that became required.
+    write_legacy_taxation_model(opened, account='pea')
     # Both halves made fatal, for the reason the test above gives.
     mocker.patch.object(PortfolioReader, 'positions',
                         side_effect=AssertionError('the positions were read'))
@@ -5905,14 +5899,7 @@ def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
     client, opened = _valued_pea(tmp_path, accounts=accounts, events=events)
 
     # `pea` carries a model this version cannot read.
-    opened.execute(
-        "INSERT INTO taxation_model (id, name, kind, parameters) "
-        "VALUES ('legacy', 'Legacy', 'aged_flat_realised', "
-        "        '{\"rate_before\": 0.3, \"threshold_years\": 5, "
-        "          \"age_basis\": \"opening\"}')")
-    opened.execute(
-        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
-        ['pea', 'legacy'])
+    write_legacy_taxation_model(opened, account='pea')
     # `cto` carries a sound one.
     _carry(client, account='cto', name='CTO', kind='flat_realised',
            parameters={'rate': 0.30})

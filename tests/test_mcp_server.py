@@ -23,6 +23,7 @@ from application import main
 from application import mcp_server
 from application import perf_series
 from application import store as store_module
+from conftest import write_legacy_taxation_model
 from application.events.schemas import (
     AccountMetricPoint, Event, EventType, PortfolioTotalPoint,
 )
@@ -478,11 +479,10 @@ def test_a_hand_edited_model_row_fails_in_words_like_any_other_fault(tmp_path):
     standing on it.
     """
     runtime, opened = build_runtime(tmp_path, events=LEDGER)
-    # The raw `INSERT` is the point: parameters that are not JSON at all, which
-    # only a hand edit of the store file can leave behind.
-    opened.execute(
-        "INSERT INTO taxation_model (id, name, kind, parameters) "
-        "VALUES ('legacy', 'Legacy', 'flat_realised', 'not json')")
+    # Parameters that are not JSON at all, which only a hand edit of the store
+    # file can leave behind — and which no writer here could produce.
+    write_legacy_taxation_model(opened, kind='flat_realised',
+                                parameters='not json')
 
     result = call(runtime, 'list_accounts')
 
