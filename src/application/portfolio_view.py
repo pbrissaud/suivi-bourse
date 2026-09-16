@@ -248,6 +248,9 @@ def _build_fundamentals(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         'dividend_yield': row.get('dividend_yield'),
         'pe_ratio': row.get('pe_ratio'),
         'market_cap': row.get('market_cap'),
+        'sector': row.get('sector'),
+        'industry': row.get('industry'),
+        'country': row.get('country'),
     }
     if all(value is None for key, value in values.items() if key != 'currency'):
         return None

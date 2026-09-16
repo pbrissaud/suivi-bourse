@@ -278,7 +278,9 @@ def seed_quote(opened, symbol='AAPL', price=200.0,
     opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
                    'ON CONFLICT (symbol) DO NOTHING', [symbol])
     values = {'currency': currency, 'exchange': 'NMS', 'quote_type': 'EQUITY',
-              'dividend_yield': 0.5, 'pe_ratio': 30.0, 'market_cap': 3.0e12}
+              'dividend_yield': 0.5, 'pe_ratio': 30.0, 'market_cap': 3.0e12,
+              'sector': 'Technology', 'industry': 'Consumer Electronics',
+              'country': 'United States'}
     values.update(attributes)
     quotes.record_quote(opened, symbol, at, price, values,
                         price if converted is None and rate is not None
@@ -461,8 +463,38 @@ def test_the_instrument_rides_on_the_holding_and_is_absent_unfetched(tmp_path):
     assert rows['AAPL']['fundamentals'] == {
         'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',
         'dividend_yield': 0.5, 'pe_ratio': None, 'market_cap': 3.0e12,
+        'sector': 'Technology', 'industry': 'Consumer Electronics',
+        'country': 'United States',
     }
     assert rows['MSFT']['fundamentals'] is None
+
+
+def test_a_symbol_known_only_by_its_country_still_draws_a_block(tmp_path):
+    """The predicate #720 wrote, met by the three columns #964 adds.
+
+    ``_build_fundamentals`` returns ``None`` when every member but ``currency``
+    is absent, because a block of five em dashes is worse than no block. A
+    symbol whose ``country`` alone was fetched used to fall on the wrong side of
+    that line: the fact existed, and the sheet drew nothing.
+
+    It is the MCP that made this matter. An agent asked what the portfolio holds
+    in France had to know by itself that Air Liquide is French, because nothing
+    in the payload said so — and a model less well read on the CAC cannot answer
+    at all.
+    """
+    def seed(opened):
+        seed_position(opened, symbol='AI.PA', account='pea')
+        seed_quote(opened, symbol='AI.PA', price=92.0, currency='EUR',
+                   exchange=None, quote_type=None, dividend_yield=None,
+                   pe_ratio=None, market_cap=None,
+                   sector=None, industry=None, country='France')
+
+    payload = build_client(tmp_path, seed=seed).get('/api/positions').get_json()
+    fundamentals = payload['positions'][0]['fundamentals']
+
+    assert fundamentals is not None
+    assert fundamentals['country'] == 'France'
+    assert fundamentals['sector'] is None
 
 
 def test_a_fundamental_json_cannot_spell_never_reaches_the_body(tmp_path):

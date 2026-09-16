@@ -26,6 +26,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from application import quotes
 from application import settings_registry
 from application import store as store_module
 
@@ -459,6 +460,58 @@ def test_a_store_that_predates_the_forward_anchor_gets_the_column(tmp_path):
             'SELECT last_price_native, oldest_window_tried, '
             '       newest_window_tried FROM symbol_quote') == [
                 (187.0, date(2021, 5, 4), None)]
+    finally:
+        opened.close()
+
+
+#: ``symbol_quote`` as #854 left it: both anchors, and nothing saying what the
+#: instrument *is* beyond the six attributes the quote has always carried.
+_PRE_964_SYMBOL_QUOTE = """
+CREATE TABLE symbol_quote (
+    symbol                VARCHAR PRIMARY KEY REFERENCES symbol(symbol),
+    currency              VARCHAR, exchange VARCHAR, quote_type VARCHAR,
+    dividend_yield        DOUBLE, pe_ratio DOUBLE, market_cap DOUBLE,
+    fetched_at            TIMESTAMPTZ,
+    last_price_native     DOUBLE, last_price_converted DOUBLE,
+    last_fx_rate          DOUBLE, last_price_ts TIMESTAMPTZ,
+    oldest_window_tried   DATE, newest_window_tried DATE);
+"""
+
+
+def test_a_store_that_predates_the_classification_reads_a_quote(tmp_path):
+    """The three columns reach a file the DDL cannot enter (issue #964).
+
+    The assertion is on a **read of the quote**, not on
+    ``information_schema``, because that is where the failure would land. The
+    six attributes and the three new ones are one tuple — ``QUOTE_ATTRIBUTES``,
+    which ``read_quote`` interpolates into its ``SELECT`` — so a store missing
+    the columns does not degrade to nine ``None``s. It raises a Binder Error on
+    the first sheet the owner opens, and every page that reads a position goes
+    dark at once.
+
+    The row is seeded with a price and the older anchors filled, so what is
+    proven is that the step **adds** without disturbing: the market data written
+    before today is still there, and the three new columns are absent rather
+    than zeroed.
+    """
+    path = tmp_path / 'old.duckdb'
+    _generation_zero(path)
+    connection = duckdb.connect(str(path))
+    connection.execute(_PRE_964_SYMBOL_QUOTE)
+    connection.execute(
+        "INSERT INTO symbol_quote (symbol, currency, last_price_native, "
+        "oldest_window_tried) "
+        "VALUES ('AAPL', 'USD', 187.0, DATE '2021-05-04')")
+    connection.close()
+
+    opened = store_module.open_store(path)
+    try:
+        row = quotes.read_quote(opened, 'AAPL')
+        assert row['last_price_native'] == 187.0
+        assert row['currency'] == 'USD'
+        # Absent, and absent is what they say — no sentinel, no empty string.
+        assert (row['sector'], row['industry'], row['country']) == \
+            (None, None, None)
     finally:
         opened.close()
 

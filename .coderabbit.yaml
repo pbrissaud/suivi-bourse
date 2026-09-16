@@ -63,6 +63,11 @@ reviews:
         - `import yfinance` appears in `src/application/market.py` and nowhere
           else, tests included.
         - Reading a key of Yahoo's payload happens in `market_info.py` alone.
+        - `region` is not a key of this payload anybody may read. Yahoo answers
+          `'US'` on `AI.PA` as on every other symbol — it is yfinance's own
+          locale echoed back, not a fact about the instrument. Flag any reach
+          for it: `country` is the fact, and the wrong key returns a plausible
+          answer rather than an error (#964).
         - No sentinel is written for a field the payload does not carry. The
           string `'undefined'` must not appear anywhere in `src/` or `tests/`,
           fixtures included: a fixture naming it re-teaches the belief that

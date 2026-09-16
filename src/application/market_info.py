@@ -12,6 +12,13 @@ def quote_attributes(raw: Mapping) -> dict:
         'dividendYield': raw.get('dividendYield'),
         'peRatio': raw.get('trailingPE') or raw.get('forwardPE'),
         'marketCap': raw.get('marketCap'),
+        #: What the instrument *does* and *where* — the three keys #964 adds.
+        #: **Never** ``raw['region']``: it answers ``'US'`` on ``AI.PA`` as on
+        #: any other symbol, because it is yfinance's own locale echoed back
+        #: and not a fact about the instrument. ``country`` is the fact.
+        'sector': raw.get('sector'),
+        'industry': raw.get('industry'),
+        'country': raw.get('country'),
     }
 
 
@@ -38,6 +45,9 @@ def quote_columns(info: Mapping) -> dict:
         'dividend_yield': info.get('dividendYield'),
         'pe_ratio': info.get('peRatio'),
         'market_cap': info.get('marketCap'),
+        'sector': info.get('sector'),
+        'industry': info.get('industry'),
+        'country': info.get('country'),
     }
 
 

@@ -575,6 +575,54 @@ def test_the_attributes_can_be_written_without_claiming_a_price(declared):
         == [(1,)]
 
 
+def test_both_write_doors_carry_what_the_instrument_is(declared):
+    """The live pass and the lateral one agree on the classification (#964).
+
+    The two writers are separate functions — :func:`quotes.record_quote` appends
+    a point, :func:`quotes.record_attributes` refuses to — and the only thing
+    keeping them from drifting is that both interpolate the **same**
+    ``QUOTE_ATTRIBUTES``. A symbol the scrape holds and a symbol only the
+    backfill ever reached must describe the same instrument, or an allocation
+    computed over the portfolio would be answerable for the held half alone.
+
+    Written through the real writers, on one symbol, in both orders: the lateral
+    pass must refresh a classification the live pass wrote, not blank it.
+    """
+    live = {'currency': 'EUR', 'exchange': 'PAR', 'quote_type': 'EQUITY',
+            'sector': 'Basic Materials', 'industry': 'Specialty Chemicals',
+            'country': 'France'}
+    quotes.record_quote(declared, 'AAPL', NOW, 187.0, live)
+
+    row = quotes.read_quote(declared, 'AAPL')
+    assert (row['sector'], row['industry'], row['country']) == \
+        ('Basic Materials', 'Specialty Chemicals', 'France')
+
+    # The lateral pass, one day later, on the same row. It carries the whole
+    # tuple too, so what it says about the instrument is what stands.
+    quotes.record_attributes(declared, 'AAPL', NOW + timedelta(days=1),
+                             {**live, 'industry': 'Diversified Chemicals'})
+
+    row = quotes.read_quote(declared, 'AAPL')
+    assert row['industry'] == 'Diversified Chemicals'
+    assert row['country'] == 'France'
+    assert row['last_price_native'] == 187.0
+
+
+def test_a_fund_is_classified_as_absent_and_never_as_unknown(declared):
+    """#845's rule on the three new columns, and the trap beside them.
+
+    Yahoo publishes no ``sector`` for an ETF. That absence reaches the reader as
+    an absence — no ``'Unknown'``, no empty string — because a page drawing
+    "Unknown" in an allocation invents a bucket nobody holds.
+    """
+    quotes.record_quote(declared, 'AAPL', NOW, 92.0,
+                        {'currency': 'EUR', 'quote_type': 'ETF'})
+
+    row = quotes.read_quote(declared, 'AAPL')
+    assert (row['sector'], row['industry'], row['country']) == \
+        (None, None, None)
+
+
 def test_the_attributes_reach_a_symbol_the_scrape_never_fetched(store):
     """The population that made #773 a defect: a line sold before the install.
 
