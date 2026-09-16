@@ -16,11 +16,17 @@ from datetime import date, datetime, timezone
 import pytest
 from mcp import Client
 
+from api import create_app
+from application import accounts as accounts_module
 from application import entries
 from application import main
 from application import mcp_server
+from application import perf_series
 from application import store as store_module
-from application.events.schemas import Event, EventType
+from conftest import write_legacy_taxation_model
+from application.events.schemas import (
+    AccountMetricPoint, Event, EventType, PortfolioTotalPoint,
+)
 
 
 def build_runtime(tmp_path, events=None, currency='EUR', break_store=False):
@@ -162,6 +168,139 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
     assert 'worth zero' in described
 
 
+def test_the_positions_description_names_the_members_the_row_actually_has(
+        tmp_path):
+    """**A description is the only schema an agent gets**, so a member it names
+    and the payload does not carry is worse than silence.
+
+    This one promised `unit_cost`, `market_value` and an unrealised gain. None
+    of the three is on the row: what is there is `cost_basis`, which is a TOTAL
+    over the holding. An agent told `unit_cost` is a weighted average reads that
+    total as a price per unit and is wrong by a factor of the quantity held —
+    the same shape as the two figures called a gain that #951 had to separate on
+    screen.
+    """
+    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)
+                          }['list_positions'].split())
+    served = payload(call(runtime, 'list_positions'))['positions']
+
+    assert served, 'the ledger must hold a position for this to mean anything'
+    for absent in ('unit_cost', 'market_value', 'plus_value_latente'):
+        assert absent not in served[0], absent
+    assert 'READ cost_basis AS A TOTAL' in described
+    assert 'THERE IS NO market_value MEMBER' in described
+    # And the currency exception, which contradicts the shared paragraph unless
+    # it says so: price.value is the only amount here not in base_currency.
+    assert 'EXCEPTIONS TO THAT PARAGRAPH' in described
+    assert 'market_cap especially is NOT in base_currency' in described
+    assert set(served[0]) >= {'quantity', 'cost_basis', 'realised',
+                              'dividends', 'price', 'converted'}
+
+
+def test_the_server_states_the_set_its_answers_are_drawn_from(tmp_path):
+    """**What is not here**, said once for the six tools (#889).
+
+    Every field says which absence it is, and the payload as a whole said
+    nothing about the set it is drawn from. An unlisted holding — private
+    equity, an SPV, anything without a ticker — cannot be in the ledger, and the
+    first outside agent to use this server nearly reported a position as sold
+    when it had simply never been in scope.
+
+    The perimeter is stated in the instructions, which every tool inherits, and
+    again on ``list_positions``, which is the table an agent reads when it goes
+    looking for a line that is not there.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    async def _handshake():
+        """Through the client, as :func:`listed` is: what a model reads is the
+        copy that crossed the wire."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            return client.instructions or ''
+
+    said = asyncio.run(_handshake())
+    assert 'listed instruments' in said
+    assert 'not a sale' in said
+    assert 'net worth' in said
+
+    # Unwrapped before it is read: these are sentences, and a paragraph
+    # reflowed to 79 columns puts a line break wherever it lands. An assertion
+    # that a rewrap breaks is an assertion about the margin, not about the words.
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)}['list_positions'].split())
+    assert 'A SYMBOL ABSENT FROM THIS TABLE WAS NEVER IN IT' in described
+    assert 'was never declared, and reading it as a sale' in described
+
+
+def test_the_accounts_description_frames_the_tax_and_the_index(tmp_path):
+    """Two figures a model will misread unless the words stop it.
+
+    ``projected_tax`` is a number called *tax*, and a model reading one will
+    present it as one (#920): the description has to say it is a projection
+    under a model the owner declared, and name what it does not express.
+    ``twr_index`` is an index whose base day differs per row (#887), so the
+    description has to send the reader to ``twr_since`` rather than invite the
+    comparison — which is what it used to do.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)}['list_accounts'].split())
+
+    assert 'projection' in described
+    assert 'OWNER DECLARED THEMSELVES' in described
+    assert 'no allowance' in described and 'loss carry-forward' in described
+    assert 'when to sell' in described
+    assert 'projected_base' in described
+    # The three families are absent independently, and the description has to
+    # say so: opened_on and first_payment do not consult the model at all, and
+    # a valid model can still project nothing.
+    assert 'absent independently' in described
+    assert 'NOT on any taxation model' in described
+    assert 'taxation_kind CAN RIDE WITHOUT A FIGURE' in described
+    # And the figure is not rate times base: a loss floors the tax at 0 while
+    # the base stays negative, and a ladder does not serve its bounds.
+    assert 'DO NOT RECOMPUTE projected_tax' in described
+    assert 'negative projected_base and a' in described
+
+    assert 'twr_since' in described
+    # The sentence that sold the comparison the payload cannot support.
+    assert 'the figure that compares two accounts of different sizes' not in described
+
+
+def test_the_totals_description_names_the_day_its_own_index_counts_from(tmp_path):
+    """The other half of #887, and the half nothing held.
+
+    ``list_accounts`` now warns a model off ranking two indexes — but the
+    comparison a model actually reaches for is the portfolio against one of its
+    accounts, and that figure comes from **this** tool. The aggregate is based
+    at the *latest* horizon among the accounts it sums, so it sits below every
+    one of them as a matter of arithmetic. A description that does not say so
+    leaves a model free to report the portfolio as the worst performer in it.
+    """
+    runtime, _ = build_runtime(tmp_path)
+
+    # Unwrapped before it is read, as above: a rewrap to 79 columns is a
+    # property of the margin and not of the sentence.
+    described = ' '.join({tool.name: tool.description or ''
+                          for tool in listed(runtime)
+                          }['get_portfolio_totals'].split())
+
+    assert 'twr_index is based at 100 on twr_since' in described
+    assert 'not a sign that the accounts outperformed' in described
+    # **And no claim about which anchor comes first.** The aggregate is clipped
+    # to `max([start] + bounds)`, but `bounds` covers only the accounts that
+    # pass rewrote, and `_fill_twr` anchors on the first day of value rather
+    # than the first day of the list — so the order is a property of the last
+    # recompute, not an invariant. A description asserting one teaches the agent
+    # a rule the data breaks.
+    assert 'THERE IS NO RULE ABOUT WHICH COMES' in described
+    assert 'latest horizon' not in described
+
+
 # --------------------------------------------------------------------- #
 # The figures
 # --------------------------------------------------------------------- #
@@ -216,6 +355,74 @@ def test_the_accounts_list_always_holds_at_least_one_row(tmp_path):
     assert len(body['accounts']) >= 1
 
 
+def test_the_agent_and_the_browser_are_served_the_same_account(tmp_path):
+    """One store, two surfaces, **the same members on a row** (#920).
+
+    The tool used to re-assemble this payload by hand and stopped where the perf
+    figures stop, so every member #752, #918 and #948 hung on an account reached
+    the panel and not the agent — eight of them by the time anybody counted, the
+    taxation model among them, which is why an agent could say nothing about a
+    wrapper it could see.
+
+    What is held here is **not the list of eight**. It is that the two key sets
+    are equal, so a ninth member added to one surface and not the other fails
+    here rather than in the next ticket. The account carries a model so the
+    comparison is not made between two rows that both lost the same thing.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    model = accounts_module.create_model(opened, 'Flat', 'flat_realised',
+                                         {'rate': 0.3})
+    accounts_module.set_taxation_model(
+        opened, accounts_module.DEFAULT_ACCOUNT, model.id)
+
+    served = create_app(runtime).test_client().get('/api/accounts').get_json()
+    read = payload(call(runtime, 'list_accounts'))
+
+    assert read['declared'] == served['declared']
+    by_id = {row['id']: row for row in served['accounts']}
+    assert {row['id'] for row in read['accounts']} == set(by_id)
+    for row in read['accounts']:
+        assert set(row) == set(by_id[row['id']]), row['id']
+
+    carrying = by_id[accounts_module.DEFAULT_ACCOUNT]
+    assert carrying['taxation_model'] == model.id
+    assert carrying['taxation_kind'] == 'flat_realised'
+
+
+def test_the_agent_reads_the_day_each_accounts_index_is_based_at(tmp_path):
+    """``twr_since`` **on the wire**, and not merely in the description (#887).
+
+    The shared-payload test above computes no series, so the member is absent on
+    both surfaces and their key sets agree on its absence — which is agreement
+    about nothing. The description tells a model to read ``twr_since`` before it
+    puts two indexes in one sentence, so a model that cannot find the member has
+    been given an instruction it cannot follow; this is what holds the member
+    there.
+
+    Anchored on the first day the index **exists** and not on the first row of
+    the series: a day the perf job wrote with a null index is not a base of 100.
+    The per-account claim itself — that two wrappers carry two anchors — is held
+    on the browser's side of the same payload, where accounts can be declared.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    perf_series.write_account_metrics(opened, [
+        AccountMetricPoint(account=accounts_module.DEFAULT_ACCOUNT,
+                           day=date(2019, 10, 30), total_value=1000.0,
+                           twr_index=None),
+        AccountMetricPoint(account=accounts_module.DEFAULT_ACCOUNT,
+                           day=date(2024, 1, 15), total_value=1100.0,
+                           twr_index=100.0),
+        AccountMetricPoint(account=accounts_module.DEFAULT_ACCOUNT,
+                           day=date(2024, 9, 15), total_value=1200.0,
+                           twr_index=120.0),
+    ])
+
+    rows = {row['id']: row
+            for row in payload(call(runtime, 'list_accounts'))['accounts']}
+
+    assert rows[accounts_module.DEFAULT_ACCOUNT]['twr_since'] == '2024-01-15'
+
+
 def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):
     """One shape for two causes, and the head keeps its subject either way."""
     runtime, _ = build_runtime(tmp_path, events=None, currency='EUR')
@@ -224,6 +431,64 @@ def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):
 
     assert body['totals'] is None
     assert body['base_currency'] == 'EUR'
+
+
+def test_the_agent_reads_the_day_the_portfolio_index_is_based_at(tmp_path):
+    """``twr_since`` on the totals, **on the wire** (#887).
+
+    `list_accounts`' description sends the agent here — it says this tool
+    carries the same member for the portfolio-wide index, and that reading both
+    anchors is what stands between it and ranking two figures that measure
+    different periods. A description pointing at a member the payload does not
+    carry is worse than no description: it is an instruction that cannot be
+    followed.
+
+    Anchored on the first day the index exists, like the per-account one: a day
+    the perf job wrote with a null index is not a base of 100.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    perf_series.write_portfolio_totals(opened, [
+        PortfolioTotalPoint(day=date(2019, 10, 30), cash_balance=0.0,
+                            holdings_value=1000.0, total_value=1000.0,
+                            net_contributed=1000.0, xirr=None,
+                            gain_absolu=0.0, twr_index=None),
+        PortfolioTotalPoint(day=date(2024, 1, 15), cash_balance=0.0,
+                            holdings_value=1100.0, total_value=1100.0,
+                            net_contributed=1000.0, xirr=0.1,
+                            gain_absolu=100.0, twr_index=100.0),
+        PortfolioTotalPoint(day=date(2024, 9, 15), cash_balance=0.0,
+                            holdings_value=1200.0, total_value=1200.0,
+                            net_contributed=1000.0, xirr=0.12,
+                            gain_absolu=200.0, twr_index=120.0),
+    ])
+
+    totals = payload(call(runtime, 'get_portfolio_totals'))['totals']
+
+    assert totals['twr_since'] == '2024-01-15'
+    assert totals['twr_index'] == 120.0
+
+
+def test_a_hand_edited_model_row_fails_in_words_like_any_other_fault(tmp_path):
+    """The shared payload took this tool somewhere ``break_store`` cannot reach.
+
+    ``list_accounts`` now runs `read_models`, whose `json.loads` raises
+    `ValueError` on a row no writer in this app could have produced — and the
+    SDK reports anything that is not a `ToolError` as *"Error executing tool
+    <name>"*, with the cause discarded. Every other fault test here drops a
+    table and gets a `duckdb.Error`, so that arm of :func:`reading` had nothing
+    standing on it.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    # Parameters that are not JSON at all, which only a hand edit of the store
+    # file can leave behind — and which no writer here could produce.
+    write_legacy_taxation_model(opened, kind='flat_realised',
+                                parameters='not json')
+
+    result = call(runtime, 'list_accounts')
+
+    assert result.is_error is True
+    assert 'could not answer this read' in _text(result)
+    assert 'no figure to give' in _text(result)
 
 
 def test_the_history_defaults_to_a_year_and_honours_a_window(tmp_path):

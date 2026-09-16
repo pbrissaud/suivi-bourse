@@ -316,3 +316,37 @@ def fake_ticker():
         return _FakeTicker(df, default_info, history_metadata)
 
     return _make
+
+
+#: An `aged_flat_realised` model missing the `rate_after` that became required —
+#: the shape an earlier version of this app accepted and this one refuses.
+REFUSED_PARAMETERS = ('{"rate_before": 0.3, "threshold_years": 5, '
+                      '"age_basis": "opening"}')
+
+
+def write_legacy_taxation_model(opened, model_id='legacy', name='Legacy',
+                                kind='aged_flat_realised',
+                                parameters=REFUSED_PARAMETERS, account=None):
+    """A `taxation_model` row **written around its writer**, on purpose.
+
+    ``taxation_model`` and ``account_fact`` are written by
+    `application.accounts` alone, and a test that reaches past it is normally
+    the finding rather than the fixture. This is the one exception, and it
+    cannot be anything else: every row these tests need is a row
+    `accounts.create_model` **refuses** — a parameter that became required and
+    is missing, or `parameters` that are not JSON at all. Going through the
+    writer to produce them is not a stricter fixture, it is an impossible one.
+
+    So the bypass lives here, named and explained once, rather than as a raw
+    `INSERT` copied into each test that needs a legacy row. A test calling this
+    is declaring *"what a past version left behind"*; a raw `INSERT` anywhere
+    else in the suite is still the finding the convention says it is.
+    """
+    opened.execute(
+        'INSERT INTO taxation_model (id, name, kind, parameters) '
+        'VALUES (?, ?, ?, ?)', [model_id, name, kind, parameters])
+    if account is not None:
+        opened.execute(
+            'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
+            [account, model_id])
+    return model_id

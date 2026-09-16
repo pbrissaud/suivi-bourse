@@ -7,7 +7,7 @@ import duckdb
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from application import accounts as accounts_module
+from application import account_facts
 from application import instants
 from application import portfolio_view
 from application import quotes
@@ -33,10 +33,28 @@ _CURRENCY = (
 LIST_POSITIONS_DESCRIPTION = f"""\
 What the owner currently holds, one row per (account, symbol).
 
-Each row carries quantity, unit_cost (a weighted average over everything bought,
-never a purchase price), market_value, and the unrealised gain.
+Each row carries quantity, cost_basis, realised, dividends, price, converted,
+terminal, closed_at (the day a quantity-0 row was sold) and fundamentals.
+
+READ cost_basis AS A TOTAL. It is what the whole holding cost, summed over every
+purchase — NOT a unit price and not a purchase price. The weighted average paid
+per unit is cost_basis / quantity, and you must do that division yourself.
+
+THERE IS NO market_value MEMBER AND NO UNREALISED-GAIN MEMBER. Both are yours to
+compute: the holding is worth quantity x converted.value, and its unrealised gain
+is that figure minus cost_basis. Say you computed them; do not attribute them to
+this app.
 
 {_CURRENCY}
+
+THIS TOOL IS THE ONE THAT HAS EXCEPTIONS TO THAT PARAGRAPH, and there are two.
+price and converted are the same price twice: price.value is in the instrument's
+OWN currency, which price.currency names on the row, and converted.value is that
+same price in base_currency at converted.rate. Use converted for anything you add
+up or compare; use price only to quote the instrument on its own exchange, and
+name price.currency when you do. And fundamentals — what the instrument is rather
+than what the holding is worth — is quoted in fundamentals.currency, its own:
+market_cap especially is NOT in base_currency and must never be added to one.
 
 Two things about a row will mislead you if you do not know them:
 - quantity 0 is a SOLD position, not a mistake and not an empty row. It stays in
@@ -48,18 +66,45 @@ Two things about a row will mislead you if you do not know them:
   both cases the honest answer is that it is not priced, and terminal is what
   lets you say which of the two it is.
 
+A SYMBOL ABSENT FROM THIS TABLE WAS NEVER IN IT. The ledger holds listed
+instruments only, so a holding with no ticker — private equity, an SPV,
+property — could not be entered and does not appear here. A sold position stays
+as a row with quantity 0, which is the only shape a disposal takes: nothing
+leaves this table. So a position you expected and cannot find was never
+declared, and reading it as a sale is the mistake this paragraph exists to
+prevent.
+
 {_ABSENCE}
 """
 
 GET_PORTFOLIO_TOTALS_DESCRIPTION = f"""\
 The portfolio as a whole, on the most recent day the app has computed.
 
-Carries the market value, the net amount contributed, the money-weighted return
-(xirr, annualised), the time-weighted return (twr, an index based at 100), the
-year-to-date figures, and the gain broken into its four terms — the unrealised
-gain, the realised gain, the dividends received, and the transfer fees paid.
-Those four terms sum to the total gain by definition: do not recombine them some
-other way, and do not treat their sum as an independent check.
+Carries day, total_value, holdings_value, cash_balance, net_contributed, the
+money-weighted return (xirr, annualised), the time-weighted return (twr_index,
+based at 100, with its twr_since), gain_absolu, transfer_fees, and ytd.
+
+ytd IS A PAIR AND ITS twr IS NOT AN INDEX. ytd.gain is an amount; ytd.twr is a
+RETURN FRACTION — 0.019 means 1.9% — and not a figure based at 100 like
+twr_index three paragraphs down. Do not read the two as the same unit. ytd is
+null when the series does not reach back to the end of the previous year.
+
+THE GAIN ARRIVES WHOLE, NOT BROKEN DOWN. gain_absolu is the total, and the only
+term served beside it is transfer_fees. The unrealised gain, the realised gain
+and the dividends are NOT members here: they sum into gain_absolu and this tool
+does not take them apart. If you need the breakdown, list_positions carries
+realised and dividends per holding — say that you summed them yourself, and
+never present a difference between your sum and gain_absolu as a discrepancy in
+the app.
+
+twr_index is based at 100 on twr_since, the day this series starts. It is NOT
+the same day as an account's own anchor, and THERE IS NO RULE ABOUT WHICH COMES
+FIRST — it depends on which accounts the app last recomputed together, so do not
+derive one from the other. Read both twr_since. Where they differ, the two
+figures measure different periods and cannot be ranked: a global index below
+every account's is arithmetically ordinary, not a sign that the accounts
+outperformed the portfolio holding them. Say which period each figure covers.
+Where the two anchors are the same day, they are comparable and you may say so.
 
 {_CURRENCY}
 
@@ -74,8 +119,8 @@ error and neither means the portfolio is worth zero.
 GET_PORTFOLIO_HISTORY_DESCRIPTION = f"""\
 The portfolio's value and return, one point per calendar day, over a window.
 
-Each point carries cash_balance, holdings_value, total_value, net_contributed
-and twr_index. Defaults to the last 365 days when no window is given; pass
+Each point carries day (an ISO calendar day), cash_balance, holdings_value,
+total_value, net_contributed and twr_index. Defaults to the last 365 days when no window is given; pass
 from_day and to_day as ISO calendar days (YYYY-MM-DD) to narrow it.
 
 twr_index is an index, not a percentage: it is based at 100 at the start of the
@@ -96,16 +141,78 @@ LIST_ACCOUNTS_DESCRIPTION = f"""\
 The declared accounts, each with its newest figures — the allocation primitive.
 
 Use this to answer how the portfolio is split, and to compare accounts. Each
-account carries its own value, net contribution, returns and the four terms of
-its gain.
+account carries its own value, net contribution, returns, gain_absolu and
+transfer_fees. As on the portfolio totals, gain_absolu is the WHOLE gain and is
+not broken down here: there is no unrealised, realised or dividend member on
+these rows.
 
 declared=false means the owner has never declared an account, so what you are
 looking at is the single account every install is given. It is a designed state
 and not an empty one: the list always holds at least one row.
 
-Comparing accounts by value tells you about size, not about performance. twr is
-the figure that compares two accounts of different sizes, because an index
-carries neither size nor currency.
+Comparing accounts by value tells you about size, not about performance. But
+twr_index IS NOT COMPARABLE ACROSS ROWS AS IT STANDS: it is an index based at
+100 on the first day of its own series, and these series do not start on the
+same day. An account opened in 2019 has been indexing for six years; one opened
+last month has been indexing for one, and the portfolio-wide index served by
+get_portfolio_totals starts on a day of its own that follows neither rule — so a
+global index sitting below every account's is arithmetically ordinary and not a
+bug. Each row carries twr_since, the calendar
+day its index is based at, and get_portfolio_totals carries the same member for
+the portfolio-wide index. READ twr_since BEFORE YOU PUT TWO OF THESE FIGURES IN
+ONE SENTENCE. Where two of them differ, the figures measure different periods
+and you cannot rank them: say which period each one covers, and do not call the
+lower one the worse performer. twr_since is absent on an account the app has
+computed no series for.
+
+A row carries three families of member, and they are absent independently of
+one another. Do not read one family's absence as another's.
+
+- opened_on and first_payment ride on their own facts and NOT on any taxation
+  model: opened_on where the owner declared an opening day, first_payment where
+  the ledger holds a payment into the account. An account with no model can
+  carry both; an account with a model can carry neither.
+- taxation_model is the owner's declaration of which model the account carries,
+  served as written wherever there is one. It is an internal identifier, not a
+  name: no tool here resolves it, so do not read it aloud — say *which account*
+  needs its model looked at, in the app.
+- taxation_kind and the four projected_* members are the projection, and they
+  are served only where that declared model still passes this version's own
+  check on it. A model an older version accepted and this one refuses publishes
+  NOTHING beyond its name. So taxation_model present with taxation_kind absent
+  means the declaration needs repairing in the app — not that the tax is zero,
+  and not that the read failed.
+
+AND taxation_kind CAN RIDE WITHOUT A FIGURE. A model can be perfectly valid and
+still project nothing — a kind that taxes no realised gain, an aged wrapper with
+no date to age it from, an account one unvalued position makes unmeasurable, and
+others: the list is not closed, and you are told only that there is no figure.
+That is an honest absence, not a broken declaration and not a zero.
+
+projected_tax IS A PROJECTION AND NOT A TAX. It is what the account would owe if
+it were emptied today under a model THE OWNER DECLARED THEMSELVES — they entered
+the kind and the rates, and this app applied their arithmetic rather than
+reading any tax code. It expresses no allowance, no loss carry-forward, no
+household situation and no year of any actual return. Say it is a projection
+under a model the owner declared, every time you quote it, and never use it to
+advise what is owed, what is due, or when to sell.
+
+projected_base is the LATENT gain — not gain_absolu, which also holds the
+realised gain, the dividends and the fees. Applying projected_rates to
+gain_absolu gives a number this app did not publish and does not agree with.
+
+DO NOT RECOMPUTE projected_tax FROM THE OTHER TWO. The arithmetic behind it is
+not rate times base, and multiplying them yourself gives a wrong answer in two
+ordinary cases. A LOSING ACCOUNT carries a negative projected_base and a
+projected_tax of 0: nothing is owed on a loss, and the rate was applied to zero
+rather than to the negative figure you can see. A BRACKETED model carries one
+fraction per rung and NOT the gain bounds that place a gain among them, so its
+figure cannot be reconstructed from what is served at all. Quote projected_tax
+as the app computed it; use projected_rates to say which rate or rates are in
+force, never to derive the figure.
+
+projected_rate_changes_on is the day the rate would next change for this
+wrapper, absent when nothing is coming.
 
 {_CURRENCY}
 
@@ -195,6 +302,14 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             "is a dated ledger of what its owner did; everything else — the "
             "positions, the prices, the returns — is derived from it. These "
             "tools read that data and cannot change it.\n\n"
+            "THIS IS NOT THE OWNER'S WHOLE WEALTH. The ledger holds listed "
+            "instruments, valued from market data: anything held outside that "
+            "— private equity, an SPV, property, a holding with no ticker — "
+            "cannot be entered here and is therefore not in any answer these "
+            "tools give. A holding you expected and cannot find was very "
+            "probably never in scope, and its absence is not a sale. Say what "
+            "this app covers before you characterise what the owner owns, and "
+            "never present these figures as their net worth.\n\n"
             "Advise on strategy and allocation. Do not recommend individual "
             "securities to buy or sell.\n\n"
             "Read each tool's description before using its figures: this app "
@@ -218,7 +333,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             return work()
         except ToolError:
             raise
-        except (store_module.StoreUnavailable, duckdb.Error) as exc:
+        except (store_module.StoreUnavailable, duckdb.Error,
+                ValueError) as exc:
             raise ToolError(
                 f"the portfolio store could not answer this read, so there is "
                 f"no figure to give: {exc}") from exc
@@ -306,29 +422,10 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         """The declared accounts with their newest figures — ``/api/accounts``."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
-            accounts = _snapshot().accounts
-            declaration = (
-                accounts.accounts if accounts is not None
-                else [row for row in accounts_module.read_accounts(_store())
-                      if row.id == accounts_module.DEFAULT_ACCOUNT])
-            declaration = [accounts_module.as_declared(row)
-                           for row in declaration]
-
-            reader = _reader()
-            rows = reader.latest_account_metrics()
-            through = {
-                row['account']: row['day'] for row in rows
-                if row.get('account') is not None and row.get('day') is not None
-            }
             return {
                 'base_currency': _base_currency(),
-                'declared': accounts is not None,
-                'accounts': [
-                    summary.to_dict()
-                    for summary in portfolio_view.build_accounts(
-                        declaration, rows,
-                        reader.transfer_fees_by_account(through))
-                ],
+                **account_facts.accounts_payload(
+                    _store(), _snapshot(), datetime.now(timezone.utc)),
             }
         return reading(_body)
 

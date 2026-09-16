@@ -130,6 +130,13 @@ def read_accounts(store) -> List[Account]:
     return [Account(id=r[0], label=r[1]) for r in rows]
 
 
+def seeded_only(store) -> List[Account]:
+    """The ``default`` row as the store holds it — the whole declaration, where
+    nothing was declared. Read from here by both the accounts payload and the
+    per-account history, which is one caller more than it had."""
+    return [row for row in read_accounts(store) if row.id == DEFAULT_ACCOUNT]
+
+
 def account_ids(store) -> Set[str]:
     """The ids an event may name. Never empty — ``default`` is always in it."""
     return {row[0] for row in store.query('SELECT id FROM account')}

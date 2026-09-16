@@ -43,6 +43,7 @@ from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from api import create_app, problem
+from conftest import write_legacy_taxation_model
 
 
 class FakeMetrics:
@@ -1807,6 +1808,82 @@ def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
     payload = client.get('/api/accounts').get_json()
 
     assert [a['id'] for a in payload['accounts']] == ['pea']
+
+
+def test_an_account_states_the_day_its_index_is_based_at(tmp_path):
+    """`twr_index` is based at 100 on the first day of **its own** series (#887).
+
+    The accounts do not share that day — one opened in 2019 has been indexing
+    for six years, the aggregate starts at the latest horizon among its terms —
+    so two of these figures compared point to point compare different periods,
+    and a global index sitting below every account's is the ordinary consequence
+    rather than a fault in the arithmetic. The anchor rides with the figure
+    because it is the only thing that lets a reader tell.
+
+    Anchored on the first day the index **exists**, not the first day the series
+    has a row: a day the perf job wrote with a null index is not a base of 100.
+    """
+    def seed(opened):
+        seed_account_metrics(opened, day=date(2026, 8, 4), twr_index=None)
+        seed_account_metrics(opened, day=date(2026, 8, 5))
+
+    client = build_client(tmp_path, seed=seed, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    row = client.get('/api/accounts').get_json()['accounts'][0]
+
+    assert row['twr_since'] == '2026-08-05'
+
+
+def test_each_account_is_based_at_100_on_a_day_of_its_own(tmp_path):
+    """**The accounts do not share the anchor**, which is the whole of #887.
+
+    One test with one account cannot tell `twr_origin_by_account` from
+    `twr_origin`: a single `min(day)` over the table would pass it. The claim
+    the payload actually makes is that a wrapper opened in 2019 and one opened
+    last month carry indexes based at 100 on *different* days, so the reader who
+    compares them point to point is comparing periods — and the `GROUP BY` is
+    the only thing standing between that claim and a figure that lies.
+
+    The third account is declared and has no series at all: `twr_since` is then
+    **absent rather than null** (#845), which is the sentence `list_accounts`'
+    description gives a model in so many words.
+    """
+    accounts = (ACCOUNTS_FILE + "cto,CTO,CTO Degiro\n"
+                + "titres,CTO,Titres Boursorama\n")
+
+    def seed(opened):
+        seed_account_metrics(opened, account='pea', day=date(2019, 10, 30))
+        seed_account_metrics(opened, account='pea', day=date(2026, 8, 5))
+        seed_account_metrics(opened, account='cto', day=date(2026, 8, 5))
+
+    client = build_client(tmp_path, seed=seed, accounts=accounts,
+                          events=ACCOUNTS_EVENTS)
+    rows = {row['id']: row
+            for row in client.get('/api/accounts').get_json()['accounts']}
+
+    assert rows['pea']['twr_since'] == '2019-10-30'
+    assert rows['cto']['twr_since'] == '2026-08-05'
+    assert 'twr_since' not in rows['titres']
+
+
+def test_the_accounts_read_is_503_rather_than_a_list_it_could_not_build(
+        tmp_path):
+    """The accounts list is read by the dashboard, the settings, the ledger and
+    the palette, and a store that cannot answer has to reach all four as the
+    storage fault it is: an empty list would tell this owner they declared
+    nothing.
+
+    The route had no 503 coverage at all before this, which is what the test is
+    for. It does **not** pin the query #887 added: `latest_account_metrics`
+    runs first in `accounts_payload` and raises before `twr_origin_by_account`
+    is reached, so this would pass with the new read deleted."""
+    response = build_client(tmp_path, break_store=True,
+                            accounts=ACCOUNTS_FILE,
+                            events=ACCOUNTS_EVENTS).get('/api/accounts')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == '/problems/storage-unavailable'
 
 
 # --------------------------------------------------------------------- #
@@ -5617,6 +5694,40 @@ def test_the_positions_are_not_read_where_no_model_projects(tmp_path, mocker):
     assert 'projected_tax' not in row
 
 
+def test_a_model_this_version_refuses_does_not_pay_for_the_positions_read(
+        tmp_path, mocker):
+    """**The account slowest to answer was the one its owner had to open.**
+
+    The gate above read the declared model's *kind* alone, so an account
+    carrying a model an earlier version wrote and this one refuses took the
+    whole `reader.positions()` read — on every load of every page that lists the
+    accounts — and `_projection` threw the result away at the end of it.
+    `account_facts._usable` now decides the refusal before the read, and this is
+    the only test that would notice the decision moving back after it.
+
+    One account and one refused model on purpose: the test four below declares a
+    sound model on `cto` beside the refused one, which keeps the positions read
+    alive and would let this regression through unseen.
+    """
+    client, opened = _valued_pea(tmp_path)
+    # The row `accounts.create_model` refuses: `aged_flat_realised` without the
+    # `rate_after` that became required.
+    write_legacy_taxation_model(opened, account='pea')
+    # Both halves made fatal, for the reason the test above gives.
+    mocker.patch.object(PortfolioReader, 'positions',
+                        side_effect=AssertionError('the positions were read'))
+    mocker.patch.object(portfolio_view, 'build_shares',
+                        side_effect=AssertionError('the positions were folded'))
+
+    listed = client.get('/api/accounts')
+
+    assert listed.status_code == 200
+    row = _pea_row(client)
+    assert 'taxation_kind' not in row
+    # And the declaration is still named, so its owner can go and repair it.
+    assert row['taxation_model'] == 'legacy'
+
+
 def test_an_account_carrying_no_model_publishes_no_projection(tmp_path):
     """No model is no figure, and the absence reaches the reader as one (#845):
     the member is missing, not `null`."""
@@ -5788,14 +5899,7 @@ def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
     client, opened = _valued_pea(tmp_path, accounts=accounts, events=events)
 
     # `pea` carries a model this version cannot read.
-    opened.execute(
-        "INSERT INTO taxation_model (id, name, kind, parameters) "
-        "VALUES ('legacy', 'Legacy', 'aged_flat_realised', "
-        "        '{\"rate_before\": 0.3, \"threshold_years\": 5, "
-        "          \"age_basis\": \"opening\"}')")
-    opened.execute(
-        'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
-        ['pea', 'legacy'])
+    write_legacy_taxation_model(opened, account='pea')
     # `cto` carries a sound one.
     _carry(client, account='cto', name='CTO', kind='flat_realised',
            parameters={'rate': 0.30})
@@ -5810,6 +5914,11 @@ def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
     # wrong is the model.
     for member in ('taxation_kind', 'projected_tax', 'projected_rates'):
         assert member not in rows['pea'], member
+    # **But the name survives the refusal**, and the MCP description leans on
+    # it: taxation_model present with taxation_kind absent is how a reader is
+    # told the declaration needs repairing rather than that the read failed.
+    # Drop the name and that sentence points at nothing.
+    assert rows['pea']['taxation_model'] == 'legacy'
     # And the account beside it is untouched: 4 AAPL at 150, quoted at 200.
     assert rows['cto']['taxation_kind'] == 'flat_realised'
     assert rows['cto']['projected_tax'] == pytest.approx(60.0, abs=5e-3)
