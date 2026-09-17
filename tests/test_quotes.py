@@ -48,6 +48,51 @@ def _points(store, symbol='AAPL'):
         [symbol])
 
 
+def test_an_old_scan_does_not_replace_the_new_generations_memo(tmp_path):
+    """A writer can move the generation while an earlier reader is scanning."""
+    path = tmp_path / 'shared.duckdb'
+    old_started = threading.Event()
+    release_old = threading.Event()
+    old_instant = datetime(2023, 1, 1, tzinfo=UTC)
+    new_instant = datetime(2024, 1, 1, tzinfo=UTC)
+
+    class OldReader:
+        def __init__(self):
+            self.path = path
+
+        def query(self, _sql):
+            old_started.set()
+            assert release_old.wait(timeout=5)
+            return [('AAPL', old_instant)]
+
+    class NewReader:
+        def __init__(self):
+            self.path = path
+            self.scans = 0
+
+        def query(self, _sql):
+            self.scans += 1
+            return [('AAPL', new_instant)]
+
+    old_result = []
+    old_reader = threading.Thread(
+        target=lambda: old_result.append(quotes.oldest_stored(OldReader())))
+    old_reader.start()
+    assert old_started.wait(timeout=5)
+
+    quotes.forget_oldest_stored()
+    new_reader = NewReader()
+    new_result = quotes.oldest_stored(new_reader)
+    release_old.set()
+    old_reader.join(timeout=5)
+
+    assert not old_reader.is_alive()
+    assert old_result == [{'AAPL': old_instant}]
+    assert new_result == {'AAPL': new_instant}
+    assert quotes.oldest_stored(new_reader) is new_result
+    assert new_reader.scans == 1
+
+
 # --------------------------------------------------------------------------- #
 # What a price point is, and what it is not
 # --------------------------------------------------------------------------- #

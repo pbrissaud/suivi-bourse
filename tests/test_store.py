@@ -420,6 +420,65 @@ def test_a_read_view_does_not_open_a_transaction(store):
             pass
 
 
+def test_a_read_view_refuses_write_capable_methods(store):
+    view = store.reader()
+
+    with pytest.raises(store_module.StoreUnavailable):
+        view.execute("DELETE FROM account WHERE id = 'default'")
+    with pytest.raises(store_module.StoreUnavailable):
+        view.executemany(
+            'INSERT INTO account (id, label) VALUES (?, ?)',
+            [('later', 'Later')])
+
+    assert view.query('SELECT id FROM account') == [('default',)]
+
+
+def test_shutdown_waits_for_an_active_read(store, monkeypatch):
+    """Closing a cursor cannot overtake the query holding its view's lock."""
+    view_ready = threading.Event()
+    begin_read = threading.Event()
+    read_active = threading.Event()
+    release_read = threading.Event()
+    result = []
+
+    def read():
+        view = store.reader()
+        view_ready.set()
+        assert begin_read.wait(timeout=5)
+        result.extend(view.query('SELECT id FROM account'))
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    assert view_ready.wait(timeout=5)
+    view = store._views[0]
+    connection = view._connection
+
+    class PausedConnection:
+        def execute(self, sql, parameters=None):
+            read_active.set()
+            assert release_read.wait(timeout=5)
+            if parameters is None:
+                return connection.execute(sql)
+            return connection.execute(sql, parameters)
+
+    monkeypatch.setattr(view, '_live', lambda: PausedConnection())
+    begin_read.set()
+    assert read_active.wait(timeout=5)
+
+    closer = threading.Thread(target=store.close)
+    closer.start()
+    closer.join(timeout=0.1)
+    assert closer.is_alive(), 'shutdown overtook the active read'
+
+    release_read.set()
+    reader.join(timeout=5)
+    closer.join(timeout=5)
+
+    assert not reader.is_alive()
+    assert not closer.is_alive()
+    assert result == [('default',)]
+
+
 # --------------------------------------------------------------------------- #
 # The generation, and the steps that move between two (#926)
 # --------------------------------------------------------------------------- #

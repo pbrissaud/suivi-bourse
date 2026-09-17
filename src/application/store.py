@@ -190,12 +190,12 @@ class Store:
             table: connection.execute(
                 f'SELECT coalesce(max(id), 0) FROM {table}').fetchone()[0]
             for table in KEYED_TABLES}
-        #: This thread's read view, and the cursors handed out so far — see
+        #: This thread's read view, and the views handed out so far — see
         #: :meth:`reader`. The list is what :meth:`close` gives back; it holds
         #: one entry per thread that has ever read, which is the server's
         #: worker pool and not a number that climbs with traffic.
         self._readers = threading.local()
-        self._cursors: List['duckdb.DuckDBPyConnection'] = []
+        self._views: List['ReadView'] = []
 
     def reader(self) -> 'ReadView':
         """This thread's read view on the same database (#967).
@@ -227,8 +227,8 @@ class Store:
             # own: without this it reads bare literals in the host's zone,
             # which is the failure ``test_the_connection_speaks_utc…`` pins.
             cursor.execute("SET TimeZone='UTC'")
-            self._cursors.append(cursor)
-        view = ReadView(self, cursor)
+            view = ReadView(self, cursor)
+            self._views.append(view)
         self._readers.view = view
         return view
 
@@ -344,9 +344,11 @@ class Store:
     def close(self) -> None:
         """Close the connection, readers included. Safe to call twice."""
         with self._lock:
-            for cursor in self._cursors:
-                cursor.close()
-            self._cursors = []
+            for view in self._views:
+                with view._lock:
+                    view._connection.close()
+                    view._connection = None
+            self._views = []
             if self._connection is not None:
                 self._connection.close()
                 self._connection = None
@@ -370,7 +372,7 @@ class ReadView(Store):
         self._lock = threading.RLock()   # this thread's alone, never contended
         self._reserved: Dict[str, int] = {}   # keys are the writer's to issue
         self._readers = threading.local()
-        self._cursors: List['duckdb.DuckDBPyConnection'] = []
+        self._views: List['ReadView'] = []
 
     @property
     def closed(self) -> bool:
@@ -389,6 +391,16 @@ class ReadView(Store):
 
     def transaction(self):
         """Refused. A write here would land outside the writers' mutex."""
+        raise StoreUnavailable(
+            f"The read view on {self.path} does not write")
+
+    def execute(self, sql: str, parameters: Optional[Sequence[Any]] = None):
+        """Refuse a write-capable statement on the read connection."""
+        raise StoreUnavailable(
+            f"The read view on {self.path} does not write")
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
+        """Refuse batched statements on the read connection."""
         raise StoreUnavailable(
             f"The read view on {self.path} does not write")
 

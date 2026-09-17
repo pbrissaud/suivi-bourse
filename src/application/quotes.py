@@ -1,4 +1,5 @@
 """The market's own two tables: ``symbol_quote`` and ``price_point`` (issue #700)."""
+import threading
 from datetime import date, datetime, timezone
 from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
                     Tuple)
@@ -268,6 +269,7 @@ def newest_window_tried(store, symbol: str) -> Optional[date]:
 
 
 _generation = 0
+_scan_lock = threading.Lock()
 
 
 def oldest_stored(store) -> Dict[str, datetime]:
@@ -293,8 +295,9 @@ def oldest_stored(store) -> Dict[str, datetime]:
     One slot, because a process has one store. Two stores read in turn — which
     is a test and not an install — simply rescan.
     """
-    generation = _generation
-    held = _scan
+    with _scan_lock:
+        generation = _generation
+        held = _scan
     if held is not None and held[0] == (store.path, generation):
         return held[1]
 
@@ -313,15 +316,18 @@ _scan: Optional[Tuple[Tuple, Dict[str, datetime]]] = None
 
 
 def _remember(key, scanned: Dict[str, datetime]) -> None:
-    """Put a scan in the slot — a plain rebind, which the GIL makes atomic."""
+    """Publish a scan only while the generation it read is still current."""
     global _scan
-    _scan = (key, scanned)
+    with _scan_lock:
+        if key[1] == _generation:
+            _scan = (key, scanned)
 
 
 def forget_oldest_stored() -> None:
     """Move the memo on — every gesture that can move a symbol's oldest point."""
     global _generation
-    _generation += 1
+    with _scan_lock:
+        _generation += 1
 
 
 def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
