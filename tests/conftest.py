@@ -23,6 +23,7 @@ import pytest
 
 from application import ledger
 from application import main
+from application import market
 from application import positions
 from application import store as store_module
 from application.events.schemas import Event, EventType
@@ -230,6 +231,23 @@ def declare_ledger():
                  event.quantity, event.unit_price, event.fee, event.amount,
                  event.notes])
     return _declare
+
+
+@pytest.fixture(autouse=True)
+def _market_is_faked_or_refused(monkeypatch):
+    """yfinance is the suite's one faked edge — an unfaked call stays local.
+
+    A test that wants a ticker patches ``market.yf.Ticker`` itself, and that
+    patch lands over this one. Every other call now fails instantly instead of
+    resolving a name over the network: since #968 a pass fetches what a symbol
+    *is* on its own cadence, so a module that never meant to talk to Yahoo can
+    reach it in passing. Each edge in ``market`` catches, so the refusal reads
+    as "Yahoo said nothing", which is the production behaviour under an outage.
+    """
+    def refused(*args, **kwargs):
+        raise RuntimeError("yfinance was called by a test that did not fake it")
+
+    monkeypatch.setattr(market.yf, "Ticker", refused)
 
 
 @pytest.fixture

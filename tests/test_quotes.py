@@ -608,6 +608,32 @@ def test_both_write_doors_carry_what_the_instrument_is(declared):
     assert row['last_price_native'] == 187.0
 
 
+def test_a_classification_write_leaves_what_it_does_not_name_alone(declared):
+    """The writer constraint the backfill's classification pass rests on (#968).
+
+    That pass asks Yahoo what an instrument **is** and nothing else, for symbols
+    the live scrape will never fetch again — a line sold out, a line whose market
+    is shut. It writes through the same door as the lateral pass, so the door
+    must touch the columns it is *given* and no other: a mapping naming the
+    three classification keys must not blank the currency a live fetch
+    established, or repairing the allocation would cost every sold line its unit
+    and the valuation with it.
+    """
+    quotes.record_quote(declared, 'AAPL', NOW, 187.0, ATTRIBUTES)
+
+    quotes.record_attributes(declared, 'AAPL', NOW + timedelta(days=1),
+                             {'sector': 'Technology',
+                              'industry': 'Consumer Electronics',
+                              'country': 'United States'})
+
+    row = quotes.read_quote(declared, 'AAPL')
+    assert (row['sector'], row['industry'], row['country']) == \
+        ('Technology', 'Consumer Electronics', 'United States')
+    assert (row['currency'], row['exchange'], row['quote_type']) == \
+        ('USD', 'NMS', 'EQUITY')
+    assert row['last_price_native'] == 187.0
+
+
 def test_a_fund_is_classified_as_absent_and_never_as_unknown(declared):
     """#845's rule on the three new columns, and the trap beside them.
 

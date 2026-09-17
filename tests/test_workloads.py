@@ -730,6 +730,83 @@ def test_backfill_does_not_replay_the_ledger_at_all(store, mocker, sample_events
     assert spy.call_count == 0
 
 
+def test_a_sold_out_line_is_classified_by_the_backfill(
+        store, mocker, monkeypatch, fake_ticker):
+    """The hole #968 measured: the only writer of the classification is the scrape.
+
+    And the scrape fetches a **held** symbol, when its market answers. A line
+    sold out is never fetched again, so it stayed unclassified for ever — while
+    it keeps its realised gain and its history in the portfolio — and a line
+    bought on a Friday evening stayed unclassified until its market opened.
+
+    The backfill walks every symbol *ever* held, on its own cadence and with no
+    market to wait for, so it is the pass that fills them: one call per symbol,
+    once, writing what the instrument is with no price claimed beside it.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
+        acquisitions={"AAPL": date(2024, 1, 15)},
+        exits={"AAPL": date(2024, 6, 4)})
+    metrics.backfill_chunk_days = 365
+    # Stored history already predates the first BUY: the backward pass is done,
+    # so the only fetch left in the cycle is the classification one.
+    _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+    asked = []
+
+    def _ticker(symbol):
+        asked.append(symbol)
+        return fake_ticker(info={"sector": "Technology",
+                                 "industry": "Consumer Electronics",
+                                 "country": "United States"})
+
+    monkeypatch.setattr(market.yf, "Ticker", _ticker)
+
+    metrics.backfill()
+
+    row = quotes.read_quote(store, "AAPL")
+    assert (row["sector"], row["industry"], row["country"]) == (
+        "Technology", "Consumer Electronics", "United States")
+    # No price claimed beside it: the series is where the seed left it.
+    assert row["last_price_native"] == 100.0
+    assert len(_points(store)) == 2
+
+    # A sector changes about never, so the answer is kept: the next cycle asks
+    # Yahoo nothing at all.
+    metrics.backfill()
+
+    assert asked == ["AAPL"]
+
+
+def test_a_row_carrying_half_a_classification_is_filled_rather_than_skipped(
+        store, mocker, monkeypatch, fake_ticker):
+    """Classified is all three columns, not the first one (issue #968).
+
+    The reader is an allocation and it groups on the three together, so a row
+    that names a sector and no country is as unusable as an empty one — and a
+    guard reading the sector alone would leave it that way for ever, the pass
+    never asking again.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
+        acquisitions={"AAPL": date(2024, 1, 15)},
+        exits={"AAPL": date(2024, 6, 4)})
+    metrics.backfill_chunk_days = 365
+    _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
+    quotes.record_attributes(store, "AAPL", datetime(2024, 6, 4, tzinfo=timezone.utc),
+                             {"sector": "Technology"})
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+    monkeypatch.setattr(market.yf, "Ticker", lambda symbol: fake_ticker(
+        info={"sector": "Technology", "industry": "Consumer Electronics",
+              "country": "United States"}))
+
+    metrics.backfill()
+
+    row = quotes.read_quote(store, "AAPL")
+    assert (row["industry"], row["country"]) == (
+        "Consumer Electronics", "United States")
+
+
 def test_backfill_write_failure_does_not_abort_remaining_symbols(store, mocker):
     acquired_on = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 1, 15)}
     metrics, _ = _build_metrics(
