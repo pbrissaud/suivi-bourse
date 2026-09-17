@@ -221,6 +221,18 @@ describe('the front branches on problem.type, never on status', () => {
     expect(Object.values(PROBLEM_TYPES)).not.toContain('/problems/foreign-origin')
   })
 
+  it('does not know refused either, and reads it as the sentence it already had', () => {
+    // `/problems/refused` is what werkzeug's own refusals now carry (#971) —
+    // a `405` on a path that takes no `POST`, a `413` outside the import. No
+    // page this app serves provokes one: the SPA does not call a verb a route
+    // does not have. The server identifier stops calling a deliberate refusal
+    // a fault; the sentence here is unchanged, because an unknown type already
+    // falls back to *an unexpected error*.
+    expect(Object.values(PROBLEM_TYPES)).not.toContain('/problems/refused')
+    expect(problemMessageKey(new ApiProblem({ status: 405, type: '/problems/refused' })))
+      .toBe('problem.internal')
+  })
+
   it('does not read a 503 as a store failure when the type says otherwise', () => {
     // Branching on `status` is what made two unrelated failures the same
     // screen. The same status, two types, two sentences.
