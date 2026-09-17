@@ -453,6 +453,29 @@ export function onContributed(amount: number | null, contributed: number | null)
   return amount / contributed
 }
 
+/**
+ * **`Performance totale`, and there is one producer of it** (#970).
+ *
+ * The rail divided the stored `gain_absolu`; the detail's head divided a total
+ * it re-summed from the four terms of `/api/positions`. The two formulas
+ * telescope — that much was true, and tested — but they read **two endpoints at
+ * two moments**, so a quote scrape landing between the page's two requests put
+ * `+6,82 %` on the card and `+6,85 %` on the panel beside it, and the panel's
+ * own subtraction (`total_value − net_contributed`) agreed with the card rather
+ * than with itself.
+ *
+ * One row of one read is what closes it: the value, the contribution and the
+ * gain at the head of a detail are the members of the same `account_metrics`
+ * row the rail divides, so nothing on the page can be a scrape apart from its
+ * neighbour. The four terms stay where they are *read* — the dividends have a
+ * card, the fees are the line under the gain, the latent gain is a column of
+ * the lines table — which is a decomposition at another altitude and never a
+ * second producer for this headline.
+ */
+export function totalPerformance(row: AccountRow): number | null {
+  return onContributed(row.gain_absolu, row.net_contributed)
+}
+
 // ------------------------------------------------------------------------- //
 // The rail — the weights, and which account the detail is about
 // ------------------------------------------------------------------------- //

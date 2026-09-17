@@ -7,12 +7,14 @@
  *  stated day** is not one, and `Performance totale` — `gain ÷ versé net`, the
  *  same figure the detail leads with since #833 — covers the account's whole
  *  life, which is what *totale* says.
- *  - **The ratio is divided out of `gain_absolu`**, where the detail divides
- *    the total it computes from four terms. That is not two producers for one
- *    number: the fourth term is what closes the gap between the sum and the
- *    stored figure (`lib/gain.ts`), so the two land on the same percentage —
- *    and the rail reads no positions at all, which is the whole reason it costs
- *    one request for the page rather than one per account.
+ *  - **The ratio is divided out of `gain_absolu`**, and the detail's head
+ *    divides that same stored figure since #970 — one producer, named once
+ *    (`totalPerformance`). It was the sum of the four terms over there, which
+ *    telescopes to the same number but is read off a **second endpoint**: a
+ *    scrape landing between the page's two requests was all it took for the
+ *    card and the panel beside it to disagree. The rail reads no positions at
+ *    all, which is the whole reason it costs one request for the page rather
+ *    than one per account.
  *  - **The weights' legend carries neither.** The maquette puts its `perf` on
  *    the *accounts* — the cards, and the sticky strip that is those same cards
  *    at a narrow width — and never on the bar's legend, whose one figure is the
@@ -54,7 +56,7 @@ import {
   accountWorth,
   declaredLabel,
   degradedReason,
-  onContributed,
+  totalPerformance,
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
   type AccountRow,
@@ -232,7 +234,7 @@ export function AccountsRail({
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
           // `null` where there is no ratio to state — nothing written about this
           // account yet, nothing ever paid in, or more taken out than put in.
-          const performance = onContributed(row.gain_absolu, row.net_contributed)
+          const performance = totalPerformance(row)
           return (
             <li key={row.id}>
               <Link
@@ -395,7 +397,7 @@ export function AccountsChips({
       className="sticky top-0 z-10 -mt-1.5 flex gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5 wide:hidden"
     >
       {rows.map((row, index) => {
-        const performance = onContributed(row.gain_absolu, row.net_contributed)
+        const performance = totalPerformance(row)
         return (
           <Link
             key={row.id}

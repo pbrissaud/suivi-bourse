@@ -28,9 +28,11 @@
  *   gain total  +300,00 + 50,00 + 25,00 − 5,00 = 370,00
  *
  * which is exactly what `total_value 2 800,00 − net_contributed 2 430,00`
- * comes to. That agreement is the fixture's whole point: `gain_absolu` in the
- * payload is the same number written down elsewhere, and the head is proved to
- * ignore it by handing it a different one.
+ * comes to. That agreement is the fixture's whole point: the dashboard's head
+ * still sums the four terms, and is proved to ignore `portfolio_totals`'s own
+ * `gain_absolu` by being handed a different one. The **account** panel reads
+ * the stored figure since #970 — one read, one row — so over there the same
+ * divergent value proves the opposite property.
  *
  * Every figure above is computable from its own terms, as `tests/test_e2e.py`
  * writes them: 10 × 130,00 = 1 300,00 and 1 300,00 − 1 000,00 = +300,00, read
@@ -120,9 +122,9 @@ export const BASE_CURRENCY = 'EUR'
  * accounts added up to the totals would quietly license the arithmetic
  * `build_accounts` refuses to do.
  *
- * The account's panel computes the head from the four rather than reading the
- * fifth, so a fixture where the two disagreed would put a contradiction on
- * screen and call it a test.
+ * The account's panel reads `gain_absolu` at its head since #970, beside the
+ * value and the contribution it is the difference of, so a fixture where the
+ * five disagreed would put a contradiction on screen and call it a test.
  *
  * There is one kind of account and no second: it is declared in the app and
  * nowhere else, so nothing on it says where it came from and every row is one
@@ -450,8 +452,9 @@ export function defaultPositions(): Position[] {
  *
  * Read in the table's `Gain total` cell alone, that account has done nothing.
  * The four terms are what say **why**: an unrealised loss and a realised gain
- * that cancel, and no dividend at all. That is the whole argument for the block,
- * and it is why the sum is what is rendered rather than `gain_absolu`.
+ * that cancel, and no dividend at all. That is the whole argument for the four
+ * terms being read and rendered where each of them belongs — and `gain_absolu`
+ * is set to the sum they come to, because the head prints that one (#970).
  */
 export function anAccountGoingNowhere(overrides: Partial<Account> = {}): Account {
   return anAccount({

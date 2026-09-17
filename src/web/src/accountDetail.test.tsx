@@ -135,18 +135,32 @@ describe('the head states the account, and the curve is in it', () => {
     expect(within(detail).queryByRole('group', { name: /Frais/ })).not.toBeInTheDocument()
   })
 
-  it('computes the head instead of reading the figure written beside it', async () => {
-    // A `gain_absolu` that disagrees is the same number written down elsewhere,
-    // and it changes nothing here.
+  it('reads the gain the rail divides, and never re-sums a second read (#970)', async () => {
+    // The head computed its gain from the four terms of `/api/positions` while
+    // the rail divided the stored `gain_absolu` of `/api/accounts`. The two
+    // formulas telescope; the two **reads** do not, and a scrape landing between
+    // the page's requests was enough to put `+6,82 %` on the card and `+6,85 %`
+    // on the panel beside it. A divergent `gain_absolu` is that skew, frozen:
+    // the head must read it, because it is the figure the two lines around it
+    // — the value and the contribution — are the subtraction of.
     const { user } = renderAccounts(
       defaultAccounts().map((account) =>
         account.id === 'alpha' ? { ...account, gain_absolu: 99999 } : account,
       ),
     )
     const detail = await open(user, 'Alpha')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/99 999/))
 
-    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
-    expect(within(detail).queryByText(/99 999/)).not.toBeInTheDocument()
+    // And the one percentage is read twice on one screen, so the two must be
+    // the same character for character: 99 999 / 1 478 = +6 765,83 %.
+    const rail = screen.getByRole('list', { name: 'Vos comptes' })
+    const card = within(rail).getByRole('link', { name: /Alpha/ })
+    const shown = within(detail)
+      .getByRole('group', { name: 'Performance totale' })
+      .textContent?.replace('Performance totale', '')
+      .trim()
+    expect(shown).toMatch(/\+6\s?765,83\s?%/)
+    expect(card.textContent).toContain(shown)
   })
 
   it('refuses a four-term total rendered from three (#775)', async () => {
@@ -439,7 +453,11 @@ describe('a read in flight is not an absence', () => {
       }),
     ).toBeInTheDocument()
 
-    expect(within(detail).queryByRole('group', { name: 'Gain' })).not.toBeInTheDocument()
+    // **The head is not among what waits** (#970): its four figures are four
+    // members of the account row, which landed, and the gain it states is the
+    // one the rail states — so there is nothing left for a cold detail to
+    // contradict.
+    expect(head(detail)).toHaveTextContent(/322,00/)
     for (const term of [
       'Plus-value latente',
       'Plus-value réalisée',
@@ -494,7 +512,10 @@ describe('a read in flight is not an absence', () => {
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Gain' })).not.toBeInTheDocument()
+    // The head keeps its figures all the same: none of them is read off the
+    // positions since #970, and a read that failed never costs the reader a
+    // block that did answer.
+    expect(screen.getByRole('group', { name: 'Gain' })).toHaveTextContent(/322,00/)
   })
 })
 
