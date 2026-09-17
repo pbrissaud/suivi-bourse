@@ -190,6 +190,47 @@ class Store:
             table: connection.execute(
                 f'SELECT coalesce(max(id), 0) FROM {table}').fetchone()[0]
             for table in KEYED_TABLES}
+        #: This thread's read view, and the views handed out so far — see
+        #: :meth:`reader`. The list is what :meth:`close` gives back; it holds
+        #: one entry per thread that has ever read, which is the server's
+        #: worker pool and not a number that climbs with traffic.
+        self._readers = threading.local()
+        self._views: List['ReadView'] = []
+
+    def reader(self) -> 'ReadView':
+        """This thread's read view on the same database (#967).
+
+        ``connection.cursor()`` is a **second connection** on the same database
+        instance, so DuckDB's MVCC hands it a snapshot instead of making it wait
+        behind the writers' transaction. Measured on a 40 k-row upsert with a
+        reader polling every 20 ms: on the writer's connection 3 reads landed,
+        the worst at 39.6 s; on a cursor, 771 landed, the worst at 0.8 ms.
+
+        **One cursor per thread, because a connection is not thread-safe.** A
+        single shared reader connection would be the serialisation point this
+        removes, moved rather than gone.
+
+        Creating the cursor takes the store's lock, so the *first* read on a
+        thread can still wait for a write in flight — once per thread, against
+        every read today. Reaching into the connection while another thread is
+        executing on it is the thing not worth saving that from.
+        """
+        view = getattr(self._readers, 'view', None)
+        # ``closed`` in the condition and not around it: a thread holding a view
+        # from before the shutdown falls through to ``_live()``, so asking for a
+        # reader on a closed store is refused by name here too (#858).
+        if view is not None and not self.closed:
+            return view
+        with self._lock:
+            cursor = self._live().cursor()
+            # The zone is a *session* setting and a cursor is a session of its
+            # own: without this it reads bare literals in the host's zone,
+            # which is the failure ``test_the_connection_speaks_utc…`` pins.
+            cursor.execute("SET TimeZone='UTC'")
+            view = ReadView(self, cursor)
+            self._views.append(view)
+        self._readers.view = view
+        return view
 
     def reserve(self, table: str, count: int = 1) -> int:
         """The first of ``count`` fresh keys for ``table`` (#785).
@@ -301,11 +342,67 @@ class Store:
         return settings_registry.resolve(key, stored)
 
     def close(self) -> None:
-        """Close the connection. Safe to call twice."""
+        """Close the connection, readers included. Safe to call twice."""
         with self._lock:
+            for view in self._views:
+                with view._lock:
+                    view._connection.close()
+                    view._connection = None
+            self._views = []
             if self._connection is not None:
                 self._connection.close()
                 self._connection = None
+
+
+class ReadView(Store):
+    """A read path's own connection on the store's database (#967).
+
+    Every read gesture is :class:`Store`'s, unchanged; the connection under it
+    is the whole difference. It is handed out by :meth:`Store.reader` and
+    belongs to **the API read path only**: a cursor is its own transaction, so
+    it sees committed rows and not the ones the thread inside
+    ``ConfigurationManager.writing()`` has yet to commit. A job that reads what
+    it is about to write must stay on :meth:`Store.query`.
+    """
+
+    def __init__(self, owner: Store, connection):
+        self.path = owner.path
+        self._owner = owner
+        self._connection = connection
+        self._lock = threading.RLock()   # this thread's alone, never contended
+        self._reserved: Dict[str, int] = {}   # keys are the writer's to issue
+        self._readers = threading.local()
+        self._views: List['ReadView'] = []
+
+    @property
+    def closed(self) -> bool:
+        """Closed when the store it reads is — one shutdown, one answer."""
+        return self._owner.closed
+
+    def _live(self):
+        """The cursor, or the refusal a closed store owes its readers (#858)."""
+        if self._owner.closed:
+            raise StoreUnavailable(f"The store at {self.path} is closed")
+        return super()._live()
+
+    def reader(self) -> 'ReadView':
+        """Itself: a read view of a read view is the same connection."""
+        return self
+
+    def transaction(self):
+        """Refused. A write here would land outside the writers' mutex."""
+        raise StoreUnavailable(
+            f"The read view on {self.path} does not write")
+
+    def execute(self, sql: str, parameters: Optional[Sequence[Any]] = None):
+        """Refuse a write-capable statement on the read connection."""
+        raise StoreUnavailable(
+            f"The read view on {self.path} does not write")
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
+        """Refuse batched statements on the read connection."""
+        raise StoreUnavailable(
+            f"The read view on {self.path} does not write")
 
 
 def finite(value):
@@ -564,7 +661,7 @@ def open_store(path: Optional[Path] = None) -> Store:
 
 
 __all__ = [
-    'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
+    'Store', 'ReadView', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
     'file_size', 'finite',
     'DDL', 'TABLES', 'KEYED_TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
     'DEFAULT_ACCOUNT_ROW', 'STEPS', 'apply_steps', 'rebuilding',

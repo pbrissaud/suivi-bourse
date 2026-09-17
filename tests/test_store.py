@@ -20,6 +20,7 @@ tickets that follow will build on and could silently break:
 """
 
 from datetime import date
+import threading
 import time
 from pathlib import Path
 
@@ -340,6 +341,142 @@ def test_ping_fails_once_the_store_is_closed(store):
 
     with pytest.raises(Exception):
         store.ping()
+
+
+# --------------------------------------------------------------------------- #
+# The read view: a connection of its own (#967)
+# --------------------------------------------------------------------------- #
+
+def test_a_read_lands_while_a_write_holds_the_store(store):
+    """The regression this whole ticket is: a read behind a held transaction.
+
+    On the store's own connection the reader waited for the ``COMMIT`` — the
+    staging measurement was 3 reads landed against 771, worst case 39.6 s
+    against 0.8 ms. The read view is a ``cursor()``, a second connection on the
+    same database, and DuckDB's MVCC hands it a snapshot.
+
+    The view is taken **before** the writer holds the store, because that is
+    what a server thread does: it is warmed by the request before this one.
+    Creating it takes the store's lock, and doing so here would measure the
+    lock rather than the read.
+    """
+    warmed = threading.Event()
+    holding = threading.Event()
+    landed = []
+
+    def read():
+        view = store.reader()
+        warmed.set()
+        holding.wait(timeout=5)
+        landed.append(view.query('SELECT count(*) FROM account')[0][0])
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    assert warmed.wait(timeout=5)
+
+    with store.transaction():
+        store.execute("INSERT INTO account (id, label) VALUES ('later', 'L')")
+        holding.set()
+        reader.join(timeout=5)
+        assert not reader.is_alive(), 'the read is still waiting for the write'
+
+    # One row: the seeded default. The uncommitted account is *not* visible —
+    # a cursor is its own transaction, which is why the jobs must not read
+    # through one when they are about to write.
+    assert landed == [1]
+    assert store.query('SELECT count(*) FROM account') == [(2,)]
+
+
+def test_the_read_view_speaks_utc_like_the_connection_it_came_from(store):
+    """A cursor is a session of its own, and the zone is a session setting."""
+    assert store.reader().query("SELECT current_setting('TimeZone')") == [('UTC',)]
+
+
+def test_one_thread_gets_one_read_view(store):
+    assert store.reader() is store.reader()
+    assert store.reader().reader() is store.reader()
+
+    views = []
+    other = threading.Thread(target=lambda: views.append(store.reader()))
+    other.start()
+    other.join(timeout=5)
+
+    assert views[0] is not store.reader()
+
+
+def test_a_read_view_refuses_a_read_once_the_store_is_closed(store):
+    view = store.reader()
+    store.close()
+
+    with pytest.raises(store_module.StoreUnavailable):
+        view.ping()
+    with pytest.raises(store_module.StoreUnavailable):
+        store.reader()
+
+
+def test_a_read_view_does_not_open_a_transaction(store):
+    with pytest.raises(store_module.StoreUnavailable):
+        with store.reader().transaction():
+            pass
+
+
+def test_a_read_view_refuses_write_capable_methods(store):
+    view = store.reader()
+
+    with pytest.raises(store_module.StoreUnavailable):
+        view.execute("DELETE FROM account WHERE id = 'default'")
+    with pytest.raises(store_module.StoreUnavailable):
+        view.executemany(
+            'INSERT INTO account (id, label) VALUES (?, ?)',
+            [('later', 'Later')])
+
+    assert view.query('SELECT id FROM account') == [('default',)]
+
+
+def test_shutdown_waits_for_an_active_read(store, monkeypatch):
+    """Closing a cursor cannot overtake the query holding its view's lock."""
+    view_ready = threading.Event()
+    begin_read = threading.Event()
+    read_active = threading.Event()
+    release_read = threading.Event()
+    result = []
+
+    def read():
+        view = store.reader()
+        view_ready.set()
+        assert begin_read.wait(timeout=5)
+        result.extend(view.query('SELECT id FROM account'))
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    assert view_ready.wait(timeout=5)
+    view = store._views[0]
+    connection = view._connection
+
+    class PausedConnection:
+        def execute(self, sql, parameters=None):
+            read_active.set()
+            assert release_read.wait(timeout=5)
+            if parameters is None:
+                return connection.execute(sql)
+            return connection.execute(sql, parameters)
+
+    monkeypatch.setattr(view, '_live', lambda: PausedConnection())
+    begin_read.set()
+    assert read_active.wait(timeout=5)
+
+    closer = threading.Thread(target=store.close)
+    closer.start()
+    closer.join(timeout=0.1)
+    assert closer.is_alive(), 'shutdown overtook the active read'
+
+    release_read.set()
+    reader.join(timeout=5)
+    closer.join(timeout=5)
+
+    assert not reader.is_alive()
+    assert not closer.is_alive()
+    assert result == [('default',)]
 
 
 # --------------------------------------------------------------------------- #

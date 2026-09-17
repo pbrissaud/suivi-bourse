@@ -320,12 +320,17 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     )
 
     def _store():
-        """The runtime's open store, raising when there is none."""
+        """The runtime's read view on the store, raising when there is none.
+
+        This server writes nothing — every tool below is a read — so it reads
+        through the same connection of its own the ``/api`` blueprint uses
+        (#967), rather than waiting behind a background pass.
+        """
         if runtime.store is None:
             raise ToolError(
                 "the portfolio store is not available in this process; this is "
                 "a failure to read, not an empty portfolio")
-        return runtime.store
+        return runtime.store.reader()
 
     def reading(work):
         """Run a tool body, and let a storage fault arrive **in words**."""
