@@ -968,7 +968,9 @@ def test_the_bound_is_app_wide_and_its_file_sentence_is_not(tmp_path):
     answering it with *a file may carry at most 8 MiB* — plus a ``limit`` naming
     a file's bound the body never met — would describe a gesture the reader did
     not make. The status is the true part and it is kept; the sentence falls
-    back to the generic one.
+    back to the generic one — under `/problems/refused` (#971), which is what
+    every werkzeug refusal this app did not arrange now carries. The reader
+    meets the same sentence either way, the front having no row for it.
     """
     client = build_client(tmp_path)
 
@@ -980,7 +982,7 @@ def test_the_bound_is_app_wide_and_its_file_sentence_is_not(tmp_path):
     assert response.status_code == 413
     assert response.mimetype == problem.CONTENT_TYPE
     payload = response.get_json()
-    assert payload['type'] == problem.TYPE_INTERNAL
+    assert payload['type'] == problem.TYPE_REFUSED
     assert 'limit' not in payload
     assert 'MiB' not in payload['detail']
 
