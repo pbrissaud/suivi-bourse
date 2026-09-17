@@ -195,6 +195,9 @@ class Workloads:
                           now: Optional[datetime] = None) -> int:
         return self._backfill.forward(symbol, now)
 
+    def _classify(self, symbol: str) -> None:
+        return self._backfill.classify(symbol)
+
     def _learn_quote_currency(self, symbol: str) -> Tuple[Optional[str], bool]:
         return self._backfill.learn_quote_currency(symbol)
 

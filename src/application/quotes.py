@@ -80,15 +80,21 @@ def record_quote(store, symbol: str, moment: datetime,
 
 def record_attributes(store, symbol: str, moment: datetime,
                       attributes: Mapping) -> None:
-    """Write what the instrument **is**, with no price claimed beside it (#773)."""
-    refreshed = ('fetched_at',) + QUOTE_ATTRIBUTES
+    """Write what the instrument **is**, with no price claimed beside it (#773).
+
+    Only the columns the mapping *names* are written. A fetch that learns one
+    thing about a symbol — its classification, its unit — must not blank what
+    another fetch already established beside it (issue #968).
+    """
+    refreshed = ('fetched_at',) + tuple(
+        name for name in QUOTE_ATTRIBUTES if name in attributes)
     assignments = ', '.join(f'{name} = excluded.{name}' for name in refreshed)
     store.execute(
         f'INSERT INTO symbol_quote (symbol, {", ".join(refreshed)}) '
         f'VALUES (?{", ?" * len(refreshed)}) '
         f'ON CONFLICT (symbol) DO UPDATE SET {assignments}',
         [symbol, truncate(moment),
-         *(finite(attributes.get(name)) for name in QUOTE_ATTRIBUTES)])
+         *(finite(attributes.get(name)) for name in refreshed[1:])])
 
 
 def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:

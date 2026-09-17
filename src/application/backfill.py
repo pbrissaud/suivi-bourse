@@ -36,6 +36,14 @@ class BackfillWorkload:
 
         self.quote_currency_unknown: Set[str] = set()
 
+        #: Symbols this process has settled: either the store carries what they
+        #: are, or Yahoo was asked and names nothing (issue #968).
+        self.classified: Set[str] = set()
+
+        #: What Yahoo answered about the symbol whose turn it is — see
+        #: :meth:`attributes_of`. One turn long, never a cache.
+        self.asked: Dict[str, dict] = {}
+
     def fetch_historical_data(self, symbol: str, start: datetime,
                               end: datetime,
                               max_retries: int = 3) -> Optional[List[Dict]]:
@@ -87,6 +95,9 @@ class BackfillWorkload:
         """Backfill one symbol over its own holding window (issue #626, #703, #704)."""
         acquired, exited = window
         target, ceiling = carrying.holding_bounds(acquired, exited, now)
+
+        self.asked.clear()
+        self.facade._classify(symbol)
 
         written = 0
         if self.complete.get(symbol) == target:
@@ -319,12 +330,11 @@ class BackfillWorkload:
         if symbol in self.quote_currency_unknown:
             return None, False
 
-        info = market.symbol_attributes(symbol)
+        info = self.attributes_of(symbol)
         if info is None:
             return None, True
 
         currency = market_info.currency_of(info)
-        time.sleep(self.facade.backfill_delay)
 
         if not currency:
             self.quote_currency_unknown.add(symbol)
@@ -346,6 +356,82 @@ class BackfillWorkload:
         self.info_cache.setdefault(symbol, info)
         app_logger.info(f"{symbol} is quoted in {currency}")
         return currency, False
+
+    def classify(self, symbol: str) -> None:
+        """Say what an instrument **is**, held or not, market open or shut (#968).
+
+        The live scrape already writes the three classification columns, but it
+        only ever fetches a *held* symbol and only when its market answers: a
+        line sold out is classified never, and a line bought on a Friday evening
+        not before Monday. The backfill walks every symbol ever held, on its own
+        cadence and with no market to wait for, so it is the pass that can close
+        the hole — one Yahoo call per symbol, once, with no price claimed beside
+        it.
+        """
+        if symbol in self.classified:
+            return
+        try:
+            row = quotes.read_quote(self.facade.config_manager.store, symbol)
+        except Exception as e:
+            app_logger.error(f"Failed to read what {symbol} is: {e}")
+            return
+        if row is not None and row.get('sector'):
+            self.classified.add(symbol)
+            return
+
+        info = self.attributes_of(symbol)
+        if info is None:
+            app_logger.warning(
+                f"Could not establish what {symbol} is, will retry")
+            return
+
+        columns = market_info.quote_columns(info)
+        classification = {name: columns[name]
+                          for name in ('sector', 'industry', 'country')}
+
+        if not any(classification.values()):
+            # A fund, most often: Yahoo publishes no sector for one, and an
+            # absence is written as an absence rather than re-asked every cycle.
+            self.classified.add(symbol)
+            app_logger.debug(f"Yahoo classifies {symbol} as nothing")
+            return
+
+        try:
+            with self.facade.config_manager.writing() as opened:
+                quotes.record_attributes(
+                    opened, symbol, datetime.now(timezone.utc), classification)
+        except Exception as e:
+            app_logger.error(f"Failed to record what {symbol} is: {e}")
+            return
+
+        self.classified.add(symbol)
+        app_logger.info(
+            f"{symbol} is {classification['sector']} / "
+            f"{classification['industry']} ({classification['country']})")
+
+    def attributes_of(self, symbol: str) -> Optional[dict]:
+        """Yahoo's word on one instrument, asked **once per turn** (#968).
+
+        Two passes of a symbol's turn want it: the classification one for what
+        the instrument is, the lateral one for the unit its stored points are
+        quoted in. They ask the same question, so the second one reads the
+        answer the first got and the turn costs one request — which is #773's
+        bound (one ``.info`` per symbol, whatever the number of chunks or
+        cycles) kept with a second pass now asking.
+
+        The memory lasts the turn and no longer: :meth:`backfill_symbol` empties
+        it. The live scrape's cache is **not** read here — that one is filled by
+        a fetch made for a price, possibly market shut and cycles ago, and the
+        pass that needs to know a symbol's unit is the one that must ask.
+        """
+        if symbol in self.asked:
+            return self.asked[symbol]
+        info = market.symbol_attributes(symbol)
+        if info is None:
+            return None
+        time.sleep(self.facade.backfill_delay)
+        self.asked[symbol] = info
+        return info
 
     def lateral(self, symbol: str) -> int:
         """Lateral pass: give the stored points the conversion they lack (#704)."""
