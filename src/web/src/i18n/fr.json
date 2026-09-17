@@ -77,6 +77,8 @@
   "notification.advisory.cash_share.body": "Une part de ce compte dort en cash au lieu d’être investie. Rien d’anormal si c’est voulu.",
   "notification.advisory.opened_after_first_payment": "{label} · ouvert après son premier versement",
   "notification.advisory.opened_after_first_payment.body": "Vous avez déclaré ce compte ouvert le {opened}, et il a reçu un versement le {payment}. Une enveloppe ne peut pas être alimentée avant d’exister : l’une des deux dates est donc fausse, et l’application ne peut pas dire laquelle.",
+  "notification.advisory.opened_in_the_future": "{label} · ouvert un jour qui n’est pas arrivé",
+  "notification.advisory.opened_in_the_future.body": "Vous avez déclaré ce compte ouvert le {opened}, une date encore à venir. Si un modèle d’imposition compte un seuil d’ancienneté depuis ce jour, le seuil n’est jamais atteint et l’impôt projeté reste indéfiniment au taux d’avant.",
   "notification.advisory.no_taxation_model": "{label} · aucun modèle d’imposition",
   "notification.advisory.no_taxation_model.body": "Ce compte ne porte aucun modèle d’imposition : l’application ne peut donc pas dire ce que vous devriez dessus. Déclarez-en un et son panneau affichera la projection.",
 
