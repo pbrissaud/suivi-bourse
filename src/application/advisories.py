@@ -21,6 +21,8 @@ SUBJECT_ACCOUNTS = 'accounts'
 CASH_SHARE = 'cash_share'
 #: A declared opening date **later** than the account's first declared payment.
 OPENED_AFTER_FIRST_PAYMENT = 'opened_after_first_payment'
+#: A declared opening date on a day that **has not happened yet** (#969).
+OPENED_IN_THE_FUTURE = 'opened_in_the_future'
 #: An account holding money and carrying no taxation model, so #919's panel has
 #: nothing to project and says nothing at all.
 NO_TAXATION_MODEL = 'no_taxation_model'
@@ -135,6 +137,10 @@ def _observe_opened_after_first_payment(opened, now: datetime) -> List[Advisory]
     The other direction raises nothing: a date *earlier* than the first payment
     is exactly what a wrapper transferred to a new broker looks like, which is
     the case the declared date exists for.
+
+    **A day still to come belongs to the advisory next door** (#969). Saying
+    *one of the two is wrong and the app cannot say which* would be false there:
+    a day that has not happened is precisely the one the app can name.
     """
     payments = ledger.first_payments(opened)
     # Both halves are read through the module that owns them rather than
@@ -147,7 +153,7 @@ def _observe_opened_after_first_payment(opened, now: datetime) -> List[Advisory]
             accounts.opening_dates_by_account(opened).items()):
         label = labels.get(account)
         first = payments.get(account)
-        if first is None or opened_on <= first:
+        if first is None or opened_on <= first or opened_on > now.date():
             continue
         detail = {
             'account': account,
@@ -171,6 +177,48 @@ def _say_opened_after_first_payment(detail: Mapping[str, Any]) -> str:
         f"{detail['label']} is declared as opened on {detail['opened_on']}, "
         f"and it received a payment on {detail['first_payment']}. One of the "
         f"two is wrong.")
+
+
+def _observe_opened_in_the_future(opened, now: datetime) -> List[Advisory]:
+    """A wrapper declared open on a day that has not happened (#969).
+
+    **Contradicted, not refused.** The declaration is kept — a reader mid-typing
+    a year is the likeliest way here, and a refusal would throw the rest of the
+    form away with it — and the app says out loud that it disagrees.
+
+    It is not a matter of taste: an ``aged_flat_realised`` model counting its
+    threshold from ``opening`` never reaches it, so the projection stays at
+    ``rate_before`` for ever, on the one card that says what its owner would owe
+    if they emptied the account today.
+    """
+    labels = {row.id: row.label for row in accounts.read_accounts(opened)}
+
+    standing: List[Advisory] = []
+    for account, opened_on in sorted(
+            accounts.opening_dates_by_account(opened).items()):
+        if opened_on <= now.date():
+            continue
+        detail = {
+            'account': account,
+            'label': labels.get(account),
+            'opened_on': instants.iso(opened_on),
+        }
+        standing.append(Advisory(
+            key=f'{OPENED_IN_THE_FUTURE}:{account}',
+            kind=OPENED_IN_THE_FUTURE,
+            subject=SUBJECT_ACCOUNTS,
+            detail=detail,
+            message=_say_opened_in_the_future(detail),
+            observed_at=now,
+        ))
+    return standing
+
+
+def _say_opened_in_the_future(detail: Mapping[str, Any]) -> str:
+    return (
+        f"{detail['label']} is declared as opened on {detail['opened_on']}, a "
+        f"day that has not happened yet, so nothing counted from it can be "
+        f"right.")
 
 
 def _observe_no_taxation_model(opened, now: datetime) -> List[Advisory]:
@@ -217,6 +265,7 @@ def _say_no_taxation_model(detail: Mapping[str, Any]) -> str:
 OBSERVATIONS = (
     _observe_cash_share,
     _observe_opened_after_first_payment,
+    _observe_opened_in_the_future,
     _observe_no_taxation_model,
 )
 
@@ -286,7 +335,8 @@ def acknowledge(opened, key: str,
 __all__ = [
     'Advisory', 'Acknowledgement', 'UnknownAdvisory',
     'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD',
-    'OPENED_AFTER_FIRST_PAYMENT', 'NO_TAXATION_MODEL',
+    'OPENED_AFTER_FIRST_PAYMENT', 'OPENED_IN_THE_FUTURE',
+    'NO_TAXATION_MODEL',
     'SUBJECT_HEALTH', 'SUBJECT_INSTALLATION', 'SUBJECT_PORTFOLIO',
     'SUBJECT_ACCOUNTS',
     'OBSERVATIONS', 'acknowledgements', 'standing', 'listing', 'acknowledge',

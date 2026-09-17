@@ -408,6 +408,61 @@ def test_it_is_acknowledgeable_like_any_other(store):
 
 
 # --------------------------------------------------------------------------- #
+# The opening date that has not happened yet (#969)
+# --------------------------------------------------------------------------- #
+
+def test_a_wrapper_opened_on_a_day_to_come_raises_one(store):
+    """Kept and contradicted, never refused: the declaration stands in the store
+    and the app says out loud that it disagrees."""
+    _account(store, 'pea', 'PEA Bourso')
+    accounts.set_opened_on(store, 'pea', date(2099, 1, 1))
+
+    found = advisories.listing(store, NOW)
+
+    assert _keys(found) == ['opened_in_the_future:pea']
+    one = found[0]
+    assert one.kind == advisories.OPENED_IN_THE_FUTURE
+    assert one.subject == advisories.SUBJECT_ACCOUNTS
+    assert one.detail == {
+        'account': 'pea',
+        'label': 'PEA Bourso',
+        'opened_on': '2099-01-01',
+    }
+    assert one.observed_at == NOW
+    # And the row is still there, unarbitrated.
+    assert accounts.opening_dates_by_account(store)['pea'] == date(2099, 1, 1)
+
+
+def test_today_raises_nothing(store):
+    """An account opened this morning is an account opened this morning."""
+    _account(store, 'pea', 'PEA')
+    accounts.set_opened_on(store, 'pea', NOW.date())
+
+    assert advisories.listing(store, NOW) == []
+
+
+def test_a_day_to_come_says_so_rather_than_blaming_the_ledger(store):
+    """**One sentence, the true one.** A 2099 opening over a 2019 payment is
+    also *later than the first payment*, but that advisory says the app cannot
+    tell which of the two is wrong — and here it can."""
+    _account(store, 'pea', 'PEA')
+    _payment(store, 'pea', date(2019, 3, 4))
+    accounts.set_opened_on(store, 'pea', date(2099, 1, 1))
+
+    assert _keys(advisories.listing(store, NOW)) == ['opened_in_the_future:pea']
+
+
+def test_it_is_acknowledgeable_like_any_other_too(store):
+    _account(store, 'pea', 'PEA')
+    accounts.set_opened_on(store, 'pea', date(2099, 1, 1))
+
+    advisories.acknowledge(store, 'opened_in_the_future:pea', NOW)
+
+    assert advisories.listing(store, NOW) == []
+    assert _keys(advisories.standing(store, NOW)) == ['opened_in_the_future:pea']
+
+
+# --------------------------------------------------------------------------- #
 # The account nothing can be projected for (#919)
 # --------------------------------------------------------------------------- #
 

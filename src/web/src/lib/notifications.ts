@@ -190,6 +190,18 @@ function sentences(advisory: Advisory, label: string): Pick<Entry, 'title' | 'bo
       },
     }
   }
+  // **Contradicted, not refused** (#969): the declaration is kept — a reader
+  // mid-typing a year is the likeliest way here — and the app names the one
+  // date it *can* call wrong, a day that has not happened.
+  if (advisory.kind === 'opened_in_the_future') {
+    return {
+      title: { key: 'notification.advisory.opened_in_the_future', values: { label } },
+      body: {
+        key: 'notification.advisory.opened_in_the_future.body',
+        values: { opened: String(advisory.detail.opened_on ?? '') },
+      },
+    }
+  }
   // **The sentence #919's silence rests on.** An account's panel shows no
   // projection where no model was declared, and an empty block cannot explain
   // its own emptiness without appearing on every account for ever. This says it

@@ -285,3 +285,42 @@ describe('the contradiction, said out loud', () => {
     expect(within(panel).getByRole('link', { name: 'See the account' })).toBeInTheDocument()
   })
 })
+
+describe('the day that has not happened, said out loud', () => {
+  const TO_COME = anAdvisory({
+    key: 'opened_in_the_future:alpha',
+    kind: 'opened_in_the_future',
+    message: 'Alpha is declared as opened on 2099-01-01, a day that has not happened yet.',
+    detail: { account: 'alpha', label: 'Alpha', opened_on: '2099-01-01' },
+  })
+
+  async function openNotifications(language: readonly string[]) {
+    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([TO_COME])))
+    const rendered = renderApp({ browserLanguages: language })
+    await rendered.user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+    return screen.findByRole('dialog', { name: 'Notifications' })
+  }
+
+  it('names the date and what it does to the projection — in French', async () => {
+    const panel = await openNotifications(['fr-FR'])
+
+    expect(within(panel).getByText(/Alpha · ouvert un jour qui n’est pas arrivé/)).toBeInTheDocument()
+    expect(panel.textContent).toContain('ouvert le 2099-01-01')
+    // The figure is the reason this is said at all.
+    expect(panel.textContent).toContain('n’est jamais atteint')
+    expect(within(panel).getByRole('link', { name: 'Voir le compte' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('account=alpha'),
+    )
+  })
+
+  it('and in English', async () => {
+    const panel = await openNotifications(['en-GB'])
+
+    expect(
+      within(panel).getByText(/Alpha · opened on a day that has not happened/),
+    ).toBeInTheDocument()
+    expect(panel.textContent).toContain('opened on 2099-01-01')
+    expect(panel.textContent).toContain('never reached')
+  })
+})

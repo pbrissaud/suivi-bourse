@@ -77,6 +77,8 @@
   "notification.advisory.cash_share.body": "Part of this account is sitting in cash rather than being invested. Nothing is wrong with that if it is deliberate.",
   "notification.advisory.opened_after_first_payment": "{label} · opened after its first payment",
   "notification.advisory.opened_after_first_payment.body": "You declared this account as opened on {opened}, and it received a payment on {payment}. A wrapper cannot be funded before it exists, so one of the two dates is wrong — the app cannot tell which.",
+  "notification.advisory.opened_in_the_future": "{label} · opened on a day that has not happened",
+  "notification.advisory.opened_in_the_future.body": "You declared this account as opened on {opened}, which is still to come. An age threshold counted from that day is never reached, so the projected tax stays at the rate before it for ever.",
   "notification.advisory.no_taxation_model": "{label} · no taxation model",
   "notification.advisory.no_taxation_model.body": "This account carries no taxation model, so the app cannot say what you would owe on it. Declare one and its panel will show the projection.",
 
