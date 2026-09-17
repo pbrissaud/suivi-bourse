@@ -1001,7 +1001,9 @@ def test_two_dashboard_reads_scan_the_price_table_once(tmp_path, mocker):
     )
     client, opened = build_client_and_store(tmp_path, events=events)
 
-    queried = mocker.spy(opened, 'query')
+    # On the **read view**, which is where a read runs since #967 — the test
+    # client serves on this thread, so it is handed this very object.
+    queried = mocker.spy(opened.reader(), 'query')
 
     def scans():
         return [call for call in queried.call_args_list
@@ -4339,8 +4341,8 @@ def test_the_health_body_issues_no_query_at_all(tmp_path, mocker):
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     _arm_the_scheduler(api_module.current_runtime())
-    queried = mocker.spy(opened, 'query')
-    arrow = mocker.spy(opened, 'arrow')
+    queried = mocker.spy(opened.reader(), 'query')
+    arrow = mocker.spy(opened.reader(), 'arrow')
 
     assert client.get('/health').status_code == 200
 

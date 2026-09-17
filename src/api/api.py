@@ -87,11 +87,17 @@ def _carried():
 
 
 def _store():
-    """The worker's open store (issue #697)."""
+    """The worker's **read view** on the open store (issues #697, #967).
+
+    Every read in this blueprint goes through here, and none of them writes —
+    the writes take ``config_manager.writing()``, which stays on the store's own
+    connection. So the reads get a connection of their own and stop waiting
+    behind a background pass that holds a transaction for seconds.
+    """
     runtime = current_runtime()
     if runtime.store is None:
         raise RuntimeError("the store is not open in this process")
-    return runtime.store
+    return runtime.store.reader()
 
 
 def current_runtime():
@@ -682,7 +688,7 @@ def import_events():
     runtime = current_runtime()
     try:
         if dry_run:
-            opened = runtime.config_manager.store
+            opened = _store()   # a dry run reads and nothing else (#967)
             settled = _settled_mapping(opened, correspondence, census)
             declared = ledger.currency_to_adopt(opened,
                                                 parsed.declared_currency)

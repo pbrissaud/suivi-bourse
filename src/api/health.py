@@ -21,7 +21,9 @@ def health():
         return problem.storage_unavailable('The store is not open')
 
     try:
-        open_store.ping()
+        # On the read view, like every other read (#967): a probe that waits
+        # behind the write it is meant to report on answers nothing.
+        open_store.reader().ping()
     except Exception as exc:
         return problem.storage_unavailable(f"The store did not answer: {exc}")
 

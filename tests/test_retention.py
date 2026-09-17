@@ -819,3 +819,21 @@ def test_a_gap_wider_than_two_years_is_closed_on_both_sides_of_the_ceiling(
     _the_api_ceiling_is_respected(asked, today)
     # And the band it exists for was really asked by the hour.
     assert any(interval == '1h' for _, _, interval in asked)
+
+
+def test_the_memo_is_shared_by_every_handle_on_one_file(store):
+    """One file, one answer — whichever connection asked (#967).
+
+    The read path reads through a ``cursor()`` of its own, one per server
+    thread. Memoized on the *handle*, this scan — the largest table's, on the
+    hottest read — would be rescanned by every thread that had not run it yet,
+    and the memo holding one slot, by every thread in turn. It is held on the
+    file instead, and a write still moves it for all of them at once.
+    """
+    _seed(store, 'AAPL', [_at(400)])
+
+    scanned = quotes.oldest_stored(store)
+    assert quotes.oldest_stored(store.reader()) is scanned
+
+    _seed(store, 'AAPL', [_at(900, 9, 0)])
+    assert quotes.oldest_stored(store.reader())['AAPL'] == _at(900, 9, 0)

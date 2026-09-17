@@ -1,5 +1,4 @@
 """The market's own two tables: ``symbol_quote`` and ``price_point`` (issue #700)."""
-from functools import lru_cache
 from datetime import date, datetime, timezone
 from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
                     Tuple)
@@ -280,24 +279,43 @@ def oldest_stored(store) -> Dict[str, datetime]:
     only moves when a price point is written or removed, which is the backfill's
     rhythm and not the reader's.
 
-    Keyed on ``(store, generation)``: the handle because a suite opens one store
-    per test, and the generation because ``lru_cache`` inserts when the call
-    *returns* — so a ``cache_clear`` landing mid-scan would clear nothing and
-    the reader would then store its pre-write answer. A scan that started a
-    generation ago is stored under that generation and never read again.
+    Held under ``(path, generation)`` — **the file, not the handle**. Since
+    #967 every server thread reads through a connection of its own, and a memo
+    keyed on the handle would give each of them a private copy of an answer they
+    all share: on the hottest read, with the cache holding two, that is a full
+    scan per request again.
+
+    The generation is the one the scan **started** in, because the answer is
+    stored when the scan *returns*: a write that lands while it runs has already
+    moved the generation on, so the pre-write answer is never handed to the read
+    that follows it.
+
+    One slot, because a process has one store. Two stores read in turn — which
+    is a test and not an install — simply rescan.
     """
-    return _scanned(store, _generation)
+    generation = _generation
+    held = _scan
+    if held is not None and held[0] == (store.path, generation):
+        return held[1]
 
-
-@lru_cache(maxsize=2)
-def _scanned(store, generation: int) -> Dict[str, datetime]:
-    """The scan itself, held under the generation it was started in."""
-    return {
+    scanned = {
         symbol: instants.utc(value)
         for symbol, value in store.query(
             'SELECT symbol, min(ts) FROM price_point GROUP BY symbol')
         if value is not None
     }
+    _remember((store.path, generation), scanned)
+    return scanned
+
+
+#: ``((path, generation), scan)`` — the one slot :func:`oldest_stored` holds.
+_scan: Optional[Tuple[Tuple, Dict[str, datetime]]] = None
+
+
+def _remember(key, scanned: Dict[str, datetime]) -> None:
+    """Put a scan in the slot — a plain rebind, which the GIL makes atomic."""
+    global _scan
+    _scan = (key, scanned)
 
 
 def forget_oldest_stored() -> None:
