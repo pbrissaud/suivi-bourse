@@ -778,6 +778,35 @@ def test_a_sold_out_line_is_classified_by_the_backfill(
     assert asked == ["AAPL"]
 
 
+def test_a_row_carrying_half_a_classification_is_filled_rather_than_skipped(
+        store, mocker, monkeypatch, fake_ticker):
+    """Classified is all three columns, not the first one (issue #968).
+
+    The reader is an allocation and it groups on the three together, so a row
+    that names a sector and no country is as unusable as an empty one — and a
+    guard reading the sector alone would leave it that way for ever, the pass
+    never asking again.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
+        acquisitions={"AAPL": date(2024, 1, 15)},
+        exits={"AAPL": date(2024, 6, 4)})
+    metrics.backfill_chunk_days = 365
+    _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
+    quotes.record_attributes(store, "AAPL", datetime(2024, 6, 4, tzinfo=timezone.utc),
+                             {"sector": "Technology"})
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+    monkeypatch.setattr(market.yf, "Ticker", lambda symbol: fake_ticker(
+        info={"sector": "Technology", "industry": "Consumer Electronics",
+              "country": "United States"}))
+
+    metrics.backfill()
+
+    row = quotes.read_quote(store, "AAPL")
+    assert (row["industry"], row["country"]) == (
+        "Consumer Electronics", "United States")
+
+
 def test_backfill_write_failure_does_not_abort_remaining_symbols(store, mocker):
     acquired_on = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 1, 15)}
     metrics, _ = _build_metrics(

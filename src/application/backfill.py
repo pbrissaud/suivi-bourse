@@ -16,6 +16,11 @@ app_logger = logging.getLogger("suivi_bourse")
 
 LATERAL_LOOKBACK_DAYS = 10
 
+#: What an instrument *is* — the three columns #964 added and #968 fills. A row
+#: carrying only some of them is as unclassified as an empty one: the reader is
+#: an allocation, and it groups on all three.
+CLASSIFICATION = ('sector', 'industry', 'country')
+
 
 def span_instants(first: date, last: date) -> Tuple[datetime, datetime]:
     """Two calendar days as the two UTC instants a last-pass record carries."""
@@ -375,7 +380,7 @@ class BackfillWorkload:
         except Exception as e:
             app_logger.error(f"Failed to read what {symbol} is: {e}")
             return
-        if row is not None and row.get('sector'):
+        if row is not None and all(row.get(name) for name in CLASSIFICATION):
             self.classified.add(symbol)
             return
 
@@ -386,8 +391,7 @@ class BackfillWorkload:
             return
 
         columns = market_info.quote_columns(info)
-        classification = {name: columns[name]
-                          for name in ('sector', 'industry', 'country')}
+        classification = {name: columns[name] for name in CLASSIFICATION}
 
         if not any(classification.values()):
             # A fund, most often: Yahoo publishes no sector for one, and an
@@ -418,6 +422,12 @@ class BackfillWorkload:
         answer the first got and the turn costs one request — which is #773's
         bound (one ``.info`` per symbol, whatever the number of chunks or
         cycles) kept with a second pass now asking.
+
+        A request that did **not** complete is not remembered, here or
+        anywhere: #704's rule is that a failure is not a reply, and two tests
+        pin it — the symbol is asked again, for ever. So an outage costs the
+        turn the two failed requests it would cost without this memory, and the
+        memory never has to be right about a fact nobody established.
 
         The memory lasts the turn and no longer: :meth:`backfill_symbol` empties
         it. The live scrape's cache is **not** read here — that one is filled by
