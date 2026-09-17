@@ -13,6 +13,103 @@ The version 4 history is not merged in here. It stays with the
 [version 4 documentation](/docs/v4/changelog), where the releases it announces
 can still be run.
 
+## 5.1 — Taxation, investment rhythm, MCP server
+
+A feature release on top of 5.0. Same store, same mounts: pull the image and
+restart the container.
+
+### Projected tax per account
+
+Declare how an account is taxed. Its panel then shows what you would owe if you
+sold everything in it today, the latent gain that figure applies to, and the rate.
+
+Five kinds of model: nothing owed, a flat rate on the realised gain, a rate that
+changes with the account's age, a bracket table, and a withholding on income. Two
+presets fill their own parameters — PEA (5 years from the first payment) and
+assurance-vie (8 years from the opening). One model can serve several accounts.
+
+When the model counts age from the opening, the form asks for that date and
+pre-fills it with your earliest payment. Correct it if the account is older than
+your ledger, as it is after a transfer from another broker.
+
+Declare no model and the app shows nothing rather than a zero.
+
+:::note A projection, not a tax return
+You enter the kind and the rates, and the app applies them. It ignores
+allowances, loss carry-forward, your household situation and any actual return.
+Nothing has been sold.
+:::
+
+### Investment rhythm
+
+The dashboard shows what you bought over the last twelve months: the amount a
+typical month carries, how many of the twelve had a purchase, and one bar per
+month.
+
+It reads the buys already in your ledger. There is nothing to configure.
+
+### MCP server
+
+The app speaks [MCP](https://modelcontextprotocol.io) on `/mcp`, on the same port
+as everything else. An agent can read your positions, accounts, history, ledger
+and rhythm.
+
+It reads only. No tool writes, and none deletes.
+
+→ [Connect your own agent](./connect-your-own-agent.mdx)
+
+### Sector, industry and country
+
+Each symbol carries its sector, industry and country as Yahoo! Finance classifies
+it, on the shares payload and over MCP.
+
+Funds and crypto carry none: Yahoo gives a fund a breakdown across sectors rather
+than one sector.
+
+### The account type is gone
+
+Creating an account no longer asks for a type. It decided nothing the app
+computed — the taxation model answers that question now.
+
+The store also tracks its own schema generation, and migrates itself when it
+opens.
+
+### Fixes
+
+- Reads no longer wait behind a background write. They used to stall 7 to 15
+  seconds, sometimes never arriving; they now answer in about 0,3 s.
+- The shares table stops painting every held line green. Only the latent gain
+  takes a colour.
+- An account shows one performance figure instead of two that disagree.
+- A failed exchange-rate fetch retries instead of caching *no rate* for the whole
+  window.
+- A symbol stays in the rotation when its rescheduling fails.
+- A failed history write no longer moves the anchor past the year it missed, and
+  the rebuild stops asking Yahoo about weekends.
+- A refusal — file too large, wrong method — returns its own error type instead
+  of *unexpected error*.
+- An opening date in the future raises a notification.
+
+### Before you upgrade
+
+**The migration only goes forward.** 5.1 drops `account.type` and adds the three
+classification columns. 5.0 cannot open the result, so copy `/data` first if you
+want the option of going back.
+
+**Classification fills in over the next few minutes.** The history rebuild writes
+it one symbol at a time, so the shares page can show blank sectors just after the
+upgrade.
+
+**`/mcp` has no authentication**, like the rest of the port. Put the same thing in
+front of it that you put in front of the interface.
+
+**Recording an event takes about 17 seconds** on a ledger of a few hundred events
+going back to 2019. Every write replays the whole ledger and rebuilds the
+performance series before it answers, and that cost grows with your history, not
+with what you changed. The figures are right, the form blocks a second submit,
+and reads stay fast meanwhile. See
+[#972](https://github.com/pbrissaud/suivi-bourse/issues/972).
+
 ## 5.0 — One embedded store, one interface
 
 :::warning Breaking release
