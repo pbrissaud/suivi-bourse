@@ -17,10 +17,14 @@
  *  `Performance totale`, `gain ÷ versé net` — cumulative, of the same family as
  *  the *sur versé* under the dividends, and covering the account's whole life
  *  so that it implies no window and needs none stated.
- *  - **The total is computed from its four terms and never read**. The payload
- *    carries `gain_absolu`, which is the same number written down elsewhere;
- *    computing here is what makes the four an identity rather than a
- *    decomposition somebody has to trust.
+ *  - **The head is one row of one read** (#970). The gain it announces is the
+ *    payload's `gain_absolu`, beside the value and the contribution it is the
+ *    difference of, which is what makes the subtraction printed on that line
+ *    true. It was re-summed from the four terms — an identity rather than a
+ *    decomposition somebody has to trust — and the four terms come off a
+ *    *second* endpoint, so the identity was true of the formulas and false of
+ *    the page: one scrape between the page's two requests and the head
+ *    contradicted both its own subtraction and the rail beside it.
  *  - **Dividends are promoted, not recomputed.** The block reads the very term
  *    the block above decomposes — one arithmetic, rendered at two altitudes —
  *    because *what has this account paid me* is the one term that answers a
@@ -56,6 +60,7 @@ import {
   distinctSymbols,
   dividendPayers,
   onContributed,
+  totalPerformance,
   valueSeries,
   DEFAULT_ACCOUNT_LABEL,
   type AccountRow,
@@ -64,13 +69,7 @@ import {
 } from '@/lib/accounts'
 import { api, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
-import {
-  gainTotal,
-  portfolioTerms,
-  sumRendering,
-  termAmount,
-  termRendering,
-} from '@/lib/gain'
+import { portfolioTerms, termAmount, termRendering } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { FIELDS, identityOf } from '@/lib/ledger'
 import { problemSentence } from '@/lib/problem'
@@ -100,8 +99,9 @@ interface AccountDetailProps {
    * The whole payload's rows, or **`null` while the read has not landed** —
    * which is not the same shape as *the payload is empty*, and the difference is
    * three blocks. `?? []` here summed three terms over nothing and printed them
-   * as zeros beside a fourth read off the account row, so a detail opened cold
-   * announced a `Gain total` the rail beside it contradicted.
+   * as zeros beside a fourth read off the account row. The head is no longer
+   * among them (#970) — it is made of the account row alone and waits on
+   * nothing — but the dividends, the composition and the lines all are.
    */
   positions: readonly Position[] | null
   /** The whole ledger, or **`null` while that read is in flight**. */
@@ -187,17 +187,19 @@ export function AccountDetail({
     () => (held === null ? null : portfolioTerms(held, row.transfer_fees)),
     [held, row.transfer_fees],
   )
-  const total = terms === null ? null : gainTotal(terms)
   // **What this account has done, cumulatively** — `gain ÷ versé net`, the
-  // maquette's `Performance totale`. The numerator is the total *computed* from
-  // the four terms and never `row.gain_absolu`: the figure sits under the block
-  // that decomposes it, and reading two producers for one number one card apart
-  // is what would let the head and its own ratio disagree. They telescope
-  // exactly, the fourth term being what closes the gap (`lib/gain.ts`), which is
-  // why the rail one column over can divide `gain_absolu` and land on the same
-  // percentage.
-  const performance =
-    total === null || !total.known ? null : onContributed(total.value, row.net_contributed)
+  // maquette's `Performance totale`, and it is **the stored gain the rail
+  // divides** (#970). It was the total re-summed from the four terms here, on
+  // the argument that the two telescope exactly; they do, and it was not
+  // enough, because the four terms come off `/api/positions` while the two
+  // figures printed beside this one come off `/api/accounts` — two reads, two
+  // moments, and one scrape landing between them was all it took for the head
+  // to contradict its own subtraction and the card one column over to
+  // contradict the head. The four terms are still read, and still rendered
+  // where each of them *is* read: the dividends have a card, the fees are the
+  // line under the gain, the latent gain is a column of the lines table. What
+  // none of them is any more is a second producer for this headline.
+  const performance = totalPerformance(row)
   // What the dividends are worth against the same denominator — the maquette's
   // *sur versé*, one arithmetic shared with the figure above (`onContributed`).
   const dividendsOnContributed =
@@ -287,123 +289,103 @@ export function AccountDetail({
                 </button>
               </div>
 
-              {/* The figures wait on the positions — nothing at all while the
-                  read is in flight, the reason in their place where
-                  it refused (#829) — and the curve below waits on its
-                  own read. One frame, two waits, neither costing the other. */}
-              {terms === null || total === null ? (
-                failures.positions ? <Unreadable failure={failures.positions} /> : null
-              ) : (
-                <>
+              {/* **The head waits on nothing any more** (#970). Its four
+                  figures — the value, the contribution, the gain and the fees —
+                  are four members of **one** `account_metrics` row, so there is
+                  no second read for them to be a scrape apart from, and no
+                  reason left to hold them back while the positions are in
+                  flight. The curve below still waits on its own read: one
+                  frame, one wait, and it costs the figures nothing. */}
+                <p
+                  role="group"
+                  aria-label={t('accounts.figure.totalValue')}
+                  className="tabular text-5xl font-heavy tracking-tight"
+                >
+                  {f.currency(row.total_value, currency)}
+                </p>
+                {/* The two figures the value is a change **of** and **by**, on
+                    one line and a rung down: neither is the subject. */}
+                <p className="text-sm text-muted-foreground">
+                  <span role="group" aria-label={t('accounts.figure.netContributed')}>
+                    {t('accounts.figure.netContributed')}{' '}
+                    <span className="tabular font-mono text-foreground">
+                      {f.currency(row.net_contributed, currency)}
+                    </span>
+                  </span>
+                  {' · '}
+                  <span
+                    role="group"
+                    aria-label={t('accounts.figure.gain')}
+                    className="inline-flex items-baseline gap-1"
+                  >
+                    {t('accounts.figure.gain')}
+                    <Explain
+                      figure={t('accounts.figure.gain')}
+                      body="accounts.detail.gainTotal.explain"
+                      anchor="total-gain"
+                    />
+                    <span className={cn('tabular font-mono', signClass(row.gain_absolu))}>
+                      {f.currency(row.gain_absolu, currency)}
+                    </span>
+                  </span>
+                </p>
+                {/* Dropped at **zero and only at zero**: an install whose
+                transfers are free reads no fourth term and never learns it
+                exists. `null` is a different sentence — the server has no day
+                to bound the fees by — and it renders, as a dash, because a
+                total that goes out incomplete owes the reader the cause under
+                it (#775). */}
+                {row.transfer_fees === 0 ? null : (
                   <p
                     role="group"
-                    aria-label={t('accounts.figure.totalValue')}
-                    className="tabular text-5xl font-heavy tracking-tight"
+                    aria-label={t('accounts.figure.fees')}
+                    className="text-xs text-muted-foreground"
                   >
-                    {f.currency(row.total_value, currency)}
-                  </p>
-                  {/* The two figures the value is a change **of** and **by**, on
-                      one line and a rung down: neither is the subject. */}
-                  <p className="text-sm text-muted-foreground">
-                    <span role="group" aria-label={t('accounts.figure.netContributed')}>
-                      {t('accounts.figure.netContributed')}{' '}
-                      <span className="tabular font-mono text-foreground">
-                        {f.currency(row.net_contributed, currency)}
-                      </span>
+                    {t('accounts.figure.fees')}{' '}
+                    <span className="tabular font-mono">
+                      {f.currency(row.transfer_fees ?? null, currency)}
                     </span>
-                    {' · '}
-                    <span
-                      role="group"
-                      aria-label={t('accounts.figure.gain')}
-                      className="inline-flex items-baseline gap-1"
-                    >
-                      {t('accounts.figure.gain')}
-                      <Explain
-                        figure={t('accounts.figure.gain')}
-                        body="accounts.detail.gainTotal.explain"
-                        anchor="total-gain"
-                      />
-                      <span
-                        className={cn(
-                          'tabular font-mono',
-                          signClass(total.known ? total.value : null),
-                        )}
-                      >
-                        {renderFigure(
-                          sumRendering(total),
-                          () => f.currency(total.known ? total.value : null, currency),
-                          t,
-                        )}
-                      </span>
-                    </span>
+                    {feesOnContributed === null ? null : (
+                      <>
+                        {' · '}
+                        <span className="tabular font-mono">
+                          {t('accounts.figure.feesOnContributed', {
+                            percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
+                          })}
+                        </span>
+                      </>
+                    )}
                   </p>
-                  {/* Dropped at **zero and only at zero**: an install whose
-                  transfers are free reads no fourth term and never learns it
-                  exists. `null` is a different sentence — the server has no day
-                  to bound the fees by — and it renders, as a dash, because a
-                  total that goes out incomplete owes the reader the cause under
-                  it (#775). */}
-                  {row.transfer_fees === 0 ? null : (
-                    <p
-                      role="group"
-                      aria-label={t('accounts.figure.fees')}
-                      className="text-xs text-muted-foreground"
-                    >
-                      {t('accounts.figure.fees')}{' '}
-                      <span className="tabular font-mono">
-                        {f.currency(row.transfer_fees ?? null, currency)}
-                      </span>
-                      {feesOnContributed === null ? null : (
-                        <>
-                          {' · '}
-                          <span className="tabular font-mono">
-                            {t('accounts.figure.feesOnContributed', {
-                              percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
-                            })}
-                          </span>
-                        </>
-                      )}
-                    </p>
-                  )}
-                </>
-              )}
+                )}
             </div>
 
             {/* **`Performance totale`, and it is a change** — hence `f.percent`
                 and its sign, where the *sur versé* under the dividends is a
                 share and carries none (`lib/format.ts`). Same arithmetic, two
                 readings, and the formatter is what says which of the two a
-                percentage is. It inherits the total's own absence: a rate still
-                resolving leaves the gain unknown, so the ratio is not an em
-                dash but the same named wait the figure beside it wears. */}
-            {terms === null || total === null ? null : (
-              <div
-                role="group"
-                aria-label={t('accounts.figure.totalPerformance')}
-                className="flex min-w-0 flex-col gap-0.5"
+                percentage is. It divides the gain printed beside it, out of the
+                same row (#970), so the two are absent together or not at all —
+                where it used to inherit the *positions'* absence and leave the
+                head waiting on a read nothing on it was made of. */}
+            <div
+              role="group"
+              aria-label={t('accounts.figure.totalPerformance')}
+              className="flex min-w-0 flex-col gap-0.5"
+            >
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {t('accounts.figure.totalPerformance')}
+                <Explain
+                  figure={t('accounts.figure.totalPerformance')}
+                  body="accounts.totalPerformance.explain"
+                  anchor="total-performance"
+                />
+              </span>
+              <span
+                className={cn('tabular text-4xl font-heavy tracking-tight', signClass(performance))}
               >
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {t('accounts.figure.totalPerformance')}
-                  <Explain
-                    figure={t('accounts.figure.totalPerformance')}
-                    body="accounts.totalPerformance.explain"
-                    anchor="total-performance"
-                  />
-                </span>
-                <span
-                  className={cn(
-                    'tabular text-4xl font-heavy tracking-tight',
-                    signClass(performance),
-                  )}
-                >
-                  {renderFigure(
-                    sumRendering(total),
-                    () => (performance === null ? ABSENT : f.percent(performance)),
-                    t,
-                  )}
-                </span>
-              </div>
-            )}
+                {performance === null ? ABSENT : f.percent(performance)}
+              </span>
+            </div>
           </div>
 
           {/* The curve, inside the head it is the history of. Nothing at all
@@ -527,10 +509,15 @@ export function AccountDetail({
           </CardContent>
         </Card>
 
-        {/* The dividends this account has paid — the same term the head's gain
-            counts, read once and rendered at two altitudes. Nothing at all
-            while the positions are in flight. */}
-        {terms === null ? null : (
+        {/* The dividends this account has paid — one of the four terms, read
+            off the positions. Nothing at all while that read is in flight, and
+            **the reason in its place where it refused** (#829): since #970 the
+            head above is made of the account row alone, so this card is the
+            first thing on the page made of the positions and the sentence about
+            them belongs to it. */}
+        {terms === null ? (
+          failures.positions ? <Unreadable failure={failures.positions} /> : null
+        ) : (
           <Card className="gap-3">
             <CardHeader>
               <h3 className="eyebrow flex items-center gap-1.5">
