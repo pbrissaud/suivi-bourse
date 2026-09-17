@@ -40,7 +40,7 @@ dependencies = [
     # called **programmatically** from `src/application/boot.py`, never from a
     # command line:
     # that is how its multiprocess mode stays out of reach without a guard.
-    "uvicorn==0.52.4",
+    "uvicorn==0.53.0",
     "a2wsgi==1.10.10",
     # The agent's interface (ADR-0040, issue #749). It is mounted **inside** this
     # process, on the one socket, beside the Flask app — so it adds a reader and
