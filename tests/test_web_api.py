@@ -2039,6 +2039,12 @@ def test_a_refusal_werkzeug_decided_keeps_its_status(tmp_path, mocker):
 
     `406` here because nothing in this app raises one: what is asserted is the
     generic translation, not the `413` the next test owns.
+
+    The identifier is `/problems/refused` and not `/problems/internal-error`
+    (#971): the handler logs this without a traceback because *a refusal by
+    design is not an incident*, and the body used to call the same event a
+    fault. The front reads no new sentence — an unknown `type` already falls
+    back to *an unexpected error* — so the repair is on the wire alone.
     """
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
@@ -2049,7 +2055,7 @@ def test_a_refusal_werkzeug_decided_keeps_its_status(tmp_path, mocker):
 
     assert response.status_code == 406
     assert response.mimetype == 'application/problem+json'
-    assert response.get_json()['type'] == '/problems/internal-error'
+    assert response.get_json()['type'] == '/problems/refused'
 
 
 def test_every_api_answer_is_problem_json_whatever_the_verb(tmp_path):
@@ -2076,7 +2082,7 @@ def test_every_api_answer_is_problem_json_whatever_the_verb(tmp_path):
                      client.post('/api/positions')):
         assert response.status_code == 405
         assert response.mimetype == 'application/problem+json'
-        assert response.get_json()['type'] == '/problems/internal-error'
+        assert response.get_json()['type'] == '/problems/refused'
 
     # And the door closed to a scraper stays closed the way it was:
     # outside `/api`, werkzeug's own page is the right answer. `/apiary` is

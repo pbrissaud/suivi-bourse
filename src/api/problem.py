@@ -17,6 +17,7 @@ TYPE_TOO_LARGE = '/problems/payload-too-large'
 TYPE_UNREPLAYABLE = '/problems/unreplayable-ledger'
 TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
 TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
+TYPE_REFUSED = '/problems/refused'
 
 
 def problem(status: int, title: str, detail: Optional[str] = None,

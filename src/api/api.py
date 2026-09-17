@@ -37,7 +37,7 @@ from application.store_reads import PortfolioReader, chart_window
 from api.problem import (
     GESTURE_REMOVE,
     GESTURE_WRITE,
-    TYPE_INTERNAL,
+    TYPE_REFUSED,
     bad_request,
     conflict,
     entry_gone,
@@ -179,10 +179,17 @@ def refused(exc: HTTPException):
     an oversized JSON body would name a limit that body never crossed, so
     anywhere but the upload the generic translation answers.
 
-    That one keeps the status rather than flattening it to ``500``, under:
-    data:`TYPE_INTERNAL`: the front branches on ``type`` alone and
-    has no sentence for a refusal nothing here arranged, so it says *an
-    unexpected error* — which is true of it — over a status that is not.
+    Everything else keeps its status under :data:`TYPE_REFUSED` (#971). It
+    first wore ``/problems/internal-error`` because the front branches on
+    ``type`` alone and has no sentence for a refusal nothing here arranged —
+    but the log two lines up says *refusal* and declines to write a traceback,
+    so the body calling the same event a fault is the wire contradicting
+    itself. The front is unchanged and needs no translation: an unknown
+    ``type`` already falls back to *an unexpected error*
+    (``problemMessageKey``), so the sentence a reader meets is the one they met
+    before, byte for byte, over an identifier that is now true. Like
+    ``/problems/foreign-origin``, no page this app serves can reach it: the
+    reader is driving the API by hand.
 
     ``exc.code`` and ``exc.description`` are read straight: Flask returns an
     ``HTTPException`` whose code is ``None`` before any handler is consulted,
@@ -191,7 +198,7 @@ def refused(exc: HTTPException):
     logger.warning(f"API refusal on {request.path}: {exc}")
     if exc.code == 413 and request.endpoint == 'api.import_events':
         return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
-    return problem(exc.code, exc.name, exc.description, TYPE_INTERNAL)
+    return problem(exc.code, exc.name, exc.description, TYPE_REFUSED)
 
 
 @api_bp.get('/portfolio/movers')
