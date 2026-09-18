@@ -51,11 +51,14 @@ class _Recorder:
     is the only place the change is observable, which is the exception
     ``CLAUDE.md`` names for an internal double.
 
-    The four entry points are shadowed on the **instance**, so the class methods
+    The five entry points are shadowed on the **instance**, so the class methods
     come back by deleting the attributes rather than by remembering them.
+    ``write_arrow`` is the fifth since #972: the perf pass writes its series
+    through it now, and a recorder that stopped at ``executemany`` would attest
+    *"no statement was run"* about the pass's own writes.
     """
 
-    _METHODS = ('query', 'arrow', 'execute', 'executemany')
+    _METHODS = ('query', 'arrow', 'execute', 'executemany', 'write_arrow')
 
     def __init__(self, opened):
         self._store = opened
