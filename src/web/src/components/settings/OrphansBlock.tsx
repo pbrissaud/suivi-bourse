@@ -1,14 +1,20 @@
 /**
- * *The orphaned securities* — what no event declares any more, and the one
- * gesture that removes them (#724, #830).
+ * *The orphaned securities* — what nothing declares any more, and the one
+ * gesture that removes them (#724, #830, #982).
+ *
+ * **Two ways in, and the body names both.** Deleting the events that named a
+ * security is the first. Emptying the comparison reference is the second
+ * (#982): a reference is followed because a dial names it, so un-naming it
+ * drops the series into exactly this list — nothing was deleted, and a body
+ * that said *your events were deleted* would describe something the reader
+ * never did.
  *
  * Two things it keeps, and both are decisions:
  *
  *  - **It is absent at zero.** Not a maintenance table with an empty state: it
- *    is the visible consequence of a gesture the reader has just made —
- *    deleting the events that named a security — and a block with nothing in it
- *    does not exist. A **sold position is not one of them**, its events being
- *    in the ledger still.
+ *    is the visible consequence of a gesture the reader has just made — and a
+ *    block with nothing in it does not exist. A **sold position is not one of
+ *    them**, its events being in the ledger still.
  *  - **The count is said and the list is named.** The count alone would leave
  *    the reader to accept a purge on trust; the list alone would leave them
  *    counting rows. Each line carries how many quotes are being kept for it,

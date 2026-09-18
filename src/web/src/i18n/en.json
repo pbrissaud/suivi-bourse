@@ -620,7 +620,7 @@
   "installation.store.lastWrite.never": "Nothing has been recorded yet",
   "installation.orphans": "The orphaned securities",
   "installation.store.orphans": "{count, plural, one {# share nothing declares any more} other {# shares nothing declares any more}}",
-  "installation.store.orphans.body": "Their prices were kept when their events were deleted: an event can be entered again, a rebuilt history cannot. Positions you have sold are not affected.",
+  "installation.store.orphans.body": "Their prices were kept when whatever named them went away: events you deleted, or a comparison reference you removed. An event can be entered again, a rebuilt history cannot. Positions you have sold are not affected.",
   "installation.store.orphans.points": "{count, plural, one {# price} other {# prices}}",
   "installation.store.purge": "Purge these histories",
 

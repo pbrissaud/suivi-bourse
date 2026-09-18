@@ -620,7 +620,7 @@
   "installation.store.lastWrite.never": "Rien n’a encore été enregistré",
   "installation.orphans": "Les titres orphelins",
   "installation.store.orphans": "{count, plural, one {# titre que plus rien ne déclare} other {# titres que plus rien ne déclarent}}",
-  "installation.store.orphans.body": "Leurs cours ont été gardés quand leurs événements ont été supprimés : un événement se ressaisit, un historique reconstruit non. Les positions que vous avez soldées ne sont pas concernées.",
+  "installation.store.orphans.body": "Leurs cours ont été gardés quand ce qui les nommait a disparu : des événements supprimés, ou une référence de comparaison retirée. Un événement se ressaisit, un historique reconstruit non. Les positions que vous avez soldées ne sont pas concernées.",
   "installation.store.orphans.points": "{count, plural, one {# cours} other {# cours}}",
   "installation.store.purge": "Purger ces historiques",
 
