@@ -490,6 +490,41 @@ def test_nothing_to_repair_is_an_absence_and_not_an_empty_span(declared):
     assert quotes.unconverted_span(declared, 'MSFT') is None
 
 
+def test_every_point_of_a_day_takes_that_day_s_rate(declared):
+    """A day is many rows, and the factor is declared once for all of them.
+
+    The shape the fixtures above do not have and production always does: the
+    scrape writes a point per pass, so a held day carries dozens of them while
+    ``factors`` is keyed by the calendar day. Since #972 the repair is one
+    statement joining ``price_point`` to a block of ``(day, factor)`` instead
+    of one ``UPDATE`` a day, and a join is exactly where *many rows to one
+    factor* could quietly become *one row*. The count it returns is read before
+    the write, so a join that reached fewer rows would return a number the
+    table does not hold.
+    """
+    moments = [datetime(2024, 6, day, hour, 0, tzinfo=UTC)
+               for day in (1, 2) for hour in range(9, 18)]
+    quotes.record_history(declared, 'AAPL', [
+        {'timestamp': moment, 'price': 100.0 + moment.hour}
+        for moment in moments])
+
+    repaired = quotes.repair_conversions(declared, 'AAPL', {
+        date(2024, 6, 1): 0.90,
+        date(2024, 6, 2): 0.91,
+    })
+
+    assert repaired == len(moments) == 18
+    rows = declared.query(
+        'SELECT CAST(ts AS DATE), price_native, price_converted, fx_rate '
+        '  FROM price_point WHERE symbol = ? ORDER BY ts', ['AAPL'])
+    assert len(rows) == 18
+    for day, native, converted, rate in rows:
+        assert rate == (0.90 if day == date(2024, 6, 1) else 0.91)
+        assert native * rate == pytest.approx(converted)
+    # Nothing is left for a later cycle: the span is the absence, not an empty one.
+    assert quotes.unconverted_span(declared, 'AAPL') is None
+
+
 def test_the_repair_is_an_update_and_never_an_insert(declared):
     """The whole shape of the pass: the **same rows**, short of a column.
 
