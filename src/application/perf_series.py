@@ -5,8 +5,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 import pyarrow
 from logfmt_logger import getLogger
 
-from application import store as store_module
-from application.store import finite
+from application.store import INCOMING, finite
 
 logger = getLogger("perf_series")
 
@@ -17,25 +16,6 @@ VALUE_COLUMNS = (
 
 ACCOUNT_COLUMNS = ('account', 'day') + VALUE_COLUMNS
 TOTALS_COLUMNS = ('day',) + VALUE_COLUMNS
-
-
-def _incoming(columns: Sequence[str], rows: Sequence[Sequence[Any]]):
-    """The rows as an Arrow table, transposed once — one array a column (#972).
-
-    **Inferred, and that is the safer half of the choice.** A declared schema
-    was written first and taken back out: the column of a perf series is
-    routinely all-``None`` — ``xirr`` on every day but the last, and six of the
-    seven for an account with no cash ledger — so the fear was that the
-    ``null`` type inference gives such a column would be refused by a
-    ``DOUBLE``. It is not: duckdb 1.5.5 casts it, verified on the real column
-    set. What the declared version did add was a hand-written map with
-    ``float64`` as its default for every column it did not name, which is a
-    copy of the DDL that nothing checks and that turns the next non-``DOUBLE``
-    column into an ``ArrowInvalid`` raised inside a write request's
-    transaction. Inference would have stored it. The cast belongs to the
-    column's own declaration, and that lives in ``store``.
-    """
-    return pyarrow.table(dict(zip(columns, zip(*rows))))
 
 
 def _last_per_key(columns: Sequence[str], keys: Sequence[str],
@@ -78,6 +58,19 @@ def _upsert(store, table: str, columns: Sequence[str], keys: Sequence[str],
     the 13 146 points of six accounts over six years, 9.741 s row by row
     against 0.009 s here (issue #972) — which is what lets the write stay
     synchronous, and a ``200`` keep meaning the figures behind it are current.
+
+    The block is **inferred and not declared**, which is the safer half of the
+    choice. A declared schema was written first and taken back out: a column of
+    a perf series is routinely all-``None`` — ``xirr`` on every day but the
+    last, and six of the seven for an account with no cash ledger — so the fear
+    was that the ``null`` type inference gives such a column would be refused
+    by a ``DOUBLE``. It is not: duckdb 1.5.5 casts it, verified on the real
+    column set. What the declared version did add was a hand-written map with
+    ``float64`` as its default for every column it did not name, a copy of the
+    DDL that nothing checks and that turns the next non-``DOUBLE`` column into
+    an ``ArrowInvalid`` raised inside a write request's transaction. Inference
+    would have stored it. The cast belongs to the column's own declaration, and
+    that lives in ``store``.
     """
     if not rows:
         return 0
@@ -86,9 +79,9 @@ def _upsert(store, table: str, columns: Sequence[str], keys: Sequence[str],
     assignments = ', '.join(f'{name} = excluded.{name}' for name in updated)
     store.write_arrow(
         f'INSERT INTO {table} ({", ".join(columns)}) '
-        f'SELECT {", ".join(columns)} FROM {store_module.INCOMING} '
+        f'SELECT {", ".join(columns)} FROM {INCOMING} '
         f'ON CONFLICT ({", ".join(keys)}) DO UPDATE SET {assignments}',
-        _incoming(columns, rows))
+        pyarrow.table(dict(zip(columns, zip(*rows)))))
     return len(rows)
 
 

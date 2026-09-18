@@ -39,9 +39,9 @@ def test_a_column_no_point_fills_is_still_written_as_a_number(store):
     all. Typed per value that was nobody's problem; typed once for the block it
     is the block's type, and this is the case that decides it — Arrow infers
     ``null`` for a column with nothing in it, and what this pins is that DuckDB
-    takes it into a ``DOUBLE``. It is the assumption ``_incoming`` rests on
-    since the declared schema came back out, so it fails here first if a
-    version ever stops casting.
+    takes it into a ``DOUBLE``. It is the assumption ``_upsert`` rests on since
+    the declared schema came back out, so it fails here first if a version ever
+    stops casting.
     """
     written = perf_series.write_account_metrics(store, [
         AccountMetricPoint(account='default', day=_day(i), holdings_value=10.0 * i)
