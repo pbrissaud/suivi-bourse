@@ -1208,7 +1208,6 @@ export function defaultSettings(): SettingDescription[] {
       minimum: null,
       maximum: null,
       effect: 'next_cycle',
-      doc: 'A reference ticker the portfolio is compared against.',
       stored: false,
     }),
   ]

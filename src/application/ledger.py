@@ -132,8 +132,6 @@ def orphan_symbols(store) -> List[OrphanSymbol]:
         'FROM symbol s LEFT JOIN price_point p ON p.symbol = s.symbol '
         'WHERE NOT EXISTS (SELECT 1 FROM event e WHERE e.symbol = s.symbol) '
         '  AND NOT EXISTS (SELECT 1 FROM position q WHERE q.symbol = s.symbol) '
-        # The three reasons to survive: an event names it, a position holds it,
-        # or a setting points at it — the reference series nobody ever bought.
         '  AND NOT EXISTS (SELECT 1 FROM setting t '
         '                  WHERE t.key = ? AND t.value = s.symbol) '
         'GROUP BY s.symbol ORDER BY s.symbol',

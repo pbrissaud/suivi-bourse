@@ -188,10 +188,8 @@ class ConfigSnapshot:
         ``perf_job``'s own expression and what makes the two curves share a
         first day.
 
-        **Two perimeters, named, and not one widened set.** Everything that
-        values a position reads the held one; only what *fetches prices* reads
-        the tracked one, and it is the larger of the two by exactly the
-        reference::
+        Two perimeters, named, and not one widened set — only what *fetches
+        prices* reads the tracked one::
 
             ledger events ──► backfill_windows()   held: bought, maybe sold
                                      │             └─► valuation, totals,

@@ -88,9 +88,6 @@ class BackfillWorkload:
         repaired_count = 0
 
         for symbol in sorted(windows):
-            # Held **or** merely tracked: both are still running, so both get the
-            # forward pass. A reference that was once held and sold keeps its own
-            # acquisition date and still advances (#982).
             written, repaired = self.facade._backfill_symbol(
                 symbol, windows[symbol],
                 symbol in held or symbol == benchmark, now)

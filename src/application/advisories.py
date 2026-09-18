@@ -268,11 +268,6 @@ def _say_no_taxation_model(detail: Mapping[str, Any]) -> str:
 def _observe_benchmark_never_priced(opened, now: datetime) -> List[Advisory]:
     """A named reference whose series never filled (#982).
 
-    The reference is the one symbol nobody would notice was broken. It is held
-    by no one, so no position goes missing and no total comes out wrong — the
-    comparison is simply absent, which looks exactly like a comparison that was
-    never set up. Nothing else in the app will ever say so.
-
     **The trigger is the anchor, not the clock.** ``oldest_window_tried`` is
     written once a window has come back, so its presence beside an empty series
     says the backfill reached the market and the market had nothing under that

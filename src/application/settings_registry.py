@@ -49,15 +49,7 @@ def _currency(raw: str) -> str:
     return str(raw).strip().upper()
 
 
-def _symbol(raw: str) -> str:
-    """A ticker, upper-cased — so ``cw8.pa`` and ``CW8.PA`` are one answer."""
-    return str(raw).strip().upper()
-
-
 _ONE_DAY = 86400
-
-#: The longest ticker any exchange issues is comfortably under this.
-_SYMBOL_CEILING = 24
 
 SETTINGS: Tuple[SettingSpec, ...] = (
     SettingSpec(
@@ -88,7 +80,7 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'never assumed, and it is fixed from the first recorded event.',
         attribute='base_currency', required=True),
     SettingSpec(
-        'benchmark_symbol', None, SYMBOL, _symbol, NEXT_CYCLE,
+        'benchmark_symbol', None, SYMBOL, _currency, NEXT_CYCLE,
         'A reference ticker the portfolio is compared against, typically an '
         'accumulating broad-market ETF. It is followed because it is named '
         'here, not because it is held: no acquisition event is needed, and the '
@@ -158,7 +150,12 @@ def validate(key: str, value: Any):
     elif spec.kind == CURRENCY:
         parsed = _validate_currency(spec, value)
     elif spec.kind == SYMBOL:
-        parsed = _validate_symbol(spec, value)
+        # Shape is not checked: nothing in this repository constrains a
+        # ticker's form, so a grammar invented here would refuse a reference
+        # the ledger takes as a holding. A ticker no market knows is caught by
+        # `benchmark_never_priced`, which also catches the typo that is a
+        # perfectly well-shaped ticker.
+        parsed = spec.parse(value)
     else:
         raise InvalidSetting(key, f"{key} has no validator for kind {spec.kind!r}")
 
@@ -173,25 +170,6 @@ def _validate_currency(spec: SettingSpec, value: Any) -> str:
             spec.key,
             f"{spec.key} must be a three-letter ISO-4217 code (EUR, USD, GBP), "
             f"got {value!r}")
-    return parsed
-
-
-def _validate_symbol(spec: SettingSpec, value: Any) -> str:
-    """Parse one ticker. Shape only — whether it prices is yfinance's answer.
-
-    Nothing in this repository constrains the shape of a ticker: an event's
-    symbol is taken as typed, so a grammar invented here would refuse a
-    reference the ledger would have accepted as a holding. What is refused is
-    what cannot be a ticker at all — several words, or a length no market uses
-    — which catches the paste that would otherwise fail silently, one backfill
-    later, as a series that never fills.
-    """
-    parsed = spec.parse(value)
-    if len(parsed.split()) != 1 or len(parsed) > _SYMBOL_CEILING:
-        raise InvalidSetting(
-            spec.key,
-            f"{spec.key} must be a single ticker of at most "
-            f"{_SYMBOL_CEILING} characters (CW8.PA, AAPL), got {value!r}")
     return parsed
 
 

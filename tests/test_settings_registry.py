@@ -223,18 +223,16 @@ def test_a_new_kind_needs_its_branch_or_every_write_to_it_is_a_400():
     assert registry.validate('benchmark_symbol', ' cw8.pa ') == 'CW8.PA'
 
 
-@pytest.mark.parametrize('value', ['CW8.PA at Paris', 'A' * 25])
-def test_something_that_cannot_be_a_ticker_is_refused(value):
-    """Shape only, and only what no ticker ever is.
+def test_a_ticker_is_taken_as_typed_because_nothing_else_constrains_one():
+    """No grammar is invented here, and that is the decision.
 
-    Nothing in this repository constrains an event's symbol, so a grammar
-    invented here would refuse a reference the ledger takes as a holding. Two
-    words and a run of twenty-five characters are the paste and the fat
-    finger, which otherwise surface a backfill later as a series that never
-    fills.
+    An event's symbol is stored as typed, so a shape refused on this dial
+    would refuse a reference the ledger takes as a holding. A ticker no market
+    knows is named by ``benchmark_never_priced`` instead — which also catches
+    the typo that happens to be a perfectly well-shaped ticker, and a grammar
+    never would.
     """
-    with pytest.raises(registry.InvalidSetting, match='single ticker'):
-        registry.validate('benchmark_symbol', value)
+    assert registry.validate('benchmark_symbol', 'CW8.PA at Paris') == 'CW8.PA AT PARIS'
 
 
 @pytest.mark.parametrize('value', [None, '', '   '])

@@ -161,10 +161,7 @@ function advisoryEntry(advisory: Advisory): Entry {
   }
 }
 
-/**
- * Where a card sends the reader: the account it is about, or — for the one
- * family that is about no account — the dial that named the ticker (#982).
- */
+/** Where a card sends the reader: its account, or the dial that named it. */
 function advisoryLink(advisory: Advisory, account: string): Entry['link'] {
   if (advisory.kind === 'benchmark_never_priced') {
     return { label: 'notification.link.settings', to: { to: '/settings' } }
