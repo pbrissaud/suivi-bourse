@@ -410,7 +410,11 @@ def test_a_refused_write_leaves_the_previous_series_whole(declared, mocker):
         {'timestamp': NOW - timedelta(days=n), 'price': 100.0 + n}
         for n in range(5)])
     before = _points(declared)
-    mocker.patch.object(declared, 'executemany',
+    # The insert's own seam, which is `write_arrow` since #972 — the failure has
+    # to land *between* the delete and the insert for the transaction to be what
+    # is under test, and patching a method the writer no longer calls would let
+    # the whole gesture succeed and the assertion pass on nothing.
+    mocker.patch.object(declared, 'write_arrow',
                         side_effect=RuntimeError('disk full'))
 
     with pytest.raises(RuntimeError):
