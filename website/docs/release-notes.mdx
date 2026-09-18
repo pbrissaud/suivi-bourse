@@ -103,11 +103,12 @@ upgrade.
 **`/mcp` has no authentication**, like the rest of the port. Put the same thing in
 front of it that you put in front of the interface.
 
-**Recording an event takes about 17 seconds** on a ledger of a few hundred events
-going back to 2019. Every write replays the whole ledger and rebuilds the
-performance series before it answers, and that cost grows with your history, not
-with what you changed. The figures are right, the form blocks a second submit,
-and reads stay fast meanwhile. See
+**Recording an event took about 17 seconds in 5.1 as released** on a ledger of a
+few hundred events going back to 2019. Every write replays the whole ledger and
+rebuilds the performance series before it answers, and that cost grew with your
+history, not with what you changed. **It now takes about 0,9 s**: the replay is
+still synchronous, so a `200` still means the figures behind it are current, but
+the series is written as one block rather than one statement a row. See
 [#972](https://github.com/pbrissaud/suivi-bourse/issues/972).
 
 ## 5.0 — One embedded store, one interface
