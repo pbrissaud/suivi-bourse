@@ -16,6 +16,7 @@ from application import quotes
 from application import settings
 from application import taxation
 from application import store as store_module
+from application.events.schemas import Event, EventType
 
 
 NOW = datetime(2026, 8, 26, 8, 10, tzinfo=timezone.utc)
@@ -537,17 +538,28 @@ def test_an_account_no_cycle_has_written_raises_nothing_either(store):
 BENCHMARK = 'CW8.PA'
 
 
+#: The ledger's first day, which is where a reference nobody bought is walked
+#: from — ``tracked_windows``' own expression, and the date the anchor has to
+#: reach before the advisory will say anything.
+LEDGER_ORIGIN = date(2020, 3, 2)
+
+
 def _tracked(opened, symbol: str = BENCHMARK) -> None:
     """A reference **named on the dial**, with the row the backfill gives it.
 
-    Both halves go through the app's own writers: :func:`settings.save` is the
-    one road to a dial, and ``declare_symbol`` is what the backfill calls for a
-    symbol no event will ever declare — a ``symbol_quote`` row references it,
-    so an advisory read against a hand-inserted ledger would be read against a
-    shape the product cannot produce.
+    Three halves, all through the app's own writers: :func:`settings.save` is
+    the one road to a dial, ``declare_symbol`` is what the backfill calls for a
+    symbol no event will ever declare, and the deposit is the ledger's first
+    day — without one there is no window to walk and nothing is tracked at all.
+    A ``symbol_quote`` row references the symbol row, so an advisory read
+    against a hand-inserted ledger would be read against a shape the product
+    cannot produce.
     """
     settings.save(opened, {'benchmark_symbol': symbol})
     entries.declare_symbol(opened, symbol)
+    _account(opened, 'main', 'Main')
+    entries.create(opened, Event(LEDGER_ORIGIN, EventType.DEPOSIT,
+                                 account='main', amount=1000.0))
 
 
 def _flat_advisories(opened):
@@ -565,7 +577,7 @@ def test_a_reference_the_market_returned_nothing_for_says_so(store):
     only place the app says the difference out loud.
     """
     _tracked(store)
-    quotes.record_window_tried(store, BENCHMARK, date(2024, 1, 1))
+    quotes.record_window_tried(store, BENCHMARK, LEDGER_ORIGIN)
 
     assert _keys(advisories.listing(store, NOW)) == [
         f'benchmark_never_priced:{BENCHMARK}']
@@ -601,6 +613,47 @@ def test_a_reference_no_window_has_come_back_for_yet_is_not_accused(store):
     assert _flat_advisories(store) == []
 
 
+def test_a_reference_still_being_walked_backwards_is_not_accused(store):
+    """**The anchor moves on an empty chunk too, so its presence proves nothing.**
+
+    ``backfill.backward`` records the window it tried as soon as the fetch came
+    back, empty or not, and then walks one chunk further next cycle. A ticker
+    that stopped trading two years ago therefore answers its first chunks with
+    nothing while its real history is still several cycles away — and an
+    anchor-blind query would call it mistyped, every cycle, until the prices
+    land and prove it was not.
+
+    So the anchor has to have **arrived**: not merely set, but down to the
+    first day of the window being walked.
+    """
+    _tracked(store)
+
+    quotes.record_window_tried(store, BENCHMARK,
+                               LEDGER_ORIGIN + timedelta(days=365))
+    assert _flat_advisories(store) == []
+
+    quotes.record_window_tried(store, BENCHMARK,
+                               LEDGER_ORIGIN + timedelta(days=1))
+    assert _flat_advisories(store) == []
+
+    quotes.record_window_tried(store, BENCHMARK, LEDGER_ORIGIN)
+    assert [one.kind for one in _flat_advisories(store)] == [
+        advisories.BENCHMARK_NEVER_PRICED]
+
+
+def test_an_empty_ledger_tracks_no_reference_and_accuses_none(store):
+    """No first day means no window, and no window means nothing was asked for.
+
+    The same silence ``ConfigSnapshot.tracked_windows`` keeps on an empty
+    ledger, reached here by the ``COALESCE`` falling to ``NULL``.
+    """
+    settings.save(store, {'benchmark_symbol': BENCHMARK})
+    entries.declare_symbol(store, BENCHMARK)
+    quotes.record_window_tried(store, BENCHMARK, date(2020, 1, 1))
+
+    assert _flat_advisories(store) == []
+
+
 def test_a_symbol_no_dial_names_raises_nothing(store):
     """The advisory is about *the reference*, never about any empty series.
 
@@ -609,7 +662,7 @@ def test_a_symbol_no_dial_names_raises_nothing(store):
     under a symbol the ledger declares.
     """
     entries.declare_symbol(store, BENCHMARK)
-    quotes.record_window_tried(store, BENCHMARK, date(2024, 1, 1))
+    quotes.record_window_tried(store, BENCHMARK, LEDGER_ORIGIN)
 
     assert _flat_advisories(store) == []
 
@@ -632,7 +685,7 @@ def test_it_is_acknowledgeable_like_any_other_as_well(store):
     is a standing truth they have already read, and the sentence goes to sleep
     like every other rather than sitting on the page for ever."""
     _tracked(store)
-    quotes.record_window_tried(store, BENCHMARK, date(2024, 1, 1))
+    quotes.record_window_tried(store, BENCHMARK, LEDGER_ORIGIN)
 
     advisories.acknowledge(store, f'benchmark_never_priced:{BENCHMARK}', NOW)
 

@@ -1664,7 +1664,7 @@ def test_a_reference_nobody_holds_is_still_walked_up_to_today(store, mocker):
     forward = metrics.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
     assert forward is not None and forward.skipped is None
     # And it asked Yahoo for the days since the series stops, not for nothing.
-    assert any(end.date() >= date.today() - timedelta(days=1)
+    assert any(end.date() >= datetime.now(timezone.utc).date() - timedelta(days=1)
                for start, end in windows)
 
 
