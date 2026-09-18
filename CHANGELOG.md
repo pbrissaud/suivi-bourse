@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.1.2](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.1...v5.1.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **market:** value a position in the share it was traded in ([#988](https://github.com/pbrissaud/suivi-bourse/issues/988)) ([f7020db](https://github.com/pbrissaud/suivi-bourse/commit/f7020db4138ff8a534ff0ce0a343bfbe4a510624)), closes [#987](https://github.com/pbrissaud/suivi-bourse/issues/987)
+
+
+### Dependencies
+
+* **web:** update dependency intl-messageformat to v12 ([#990](https://github.com/pbrissaud/suivi-bourse/issues/990)) ([35bbc93](https://github.com/pbrissaud/suivi-bourse/commit/35bbc934478ba9b815e78da262be08bd44c91b04))
+
 ## [5.1.1](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.0...v5.1.1) (2026-09-18)
 
 
