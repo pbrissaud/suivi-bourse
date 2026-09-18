@@ -23,10 +23,12 @@ import pandas as pd
 import pytest
 
 from application import backfill
+from application import entries
 from application import main
 from application import market
 from application import quotes
 from application import runtime_view
+from application import settings as settings_module
 from application.workloads import Workloads
 from application.events.schemas import Event, EventType
 from application.events.validator import EventValidationError
@@ -1569,3 +1571,124 @@ def test_a_store_failure_never_takes_a_job_with_the_facts(store, mocker):
                         side_effect=RuntimeError("the file is gone"))
 
     metrics.review_installation_facts()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# The reference ticker: tracked without being held (issue #982)
+#
+# A symbol reaches the backfill by being named by an acquisition event. The
+# reference has none — nobody bought it — so both things an event would have
+# done for it have to be done here: its ``symbol`` row, and its place in the
+# perimeter the cycle walks.
+# ---------------------------------------------------------------------------
+
+def _names_a_reference(store, symbol="CW8.PA"):
+    """Name a reference ticker, through the write path the settings form uses."""
+    settings_module.save(store, {"benchmark_symbol": symbol})
+
+
+def _reference_row(store, symbol="CW8.PA"):
+    """The security's declaration row — the one a quote's foreign key needs."""
+    return store.query("SELECT symbol FROM symbol WHERE symbol = ?", [symbol])
+
+
+def test_the_reference_is_declared_at_the_top_of_every_cycle(store, mocker):
+    """Nothing else will ever declare it, and its first quote cannot wait.
+
+    ``price_point`` and ``symbol_quote`` reference ``symbol(symbol)``, and the
+    only writer of that row is the import path — which is driven by events. A
+    symbol that is followed *because a setting names it* would therefore have
+    every write of its series refused by the foreign key. The declaration is
+    idempotent, so the second cycle, and a store restored from a backup that
+    already carries the row, converge rather than aborting the cycle.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events",
+        events=[Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
+                      quantity=10, unit_price=150.0)])
+    _names_a_reference(store)
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+    metrics.backfill()
+
+    assert _reference_row(store) == [("CW8.PA",)]
+
+
+def test_a_reference_named_between_two_cycles_is_seen_by_the_next_one(store, mocker):
+    """The dial's effect is ``next_cycle``, so the cycle is where it is read.
+
+    The snapshot is a view of the **ledger**, cached on the ledger's stamp — a
+    reference read off it would stay invisible until an event moved, which on a
+    portfolio nobody is importing into is never. Naming a comparison and seeing
+    nothing happen until the next import is the bug this shape avoids.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events",
+        events=[Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
+                      quantity=10, unit_price=150.0)])
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+    assert _reference_row(store) == []
+
+    _names_a_reference(store)
+    metrics.backfill()
+
+    assert _reference_row(store) == [("CW8.PA",)]
+
+
+def test_a_reference_nobody_holds_is_still_walked_up_to_today(store, mocker):
+    """The forward pass is what keeps a series current, and this one is current.
+
+    ``advancing`` used to mean *held*, which is the right rule for a line whose
+    live writer is the scrape: when the position goes, so does the writer, and
+    the pass would refetch ``[newest → now]`` for ever. A reference has no live
+    writer at all — the scrape only ever fetches what is held — so the backfill
+    is the only thing that can advance it, and without this the comparison
+    curve simply stops at the day it was first filled.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events",
+        events=[Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
+                      quantity=10, unit_price=150.0)])
+    _names_a_reference(store)
+    # The row the cycle would declare anyway (see above), laid down here so the
+    # series can be seeded: the forward pass resumes from a stored point.
+    entries.declare_symbol(store, "CW8.PA")
+    _seed_prices(store, "CW8.PA", datetime(2022, 1, 3, tzinfo=timezone.utc))
+    windows = _window_recorder(metrics, mocker)
+
+    metrics.backfill()
+
+    forward = metrics.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
+    assert forward is not None and forward.skipped is None
+    # And it asked Yahoo for the days since the series stops, not for nothing.
+    assert any(end.date() >= datetime.now(timezone.utc).date() - timedelta(days=1)
+               for start, end in windows)
+
+
+def test_a_reference_that_was_held_and_sold_keeps_its_own_first_day(store, mocker):
+    """Two rules meet on one symbol, and each keeps the half it owns.
+
+    Its acquisition date is a fact of the ledger, so the ledger's origin must
+    not overwrite it — the backward pass still stops at the day it was bought.
+    But it is named as the comparison, so it advances all the same, unlike the
+    sold line above it which stops chasing the present. Read either rule as
+    "held or tracked, pick one" and one of the two halves is lost.
+    """
+    acquired = date(2021, 10, 5)
+    metrics, _ = _build_metrics(
+        [_valid_shares("CW8.PA", "Amundi MSCI World", quantity=0)], store,
+        mode="events", acquisitions={"CW8.PA": acquired},
+        exits={"CW8.PA": date(2022, 6, 1)}, events=None)
+    _names_a_reference(store)
+    _seed_prices(store, "CW8.PA", datetime(2021, 10, 5, tzinfo=timezone.utc))
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+
+    assert metrics._backfill_complete["CW8.PA"] == datetime(
+        2021, 10, 5, tzinfo=timezone.utc)
+    forward = metrics.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
+    assert forward is not None and forward.skipped is None

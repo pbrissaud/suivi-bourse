@@ -85,10 +85,12 @@ export function changedValues(
     const typed = draft[setting.key]
     if (typed === undefined) continue
     const trimmed = typed.trim()
-    // A blank field is *not* a request to reset: the write path refuses one, and
-    // reading it as "give me the default" would make an accidental clear and a
-    // deliberate reset the same gesture.
-    if (trimmed === '') continue
+    // A blank field is *not* a request to reset a dial that has something to
+    // fall back to: the write path refuses one there, and reading it as "give me
+    // the default" would make an accidental clear and a deliberate reset the same
+    // gesture. A dial with neither a default nor an obligation is the exception —
+    // blank is the only way to say *unset*, so it has to reach the API (#982).
+    if (trimmed === '' && (setting.default !== null || setting.required)) continue
     if (trimmed === String(setting.value ?? '')) continue
     changed[setting.key] = trimmed
   }

@@ -79,6 +79,7 @@ const DIAL_LABEL: Record<string, MessageKey> = {
   backfill_chunk_days: 'settings.backfill_chunk_days',
   staleness_horizon: 'settings.staleness_horizon',
   base_currency: 'settings.base_currency',
+  benchmark_symbol: 'settings.benchmark_symbol',
 }
 
 /**
@@ -102,6 +103,7 @@ const DIAL_HINT: Record<string, MessageKey> = {
   backfill_chunk_days: 'settings.backfill_chunk_days.hint',
   staleness_horizon: 'settings.staleness_horizon.hint',
   base_currency: 'settings.base_currency.hint',
+  benchmark_symbol: 'settings.benchmark_symbol.hint',
 }
 
 interface DialsBlockProps {

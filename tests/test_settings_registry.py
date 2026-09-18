@@ -21,10 +21,14 @@ def test_the_registry_is_the_single_list_of_dials():
     Six dials, and the count is the point: four of v4's were deleted rather
     than moved (the executor-pool pair, the ingestion interval, the perf
     interval), which is what leaves the settings page a single class of field.
+    ``benchmark_symbol`` is the seventh and it arrives the same way anything
+    arrives — as a line here (#982), which is what makes *followed without
+    being held* a declared setting rather than a second notion of holding.
     """
     assert [spec.key for spec in registry.SETTINGS] == [
         'regular_interval', 'backfill_interval', 'backfill_delay',
         'backfill_chunk_days', 'staleness_horizon', 'base_currency',
+        'benchmark_symbol',
     ]
     assert set(registry.BY_KEY) == {spec.key for spec in registry.SETTINGS}
 
@@ -68,7 +72,8 @@ def test_a_required_dial_has_no_default_so_its_absence_is_the_question():
 def test_every_other_dial_has_a_default_and_it_parses():
     seeded = registry.seeded_defaults()
 
-    assert set(seeded) == {spec.key for spec in registry.SETTINGS} - {'base_currency'}
+    assert set(seeded) == {spec.key for spec in registry.SETTINGS} - {
+        'base_currency', 'benchmark_symbol'}
     assert all(isinstance(registry.default_for(key), int) for key in seeded)
 
 
@@ -187,3 +192,70 @@ def test_the_stored_form_of_a_number_is_byte_identical_to_the_seed():
     assert registry.stored_form('regular_interval', 120.0) == '120'
     assert registry.stored_form('regular_interval', 120) == \
         registry.seeded_defaults()['regular_interval']
+
+
+# --------------------------------------------------------------------- #
+# benchmark_symbol — a dial that is optional, and the blank that empties it
+# (issue #982)
+# --------------------------------------------------------------------- #
+
+def test_the_benchmark_is_optional_and_unanswered_by_default():
+    """Neither a default nor an obligation — the third state is its *resting*
+    state, where the currency's is a question waiting for an answer.
+    """
+    spec = registry.spec_for('benchmark_symbol')
+
+    assert spec.default is None
+    assert spec.required is False
+    assert 'benchmark_symbol' not in registry.required_keys()
+    assert registry.resolve('benchmark_symbol', None) is None
+
+
+def test_a_new_kind_needs_its_branch_or_every_write_to_it_is_a_400():
+    """``validate`` switches hard on the kind and its ``else`` raises.
+
+    This is the line that makes the spec above reachable: without a ``SYMBOL``
+    branch the dial would be published by the API, drawn by the form, and
+    refuse every value posted to it — with a message about a missing
+    validator, which names the bug but only after someone has hit it.
+    """
+    assert registry.spec_for('benchmark_symbol').kind == registry.SYMBOL
+    assert registry.validate('benchmark_symbol', ' cw8.pa ') == 'CW8.PA'
+
+
+def test_a_ticker_is_taken_as_typed_because_nothing_else_constrains_one():
+    """No grammar is invented here, and that is the decision.
+
+    An event's symbol is stored as typed, so a shape refused on this dial
+    would refuse a reference the ledger takes as a holding. A ticker no market
+    knows is named by ``benchmark_never_priced`` instead — which also catches
+    the typo that happens to be a perfectly well-shaped ticker, and a grammar
+    never would.
+    """
+    assert registry.validate('benchmark_symbol', 'CW8.PA at Paris') == 'CW8.PA AT PARIS'
+
+
+@pytest.mark.parametrize('value', [None, '', '   '])
+def test_blanking_a_dial_with_neither_default_nor_obligation_removes_it(value):
+    """The removal gesture, and the reason ``DELETE /api/settings`` need not exist.
+
+    ``resolve`` already reads a blank row back as the dial's default, which for
+    a dial with no default is ``None`` — so the blank round-trips to
+    *unanswered* through the one write route there is.
+    """
+    assert registry.validate('benchmark_symbol', value) is None
+    assert registry.stored_form('benchmark_symbol', None) == ''
+    assert registry.resolve('benchmark_symbol', '') is None
+
+
+@pytest.mark.parametrize('key', ['regular_interval', 'base_currency'])
+@pytest.mark.parametrize('value', [None, '', '   '])
+def test_the_blank_stays_refused_where_a_dial_answers_or_must_be_answered(key, value):
+    """The condition is narrow on purpose, and this is its other half.
+
+    A dial with a default reads its blank as *I cleared this by accident*, and
+    a required dial has nothing to fall back to at all — so neither may be
+    emptied. Only a dial that is genuinely optional can be un-set.
+    """
+    with pytest.raises(registry.InvalidSetting):
+        registry.validate(key, value)

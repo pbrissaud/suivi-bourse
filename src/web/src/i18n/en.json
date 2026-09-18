@@ -81,6 +81,8 @@
   "notification.advisory.opened_in_the_future.body": "You declared this account as opened on {opened}, which is still to come. Where a taxation model counts an age threshold from that day, the threshold is never reached and the projected tax stays at the rate before it for ever.",
   "notification.advisory.no_taxation_model": "{label} · no taxation model",
   "notification.advisory.no_taxation_model.body": "This account carries no taxation model, so the app cannot say what you would owe on it. Declare one and its panel will show the projection.",
+  "notification.advisory.benchmark_never_priced": "{symbol} · no price came back",
+  "notification.advisory.benchmark_never_priced.body": "This ticker is named as the comparison reference, but the market returned no price for it, so there is no curve to compare against. Check the spelling, or name another one.",
 
   "empty.noCurrency.title": "No base currency yet",
   "empty.noCurrency.body": "Nothing is valued and no gain is computed until you choose a base currency. Your events are recorded all the same, and the ledger stays readable.",
@@ -582,6 +584,8 @@
   "settings.unit.seconds": "seconds",
   "settings.unit.days": "days",
   "settings.base_currency.hint": "Every figure in the app is shown in this currency.",
+  "settings.benchmark_symbol": "Benchmark",
+  "settings.benchmark_symbol.hint": "An optional reference ticker — a broad-market ETF, say — to compare the portfolio's performance against. Its price history is kept up to date even though you hold none of it. Clear the field to remove the reference.",
   "settings.cadence.reach": "Applies now to {now, plural, one {# share} other {# shares}}{later, plural, =0 {} one {, and to # more when its market opens} other {, and to # more when their markets open}}.",
   "settings.backoff.retroactive": "A share that cannot be priced waits a multiple of this delay before the next try. Changing it also applies to shares already failing.",
 
@@ -616,7 +620,7 @@
   "installation.store.lastWrite.never": "Nothing has been recorded yet",
   "installation.orphans": "The orphaned securities",
   "installation.store.orphans": "{count, plural, one {# share nothing declares any more} other {# shares nothing declares any more}}",
-  "installation.store.orphans.body": "Their prices were kept when their events were deleted: an event can be entered again, a rebuilt history cannot. Positions you have sold are not affected.",
+  "installation.store.orphans.body": "Their prices were kept when whatever named them went away: events you deleted, or a comparison reference you removed. An event can be entered again, a rebuilt history cannot. Positions you have sold are not affected.",
   "installation.store.orphans.points": "{count, plural, one {# price} other {# prices}}",
   "installation.store.purge": "Purge these histories",
 

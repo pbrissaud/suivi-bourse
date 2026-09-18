@@ -1358,7 +1358,7 @@ export interface SettingDescription {
   /** The effective value: the row if there is one, the code's default otherwise. */
   value: string | number | null
   default: string | number | null
-  type: 'integer' | 'string' | 'currency'
+  type: 'integer' | 'string' | 'currency' | 'symbol'
   minimum: number | null
   maximum: number | null
   /** What changing it triggers, as a token the catalogue turns into a sentence. */

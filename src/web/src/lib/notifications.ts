@@ -147,7 +147,7 @@ const FACT_TITLES: Record<string, MessageKey> = {
 function advisoryEntry(advisory: Advisory): Entry {
   const account = String(advisory.detail.account ?? '')
   const label = String(advisory.detail.label ?? account)
-  const said = account === '' ? null : sentences(advisory, label)
+  const said = sentences(advisory, label)
   return {
     id: advisory.key,
     register: 'advisory',
@@ -156,12 +156,17 @@ function advisoryEntry(advisory: Advisory): Entry {
     title: said?.title ?? { text: advisory.message },
     body: said?.body ?? { text: '' },
     at: advisory.observed_at,
-    link:
-      said === null
-        ? null
-        : { label: 'notification.link.account', to: { to: '/accounts', search: { account } } },
+    link: said === null ? null : advisoryLink(advisory, account),
     acknowledge: { register: 'advisory', key: advisory.key },
   }
+}
+
+/** Where a card sends the reader: its account, or the dial that named it. */
+function advisoryLink(advisory: Advisory, account: string): Entry['link'] {
+  if (advisory.kind === 'benchmark_never_priced') {
+    return { label: 'notification.link.settings', to: { to: '/settings' } }
+  }
+  return { label: 'notification.link.account', to: { to: '/accounts', search: { account } } }
 }
 
 /** The two sentences of a family this front knows, or `null` for one it does not. */
@@ -210,6 +215,17 @@ function sentences(advisory: Advisory, label: string): Pick<Entry, 'title' | 'bo
     return {
       title: { key: 'notification.advisory.no_taxation_model', values: { label } },
       body: { key: 'notification.advisory.no_taxation_model.body' },
+    }
+  }
+  // **The one symbol whose breakage is invisible** (#982). Nobody holds the
+  // reference, so nothing goes missing and no total comes out wrong: the
+  // comparison is just absent, which reads as a comparison never set up. The
+  // card names the ticker, because the ticker is what has to change.
+  if (advisory.kind === 'benchmark_never_priced') {
+    const symbol = String(advisory.detail.symbol ?? '')
+    return {
+      title: { key: 'notification.advisory.benchmark_never_priced', values: { symbol } },
+      body: { key: 'notification.advisory.benchmark_never_priced.body', values: { symbol } },
     }
   }
   return null

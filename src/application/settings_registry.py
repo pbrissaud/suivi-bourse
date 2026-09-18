@@ -13,6 +13,8 @@ INTEGER = 'integer'
 
 CURRENCY = 'currency'
 
+SYMBOL = 'symbol'
+
 
 class InvalidSetting(ValueError):
     """A value the registry refuses: unknown key, wrong type, out of bounds."""
@@ -77,6 +79,13 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'The reporting currency, as an ISO-4217 code. No default: it is asked, '
         'never assumed, and it is fixed from the first recorded event.',
         attribute='base_currency', required=True),
+    SettingSpec(
+        'benchmark_symbol', None, SYMBOL, _currency, NEXT_CYCLE,
+        'A reference ticker the portfolio is compared against, typically an '
+        'accumulating broad-market ETF. It is followed because it is named '
+        'here, not because it is held: no acquisition event is needed, and the '
+        'backfill keeps its series current all the same. Optional — blank '
+        'means no comparison.'),
 )
 
 BY_KEY: Dict[str, SettingSpec] = {spec.key: spec for spec in SETTINGS}
@@ -124,6 +133,13 @@ def validate(key: str, value: Any):
         raise InvalidSetting(key, f"Unknown setting {key!r}") from None
 
     if value is None or (isinstance(value, str) and not value.strip()):
+        # A dial with neither a default nor an obligation is the one kind that
+        # can be *unset*, and emptying its field is how that is said. ``resolve``
+        # already reads a blank row back as the dial's default — ``None`` here —
+        # so the blank round-trips to "unanswered" and no removal route has to
+        # exist beside ``PUT``.
+        if spec.default is None and not spec.required:
+            return None
         raise InvalidSetting(
             key, f"{key} has no value; a setting is answered, never blanked")
     if isinstance(value, bool):
@@ -133,6 +149,13 @@ def validate(key: str, value: Any):
         parsed = _validate_integer(spec, value)
     elif spec.kind == CURRENCY:
         parsed = _validate_currency(spec, value)
+    elif spec.kind == SYMBOL:
+        # Shape is not checked: nothing in this repository constrains a
+        # ticker's form, so a grammar invented here would refuse a reference
+        # the ledger takes as a holding. A ticker no market knows is caught by
+        # `benchmark_never_priced`, which also catches the typo that is a
+        # perfectly well-shaped ticker.
+        parsed = spec.parse(value)
     else:
         raise InvalidSetting(key, f"{key} has no validator for kind {spec.kind!r}")
 
@@ -177,13 +200,15 @@ def _validate_integer(spec: SettingSpec, value: Any) -> int:
 
 def stored_form(key: str, value: Any) -> str:
     """The string the table holds for a validated ``value``."""
+    if value is None:
+        return ''  # an unset dial, stored as the blank ``resolve`` reads back
     spec = spec_for(key)
     return str(int(value)) if spec.kind == INTEGER else str(value)
 
 
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
-    'INTEGER', 'CURRENCY',
+    'INTEGER', 'CURRENCY', 'SYMBOL',
     'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
     'spec_for', 'seeded_defaults', 'required_keys', 'default_for', 'defaults',
     'resolve', 'validate', 'stored_form',

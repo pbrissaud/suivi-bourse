@@ -27,6 +27,9 @@ OPENED_IN_THE_FUTURE = 'opened_in_the_future'
 #: nothing to project and says nothing at all.
 NO_TAXATION_MODEL = 'no_taxation_model'
 
+#: A reference ticker that was asked for and answered nothing (#982).
+BENCHMARK_NEVER_PRICED = 'benchmark_never_priced'
+
 CASH_SHARE_THRESHOLD = 0.10
 
 
@@ -262,11 +265,68 @@ def _say_no_taxation_model(detail: Mapping[str, Any]) -> str:
         f"what you would owe on it. Declare one and it will.")
 
 
+def _observe_benchmark_never_priced(opened, now: datetime) -> List[Advisory]:
+    """A named reference whose series never filled (#982).
+
+    **The trigger is the anchor, and the anchor has to have arrived.**
+    ``oldest_window_tried`` moves after every window that came back, an empty
+    one included, so its mere presence says only that the backward pass has
+    started: a ticker that stopped trading two years ago answers its first
+    chunks empty and would be called mistyped while its real history is still
+    three cycles away. The claim is *nothing under that name, anywhere*, so the
+    anchor must have reached the start of the window being walked — the
+    symbol's own first acquisition, or the ledger's first day for a reference
+    nobody ever bought, which is what ``tracked_windows`` hands the backfill.
+
+    An empty ledger has no first day, so ``COALESCE`` is ``NULL``, the
+    comparison is ``NULL``, and nothing is raised. That is the same silence
+    ``tracked_windows`` keeps, reached by the same route.
+
+    "No point after a cycle" would have said all of this about a perfectly good
+    ticker on its first network outage, which is the accusation this refuses to
+    make.
+    """
+    symbol = opened.setting('benchmark_symbol')
+    if not symbol:
+        return []
+
+    tried = opened.query(
+        'SELECT 1 FROM symbol_quote q '
+        'WHERE q.symbol = ? AND q.oldest_window_tried IS NOT NULL '
+        '  AND q.oldest_window_tried <= COALESCE( '
+        '        (SELECT min(e.date) FROM event e '
+        '          WHERE e.symbol = q.symbol '
+        "            AND e.event_type IN ('BUY', 'GRANT')), "
+        '        (SELECT min(e.date) FROM event e)) '
+        '  AND NOT EXISTS (SELECT 1 FROM price_point p '
+        '                  WHERE p.symbol = q.symbol)',
+        [symbol])
+    if not tried:
+        return []
+
+    detail = {'symbol': symbol}
+    return [Advisory(
+        key=f'{BENCHMARK_NEVER_PRICED}:{symbol}',
+        kind=BENCHMARK_NEVER_PRICED,
+        subject=SUBJECT_HEALTH,
+        detail=detail,
+        message=_say_benchmark_never_priced(detail),
+        observed_at=now,
+    )]
+
+
+def _say_benchmark_never_priced(detail: Mapping[str, Any]) -> str:
+    return (
+        f"{detail['symbol']} is named as the comparison reference, but the "
+        f"market returned no price for it. Check the ticker.")
+
+
 OBSERVATIONS = (
     _observe_cash_share,
     _observe_opened_after_first_payment,
     _observe_opened_in_the_future,
     _observe_no_taxation_model,
+    _observe_benchmark_never_priced,
 )
 
 

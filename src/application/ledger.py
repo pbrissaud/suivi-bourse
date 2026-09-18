@@ -114,13 +114,28 @@ class OrphanSymbol:
 
 
 def orphan_symbols(store) -> List[OrphanSymbol]:
-    """The symbols nothing declares any more, with the size of their series."""
+    """The symbols nothing declares any more, with the size of their series.
+
+    Three reasons to survive, and a symbol needs only one::
+
+        event names it     ──►  it happened, the ledger remembers
+        position holds it  ──►  it is owned right now
+        setting points     ──►  it is *followed*, owned by nobody (#982)
+
+    The third is the one a reader will not guess: a reference ticker has no
+    event and no position, so without its clause the first purge would take the
+    series the backfill had just spent a cycle filling. Losing it is silent —
+    the comparison curve goes missing and nothing says why.
+    """
     rows = store.query(
         'SELECT s.symbol, count(p.symbol) '
         'FROM symbol s LEFT JOIN price_point p ON p.symbol = s.symbol '
         'WHERE NOT EXISTS (SELECT 1 FROM event e WHERE e.symbol = s.symbol) '
         '  AND NOT EXISTS (SELECT 1 FROM position q WHERE q.symbol = s.symbol) '
-        'GROUP BY s.symbol ORDER BY s.symbol')
+        '  AND NOT EXISTS (SELECT 1 FROM setting t '
+        '                  WHERE t.key = ? AND t.value = s.symbol) '
+        'GROUP BY s.symbol ORDER BY s.symbol',
+        ['benchmark_symbol'])
     return [OrphanSymbol(symbol=row[0], points=int(row[1])) for row in rows]
 
 

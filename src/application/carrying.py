@@ -1,6 +1,6 @@
 """The carrying price: what a position is worth on a day nothing priced it."""
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 from application.events.schemas import EventType, unit_cost
 
@@ -28,6 +28,12 @@ def is_quoted(price_native: Optional[float], currency: Optional[str]) -> bool:
 
 
 ACQUISITION_EVENT_TYPES = (EventType.BUY, EventType.GRANT)
+
+
+def held_symbols(shares) -> Set[str]:
+    """The symbols held right now: named, and with a quantity (issue #982)."""
+    return {share['symbol'] for share in shares
+            if share.get('symbol') and share.get('quantity')}
 
 
 def holding_windows(events, held) -> Dict[str, Tuple[date, Optional[date]]]:

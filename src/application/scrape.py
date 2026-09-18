@@ -5,6 +5,7 @@ import threading
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Tuple
 
+from application import carrying
 from application import market
 from application import market_info
 from application import quotes
@@ -82,8 +83,7 @@ class ScrapeWorkload:
     def scrape_held(self):
         """Fetch and store every held symbol's quote, once."""
         shares = self.facade.shares
-        held = sorted({share['symbol'] for share in shares
-                       if share.get('symbol') and share.get('quantity')})
+        held = sorted(carrying.held_symbols(shares))
         for symbol in held:
             last_quote, info = self.facade._fetch_ticker_data(symbol)
             converted, rate = self.facade._convert(
@@ -107,8 +107,7 @@ class ScrapeWorkload:
 
     def held_symbols(self) -> set:
         """The set of symbols currently held across all accounts."""
-        return {s['symbol'] for s in self.facade.shares
-                if s.get('symbol') and s.get('quantity')}
+        return carrying.held_symbols(self.facade.shares)
 
     def read_exchange_of(self) -> Dict[str, Optional[str]]:
         """Map each held symbol to its venue for auto pool sizing (#851, #619)."""

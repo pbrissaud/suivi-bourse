@@ -258,3 +258,45 @@ describe('a card’s link lands on the figure, never on the page', () => {
     expect(entry.link).toBeNull()
   })
 })
+
+describe('the one advisory that is about no account at all', () => {
+  /** A reference ticker the market answered nothing for — held by nobody (#982). */
+  const reference = () =>
+    advisory({
+      key: 'benchmark_never_priced:CW8.PA',
+      kind: 'benchmark_never_priced',
+      subject: 'health',
+      message:
+        'CW8.PA is named as the comparison reference, but the market returned no price for it. Check the ticker.',
+      detail: { symbol: 'CW8.PA' },
+    })
+
+  it('says its two sentences from the catalogue, not the server’s English', () => {
+    // Every other family is keyed on an account, so an advisory naming none read
+    // as *a family this front does not know* and fell back to the server's own
+    // `message` — an English sentence on a French panel, about the one breakage
+    // nothing else in the app will ever mention.
+    const [entry] = notifications({ ...QUIET, advisories: [reference()] })
+
+    expect(entry.title).toEqual({
+      key: 'notification.advisory.benchmark_never_priced',
+      values: { symbol: 'CW8.PA' },
+    })
+    expect(entry.body).toEqual({
+      key: 'notification.advisory.benchmark_never_priced.body',
+      values: { symbol: 'CW8.PA' },
+    })
+  })
+
+  it('sends the reader to the dial that named the ticker, never to an account', () => {
+    // What has to change is the ticker, and the ticker was typed into the
+    // settings. The account destination would carry an empty `?account=` and
+    // open a page about nobody, which is a lie the card would be telling.
+    const [entry] = notifications({ ...QUIET, advisories: [reference()] })
+
+    expect(entry.link).toEqual({
+      label: 'notification.link.settings',
+      to: { to: '/settings' },
+    })
+  })
+})

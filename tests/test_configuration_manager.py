@@ -458,3 +458,77 @@ def test_touching_settings_yaml_does_not_invalidate_the_cache(tmp_path, events_d
     os.utime(settings, (st.st_atime, st.st_mtime + 100))
 
     assert ledger.stamp(cm.store) == key_before
+
+
+# --------------------------------------------------------------------------- #
+# current().tracked_windows: the reference ticker nobody bought (issue #982)
+# --------------------------------------------------------------------------- #
+def test_naming_no_reference_tracks_exactly_what_is_held(tmp_path, events_dir):
+    """The perimeter only widens when something widens it.
+
+    ``tracked_windows`` is what the backfill walks now, so a portfolio with no
+    comparison must walk the same set it always did — and an unset dial reaches
+    this method as the empty string as readily as as ``None`` (a blank field
+    unsets it), so both have to mean *nothing named*.
+    """
+    cm = seeded(tmp_path, events_dir)
+    cm.load_shares()
+    snapshot = cm.current()
+
+    assert snapshot.tracked_windows() == snapshot.backfill_windows()
+    assert snapshot.tracked_windows("") == snapshot.backfill_windows()
+
+
+def test_a_named_reference_is_tracked_from_the_ledgers_first_day(tmp_path, events_dir):
+    """The two curves are only comparable if they start on the same day.
+
+    Nobody bought the reference, so it has no acquisition to start from and the
+    day picked here is the ledger's own origin — deliberately the same
+    expression ``perf_job`` sizes the portfolio curve with. Any other choice
+    (today, a fixed horizon) plots a comparison whose first point is not the
+    portfolio's first point.
+    """
+    cm = seeded(tmp_path, events_dir)
+    cm.load_shares()
+    snapshot = cm.current()
+
+    windows = snapshot.tracked_windows("CW8.PA")
+
+    assert windows["CW8.PA"] == (min(e.date for e in snapshot.events), None)
+    assert windows["CW8.PA"] == (date(2024, 1, 15), None)
+    # And it is an addition, not a replacement: everything held is still walked.
+    assert set(windows) == set(snapshot.backfill_windows()) | {"CW8.PA"}
+
+
+def test_a_reference_that_is_also_held_keeps_its_acquisition_date(tmp_path, events_dir):
+    """Owning your own benchmark must not rewrite when you bought it.
+
+    The ledger's origin is a *stand-in* for an acquisition date, used only for a
+    symbol that has none. MSFT here has one — 2024-02-01, two weeks after the
+    ledger starts — and overwriting it with the origin would make the backfill
+    reconstruct, and the position report, a holding from a day it was not held.
+    """
+    cm = seeded(tmp_path, events_dir)
+    cm.load_shares()
+    snapshot = cm.current()
+
+    held_window = snapshot.backfill_windows()["MSFT"]
+
+    assert held_window[0] == date(2024, 2, 1) != min(e.date for e in snapshot.events)
+    assert snapshot.tracked_windows("MSFT") == snapshot.backfill_windows()
+    assert snapshot.tracked_windows("MSFT")["MSFT"] == held_window
+
+
+def test_an_empty_ledger_tracks_nothing_even_with_a_reference_named(tmp_path):
+    """There is no first day to share, so there is no window to open.
+
+    A reference named on a fresh install would otherwise be tracked from
+    ``min()`` of nothing. It starts being tracked when the first event lands,
+    which is also when there is something to compare it to.
+    """
+    (tmp_path / "events").mkdir()
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    snapshot = cm.current()
+
+    assert snapshot.events == []
+    assert snapshot.tracked_windows("CW8.PA") == {}

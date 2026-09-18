@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone, timedelta, time as time_of_day
 from typing import Dict, List, Optional, Set, Tuple
 
 from application import carrying
+from application import entries
 from application import fx
 from application import market
 from application import market_info
@@ -60,7 +61,12 @@ class BackfillWorkload:
         """Backfill historical price data, one series per **symbol**, in both directions. This runs as its own scheduled job, progressively filling gaps."""
         now = now or datetime.now(timezone.utc)
         snapshot = self.facade.config_manager.current()
-        windows = snapshot.backfill_windows()
+        # Read fresh each cycle, not off the snapshot: the snapshot is a view of
+        # the *ledger* and is cached on it, so a reference named between two
+        # cycles would not be seen until an event moved. Its effect is
+        # `next_cycle`, and this is that cycle.
+        benchmark = self.facade.config_manager.store.setting('benchmark_symbol')
+        windows = snapshot.tracked_windows(benchmark)
 
         self.facade._collapse_to_ladder(now)
 
@@ -71,14 +77,20 @@ class BackfillWorkload:
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
-        held = {share['symbol'] for share in snapshot.shares
-                if share.get('symbol') and share.get('quantity')}
+        held = carrying.held_symbols(snapshot.shares)
+
+        if benchmark:
+            # A quote references a `symbol` row, and no event will ever create
+            # this one. Idempotent, so it also converges from a restored store.
+            with self.facade.config_manager.writing() as opened:
+                entries.declare_symbol(opened, benchmark)
 
         repaired_count = 0
 
         for symbol in sorted(windows):
             written, repaired = self.facade._backfill_symbol(
-                symbol, windows[symbol], symbol in held, now)
+                symbol, windows[symbol],
+                symbol in held or symbol == benchmark, now)
             backfilled_count += written
             repaired_count += repaired
 
@@ -96,8 +108,13 @@ class BackfillWorkload:
 
     def backfill_symbol(self, symbol: str,
                         window: Tuple[date, Optional[date]],
-                        held: bool, now: datetime) -> Tuple[int, int]:
-        """Backfill one symbol over its own holding window (issue #626, #703, #704)."""
+                        advancing: bool, now: datetime) -> Tuple[int, int]:
+        """Backfill one symbol over its own window (issue #626, #703, #704).
+
+        ``advancing`` asks for the forward pass: the series is still running, so
+        it is walked up to today. A held symbol advances; so does a symbol that
+        is merely tracked (issue #982).
+        """
         acquired, exited = window
         target, ceiling = carrying.holding_bounds(acquired, exited, now)
 
@@ -110,7 +127,7 @@ class BackfillWorkload:
         else:
             written += self.facade._backfill_backward(symbol, target, ceiling, now)
 
-        if held:
+        if advancing:
             written += self.facade._backfill_forward(symbol, now)
 
         repaired = self.facade._backfill_lateral(symbol)

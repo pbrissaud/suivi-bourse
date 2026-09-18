@@ -81,6 +81,8 @@
   "notification.advisory.opened_in_the_future.body": "Vous avez déclaré ce compte ouvert le {opened}, une date encore à venir. Si un modèle d’imposition compte un seuil d’ancienneté depuis ce jour, le seuil n’est jamais atteint et l’impôt projeté reste indéfiniment au taux d’avant.",
   "notification.advisory.no_taxation_model": "{label} · aucun modèle d’imposition",
   "notification.advisory.no_taxation_model.body": "Ce compte ne porte aucun modèle d’imposition : l’application ne peut donc pas dire ce que vous devriez dessus. Déclarez-en un et son panneau affichera la projection.",
+  "notification.advisory.benchmark_never_priced": "{symbol} · aucun cours reçu",
+  "notification.advisory.benchmark_never_priced.body": "Ce ticker est nommé comme référence de comparaison, mais le marché n’a renvoyé aucun cours pour lui : il n’y a donc aucune courbe à comparer. Vérifiez l’orthographe, ou nommez-en un autre.",
 
   "empty.noCurrency.title": "Aucune devise de base",
   "empty.noCurrency.body": "Rien n’est valorisé et aucun gain n’est calculé tant que vous n’avez pas choisi de devise de base. Vos événements sont enregistrés malgré tout, et le grand livre reste lisible.",
@@ -582,6 +584,8 @@
   "settings.unit.seconds": "secondes",
   "settings.unit.days": "jours",
   "settings.base_currency.hint": "Tous les chiffres de l’application sont affichés dans cette devise.",
+  "settings.benchmark_symbol": "Référence de comparaison",
+  "settings.benchmark_symbol.hint": "Un ticker de référence facultatif — un ETF large, par exemple — auquel comparer la performance du portefeuille. Son historique est tenu à jour même si vous n’en détenez aucune part. Videz le champ pour retirer la référence.",
   "settings.cadence.reach": "S’applique maintenant à {now, plural, one {# titre} other {# titres}}{later, plural, =0 {} one {, et à # autre à l’ouverture de son marché} other {, et à # autres à l’ouverture de leur marché}}.",
   "settings.backoff.retroactive": "Un titre qui n’a pas pu être valorisé attend un multiple de ce délai avant le prochain essai. Le changer s’applique aussi aux titres déjà en échec.",
 
@@ -616,7 +620,7 @@
   "installation.store.lastWrite.never": "Rien n’a encore été enregistré",
   "installation.orphans": "Les titres orphelins",
   "installation.store.orphans": "{count, plural, one {# titre que plus rien ne déclare} other {# titres que plus rien ne déclarent}}",
-  "installation.store.orphans.body": "Leurs cours ont été gardés quand leurs événements ont été supprimés : un événement se ressaisit, un historique reconstruit non. Les positions que vous avez soldées ne sont pas concernées.",
+  "installation.store.orphans.body": "Leurs cours ont été gardés quand ce qui les nommait a disparu : des événements supprimés, ou une référence de comparaison retirée. Un événement se ressaisit, un historique reconstruit non. Les positions que vous avez soldées ne sont pas concernées.",
   "installation.store.orphans.points": "{count, plural, one {# cours} other {# cours}}",
   "installation.store.purge": "Purger ces historiques",
 

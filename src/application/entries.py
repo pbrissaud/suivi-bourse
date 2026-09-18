@@ -67,7 +67,7 @@ def create(store, draft: Event) -> Event:
         account = event.account or DEFAULT_ACCOUNT
 
         next_id = store.reserve('event')
-        _insert_symbol(store, event)
+        declare_symbol(store, event.symbol)
         store.execute(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
             '                   quantity, unit_price, fee, amount, notes) '
@@ -147,7 +147,7 @@ def update(store, event_id: int, draft: Event) -> Event:
         _refuse(store, event)
         account = event.account or DEFAULT_ACCOUNT
 
-        _insert_symbol(store, event)
+        declare_symbol(store, event.symbol)
         store.execute(
             'UPDATE event SET date = ?, event_type = ?, account = ?, '
             '                 symbol = ?, name = ?, quantity = ?, '
@@ -337,12 +337,12 @@ def _validator(store, *, declaring: Sequence[str] = (),
         accounts_declared=accounts_module.accounts_are_declared(store))
 
 
-def _insert_symbol(store, event: Event) -> None:
-    """Give the security its row before the event references it."""
-    if event.symbol:
+def declare_symbol(store, symbol: str) -> None:
+    """Give a security its row, once. Idempotent, so a restored store converges."""
+    if symbol:
         store.execute(
             'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
-            [event.symbol])
+            [symbol])
 
 
 def _replays(store) -> None:
