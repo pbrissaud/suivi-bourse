@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 
 import duckdb
+import pyarrow
 import pytest
 
 from application import quotes
@@ -429,8 +430,104 @@ def test_a_read_view_refuses_write_capable_methods(store):
         view.executemany(
             'INSERT INTO account (id, label) VALUES (?, ?)',
             [('later', 'Later')])
+    with pytest.raises(store_module.StoreUnavailable):
+        view.write_arrow(
+            f'INSERT INTO account SELECT * FROM {store_module.INCOMING}',
+            pyarrow.table({'id': ['later'], 'label': ['Later']}))
 
     assert view.query('SELECT id FROM account') == [('default',)]
+
+
+def test_a_block_write_binds_its_arrow_table_and_unbinds_it(store):
+    """``write_arrow`` is the write direction of ``arrow`` (issue #972)."""
+    store.write_arrow(
+        f'INSERT INTO account (id, label) SELECT id, label '
+        f'FROM {store_module.INCOMING}',
+        pyarrow.table({'id': ['one', 'two'], 'label': ['One', 'Two']}))
+
+    assert store.query('SELECT id FROM account ORDER BY id') == [
+        ('default',), ('one',), ('two',)]
+    # The view is gone, so the next statement cannot read a block that was
+    # handed over for one insert — and a failed statement unbinds it too. The
+    # error is asserted by name rather than as `Exception`: a closed store, a
+    # renamed constant and a typo in the SQL all raise something, and only
+    # `CatalogException` says *there is no such table*, which is the claim.
+    with pytest.raises(duckdb.CatalogException):
+        store.query(f'SELECT * FROM {store_module.INCOMING}')
+
+    with pytest.raises(duckdb.BinderException):
+        store.write_arrow(
+            f'INSERT INTO account (id, label) SELECT id, nope '
+            f'FROM {store_module.INCOMING}',
+            pyarrow.table({'id': ['three'], 'label': ['Three']}))
+    with pytest.raises(duckdb.CatalogException):
+        store.query(f'SELECT * FROM {store_module.INCOMING}')
+
+
+def test_a_block_write_is_refused_once_the_store_is_closed(store):
+    """The late write gets the named refusal, not a bound view on a dead handle.
+
+    The shutdown closes the store while jobs are still in flight — ``#858``'s
+    whole point — and the perf pass is one of those jobs, so a block write
+    arriving after the close is the ordinary case. ``_live()`` has to raise
+    *before* ``register``, because there is no connection left to unregister
+    from: the ``finally`` would then answer a ``StoreUnavailable`` with an
+    ``AttributeError`` on ``None`` and lose the name the blueprint answers
+    ``503`` to.
+    """
+    store.close()
+
+    with pytest.raises(store_module.StoreUnavailable):
+        store.write_arrow(
+            f'INSERT INTO account (id, label) SELECT id, label '
+            f'FROM {store_module.INCOMING}',
+            pyarrow.table({'id': ['late'], 'label': ['Late']}))
+
+
+def test_a_block_write_that_fails_inside_a_transaction_says_why(store):
+    """The perf pass writes its blocks inside ``opened.transaction()`` (#972).
+
+    Two things compose here that did not before. The lock is the same ``RLock``
+    both gestures take, so the write nested in an open transaction must not
+    deadlock on itself; and the ``finally`` that unregisters runs **while the
+    statement has already begun writing**, which is the moment a second
+    statement on the connection could raise over the first and hand the caller
+    a transaction error where the real refusal was. What has to survive is the
+    original refusal, an unbound view, a rolled-back table, and a store still
+    usable.
+
+    The failure is a **constraint** and not a bad column name, which is the
+    whole of the difference: a name DuckDB cannot bind is refused before a row
+    is touched, so the transaction stays live and the paragraph above describes
+    a state the test never entered. A duplicate primary key is refused by the
+    execution, with the block bound and rows in flight.
+    """
+    store.execute("INSERT INTO account (id, label) VALUES ('taken', 'Taken')")
+
+    with pytest.raises(Exception) as refused:
+        with store.transaction():
+            store.execute("INSERT INTO account (id, label) "
+                          "VALUES ('kept', 'Kept')")
+            store.write_arrow(
+                f'INSERT INTO account (id, label) SELECT id, label '
+                f'FROM {store_module.INCOMING}',
+                pyarrow.table({'id': ['taken'], 'label': ['Again']}))
+
+    assert 'taken' in str(refused.value)
+    with pytest.raises(duckdb.CatalogException):
+        store.query(f'SELECT * FROM {store_module.INCOMING}')
+    # The row written before the failure went back with it, and the store takes
+    # the next write — a rollback, not a connection left mid-statement. The row
+    # seeded *before* the transaction stays, which is what says it rolled back
+    # to the transaction's own start and no further.
+    assert store.query('SELECT id FROM account ORDER BY id') == [
+        ('default',), ('taken',)]
+    store.write_arrow(
+        f'INSERT INTO account (id, label) SELECT id, label '
+        f'FROM {store_module.INCOMING}',
+        pyarrow.table({'id': ['after'], 'label': ['After']}))
+    assert store.query('SELECT id FROM account ORDER BY id') == [
+        ('after',), ('default',), ('taken',)]
 
 
 def test_shutdown_waits_for_an_active_read(store, monkeypatch):

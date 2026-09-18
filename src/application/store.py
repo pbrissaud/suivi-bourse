@@ -173,6 +173,10 @@ KEYED_TABLES = ('event',)
 
 DEFAULT_ACCOUNT_ROW = ('default', 'Default account')
 
+#: The name :meth:`Store.write_arrow` binds its Arrow table under, and therefore
+#: the name the statement handed to it reads ``FROM``.
+INCOMING = 'incoming'
+
 
 class Store:
     """The open store: a DuckDB connection and the few gestures #696 needs."""
@@ -309,7 +313,14 @@ class Store:
             return self._live().execute(sql, list(parameters))
 
     def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
-        """Run one statement over many parameter sets, in one round trip."""
+        """Run one statement over many parameter sets — **one per row**.
+
+        It reads like a block write and is not one: DuckDB executes the
+        prepared statement once per parameter set, which #972 measured at
+        0.741 ms a row upserting into a table with a primary key. For a block
+        of rows that is a loop with a round trip in it — :meth:`write_arrow`
+        is the one statement.
+        """
         if not rows:
             return
         with self._lock:
@@ -330,6 +341,32 @@ class Store:
                 return self._live().execute(sql).fetch_arrow_table()
             return self._live().execute(
                 sql, list(parameters)).fetch_arrow_table()
+
+    def write_arrow(self, sql: str, incoming) -> None:
+        """Run one statement over an Arrow table bound as ``incoming`` (#972).
+
+        The other direction of :meth:`arrow`, and the frontier is the same one
+        ``pyarrow`` was taken on: a block of rows crosses into DuckDB **once**,
+        as columns, instead of once per row. :meth:`executemany` hands the
+        connection one prepared statement per row, and an
+        ``INSERT … ON CONFLICT DO UPDATE`` on a table with a primary key is an
+        MVCC operation per row with it — measured at 0.741 ms a row, so the
+        13 146 points of a six-year portfolio took 9.7 s. Bound as an Arrow
+        table and inserted with one ``INSERT … SELECT``, the same rows take
+        0.009 s.
+
+        The name is fixed rather than a parameter: a caller that chose it would
+        be choosing an identifier the SQL beside it has to spell the same way,
+        and the registration is undone in a ``finally`` so a failed statement
+        does not leave a view standing on a buffer nothing holds any more.
+        """
+        with self._lock:
+            connection = self._live()
+            connection.register(INCOMING, incoming)
+            try:
+                connection.execute(sql)
+            finally:
+                connection.unregister(INCOMING)
 
     def ping(self) -> None:
         """Touch the store, and raise if it cannot be touched."""
@@ -401,6 +438,11 @@ class ReadView(Store):
 
     def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
         """Refuse batched statements on the read connection."""
+        raise StoreUnavailable(
+            f"The read view on {self.path} does not write")
+
+    def write_arrow(self, sql: str, incoming) -> None:
+        """Refuse a block insert here too — it is a write like any other."""
         raise StoreUnavailable(
             f"The read view on {self.path} does not write")
 
