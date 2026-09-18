@@ -337,12 +337,17 @@ def _validator(store, *, declaring: Sequence[str] = (),
         accounts_declared=accounts_module.accounts_are_declared(store))
 
 
-def _insert_symbol(store, event: Event) -> None:
-    """Give the security its row before the event references it."""
-    if event.symbol:
+def declare_symbol(store, symbol: str) -> None:
+    """Give a security its row, once. Idempotent, so a restored store converges."""
+    if symbol:
         store.execute(
             'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
-            [event.symbol])
+            [symbol])
+
+
+def _insert_symbol(store, event: Event) -> None:
+    """Give the security its row before the event references it."""
+    declare_symbol(store, event.symbol)
 
 
 def _replays(store) -> None:

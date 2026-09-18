@@ -27,6 +27,9 @@ OPENED_IN_THE_FUTURE = 'opened_in_the_future'
 #: nothing to project and says nothing at all.
 NO_TAXATION_MODEL = 'no_taxation_model'
 
+#: A reference ticker that was asked for and answered nothing (#982).
+BENCHMARK_NEVER_PRICED = 'benchmark_never_priced'
+
 CASH_SHARE_THRESHOLD = 0.10
 
 
@@ -262,11 +265,58 @@ def _say_no_taxation_model(detail: Mapping[str, Any]) -> str:
         f"what you would owe on it. Declare one and it will.")
 
 
+def _observe_benchmark_never_priced(opened, now: datetime) -> List[Advisory]:
+    """A named reference whose series never filled (#982).
+
+    The reference is the one symbol nobody would notice was broken. It is held
+    by no one, so no position goes missing and no total comes out wrong — the
+    comparison is simply absent, which looks exactly like a comparison that was
+    never set up. Nothing else in the app will ever say so.
+
+    **The trigger is the anchor, not the clock.** ``oldest_window_tried`` is
+    written once a window has come back, so its presence beside an empty series
+    says the backfill reached the market and the market had nothing under that
+    name: a typo, a delisted ticker, an index symbol Yahoo does not serve.
+    "No point after a cycle" would have said the same thing about a perfectly
+    good ticker on its first network outage, which is the accusation this
+    refuses to make.
+    """
+    symbol = opened.setting('benchmark_symbol')
+    if not symbol:
+        return []
+
+    tried = opened.query(
+        'SELECT 1 FROM symbol_quote q '
+        'WHERE q.symbol = ? AND q.oldest_window_tried IS NOT NULL '
+        '  AND NOT EXISTS (SELECT 1 FROM price_point p '
+        '                  WHERE p.symbol = q.symbol)',
+        [symbol])
+    if not tried:
+        return []
+
+    detail = {'symbol': symbol}
+    return [Advisory(
+        key=f'{BENCHMARK_NEVER_PRICED}:{symbol}',
+        kind=BENCHMARK_NEVER_PRICED,
+        subject=SUBJECT_HEALTH,
+        detail=detail,
+        message=_say_benchmark_never_priced(detail),
+        observed_at=now,
+    )]
+
+
+def _say_benchmark_never_priced(detail: Mapping[str, Any]) -> str:
+    return (
+        f"{detail['symbol']} is named as the comparison reference, but the "
+        f"market returned no price for it. Check the ticker.")
+
+
 OBSERVATIONS = (
     _observe_cash_share,
     _observe_opened_after_first_payment,
     _observe_opened_in_the_future,
     _observe_no_taxation_model,
+    _observe_benchmark_never_priced,
 )
 
 

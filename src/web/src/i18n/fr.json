@@ -81,6 +81,8 @@
   "notification.advisory.opened_in_the_future.body": "Vous avez déclaré ce compte ouvert le {opened}, une date encore à venir. Si un modèle d’imposition compte un seuil d’ancienneté depuis ce jour, le seuil n’est jamais atteint et l’impôt projeté reste indéfiniment au taux d’avant.",
   "notification.advisory.no_taxation_model": "{label} · aucun modèle d’imposition",
   "notification.advisory.no_taxation_model.body": "Ce compte ne porte aucun modèle d’imposition : l’application ne peut donc pas dire ce que vous devriez dessus. Déclarez-en un et son panneau affichera la projection.",
+  "notification.advisory.benchmark_never_priced": "{symbol} · aucun cours reçu",
+  "notification.advisory.benchmark_never_priced.body": "Ce ticker est nommé comme référence de comparaison, mais le marché n’a renvoyé aucun cours pour lui : il n’y a donc aucune courbe à comparer. Vérifiez l’orthographe, ou nommez-en un autre.",
 
   "empty.noCurrency.title": "Aucune devise de base",
   "empty.noCurrency.body": "Rien n’est valorisé et aucun gain n’est calculé tant que vous n’avez pas choisi de devise de base. Vos événements sont enregistrés malgré tout, et le grand livre reste lisible.",

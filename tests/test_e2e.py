@@ -22,19 +22,22 @@ No network is ever touched.
 
 import pytest
 
+from api import create_app
 from application import entries
+from application import instants
 from application import ledger
 from application import backfill
 from application import market
 from application import portfolio_view
 from application import quotes
+from application import settings
 from application import store_reads
 from application.events.loader import EventLoader
 from application.events.aggregator import AggregationError
-from application.main import ConfigurationManager
+from application.main import ConfigurationManager, Runtime
 from application.workloads import Workloads
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 # --------------------------------------------------------------------------- #
@@ -274,3 +277,88 @@ def test_oversell_csv_is_refused_at_import_and_nothing_lands(tmp_path):
     with pytest.raises(AggregationError) as refused:
         entries.create_many(opened, rows)
     assert "sell" in str(refused.value).lower()
+
+
+# --------------------------------------------------------------------------- #
+# 4. A symbol followed because it is *named*, not because it is held (#982)
+# --------------------------------------------------------------------------- #
+#: A capitalising broad-market ETF — the shape a comparison reference has, and
+#: one no event in ``EVENTS_CSV`` will ever name.
+BENCHMARK = "CW8.PA"
+
+
+def _api_client(config_manager, opened):
+    """A Flask test client over this install, for the one route that reads a curve."""
+    runtime = Runtime(config_manager, None)
+    runtime.store = opened
+    return create_app(runtime).test_client()
+
+
+def test_a_named_reference_is_priced_and_the_curve_never_sees_it(
+    tmp_path, monkeypatch, fake_ticker
+):
+    """The reference is fetched like a holding and valued like nothing.
+
+    A reference ticker is the one symbol the app follows for a reason the ledger
+    cannot state: nobody bought it, so no window, no forward pass and no
+    exemption from the orphan purge follow from an event. Each of those had to
+    be granted to it by name, and granting them is exactly how a symbol that is
+    *priced* becomes a symbol that is *counted* — silently, because a day added
+    to the valuation curve carries the held lines' own forward-filled prices and
+    so is wrong in its shape while every number on it is right.
+
+    So the chain is asserted whole, and the third assertion is the one that
+    matters: the reference has a series, the curve is byte-for-byte the one it
+    was before the reference existed, and no position holds it.
+    """
+    _no_sleep(monkeypatch)
+    _patch_ticker(monkeypatch, fake_ticker)
+
+    config_manager = _config_with_a_ledger(tmp_path)
+    opened = config_manager._require_store()
+    sb = Workloads(config_manager)
+    # Quotes come back in USD and this install reports in USD, so the conversion
+    # is the identity — and `daily_closes` reads the *converted* price, which is
+    # what puts a day on the curve at all.
+    sb.base_currency = "USD"
+
+    # Two days that never meet: the held lines are priced on one, the reference
+    # on another. A reference day leaking onto the curve is then a day the
+    # comparison below can see.
+    midnight = datetime.now(timezone.utc).replace(
+        hour=15, minute=0, second=0, microsecond=0)
+    held_day = midnight - timedelta(days=10)
+    reference_day = midnight - timedelta(days=3)
+
+    def canned_fetch(symbol, start, end):
+        if symbol == BENCHMARK:
+            return [{"timestamp": reference_day, "price": 512.0}]
+        return [{"timestamp": held_day, "price": TICKER_CLOSE[symbol]}]
+
+    sb._fetch_historical_data = canned_fetch
+
+    # The curve as it is before anything is named — the comparison's witness.
+    sb.backfill()
+    client = _api_client(config_manager, opened)
+    before = client.get("/api/positions/history").get_json()["points"]
+    assert before, "the curve is empty, so what follows would compare nothing"
+
+    settings.save(opened, {"benchmark_symbol": BENCHMARK})
+    sb.backfill()
+
+    # 1. The series is written, for a symbol no event names.
+    assert opened.query(
+        "SELECT count(*) FROM event WHERE symbol = ?", [BENCHMARK]) == [(0,)]
+    assert opened.query(
+        "SELECT ts, price_native FROM price_point WHERE symbol = ?",
+        [BENCHMARK]) == [(reference_day, pytest.approx(512.0))]
+
+    # 2. The day axis does not move: same days, same values, same order.
+    assert client.get("/api/positions/history").get_json()["points"] == before
+
+    # 3. Nothing counts it. It is not held, and the day it alone was priced on
+    #    is not a day the portfolio ever lived through.
+    assert opened.query(
+        "SELECT count(*) FROM position WHERE symbol = ?", [BENCHMARK]) == [(0,)]
+    assert instants.iso(reference_day.date()) not in {
+        point["t"] for point in before}

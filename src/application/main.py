@@ -178,6 +178,38 @@ class ConfigSnapshot:
         return carrying.holding_windows(
             self.events, carrying.held_symbols(self.shares))
 
+    def tracked_windows(self, benchmark: Optional[str] = None
+                        ) -> Dict[str, Tuple[date, Optional[date]]]:
+        """The whole perimeter the backfill walks: held, plus merely **named**.
+
+        A symbol reaches the backfill by being named by an acquisition event,
+        and a reference ticker has none — nobody bought it (#982). So it is
+        added here, from the day the ledger itself starts, which is
+        ``perf_job``'s own expression and what makes the two curves share a
+        first day.
+
+        **Two perimeters, named, and not one widened set.** Everything that
+        values a position reads the held one; only what *fetches prices* reads
+        the tracked one, and it is the larger of the two by exactly the
+        reference::
+
+            ledger events ──► backfill_windows()   held: bought, maybe sold
+                                     │             └─► valuation, totals,
+                                     │                 positions, perf_job
+                                     ▼
+            benchmark  ────►  tracked_windows()    tracked: held + named
+                                                   └─► backfill only
+
+        A reference that **is** held keeps its holding window: its acquisition
+        date is a fact of the ledger, and the ledger's origin would overwrite
+        it. Nothing is added to an empty ledger — there is no first day to
+        share.
+        """
+        windows = self.backfill_windows()
+        if not benchmark or benchmark in windows or not self.events:
+            return windows
+        return {**windows, benchmark: (min(e.date for e in self.events), None)}
+
     def first_acquisition_date(self, symbol: str) -> Optional[date]:
         """Date of the earliest ``BUY`` **or ``GRANT``** for ``symbol``, or ``None``."""
         window = self.backfill_windows().get(symbol)

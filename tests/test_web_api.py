@@ -3972,6 +3972,86 @@ def test_purging_nothing_is_a_success_and_not_a_refusal(tmp_path):
     assert response.get_json() == {'symbols': [], 'points_removed': 0}
 
 
+def _reference_and_a_real_orphan(tmp_path, symbol='CW8.PA'):
+    """A store holding two undeclared series: the named reference, and an orphan.
+
+    The pair is the whole point. Both are series no event names and no position
+    holds, so the only thing telling them apart is the dial — and the plain
+    orphan beside the reference is what shows the query still runs and still
+    finds what it is for, rather than having gone quiet on everything.
+    """
+    def seed(opened):
+        seed_quote(opened, symbol=symbol, price=500.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+        seed_quote(opened, symbol=symbol, price=510.0,
+                   at=datetime(2024, 6, 2, 17, 0, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='ZZORPHAN', price=10.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS, seed=seed)
+    assert client.put(
+        '/api/settings', json={'benchmark_symbol': symbol}).status_code == 200
+    return client, opened
+
+
+def test_the_named_reference_is_not_an_orphan_though_nothing_holds_it(tmp_path):
+    """The third reason a symbol survives the purge (#982).
+
+    A reference ticker is tracked *because it is named*, not because it is
+    held: no acquisition event will ever mention it and no position will ever
+    carry it, so the two reasons the query knew about both come out false and
+    it reads as abandoned. The dial pointing at it is the reason, and it has to
+    be one the query asks about — otherwise naming a benchmark is enough to put
+    its series on the purge list the same afternoon.
+    """
+    client, _ = _reference_and_a_real_orphan(tmp_path)
+
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'ZZORPHAN', 'points': 1}]
+
+
+def test_the_purge_walks_past_the_reference_and_takes_the_orphan(tmp_path):
+    """The list is the promise and the purge is the gesture, so they cannot
+    disagree: a series exempt from the naming has to survive the button too.
+
+    Said on the rows rather than on the answer, because what is at stake is
+    history that cannot be rebuilt — a reference series is years of closes
+    nothing in the ledger would let the app fetch again on its own.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    body = client.delete('/api/store/orphans').get_json()
+
+    assert body == {'symbols': ['ZZORPHAN'], 'points_removed': 1}
+    assert opened.query(
+        "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 2
+    assert opened.query(
+        "SELECT count(*) FROM symbol WHERE symbol = 'CW8.PA'")[0][0] == 1
+
+
+def test_a_reference_nobody_names_any_more_is_an_orphan_again(tmp_path):
+    """The exemption follows the dial, and fossilises nothing.
+
+    Emptying the field is how a reference is removed — there is no second
+    route — and what it leaves behind is a series nothing in the installation
+    has a use for. It goes back on the list like any other, which is also the
+    only way the owner ever gets those rows back.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    assert client.put(
+        '/api/settings', json={'benchmark_symbol': ''}).status_code == 200
+
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'CW8.PA', 'points': 2},
+        {'symbol': 'ZZORPHAN', 'points': 1}]
+    assert client.delete('/api/store/orphans').get_json() == {
+        'symbols': ['CW8.PA', 'ZZORPHAN'], 'points_removed': 3}
+    assert opened.query(
+        "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 0
+
+
 def test_the_store_resource_fails_with_the_store_it_describes(tmp_path):
     """A ``503``, deliberately — and it is the split with ``/api/runtime``.
 

@@ -81,6 +81,8 @@
   "notification.advisory.opened_in_the_future.body": "You declared this account as opened on {opened}, which is still to come. Where a taxation model counts an age threshold from that day, the threshold is never reached and the projected tax stays at the rate before it for ever.",
   "notification.advisory.no_taxation_model": "{label} · no taxation model",
   "notification.advisory.no_taxation_model.body": "This account carries no taxation model, so the app cannot say what you would owe on it. Declare one and its panel will show the projection.",
+  "notification.advisory.benchmark_never_priced": "{symbol} · no price came back",
+  "notification.advisory.benchmark_never_priced.body": "This ticker is named as the comparison reference, but the market returned no price for it, so there is no curve to compare against. Check the spelling, or name another one.",
 
   "empty.noCurrency.title": "No base currency yet",
   "empty.noCurrency.body": "Nothing is valued and no gain is computed until you choose a base currency. Your events are recorded all the same, and the ledger stays readable.",

@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone, timedelta, time as time_of_day
 from typing import Dict, List, Optional, Set, Tuple
 
 from application import carrying
+from application import entries
 from application import fx
 from application import market
 from application import market_info
@@ -60,7 +61,12 @@ class BackfillWorkload:
         """Backfill historical price data, one series per **symbol**, in both directions. This runs as its own scheduled job, progressively filling gaps."""
         now = now or datetime.now(timezone.utc)
         snapshot = self.facade.config_manager.current()
-        windows = snapshot.backfill_windows()
+        # Read fresh each cycle, not off the snapshot: the snapshot is a view of
+        # the *ledger* and is cached on it, so a reference named between two
+        # cycles would not be seen until an event moved. Its effect is
+        # `next_cycle`, and this is that cycle.
+        benchmark = self.facade.config_manager.store.setting('benchmark_symbol')
+        windows = snapshot.tracked_windows(benchmark)
 
         self.facade._collapse_to_ladder(now)
 
@@ -73,11 +79,21 @@ class BackfillWorkload:
 
         held = carrying.held_symbols(snapshot.shares)
 
+        if benchmark:
+            # A quote references a `symbol` row, and no event will ever create
+            # this one. Idempotent, so it also converges from a restored store.
+            with self.facade.config_manager.writing() as opened:
+                entries.declare_symbol(opened, benchmark)
+
         repaired_count = 0
 
         for symbol in sorted(windows):
+            # Held **or** merely tracked: both are still running, so both get the
+            # forward pass. A reference that was once held and sold keeps its own
+            # acquisition date and still advances (#982).
             written, repaired = self.facade._backfill_symbol(
-                symbol, windows[symbol], symbol in held, now)
+                symbol, windows[symbol],
+                symbol in held or symbol == benchmark, now)
             backfilled_count += written
             repaired_count += repaired
 
