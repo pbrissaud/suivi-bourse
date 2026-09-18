@@ -1,5 +1,19 @@
 # Changelog
 
+## [5.1.1](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.0...v5.1.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **entries:** write an import and a backfill in blocks, not row by row ([#984](https://github.com/pbrissaud/suivi-bourse/issues/984)) ([f095cd0](https://github.com/pbrissaud/suivi-bourse/commit/f095cd08120ef3757ac00b1b2819da2402de8961))
+* **perf:** upsert the whole series in one statement, not one per row ([#980](https://github.com/pbrissaud/suivi-bourse/issues/980)) ([d4e2bee](https://github.com/pbrissaud/suivi-bourse/commit/d4e2bee5acab8ee8a936e95f9ac595d6fc69a765))
+
+
+### Dependencies
+
+* **website:** update pnpm to v12.4.2 ([#985](https://github.com/pbrissaud/suivi-bourse/issues/985)) ([04a2e35](https://github.com/pbrissaud/suivi-bourse/commit/04a2e35823cd82a0a5f4b51e92f79fd619f0f6fc))
+* **web:** update dependency vitest to v5 ([#904](https://github.com/pbrissaud/suivi-bourse/issues/904)) ([52a81ee](https://github.com/pbrissaud/suivi-bourse/commit/52a81ee2676a3d227096db7c01169adc01b76102))
+
 ## [5.1.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.0.0...v5.1.0) (2026-09-17)
 
 
