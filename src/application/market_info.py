@@ -1,6 +1,8 @@
 """What a Yahoo payload *says* — the one place its keys are named (issue #846)."""
 
-from typing import Mapping, Optional
+import math
+from datetime import date
+from typing import Mapping, MutableMapping, Optional, Sequence
 
 
 def quote_attributes(raw: Mapping) -> dict:
@@ -82,3 +84,39 @@ def regular_period_start(history_meta: Optional[Mapping]):
     if not isinstance(regular, dict):
         return None
     return regular.get('start')
+
+
+def as_printed(prices: Sequence[MutableMapping],
+               splits: Mapping[date, float]) -> Sequence[MutableMapping]:
+    """Yahoo's closes, put back in the share the market printed them in (#987).
+
+    Yahoo serves every close **split-adjusted to today's share**; the ledger
+    holds the quantity **as traded on the day**. A line bought before a split is
+    therefore valued in two units at once — three shares of a symbol that
+    reverse-split 1-for-1000 are carried at a thousand times what they were
+    worth, for the whole of their pre-split history. ``auto_adjust=False`` does
+    not reach this: the chart endpoint applies the split upstream, so the caller
+    cannot turn it off and the correction has to be made here.
+
+    The printed close is the served one multiplied back by **every split that
+    came after it**; the close of the split day itself already stands in the new
+    unit, which is why the comparison is strict.
+
+    Corrected in place, and returned for the caller to read as one expression.
+
+    What this does *not* undo is an adjustment Yahoo made for anything but a
+    split — a rights issue leaves no row in ``ticker.splits`` and no factor to
+    read, so a symbol that went through one keeps a residue this cannot see.
+    """
+    ratios = [(day, ratio) for day, ratio in splits.items() if ratio > 0]
+    if not ratios:
+        return prices
+
+    for point in prices:
+        price = point.get('price')
+        if price is None:
+            continue
+        day = point['timestamp'].date()
+        point['price'] = price * math.prod(
+            ratio for split_day, ratio in ratios if split_day > day)
+    return prices

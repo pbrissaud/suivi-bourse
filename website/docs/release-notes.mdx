@@ -13,6 +13,28 @@ The version 4 history is not merged in here. It stays with the
 [version 4 documentation](/docs/v4/changelog), where the releases it announces
 can still be run.
 
+## 5.1.2 — Prices in the share you hold
+
+Yahoo serves its closes adjusted to **today's** share; your ledger holds the
+quantity you traded. Multiplied together, any line bought before a split was
+valued in two units at once — three shares of a symbol that reverse-split
+1-for-1000 were carried at a thousand times their worth, for the whole of their
+pre-split history. A free-share attribution moves the same figures the other way,
+a few per cent at a time: Yahoo records one share per ten as a split too, so a
+line you merely hold accumulated the error. The dashboard curve and the account
+performance are distorted in either direction: a year can show a loss on a
+portfolio that grew, or a gain it never made. The XIRR beside them was right all
+along, which is how the two came to disagree on the same card.
+
+### Before you upgrade
+
+**Your stored price history is dropped at the first start** and bought back from
+Yahoo, one window per symbol per cycle. It could not be corrected in place: a
+point written on the day it happened stands in that day's share, one backfilled
+after a split does not, and nothing in the store says which. Expect a shorter
+curve on the dashboard for a few hours. Your ledger and the prices shown today
+are untouched.
+
 ## 5.1 — Taxation, investment rhythm, MCP server
 
 A feature release on top of 5.0. Same store, same mounts: pull the image and
