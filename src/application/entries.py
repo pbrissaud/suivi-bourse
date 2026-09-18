@@ -12,11 +12,20 @@ from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
 from application.events import export as events_export
 from application.events.schemas import DEFAULT_ACCOUNT, Event
+from application.store import INCOMING
 
 logger = getLogger("entries")
 
 DUPLICATE_KEY_COLUMNS = ('date', 'event_type', 'account', 'symbol', 'quantity',
                          'unit_price', 'fee', 'amount')
+
+#: The ``event`` columns **an import writes**, in the order the block builds
+#: them. Deliberately not ``ledger._EVENT_COLUMNS``, which is the *reader's*
+#: list in the reader's own order and is unpacked positionally by
+#: ``_event_from_row``: sharing one tuple between the two would make a column
+#: reordered for the writer silently reorder what the reader unpacks.
+EVENT_COLUMNS = ('id', 'date', 'event_type', 'account', 'symbol', 'name',
+                 'quantity', 'unit_price', 'fee', 'amount', 'notes')
 
 AMOUNT_PRECISION = '%.16g'
 
@@ -107,17 +116,19 @@ def create_many(store, drafts: Sequence[Event], *,
             return []
 
         next_id = store.reserve('event', len(settled))
-        store.executemany(
-            'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
+        store.write_arrow(
+            f'INSERT INTO symbol (symbol) SELECT symbol FROM {INCOMING} '
+            'ON CONFLICT DO NOTHING',
+            ('symbol',),
             [[symbol] for symbol in sorted({event.symbol for event in settled
                                             if event.symbol})])
         stored = [replace(event, id=next_id + offset,
                           account=event.account or DEFAULT_ACCOUNT)
                   for offset, event in enumerate(settled)]
-        store.executemany(
-            'INSERT INTO event (id, date, event_type, account, symbol, name, '
-            '                   quantity, unit_price, fee, amount, notes) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        store.write_arrow(
+            f'INSERT INTO event ({", ".join(EVENT_COLUMNS)}) '
+            f'SELECT {", ".join(EVENT_COLUMNS)} FROM {INCOMING}',
+            EVENT_COLUMNS,
             [[event.id, event.date, event.event_type.value, event.account,
               event.symbol, event.name, event.quantity, event.unit_price,
               event.fee, event.amount, event.notes] for event in stored])
@@ -168,8 +179,9 @@ def remove_selection(store, selection: events_export.Selection) -> int:
         keys = [event.id for event
                 in events_export.select(ledger.read_events(store), selection)
                 if event.id is not None]
-        store.executemany('DELETE FROM event WHERE id = ?',
-                          [[key] for key in keys])
+        store.write_arrow(
+            f'DELETE FROM event WHERE id IN (SELECT id FROM {INCOMING})',
+            ('id',), [[key] for key in keys])
         if keys:
             _stamp_write(store)
         _replays(store)
