@@ -212,3 +212,64 @@ def test_the_required_mark_travels_with_the_dial_it_belongs_to(store):
     assert described['base_currency']['required'] is True
     assert described['base_currency']['stored'] is False
     assert described['regular_interval']['required'] is False
+
+
+# --------------------------------------------------------------------- #
+# The optional dial, and the blank that empties it (issue #982)
+# --------------------------------------------------------------------- #
+
+def test_a_benchmark_is_named_like_any_other_dial(store):
+    changes = settings.save(store, {'benchmark_symbol': 'cw8.pa'})
+
+    assert [(c.key, c.before, c.after) for c in changes] == [
+        ('benchmark_symbol', None, 'CW8.PA')]
+    assert settings.read_all(store)['benchmark_symbol'] == 'CW8.PA'
+
+
+def test_emptying_the_field_removes_the_benchmark_through_the_write_path(store):
+    """The removal gesture, and the whole reason no ``DELETE`` route exists.
+
+    The blank is stored *as* the blank, and ``resolve`` reads a blank row back
+    as the dial's default — which for a dial with no default is ``None``. So
+    the round trip through the one write route there is lands back on
+    *unanswered*, and ``describe`` says so to the form.
+    """
+    settings.save(store, {'benchmark_symbol': 'CW8.PA'})
+
+    changes = settings.save(store, {'benchmark_symbol': ''})
+
+    assert [(c.key, c.before, c.after) for c in changes] == [
+        ('benchmark_symbol', 'CW8.PA', None)]
+    assert settings.read_all(store)['benchmark_symbol'] is None
+    assert store.query(
+        "SELECT value FROM setting WHERE key = 'benchmark_symbol'") == [('',)]
+    described = {row['key']: row for row in settings.describe(store)}
+    assert described['benchmark_symbol']['stored'] is False
+
+
+def test_emptying_an_already_empty_benchmark_is_not_a_change(store):
+    """Otherwise every save of a form nobody filled would report a change.
+
+    ``save`` compares against the *effective* value, and the effective value of
+    a removed benchmark is the same ``None`` an unanswered one has — so the two
+    have to compare equal, or the effect token fires on a dial that did not
+    move.
+    """
+    assert settings.save(store, {'benchmark_symbol': ''}) == ()
+    assert store.query(
+        "SELECT count(*) FROM setting WHERE key = 'benchmark_symbol'") == [(0,)]
+
+
+def test_the_currency_cannot_be_emptied_the_way_the_benchmark_can(store):
+    """The condition is *no default and not required*, and the currency is required.
+
+    It has no default either, so this is the pair that tells the two halves of
+    the condition apart: were it written on the default alone, the one dial the
+    app cannot run without would have just become erasable.
+    """
+    settings.save(store, {'base_currency': 'EUR'})
+
+    with pytest.raises(settings_registry.InvalidSetting):
+        settings.save(store, {'base_currency': ''})
+
+    assert settings.read_all(store)['base_currency'] == 'EUR'

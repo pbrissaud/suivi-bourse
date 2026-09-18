@@ -1178,7 +1178,7 @@ export function aSetting(overrides: Partial<SettingDescription> = {}): SettingDe
   }
 }
 
-/** The six, in the registry's order. Nothing here is written twice by the form. */
+/** The seven, in the registry's order. Nothing here is written twice by the form. */
 export function defaultSettings(): SettingDescription[] {
   return [
     aSetting(),
@@ -1198,6 +1198,18 @@ export function defaultSettings(): SettingDescription[] {
       // The one dial the registry marks required, and the fixture says so
       // rather than letting the predicate recognise it by name.
       required: true,
+    }),
+    aSetting({
+      // Neither a default nor an obligation: the one dial a blank can unset.
+      key: 'benchmark_symbol',
+      value: null,
+      default: null,
+      type: 'symbol',
+      minimum: null,
+      maximum: null,
+      effect: 'next_cycle',
+      doc: 'A reference ticker the portfolio is compared against.',
+      stored: false,
     }),
   ]
 }

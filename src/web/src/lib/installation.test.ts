@@ -87,6 +87,26 @@ describe('what the form sends', () => {
     expect(changedValues(settings, { ...draftFrom(settings), base_currency: '' })).toEqual({})
   })
 
+  it('sends the blank that unsets a dial with no default and no obligation', () => {
+    // The other direction of the same rule (#982). `benchmark_symbol` has
+    // nothing to fall back to, so emptying its field is the *only* way to say
+    // "no reference" — and if the form drops it here, the gesture the help text
+    // promises never leaves the browser.
+    const answered = settings.map((setting) =>
+      setting.key === 'benchmark_symbol' ? { ...setting, value: 'CW8.PA', stored: true } : setting,
+    )
+
+    expect(changedValues(answered, { ...draftFrom(answered), benchmark_symbol: '' })).toEqual({
+      benchmark_symbol: '',
+    })
+  })
+
+  it('reads emptying an already empty dial as no change', () => {
+    // Unset and unset is not a move: posting it would re-arm the cycle for
+    // nothing.
+    expect(changedValues(settings, { ...draftFrom(settings), benchmark_symbol: '' })).toEqual({})
+  })
+
   it('starts a dial with no stored answer from an empty field', () => {
     const unanswered = settings.map((setting) =>
       setting.key === 'base_currency' ? { ...setting, value: null, stored: false } : setting,

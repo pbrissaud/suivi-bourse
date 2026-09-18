@@ -582,6 +582,8 @@
   "settings.unit.seconds": "seconds",
   "settings.unit.days": "days",
   "settings.base_currency.hint": "Every figure in the app is shown in this currency.",
+  "settings.benchmark_symbol": "Benchmark",
+  "settings.benchmark_symbol.hint": "An optional reference ticker — a broad-market ETF, say — to compare the portfolio's performance against. Its price history is kept up to date even though you hold none of it. Clear the field to remove the reference.",
   "settings.cadence.reach": "Applies now to {now, plural, one {# share} other {# shares}}{later, plural, =0 {} one {, and to # more when its market opens} other {, and to # more when their markets open}}.",
   "settings.backoff.retroactive": "A share that cannot be priced waits a multiple of this delay before the next try. Changing it also applies to shares already failing.",
 

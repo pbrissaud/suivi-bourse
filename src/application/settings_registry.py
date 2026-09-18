@@ -13,6 +13,8 @@ INTEGER = 'integer'
 
 CURRENCY = 'currency'
 
+SYMBOL = 'symbol'
+
 
 class InvalidSetting(ValueError):
     """A value the registry refuses: unknown key, wrong type, out of bounds."""
@@ -47,7 +49,15 @@ def _currency(raw: str) -> str:
     return str(raw).strip().upper()
 
 
+def _symbol(raw: str) -> str:
+    """A ticker, upper-cased — so ``cw8.pa`` and ``CW8.PA`` are one answer."""
+    return str(raw).strip().upper()
+
+
 _ONE_DAY = 86400
+
+#: The longest ticker any exchange issues is comfortably under this.
+_SYMBOL_CEILING = 24
 
 SETTINGS: Tuple[SettingSpec, ...] = (
     SettingSpec(
@@ -77,6 +87,13 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'The reporting currency, as an ISO-4217 code. No default: it is asked, '
         'never assumed, and it is fixed from the first recorded event.',
         attribute='base_currency', required=True),
+    SettingSpec(
+        'benchmark_symbol', None, SYMBOL, _symbol, NEXT_CYCLE,
+        'A reference ticker the portfolio is compared against, typically an '
+        'accumulating broad-market ETF. It is followed because it is named '
+        'here, not because it is held: no acquisition event is needed, and the '
+        'backfill keeps its series current all the same. Optional — blank '
+        'means no comparison.'),
 )
 
 BY_KEY: Dict[str, SettingSpec] = {spec.key: spec for spec in SETTINGS}
@@ -124,6 +141,13 @@ def validate(key: str, value: Any):
         raise InvalidSetting(key, f"Unknown setting {key!r}") from None
 
     if value is None or (isinstance(value, str) and not value.strip()):
+        # A dial with neither a default nor an obligation is the one kind that
+        # can be *unset*, and emptying its field is how that is said. ``resolve``
+        # already reads a blank row back as the dial's default — ``None`` here —
+        # so the blank round-trips to "unanswered" and no removal route has to
+        # exist beside ``PUT``.
+        if spec.default is None and not spec.required:
+            return None
         raise InvalidSetting(
             key, f"{key} has no value; a setting is answered, never blanked")
     if isinstance(value, bool):
@@ -133,6 +157,8 @@ def validate(key: str, value: Any):
         parsed = _validate_integer(spec, value)
     elif spec.kind == CURRENCY:
         parsed = _validate_currency(spec, value)
+    elif spec.kind == SYMBOL:
+        parsed = _validate_symbol(spec, value)
     else:
         raise InvalidSetting(key, f"{key} has no validator for kind {spec.kind!r}")
 
@@ -147,6 +173,25 @@ def _validate_currency(spec: SettingSpec, value: Any) -> str:
             spec.key,
             f"{spec.key} must be a three-letter ISO-4217 code (EUR, USD, GBP), "
             f"got {value!r}")
+    return parsed
+
+
+def _validate_symbol(spec: SettingSpec, value: Any) -> str:
+    """Parse one ticker. Shape only — whether it prices is yfinance's answer.
+
+    Nothing in this repository constrains the shape of a ticker: an event's
+    symbol is taken as typed, so a grammar invented here would refuse a
+    reference the ledger would have accepted as a holding. What is refused is
+    what cannot be a ticker at all — several words, or a length no market uses
+    — which catches the paste that would otherwise fail silently, one backfill
+    later, as a series that never fills.
+    """
+    parsed = spec.parse(value)
+    if len(parsed.split()) != 1 or len(parsed) > _SYMBOL_CEILING:
+        raise InvalidSetting(
+            spec.key,
+            f"{spec.key} must be a single ticker of at most "
+            f"{_SYMBOL_CEILING} characters (CW8.PA, AAPL), got {value!r}")
     return parsed
 
 
@@ -177,13 +222,15 @@ def _validate_integer(spec: SettingSpec, value: Any) -> int:
 
 def stored_form(key: str, value: Any) -> str:
     """The string the table holds for a validated ``value``."""
+    if value is None:
+        return ''  # an unset dial, stored as the blank ``resolve`` reads back
     spec = spec_for(key)
     return str(int(value)) if spec.kind == INTEGER else str(value)
 
 
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
-    'INTEGER', 'CURRENCY',
+    'INTEGER', 'CURRENCY', 'SYMBOL',
     'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
     'spec_for', 'seeded_defaults', 'required_keys', 'default_for', 'defaults',
     'resolve', 'validate', 'stored_form',
