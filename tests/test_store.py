@@ -19,7 +19,6 @@ tickets that follow will build on and could silently break:
   the boot completes the table without ever overwriting an answer.
 """
 
-from datetime import date
 import threading
 import time
 from pathlib import Path
@@ -725,11 +724,15 @@ def test_a_store_that_predates_the_forward_anchor_gets_the_column(tmp_path):
 
     opened = store_module.open_store(path)
     try:
-        # The column is there, and the backward anchor beside it is untouched.
+        # The column is there, and the price beside it is untouched. Both
+        # anchors read ``NULL`` because the store walks the **whole** list: the
+        # last step (#987) gives up a series Yahoo served in the wrong share and
+        # sends the passes to buy it back, which is exactly what an anchor of
+        # ``NULL`` says. What this test is about is the column existing at all.
         assert opened.query(
             'SELECT last_price_native, oldest_window_tried, '
             '       newest_window_tried FROM symbol_quote') == [
-                (187.0, date(2021, 5, 4), None)]
+                (187.0, None, None)]
     finally:
         opened.close()
 

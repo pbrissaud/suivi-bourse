@@ -609,6 +609,41 @@ def _add_symbol_classification(connection) -> None:
                            f'ADD COLUMN IF NOT EXISTS {column} VARCHAR')
 
 
+def _drop_split_adjusted_prices(connection) -> None:
+    """Throw away a series stored in two shares at once (issue #987).
+
+    Every point written before this release carries the close Yahoo served, and
+    Yahoo serves them split-adjusted to today's share while the ledger holds the
+    quantity as traded on the day. The two are multiplied together, so a line
+    bought before a split was valued at a multiple of what it was worth for the
+    whole of its pre-split history — and the store is *mixed*, because a point
+    written on the day it happened was in that day's share and a point backfilled
+    after a split was not. Nothing in the row says which, so the series cannot be
+    corrected in place; it can only be bought again.
+
+    Which is what the anchors are for. The backward pass resumes from the oldest
+    point it can see, so deleting the series alone would leave it where it stood:
+    both anchors go back to ``NULL`` and the three passes rebuild what they had,
+    in printed shares this time, one chunk per symbol per cycle. What the owner
+    sees in the meantime is a shorter curve, not a wrong one — and
+    ``symbol_quote`` keeps the latest price, which is the one figure no split can
+    have moved.
+
+    The two derived series go with it. They are rewritten whole on the first
+    perf cycle and pruned to what that cycle could compute, so keeping them would
+    buy nothing but a window — one that lasts until the boot's rebuild lands, and
+    for as long as this store stands if that rebuild fails.
+
+    A no-op on a file created today, where all four tables are empty.
+    """
+    connection.execute('DELETE FROM price_point')
+    connection.execute('UPDATE symbol_quote '
+                       '   SET oldest_window_tried = NULL, '
+                       '       newest_window_tried = NULL')
+    connection.execute('DELETE FROM account_metrics')
+    connection.execute('DELETE FROM portfolio_totals')
+
+
 #: The schema steps, oldest first (#926). A step is what the ``IF NOT EXISTS``
 #: DDL cannot express — dropping a column, renaming one, **adding one to a table
 #: that already exists** (the DDL only builds a table it does not find) — and
@@ -626,6 +661,7 @@ STEPS = (
     ('drop_account_type', _drop_account_type),
     ('add_newest_window_tried', _add_newest_window_tried),
     ('add_symbol_classification', _add_symbol_classification),
+    ('drop_split_adjusted_prices', _drop_split_adjusted_prices),
 )
 
 

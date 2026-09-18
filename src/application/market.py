@@ -53,6 +53,29 @@ def latest_quote(symbol: str,
     return None, None
 
 
+def _splits(ticker, symbol: str) -> Optional[Dict[date, float]]:
+    """When this symbol split and by how much, or ``None`` when Yahoo would not say.
+
+    The absence is **not** an empty answer (#987). A window written without the
+    splits is written in the wrong share, and nothing ever comes back for it: the
+    backward pass does not ask twice for a window it has filled. So a symbol
+    whose splits could not be read fails its fetch instead, and the chunk is
+    retried on the next cycle like any other failure.
+
+    A ticker that has no ``splits`` at all is a different thing from one that
+    could not be asked, and it says so: the fakes the suite hands the market
+    have no corporate actions, and neither do most symbols.
+    """
+    try:
+        series = getattr(ticker, 'splits', None)
+        if series is None or len(series) == 0:
+            return {}
+        return {index.date(): float(ratio) for index, ratio in series.items()}
+    except Exception as e:
+        logger.error(f"Could not read the splits of {symbol}: {e}")
+        return None
+
+
 def price_history(symbol: str, start: datetime, end: datetime,
                   delay: float,
                   max_retries: int = 3) -> Optional[List[Dict]]:
@@ -78,7 +101,13 @@ def price_history(symbol: str, start: datetime, end: datetime,
                     ts = ts.replace(tzinfo=timezone.utc)
                 prices.append({'timestamp': ts, 'price': float(close)})
 
-            return prices
+            if not prices:
+                return prices
+
+            splits = _splits(ticker, symbol)
+            if splits is None:
+                return None
+            return market_info.as_printed(prices, splits)
 
         except YFRateLimitError:
             if attempt < max_retries - 1:
