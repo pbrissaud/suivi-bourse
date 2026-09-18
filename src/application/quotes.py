@@ -9,7 +9,7 @@ from logfmt_logger import getLogger
 from application import carrying
 from application import instants
 from application import retention
-from application.store import finite
+from application.store import INCOMING, finite
 
 logger = getLogger("quotes")
 
@@ -18,6 +18,9 @@ QUOTE_ATTRIBUTES = (
     'dividend_yield', 'pe_ratio', 'market_cap',
     'sector', 'industry', 'country',
 )
+
+#: ``price_point``'s columns, in the order :func:`record_history` builds a row.
+_POINT_COLUMNS = ('symbol', 'ts', 'price_native', 'price_converted', 'fx_rate')
 
 
 def truncate(moment: datetime) -> datetime:
@@ -121,11 +124,10 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
             'DELETE FROM price_point '
             ' WHERE symbol = ? AND ts >= ? AND ts <= ?',
             [symbol, oldest, newest])
-        store.executemany(
-            'INSERT INTO price_point '
-            '  (symbol, ts, price_native, price_converted, fx_rate) '
-            'VALUES (?, ?, ?, ?, ?)',
-            rows)
+        store.write_arrow(
+            f'INSERT INTO price_point ({", ".join(_POINT_COLUMNS)}) '
+            f'SELECT {", ".join(_POINT_COLUMNS)} FROM {INCOMING}',
+            _POINT_COLUMNS, rows)
         latest = [row for row in rows if row[1] == newest][-1]
         _advance_latest(store, symbol, newest, latest[2], latest[3], latest[4])
     forget_oldest_stored()
@@ -211,12 +213,19 @@ def repair_conversions(store, symbol: str,
         if not repaired:
             return 0
 
-        store.executemany(
+        # One statement joining the days to their factors, not one a day: the
+        # repair covers whatever the backward pass has reached, which is years
+        # of them on a line held since the start (#972).
+        store.write_arrow(
             'UPDATE price_point '
-            '   SET price_converted = price_native * ?, fx_rate = ? '
+            '   SET price_converted = price_native * f.factor, '
+            '       fx_rate = f.factor '
+            f'  FROM {INCOMING} f '
             ' WHERE symbol = ? AND price_native IS NOT NULL '
-            '   AND price_converted IS NULL AND CAST(ts AS DATE) = ?',
-            [(factors[day], factors[day], symbol, day) for day in days])
+            '   AND price_converted IS NULL AND CAST(ts AS DATE) = f.day',
+            ('day', 'factor'),
+            [[day, factors[day]] for day in days],
+            [symbol])
 
         latest = store.query(
             'SELECT price_native, price_converted, fx_rate FROM price_point '
