@@ -5991,3 +5991,40 @@ def test_an_unknown_assiette_states_no_base_either(tmp_path):
 
     assert 'projected_tax' not in row
     assert 'projected_base' not in row
+
+
+def test_a_tracked_never_held_symbol_adds_no_day_to_the_curve(tmp_path):
+    """A reference series prices days the portfolio never lived through (#982).
+
+    Tracking a symbol nobody ever bought — a benchmark ETF — writes
+    `price_point` rows for it, and the curve's day axis used to be read off
+    **every** row in the store. The reference index quotes on a day the
+    portfolio has no close for, and that day appeared on the curve valued at
+    the held lines' forward-filled prices: a point the owner never had, with no
+    value of its own to give it away. So the axis is read off the ledger's
+    symbols, and the two closes below are the whole assertion — the same two
+    days, the same two values, with the intruder in the store.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, symbol='AAPL', price=200.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='AAPL', price=210.0,
+                   at=datetime(2024, 6, 3, 17, 0, tzinfo=timezone.utc))
+        # Never bought, never granted: it names no event in the ledger.
+        seed_quote(opened, symbol='CW8.PA', price=500.0,
+                   at=datetime(2024, 6, 2, 17, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, events=events, seed=seed)
+
+    curve = client.get(
+        '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()
+
+    assert curve['points'] == [
+        {'t': '2024-06-01', 'value': 2000.0, 'invested': 1500.0},
+        {'t': '2024-06-03', 'value': 2100.0, 'invested': 1500.0},
+    ]

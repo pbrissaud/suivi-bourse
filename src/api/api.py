@@ -293,7 +293,8 @@ def get_positions_history():
         return bad_request(str(exc))
 
     reader = _reader()
-    timeline = EventAggregator().replay(_snapshot().events)
+    events = _snapshot().events
+    timeline = EventAggregator().replay(events)
     return jsonify({
         'from': instants.iso(start),
         'to': instants.iso(stop),
@@ -302,7 +303,9 @@ def get_positions_history():
             carried_in={row['symbol']: row['price']
                         for row in reader.prices_at(start)},
             carried=_carried(),
-            first_quoted=quotes.first_quoted_days(_store())),
+            first_quoted=quotes.first_quoted_days(_store()),
+            # The ledger's symbols, the same scope `perf_job` values on.
+            symbols={event.symbol for event in events if event.symbol}),
     })
 
 

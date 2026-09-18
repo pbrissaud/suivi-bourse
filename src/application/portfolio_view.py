@@ -387,8 +387,20 @@ def valuation_series(
     carried_in: Optional[Dict[str, float]] = None,
     carried: Collection[str] = (),
     first_quoted: Optional[Mapping[str, date]] = None,
+    symbols: Optional[Collection[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """The daily valuation curve, from the day's closes and the day's holdings."""
+    """The daily valuation curve, from the day's closes and the day's holdings.
+
+    ``symbols`` is the perimeter to value, and the caller owns it because the
+    caller already knows it. The day axis is read off the closes, so without it
+    a symbol merely **tracked** — priced in the store, never acquired (#982) —
+    puts days on the curve that the portfolio never lived through. It changes
+    the shape and not one value, which is the worst kind of wrong. The scope is
+    the ledger's, not what is held today: a line sold last year was still worth
+    something on the days it was held. ``None`` means every symbol in ``closes``.
+    """
+    if symbols is not None:
+        closes = [row for row in closes if row.get('symbol') in symbols]
     days = sorted({row['day'] for row in closes if row.get('day') is not None})
     by_day: Dict[Any, Dict[str, float]] = {}
     for row in closes:
