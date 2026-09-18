@@ -817,3 +817,17 @@ def test_a_closed_holding_window_ends_the_day_after_the_last_sale():
 
     assert target == datetime(2020, 3, 2, tzinfo=UTC)
     assert ceiling == datetime(2022, 5, 4, tzinfo=UTC) + timedelta(days=1)
+
+
+def test_held_means_named_and_carrying_a_quantity():
+    """The four sites that open-coded this agreed on both terms — pin them here."""
+    shares = [
+        {'symbol': 'AAPL', 'quantity': 3},
+        {'symbol': 'MSFT', 'quantity': 0},      # sold out, still listed
+        {'symbol': '', 'quantity': 12},         # a row with no ticker
+        {'quantity': 5},                        # a row missing the key
+        {'symbol': 'SAP.DE'},                   # declared, never bought
+    ]
+
+    assert carrying.held_symbols(shares) == {'AAPL'}
+    assert carrying.held_symbols([]) == set()

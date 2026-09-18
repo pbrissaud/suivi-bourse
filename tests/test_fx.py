@@ -1272,10 +1272,10 @@ def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
 
     # The whole of ``_backfill_symbol``, so the gating is the production one:
     # the backward pass reaches its terminal by itself (its anchor is already the
-    # first acquisition), the forward one is refused by ``held=False``, and the
+    # first acquisition), the forward one is refused by ``advancing=False``, and the
     # lateral one runs regardless — which is the claim.
     metrics._backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
-                             held=False, now=datetime.now(timezone.utc))
+                             advancing=False, now=datetime.now(timezone.utc))
 
     assert metrics.recorder.backfill_of(
         'AAPL', runtime_state.BACKWARD).terminal \
@@ -1344,7 +1344,7 @@ def test_a_line_sold_before_the_install_learns_its_currency_and_is_converted(
     assert metrics._share_info_cache == {}
 
     metrics._backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
-                             held=False, now=datetime.now(timezone.utc))
+                             advancing=False, now=datetime.now(timezone.utc))
 
     assert store.query(
         'SELECT currency FROM symbol_quote WHERE symbol = ?',

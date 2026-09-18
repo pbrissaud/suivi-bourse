@@ -175,9 +175,8 @@ class ConfigSnapshot:
 
     def backfill_windows(self) -> Dict[str, Tuple[date, Optional[date]]]:
         """``{symbol: (first acquisition, last exit or None)}`` — the backfill's pilot."""
-        held = {share['symbol'] for share in self.shares
-                if share.get('symbol') and share.get('quantity')}
-        return carrying.holding_windows(self.events, held)
+        return carrying.holding_windows(
+            self.events, carrying.held_symbols(self.shares))
 
     def first_acquisition_date(self, symbol: str) -> Optional[date]:
         """Date of the earliest ``BUY`` **or ``GRANT``** for ``symbol``, or ``None``."""

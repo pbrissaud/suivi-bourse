@@ -165,8 +165,8 @@ class Workloads:
 
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
-                         held: bool, now: datetime) -> Tuple[int, int]:
-        return self._backfill.backfill_symbol(symbol, window, held, now)
+                         advancing: bool, now: datetime) -> Tuple[int, int]:
+        return self._backfill.backfill_symbol(symbol, window, advancing, now)
 
     def _fetch_and_store(self, symbol, start_date, end_date):
         return self._backfill.fetch_and_store(symbol, start_date, end_date)

@@ -71,8 +71,7 @@ class BackfillWorkload:
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
-        held = {share['symbol'] for share in snapshot.shares
-                if share.get('symbol') and share.get('quantity')}
+        held = carrying.held_symbols(snapshot.shares)
 
         repaired_count = 0
 
@@ -96,8 +95,13 @@ class BackfillWorkload:
 
     def backfill_symbol(self, symbol: str,
                         window: Tuple[date, Optional[date]],
-                        held: bool, now: datetime) -> Tuple[int, int]:
-        """Backfill one symbol over its own holding window (issue #626, #703, #704)."""
+                        advancing: bool, now: datetime) -> Tuple[int, int]:
+        """Backfill one symbol over its own window (issue #626, #703, #704).
+
+        ``advancing`` asks for the forward pass: the series is still running, so
+        it is walked up to today. A held symbol advances; so does a symbol that
+        is merely tracked (issue #982).
+        """
         acquired, exited = window
         target, ceiling = carrying.holding_bounds(acquired, exited, now)
 
@@ -110,7 +114,7 @@ class BackfillWorkload:
         else:
             written += self.facade._backfill_backward(symbol, target, ceiling, now)
 
-        if held:
+        if advancing:
             written += self.facade._backfill_forward(symbol, now)
 
         repaired = self.facade._backfill_lateral(symbol)
