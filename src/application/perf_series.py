@@ -2,8 +2,10 @@
 from datetime import date
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
+import pyarrow
 from logfmt_logger import getLogger
 
+from application import store as store_module
 from application.store import finite
 
 logger = getLogger("perf_series")
@@ -17,18 +19,76 @@ ACCOUNT_COLUMNS = ('account', 'day') + VALUE_COLUMNS
 TOTALS_COLUMNS = ('day',) + VALUE_COLUMNS
 
 
+def _incoming(columns: Sequence[str], rows: Sequence[Sequence[Any]]):
+    """The rows as an Arrow table, transposed once — one array a column (#972).
+
+    **Inferred, and that is the safer half of the choice.** A declared schema
+    was written first and taken back out: the column of a perf series is
+    routinely all-``None`` — ``xirr`` on every day but the last, and six of the
+    seven for an account with no cash ledger — so the fear was that the
+    ``null`` type inference gives such a column would be refused by a
+    ``DOUBLE``. It is not: duckdb 1.5.5 casts it, verified on the real column
+    set. What the declared version did add was a hand-written map with
+    ``float64`` as its default for every column it did not name, which is a
+    copy of the DDL that nothing checks and that turns the next non-``DOUBLE``
+    column into an ``ArrowInvalid`` raised inside a write request's
+    transaction. Inference would have stored it. The cast belongs to the
+    column's own declaration, and that lives in ``store``.
+    """
+    return pyarrow.table(dict(zip(columns, zip(*rows))))
+
+
+def _last_per_key(columns: Sequence[str], keys: Sequence[str],
+                  rows: Sequence[Sequence[Any]]) -> Sequence[Sequence[Any]]:
+    """The rows, with the **last** of any that share a key (#972).
+
+    A block cannot conflict with itself. ``ON CONFLICT`` arbitrates between the
+    rows arriving and the rows already stored, so two points on the same day in
+    one block are not a correction of each other: one lands and the other is
+    dropped, silently, at any block size. Row by row the second *did* correct
+    the first, because each row was its own statement — so keeping the last is
+    what the writers above already meant, and it also makes the count this
+    function's caller returns the number of rows that were really stored rather
+    than an upper bound on it.
+
+    ``rebuild_series`` cannot produce a duplicate today: it walks ``perf.daily``,
+    one point per calendar day per account, and the totals come out of a
+    ``by_date`` mapping. This is here so the writers stay free to stop being
+    careful about it.
+
+    **It arbitrates on Python equality, and the store arbitrates on the key's
+    own.** The two agree on the columns that key these tables — ``VARCHAR``
+    and ``DATE`` — and that is the whole of its warrant. They part on a float:
+    DuckDB reads two ``NaN`` as one key and collapses them, a ``dict`` reads
+    them as two, so a float key column would put the silent loss straight back.
+    There is none, and a key that is not hashable at all would raise here
+    rather than lose a row. This is not a general block deduplicator.
+    """
+    at = [columns.index(name) for name in keys]
+    return list({tuple(row[index] for index in at): row for row in rows}.values())
+
+
 def _upsert(store, table: str, columns: Sequence[str], keys: Sequence[str],
             rows: Sequence[Sequence[Any]]) -> int:
-    """One block upsert. Returns how many rows were handed to it."""
+    """One block upsert. Returns how many rows were handed to it.
+
+    One statement over an Arrow block rather than one per row: a whole series
+    is rewritten on every pass **and inside the request that wrote the event**
+    (``main.replay_after_write``), so this is the cost of a write. Measured on
+    the 13 146 points of six accounts over six years, 9.741 s row by row
+    against 0.009 s here (issue #972) — which is what lets the write stay
+    synchronous, and a ``200`` keep meaning the figures behind it are current.
+    """
     if not rows:
         return 0
+    rows = _last_per_key(columns, keys, rows)
     updated = [name for name in columns if name not in keys]
     assignments = ', '.join(f'{name} = excluded.{name}' for name in updated)
-    store.executemany(
+    store.write_arrow(
         f'INSERT INTO {table} ({", ".join(columns)}) '
-        f'VALUES ({", ".join("?" * len(columns))}) '
+        f'SELECT {", ".join(columns)} FROM {store_module.INCOMING} '
         f'ON CONFLICT ({", ".join(keys)}) DO UPDATE SET {assignments}',
-        rows)
+        _incoming(columns, rows))
     return len(rows)
 
 

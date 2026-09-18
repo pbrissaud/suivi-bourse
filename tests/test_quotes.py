@@ -1048,13 +1048,18 @@ def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker
     it already occupies. The file-size claim belongs to #707, which is where
     the incremental window it interacts with is removed.
 
-    And it is **one block statement**, not a loop: the same 5 478-row upsert is
-    3 ms in one call and does not finish in two minutes row by row.
+    And it is **one block statement**, not a loop. That was asserted on
+    ``executemany`` until #972 measured what ``executemany`` actually does: one
+    prepared statement per row, so *one call* was still a loop — 0.741 ms a row,
+    9.7 s for the 13 146 points of a six-year portfolio, inside the request that
+    recorded the event. The block is now an Arrow table crossing once, and the
+    seam that says so is ``write_arrow``.
     """
     store.execute("INSERT INTO account (id, label) "
                   "VALUES ('pea', 'PEA')")
     days = [date(2024, 1, 1) + timedelta(days=n) for n in range(60)]
-    block = mocker.spy(store, 'executemany')
+    block = mocker.spy(store, 'write_arrow')
+    loop = mocker.spy(store, 'executemany')
 
     for cycle in range(3):
         perf_series.write_account_metrics(store, [AccountMetricPoint(
@@ -1070,5 +1075,7 @@ def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker
     # The last cycle's values, not the first's: an upsert, not an insert-ignore.
     assert store.query('SELECT DISTINCT cash_balance FROM account_metrics') \
         == [(2.0,)]
-    # Two statements per cycle for 120 rows, never one per row.
+    # Two statements per cycle for 120 rows, never one per row — and the
+    # row-by-row seam is not reached at all any more.
     assert block.call_count == 6
+    assert loop.call_count == 0
