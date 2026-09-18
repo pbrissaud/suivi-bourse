@@ -25,7 +25,6 @@ import time
 from pathlib import Path
 
 import duckdb
-import pyarrow
 import pytest
 
 from application import quotes
@@ -433,7 +432,7 @@ def test_a_read_view_refuses_write_capable_methods(store):
     with pytest.raises(store_module.StoreUnavailable):
         view.write_arrow(
             f'INSERT INTO account SELECT * FROM {store_module.INCOMING}',
-            pyarrow.table({'id': ['later'], 'label': ['Later']}))
+            ('id', 'label'), [['later', 'Later']])
 
     assert view.query('SELECT id FROM account') == [('default',)]
 
@@ -443,7 +442,7 @@ def test_a_block_write_binds_its_arrow_table_and_unbinds_it(store):
     store.write_arrow(
         f'INSERT INTO account (id, label) SELECT id, label '
         f'FROM {store_module.INCOMING}',
-        pyarrow.table({'id': ['one', 'two'], 'label': ['One', 'Two']}))
+        ('id', 'label'), [['one', 'One'], ['two', 'Two']])
 
     assert store.query('SELECT id FROM account ORDER BY id') == [
         ('default',), ('one',), ('two',)]
@@ -459,9 +458,46 @@ def test_a_block_write_binds_its_arrow_table_and_unbinds_it(store):
         store.write_arrow(
             f'INSERT INTO account (id, label) SELECT id, nope '
             f'FROM {store_module.INCOMING}',
-            pyarrow.table({'id': ['three'], 'label': ['Three']}))
+            ('id', 'label'), [['three', 'Three']])
     with pytest.raises(duckdb.CatalogException):
         store.query(f'SELECT * FROM {store_module.INCOMING}')
+
+
+def test_an_empty_block_runs_no_statement_at_all(store):
+    """No rows, no statement — and it matters that it is *no statement*.
+
+    Three of the five callers can hand over nothing and mean it: a file of
+    deposits declares no symbol, a reduction can retain nothing, a series can
+    be empty. An empty block is not a legal argument to ``SELECT … FROM`` here
+    — Arrow infers a table with **no columns at all** from no rows, and the
+    statement would fail to bind on the column names it reads. The early return
+    is what makes "nothing to write" an absence rather than an error, the same
+    way :meth:`executemany` already treated it.
+    """
+    store.write_arrow(
+        f'INSERT INTO account (id, label) SELECT nope FROM {store_module.INCOMING}',
+        ('id', 'label'), [])
+
+    assert store.query('SELECT id FROM account') == [('default',)]
+
+
+def test_a_block_write_binds_the_values_that_are_not_in_the_block(store):
+    """``parameters`` is the rest of the statement (issue #972).
+
+    The repair pass narrows an ``UPDATE`` to one symbol and joins the days to
+    their factors, so the block carries the many and the symbol is the one.
+    Without this the caller's only way to name it is interpolation, which is
+    how an identifier becomes a value becomes an injection.
+    """
+    store.execute("INSERT INTO account (id, label) VALUES ('kept', 'Kept')")
+    store.write_arrow(
+        f'UPDATE account SET label = b.label FROM {store_module.INCOMING} b '
+        ' WHERE account.id = b.id AND account.id <> ?',
+        ('id', 'label'), [['kept', 'Renamed'], ['default', 'Renamed']],
+        ['default'])
+
+    assert store.query('SELECT id, label FROM account ORDER BY id') == [
+        ('default', 'Default account'), ('kept', 'Renamed')]
 
 
 def test_a_block_write_is_refused_once_the_store_is_closed(store):
@@ -481,7 +517,7 @@ def test_a_block_write_is_refused_once_the_store_is_closed(store):
         store.write_arrow(
             f'INSERT INTO account (id, label) SELECT id, label '
             f'FROM {store_module.INCOMING}',
-            pyarrow.table({'id': ['late'], 'label': ['Late']}))
+            ('id', 'label'), [['late', 'Late']])
 
 
 def test_a_block_write_that_fails_inside_a_transaction_says_why(store):
@@ -511,7 +547,7 @@ def test_a_block_write_that_fails_inside_a_transaction_says_why(store):
             store.write_arrow(
                 f'INSERT INTO account (id, label) SELECT id, label '
                 f'FROM {store_module.INCOMING}',
-                pyarrow.table({'id': ['taken'], 'label': ['Again']}))
+                ('id', 'label'), [['taken', 'Again']])
 
     assert 'taken' in str(refused.value)
     with pytest.raises(duckdb.CatalogException):
@@ -525,7 +561,7 @@ def test_a_block_write_that_fails_inside_a_transaction_says_why(store):
     store.write_arrow(
         f'INSERT INTO account (id, label) SELECT id, label '
         f'FROM {store_module.INCOMING}',
-        pyarrow.table({'id': ['after'], 'label': ['After']}))
+        ('id', 'label'), [['after', 'After']])
     assert store.query('SELECT id FROM account ORDER BY id') == [
         ('after',), ('default',), ('taken',)]
 

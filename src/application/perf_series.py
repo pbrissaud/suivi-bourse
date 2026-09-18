@@ -2,7 +2,6 @@
 from datetime import date
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
-import pyarrow
 from logfmt_logger import getLogger
 
 from application.store import INCOMING, finite
@@ -59,18 +58,11 @@ def _upsert(store, table: str, columns: Sequence[str], keys: Sequence[str],
     against 0.009 s here (issue #972) — which is what lets the write stay
     synchronous, and a ``200`` keep meaning the figures behind it are current.
 
-    The block is **inferred and not declared**, which is the safer half of the
-    choice. A declared schema was written first and taken back out: a column of
-    a perf series is routinely all-``None`` — ``xirr`` on every day but the
-    last, and six of the seven for an account with no cash ledger — so the fear
-    was that the ``null`` type inference gives such a column would be refused
-    by a ``DOUBLE``. It is not: duckdb 1.5.5 casts it, verified on the real
-    column set. What the declared version did add was a hand-written map with
-    ``float64`` as its default for every column it did not name, a copy of the
-    DDL that nothing checks and that turns the next non-``DOUBLE`` column into
-    an ``ArrowInvalid`` raised inside a write request's transaction. Inference
-    would have stored it. The cast belongs to the column's own declaration, and
-    that lives in ``store``.
+    The columns of a perf series are routinely all-``None`` — ``xirr`` on every
+    day but the last, and six of the seven for an account with no cash ledger —
+    and they cross as the ``null`` type Arrow infers for them, which DuckDB
+    takes into a ``DOUBLE``. A declared schema went in first and came back out:
+    see :meth:`store.Store.write_arrow`.
     """
     if not rows:
         return 0
@@ -81,7 +73,7 @@ def _upsert(store, table: str, columns: Sequence[str], keys: Sequence[str],
         f'INSERT INTO {table} ({", ".join(columns)}) '
         f'SELECT {", ".join(columns)} FROM {INCOMING} '
         f'ON CONFLICT ({", ".join(keys)}) DO UPDATE SET {assignments}',
-        pyarrow.table(dict(zip(columns, zip(*rows)))))
+        columns, rows)
     return len(rows)
 
 
