@@ -26,7 +26,7 @@ dependencies = [
     # The exporter's client left with the endpoint it was the whole of
     # (ADR-0033): one interface, one socket, and a dependency tree that says
     # what the application actually does.
-    "urllib3==2.7.0",
+    "urllib3==2.8.0",
     "yfinance==1.7.0",
     "pandas>=2.0.0",       # NaN-safe close prices in application/main.py (also required by yfinance)
     "openpyxl>=3.1.0",
