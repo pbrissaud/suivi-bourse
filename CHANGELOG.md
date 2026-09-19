@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.2.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.2...v5.2.0) (2026-09-19)
+
+
+### Features
+
+* a symbol can be tracked without being held ([#991](https://github.com/pbrissaud/suivi-bourse/issues/991)) ([3c29520](https://github.com/pbrissaud/suivi-bourse/commit/3c295208c486a63b2fa3a159f9690b129bc1f5ae))
+
+
+### Dependencies
+
+* **app:** update dependency urllib3 to v2.8.0 ([#997](https://github.com/pbrissaud/suivi-bourse/issues/997)) ([e7e08db](https://github.com/pbrissaud/suivi-bourse/commit/e7e08dbe5e1e3dff5077e8f642031ad6c11255b3))
+* **web:** update dependency @tanstack/react-query to v5.103.0 ([#998](https://github.com/pbrissaud/suivi-bourse/issues/998)) ([4dbd8ad](https://github.com/pbrissaud/suivi-bourse/commit/4dbd8adb43a574663c16dc2c98a025c6bbba3ede))
+* **web:** update dependency @types/node to v26.6.0 ([#993](https://github.com/pbrissaud/suivi-bourse/issues/993)) ([89f7383](https://github.com/pbrissaud/suivi-bourse/commit/89f7383ad03fd7e7cbfcccab9e37f1b4d24492a8))
+* **web:** update dependency @types/node to v26.6.1 ([#996](https://github.com/pbrissaud/suivi-bourse/issues/996)) ([c4a2d09](https://github.com/pbrissaud/suivi-bourse/commit/c4a2d09f0b6c3cd0ae8f78b31f559bff9384a3cd))
+
 ## [5.1.2](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.1...v5.1.2) (2026-09-18)
 
 
