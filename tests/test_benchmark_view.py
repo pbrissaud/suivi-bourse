@@ -405,3 +405,29 @@ def test_the_fund_is_named_when_the_portfolio_predates_it(named):
     assert payload['portfolio_from'] == '2023-06-01'
     assert payload['truncated_by_fund'] is True
     assert payload['covered_from'] == '2024-01-01'
+
+
+def test_an_off_list_reference_gets_no_progress_bar_it_cannot_honour(named):
+    """`PUT /api/settings` stays open, so the screen meets tickers off the list.
+
+    `oldest_window_tried` is where the backward pass has **got to**, not where
+    it is going: it moves with the series, so a ratio taken against it reads
+    full from the first chunk and stays there. An owner would watch a finished
+    bar wait for a figure that is hours away. Better no bar than a lying one.
+    """
+    named.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbol', 'IWDA.AS') "
+                  "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    named.execute("INSERT INTO symbol (symbol) VALUES ('IWDA.AS')")
+    _quote_the_reference(named, first='2024-02-20', last='2024-02-29',
+                         symbol='IWDA.AS')
+    _write_curve(named, 'pea')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['index'] is None          # off the list, and rendered anyway
+    assert payload['state'] == benchmark_view.REBUILDING
+    assert payload['rebuild']['target'] is None
+    assert payload['rebuild']['ratio'] is None
+    assert payload['rebuild']['reached'] == '2024-02-20'

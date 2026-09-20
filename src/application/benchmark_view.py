@@ -151,8 +151,13 @@ def _rebuild(store, symbol: str, offered, now: datetime) -> Dict[str, Any]:
     """
     reached = quotes.oldest_ts(store, symbol)
     reached_day = reached.date() if reached is not None else None
-    target = offered.inception if offered else quotes.oldest_window_tried(
-        store, symbol)
+    # **Only an offered fund has a target.** `oldest_window_tried` is where the
+    # backward pass has got to, not where it is going: it moves with `reached`,
+    # so a ratio taken against it reads full from the first chunk and stays
+    # there. An owner who set an off-list ticker through `PUT /api/settings`
+    # would watch a finished bar wait for a figure that is hours away. No
+    # target, no bar, and the panel says how far back it has got instead.
+    target = offered.inception if offered else None
     today = now.date()
 
     ratio = None
