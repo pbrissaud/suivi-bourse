@@ -60,26 +60,27 @@ EXHAUSTED = 'exhausted'
 #: A day whose close has no rate to be converted at (branch 1).
 AWAITING_RATE = 'awaiting_rate'
 
-#: The reference has no convertible close anywhere in the window. Not an early
-#: end — a comparison that never started, and the caller shows no figure at all.
-NEVER_QUOTED = 'never_quoted'
-
 
 class Snapshot(NamedTuple):
-    """One covered day, and everything an aggregate needs to read **on it**.
+    """One covered day, and the whole state of the replay **on it**.
 
-    The value alone was not enough: an aggregate ends at the *earliest* of its
-    accounts' ends, so a replay that ran longer has to be read back at that day
-    and not at its own last one. Carrying the three terms together is what
-    keeps the tax side, the return's denominator and the curve on one date.
+    An aggregate ends at the *earliest* of its accounts' ends, so a replay that
+    ran longer has to be read back at that day and not at its own last one —
+    which is also why the replay keeps no separate final state: ``series[-1]``
+    is it, and two copies of one thing drift.
     """
 
     day: date
-    #: Units at the day's price.
+    #: Shares of the reference held.
+    units: float
+    #: ``units`` at the day's price.
     value: float
-    #: The opening position plus every flow since, withdrawals netted off.
+    #: The opening position plus every flow since, withdrawals netted off —
+    #: the denominator both sides share, because both ran the same flows from
+    #: the same seed. A return read off anything else compares two fractions
+    #: with different bottoms and calls the difference a gap.
     contributed: float
-    #: What was paid for the units still held — the assiette, on this day.
+    #: What was paid for the units still held — average cost, the assiette.
     cost_basis: float
 
     @property
@@ -90,38 +91,23 @@ class Snapshot(NamedTuple):
 
 @dataclass(frozen=True)
 class Replay:
-    """What the reference would be worth, and over what period it really ran."""
+    """Over what period the reference really ran, and what it was worth each day."""
 
-    #: Shares of the reference held at the end. ``0.0`` when it never started.
-    units: float
-    #: What was paid for the units still held — average cost, the tax assiette.
-    cost_basis: float
-    #: ``units`` at the last price the replay actually reached.
-    value: float
     #: The day the money went in. **Not** the window's first day: the first day
-    #: of it the reference was convertibly quoted on.
+    #: of it the reference was convertibly quoted on. ``None`` when the fund
+    #: was never convertibly quoted inside the window at all, which is a
+    #: comparison that never started rather than one that ended early.
     first_day: Optional[date]
     #: The last day covered. Earlier than the window's when ``ended`` is set.
     last_day: Optional[date]
     #: Why it stopped early, or ``None`` for a period that ran to the end.
     ended: Optional[str] = None
-    #: The opening position plus every flow since, withdrawals netted off —
-    #: the denominator both sides share, because both ran the same flows from
-    #: the same seed. A return read off anything else compares two fractions
-    #: with different bottoms and calls the difference a gap.
-    contributed: float = 0.0
     #: One :class:`Snapshot` per calendar day covered, oldest first — the curve
-    #: drawn against the portfolio's own, and the three terms an aggregate
-    #: reads back at a day that is not this replay's last. One entry per
-    #: calendar day and not per quoted day, because the two curves are read as
-    #: the area between them and a reference that skips weekends would draw
-    #: that area wrong.
+    #: drawn against the portfolio's own, and the state an aggregate reads back
+    #: at a day that is not this replay's last. One entry per calendar day and
+    #: not per quoted day, because the two curves are read as the area between
+    #: them and a reference that skips weekends would draw that area wrong.
     series: List[Snapshot] = field(default_factory=list)
-
-    @property
-    def latent_gain(self) -> float:
-        """What the tax would be projected on: value minus what was paid."""
-        return self.value - self.cost_basis
 
 
 def replay(window: Tuple[date, date],
@@ -150,10 +136,10 @@ def replay(window: Tuple[date, date],
     day = first
     while day <= last and day not in prices:
         if day in unconverted:
-            return Replay(0.0, 0.0, 0.0, None, None, AWAITING_RATE)
+            return Replay(None, None, AWAITING_RATE)
         day += ONE_DAY
     if day > last:
-        return Replay(0.0, 0.0, 0.0, None, None, NEVER_QUOTED)
+        return Replay(None, None)
 
     seeded = day
     opening = seed + sum(
@@ -161,13 +147,13 @@ def replay(window: Tuple[date, date],
         for d in _span(first + ONE_DAY, seeded))
     price = prices[seeded]
     if opening <= 0 or price <= 0:
-        return Replay(0.0, 0.0, 0.0, seeded, seeded, EXHAUSTED)
+        return Replay(seeded, seeded, EXHAUSTED)
 
     units = opening / price
     basis = opening
     contributed = opening
     ended = None
-    series = [Snapshot(seeded, opening, opening, opening)]
+    series = [Snapshot(seeded, units, opening, opening, opening)]
 
     day = seeded + ONE_DAY
     while day <= last:
@@ -200,14 +186,15 @@ def replay(window: Tuple[date, date],
         elif flow < 0:
             if -flow > units * price:
                 ended = EXHAUSTED
-                series.append(Snapshot(day, units * price, contributed, basis))
+                series.append(
+                    Snapshot(day, units, units * price, contributed, basis))
                 break
             before = units
             units -= -flow / price
             basis *= units / before
             contributed += flow
 
-        series.append(Snapshot(day, units * price, contributed, basis))
+        series.append(Snapshot(day, units, units * price, contributed, basis))
         day += ONE_DAY
 
     # A day with no rate is not replayed at all, so the period ends the evening
@@ -220,8 +207,7 @@ def replay(window: Tuple[date, date],
     else:
         last_day = last
 
-    return Replay(units, basis, units * price, seeded, last_day, ended,
-                  contributed, series)
+    return Replay(seeded, last_day, ended, series)
 
 
 def _span(first: date, last: date):
@@ -232,5 +218,4 @@ def _span(first: date, last: date):
         day += ONE_DAY
 
 
-__all__ = ['Replay', 'Snapshot', 'replay',
-           'EXHAUSTED', 'AWAITING_RATE', 'NEVER_QUOTED']
+__all__ = ['Replay', 'Snapshot', 'replay', 'EXHAUSTED', 'AWAITING_RATE']

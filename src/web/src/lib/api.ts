@@ -858,7 +858,6 @@ export interface OfferedBenchmark {
   symbol: string
   /** The index it tracks. Named **first**; the ticker is subordinate. */
   index: string
-  currency: string
   /** Eligible to a PEA. Groups the selector, enters no arithmetic. */
   pea: boolean
   /**
@@ -934,6 +933,7 @@ export interface BenchmarkResponse {
   truncated_by_fund?: boolean
   /** Why the period ended early, or `null` — `exhausted`, `awaiting_rate`. */
   ended?: string | null
+  /** The perimeter, and the two terms the head figure is the difference of. */
   accounts?: string[]
   portfolio_value?: number | null
   reference_value?: number

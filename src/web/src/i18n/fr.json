@@ -636,7 +636,5 @@
   "benchmark.explain.gap": "Ce que cet écart mesure",
   "benchmark.chart.yours": "Votre portefeuille",
   "benchmark.chart.theirs": "{index}, mêmes versements",
-  "benchmark.chart.area": "Entre les deux courbes",
-  "benchmark.chart.floor": "Socle",
   "benchmark.chart.empty": "Rien à tracer sur cette période."
 }

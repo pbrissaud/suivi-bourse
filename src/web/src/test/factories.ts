@@ -1233,19 +1233,18 @@ export function defaultEnvironment(): EnvironmentVariable[] {
 /** The seven references the comparison offers, as the route publishes them. */
 export function offeredBenchmarks(): OfferedBenchmark[] {
   return [
-    { symbol: 'CW8.PA', index: 'MSCI World', currency: 'EUR', pea: false, inception: '2009-06-16' },
-    { symbol: 'CSPX.AS', index: 'S&P 500', currency: 'EUR', pea: false, inception: '2010-05-19' },
-    { symbol: 'MSE.PA', index: 'Euro Stoxx 50', currency: 'EUR', pea: false, inception: '2008-01-02' },
-    { symbol: 'C40.PA', index: 'CAC 40', currency: 'EUR', pea: false, inception: '2008-01-02' },
+    { symbol: 'CW8.PA', index: 'MSCI World', pea: false, inception: '2009-06-16' },
+    { symbol: 'CSPX.AS', index: 'S&P 500', pea: false, inception: '2010-05-19' },
+    { symbol: 'MSE.PA', index: 'Euro Stoxx 50', pea: false, inception: '2008-01-02' },
+    { symbol: 'C40.PA', index: 'CAC 40', pea: false, inception: '2008-01-02' },
     {
       symbol: 'AEEM.PA',
       index: 'MSCI Emerging Markets',
-      currency: 'EUR',
       pea: false,
       inception: '2010-11-30',
     },
-    { symbol: 'WPEA.PA', index: 'MSCI World', currency: 'EUR', pea: true, inception: '2024-04-02' },
-    { symbol: 'PE500.PA', index: 'S&P 500', currency: 'EUR', pea: true, inception: '2019-04-25' },
+    { symbol: 'WPEA.PA', index: 'MSCI World', pea: true, inception: '2024-04-02' },
+    { symbol: 'PE500.PA', index: 'S&P 500', pea: true, inception: '2019-04-25' },
   ]
 }
 

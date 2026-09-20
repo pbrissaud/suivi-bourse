@@ -130,8 +130,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
 
 def _offered() -> List[Dict[str, Any]]:
     """The closed list, as the selector renders it."""
-    return [{'symbol': entry.symbol, 'index': entry.index,
-             'currency': entry.currency, 'pea': entry.pea,
+    return [{'symbol': entry.symbol, 'index': entry.index, 'pea': entry.pea,
              'inception': instants.iso(entry.inception)}
             for entry in benchmarks.BENCHMARKS]
 
@@ -209,18 +208,11 @@ def _by_account(store, snapshot, prices: Dict[date, float],
             continue
         replayed[account] = (result, dict(days))
 
-    return replayed, excluded, _opening_days(written, replayed)
-
-
-def _opening_days(written, replayed) -> Dict[str, date]:
-    """The first day each replayed account was written, before any seeding.
-
-    What the screen needs it for: telling **who** truncated the period. A
-    comparison that starts in 2024 because the fund does and one that starts in
-    2024 because the account does are the same date and two different
-    sentences, and the wrong one names a cause the reader can go and check.
-    """
-    return {account: written[account][0][0] for account in replayed}
+    # The third value is the first day each replayed account was **written**,
+    # before any seeding: it is what tells who truncated the period, and the
+    # wrong answer there names a cause the reader can go and check.
+    return (replayed, excluded,
+            {account: written[account][0][0] for account in replayed})
 
 
 def _perimeter(store, snapshot) -> List[str]:
@@ -294,6 +286,10 @@ def _aggregate(store, snapshot, replayed: Dict[str, Any],
         'portfolio_from': instants.iso(portfolio_from),
         'truncated_by_fund': portfolio_from < quoted_from,
         'ended': ended,
+        # The two terms behind the head figure, and the perimeter they were
+        # summed over. No screen reads them today — the head states the gap —
+        # but they are what makes that gap checkable, and `gap_gross` alone
+        # cannot tell 2 000 against 2 000 from 12 000 against 12 000.
         'accounts': sorted(replayed),
         'portfolio_value': portfolio,
         'reference_value': reference,

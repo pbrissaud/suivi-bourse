@@ -14,6 +14,15 @@ import pytest
 from application import counterfactual
 
 
+def _final(result):
+    """The replay's last covered day — where its final state lives now.
+
+    `Replay` carries no copy of it: two records of one thing drift, and the
+    aggregate reads a day that is not always the last anyway.
+    """
+    return result.series[-1]
+
+
 def _days(first: str, last: str, price: float) -> dict:
     """A flat quoted series over ``[first, last]`` — weekends and all."""
     day = date.fromisoformat(first)
@@ -39,9 +48,9 @@ def test_the_money_goes_in_on_the_window_s_first_day_and_buys_at_its_price():
         _window('2024-01-01', '2024-01-31'),
         _days('2024-01-01', '2024-01-31', 20.0), {}, {}, 1000.0)
 
-    assert result.units == pytest.approx(50.0)
-    assert result.cost_basis == pytest.approx(1000.0)
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).units == pytest.approx(50.0)
+    assert _final(result).cost_basis == pytest.approx(1000.0)
+    assert _final(result).value == pytest.approx(1000.0)
     assert result.first_day == date(2024, 1, 1)
     assert result.last_day == date(2024, 1, 31)
     assert result.ended is None
@@ -64,8 +73,8 @@ def test_the_seed_waits_for_the_first_quoted_day_and_takes_the_flows_with_it():
         1000.0)
 
     assert result.first_day == date(2024, 1, 3)
-    assert result.cost_basis == pytest.approx(1500.0)
-    assert result.units == pytest.approx(75.0)
+    assert _final(result).cost_basis == pytest.approx(1500.0)
+    assert _final(result).units == pytest.approx(75.0)
 
 
 def test_a_reference_never_quoted_in_the_window_never_started():
@@ -73,8 +82,10 @@ def test_a_reference_never_quoted_in_the_window_never_started():
     result = counterfactual.replay(
         _window('2024-01-01', '2024-01-31'), {}, {}, {}, 1000.0)
 
-    assert result.ended == counterfactual.NEVER_QUOTED
-    assert (result.units, result.value, result.first_day) == (0.0, 0.0, None)
+    # Not an early end and not a state of its own: no first day, no series.
+    assert result.ended is None
+    assert result.first_day is None
+    assert result.series == []
 
 
 # --------------------------------------------------------------------------- #
@@ -96,8 +107,8 @@ def test_a_split_mid_history_does_not_move_the_head_figure():
         _window('2024-01-01', '2024-01-31'), prices,
         {date(2024, 1, 16): 4.0}, {}, 1000.0)
 
-    assert result.units == pytest.approx(8.0)      # 2 shares, then 8
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).units == pytest.approx(8.0)      # 2 shares, then 8
+    assert _final(result).value == pytest.approx(1000.0)
 
 
 def test_a_split_the_replay_cannot_see_divides_the_holding_by_the_ratio():
@@ -115,7 +126,7 @@ def test_a_split_the_replay_cannot_see_divides_the_holding_by_the_ratio():
     blind = counterfactual.replay(
         _window('2024-01-01', '2024-01-31'), prices, {}, {}, 1000.0)
 
-    assert blind.value == pytest.approx(250.0)
+    assert _final(blind).value == pytest.approx(250.0)
     assert blind.ended is None
 
 
@@ -126,8 +137,8 @@ def test_the_split_of_the_seed_s_own_day_is_not_applied_twice():
         _days('2024-01-16', '2024-01-31', 125.0),
         {date(2024, 1, 16): 4.0}, {}, 1000.0)
 
-    assert result.units == pytest.approx(8.0)
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).units == pytest.approx(8.0)
+    assert _final(result).value == pytest.approx(1000.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -143,10 +154,10 @@ def test_a_contribution_buys_at_the_day_s_price_and_adds_to_the_basis():
         _window('2024-01-01', '2024-01-31'), prices, {},
         {date(2024, 1, 10): 400.0}, 1000.0)
 
-    assert result.units == pytest.approx(60.0)     # 50, then 10 more at 40
-    assert result.cost_basis == pytest.approx(1400.0)
-    assert result.value == pytest.approx(2400.0)
-    assert result.latent_gain == pytest.approx(1000.0)
+    assert _final(result).units == pytest.approx(60.0)     # 50, then 10 more at 40
+    assert _final(result).cost_basis == pytest.approx(1400.0)
+    assert _final(result).value == pytest.approx(2400.0)
+    assert _final(result).latent_gain == pytest.approx(1000.0)
 
 
 def test_a_withdrawal_takes_its_share_of_the_cost_basis_with_it():
@@ -164,9 +175,9 @@ def test_a_withdrawal_takes_its_share_of_the_cost_basis_with_it():
         _window('2024-01-01', '2024-01-31'), prices, {},
         {date(2024, 1, 10): -1000.0}, 1000.0)
 
-    assert result.units == pytest.approx(25.0)     # 50 held, 25 sold at 40
-    assert result.cost_basis == pytest.approx(500.0)
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).units == pytest.approx(25.0)     # 50 held, 25 sold at 40
+    assert _final(result).cost_basis == pytest.approx(500.0)
+    assert _final(result).value == pytest.approx(1000.0)
     assert result.ended is None
 
 
@@ -188,8 +199,8 @@ def test_a_withdrawal_the_reference_could_not_have_funded_ends_the_period():
 
     assert result.ended == counterfactual.EXHAUSTED
     assert result.last_day == date(2024, 1, 10)
-    assert result.units == pytest.approx(50.0)     # untouched: the sale did not happen
-    assert result.value == pytest.approx(100.0)
+    assert _final(result).units == pytest.approx(50.0)     # untouched: the sale did not happen
+    assert _final(result).value == pytest.approx(100.0)
 
 
 def test_a_withdrawal_on_the_window_s_first_day_ends_it_there():
@@ -217,8 +228,8 @@ def test_a_withdrawal_of_exactly_what_is_there_is_funded_and_leaves_nothing():
         {date(2024, 1, 10): -1000.0}, 1000.0)
 
     assert result.ended is None
-    assert result.units == pytest.approx(0.0)
-    assert result.cost_basis == pytest.approx(0.0)
+    assert _final(result).units == pytest.approx(0.0)
+    assert _final(result).cost_basis == pytest.approx(0.0)
 
 
 def test_an_opening_position_of_nothing_never_starts():
@@ -229,7 +240,8 @@ def test_an_opening_position_of_nothing_never_starts():
         {date(2024, 1, 2): -1000.0}, 1000.0)
 
     assert result.ended == counterfactual.EXHAUSTED
-    assert result.units == 0.0
+    # Nothing was ever bought, so there is no covered day to read a state off.
+    assert result.series == []
 
 
 # --------------------------------------------------------------------------- #
@@ -244,8 +256,8 @@ def test_a_closed_market_carries_yesterday_s_price_and_changes_nothing():
         _window('2024-01-05', '2024-01-08'), prices, {},
         {date(2024, 1, 6): 200.0}, 1000.0)
 
-    assert result.units == pytest.approx(60.0)     # 50, then 10 at Friday's 20
-    assert result.value == pytest.approx(1500.0)
+    assert _final(result).units == pytest.approx(60.0)     # 50, then 10 at Friday's 20
+    assert _final(result).value == pytest.approx(1500.0)
     assert result.ended is None
 
 
@@ -266,7 +278,7 @@ def test_a_day_whose_close_has_no_rate_ends_the_period_the_evening_before():
 
     assert result.ended == counterfactual.AWAITING_RATE
     assert result.last_day == date(2024, 1, 9)
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).value == pytest.approx(1000.0)
 
 
 def test_a_missing_rate_on_the_first_day_leaves_the_comparison_unstarted():
@@ -277,7 +289,7 @@ def test_a_missing_rate_on_the_first_day_leaves_the_comparison_unstarted():
 
     assert result.ended == counterfactual.AWAITING_RATE
     assert result.first_day is None
-    assert result.units == 0.0
+    assert result.series == []
 
 
 def test_the_split_of_a_day_with_no_rate_is_not_applied_before_stopping():
@@ -296,8 +308,8 @@ def test_the_split_of_a_day_with_no_rate_is_not_applied_before_stopping():
         unconverted=[date(2024, 1, 16)])
 
     assert result.ended == counterfactual.AWAITING_RATE
-    assert result.units == pytest.approx(2.0)
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).units == pytest.approx(2.0)
+    assert _final(result).value == pytest.approx(1000.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -387,4 +399,4 @@ def test_a_close_of_zero_stops_the_replay_rather_than_dividing_by_it():
 
     assert result.ended == counterfactual.AWAITING_RATE
     assert result.last_day == date(2024, 1, 9)
-    assert result.value == pytest.approx(1000.0)
+    assert _final(result).value == pytest.approx(1000.0)

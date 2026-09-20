@@ -636,7 +636,5 @@
   "benchmark.explain.gap": "What this gap measures",
   "benchmark.chart.yours": "Your portfolio",
   "benchmark.chart.theirs": "{index}, same contributions",
-  "benchmark.chart.area": "Between the two curves",
-  "benchmark.chart.floor": "Floor",
   "benchmark.chart.empty": "Nothing to draw over this period."
 }

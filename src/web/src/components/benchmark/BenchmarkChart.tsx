@@ -114,12 +114,12 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
 
               <ChartTooltip format={(value) => f.currency(value, currency)} />
 
-              {/* Both bands answer the pointer with a figure the two lines
-                  already state, so they take function keys and drop out of the
-                  tooltip (`ChartTooltip`). */}
+              {/* All three bands answer the pointer with a figure the two
+                  lines already state, so they take function keys and drop out
+                  of the tooltip (`ChartTooltip`) — which is also why none of
+                  them carries a name: nothing renders it. */}
               <Area
                 dataKey={(row: { floor: number | null }) => row.floor}
-                name={t('benchmark.chart.floor')}
                 stackId="gap"
                 stroke="none"
                 fill="none"
@@ -128,7 +128,6 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
               />
               <Area
                 dataKey={(row: { gapAhead: number | null }) => row.gapAhead}
-                name={t('benchmark.chart.area')}
                 stackId="gap"
                 stroke="none"
                 fill="var(--color-price)"
@@ -138,7 +137,6 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
               />
               <Area
                 dataKey={(row: { gapBehind: number | null }) => row.gapBehind}
-                name={t('benchmark.chart.area')}
                 stackId="gap"
                 stroke="none"
                 fill="var(--loss)"
