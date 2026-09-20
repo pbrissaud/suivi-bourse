@@ -236,8 +236,12 @@ describe('what the period costs, and what the comparison did not account for', (
       ready({
         reference: 'WPEA.PA',
         index: 'MSCI World',
-        inception: '2013-01-02',
+        inception: '2024-04-02',
         covered_from: '2024-04-02',
+        // The server decides who truncated: here the portfolio predates the
+        // fund by eleven years, so the fund is the cause and may be named.
+        portfolio_from: '2013-01-02',
+        truncated_by_fund: true,
       }),
     )
 
@@ -246,6 +250,23 @@ describe('what the period costs, and what the comparison did not account for', (
     expect(await screen.findByText(/Comparé depuis le .*premier cours de ce fonds/)).toBeInTheDocument()
     expect(screen.getByText(/11 années antérieures ne sont pas dans cet écart/)).toBeInTheDocument()
     expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
+  })
+
+  it('does not blame the fund for a period its own accounts shortened', async () => {
+    renderBenchmark(
+      ready({
+        // The fund is quoted since 2009; the account simply opened in 2024.
+        // Same date on screen, and *this fund's first close* would send the
+        // reader hunting for a history that is sitting right there.
+        inception: '2009-06-16',
+        covered_from: '2024-02-26',
+        portfolio_from: '2024-02-26',
+        truncated_by_fund: false,
+      }),
+    )
+
+    expect(await screen.findByText(/Comparé du .* au /)).toBeInTheDocument()
+    expect(screen.queryByText(/premier cours de ce fonds/)).not.toBeInTheDocument()
   })
 
   it('says when the reference ran out rather than carrying a frozen figure', async () => {

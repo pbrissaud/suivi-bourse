@@ -324,9 +324,15 @@ function Period({ data }: { data: BenchmarkResponse }) {
 
   if (!data.covered_from || !data.covered_to) return null
 
-  const lost = data.inception
-    ? Number(data.covered_from.slice(0, 4)) - Number(data.inception.slice(0, 4))
-    : 0
+  // **The fund is named as the cause only when it is one.** A period starting
+  // in 2024 because the fund launched then and one starting in 2024 because
+  // the account did are the same date and two different sentences — and the
+  // wrong one points the reader at a fund history that is sitting right there.
+  // The server decides, because it is the only side that knows both dates.
+  const lost =
+    data.truncated_by_fund === true && data.portfolio_from
+      ? Number(data.covered_from.slice(0, 4)) - Number(data.portfolio_from.slice(0, 4))
+      : 0
 
   return (
     <p className="text-muted-foreground">

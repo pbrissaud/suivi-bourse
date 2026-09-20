@@ -370,3 +370,38 @@ def test_the_next_fetch_establishes_the_history_and_the_figure_returns(named):
 
     assert benchmark_view.comparison(
         named, snapshot, NOW)['state'] == benchmark_view.READY
+
+
+def test_the_fund_is_blamed_for_a_short_period_only_when_it_is_the_cause(named):
+    """Two truncations, one date, two sentences — and the wrong one misleads.
+
+    A comparison that starts in 2024 because the fund launched then, and one
+    that starts in 2024 because the account did, look identical on screen. Told
+    it is *this fund's first close*, an owner whose fund has been quoted since
+    2009 goes looking for a history that is sitting right there.
+    """
+    # The account opens well after the fund's first quoted day here.
+    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-29')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-02-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['portfolio_from'] == '2024-02-01'
+    assert payload['truncated_by_fund'] is False
+
+
+def test_the_fund_is_named_when_the_portfolio_predates_it(named):
+    """The other half: the perimeter was written before the fund was quoted."""
+    _write_curve(named, 'pea', first='2023-06-01', last='2024-02-29')
+    # The backward pass has tried past the ledger's own first day and found
+    # nothing older — which is what *finished* means for a fund younger than
+    # the portfolio, and the only way this state is reachable at all.
+    quotes.record_window_tried(named, REFERENCE, date(2023, 6, 1))
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2023-06-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['portfolio_from'] == '2023-06-01'
+    assert payload['truncated_by_fund'] is True
+    assert payload['covered_from'] == '2024-01-01'

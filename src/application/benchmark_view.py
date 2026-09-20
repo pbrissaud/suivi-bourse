@@ -119,13 +119,13 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': SPLITS_UNKNOWN,
                 'rebuild': _rebuild(store, symbol, offered, now)}
 
-    replayed, excluded = _by_account(store, snapshot, prices, symbol)
+    replayed, excluded, opened = _by_account(store, snapshot, prices, symbol)
     if not replayed:
         return {**head, 'state': NOTHING_TO_COMPARE,
                 'excluded_accounts': excluded}
 
     return {**head, 'state': READY, 'excluded_accounts': excluded,
-            **_aggregate(store, snapshot, replayed, now)}
+            **_aggregate(store, snapshot, replayed, opened, min(prices), now)}
 
 
 def _offered() -> List[Dict[str, Any]]:
@@ -204,7 +204,18 @@ def _by_account(store, snapshot, prices: Dict[date, float],
             continue
         replayed[account] = (result, dict(days))
 
-    return replayed, excluded
+    return replayed, excluded, _opening_days(written, replayed)
+
+
+def _opening_days(written, replayed) -> Dict[str, date]:
+    """The first day each replayed account was written, before any seeding.
+
+    What the screen needs it for: telling **who** truncated the period. A
+    comparison that starts in 2024 because the fund does and one that starts in
+    2024 because the account does are the same date and two different
+    sentences, and the wrong one names a cause the reader can go and check.
+    """
+    return {account: written[account][0][0] for account in replayed}
 
 
 def _perimeter(store, snapshot) -> List[str]:
@@ -239,6 +250,7 @@ def _unconverted_days(store, symbol: str) -> List[date]:
 
 
 def _aggregate(store, snapshot, replayed: Dict[str, Any],
+               opened: Dict[str, date], quoted_from: date,
                now: datetime) -> Dict[str, Any]:
     """Sum the accounts over the period they share, gross and net."""
     # **The period is the intersection**: the latest of the starts, because an
@@ -256,9 +268,18 @@ def _aggregate(store, snapshot, replayed: Dict[str, Any],
     contributed = sum(result.contributed for result, _ in replayed.values())
 
     taxes = _net(store, snapshot, replayed, covered_to, now)
+    # **Who truncated the period**, because the screen names a cause and a
+    # wrong one is worse than none. The fund is the reason only when the
+    # perimeter was written *before* the fund was ever quoted; an account
+    # opened in 2024 against a fund quoted since 2009 is truncated by itself,
+    # and saying otherwise sends the reader looking for a fund history that is
+    # sitting right there.
+    portfolio_from = min(opened.values())
     return {
         'covered_from': instants.iso(covered_from),
         'covered_to': instants.iso(covered_to),
+        'portfolio_from': instants.iso(portfolio_from),
+        'truncated_by_fund': portfolio_from < quoted_from,
         'ended': ended,
         'accounts': sorted(replayed),
         'portfolio_value': portfolio,

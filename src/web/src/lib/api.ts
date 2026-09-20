@@ -923,6 +923,15 @@ export interface BenchmarkResponse {
   excluded_accounts?: BenchmarkExclusion[]
   covered_from?: string
   covered_to?: string
+  /** The first day the perimeter was written, before any seeding. */
+  portfolio_from?: string
+  /**
+   * Whether the **fund** is what shortened the period. `false` when the
+   * accounts simply start later than it does: same date, different cause, and
+   * naming the wrong one sends the reader looking for a history that is
+   * already there.
+   */
+  truncated_by_fund?: boolean
   /** Why the period ended early, or `null` — `exhausted`, `awaiting_rate`. */
   ended?: string | null
   accounts?: string[]
