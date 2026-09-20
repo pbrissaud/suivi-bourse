@@ -329,9 +329,13 @@ function Period({ data }: { data: BenchmarkResponse }) {
   // the account did are the same date and two different sentences — and the
   // wrong one points the reader at a fund history that is sitting right there.
   // The server decides, because it is the only side that knows both dates.
+  // Whole years **elapsed**, from the two dates. Subtracting the year parts
+  // calls 31 Dec 2023 → 1 Jan 2024 a lost year and 1 Jan 2024 → 31 Dec 2024
+  // none: a figure the owner can check against their own ledger has to be
+  // counted the way they would count it.
   const lost =
     data.truncated_by_fund === true && data.portfolio_from
-      ? Number(data.covered_from.slice(0, 4)) - Number(data.portfolio_from.slice(0, 4))
+      ? elapsedYears(data.portfolio_from, data.covered_from)
       : 0
 
   return (
@@ -361,6 +365,21 @@ function NetUnavailable({ rows }: { rows: readonly BenchmarkExclusion[] }) {
       {t('benchmark.net.unavailable', { accounts: names(rows), count: rows.length })}
     </p>
   )
+}
+
+/**
+ * Whole years between two `YYYY-MM-DD` days, never a difference of year parts.
+ *
+ * Under a year the caption falls back to stating the period, which is true and
+ * says no less: *eleven months of your history are outside this gap* is not
+ * what the sentence is for — it exists for the case where truncation actually
+ * bites, and the period line already names both ends.
+ */
+function elapsedYears(from: string, to: string): number {
+  const [fy, fm, fd] = from.split('-').map(Number)
+  const [ty, tm, td] = to.split('-').map(Number)
+  const whole = ty - fy
+  return tm > fm || (tm === fm && td >= fd) ? whole : whole - 1
 }
 
 /** The accounts a grant with no declared price took out of the perimeter. */

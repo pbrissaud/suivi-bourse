@@ -4,10 +4,11 @@
  * The same reading `PortfolioChart` gives *Montants*, arrived at from the other
  * end: there, the wash sits under the value curve because a fill *between* two
  * curves is a signed quantity that crosses zero inside a window and would be
- * the wrong colour half the time. Here it does not cross: the portfolio is
- * ahead or behind of one reference, and which one it is, is the whole subject
- * of the screen. So the fill is between them and it takes the sign — mint when
- * the portfolio leads, the loss colour when the reference does.
+ * the wrong colour half the time. Here the sign is the whole subject of the
+ * screen, so the fill takes it — mint where the portfolio leads, the loss
+ * colour where the reference does. **Per day**, because two curves over
+ * seventeen years cross, and one colour for the window would paint the years
+ * the owner was ahead in the colour of the years they were not.
  *
  * **No base-100 normalisation.** #760 is the euro question, money-weighted:
  * both curves start at the same amount on the same day by construction, so
@@ -59,19 +60,27 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
     )
   }
 
-  // The area is drawn as two stacked bands rather than one signed one, because
-  // Recharts fills from a baseline and not between two series: the lower of the
-  // two curves is an invisible floor, and the gap rides on top of it in the
-  // colour of whoever is ahead. One `ahead` flag for the whole window, read off
-  // the last day — which is the day the head figure states.
-  const last = points[points.length - 1]
-  const ahead = (last.portfolio ?? 0) >= last.reference
-
+  // Recharts fills from a baseline and not between two series, so the band is
+  // stacked: the lower curve is an invisible floor, and the gap rides on it.
+  // **Two gap bands, not one**, each carrying the days where its side leads and
+  // `null` on the others — that is what makes the colour switch at a crossing
+  // without computing the crossing itself. The switch lands on the day rather
+  // than on the exact intersection, which over 900 points is under a pixel.
+  //
+  // A day the portfolio has no value for is a hole in both bands, never a day
+  // the reference won by default.
   const rows = points.map((point) => {
-    const floor =
-      point.portfolio === null ? null : Math.min(point.portfolio, point.reference)
-    const gap = point.portfolio === null ? null : Math.abs(point.portfolio - point.reference)
-    return { ...point, floor, gap }
+    if (point.portfolio === null) {
+      return { ...point, floor: null, gapAhead: null, gapBehind: null }
+    }
+    const gap = Math.abs(point.portfolio - point.reference)
+    const leading = point.portfolio >= point.reference
+    return {
+      ...point,
+      floor: Math.min(point.portfolio, point.reference),
+      gapAhead: leading ? gap : null,
+      gapBehind: leading ? null : gap,
+    }
   })
 
   return (
@@ -118,11 +127,21 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
                 connectNulls={false}
               />
               <Area
-                dataKey={(row: { gap: number | null }) => row.gap}
+                dataKey={(row: { gapAhead: number | null }) => row.gapAhead}
                 name={t('benchmark.chart.area')}
                 stackId="gap"
                 stroke="none"
-                fill={ahead ? 'var(--color-price)' : 'var(--loss)'}
+                fill="var(--color-price)"
+                fillOpacity={0.14}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+              <Area
+                dataKey={(row: { gapBehind: number | null }) => row.gapBehind}
+                name={t('benchmark.chart.area')}
+                stackId="gap"
+                stroke="none"
+                fill="var(--loss)"
                 fillOpacity={0.14}
                 isAnimationActive={false}
                 connectNulls={false}

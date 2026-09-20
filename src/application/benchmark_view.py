@@ -267,12 +267,20 @@ def _aggregate(store, snapshot, replayed: Dict[str, Any],
     ended = next((result.ended for result, _ in replayed.values()
                   if result.ended), None)
 
-    portfolio = _portfolio_at(replayed, covered_to)
-    reference = sum(_reference_at(result, covered_to)
-                    for result, _ in replayed.values())
-    contributed = sum(result.contributed for result, _ in replayed.values())
+    # **Every term read on the covered day**, not on each replay's own last
+    # one. The period ends at the *earliest* of the accounts' ends, so an
+    # account whose replay ran longer would otherwise contribute a value, a
+    # denominator and a tax basis from days the screen says are not in the
+    # comparison — and the one account that ended early is exactly the one
+    # whose later days are least like the others.
+    at_covered = {account: _snapshot_at(result, covered_to)
+                  for account, (result, _) in replayed.items()}
 
-    taxes = _net(store, snapshot, replayed, covered_to, now)
+    portfolio = _portfolio_at(replayed, covered_to)
+    reference = sum(snap.value for snap in at_covered.values() if snap)
+    contributed = sum(snap.contributed for snap in at_covered.values() if snap)
+
+    taxes = _net(store, snapshot, replayed, at_covered, covered_to, now)
     # **Who truncated the period**, because the screen names a cause and a
     # wrong one is worse than none. The fund is the reason only when the
     # perimeter was written *before* the fund was ever quoted; an account
@@ -331,12 +339,17 @@ def _portfolio_at(replayed: Dict[str, Any],
     return total
 
 
-def _reference_at(result, day: date) -> float:
-    """The replay's value on ``day``, or on the last day it covered."""
-    for covered, value in reversed(result.series):
-        if covered <= day:
-            return value
-    return 0.0
+def _snapshot_at(result, day: date):
+    """The replay's state on ``day``, or on the last day it covered before it.
+
+    ``None`` only for a replay that never reached ``day``'s side of its own
+    window, which the caller treats as nothing — a comparison with no covered
+    day contributes no value, no contribution and no tax.
+    """
+    for snap in reversed(result.series):
+        if snap.day <= day:
+            return snap
+    return None
 
 
 def _return(value: Optional[float],
@@ -374,9 +387,9 @@ def _series(replayed: Dict[str, Any], first: date,
     """The two curves on one day axis, over the shared period only."""
     reference: Dict[date, float] = {}
     for result, _ in replayed.values():
-        for day, value in result.series:
-            if first <= day <= last:
-                reference[day] = reference.get(day, 0.0) + value
+        for snap in result.series:
+            if first <= snap.day <= last:
+                reference[snap.day] = reference.get(snap.day, 0.0) + snap.value
 
     points = []
     for day in sorted(reference):
@@ -388,8 +401,8 @@ def _series(replayed: Dict[str, Any], first: date,
     return points
 
 
-def _net(store, snapshot, replayed: Dict[str, Any], day: date,
-         now: datetime) -> Dict[str, Any]:
+def _net(store, snapshot, replayed: Dict[str, Any], at_covered: Dict[str, Any],
+         day: date, now: datetime) -> Dict[str, Any]:
     """The after-tax side, or the reason there is none — **all or nothing**.
 
     One account whose model this version refuses makes the *whole* net absent,
@@ -434,8 +447,11 @@ def _net(store, snapshot, replayed: Dict[str, Any], day: date,
                      first_payment=payments.get(account), now=day)
         real = taxation_projection.projected_tax(
             latent_gain=latent.get(account), **facts)
+        # The reference's gain **on the covered day**: a replay that outlived
+        # the period would otherwise be taxed on days the screen excludes.
+        covered = at_covered.get(account)
         theirs = taxation_projection.projected_tax(
-            latent_gain=result.latent_gain, **facts)
+            latent_gain=covered.latent_gain if covered else None, **facts)
         if real is None and model.kind in taxation_projection.PROJECTED_KINDS:
             unavailable.append({'account': account, 'reason': 'no_assiette'})
             continue

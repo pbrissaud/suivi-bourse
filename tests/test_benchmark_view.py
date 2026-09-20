@@ -285,6 +285,13 @@ def test_an_account_with_no_taxation_model_removes_the_net_entirely(named):
     assert payload['gap_gross'] is not None      # the gross side is unaffected
 
 
+def _flat_model_on(store, account, rate=0.3):
+    """Attach a second account to the model the first one created."""
+    model = accounts_module.read_models(store)[0]
+    accounts_module.set_taxation_model(store, account, model.id)
+    return model
+
+
 def _flat_model(store, account, rate=0.3):
     """A flat-rate wrapper on ``account``, created through the real write path."""
     model = accounts_module.create_model(store, 'Flat', taxation.FLAT_REALISED,
@@ -431,3 +438,36 @@ def test_an_off_list_reference_gets_no_progress_bar_it_cannot_honour(named):
     assert payload['rebuild']['target'] is None
     assert payload['rebuild']['ratio'] is None
     assert payload['rebuild']['reached'] == '2024-02-20'
+
+
+def test_an_account_that_ended_early_closes_the_period_for_every_term(named):
+    """The aggregate reads each account **on the covered day**, not on its own.
+
+    One account's reference is exhausted in February while the other runs to
+    the end. The period stops at the earlier date, and a term taken from the
+    longer replay's last day would mix in months the screen says are not in
+    the comparison — the contribution behind the return, and the gain the tax
+    rests on.
+    """
+    _write_curve(named, 'pea', value=1000.0)
+    _write_curve(named, 'cto', value=1000.0)
+    _flat_model(named, 'pea')
+    _flat_model_on(named, 'cto')
+
+    payload = benchmark_view.comparison(
+        named,
+        _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+                   # Empties the reference on 1 February, closing the period.
+                   _deposit('2024-02-01', 'pea', -5000.0),
+                   _deposit('2024-01-01', 'cto', 1000.0),
+                   # Paid in *after* the period ends: must not reach any term.
+                   _deposit('2024-02-15', 'cto', 10_000.0)],
+                  accounts=('pea', 'cto')),
+        NOW)
+
+    assert payload['ended'] == counterfactual.EXHAUSTED
+    assert payload['covered_to'] == '2024-02-01'
+    # Two accounts seeded at 1 000 €, and the February contribution is outside
+    # the period — so the denominator is 2 000 € and not 12 000 €.
+    assert payload['reference_value'] == pytest.approx(2000.0)
+    assert payload['portfolio_return'] == pytest.approx(0.0)

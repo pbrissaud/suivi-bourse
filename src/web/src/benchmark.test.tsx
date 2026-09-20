@@ -341,3 +341,36 @@ describe('the contract a non-visual reader gets', () => {
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 })
+
+describe('what truncation is counted in', () => {
+  it('counts whole elapsed years and not a difference of year parts', async () => {
+    renderBenchmark(
+      ready({
+        // 31 Dec 2023 → 1 Jan 2024 is one day, not "a year": subtracting the
+        // year parts would tell the owner a whole year of their history is
+        // outside a gap that misses a day of it.
+        portfolio_from: '2023-12-31',
+        covered_from: '2024-01-01',
+        truncated_by_fund: true,
+      }),
+    )
+
+    expect(await screen.findByText(/Comparé du .* au /)).toBeInTheDocument()
+    expect(screen.queryByText(/année.* antérieure/)).not.toBeInTheDocument()
+  })
+
+  it('counts the year only once it has actually elapsed', async () => {
+    renderBenchmark(
+      ready({
+        portfolio_from: '2013-05-10',
+        covered_from: '2024-04-02',
+        truncated_by_fund: true,
+      }),
+    )
+
+    // Ten years and eleven months: ten, not eleven.
+    expect(
+      await screen.findByText(/10 années antérieures ne sont pas dans cet écart/),
+    ).toBeInTheDocument()
+  })
+})

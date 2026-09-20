@@ -317,9 +317,9 @@ def test_the_series_carries_every_calendar_day_of_the_covered_period():
     result = counterfactual.replay(
         _window('2024-01-05', '2024-01-08'), prices, {}, {}, 1000.0)
 
-    assert [day for day, _ in result.series] == [
+    assert [snap.day for snap in result.series] == [
         date(2024, 1, 5), date(2024, 1, 6), date(2024, 1, 7), date(2024, 1, 8)]
-    assert [round(value) for _, value in result.series] == [
+    assert [round(snap.value) for snap in result.series] == [
         1000, 1000, 1000, 1250]
 
 
@@ -336,10 +336,55 @@ def test_a_period_that_ended_early_draws_no_day_past_its_end():
         _days('2024-01-01', '2024-01-31', 20.0), {},
         {date(2024, 1, 10): -5000.0}, 1000.0)
 
-    assert stopped.series[-1][0] == stopped.last_day == date(2024, 1, 9)
-    assert emptied.series[-1][0] == emptied.last_day == date(2024, 1, 10)
+    assert stopped.series[-1].day == stopped.last_day == date(2024, 1, 9)
+    assert emptied.series[-1].day == emptied.last_day == date(2024, 1, 10)
 
 
 def test_a_comparison_that_never_started_draws_nothing():
     assert counterfactual.replay(
         _window('2024-01-01', '2024-01-31'), {}, {}, {}, 1000.0).series == []
+
+
+def test_each_day_carries_the_three_terms_an_aggregate_reads_back():
+    """A snapshot, not a value: an aggregate ends at the **earliest** of its
+    accounts' ends, so a replay that ran longer is read back at that day.
+
+    Left with the value alone, the contribution and the cost basis would come
+    from the replay's own last day — days the screen says are not in the
+    comparison — and the account that ended early is exactly the one whose
+    later days are least like the others.
+    """
+    prices = _days('2024-01-01', '2024-01-31', 20.0)
+
+    result = counterfactual.replay(
+        _window('2024-01-01', '2024-01-31'), prices, {},
+        {date(2024, 1, 10): 500.0, date(2024, 1, 20): -300.0}, 1000.0)
+
+    before = next(s for s in result.series if s.day == date(2024, 1, 5))
+    assert before.contributed == pytest.approx(1000.0)
+    assert before.cost_basis == pytest.approx(1000.0)
+
+    after = next(s for s in result.series if s.day == date(2024, 1, 15))
+    assert after.contributed == pytest.approx(1500.0)
+    assert after.latent_gain == pytest.approx(0.0)
+
+    # And the withdrawal moves both, on its own day and not on the last one.
+    sold = next(s for s in result.series if s.day == date(2024, 1, 25))
+    assert sold.contributed == pytest.approx(1200.0)
+    assert sold.cost_basis == pytest.approx(1200.0)
+
+
+def test_a_close_of_zero_stops_the_replay_rather_than_dividing_by_it():
+    """`finite()` keeps `0.0`, and a converted close is a product this module
+    never sees. The seed already refuses a non-positive quote; the loop divides
+    by the same number two lines later, so it refuses one too."""
+    prices = _days('2024-01-01', '2024-01-31', 20.0)
+    prices[date(2024, 1, 10)] = 0.0
+
+    result = counterfactual.replay(
+        _window('2024-01-01', '2024-01-31'), prices, {},
+        {date(2024, 1, 10): 500.0}, 1000.0)
+
+    assert result.ended == counterfactual.AWAITING_RATE
+    assert result.last_day == date(2024, 1, 9)
+    assert result.value == pytest.approx(1000.0)

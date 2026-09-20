@@ -29,7 +29,16 @@ export function ReferenceRebuild({ rebuild }: { rebuild: BenchmarkRebuild }) {
   const { t } = useI18n()
   const f = useFormatters()
 
-  const percent = rebuild.ratio === null ? null : Math.round(rebuild.ratio * 100)
+  // **Floored, never rounded.** `Math.round(0.999 * 100)` is 100, and a bar
+  // that reads finished while the fetch has hours left is the same lie the
+  // off-list target was: the owner stops waiting and the figure never comes.
+  // Only a ratio that has actually reached 1 shows 100.
+  const percent =
+    rebuild.ratio === null
+      ? null
+      : rebuild.ratio >= 1
+        ? 100
+        : Math.floor(rebuild.ratio * 100)
 
   return (
     <Card>

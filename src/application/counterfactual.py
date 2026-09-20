@@ -50,7 +50,7 @@ this is where the next person to wonder will look.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Collection, List, Mapping, Optional, Tuple
+from typing import Collection, List, Mapping, NamedTuple, Optional, Tuple
 
 ONE_DAY = timedelta(days=1)
 
@@ -63,6 +63,29 @@ AWAITING_RATE = 'awaiting_rate'
 #: The reference has no convertible close anywhere in the window. Not an early
 #: end — a comparison that never started, and the caller shows no figure at all.
 NEVER_QUOTED = 'never_quoted'
+
+
+class Snapshot(NamedTuple):
+    """One covered day, and everything an aggregate needs to read **on it**.
+
+    The value alone was not enough: an aggregate ends at the *earliest* of its
+    accounts' ends, so a replay that ran longer has to be read back at that day
+    and not at its own last one. Carrying the three terms together is what
+    keeps the tax side, the return's denominator and the curve on one date.
+    """
+
+    day: date
+    #: Units at the day's price.
+    value: float
+    #: The opening position plus every flow since, withdrawals netted off.
+    contributed: float
+    #: What was paid for the units still held — the assiette, on this day.
+    cost_basis: float
+
+    @property
+    def latent_gain(self) -> float:
+        """What the tax would be projected on, **on this day**."""
+        return self.value - self.cost_basis
 
 
 @dataclass(frozen=True)
@@ -87,11 +110,13 @@ class Replay:
     #: the same seed. A return read off anything else compares two fractions
     #: with different bottoms and calls the difference a gap.
     contributed: float = 0.0
-    #: ``(day, value)`` for every day covered, oldest first — the curve drawn
-    #: against the portfolio's own. One entry per calendar day and not per
-    #: quoted day, because the two curves are read as the area between them and
-    #: a reference that skips weekends would draw that area wrong.
-    series: List[Tuple[date, float]] = field(default_factory=list)
+    #: One :class:`Snapshot` per calendar day covered, oldest first — the curve
+    #: drawn against the portfolio's own, and the three terms an aggregate
+    #: reads back at a day that is not this replay's last. One entry per
+    #: calendar day and not per quoted day, because the two curves are read as
+    #: the area between them and a reference that skips weekends would draw
+    #: that area wrong.
+    series: List[Snapshot] = field(default_factory=list)
 
     @property
     def latent_gain(self) -> float:
@@ -142,7 +167,7 @@ def replay(window: Tuple[date, date],
     basis = opening
     contributed = opening
     ended = None
-    series = [(seeded, opening)]
+    series = [Snapshot(seeded, opening, opening, opening)]
 
     day = seeded + ONE_DAY
     while day <= last:
@@ -155,6 +180,16 @@ def replay(window: Tuple[date, date],
         if ratio:
             units *= ratio
         if quoted is not None:
+            # **A close of zero or less is not a price.** The seed already
+            # refuses one, and this is the same number divided by two lines
+            # down: `flow / price` raises on a zero and a negative quote buys
+            # negative units, which compounds into a figure that still looks
+            # like an answer. The store can hold one — `finite()` keeps `0.0`,
+            # and a converted close is a product of two numbers this module
+            # never sees. Nothing is replayed past it.
+            if quoted <= 0:
+                ended = AWAITING_RATE
+                break
             price = quoted
 
         flow = flows.get(day, 0.0)
@@ -165,14 +200,14 @@ def replay(window: Tuple[date, date],
         elif flow < 0:
             if -flow > units * price:
                 ended = EXHAUSTED
-                series.append((day, units * price))
+                series.append(Snapshot(day, units * price, contributed, basis))
                 break
             before = units
             units -= -flow / price
             basis *= units / before
             contributed += flow
 
-        series.append((day, units * price))
+        series.append(Snapshot(day, units * price, contributed, basis))
         day += ONE_DAY
 
     # A day with no rate is not replayed at all, so the period ends the evening
@@ -197,4 +232,5 @@ def _span(first: date, last: date):
         day += ONE_DAY
 
 
-__all__ = ['Replay', 'replay', 'EXHAUSTED', 'AWAITING_RATE', 'NEVER_QUOTED']
+__all__ = ['Replay', 'Snapshot', 'replay',
+           'EXHAUSTED', 'AWAITING_RATE', 'NEVER_QUOTED']
