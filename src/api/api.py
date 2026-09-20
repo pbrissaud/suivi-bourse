@@ -12,6 +12,7 @@ from logfmt_logger import getLogger
 
 from application import account_facts
 from application import accounts as accounts_module
+from application import benchmark_view
 from application import advisories
 from application import entries
 from application import installation_facts
@@ -1218,6 +1219,28 @@ def get_investment_rhythm():
         'base_currency': _base_currency(),
         **rhythm.measure(_snapshot().events,
                          datetime.now(timezone.utc)).to_dict(),
+    })
+
+
+@api_bp.get('/benchmark')
+def get_benchmark():
+    """The comparison of #760 — the figure and the right to display it, together.
+
+    One route and one payload, because the two cannot be allowed to disagree:
+    the gap, the period it covers and ``terminal`` arrive in the same read, so
+    the screen can never draw a number over a series that is still being
+    fetched. A second read for terminality would be a second chance to be
+    wrong.
+
+    No MCP tool beside it yet. The milestone orders #958 and the surface it
+    guards in that order, and this is the one screen of the product carrying a
+    tax figure — a description nothing checks is exactly the defect #958 exists
+    to catch.
+    """
+    return jsonify({
+        'base_currency': _base_currency(),
+        **benchmark_view.comparison(_store(), _snapshot(),
+                                    datetime.now(timezone.utc)),
     })
 
 

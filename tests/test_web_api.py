@@ -6154,6 +6154,80 @@ def test_an_unknown_assiette_states_no_base_either(tmp_path):
     assert 'projected_base' not in row
 
 
+def test_the_comparison_route_answers_the_untouched_dial_with_the_list(tmp_path):
+    """No reference named is not a failure, and the empty state's one action
+    is the selector — so the seven arrive with the emptiness."""
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    body = client.get('/api/benchmark').get_json()
+
+    assert body['state'] == 'no_reference'
+    assert body['reference'] is None
+    assert len(body['offered']) == 7
+    assert 'gap_gross' not in body
+
+
+def test_the_comparison_route_gates_every_figure_on_terminality(tmp_path):
+    """The figure and the right to display it arrive in one read.
+
+    A second read for terminality is a second chance to disagree, and what
+    disagreement looks like here is a gap computed over a half-built series: a
+    plausible number beside a portfolio figure that is right, gone an hour
+    later.
+    """
+    def seed(opened):
+        seed_quote(opened, symbol='CW8.PA', price=500.0,
+                   at=datetime(2024, 6, 2, 17, 0, tzinfo=timezone.utc))
+
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS, seed=seed)
+    assert client.put('/api/settings',
+                      json={'benchmark_symbol': 'CW8.PA'}).status_code == 200
+
+    body = client.get('/api/benchmark').get_json()
+
+    assert body['state'] == 'rebuilding'
+    assert body['rebuild']['symbol'] == 'CW8.PA'
+    assert 'gap_gross' not in body and 'gap_net' not in body
+
+
+def test_naming_a_reference_still_adds_no_day_to_the_valuation_curve(tmp_path):
+    """#982's acceptance criterion 4, re-asserted now that a second call site
+    of `terminal_symbols` exists.
+
+    The criterion is about the **valuation path**, not about the function: the
+    comparison asks `terminal_symbols` whether the reference's own backfill is
+    finished, which is a different question from the same name. This test is
+    the one that would catch the two being confused — the curve's day axis must
+    stay the ledger's, with the reference named and quoted in the store.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, symbol='AAPL', price=200.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='AAPL', price=210.0,
+                   at=datetime(2024, 6, 3, 17, 0, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='CW8.PA', price=500.0,
+                   at=datetime(2024, 6, 2, 17, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, events=events, seed=seed)
+    assert client.put('/api/settings',
+                      json={'benchmark_symbol': 'CW8.PA'}).status_code == 200
+
+    curve = client.get(
+        '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()
+
+    assert curve['points'] == [
+        {'t': '2024-06-01', 'value': 2000.0, 'invested': 1500.0},
+        {'t': '2024-06-03', 'value': 2100.0, 'invested': 1500.0},
+    ]
+
+
 def test_a_tracked_never_held_symbol_adds_no_day_to_the_curve(tmp_path):
     """A reference series prices days the portfolio never lived through (#982).
 
