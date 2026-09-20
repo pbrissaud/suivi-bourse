@@ -401,6 +401,42 @@ be a guess.
 in the colour of ordinary text — never greyed like something that is missing. On
 a sold-out position the two sit side by side, and they mean different things.
 
+## The gap against a reference {#benchmark}
+
+The comparison screen answers one question, in euros: **would an index fund have
+left you with more?**
+
+It is not a comparison of returns. The app takes your own deposits and
+withdrawals, on the days they actually happened, and buys shares of the fund
+with them instead. That is why the sentence under the figure says *with the same
+contributions*: two portfolios with the same percentage return end on different
+amounts when the money arrived on different days, and the euro is the number
+that answers what you have left.
+
+Four things bound the answer, and each one is stated on screen rather than left
+to be inferred:
+
+- **The period is the one the computation honours**, not the fund's age. It
+  starts at the later of the fund's first close and your own first recorded day,
+  so a fund launched in 2024 compares against 2024 onwards and says how many of
+  your earlier years are not in the gap.
+- **A withdrawal the reference could not have funded ends the period that day.**
+  Your withdrawal happened — your portfolio had the money. A reference that has
+  fallen may not, and selling shares it does not own would produce a negative
+  holding that compounds into a figure that still looks like an answer.
+- **The reference is fully invested from day one.** Your accounts may hold cash;
+  the replay never does. When that cash is material the screen says how much, so
+  the difference is visible rather than silently loaded onto the comparison.
+- **The after-tax reading is per account.** Each wrapper projects its own tax on
+  its own gain, and a loss in one account owes nothing rather than offsetting a
+  gain in another. If any one account of the perimeter has no taxation this
+  version can read, there is no after-tax figure at all and that account is
+  named — a net that is short by one wrapper reads exactly like a net that is
+  right.
+
+While the fund's history is still being fetched, **no figure appears at all**.
+A gap computed over half a series is not a smaller answer, it is a wrong one.
+
 ## Where these figures come from {#sources}
 
 - Your events are the only input: [Import your events](./import-your-events.mdx).

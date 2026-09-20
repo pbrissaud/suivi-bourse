@@ -63,7 +63,8 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     symbol = store.setting('benchmark_symbol')
     if not symbol:
         return {'state': NO_REFERENCE, 'reference': None,
-                'offered': _offered()}
+                'offered': _offered(),
+                'consulted': ledger.consulted_benchmarks(store)}
 
     offered = benchmarks.offered(symbol)
     head: Dict[str, Any] = {
@@ -74,6 +75,13 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         'index': offered.index if offered else None,
         'inception': instants.iso(offered.inception) if offered else None,
         'offered': _offered(),
+        # **Which of the seven this install already holds a series for.** The
+        # consulted list and not a scan of `price_point`, because that list is
+        # exactly what #760 keeps alive so switching back is instant — and the
+        # selector's *déjà téléchargé* column is the only thing that makes the
+        # promise visible. Without it every switch is a coin flip between
+        # instant and a two-hour rebuild.
+        'consulted': ledger.consulted_benchmarks(store),
     }
 
     # No tracked window means an empty ledger: `tracked_windows` anchors the

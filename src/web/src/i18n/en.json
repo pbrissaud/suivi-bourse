@@ -1,20 +1,17 @@
 {
   "app.name": "SuiviBourse",
-
   "nav.label": "Sections",
   "nav.dashboard": "Dashboard",
   "nav.shares": "Shares",
   "nav.accounts": "Accounts",
   "nav.ledger": "Ledger",
   "nav.settings": "Settings",
-
   "header.toggleSidebar": "Show or hide the navigation",
   "header.language": "Language",
   "header.theme": "Theme",
   "header.density": "Table density",
   "density.comfortable": "Comfortable",
   "density.compact": "Compact",
-
   "palette.open": "Search a security, an account…",
   "palette.shortcut": "⌘K",
   "palette.title": "Search your portfolio",
@@ -30,23 +27,18 @@
   "palette.action.account": "Declare an account",
   "palette.action.account.keywords": "declare account broker",
   "palette.empty": "Nothing in your portfolio matches “{query}”.",
-
   "sidebar.rail": "Collapse or expand the navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "The sections of the app, in a drawer.",
   "sheet.close": "Close",
   "dialog.close": "Close",
-
   "lang.auto": "Automatic",
   "lang.fr": "Français",
   "lang.en": "English",
-
   "theme.auto": "Automatic",
   "theme.light": "Light",
   "theme.dark": "Dark",
-
   "status.dot": "{state, select, ok {Everything is running} attention {Something needs your attention} rebuilding {Your history is being rebuilt} unreachable {The app is not responding} other {The state of this installation is unknown}}",
-
   "notification.title": "Notifications",
   "notification.open": "Notifications",
   "notification.count": "{count, plural, one {# open entry} other {# open entries}}",
@@ -83,36 +75,28 @@
   "notification.advisory.no_taxation_model.body": "This account carries no taxation model, so the app cannot say what you would owe on it. Declare one and its panel will show the projection.",
   "notification.advisory.benchmark_never_priced": "{symbol} · no price came back",
   "notification.advisory.benchmark_never_priced.body": "This ticker is named as the comparison reference, but the market returned no price for it, so there is no curve to compare against. Check the spelling, or name another one.",
-
   "empty.noCurrency.title": "No base currency yet",
   "empty.noCurrency.body": "Nothing is valued and no gain is computed until you choose a base currency. Your events are recorded all the same, and the ledger stays readable.",
   "empty.noCurrency.link": "Answer it in Settings",
   "empty.unread.title": "This could not be read",
-
   "accounts.advisory.cash": "{share, number, percent} cash",
-
   "page.dashboard": "Dashboard",
   "page.shares": "Shares",
   "page.accounts": "Accounts",
   "page.ledger": "Ledger",
   "page.settings": "Settings",
-
   "notFound.title": "No such page",
   "notFound.body": "This address matches no page.",
   "notFound.link": "Back to the dashboard",
-
   "explain.open": "What {figure} means",
   "explain.link": "Read the whole rule",
-
   "absence.awaitingRate": "waiting for a rate",
   "absence.noQuote": "{count, plural, one {# consecutive reading, no price} other {# consecutive readings, no price}}",
   "absence.rebuilding": "history still being rebuilt",
-
   "gain.term.unrealised": "Unrealised P&L",
   "gain.term.realised": "Realised P&L",
   "gain.term.dividends": "Dividends received",
   "gain.term.transferFees": "Fees on transfers",
-
   "dashboard.gainTotal": "Total P&L",
   "dashboard.gainTotal.explain": "Everything your portfolio has earned: unrealised gain, realised gain, dividends received, and the fees your broker takes on transfers. The four add up to this total.",
   "dashboard.ytd.gain": "{amount} since 1 January",
@@ -137,7 +121,6 @@
   "dashboard.empty.link": "Go to the ledger",
   "dashboard.holdings": "Securities",
   "dashboard.pricedAt": "Prices as of {date}",
-
   "dashboard.chart.amounts": "Amounts",
   "dashboard.chart.performance": "Performance",
   "dashboard.chart.reading": "Reading",
@@ -149,7 +132,6 @@
   "dashboard.chart.cost": "Cost",
   "dashboard.chart.area": "Between the two curves",
   "dashboard.chart.empty": "Nothing to draw over this range yet.",
-
   "dashboard.movers.title": "Movers",
   "dashboard.movers.since": "Since the close of {date}",
   "dashboard.movers.others": "{count, plural, one {# other holding is} other {# other holdings are}} not shown here, {unchanged, plural, =0 {none of which moved by nothing} one {# of which moved by nothing} other {# of which moved by nothing}}.",
@@ -165,25 +147,21 @@
   "dashboard.rhythm.empty.body": "Only buys make a rhythm: a deposit, a grant and a dividend are not purchases.",
   "dashboard.rhythm.unobserved": "Nothing to measure yet",
   "dashboard.rhythm.unobserved.body": "The rhythm appears once the ledger holds an event dated in the past.",
-
   "dashboard.accounts.title": "Your accounts, compared",
   "dashboard.accounts.perf": "perf",
   "dashboard.accounts.xirr": "IRR",
   "dashboard.accounts.empty": "Nothing to compare over this range yet.",
-
   "installation.rebuild.title": "Rebuilding your history",
   "installation.rebuild.body": "Your history is being rebuilt. Prices are still being read; the consolidated figures are catching up.",
   "installation.rebuild.body.account": "Your history is being rebuilt. {account} is furthest behind, and the consolidated figures are waiting for it.",
   "installation.rebuild.progress": "{percent, number, percent} of the period covered",
   "installation.rebuild.link": "Go to the dashboard",
-
   "currency.unanswered": "Not chosen yet",
   "currency.offList": "{code} — recorded outside this list",
   "currency.suggested": "Suggested from your browser. Check that it matches your portfolio.",
   "currency.untilAnswered": "Once chosen it is fixed: every amount is recorded in it from then on, and changing it later would reinterpret them instead of converting them. You can answer whenever you like — you just cannot answer twice.",
   "currency.fixed": "Fixed: your amounts are recorded in this currency and it can no longer change.",
   "currency.fixed.mark": "Fixed",
-
   "firstRun.title": "Welcome to SuiviBourse",
   "firstRun.what.ledger": "You record what you bought and sold: the security, the date, the price.",
   "firstRun.what.quotes": "SuiviBourse fetches the quotes by itself and works out the rest.",
@@ -210,7 +188,6 @@
   "firstRun.pass.events.title": "Your first events",
   "firstRun.pass.events.body": "Two ways to start: import a file, or type an event by hand. You can also start empty and come back whenever you want.",
   "firstRun.pass.events.file": "Choose a file…",
-
   "receipt.currency.saved": "Base currency saved: {currency}.",
   "receipt.export.running": "{file, select, events {Preparing your events…} workbook {Preparing your workbook…} selection {Preparing your selection…} portfolio {Preparing your accounts and positions…} other {Preparing your file…}}",
   "receipt.export.saved": "{file, select, events {Your events are on your disk.} workbook {Your workbook is on your disk.} selection {Your selection is on your disk.} portfolio {Your accounts and positions are on your disk.} other {Your file is on your disk.}}",
@@ -223,7 +200,6 @@
   "receipt.import.known.forecast": "{count, plural, one {# line of this file is already in your ledger and will be skipped} other {# lines of this file are already in your ledger and will be skipped}}.",
   "receipt.import.known.kept": "{count, plural, one {That line will be written a second time.} other {Those # lines will be written a second time.}}",
   "receipt.events.removed": "{count, plural, one {# event removed} other {# events removed}}.",
-
   "shares.allocation.title": "Allocation",
   "shares.allocation.others": "{count, plural, one {# other holding} other {# other holdings}}",
   "shares.allocation.scope": "{lines} lines · top {top} detailed, {folded} grouped",
@@ -232,7 +208,6 @@
   "shares.allocation.unplaced": "{count, plural, one {# holding is} other {# holdings are}} not in this allocation, quoted with no rate yet: {symbols}. Including it would make every other percentage wrong.",
   "shares.allocation.empty": "Nothing held",
   "shares.allocation.empty.body": "You hold no open position, so there is nothing to split.",
-
   "shares.gainTotal": "Total P&L",
   "shares.head.title": "Open lines · totals",
   "shares.unrealised.explain": "What a position is worth today less what it cost you. It moves with the market and it is not money you have yet. A position with no price is counted at its cost, so it shows zero.",
@@ -287,12 +262,9 @@
   "shares.fundamentals.dividendYield": "Dividend yield",
   "shares.fundamentals.peRatio": "P/E",
   "shares.fundamentals.marketCap": "Market cap",
-
   "accounts.chart.rangeName": "{range, select, 1M {1M} YTD {YTD} 1Y {1Y} SINCE_OPENING {Since the opening} other {}}",
-
   "accounts.rail.title": "Weight of your accounts",
   "accounts.rail.label": "Your accounts",
-
   "accounts.figure.totalValue": "Total value",
   "accounts.figure.holdings": "Securities",
   "accounts.figure.cash": "Cash",
@@ -306,14 +278,11 @@
   "accounts.figure.feesOnContributed": "{percent} of what was paid in",
   "accounts.xirr.explain": "What your deposits into this account earned, as a yearly rate. It takes the date of every deposit and withdrawal into account.",
   "accounts.totalPerformance.explain": "This account’s whole gain divided by what you have paid into it — what a euro left here since the start has become. It covers the account’s entire life, so it is not a yearly rate.",
-
   "accounts.reason.withoutCashLedger": "no cash movement recorded on this account",
   "accounts.reason.rebuilding": "history still being rebuilt",
   "accounts.reason.empty": "nothing recorded on this account",
-
   "accounts.default.label": "Unassigned",
   "accounts.default.reassign": "Assign these events to an account",
-
   "accounts.detail.gainTotal.explain": "What this account is worth less what you have paid into it. It counts this account's sold positions, and only the fees taken on its own transfers.",
   "accounts.detail.curve.title": "Value against what you have paid in",
   "accounts.detail.curve.value": "Total value",
@@ -338,7 +307,6 @@
   "accounts.detail.payers.period": "Since this account opened",
   "accounts.detail.events": "Latest events",
   "accounts.detail.events.link": "See this account’s events in the ledger",
-
   "accounts.new": "Declare an account",
   "accounts.remove": "Remove",
   "accounts.remove.title": "Remove this account",
@@ -363,7 +331,6 @@
   "accounts.form.submit": "Declare this account",
   "accounts.form.save": "Save this account",
   "accounts.form.cancel": "Cancel",
-
   "accounts.form.taxation": "Taxation model",
   "accounts.form.taxation.none": "No model",
   "accounts.form.taxation.new": "Write a model…",
@@ -372,7 +339,6 @@
   "accounts.form.taxation.remove": "Remove this model",
   "accounts.form.openedOn": "Opened on",
   "accounts.form.openedOn.hint": "The day this wrapper was opened — it is what its age is counted from, and the shape you chose above uses that age. We offer the date of its first payment on record; correct it if the wrapper is older than this ledger, which is what a transfer from another broker looks like.",
-
   "taxation.name": "What to call this model",
   "taxation.kind": "Shape",
   "taxation.kind.none": "Not taxed",
@@ -406,17 +372,14 @@
   "taxation.brackets.remove": "Remove this bracket",
   "taxation.save": "Save this model",
   "taxation.cancel": "Cancel",
-
   "accounts.empty.title": "No account declared",
   "accounts.empty.body": "Every installation has one account, so this screen means the declaration could not be read — not that you have none. Declare one here: this is the only place an account is created.",
-
   "event.type.BUY": "Buy",
   "event.type.SELL": "Sell",
   "event.type.GRANT": "Free shares",
   "event.type.DIVIDEND": "Dividend",
   "event.type.DEPOSIT": "Cash in",
   "event.type.WITHDRAWAL": "Cash out",
-
   "data.ledger.label": "Your events",
   "data.ledger.shown": "{shown} of {total} shown",
   "data.ledger.more": "Show more",
@@ -460,7 +423,6 @@
   "data.row.delete.title": "Delete this event?",
   "data.row.delete.body": "{type} · {what} · {date}. It leaves the ledger, and everything derived from it — positions, average cost, gains, rates — is recomputed without it.",
   "data.row.delete.cancel": "Keep it",
-
   "data.form.create.title": "A new event",
   "data.form.edit.title": "This event",
   "data.form.description": "Say what happened, when, and for how much.",
@@ -485,13 +447,10 @@
   "data.form.number.invalid": "This is not a number.",
   "data.form.submit": "Record this event",
   "data.form.cancel": "Cancel",
-
-
   "data.empty.file.title": "Import a file",
   "data.empty.file.body": "Hand the app a .csv or .xlsx of your events. It reads it once, whatever it is called — a file covering a single year is a fine start.",
   "data.empty.manual.title": "Enter a first event",
   "data.empty.manual.body": "A position is typed as the events that built it — a purchase, its date, its price. If you no longer have the date, record your best estimate.",
-
   "data.imports.title": "Import and export",
   "data.drop.title": "Drop a .csv or .xlsx file: you will see what it would do before it writes",
   "data.drop.body": "The app reads it by itself, whatever it is called, and shows you the import before recording it.",
@@ -536,7 +495,6 @@
   "data.export.selection.note": "{count, plural, one {# line retained} other {# lines retained}}",
   "data.export.portfolio": "Accounts and positions",
   "data.export.portfolio.note": "Balances, average cost and valuations",
-
   "data.bulk.title": "{reduced, select, yes {{count, plural, one {Delete the event} other {Delete the # events}}} other {Delete the reduction}}",
   "data.bulk.confirm.title": "{count, plural, one {Delete the event {clauses}?} other {Delete the # events {clauses}?}}",
   "data.bulk.confirm.body": "Every event shown leaves the ledger, including the ones that came from a file.",
@@ -554,7 +512,6 @@
   "data.wipe.body": "Every event of yours leaves. The accounts you declared and your settings stay. Nothing is recomputed afterwards: there is nothing left to compute.",
   "data.wipe.submit": "Empty the ledger",
   "data.wipe.cancel": "Cancel",
-
   "installation.fact.unread_environment": "{count, plural, one {# environment variable is set but read by nothing} other {# environment variables are set but read by nothing}}: {variables}. Since v5 the settings live in the app — set them on this page. Unset the variables, or acknowledge this notice.",
   "installation.fact.unread_environment.unobserved": "Environment variables are set that this version reads for nothing.",
   "installation.fact.reconstruction_running": "History is being rebuilt: {complete, plural, one {# series goes} other {# series go}} back to the first purchase, out of {total, number}. Your performance figures will keep moving until it is done.",
@@ -588,7 +545,6 @@
   "settings.benchmark_symbol.hint": "An optional reference ticker — a broad-market ETF, say — to compare the portfolio's performance against. Its price history is kept up to date even though you hold none of it. Clear the field to remove the reference.",
   "settings.cadence.reach": "Applies now to {now, plural, one {# share} other {# shares}}{later, plural, =0 {} one {, and to # more when its market opens} other {, and to # more when their markets open}}.",
   "settings.backoff.retroactive": "A share that cannot be priced waits a multiple of this delay before the next try. Changing it also applies to shares already failing.",
-
   "settings.jobs": "The workloads",
   "settings.jobs.column.name": "Workload",
   "settings.jobs.column.at": "Last pass",
@@ -603,12 +559,10 @@
   "settings.jobs.backfill.verdict": "{verdict, select, complete {{scope, plural, one {# series goes} other {All # series go}} back to the first purchase.} running {{complete, number} of {scope, plural, one {# series} other {# series}} complete.} failing {The rebuild is stuck on {symbols}.} unconvertible {{symbols} cannot be converted to your base currency, so their history stops there.} other {Not run yet.}}",
   "settings.jobs.performance": "Performance computation",
   "settings.jobs.performance.verdict": "{verdict, select, ran {Return series rewritten.} failed {The last pass failed and wrote nothing: you are reading the previous figures.} other {Not run yet.}}",
-
   "installation.build": "The version",
   "installation.build.version": "Version",
   "installation.build.revision": "Revision",
   "installation.build.source": "{source, select, release {Image published under this version number.} commit {This image was built from a commit rather than from a published release, so it carries no version number.} checkout {The app is running from a local checkout. The revision says where the code came from, not what has been changed since.} other {Nothing stamped this build, so the app cannot tell which version it is running.}}",
-
   "installation.store": "The store",
   "installation.store.path": "Where it is",
   "installation.store.persistence": "{state, select, persistent {This path is on a volume that outlives the container.} ephemeral {This path is inside the container and is lost when it is recreated.} other {The app cannot tell whether this path outlives the container.}}",
@@ -623,7 +577,6 @@
   "installation.store.orphans.body": "Their prices were kept when whatever named them went away: events you deleted, or a comparison reference you removed. An event can be entered again, a rebuilt history cannot. Positions you have sold are not affected.",
   "installation.store.orphans.points": "{count, plural, one {# price} other {# prices}}",
   "installation.store.purge": "Purge these histories",
-
   "problem.storageUnavailable": "Your data cannot be read right now. The app is running, but its store is not answering.",
   "problem.notFound": "The app answered that this does not exist.",
   "problem.entryGone": "This event is no longer in the ledger: it was deleted elsewhere, and nothing was changed here.",
@@ -640,5 +593,47 @@
   "problem.taxationModelInUse": "The app refused: an account still carries this taxation model. Detach it there first.",
   "problem.taxationModelInUse.accounts": "The app refused: {count, plural, one {the account {accounts} still carries} other {the accounts {accounts} still carry}} this taxation model. Detach it there first, then remove the model.",
   "problem.internal": "The app hit an error it did not expect.",
-  "problem.unreachable": "The app is not answering. Nothing on screen comes from it."
+  "problem.unreachable": "The app is not answering. Nothing on screen comes from it.",
+  "nav.benchmark": "Reference",
+  "page.benchmark": "Reference",
+  "benchmark.empty.title": "No reference chosen",
+  "benchmark.empty.body": "Pick an index fund: the comparison replays your own contributions and withdrawals, on the same days, into that fund.",
+  "benchmark.empty.noEvents.title": "Nothing to compare yet",
+  "benchmark.empty.noEvents.body": "The comparison replays your own movements. Record your first events and it will fill in.",
+  "benchmark.empty.noEvents.link": "Open the ledger",
+  "benchmark.select.label": "Reference",
+  "benchmark.select.placeholder": "Choose a fund",
+  "benchmark.select.pea": "PEA-eligible",
+  "benchmark.select.since": "since {year}",
+  "benchmark.select.downloaded": "already downloaded",
+  "benchmark.select.toRebuild": "to rebuild",
+  "benchmark.select.offList": "{symbol} · off the list",
+  "benchmark.select.peaNote": "These funds are PEA-eligible. It changes nothing in the arithmetic: the comparison replays your flows in your own accounts.",
+  "benchmark.select.hint": "The first comparison rebuilds the fund's history. Give it a few minutes; the page fills in on its own.",
+  "benchmark.mode.label": "Reading",
+  "benchmark.mode.gross": "Gross",
+  "benchmark.mode.net": "After tax",
+  "benchmark.head.label": "{index} · {symbol}",
+  "benchmark.verdict.ahead": "Your holdings made {gap} more than the {index}, over the same period and with the same contributions.",
+  "benchmark.verdict.behind": "Your holdings made {gap} less than the {index}, over the same period and with the same contributions.",
+  "benchmark.verdict.equal": "Your holdings and the {index} end at the same amount, to the euro.",
+  "benchmark.inversion.ahead": "After tax, the ranking flips: you come out ahead.",
+  "benchmark.inversion.behind": "After tax, the ranking flips: you come out behind.",
+  "benchmark.period": "Compared from {from} to {to}.",
+  "benchmark.period.truncated": "Compared from {from}, this fund's first close. Your {years, plural, one {# earlier year is} other {# earlier years are}} not in this gap.",
+  "benchmark.period.exhausted": "The period ends on {to}: a withdrawal that day is one the reference could not have funded.",
+  "benchmark.period.awaitingRate": "The period ends on {to}: the next day's close has no exchange rate.",
+  "benchmark.term.gap": "Gap in points",
+  "benchmark.term.yours": "Your portfolio",
+  "benchmark.term.theirs": "The reference",
+  "benchmark.cash": "Your accounts hold {amount} in cash. The reference is fully invested from day one.",
+  "benchmark.net.unavailable": "No after-tax figure: {accounts} {count, plural, one {has} other {have}} no usable taxation.",
+  "benchmark.net.reason": "{reason, select, no_model {no taxation declared} unreadable_model {a taxation model this version refuses} no_assiette {unvalued lines} other {unreadable taxation}}",
+  "benchmark.excluded": "{accounts} {count, plural, one {is} other {are}} out of the comparison: a grant was recorded there with no declared price.",
+  "benchmark.rebuild.title": "Rebuilding {symbol}'s history.",
+  "benchmark.rebuild.progress": "Back to {reached} so far.",
+  "benchmark.rebuild.target": "Back to {reached} so far, on a history that starts on {target}.",
+  "benchmark.rebuild.starting": "The rebuild has just started.",
+  "benchmark.rebuild.label": "{percent, number, percent} of the fund’s history",
+  "benchmark.explain.gap": "What this gap measures"
 }

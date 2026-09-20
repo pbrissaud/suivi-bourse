@@ -30,7 +30,7 @@
  * the settings.
  */
 import { Link, useRouterState } from '@tanstack/react-router'
-import { CircleDollarSign, Database, LayoutDashboard, Settings, Wallet } from 'lucide-react'
+import { CircleDollarSign, Database, LayoutDashboard, Scale, Settings, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import {
@@ -46,7 +46,7 @@ import {
 import { useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {
-  to: '/' | '/shares' | '/accounts' | '/ledger' | '/settings'
+  to: '/' | '/shares' | '/accounts' | '/benchmark' | '/ledger' | '/settings'
   label: MessageKey
   icon: LucideIcon
 }
@@ -56,6 +56,7 @@ const PORTFOLIO: Entry[] = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/shares', label: 'nav.shares', icon: CircleDollarSign },
   { to: '/accounts', label: 'nav.accounts', icon: Wallet },
+  { to: '/benchmark', label: 'nav.benchmark', icon: Scale },
 ]
 
 /**
@@ -73,9 +74,12 @@ export function AppSidebar() {
   const t = useT()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
-  // **The five entries are five, at every N.** The accounts entry used to
+  // **The six entries are six, at every N.** The accounts entry used to
   // disappear at one account, and the argument was the page's own: comparing
-  // one term is not comparing.
+  // one term is not comparing. The comparison entry follows the same rule for
+  // a stronger reason — it is a page whose whole purpose is to be reached
+  // before there is anything on it, and the emptiness is where the choice is
+  // made (#760).
 
   return (
     <Sidebar collapsible="icon">

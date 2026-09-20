@@ -42,14 +42,14 @@ async function chooseInMenu(
 }
 
 describe('the walking skeleton', () => {
-  it('starts, dresses, speaks two languages and walks its five routes', async () => {
+  it('starts, dresses, speaks two languages and walks its six routes', async () => {
     // The whole ticket in one pass, because the value of a tracer bullet is
     // that it can be *shown*: the app comes up, the sidebar is there, the
-    // ground turns, the language turns, and the five routes answer under both.
+    // ground turns, the language turns, and the six routes answer under both.
     const { user } = renderApp()
 
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
-    expect(within(nav()).getAllByRole('link')).toHaveLength(5)
+    expect(within(nav()).getAllByRole('link')).toHaveLength(6)
 
     await chooseInMenu(user, 'Thème', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
@@ -57,12 +57,12 @@ describe('the walking skeleton', () => {
     await chooseInMenu(user, 'Langue', 'English')
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
 
-    // **The five routes now answer with five pages.** `PendingPage` and its one
+    // **The six routes now answer with six pages.** `PendingPage` and its one
     // sentence left with #721, the last placeholder: a page that says it is not
-    // built yet has no subject once every one of them is, and keeping the
-    // component around for a sixth route nobody plans is how dead code is kept
-    // warm.
-    for (const entry of ['Shares', 'Accounts', 'Ledger', 'Settings']) {
+    // built yet has no subject once every one of them is, and a route arriving
+    // later — #760's comparison is the sixth — arrives with its page rather
+    // than with a promise of one.
+    for (const entry of ['Shares', 'Accounts', 'Reference', 'Ledger', 'Settings']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
       // `level: 1` is the page's own name, which the header draws (#789). The
       // settings page needs it said: the block it renders is *called* the
