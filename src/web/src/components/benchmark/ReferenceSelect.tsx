@@ -68,7 +68,8 @@ export function ReferenceSelect({
 
   const general = offered.filter((entry) => !entry.pea)
   const pea = offered.filter((entry) => entry.pea)
-  const offList = value !== null && !offered.some((entry) => entry.symbol === value)
+  const chosen = offered.find((entry) => entry.symbol === value) ?? null
+  const offList = value !== null && chosen === null
 
   return (
     <div className="space-y-2">
@@ -77,7 +78,17 @@ export function ReferenceSelect({
             sidebar is a drawer, and 44 px tall — the touch minimum the kit's
             own 36 px falls under. */}
         <SelectTrigger aria-label={t('benchmark.select.label')} className="w-full sm:w-96">
-          <SelectValue placeholder={t('benchmark.select.placeholder')} />
+          {/* **The chosen fund, not the row it was chosen from.** Left to
+              render itself, `SelectValue` echoes the whole `SelectItem` —
+              inception and download state included — and those two columns
+              only mean something *between* options. On the trigger they read
+              as facts about the current choice, and *already downloaded* sits
+              there permanently saying nothing. */}
+          <SelectValue placeholder={t('benchmark.select.placeholder')}>
+            {chosen === null
+              ? t('benchmark.select.offList', { symbol: value ?? '' })
+              : `${chosen.index} · ${chosen.symbol.split('.')[0]}`}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {offList ? (
@@ -97,6 +108,15 @@ export function ReferenceSelect({
                   <Row key={entry.symbol} entry={entry} downloaded={downloaded} />
                 ))}
               </SelectGroup>
+              {/* **Under the group it is about, inside the open menu.** The
+                  note defuses a label that enters no arithmetic, and it can
+                  only do that where the label is on screen. Rendered under the
+                  closed trigger it said *these funds are PEA-eligible* with no
+                  fund in sight — and beside a chosen fund that is not one, it
+                  said something false. */}
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                {t('benchmark.select.peaNote')}
+              </p>
             </>
           )}
         </SelectContent>
@@ -104,11 +124,6 @@ export function ReferenceSelect({
 
       {write.error ? <Refusal>{t(problemMessageKey(write.error))}</Refusal> : null}
 
-      {pea.length === 0 ? null : (
-        <p className="max-w-prose text-xs text-muted-foreground">
-          {t('benchmark.select.peaNote')}
-        </p>
-      )}
       {hint ? (
         <p className="max-w-prose text-xs text-muted-foreground">{t('benchmark.select.hint')}</p>
       ) : null}
