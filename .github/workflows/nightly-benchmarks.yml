@@ -1,0 +1,49 @@
+name: "Nightly benchmark probe"
+
+# **The repository's first scheduled workflow** (#760), and it exists for one
+# fact no other check can hold: the seven references in `benchmarks.py` are
+# written down as truths about Yahoo, and a fund that is delisted, renamed or
+# moved to another venue goes on reading as a perfectly good constant. Nothing
+# in the offline suite can notice — the owner notices, by choosing it and
+# waiting hours for a history that never arrives.
+#
+# Nightly rather than per pull request, because the answer changes with the
+# market and not with the diff: run on every PR it would fail on branches that
+# touched nothing, on an outage nobody here caused.
+#
+# 04:20 UTC: after the US close and well before European pre-market, and off
+# the hour — GitHub's own docs warn that schedules on the hour queue behind
+# everyone else's.
+on:
+  schedule:
+    - cron: "20 4 * * *"
+  # So a delisting suspected during the day can be checked without waiting for
+  # the night, and so the job can be proved to work the day it lands.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-benchmarks
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: "The offered references still answer"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      # `-m network` is the mirror of what `pr-checks.yml` deselects, so the
+      # two cannot drift: every test with the marker runs here and nowhere
+      # else. A throttled run skips rather than fails — Yahoo rate-limits
+      # GitHub's shared ranges, and a delisting reported off a 429 is the false
+      # alarm that makes a nightly job unreadable by the third week.
+      - run: uv run pytest tests/ -m network -v

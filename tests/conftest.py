@@ -234,7 +234,7 @@ def declare_ledger():
 
 
 @pytest.fixture(autouse=True)
-def _market_is_faked_or_refused(monkeypatch):
+def _market_is_faked_or_refused(request, monkeypatch):
     """yfinance is the suite's one faked edge — an unfaked call stays local.
 
     A test that wants a ticker patches ``market.yf.Ticker`` itself, and that
@@ -243,7 +243,17 @@ def _market_is_faked_or_refused(monkeypatch):
     *is* on its own cadence, so a module that never meant to talk to Yahoo can
     reach it in passing. Each edge in ``market`` catches, so the refusal reads
     as "Yahoo said nothing", which is the production behaviour under an outage.
+
+    **A test marked ``network`` is let through** (#760). One exists: the probe
+    of the closed list of references, which asks the live market whether seven
+    tickers still answer — an assertion no fake can make, since what it is
+    checking is precisely that the fake would be lying. It is deselected
+    everywhere but the nightly job, so the ordinary suite stays offline and
+    this fixture goes on refusing for every other test in the file.
     """
+    if request.node.get_closest_marker("network") is not None:
+        return
+
     def refused(*args, **kwargs):
         raise RuntimeError("yfinance was called by a test that did not fake it")
 

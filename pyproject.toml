@@ -70,3 +70,12 @@ package = false
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+# The one marker this suite has, and the one thing it means: **this test talks
+# to the live market**. Registered rather than left implicit so `-m` is a
+# supported selection and a typo in it is an error rather than a silent
+# no-match. Nothing in `tests/` carries it except the probe of #760's closed
+# list, which is the only assertion here that cannot be made against a fake:
+# what it checks is that seven tickers still answer on Yahoo.
+markers = [
+    "network: talks to the live market; skipped everywhere but the nightly job",
+]
