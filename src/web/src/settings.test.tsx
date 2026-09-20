@@ -177,6 +177,23 @@ describe('the settings, which are one surface', () => {
     }
   })
 
+  it('leaves the comparison reference off the form, though the route still writes it', async () => {
+    await openSettings()
+    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
+
+    // The list is the registry's **less one** (#760). Choosing a reference
+    // costs the fund's whole history to fetch, and the comparison screen is
+    // what says so before the click — the inception, the download state, the
+    // minutes-to-hours warning. A bare text field here offers the same write
+    // with none of it, and the way back would be emptying the field.
+    //
+    // `PUT /api/settings` is untouched: the dial is a dial, it is simply not
+    // asked for here. This assertion is on the **form**, not on the registry.
+    const settings = block('Ce que vous pouvez changer')
+    expect(within(settings).queryByText('Référence de comparaison')).not.toBeInTheDocument()
+    expect(aConfig().settings.some((setting) => setting.key === 'benchmark_symbol')).toBe(true)
+  })
+
   it('keeps the stale-price horizon settable, and says what zero does', async () => {
     const { user } = await openSettings()
     await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })

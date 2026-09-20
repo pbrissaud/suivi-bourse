@@ -541,8 +541,6 @@
   "settings.unit.seconds": "secondes",
   "settings.unit.days": "jours",
   "settings.base_currency.hint": "Tous les chiffres de l’application sont affichés dans cette devise.",
-  "settings.benchmark_symbol": "Référence de comparaison",
-  "settings.benchmark_symbol.hint": "Un ticker de référence facultatif — un ETF large, par exemple — auquel comparer la performance du portefeuille. Son historique est tenu à jour même si vous n’en détenez aucune part. Videz le champ pour retirer la référence.",
   "settings.cadence.reach": "S’applique maintenant à {now, plural, one {# titre} other {# titres}}{later, plural, =0 {} one {, et à # autre à l’ouverture de son marché} other {, et à # autres à l’ouverture de leur marché}}.",
   "settings.backoff.retroactive": "Un titre qui n’a pas pu être valorisé attend un multiple de ce délai avant le prochain essai. Le changer s’applique aussi aux titres déjà en échec.",
   "settings.jobs": "Les plans de charge",
