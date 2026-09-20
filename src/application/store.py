@@ -111,6 +111,20 @@ CREATE TABLE IF NOT EXISTS price_point (
     price_native     DOUBLE,
     price_converted  DOUBLE,                        -- NULL = transient, repaired later
     fx_rate          DOUBLE);
+
+-- The ratios ``price_point`` no longer carries (#760). #988 put every close
+-- back in the share the market printed it in, which is what the ledger's
+-- quantities are in -- and that correction consumes the split factors and
+-- throws them away. Anything counting **units** across a split still needs
+-- them: the counterfactual replay buys shares of a reference and holds them
+-- for years, so a 1-for-4 it cannot see divides its holding by four in
+-- silence. Written where they are already read, as a whole history per
+-- symbol: a partial one is worse than none.
+CREATE TABLE IF NOT EXISTS symbol_split (
+    symbol  VARCHAR NOT NULL,
+    day     DATE    NOT NULL,
+    ratio   DOUBLE  NOT NULL,
+    PRIMARY KEY (symbol, day));
 """
 
 _DDL_DERIVED_FROM_COMPUTATION = """
@@ -162,7 +176,7 @@ DDL = ''.join((
 TABLES = (
     'account', 'symbol', 'event', 'taxation_model', 'account_fact',
     'position', 'account_state',
-    'symbol_quote', 'price_point',
+    'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
 )

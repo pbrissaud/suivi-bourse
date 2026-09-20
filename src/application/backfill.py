@@ -53,9 +53,29 @@ class BackfillWorkload:
     def fetch_historical_data(self, symbol: str, start: datetime,
                               end: datetime,
                               max_retries: int = 3) -> Optional[List[Dict]]:
-        """One symbol's closes over ``[start, end]``, or ``None`` on failure."""
-        return market.price_history(symbol, start, end, self.facade.backfill_delay,
-                                    max_retries)
+        """One symbol's closes over ``[start, end]``, or ``None`` on failure.
+
+        The fetch also answers what the symbol's splits are, and this is where
+        they are kept (#760): every chunk carries the **whole** history, so the
+        rewrite is total and the store never holds half of one. It is written
+        here rather than beside the prices in :meth:`fetch_and_store` because a
+        chunk that turns out empty still had its splits read, and because
+        :func:`quotes.record_splits` takes no write lock when nothing moved --
+        which is every cycle but the handful where a symbol actually splits.
+
+        A split write that fails does **not** fail the chunk. The prices are
+        right either way: #988 put them in the day's printed share before they
+        got here, and the next cycle rewrites the history whole.
+        """
+        prices, splits = market.price_history(
+            symbol, start, end, self.facade.backfill_delay, max_retries)
+        if splits is not None:
+            try:
+                with self.facade.config_manager.writing() as opened:
+                    quotes.record_splits(opened, symbol, splits)
+            except Exception as e:
+                app_logger.error(f"Failed to write the splits of {symbol}: {e}")
+        return prices
 
     def run(self, now: Optional[datetime] = None):
         """Backfill historical price data, one series per **symbol**, in both directions. This runs as its own scheduled job, progressively filling gaps."""

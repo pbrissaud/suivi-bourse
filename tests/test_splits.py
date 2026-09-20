@@ -20,6 +20,7 @@ import pytest
 from application import instants
 from application import market
 from application import market_info
+from application import quotes
 from application import store as store_module
 
 UTC = timezone.utc
@@ -109,9 +110,14 @@ def test_the_fetch_returns_what_the_market_printed(mocker):
     walked that as a day of several hundred per cent with no contribution behind
     it.
     """
-    prices = _fetch(mocker, [('2022-01-31', 2000.0)], {'2024-03-22': 0.001})
+    prices, splits = _fetch(mocker, [('2022-01-31', 2000.0)],
+                            {'2024-03-22': 0.001})
 
     assert prices[0]['price'] == pytest.approx(2.0)
+    # And the ratio that correction consumed is handed over rather than lost
+    # (#760): the close is now in the day's share, so anything counting units
+    # across the split has nothing left to read in the price.
+    assert splits == {date(2024, 3, 22): 0.001}
 
 
 def test_a_window_whose_splits_cannot_be_read_is_not_written(mocker):
@@ -122,7 +128,7 @@ def test_a_window_whose_splits_cannot_be_read_is_not_written(mocker):
     would be permanent and invisible. Failing the fetch costs one cycle.
     """
     assert _fetch(mocker, [('2022-01-31', 2000.0)],
-                  RuntimeError('Yahoo said no')) is None
+                  RuntimeError('Yahoo said no')) == (None, None)
 
 
 # --------------------------------------------------------------------------- #
@@ -176,3 +182,83 @@ def test_a_store_carrying_an_adjusted_series_gives_it_up_and_asks_again(
             (None, None, 187.0)]
     finally:
         brought.close()
+
+
+# --------------------------------------------------------------------------- #
+# Keeping the ratios the correction consumes (#760)
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture
+def opened(tmp_path):
+    """A store, open and at its schema."""
+    handle = store_module.open_store(tmp_path / 'splits.duckdb')
+    try:
+        yield handle
+    finally:
+        handle.close()
+
+
+def test_a_symbol_that_never_split_reads_as_empty_and_not_as_unknown(opened):
+    """``{}`` is an answer; the caller must not have to tell it from ``None``.
+
+    Most symbols never split, and a replay over one of them is as correct as a
+    replay over one that did. Handing back ``None`` here would make the common
+    case indistinguishable from a history nobody has fetched yet.
+    """
+    assert quotes.read_splits(opened, 'AAPL') == {}
+
+    assert quotes.record_splits(opened, 'AAPL', {}) == 0
+    assert quotes.read_splits(opened, 'AAPL') == {}
+
+
+def test_the_history_is_rewritten_whole_and_a_retracted_split_goes(opened):
+    """The critical gap of the replay: half a split history, written silently.
+
+    Yahoo hands back every split it knows on every fetch, so a row missing from
+    the new answer is a row it has taken back. Merging instead of rewriting
+    would leave it standing, and a replay counting units would divide a holding
+    by a split that never happened — for ever, since the backward pass does not
+    revisit a window it has filled.
+    """
+    quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0,
+                                          date(2024, 3, 22): 0.001})
+    assert quotes.read_splits(opened, 'AAPL') == {date(2020, 8, 31): 4.0,
+                                                 date(2024, 3, 22): 0.001}
+
+    quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0})
+
+    assert quotes.read_splits(opened, 'AAPL') == {date(2020, 8, 31): 4.0}
+
+
+def test_rewriting_the_same_history_changes_nothing_and_takes_no_lock(opened):
+    """Idempotence, and the reason it is worth asserting rather than assuming.
+
+    A fetch happens every cycle and a symbol splits a handful of times in its
+    life, so this is the answer nearly every write path gets. It must leave the
+    rows exactly as they were — and say it did nothing, which is what keeps the
+    write mutex out of the ordinary cycle.
+    """
+    quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0})
+
+    assert quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0}) == 0
+    assert quotes.read_splits(opened, 'AAPL') == {date(2020, 8, 31): 4.0}
+
+
+def test_one_symbol_s_splits_are_its_own(opened):
+    """The rewrite is total **per symbol**, and stops at that symbol."""
+    quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0})
+    quotes.record_splits(opened, 'TSLA', {date(2022, 8, 25): 3.0})
+
+    quotes.record_splits(opened, 'AAPL', {})
+
+    assert quotes.read_splits(opened, 'AAPL') == {}
+    assert quotes.read_splits(opened, 'TSLA') == {date(2022, 8, 25): 3.0}
+
+
+def test_forgetting_a_symbol_takes_its_splits_with_it(opened):
+    """A symbol dropped from the store leaves no ratio behind to mislead a replay."""
+    quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0})
+
+    quotes.forget_symbol(opened, 'AAPL')
+
+    assert quotes.read_splits(opened, 'AAPL') == {}

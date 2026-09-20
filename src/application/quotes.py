@@ -136,6 +136,43 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
     return len(rows)
 
 
+def read_splits(store, symbol: str) -> Dict[date, float]:
+    """``{day: ratio}`` — one symbol's whole split history, empty when it has none."""
+    return {day: float(ratio) for day, ratio in store.query(
+        'SELECT day, ratio FROM symbol_split WHERE symbol = ? ORDER BY day',
+        [symbol])}
+
+
+def record_splits(store, symbol: str, splits: Mapping[date, float]) -> int:
+    """Rewrite one symbol's **whole** split history. Returns rows written.
+
+    Total, never incremental: :func:`market._splits` reads every split Yahoo
+    knows on every fetch, so what arrives here is always the complete history
+    and a row this one does not carry is a row Yahoo has retracted. Writing the
+    difference would leave that row standing, and a replay counting units would
+    apply a split that never happened -- silently, and for ever, because the
+    backward pass does not ask twice for a window it has filled.
+
+    Idempotent by the same token, and cheap when nothing moved: splits change a
+    handful of times in a symbol's life and a fetch happens every cycle, so the
+    common answer is the one already stored. That read costs no write lock; the
+    rewrite is only taken when the history actually differs.
+    """
+    stored = read_splits(store, symbol)
+    incoming = {day: float(ratio) for day, ratio in splits.items()}
+    if stored == incoming:
+        return 0
+
+    with store.transaction():
+        store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
+        store.executemany(
+            'INSERT INTO symbol_split (symbol, day, ratio) VALUES (?, ?, ?)',
+            [(symbol, day, ratio) for day, ratio in sorted(incoming.items())])
+
+    logger.debug(f"Wrote {len(incoming)} split(s) for {symbol}")
+    return len(incoming)
+
+
 def collapse_to_ladder(store, now: datetime) -> int:
     """Age the whole series onto the ladder, in place. Returns rows removed."""
     hourly_wall, daily_wall = retention.walls(now)
@@ -456,10 +493,11 @@ def read_quote(store, symbol: str) -> Optional[Dict]:
 
 
 def forget_symbol(store, symbol: str) -> int:
-    """Drop every market row of one symbol — its series and its quote row."""
+    """Drop every market row of one symbol — its series, its splits, its quote row."""
     (points,) = store.query(
         'SELECT count(*) FROM price_point WHERE symbol = ?', [symbol])[0]
     store.execute('DELETE FROM price_point WHERE symbol = ?', [symbol])
+    store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
     store.execute('DELETE FROM symbol_quote WHERE symbol = ?', [symbol])
     forget_oldest_stored()
     return int(points)
@@ -468,6 +506,7 @@ def forget_symbol(store, symbol: str) -> int:
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_attributes', 'record_history',
+    'read_splits', 'record_splits',
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',

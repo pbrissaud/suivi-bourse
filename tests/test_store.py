@@ -6,7 +6,7 @@ Everything here runs against a **real DuckDB file** in ``tmp_path`` — the
 the product. Nothing reads or writes domain rows yet; what is pinned is what the
 tickets that follow will build on and could silently break:
 
-* the fifteen tables exist on a brand-new file, and a second boot on the same
+* the sixteen tables exist on a brand-new file, and a second boot on the same
   file adds nothing to it — nor does it re-run a schema step (#926);
 * ``price_point`` carries no key of any kind while the others keep theirs
   — a primary key here costs +563 MB of *resident* memory on a 319 MB
@@ -35,12 +35,13 @@ from application import store as store_module
 # A fresh file, and a second boot on it
 # --------------------------------------------------------------------------- #
 
-def test_a_new_file_carries_the_fifteen_tables(store):
+def test_a_new_file_carries_the_sixteen_tables(store):
     assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
-    # **Fifteen since #926** — ``schema_step``, which is the one table that is
-    # about the store rather than about the portfolio: it says what generation
-    # this file is. The fourteenth was #752's ``account_fact``.
-    assert len(store_module.TABLES) == 15
+    # **Sixteen since #760** — ``symbol_split``, the ratios #988's correction
+    # consumes and nothing kept, which anything counting units across a split
+    # needs. The fifteenth was #926's ``schema_step``, the one table that is
+    # about the store rather than about the portfolio.
+    assert len(store_module.TABLES) == 16
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):
