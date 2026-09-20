@@ -32,6 +32,20 @@ the signature shows it.** Each day, in this order:
 Pure: no store, no market, no clock. The window, the prices, the splits, the
 flows and the opening position are handed in, and the caller is the one that
 knows where they come from.
+
+**Recomputed on every read, and measured once so nobody has to wonder.** On the
+longest window the closed list offers — 6 302 calendar days, 4 503 of them
+quoted, seventeen splits and 207 flows, which is heavier than a real portfolio
+— one replay takes **1,4 ms** (median of 20, 2026-09-20, Python 3.14 on an
+M-series laptop). The route runs one per account: 6,7 ms at five accounts,
+13,6 ms at ten.
+
+That is the whole argument against persisting the series. #760 reserved the
+right to switch to a stored curve "past a threshold"; the threshold is two
+code paths and a staleness question for a Python loop that costs less than the
+JSON encoding of its own output, and the branch would be one nobody ever
+exercises. The measurement is here rather than in a pull request body because
+this is where the next person to wonder will look.
 """
 
 from dataclasses import dataclass, field
