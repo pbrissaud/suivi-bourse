@@ -34,9 +34,9 @@ flows and the opening position are handed in, and the caller is the one that
 knows where they come from.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Collection, Mapping, Optional, Tuple
+from typing import Collection, List, Mapping, Optional, Tuple
 
 ONE_DAY = timedelta(days=1)
 
@@ -68,6 +68,16 @@ class Replay:
     last_day: Optional[date]
     #: Why it stopped early, or ``None`` for a period that ran to the end.
     ended: Optional[str] = None
+    #: The opening position plus every flow since, withdrawals netted off —
+    #: the denominator both sides share, because both ran the same flows from
+    #: the same seed. A return read off anything else compares two fractions
+    #: with different bottoms and calls the difference a gap.
+    contributed: float = 0.0
+    #: ``(day, value)`` for every day covered, oldest first — the curve drawn
+    #: against the portfolio's own. One entry per calendar day and not per
+    #: quoted day, because the two curves are read as the area between them and
+    #: a reference that skips weekends would draw that area wrong.
+    series: List[Tuple[date, float]] = field(default_factory=list)
 
     @property
     def latent_gain(self) -> float:
@@ -116,7 +126,9 @@ def replay(window: Tuple[date, date],
 
     units = opening / price
     basis = opening
+    contributed = opening
     ended = None
+    series = [(seeded, opening)]
 
     day = seeded + ONE_DAY
     while day <= last:
@@ -135,14 +147,18 @@ def replay(window: Tuple[date, date],
         if flow > 0:
             units += flow / price
             basis += flow
+            contributed += flow
         elif flow < 0:
             if -flow > units * price:
                 ended = EXHAUSTED
+                series.append((day, units * price))
                 break
             before = units
             units -= -flow / price
             basis *= units / before
+            contributed += flow
 
+        series.append((day, units * price))
         day += ONE_DAY
 
     # A day with no rate is not replayed at all, so the period ends the evening
@@ -155,7 +171,8 @@ def replay(window: Tuple[date, date],
     else:
         last_day = last
 
-    return Replay(units, basis, units * price, seeded, last_day, ended)
+    return Replay(units, basis, units * price, seeded, last_day, ended,
+                  contributed, series)
 
 
 def _span(first: date, last: date):

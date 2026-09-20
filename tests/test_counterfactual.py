@@ -298,3 +298,48 @@ def test_the_split_of_a_day_with_no_rate_is_not_applied_before_stopping():
     assert result.ended == counterfactual.AWAITING_RATE
     assert result.units == pytest.approx(2.0)
     assert result.value == pytest.approx(1000.0)
+
+
+# --------------------------------------------------------------------------- #
+# The curve
+# --------------------------------------------------------------------------- #
+
+def test_the_series_carries_every_calendar_day_of_the_covered_period():
+    """One point per calendar day, not per quoted day.
+
+    The chart reads the area between the two curves as the gap, and the
+    portfolio's own curve is written one row per day by `perf_job`. A reference
+    that skipped weekends would put the two on different day axes and draw that
+    area wrong — the shape wrong, which is worse than one value wrong.
+    """
+    prices = {date(2024, 1, 5): 20.0, date(2024, 1, 8): 25.0}
+
+    result = counterfactual.replay(
+        _window('2024-01-05', '2024-01-08'), prices, {}, {}, 1000.0)
+
+    assert [day for day, _ in result.series] == [
+        date(2024, 1, 5), date(2024, 1, 6), date(2024, 1, 7), date(2024, 1, 8)]
+    assert [round(value) for _, value in result.series] == [
+        1000, 1000, 1000, 1250]
+
+
+def test_a_period_that_ended_early_draws_no_day_past_its_end():
+    """The curve stops where the period stops, both ways it can stop."""
+    prices = _days('2024-01-01', '2024-01-31', 20.0)
+    del prices[date(2024, 1, 10)]
+
+    stopped = counterfactual.replay(
+        _window('2024-01-01', '2024-01-31'), prices, {}, {}, 1000.0,
+        unconverted=[date(2024, 1, 10)])
+    emptied = counterfactual.replay(
+        _window('2024-01-01', '2024-01-31'),
+        _days('2024-01-01', '2024-01-31', 20.0), {},
+        {date(2024, 1, 10): -5000.0}, 1000.0)
+
+    assert stopped.series[-1][0] == stopped.last_day == date(2024, 1, 9)
+    assert emptied.series[-1][0] == emptied.last_day == date(2024, 1, 10)
+
+
+def test_a_comparison_that_never_started_draws_nothing():
+    assert counterfactual.replay(
+        _window('2024-01-01', '2024-01-31'), {}, {}, {}, 1000.0).series == []

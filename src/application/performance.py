@@ -224,6 +224,34 @@ def _grant_value(flow: InKindFlow) -> float:
     return declared_value(flow.quantity, flow.unit_price)
 
 
+def external_flows(timeline: Timeline, account: str) -> Dict[date, float]:
+    """One account's net external flow per day — the counterfactual's input (#760).
+
+    Public, and deliberately the **same** two private steps the XIRR and the
+    contribution line already run: the comparison replays the owner's own flows
+    into a reference fund, so a flow the two sides disagree about is a gap made
+    of bookkeeping rather than of markets. Deposits positive, withdrawals
+    negative, grants at their declared value.
+    """
+    return dict(_external_flow_by_date(*_account_flows(timeline, account)))
+
+
+def undeclared_grants(timeline: Timeline, account: str) -> List[str]:
+    """The symbols this account was granted with **no price declared**, sorted.
+
+    :func:`declared_value` answers ``0.0`` for those on purpose — a grant nobody
+    priced contributed nothing the app can vouch for. That is the right answer
+    for a contribution line and the wrong one for a replay: the reference would
+    be handed nothing on a day the portfolio gained shares, and it would trail
+    by the whole undeclared amount for the rest of the comparison. The account
+    leaves the perimeter instead, and the screen names it.
+    """
+    granted = (flow for flow in timeline.flows
+               if isinstance(flow, InKindFlow) and flow.account == account)
+    return sorted({flow.symbol for flow in granted
+                   if flow.quantity and not _grant_value(flow)})
+
+
 def _external_flow_by_date(cash_flows, grant_flows) -> Dict[date, float]:
     """Net external inflow value per date (deposits +, withdrawals -, grants at their declared value)."""
     by_date: Dict[date, float] = defaultdict(float)

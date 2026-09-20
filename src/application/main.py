@@ -188,15 +188,23 @@ class ConfigSnapshot:
         ``perf_job``'s own expression and what makes the two curves share a
         first day.
 
-        Two perimeters, named, and not one widened set — only what *fetches
-        prices* reads the tracked one::
+        Two perimeters, named, and not one widened set — the tracked one is
+        read by what *fetches* the reference and by what *compares against*
+        it, and by nothing that values the portfolio::
 
             ledger events ──► backfill_windows()   held: bought, maybe sold
                                      │             └─► valuation, totals,
                                      │                 positions, perf_job
                                      ▼
             benchmark  ────►  tracked_windows()    tracked: held + named
-                                                   └─► backfill only
+                                                   ├─► backfill
+                                                   └─► benchmark_view (#760)
+
+        The second consumer reads it for one thing only: whether the
+        reference's own backfill is **finished**, which is the gate on every
+        figure of the comparison. It is a different call site from the
+        valuation's, which is what keeps #982's acceptance criterion 4 true —
+        that criterion is about the valuation path, not about the function.
 
         A reference that **is** held keeps its holding window: its acquisition
         date is a fact of the ledger, and the ledger's origin would overwrite
