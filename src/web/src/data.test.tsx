@@ -386,7 +386,7 @@ describe('the reduction, which is what pays for no pagination', () => {
     // belongs to is still the one in force in the panel.
     expect(
       within(screen.getByRole('group', { name: 'Filtres actifs' })).getByRole('button', {
-        name: 'Retirer ce filtre : Du 1 janv. 2026 au 31 janv. 2026',
+        name: 'Retirer ce filtre : Du 1ᵉʳ janv. 2026 au 31 janv. 2026',
       }),
     ).toBeInTheDocument()
 
@@ -654,7 +654,7 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     const box = await screen.findByRole('dialog')
     expect(
       within(box).getByRole('heading', {
-        name: 'Supprimer les 2 événements de type Achat, depuis le 1 janv. 2026 ?',
+        name: 'Supprimer les 2 événements de type Achat, depuis le 1ᵉʳ janv. 2026 ?',
       }),
     ).toBeInTheDocument()
   })

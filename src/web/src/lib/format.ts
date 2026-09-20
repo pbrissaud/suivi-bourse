@@ -157,11 +157,43 @@ export function formatBytes(locale: string, value: number | null | undefined): s
   }).format(size)
 }
 
+/**
+ * **The first of the month takes its ordinal in French** — `1ᵉʳ avr.`, not
+ * `1 avr.`
+ *
+ * `Intl` does not do it: `dateStyle` gives the cardinal in every locale, and
+ * French is one of the few where the first day is the exception and the other
+ * thirty are not. The product already knew — `formatDaySpan`'s own docstring
+ * draws `1ᵉʳ janv. → 20 août 2026`, and `dashboard.chart.rangeName` spells
+ * *Depuis le 1ᵉʳ janvier* by hand in the catalogue — so the shape was settled
+ * and only the formatter disagreed.
+ *
+ * Done on the **parts** rather than on the string: a date carries other ones,
+ * and a naive replace turns `1 janv. 2021` into `1ᵉʳ janv. 202ᵉʳ`. The
+ * modifier letters are the catalogue's own (U+1D49, U+02B3), so a date and a
+ * hand-written label sitting on the same screen are spelled alike.
+ *
+ * Every locale but French comes back through `format` untouched, so this costs
+ * one `startsWith` on the English path.
+ */
+function formatted(
+  locale: string,
+  date: Date,
+  options: Intl.DateTimeFormatOptions,
+): string {
+  const shape = new Intl.DateTimeFormat(locale, options)
+  if (!locale.startsWith('fr') || date.getDate() !== 1) return shape.format(date)
+  return shape
+    .formatToParts(date)
+    .map((part) => (part.type === 'day' && part.value === '1' ? '1\u1d49\u02b3' : part.value))
+    .join('')
+}
+
 export function formatDateTime(locale: string, value: string | null | undefined): string {
   if (!value) return ABSENT
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ABSENT
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  return formatted(locale, date, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 /**
@@ -183,7 +215,7 @@ export function formatDate(
     ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
     : new Date(value)
   if (Number.isNaN(date.getTime())) return ABSENT
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date)
+  return formatted(locale, date, { dateStyle: 'medium' })
 }
 
 /**
@@ -210,11 +242,12 @@ function formatDaySpan(
   const end = parse(to)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return ABSENT
   const sameYear = start.getFullYear() === end.getFullYear()
-  const left = new Intl.DateTimeFormat(
+  const left = formatted(
     locale,
+    start,
     sameYear ? { day: 'numeric', month: 'short' } : { dateStyle: 'medium' },
-  ).format(start)
-  const right = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(end)
+  )
+  const right = formatted(locale, end, { dateStyle: 'medium' })
   return `${left} → ${right}`
 }
 

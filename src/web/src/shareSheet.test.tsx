@@ -286,7 +286,7 @@ describe('the liaison is a selection, not a hover', () => {
     // carries three says so.
     expect(markers.map((marker) => marker.getAttribute('aria-label'))).toEqual([
       '1 événement le 28 févr. 2026',
-      '3 événements le 1 mars 2026',
+      '3 événements le 1ᵉʳ mars 2026',
     ])
     expect(band).toHaveTextContent('×3')
   })
@@ -319,7 +319,7 @@ describe('the liaison is a selection, not a hover', () => {
     const sheet = await openSheet(user)
     const band = await within(sheet).findByRole('group', { name: 'Jours portant un événement' })
 
-    await user.click(within(band).getByRole('button', { name: '3 événements le 1 mars 2026' }))
+    await user.click(within(band).getByRole('button', { name: '3 événements le 1ᵉʳ mars 2026' }))
     // The unit of the selection is the **day**, which is what the marker counts:
     // three lines, and never a third of a marker.
     expect(within(sheet).getAllByRole('button', { current: 'date' })).toHaveLength(3)
@@ -335,7 +335,7 @@ describe('the liaison is a selection, not a hover', () => {
     await user.click(within(sheet).getByText('Dividende'))
     expect(within(sheet).getAllByRole('button', { current: 'date' })).toHaveLength(3)
     expect(
-      within(band).getByRole('button', { name: '3 événements le 1 mars 2026' }),
+      within(band).getByRole('button', { name: '3 événements le 1ᵉʳ mars 2026' }),
     ).toHaveAttribute('aria-pressed', 'true')
   })
 
@@ -346,7 +346,7 @@ describe('the liaison is a selection, not a hover', () => {
     const sheet = await openSheet(user)
     const band = await within(sheet).findByRole('group', { name: 'Jours portant un événement' })
 
-    const marker = within(band).getByRole('button', { name: '3 événements le 1 mars 2026' })
+    const marker = within(band).getByRole('button', { name: '3 événements le 1ᵉʳ mars 2026' })
     marker.focus()
     expect(marker).toHaveFocus()
     await user.keyboard('{Enter}')
@@ -365,7 +365,7 @@ describe('the liaison is a selection, not a hover', () => {
     const { user } = renderShares()
     const sheet = await openSheet(user)
     const band = await within(sheet).findByRole('group', { name: 'Jours portant un événement' })
-    await user.click(within(band).getByRole('button', { name: '3 événements le 1 mars 2026' }))
+    await user.click(within(band).getByRole('button', { name: '3 événements le 1ᵉʳ mars 2026' }))
     expect(within(sheet).getAllByRole('button', { current: 'date' })).toHaveLength(3)
 
     await user.keyboard('{Escape}')

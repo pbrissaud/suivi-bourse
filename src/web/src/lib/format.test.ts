@@ -78,6 +78,22 @@ describe('the format follows the language, not the currency', () => {
     expect(formatDateTime(EN, '2026-03-02T12:00:00Z')).toContain('2 Mar 2026')
   })
 
+  it('gives the first of the month its ordinal, in French and only there', () => {
+    // `Intl` hands back the cardinal in every locale, and French is one of the
+    // few where the first day is the exception and the other thirty are not.
+    // The product already spelled it by hand — `dashboard.chart.rangeName`
+    // says *Depuis le 1ᵉʳ janvier* — so a formatted date sitting beside that
+    // label was the one place the two disagreed.
+    expect(formatDate(FR, '2024-04-01')).toBe('1ᵉʳ avr. 2024')
+    expect(formatDate(FR, '2024-04-02')).toBe('2 avr. 2024')
+
+    // English takes no ordinal at `dateStyle: medium`, and inventing one would
+    // be this module's own bug: the reader chooses the language.
+    expect(formatDate(EN, '2024-04-01')).toBe('1 Apr 2024')
+
+    expect(formatDateTime(FR, '2024-04-01T12:00:00Z')).toContain('1ᵉʳ avr. 2024')
+  })
+
   it('reads a bare day as a calendar day and never as an instant', () => {
     // `new Date('2026-03-02')` is UTC midnight, so west of Greenwich the whole
     // product renders a day early: an event dated the 2nd shown as the 1st, and

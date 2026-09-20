@@ -1172,7 +1172,7 @@ describe('the movers', () => {
 
     // The **reference**, never the cut: naming the cut announced a session that
     // had not happened yet.
-    expect(await screen.findAllByText(/Depuis la clôture du 1 mars 2026/)).toHaveLength(1)
+    expect(await screen.findAllByText(/Depuis la clôture du 1ᵉʳ mars 2026/)).toHaveLength(1)
   })
 })
 
