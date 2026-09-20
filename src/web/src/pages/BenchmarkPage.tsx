@@ -123,7 +123,14 @@ export default function BenchmarkPage() {
     </div>
   )
 
-  if (data.state === 'rebuilding') {
+  // Two withheld states, one rendering. `splits_unknown` is a store that
+  // fetched this fund before its split ratios were persisted: the series is
+  // there and the history behind it is not established, so a replay counting
+  // units could walk through a split it cannot see. What the reader needs to
+  // know is the same in both cases — the figure is coming, the next fetch
+  // brings it — and inventing a second panel would be inventing a second
+  // explanation for one wait.
+  if (data.state === 'rebuilding' || data.state === 'splits_unknown') {
     return (
       <div className="space-y-6">
         {data.rebuild ? <ReferenceRebuild rebuild={data.rebuild} /> : null}

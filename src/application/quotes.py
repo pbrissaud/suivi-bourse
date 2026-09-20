@@ -143,6 +143,23 @@ def read_splits(store, symbol: str) -> Dict[date, float]:
         [symbol])}
 
 
+def splits_were_read(store, symbol: str) -> bool:
+    """Has this symbol's split history ever been established? (#760)
+
+    **An empty history is ambiguous and this is what disambiguates it.** Most
+    symbols have never split, so zero rows in ``symbol_split`` is the ordinary
+    correct answer — and it is also what a store written before the table
+    existed holds for every symbol it has already fetched. Anything counting
+    units across time has to tell the two apart: a replay that takes *never
+    asked* for *never split* walks through a four-for-one and divides the
+    holding by four, in silence and for good, because the backward pass does
+    not revisit a window it has filled.
+    """
+    rows = store.query(
+        'SELECT splits_read_at FROM symbol_quote WHERE symbol = ?', [symbol])
+    return bool(rows) and rows[0][0] is not None
+
+
 def record_splits(store, symbol: str, splits: Mapping[date, float]) -> int:
     """Rewrite one symbol's **whole** split history. Returns rows written.
 
@@ -153,22 +170,33 @@ def record_splits(store, symbol: str, splits: Mapping[date, float]) -> int:
     apply a split that never happened -- silently, and for ever, because the
     backward pass does not ask twice for a window it has filled.
 
-    Idempotent by the same token, and cheap when nothing moved: splits change a
-    handful of times in a symbol's life and a fetch happens every cycle, so the
-    common answer is the one already stored. That read costs no write lock; the
-    rewrite is only taken when the history actually differs.
+    Idempotent by the same token: splits change a handful of times in a
+    symbol's life and a fetch happens every cycle, so the common answer is the
+    one already stored, and the rows are left exactly as they were. What is
+    always written is :func:`splits_were_read`'s mark — *Yahoo answered* is a
+    different fact from *these are the ratios*, and a symbol that has never
+    split would otherwise never carry one.
     """
-    stored = read_splits(store, symbol)
     incoming = {day: float(ratio) for day, ratio in splits.items()}
-    if stored == incoming:
-        return 0
+    unchanged = read_splits(store, symbol) == incoming
 
     with store.transaction():
-        store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
-        store.executemany(
-            'INSERT INTO symbol_split (symbol, day, ratio) VALUES (?, ?, ?)',
-            [(symbol, day, ratio) for day, ratio in sorted(incoming.items())])
+        _ensure_row(store, symbol)
+        # **The mark moves even when the rows do not.** It says *Yahoo
+        # answered*, which is a different fact from *these are the ratios* —
+        # and for a symbol that has never split, the answer is always the same
+        # empty one, so an unmarked store would stay unmarked for ever.
+        store.execute(
+            'UPDATE symbol_quote SET splits_read_at = ? WHERE symbol = ?',
+            [datetime.now(timezone.utc), symbol])
+        if not unchanged:
+            store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
+            store.executemany(
+                'INSERT INTO symbol_split (symbol, day, ratio) VALUES (?, ?, ?)',
+                [(symbol, day, ratio) for day, ratio in sorted(incoming.items())])
 
+    if unchanged:
+        return 0
     logger.debug(f"Wrote {len(incoming)} split(s) for {symbol}")
     return len(incoming)
 
@@ -498,6 +526,11 @@ def forget_symbol(store, symbol: str) -> int:
         'SELECT count(*) FROM price_point WHERE symbol = ?', [symbol])[0]
     store.execute('DELETE FROM price_point WHERE symbol = ?', [symbol])
     store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
+    # The mark goes with the rows: the symbol is being forgotten, so what this
+    # install knew about its corporate actions is not true of it any more.
+    store.execute(
+        'UPDATE symbol_quote SET splits_read_at = NULL WHERE symbol = ?',
+        [symbol])
     store.execute('DELETE FROM symbol_quote WHERE symbol = ?', [symbol])
     forget_oldest_stored()
     return int(points)
@@ -506,7 +539,7 @@ def forget_symbol(store, symbol: str) -> int:
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_attributes', 'record_history',
-    'read_splits', 'record_splits',
+    'read_splits', 'record_splits', 'splits_were_read',
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',

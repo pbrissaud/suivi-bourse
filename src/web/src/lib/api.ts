@@ -901,10 +901,14 @@ export interface BenchmarkPoint {
  * than on the presence of `gap_gross`: a figure that is absent and a figure
  * that is withheld are different facts, and this screen renders them
  * differently on purpose.
+ *
+ * `splits_unknown` is the second withheld state and it looks like `rebuilding`
+ * to the reader on purpose: the fund's history is there but its split ratios
+ * were never established, and the next fetch is what repairs both.
  */
 export interface BenchmarkResponse {
   base_currency: string | null
-  state: 'no_reference' | 'rebuilding' | 'nothing_to_compare' | 'ready'
+  state: 'no_reference' | 'rebuilding' | 'splits_unknown' | 'nothing_to_compare' | 'ready'
   reference: string | null
   index?: string | null
   inception?: string | null

@@ -51,6 +51,9 @@ def _quote_the_reference(store, first='2024-01-01', last='2024-02-29',
     # this process happens to be holding.
     quotes.record_window_tried(store, symbol, date.fromisoformat(first))
     quotes.record_forward_window_tried(store, symbol, end)
+    # The split history, **established and empty** — which is a different fact
+    # from never asked, and the one the comparison refuses to compute without.
+    quotes.record_splits(store, symbol, {})
 
 
 def _write_curve(store, account, first='2024-01-01', last='2024-02-29',
@@ -330,3 +333,40 @@ def test_one_account_short_of_a_model_removes_the_net_for_all_of_them(named):
     assert payload['net_unavailable'] == [{'account': 'cto',
                                            'reason': 'no_model'}]
     assert payload['gap_gross'] is not None
+
+
+def test_a_reference_whose_splits_were_never_read_publishes_no_figure(named):
+    """The defect a store in circulation would have shipped with.
+
+    It fetched this symbol before #760 persisted the ratios, so it holds zero
+    rows — indistinguishable from a symbol that never split. A replay taking
+    the first for the second walks through a four-for-one and divides the
+    holding by four, silently, beside a portfolio figure that is right. Same
+    class as a gap over a half-built series, so the same answer: no figure.
+    """
+    named.execute("UPDATE symbol_quote SET splits_read_at = NULL "
+                  "WHERE symbol = ?", [REFERENCE])
+    _write_curve(named, 'pea')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.SPLITS_UNKNOWN
+    assert 'gap_gross' not in payload
+    assert payload['rebuild']['symbol'] == REFERENCE
+
+
+def test_the_next_fetch_establishes_the_history_and_the_figure_returns(named):
+    """The state repairs itself, and by the ordinary cycle rather than a chore."""
+    named.execute("UPDATE symbol_quote SET splits_read_at = NULL "
+                  "WHERE symbol = ?", [REFERENCE])
+    _write_curve(named, 'pea')
+    snapshot = _snapshot([_deposit('2024-01-01', 'pea', 1000.0)])
+
+    assert benchmark_view.comparison(
+        named, snapshot, NOW)['state'] == benchmark_view.SPLITS_UNKNOWN
+
+    quotes.record_splits(named, REFERENCE, {})
+
+    assert benchmark_view.comparison(
+        named, snapshot, NOW)['state'] == benchmark_view.READY

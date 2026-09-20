@@ -54,6 +54,11 @@ REBUILDING = 'rebuilding'
 #: written day inside the fund's own history.
 NOTHING_TO_COMPARE = 'nothing_to_compare'
 
+#: Named and quoted, but this install has never established the reference's
+#: split history — a store written before #760 that had already fetched it.
+#: **No figure**, for the same reason a half-built series carries none.
+SPLITS_UNKNOWN = 'splits_unknown'
+
 #: Everything answered.
 READY = 'ready'
 
@@ -100,6 +105,18 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     prices = quotes.price_series(store, symbol)
     if not prices:
         return {**head, 'state': REBUILDING,
+                'rebuild': _rebuild(store, symbol, offered, now)}
+
+    # **An empty split history is not the same as none, and the difference is
+    # invisible in the figure.** A store that fetched this symbol before #760
+    # persisted the ratios carries zero rows exactly like a symbol that has
+    # never split, and a replay taking the first for the second walks through a
+    # four-for-one and divides the holding by four — silently, permanently,
+    # beside a portfolio figure that is right. This is the same class of defect
+    # as a gap over a half-built series, so it gets the same answer: no figure
+    # at all until the next fetch establishes the history.
+    if not quotes.splits_were_read(store, symbol):
+        return {**head, 'state': SPLITS_UNKNOWN,
                 'rebuild': _rebuild(store, symbol, offered, now)}
 
     replayed, excluded = _by_account(store, snapshot, prices, symbol)
@@ -417,4 +434,4 @@ def _real_latent_gains(store, snapshot, replayed: Dict[str, Any],
 
 
 __all__ = ['comparison', 'NO_REFERENCE', 'REBUILDING', 'NOTHING_TO_COMPARE',
-           'READY']
+           'SPLITS_UNKNOWN', 'READY']

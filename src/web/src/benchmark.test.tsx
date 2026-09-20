@@ -107,6 +107,21 @@ describe('the comparison', () => {
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
   })
 
+  it('withholds the figure when the fund’s splits were never established', async () => {
+    renderBenchmark({
+      state: 'splits_unknown',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      rebuild: { symbol: 'CW8.PA', reached: '2009-06-16', target: '2009-06-16', ratio: 1 },
+    })
+
+    // The series is complete and the ratios behind it are not, so a replay
+    // counting units could walk through a split it cannot see. Same wait, same
+    // panel: a second explanation for one wait is one explanation too many.
+    expect(await screen.findByText(/Reconstitution de l’historique de CW8.PA/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
+  })
+
   it('offers the selector as the empty state’s own action', async () => {
     renderBenchmark()
 

@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS symbol_quote (
     last_fx_rate          DOUBLE,
     last_price_ts         TIMESTAMPTZ,
     oldest_window_tried   DATE,                     -- the persisted backward-pass anchor
-    newest_window_tried   DATE);                    -- and the forward pass's own (#854)
+    newest_window_tried   DATE,                     -- and the forward pass's own (#854)
+    splits_read_at        TIMESTAMPTZ);             -- when the split history was last read (#760)
 """
 
 _DDL_PRICE_POINT = """
@@ -623,6 +624,28 @@ def _add_symbol_classification(connection) -> None:
                            f'ADD COLUMN IF NOT EXISTS {column} VARCHAR')
 
 
+def _add_splits_read_at(connection) -> None:
+    """Give an already-created store the mark that says its splits were read (#760).
+
+    Same shape as :func:`_add_newest_window_tried`, and needed for a reason the
+    new ``symbol_split`` table did not have: a table the DDL creates reaches
+    every store on the next boot, but **an empty split history is ambiguous**.
+    Most symbols have never split, so zero rows is the ordinary correct answer
+    — and it is also what a store that predates this release holds for every
+    symbol it has already fetched. Told apart by nothing, a replay counting
+    units would walk straight through a split it cannot see and divide the
+    holding by the ratio, silently.
+
+    So the *reading* is recorded rather than inferred from the rows. Absent
+    means never asked; present means Yahoo answered, empty or not.
+
+    No :func:`rebuilding`: nothing holds a foreign key on ``symbol_quote``, and
+    an added column has none of the dependency cost a dropped one has.
+    """
+    connection.execute('ALTER TABLE symbol_quote '
+                       'ADD COLUMN IF NOT EXISTS splits_read_at TIMESTAMPTZ')
+
+
 def _drop_split_adjusted_prices(connection) -> None:
     """Throw away a series stored in two shares at once (issue #987).
 
@@ -676,6 +699,7 @@ STEPS = (
     ('add_newest_window_tried', _add_newest_window_tried),
     ('add_symbol_classification', _add_symbol_classification),
     ('drop_split_adjusted_prices', _drop_split_adjusted_prices),
+    ('add_splits_read_at', _add_splits_read_at),
 )
 
 

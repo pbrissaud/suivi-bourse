@@ -190,8 +190,15 @@ def test_a_store_carrying_an_adjusted_series_gives_it_up_and_asks_again(
 
 @pytest.fixture
 def opened(tmp_path):
-    """A store, open and at its schema."""
+    """A store, open and at its schema, with the two symbols declared.
+
+    Declared because that is the order production runs in: `backfill.run`
+    calls `entries.declare_symbol` on the reference before any fetch, and
+    `symbol_quote` holds a foreign key on `symbol`.
+    """
     handle = store_module.open_store(tmp_path / 'splits.duckdb')
+    for symbol in ('AAPL', 'TSLA'):
+        handle.execute('INSERT INTO symbol (symbol) VALUES (?)', [symbol])
     try:
         yield handle
     finally:
@@ -262,3 +269,70 @@ def test_forgetting_a_symbol_takes_its_splits_with_it(opened):
     quotes.forget_symbol(opened, 'AAPL')
 
     assert quotes.read_splits(opened, 'AAPL') == {}
+
+
+def test_an_empty_history_is_told_apart_from_one_nobody_ever_asked_for(opened):
+    """The mark, and the whole reason it exists.
+
+    Zero rows is the ordinary correct answer for the majority of symbols, and
+    it is also what a store written before this release holds for every symbol
+    it had already fetched. Nothing in the rows tells the two apart, so the
+    *reading* is recorded rather than inferred — and anything counting units
+    across time reads the mark, never the count.
+    """
+    assert quotes.splits_were_read(opened, 'AAPL') is False
+
+    quotes.record_splits(opened, 'AAPL', {})
+
+    assert quotes.splits_were_read(opened, 'AAPL') is True
+    assert quotes.read_splits(opened, 'AAPL') == {}
+
+
+def test_the_mark_moves_even_when_no_row_does(opened):
+    """A symbol that has never split answers the same empty history for ever.
+
+    Written only alongside a change, the mark would never land on exactly the
+    symbols it matters least to be wrong about — and those are the majority.
+    """
+    quotes.record_splits(opened, 'AAPL', {})
+    opened.execute("UPDATE symbol_quote SET splits_read_at = NULL "
+                   "WHERE symbol = 'AAPL'")
+
+    assert quotes.record_splits(opened, 'AAPL', {}) == 0
+    assert quotes.splits_were_read(opened, 'AAPL') is True
+
+
+def test_forgetting_a_symbol_takes_the_mark_with_the_rows(opened):
+    """What this install knew about its corporate actions is no longer true of it."""
+    quotes.record_splits(opened, 'AAPL', {date(2020, 8, 31): 4.0})
+
+    quotes.forget_symbol(opened, 'AAPL')
+
+    assert quotes.splits_were_read(opened, 'AAPL') is False
+
+
+def test_a_store_that_predates_the_table_is_brought_forward_unmarked(tmp_path):
+    """The step adds the column and marks nothing, which is the point.
+
+    A store in circulation has fetched its symbols already and holds no ratios
+    for any of them. Marking them on migration would assert a reading that
+    never happened; leaving them unmarked is what makes the next fetch the
+    thing that establishes the history.
+    """
+    path = tmp_path / 'older.duckdb'
+    opened = store_module.open_store(path)
+    try:
+        opened.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
+        opened.execute("INSERT INTO symbol_quote (symbol) VALUES ('AAPL')")
+        opened.execute("DELETE FROM schema_step WHERE step = 'add_splits_read_at'")
+        opened.execute('ALTER TABLE symbol_quote DROP COLUMN splits_read_at')
+    finally:
+        opened.close()
+
+    brought = store_module.open_store(path)
+    try:
+        assert quotes.splits_were_read(brought, 'AAPL') is False
+        assert quotes.record_splits(brought, 'AAPL', {}) == 0
+        assert quotes.splits_were_read(brought, 'AAPL') is True
+    finally:
+        brought.close()
