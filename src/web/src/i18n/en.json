@@ -599,7 +599,7 @@
   "benchmark.empty.noEvents.title": "Nothing to compare yet",
   "benchmark.empty.noEvents.body": "The comparison replays your own movements. Record your first events and it will fill in.",
   "benchmark.empty.noEvents.link": "Open the ledger",
-  "benchmark.select.label": "Reference",
+  "benchmark.select.label": "Comparison benchmark",
   "benchmark.select.placeholder": "Choose a fund",
   "benchmark.select.pea": "PEA-eligible",
   "benchmark.select.since": "since {year}",
@@ -633,5 +633,10 @@
   "benchmark.rebuild.target": "Back to {reached} so far, on a history that starts on {target}.",
   "benchmark.rebuild.starting": "The rebuild has just started.",
   "benchmark.rebuild.label": "{percent, number, percent} of the fund’s history",
-  "benchmark.explain.gap": "What this gap measures"
+  "benchmark.explain.gap": "What this gap measures",
+  "benchmark.chart.yours": "Your portfolio",
+  "benchmark.chart.theirs": "{index}, same contributions",
+  "benchmark.chart.area": "Between the two curves",
+  "benchmark.chart.floor": "Floor",
+  "benchmark.chart.empty": "Nothing to draw over this period."
 }

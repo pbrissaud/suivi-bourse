@@ -599,7 +599,7 @@
   "benchmark.empty.noEvents.title": "Rien à comparer pour l’instant",
   "benchmark.empty.noEvents.body": "La comparaison rejoue vos propres mouvements. Enregistrez vos premiers événements et elle se remplira.",
   "benchmark.empty.noEvents.link": "Ouvrir le grand livre",
-  "benchmark.select.label": "Référence",
+  "benchmark.select.label": "Référence de comparaison",
   "benchmark.select.placeholder": "Choisir un fonds",
   "benchmark.select.pea": "Éligibles au PEA",
   "benchmark.select.since": "depuis {year}",
@@ -633,5 +633,10 @@
   "benchmark.rebuild.target": "Remonté jusqu’au {reached}, sur un historique qui commence le {target}.",
   "benchmark.rebuild.starting": "La reconstitution vient de commencer.",
   "benchmark.rebuild.label": "{percent, number, percent} de l’historique du fonds",
-  "benchmark.explain.gap": "Ce que cet écart mesure"
+  "benchmark.explain.gap": "Ce que cet écart mesure",
+  "benchmark.chart.yours": "Votre portefeuille",
+  "benchmark.chart.theirs": "{index}, mêmes versements",
+  "benchmark.chart.area": "Entre les deux courbes",
+  "benchmark.chart.floor": "Socle",
+  "benchmark.chart.empty": "Rien à tracer sur cette période."
 }

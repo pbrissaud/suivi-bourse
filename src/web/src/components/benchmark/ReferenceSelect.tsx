@@ -73,7 +73,10 @@ export function ReferenceSelect({
   return (
     <div className="space-y-2">
       <Select value={value ?? undefined} onValueChange={(symbol) => write.mutate(symbol)}>
-        <SelectTrigger aria-label={t('benchmark.select.label')} className="sm:w-96">
+        {/* Full width on a 390 px viewport, where ~350 px are left once the
+            sidebar is a drawer, and 44 px tall — the touch minimum the kit's
+            own 36 px falls under. */}
+        <SelectTrigger aria-label={t('benchmark.select.label')} className="w-full sm:w-96">
           <SelectValue placeholder={t('benchmark.select.placeholder')} />
         </SelectTrigger>
         <SelectContent>
@@ -125,19 +128,25 @@ function Row({
 
   return (
     <SelectItem value={entry.symbol}>
-      <span className="flex w-full items-baseline gap-x-3">
+      {/* Three columns on a wide viewport, **two lines** under it: the name on
+          the first, what it costs and what it holds on the second. Truncating
+          instead would drop the inception, which is the column that exists to
+          be read before the click. */}
+      <span className="flex w-full flex-col gap-y-0.5 sm:flex-row sm:items-baseline sm:gap-x-3">
         {/* The index leads and the ticker is subordinate — the legend names the
             index too, never the ticker. */}
         <span className="min-w-0 flex-1 truncate">
           {entry.index} · {entry.symbol.split('.')[0]}
         </span>
-        <span className="tabular shrink-0 text-xs text-muted-foreground">
-          {t('benchmark.select.since', { year: entry.inception.slice(0, 4) })}
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {downloaded.includes(entry.symbol)
-            ? t('benchmark.select.downloaded')
-            : t('benchmark.select.toRebuild')}
+        <span className="flex gap-x-3 text-xs text-muted-foreground">
+          <span className="tabular shrink-0">
+            {t('benchmark.select.since', { year: entry.inception.slice(0, 4) })}
+          </span>
+          <span className="shrink-0">
+            {downloaded.includes(entry.symbol)
+              ? t('benchmark.select.downloaded')
+              : t('benchmark.select.toRebuild')}
+          </span>
         </span>
       </span>
     </SelectItem>

@@ -39,6 +39,7 @@ import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Segmented } from '@/components/Segmented'
 import { Stat } from '@/components/Stat'
 import { Unreadable } from '@/components/Unreadable'
+import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
 import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
 import { ReferenceSelect } from '@/components/benchmark/ReferenceSelect'
 import { Card, CardContent } from '@/components/ui/card'
@@ -100,6 +101,9 @@ export default function BenchmarkPage() {
     )
   }
 
+  // The same `flex-wrap` + `justify-between` fold the dashboard's control row
+  // uses. Nothing new, and nothing removed by width: both controls go full
+  // width when they fold rather than shrinking under the touch minimum.
   const controls = (
     <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
       <ReferenceSelect
@@ -108,12 +112,17 @@ export default function BenchmarkPage() {
         downloaded={data.consulted}
       />
       {data.state !== 'ready' ? null : (
+        // `Segmented` sizes its options for a card's corner — 32 px, under the
+        // 44 px a thumb can hit. Widened here rather than through a new prop
+        // on a primitive four other surfaces draw: this screen is the only one
+        // whose toggle is a full-width control on a phone.
         <Segmented
           bordered
           mode="pressed"
           label={t('benchmark.mode.label')}
           value={mode}
           onChange={setMode}
+          className="w-full [&>button]:min-h-11 [&>button]:flex-1 sm:w-auto sm:[&>button]:min-h-0 sm:[&>button]:flex-none"
           options={[
             { value: 'gross', label: t('benchmark.mode.gross') },
             { value: 'net', label: t('benchmark.mode.net') },
@@ -161,6 +170,11 @@ export default function BenchmarkPage() {
     <div className="space-y-6">
       <Head data={data} mode={mode} currency={currency} />
       {controls}
+      <BenchmarkChart
+        points={data.series ?? []}
+        index={data.index ?? data.reference ?? ''}
+        currency={currency}
+      />
       <Excluded rows={data.excluded_accounts ?? []} />
       {data.idle_cash ? (
         <p className="max-w-prose text-sm text-muted-foreground">
@@ -196,11 +210,22 @@ function Head({
     gross !== null && net !== null && signOf(gross) !== signOf(net) && signOf(net) !== 'zero'
 
   return (
-    <Card className="bg-linear-160 from-chart-2/9 to-card">
+    // **`aria-live="polite"`**, because this is the result of a gesture and not
+    // an ambient state: switching from `CW8` to `C40` reads the eyebrow, the
+    // figure and the verdict back, and so does the gross/net toggle. Polite and
+    // never assertive — the reader is already looking at the control they
+    // pressed, which is `Refusal`'s own reasoning for keeping `role="status"`.
+    <Card className="bg-linear-160 from-chart-2/9 to-card" aria-live="polite">
       <CardContent className="space-y-4 py-6">
         <Stat
           size="head"
-          label={t('benchmark.head.label', { index, symbol: data.reference ?? '' })}
+          // The ticker without its venue suffix, as the selector renders it:
+          // `CW8` and not `CW8.PA`. The exchange is an addressing detail of the
+          // fetch, and the eyebrow is the one place the reader meets the fund.
+          label={t('benchmark.head.label', {
+            index,
+            symbol: (data.reference ?? '').split('.')[0],
+          })}
           value={shown === null ? '—' : f.signedCurrency(shown, currency)}
           valueClassName={signClass(shown)}
           explain={

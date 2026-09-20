@@ -62,6 +62,9 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
 
 const head = () => screen.findByRole('group', { name: /MSCI World/ })
 
+/** The ticker as the reader meets it: without the venue suffix of the fetch. */
+const EYEBROW = /MSCI World\s*·\s*CW8$/
+
 describe('the comparison', () => {
   it('leads with the euro and files the percentages one weight down', async () => {
     renderBenchmark(ready())
@@ -90,6 +93,17 @@ describe('the comparison', () => {
     renderBenchmark(ready())
 
     expect(await screen.findByText(/Comparé du .* au /)).toBeInTheDocument()
+  })
+
+  it('names the fund by its index, with the ticker subordinate and unsuffixed', async () => {
+    renderBenchmark(ready())
+
+    // `.PA` is where the fetch goes, not what the fund is called. The selector
+    // already drops it, and the eyebrow is the one place the reader meets it.
+    // Read off the head's own accessible name, which **is** the eyebrow: the
+    // selector renders the same string one row down, and asserting on the
+    // document would not say which of the two was checked.
+    expect((await head()).getAttribute('aria-label')).toMatch(EYEBROW)
   })
 
   it('renders no figure at all while the fund is still being rebuilt', async () => {
@@ -127,9 +141,42 @@ describe('the comparison', () => {
 
     expect(await screen.findByText('Aucune référence choisie')).toBeInTheDocument()
     // The one way out **is** the control, not a link to where the control is.
-    expect(screen.getByRole('combobox', { name: 'Référence' })).toBeInTheDocument()
+    // Named for what it is a reference **for**: *Référence* alone is the page's
+    // own title, and a control sharing its page's name says nothing.
+    expect(
+      screen.getByRole('combobox', { name: 'Référence de comparaison' }),
+    ).toBeInTheDocument()
     // And the wait is announced before it is discovered.
     expect(screen.getByText(/la page se remplira toute seule/)).toBeInTheDocument()
+  })
+})
+
+describe('the two curves', () => {
+  const series = [
+    { t: '2024-01-01', portfolio: 1000, reference: 1000 },
+    { t: '2024-01-02', portfolio: 1100, reference: 1050 },
+  ]
+
+  it('names the index and never the ticker', async () => {
+    renderBenchmark(ready({ series }))
+
+    // `CW8.PA` is an address; the MSCI World is what the owner is being
+    // compared against, and the legend is what pairs a curve to its name. The
+    // trailing clause is the same one the verdict carries — read off the chart
+    // rather than off the sentence, the two curves would otherwise look like
+    // two returns.
+    expect(await screen.findByText('MSCI World, mêmes versements')).toBeInTheDocument()
+    // The portfolio's own name is deliberately the one the terms row already
+    // uses: one thing, one name, twice on the screen.
+    expect(screen.getAllByText('Votre portefeuille').length).toBeGreaterThan(1)
+  })
+
+  it('says it has nothing to draw rather than drawing an empty plot', async () => {
+    renderBenchmark(ready({ series: [] }))
+
+    // A fact, not a wait: the payload answered `ready`, so the period exists
+    // and holds no drawable day.
+    expect(await screen.findByText('Rien à tracer sur cette période.')).toBeInTheDocument()
   })
 })
 
@@ -225,5 +272,51 @@ describe('what the period costs, and what the comparison did not account for', (
     )
 
     expect(await screen.findByText(/pee.*exclu.*sans prix déclaré/)).toBeInTheDocument()
+  })
+})
+
+
+describe('the contract a non-visual reader gets', () => {
+  it('reads the head back when the reference or the reading changes', async () => {
+    const { user } = renderBenchmark(ready())
+
+    // The result of a **gesture**, not an ambient state — so it is announced,
+    // and politely: the reader is already looking at the control they pressed
+    // and an assertive region would interrupt them mid-sentence.
+    const card = (await head()).closest('[aria-live]')
+    expect(card).toHaveAttribute('aria-live', 'polite')
+
+    await user.click(screen.getByRole('button', { name: 'Net d’impôt' }))
+
+    expect(within(await head()).getByText('+3 000,00 €')).toBeInTheDocument()
+  })
+
+  it('hides the plot and leaves the legend readable', async () => {
+    renderBenchmark(
+      ready({
+        series: [
+          { t: '2024-01-01', portfolio: 1000, reference: 1000 },
+          { t: '2024-01-02', portfolio: 1100, reference: 1050 },
+        ],
+      }),
+    )
+
+    // Honest here and only here: the whole answer is in the head, in prose and
+    // in figures, so what is lost is the shape. The legend is what says which
+    // curve was which, and it stays.
+    const legend = await screen.findByText('MSCI World, mêmes versements')
+    expect(legend.closest('[aria-hidden]')).toBeNull()
+    expect(document.querySelector('.recharts-wrapper')?.closest('[aria-hidden]')).not.toBeNull()
+  })
+
+  it('names the toggle as a switch between two readings, not as a setting', async () => {
+    renderBenchmark(ready())
+    await head()
+
+    // `aria-pressed` and not a radiogroup: it swaps what the slot below draws,
+    // and the page has no other setting for it to be one of.
+    const gross = screen.getByRole('button', { name: 'Brut' })
+    expect(gross).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 })
