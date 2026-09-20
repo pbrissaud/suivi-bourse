@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Tuple
 
+from application import ledger
 from application import settings_registry
 
 
@@ -66,7 +67,38 @@ def save(store, values: Mapping[str, Any]) -> Tuple[Change, ...]:
                 'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
                 [key, settings_registry.stored_form(key, value)])
             changes.append(Change(key, current.get(key), value))
+        _remember_the_reference(store, current, dict(pending))
     return tuple(changes)
+
+
+def _remember_the_reference(store, current, pending) -> None:
+    """Keep the series of a reference that is being switched away from (#760).
+
+    ``ledger.orphan_symbols`` protects the reference the dial points at *right
+    now*, so the moment the dial moves the previous one is an orphan and the
+    next purge takes the history the backfill spent hours on. Both go in the
+    consulted list: the new one because it is about to be fetched, and the old
+    one because it has been — including the one chosen before this list
+    existed, which is in no list and would otherwise be lost on its first
+    switch.
+
+    **Emptying the field is the opposite gesture and is left alone.** #982 made
+    a blank the one route for retiring a reference, and the only way the owner
+    ever gets those years of closes back off their disk; protecting what it
+    releases would fossilise every ticker ever typed. So a switch keeps both,
+    and a blank forgets.
+
+    Inside the write transaction on purpose. A reference remembered a moment
+    after the dial moved is a reference the purge can catch in between.
+    """
+    if 'benchmark_symbol' not in pending:
+        return
+    chosen = pending['benchmark_symbol']
+    previous = current.get('benchmark_symbol')
+    if chosen:
+        ledger.record_consulted_benchmark(store, chosen, previous)
+    elif previous:
+        ledger.forget_consulted_benchmark(store, previous)
 
 
 def _refuse_a_reinterpretation(store, current, pending) -> None:

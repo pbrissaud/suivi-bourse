@@ -15,6 +15,15 @@ logger = getLogger("ledger")
 
 LAST_WRITE_KEY = 'ledger_last_write'
 
+#: The references already compared against, newest first, comma-separated. A
+#: `setting` row and not a dial: it is the app's own memory of what it fetched,
+#: not a question anybody is asked, so it stays out of `settings_registry` and
+#: out of the Settings form.
+CONSULTED_KEY = 'benchmark_consulted'
+
+#: #760's own bound on the consulted series kept alive.
+CONSULTED_LIMIT = 7
+
 
 _EVENT_COLUMNS = (
     'id, date, event_type, symbol, name, quantity, unit_price, '
@@ -113,19 +122,78 @@ class OrphanSymbol:
     points: int
 
 
+def consulted_benchmarks(store) -> List[str]:
+    """The references this install has compared against, newest first."""
+    rows = store.query(
+        'SELECT value FROM setting WHERE key = ?', [CONSULTED_KEY])
+    stored = rows[0][0] if rows else None
+    return [symbol for symbol in str(stored or '').split(',') if symbol]
+
+
+def record_consulted_benchmark(store, *symbols: Optional[str]) -> List[str]:
+    """Remember ``symbols`` as consulted, newest first. Returns the new list.
+
+    Bounded at :data:`CONSULTED_LIMIT`, and the bound **is** the guard: the
+    protection below keeps a series out of the purge for good, so an unbounded
+    list would turn every ticker ever typed into a permanent resident of the
+    store. The eighth consulted reference evicts the oldest, and that one's
+    series goes on the next purge like any other orphan.
+
+    Writes with a bare statement and no transaction of its own so it can be
+    called from inside one — which is where :func:`settings.save` calls it,
+    because a reference protected a moment *after* the dial moved is a
+    reference the purge can still catch in between.
+    """
+    kept = [symbol for symbol in symbols if symbol]
+    for symbol in consulted_benchmarks(store):
+        if symbol not in kept:
+            kept.append(symbol)
+    kept = kept[:CONSULTED_LIMIT]
+
+    store.execute(
+        'INSERT INTO setting (key, value) VALUES (?, ?) '
+        'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+        [CONSULTED_KEY, ','.join(kept)])
+    return kept
+
+
+def forget_consulted_benchmark(store, symbol: str) -> List[str]:
+    """Drop one reference from the consulted list. Returns the new list.
+
+    The removal route, and the only one (#982): emptying the field is how a
+    reference is retired, and what it leaves behind has to go back on the purge
+    list — that is the only way the owner ever gets those years of closes off
+    their disk. Switching from one reference to another is a different gesture
+    and keeps both; see :func:`record_consulted_benchmark`.
+    """
+    kept = [kept for kept in consulted_benchmarks(store) if kept != symbol]
+    store.execute(
+        'INSERT INTO setting (key, value) VALUES (?, ?) '
+        'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+        [CONSULTED_KEY, ','.join(kept)])
+    return kept
+
+
 def orphan_symbols(store) -> List[OrphanSymbol]:
     """The symbols nothing declares any more, with the size of their series.
 
-    Three reasons to survive, and a symbol needs only one::
+    Four reasons to survive, and a symbol needs only one::
 
         event names it     ──►  it happened, the ledger remembers
         position holds it  ──►  it is owned right now
         setting points     ──►  it is *followed*, owned by nobody (#982)
+        consulted before   ──►  it was compared against once (#760)
 
     The third is the one a reader will not guess: a reference ticker has no
     event and no position, so without its clause the first purge would take the
     series the backfill had just spent a cycle filling. Losing it is silent —
     the comparison curve goes missing and nothing says why.
+
+    The fourth exists because the third is about the **current** value only, so
+    switching references would purge the one just left — and #760 keeps up to
+    seven consulted series precisely so switching back is instant rather than a
+    two-hour rebuild. Bounded at :data:`CONSULTED_LIMIT`; the eighth evicts the
+    oldest, which becomes an orphan again.
     """
     rows = store.query(
         'SELECT s.symbol, count(p.symbol) '
@@ -136,7 +204,9 @@ def orphan_symbols(store) -> List[OrphanSymbol]:
         '                  WHERE t.key = ? AND t.value = s.symbol) '
         'GROUP BY s.symbol ORDER BY s.symbol',
         ['benchmark_symbol'])
-    return [OrphanSymbol(symbol=row[0], points=int(row[1])) for row in rows]
+    consulted = set(consulted_benchmarks(store))
+    return [OrphanSymbol(symbol=row[0], points=int(row[1]))
+            for row in rows if row[0] not in consulted]
 
 
 def purge_orphan_symbols(store) -> Tuple[List[str], int]:
@@ -184,7 +254,9 @@ def currency_to_adopt(store, declared: Optional[str]) -> Optional[str]:
 
 
 __all__ = [
-    'LAST_WRITE_KEY', 'OrphanSymbol',
+    'LAST_WRITE_KEY', 'CONSULTED_KEY', 'CONSULTED_LIMIT', 'OrphanSymbol',
+    'consulted_benchmarks', 'record_consulted_benchmark',
+    'forget_consulted_benchmark',
     'read_events', 'stamp', 'last_write', 'first_payments',
     'orphan_symbols', 'purge_orphan_symbols',
     'currency_to_adopt',

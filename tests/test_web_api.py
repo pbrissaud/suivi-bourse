@@ -4052,6 +4052,87 @@ def test_a_reference_nobody_names_any_more_is_an_orphan_again(tmp_path):
         "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 0
 
 
+def test_switching_reference_keeps_the_series_of_the_one_left_behind(tmp_path):
+    """The fourth reason a symbol survives the purge (#760).
+
+    The third reason is about the dial's **current** value, so the instant it
+    moves the previous reference is an orphan — and #760 keeps up to seven
+    consulted series precisely so switching back is instant rather than a
+    two-hour rebuild. Without this the promise is the opposite of what happens:
+    every switch throws away the history that made switching back worth
+    offering.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    assert client.put(
+        '/api/settings', json={'benchmark_symbol': 'CSPX.AS'}).status_code == 200
+
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'ZZORPHAN', 'points': 1}]
+    assert client.delete('/api/store/orphans').get_json() == {
+        'symbols': ['ZZORPHAN'], 'points_removed': 1}
+    assert opened.query(
+        "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 2
+
+
+def test_the_eighth_consulted_reference_evicts_the_oldest(tmp_path):
+    """The bound is the guard, and there is no other one.
+
+    The protection keeps a series out of the purge for good, so an unbounded
+    list would turn every ticker ever typed into a permanent resident of a
+    store the owner cannot clean. Seven in, the eighth pushes the first out and
+    its series goes back on the list like any other orphan.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    for symbol in ['CSPX.AS', 'MSE.PA', 'C40.PA', 'AEEM.PA', 'WPEA.PA',
+                   'PE500.PA', 'IWDA.AS']:
+        assert client.put(
+            '/api/settings',
+            json={'benchmark_symbol': symbol}).status_code == 200
+
+    assert ledger.consulted_benchmarks(opened) == [
+        'IWDA.AS', 'PE500.PA', 'WPEA.PA', 'AEEM.PA', 'C40.PA', 'MSE.PA',
+        'CSPX.AS']
+    assert {orphan['symbol']
+            for orphan in client.get('/api/store').get_json()['orphans']} == {
+        'CW8.PA', 'ZZORPHAN'}
+    assert opened.query(
+        "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 2
+
+
+def test_switching_back_and_forth_does_not_spend_the_bound(tmp_path):
+    """A reference already consulted moves to the front rather than joining twice.
+
+    Otherwise four switches between two references fill the list with two names
+    and evict a third that was never touched.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    for symbol in ['CSPX.AS', 'CW8.PA', 'CSPX.AS', 'CW8.PA']:
+        client.put('/api/settings', json={'benchmark_symbol': symbol})
+
+    assert ledger.consulted_benchmarks(opened) == ['CW8.PA', 'CSPX.AS']
+
+
+def test_emptying_the_field_releases_the_series_it_was_protecting(tmp_path):
+    """The removal route stays a removal route (#982), consulted list or not.
+
+    Emptying the field is the only way the owner gets those years of closes off
+    their disk. A switch keeps both references; a blank forgets the one it
+    releases, or the protection would fossilise every ticker ever typed.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    assert client.put(
+        '/api/settings', json={'benchmark_symbol': ''}).status_code == 200
+
+    assert ledger.consulted_benchmarks(opened) == []
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'CW8.PA', 'points': 2},
+        {'symbol': 'ZZORPHAN', 'points': 1}]
+
+
 def test_the_store_resource_fails_with_the_store_it_describes(tmp_path):
     """A ``503``, deliberately — and it is the split with ``/api/runtime``.
 
