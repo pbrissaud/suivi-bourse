@@ -72,24 +72,25 @@ def _keys(found):
 
 
 # --------------------------------------------------------------------------- #
-# The table: one of fourteen, and it carries the expiry
+# The table: one of sixteen, and it carries the expiry
 # --------------------------------------------------------------------------- #
 
-def test_the_product_declares_fifteen_tables_and_one_of_them_is_the_ack():
+def test_the_product_declares_sixteen_tables_and_one_of_them_is_the_ack():
     """The acknowledgement is a **table** and not a column on
     ``installation_fact``: a declared fact is its own thing, with its own
     writer, its own absence and its own lifetime.
 
-    **Fifteen since #926**, and the count is a number this suite states
+    **Sixteen since #760**, and the count is a number this suite states
     deliberately rather than a constant nobody may change: #752 added
-    ``taxation_model`` and ``account_fact``, #926 added ``schema_step``, and
-    each said by how much in its own acceptance criteria.
+    ``taxation_model`` and ``account_fact``, #926 added ``schema_step``, #760
+    added ``symbol_split``, and each said by how much in its own acceptance
+    criteria.
 
     It is still a table, because the reason was never that a column was
     impossible — it was that a declared fact has its own writer, its own
     absence and its own lifetime.
     """
-    assert len(store_module.TABLES) == 15
+    assert len(store_module.TABLES) == 16
     assert 'advisory_ack' in store_module.TABLES
 
 

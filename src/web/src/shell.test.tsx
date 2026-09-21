@@ -102,7 +102,7 @@ describe('the page title, now the header’s', () => {
   })
 })
 
-describe('the navigation, five entries in three and two', () => {
+describe('the navigation, six entries in four and two', () => {
   /** The nav's links, in the order a reader — and a screen reader — meets them. */
   const entries = () => within(nav()).getAllByRole('link').map((link) => link.textContent)
 
@@ -112,12 +112,16 @@ describe('the navigation, five entries in three and two', () => {
 
     // *Grand livre* and never *Registre*: the concept has a word, and a label
     // inventing a second one puts two names on one thing. The order is the
-    // decision — the three the owner **looks at**, then the two they **act
-    // on** — so it is asserted as an order and not as a set.
+    // decision — the four the owner **looks at**, then the two they **act
+    // on** — so it is asserted as an order and not as a set. *Référence* joins
+    // the first group and sits last in it (#760): it is read, never acted on,
+    // and it is the only one of the four that can be empty on an installation
+    // that is otherwise complete.
     expect(entries()).toEqual([
       'Tableau de bord',
       'Titres',
       'Comptes',
+      'Référence',
       'Grand livre',
       'Réglages',
     ])
@@ -163,7 +167,7 @@ describe('the navigation, five entries in three and two', () => {
     expect(sidebar()).toHaveAttribute('data-state', 'collapsed')
   })
 
-  it('is a drawer at 390 px, behind a gesture, with the five entries in it', async () => {
+  it('is a drawer at 390 px, behind a gesture, with the six entries in it', async () => {
     setViewportWidth(390)
     const { user } = renderApp()
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
@@ -174,7 +178,7 @@ describe('the navigation, five entries in three and two', () => {
 
     await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
     const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(drawer).getAllByRole('link')).toHaveLength(5)
+    expect(within(drawer).getAllByRole('link')).toHaveLength(6)
   })
 })
 

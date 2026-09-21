@@ -1,4 +1,5 @@
 """The market's own two tables: ``symbol_quote`` and ``price_point`` (issue #700)."""
+import math
 import threading
 from datetime import date, datetime, timezone
 from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
@@ -134,6 +135,75 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
 
     logger.debug(f"Wrote {len(rows)} historical price(s) for {symbol}")
     return len(rows)
+
+
+def read_splits(store, symbol: str) -> Dict[date, float]:
+    """``{day: ratio}`` — one symbol's whole split history, empty when it has none."""
+    return {day: float(ratio) for day, ratio in store.query(
+        'SELECT day, ratio FROM symbol_split WHERE symbol = ? ORDER BY day',
+        [symbol])}
+
+
+def splits_were_read(store, symbol: str) -> bool:
+    """Has this symbol's split history ever been established? (#760)
+
+    **An empty history is ambiguous and this is what disambiguates it.** Most
+    symbols have never split, so zero rows in ``symbol_split`` is the ordinary
+    correct answer — and it is also what a store written before the table
+    existed holds for every symbol it has already fetched. Anything counting
+    units across time has to tell the two apart: a replay that takes *never
+    asked* for *never split* walks through a four-for-one and divides the
+    holding by four, in silence and for good, because the backward pass does
+    not revisit a window it has filled.
+    """
+    rows = store.query(
+        'SELECT splits_read_at FROM symbol_quote WHERE symbol = ?', [symbol])
+    return bool(rows) and rows[0][0] is not None
+
+
+def record_splits(store, symbol: str, splits: Mapping[date, float]) -> int:
+    """Rewrite one symbol's **whole** split history. Returns rows written.
+
+    Total, never incremental: :func:`market._splits` reads every split Yahoo
+    knows on every fetch, so what arrives here is always the complete history
+    and a row this one does not carry is a row Yahoo has retracted. Writing the
+    difference would leave that row standing, and a replay counting units would
+    apply a split that never happened -- silently, and for ever, because the
+    backward pass does not ask twice for a window it has filled.
+
+    Idempotent by the same token: splits change a handful of times in a
+    symbol's life and a fetch happens every cycle, so the common answer is the
+    one already stored, and the rows are left exactly as they were. What is
+    always written is :func:`splits_were_read`'s mark — *Yahoo answered* is a
+    different fact from *these are the ratios*, and a symbol that has never
+    split would otherwise never carry one.
+    """
+    # The same rule `market._splits` applies at the edge, kept here too: this
+    # function is public and a caller reaching it another way must not be able
+    # to write a ratio a replay would multiply units by.
+    incoming = {day: float(ratio) for day, ratio in splits.items()
+                if math.isfinite(float(ratio)) and float(ratio) > 0}
+    unchanged = read_splits(store, symbol) == incoming
+
+    with store.transaction():
+        _ensure_row(store, symbol)
+        # **The mark moves even when the rows do not.** It says *Yahoo
+        # answered*, which is a different fact from *these are the ratios* —
+        # and for a symbol that has never split, the answer is always the same
+        # empty one, so an unmarked store would stay unmarked for ever.
+        store.execute(
+            'UPDATE symbol_quote SET splits_read_at = ? WHERE symbol = ?',
+            [datetime.now(timezone.utc), symbol])
+        if not unchanged:
+            store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
+            store.executemany(
+                'INSERT INTO symbol_split (symbol, day, ratio) VALUES (?, ?, ?)',
+                [(symbol, day, ratio) for day, ratio in sorted(incoming.items())])
+
+    if unchanged:
+        return 0
+    logger.debug(f"Wrote {len(incoming)} split(s) for {symbol}")
+    return len(incoming)
 
 
 def collapse_to_ladder(store, now: datetime) -> int:
@@ -456,10 +526,16 @@ def read_quote(store, symbol: str) -> Optional[Dict]:
 
 
 def forget_symbol(store, symbol: str) -> int:
-    """Drop every market row of one symbol — its series and its quote row."""
+    """Drop every market row of one symbol — its series, its splits, its quote row."""
     (points,) = store.query(
         'SELECT count(*) FROM price_point WHERE symbol = ?', [symbol])[0]
     store.execute('DELETE FROM price_point WHERE symbol = ?', [symbol])
+    store.execute('DELETE FROM symbol_split WHERE symbol = ?', [symbol])
+    # The mark goes with the rows: the symbol is being forgotten, so what this
+    # install knew about its corporate actions is not true of it any more.
+    store.execute(
+        'UPDATE symbol_quote SET splits_read_at = NULL WHERE symbol = ?',
+        [symbol])
     store.execute('DELETE FROM symbol_quote WHERE symbol = ?', [symbol])
     forget_oldest_stored()
     return int(points)
@@ -468,6 +544,7 @@ def forget_symbol(store, symbol: str) -> int:
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_attributes', 'record_history',
+    'read_splits', 'record_splits', 'splits_were_read',
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',

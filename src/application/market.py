@@ -1,5 +1,6 @@
 """The market edge: the one module that talks to yfinance (issue #846)."""
 
+import math
 import time
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -70,7 +71,15 @@ def _splits(ticker, symbol: str) -> Optional[Dict[date, float]]:
         series = getattr(ticker, 'splits', None)
         if series is None or len(series) == 0:
             return {}
-        return {index.date(): float(ratio) for index, ratio in series.items()}
+        # **A ratio is a positive, finite number or it is not a ratio.** Yahoo
+        # serves these out of a pandas frame, where an empty cell is `NaN` --
+        # and `NaN` is truthy, so a replay multiplying units by it turns the
+        # whole holding into `NaN` and every figure downstream with it. A zero
+        # would be silently skipped and a negative would flip the position.
+        # Rejected here, at the edge, so nothing further down has to ask.
+        kept = {index.date(): float(ratio) for index, ratio in series.items()}
+        return {day: ratio for day, ratio in kept.items()
+                if math.isfinite(ratio) and ratio > 0}
     except Exception as e:
         logger.error(f"Could not read the splits of {symbol}: {e}")
         return None
@@ -78,8 +87,21 @@ def _splits(ticker, symbol: str) -> Optional[Dict[date, float]]:
 
 def price_history(symbol: str, start: datetime, end: datetime,
                   delay: float,
-                  max_retries: int = 3) -> Optional[List[Dict]]:
-    """One symbol's closes over ``[start, end]``, or ``None`` on failure."""
+                  max_retries: int = 3
+                  ) -> Tuple[Optional[List[Dict]], Optional[Dict[date, float]]]:
+    """One symbol's closes over ``[start, end]`` and its splits, or ``(None, None)``.
+
+    The splits ride along because they are read here and nowhere else, and
+    because :func:`market_info.as_printed` **consumes** them: it puts the closes
+    back in the share the market printed them in and the ratios are gone by the
+    time the chunk reaches its caller. Anything counting units across a split
+    needs them (#760), so they are handed over rather than dropped.
+
+    The second half is ``None`` whenever no split history was established --
+    the fetch failed, or the window came back empty and the question was never
+    asked. It is ``{}`` for a symbol that has simply never split, which is a
+    different answer and the caller may store it as one.
+    """
     for attempt in range(max_retries):
         try:
             ticker = yf.Ticker(symbol)
@@ -89,7 +111,7 @@ def price_history(symbol: str, start: datetime, end: datetime,
 
             if history.empty:
                 logger.debug(f"No historical data for {symbol} from {start} to {end}")
-                return []
+                return [], None
 
             prices = []
             for idx, row in history.iterrows():
@@ -102,12 +124,12 @@ def price_history(symbol: str, start: datetime, end: datetime,
                 prices.append({'timestamp': ts, 'price': float(close)})
 
             if not prices:
-                return prices
+                return prices, None
 
             splits = _splits(ticker, symbol)
             if splits is None:
-                return None
-            return market_info.as_printed(prices, splits)
+                return None, None
+            return market_info.as_printed(prices, splits), splits
 
         except YFRateLimitError:
             if attempt < max_retries - 1:
@@ -119,12 +141,12 @@ def price_history(symbol: str, start: datetime, end: datetime,
             else:
                 logger.error(
                     f"Rate limited fetching history for {symbol}, max retries exceeded")
-                return None
+                return None, None
         except Exception as e:
             logger.error(f"Error fetching history for {symbol}: {e}")
-            return None
+            return None, None
 
-    return None
+    return None, None
 
 
 def pair_rate(pair: str) -> Optional[float]:

@@ -72,6 +72,8 @@
  * with invented values.
  */
 import type {
+  BenchmarkResponse,
+  OfferedBenchmark,
   Account,
   AccountHistoryResponse,
   AccountsResponse,
@@ -1226,6 +1228,40 @@ export function defaultEnvironment(): EnvironmentVariable[] {
     { name: 'SB_WEB_PORT', value: '8080', set: true, source: 'environment' },
     { name: 'LOG_LEVEL', value: 'INFO', set: true, source: 'environment' },
   ]
+}
+
+/** The seven references the comparison offers, as the route publishes them. */
+export function offeredBenchmarks(): OfferedBenchmark[] {
+  return [
+    { symbol: 'CW8.PA', index: 'MSCI World', pea: false, inception: '2009-06-16' },
+    { symbol: 'CSPX.AS', index: 'S&P 500', pea: false, inception: '2010-05-19' },
+    { symbol: 'MSE.PA', index: 'Euro Stoxx 50', pea: false, inception: '2008-01-02' },
+    { symbol: 'C40.PA', index: 'CAC 40', pea: false, inception: '2008-01-02' },
+    {
+      symbol: 'AEEM.PA',
+      index: 'MSCI Emerging Markets',
+      pea: false,
+      inception: '2010-11-30',
+    },
+    { symbol: 'WPEA.PA', index: 'MSCI World', pea: true, inception: '2024-04-02' },
+    { symbol: 'PE500.PA', index: 'S&P 500', pea: true, inception: '2019-04-25' },
+  ]
+}
+
+/**
+ * The comparison payload — **no reference chosen by default**, which is the
+ * state a fresh installation is actually in and the one every other page test
+ * meets when the shell walks this route.
+ */
+export function aBenchmark(overrides: Partial<BenchmarkResponse> = {}): BenchmarkResponse {
+  return {
+    base_currency: 'EUR',
+    state: 'no_reference',
+    reference: null,
+    offered: offeredBenchmarks(),
+    consulted: [],
+    ...overrides,
+  }
 }
 
 export function aConfig(overrides: Partial<ConfigResponse> = {}): ConfigResponse {

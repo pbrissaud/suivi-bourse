@@ -43,6 +43,7 @@ import {
   aRuntime,
   aStore,
   aTaxationCatalogue,
+  aBenchmark,
   aTaxationModel,
   aTotalsPayload,
 } from '@/test/factories'
@@ -194,6 +195,10 @@ export function defaultHandlers() {
     // list are what a test asks for by name, both being exactly what the block
     // exists to render.
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
+    // **No reference chosen** (#760), which is what a fresh installation reads
+    // and what the shell's walk meets on this route. A test comparing anything
+    // asks for the payload by name, exactly as it asks for an orphan.
+    http.get(ROUTES.benchmark, () => HttpResponse.json(aBenchmark())),
     http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
     // **And nothing to advise on, by default** (#829). An advisory is an audit
     // on the *data*, and the default portfolio is one nothing is wrong with —

@@ -23,7 +23,7 @@
  * with. #814 rendered them as a list, on the argument that a sentence
  * enumerating five clauses in two languages is one nobody can keep true; #834
  * takes that decision back, and the recital is the title — *« Supprimer les 47
- * événements de type Dividende, sur le compte pea, entre le 1 janv. 2025 et le
+ * événements de type Dividende, sur le compte pea, entre le 1ᵉʳ janv. 2025 et le
  * 31 déc. 2025 ? »*. What makes it keepable is that no clause is written twice:
  * each is a key of its own, the period reusing the pastille's own three
  * sentences, and the join is a **comma** because these are qualifiers stacked

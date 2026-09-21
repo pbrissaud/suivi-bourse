@@ -66,11 +66,28 @@ const CURRENCY = CURRENCY_KEY
 const DIALS_HEADING = 'settings-dials'
 
 /**
+ * The one dial this form does **not** render, though the registry declares it
+ * and `PUT /api/settings` still writes it (#760).
+ *
+ * The comparison screen is the reference's only door now. It is not a second
+ * door closed for tidiness: choosing a reference there costs the fund's whole
+ * history to fetch, and the screen is what says so before the click — the
+ * inception, the download state, the minutes-to-hours warning. A bare text
+ * field here offers the same write with none of that, and a ticker typed into
+ * it reaches the same backfill with no way back except emptying the field.
+ *
+ * The exclusion is named here, where the list is made, because the sentence
+ * under `DIAL_LABEL` says the list is the registry's — and this is the one
+ * place it is not.
+ */
+const NOT_A_DIAL = new Set(['benchmark_symbol'])
+
+/**
  * One sentence per dial, in the reader's language. The **list** is the
- * registry's; only the words are here, exactly as the six event types are named
- * by the catalogue and enumerated by the API. A dial the catalogue does not
- * know yet renders under its key with the registry's own note beside it, which
- * is the honest degradation and not a hole.
+ * registry's less :data:`NOT_A_DIAL`; only the words are here, exactly as the
+ * six event types are named by the catalogue and enumerated by the API. A dial
+ * the catalogue does not know yet renders under its key with the registry's own
+ * note beside it, which is the honest degradation and not a hole.
  */
 const DIAL_LABEL: Record<string, MessageKey> = {
   regular_interval: 'settings.regular_interval',
@@ -79,7 +96,6 @@ const DIAL_LABEL: Record<string, MessageKey> = {
   backfill_chunk_days: 'settings.backfill_chunk_days',
   staleness_horizon: 'settings.staleness_horizon',
   base_currency: 'settings.base_currency',
-  benchmark_symbol: 'settings.benchmark_symbol',
 }
 
 /**
@@ -103,7 +119,6 @@ const DIAL_HINT: Record<string, MessageKey> = {
   backfill_chunk_days: 'settings.backfill_chunk_days.hint',
   staleness_horizon: 'settings.staleness_horizon.hint',
   base_currency: 'settings.base_currency.hint',
-  benchmark_symbol: 'settings.benchmark_symbol.hint',
 }
 
 interface DialsBlockProps {
@@ -175,16 +190,18 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
         }}
       >
         <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
-          {config.settings.map((setting) => (
-            <Dial
-              key={setting.key}
-              setting={setting}
-              value={draft[setting.key] ?? ''}
-              reach={reach}
-              fixed={fixed}
-              onChange={(value) => setDraft((current) => ({ ...current, [setting.key]: value }))}
-            />
-          ))}
+          {config.settings
+            .filter((setting) => !NOT_A_DIAL.has(setting.key))
+            .map((setting) => (
+              <Dial
+                key={setting.key}
+                setting={setting}
+                value={draft[setting.key] ?? ''}
+                reach={reach}
+                fixed={fixed}
+                onChange={(value) => setDraft((current) => ({ ...current, [setting.key]: value }))}
+              />
+            ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

@@ -50,6 +50,7 @@ export const DOCS_ANCHORS = [
   'xirr',
   'carrying-price',
   'absence',
+  'benchmark',
 ] as const
 
 export type DocsAnchor = (typeof DOCS_ANCHORS)[number]

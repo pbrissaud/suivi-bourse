@@ -222,6 +222,13 @@ const SURFACES: readonly Surface[] = [
     },
   },
   { name: 'les comptes', url: '/accounts', heading: 'Comptes' },
+  // The comparison, whose whole payload is one read (#760): the gap, the
+  // period and the state that governs both. It is the surface where declaring
+  // an emptiness over a read in flight would be worst — *no reference chosen*
+  // and *the reference is still being fetched* are two different screens, and
+  // guessing either one before the answer lands puts a gesture in front of a
+  // reader who has already made it.
+  { name: 'la référence', url: '/benchmark', heading: 'Référence' },
   { name: 'le grand livre', url: '/ledger', heading: 'Grand livre' },
   {
     // The account's own panel, which is where a taxation model is chosen and

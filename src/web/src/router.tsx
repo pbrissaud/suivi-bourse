@@ -5,6 +5,7 @@ import { NotFound } from '@/components/NotFound'
 import { Shell } from '@/components/Shell'
 import { validateLedgerSearch, type LedgerSearch } from '@/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
+import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
 import SettingsPage from '@/pages/SettingsPage'
@@ -14,12 +15,12 @@ import SharesPage from '@/pages/SharesPage'
  * The route tree, written by hand — **code-based**, not file-based.
  *
  * TanStack Router supports both, and the plugin's job in the file-based mode is
- * to *generate* `routeTree.gen.ts` from `src/routes/`. With four routes that
+ * to *generate* `routeTree.gen.ts` from `src/routes/`. With six routes that
  * trade is the wrong way round: the tree below is shorter than the protocol a
  * generated file carries — gitignore, linter, formatter and the editor settings
  * the docs devote a section to — and this repo has been bitten by exactly that
  * class of problem (`c87a0b1`, the front's `lib/` swallowed by the root
- * gitignore). The crossover is roughly ten routes; the map plans four.
+ * gitignore). The crossover is roughly ten routes; the map plans six.
  *
  * And `/` is the dashboard **unconditionally**: a redirect while the ledger is
  * empty would make it the one route in the product whose behaviour depends on
@@ -143,10 +144,31 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+/**
+ * The sixth route, and the second of the two that read nothing off their own
+ * address (#760).
+ *
+ * **No search parameter, and that is a decision rather than an omission.** A
+ * counterfactual replays the flows from the beginning, so a range in the URL
+ * would not narrow the answer, it would ask a different question — one that
+ * needs a common starting point on both sides and is a different computation.
+ * The screen announces the period it covers instead.
+ *
+ * The reference itself is not in the address either: it is a **configuration
+ * fact** the store keeps, not a reduction of this page. Two owners opening the
+ * same link see their own reference, which is the same rule the dials follow.
+ */
+const benchmarkRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/benchmark',
+  component: BenchmarkPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
   accountsRoute,
+  benchmarkRoute,
   dataRoute,
   settingsRoute,
 ])

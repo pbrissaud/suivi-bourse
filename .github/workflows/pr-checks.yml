@@ -40,7 +40,10 @@ jobs:
         with:
           enable-cache: true
 
-      - run: uv run pytest tests/
+      # `-m "not network"` and not a path exclusion: the marker is what the
+      # probe of #760 carries, and a path would go stale the day a second
+      # live-market test lands beside it.
+      - run: uv run pytest tests/ -m "not network"
 
   web:
     name: "Front"

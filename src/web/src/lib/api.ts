@@ -164,6 +164,17 @@ export const ROUTES = {
    * describe one ledger.
    */
   investmentRhythm: '/api/investment-rhythm',
+  /**
+   * The comparison of #760 — the gap, the period it covers, and the right to
+   * display either.
+   *
+   * One route and one payload on purpose: `state` and `gap_gross` arrive in
+   * the same read, so the page can never draw a figure over a series still
+   * being fetched. A second read for terminality would be a second chance for
+   * the two to disagree, and what disagreement looks like here is a plausible
+   * number that repairs itself an hour later.
+   */
+  benchmark: '/api/benchmark',
 } as const
 
 export type RouteName = keyof typeof ROUTES
@@ -836,6 +847,116 @@ export interface InvestmentRhythmResponse extends RhythmFigures {
    * never.
    */
   accounts: AccountRhythm[]
+}
+
+// ------------------------------------------------------------------------- //
+// The comparison against a reference (#760)
+// ------------------------------------------------------------------------- //
+
+/** One of the seven references the selector offers. */
+export interface OfferedBenchmark {
+  symbol: string
+  /** The index it tracks. Named **first**; the ticker is subordinate. */
+  index: string
+  /** Eligible to a PEA. Groups the selector, enters no arithmetic. */
+  pea: boolean
+  /**
+   * The fund's first quoted day — what truncation costs, said *before* the
+   * click. A 2024 fund silently drops eleven years of a 2013 owner's history.
+   */
+  inception: string
+}
+
+/** The reconstruction bar, fed from the store and never from the recorder. */
+export interface BenchmarkRebuild {
+  symbol: string
+  /** How far back the backward pass has reached, or `null`. */
+  reached: string | null
+  /** Where it is heading — the fund's own inception. */
+  target: string | null
+  /** `0`…`1`, or `null` when there is nothing to take a ratio of. */
+  ratio: number | null
+}
+
+/** An account the comparison could not take, and the reason in one word. */
+export interface BenchmarkExclusion {
+  account: string
+  reason: string
+  symbols?: string
+}
+
+/** One day of the two curves, on a shared axis. */
+export interface BenchmarkPoint {
+  t: string
+  /** `null` where one account of the perimeter has no value that day. */
+  portfolio: number | null
+  reference: number
+}
+
+/**
+ * The whole screen, in one read.
+ *
+ * `state` governs everything under it, and the page branches on **it** rather
+ * than on the presence of `gap_gross`: a figure that is absent and a figure
+ * that is withheld are different facts, and this screen renders them
+ * differently on purpose.
+ *
+ * `splits_unknown` is the second withheld state and it looks like `rebuilding`
+ * to the reader on purpose: the fund's history is there but its split ratios
+ * were never established, and the next fetch is what repairs both.
+ */
+export interface BenchmarkResponse {
+  base_currency: string | null
+  state: 'no_reference' | 'rebuilding' | 'splits_unknown' | 'nothing_to_compare' | 'ready'
+  reference: string | null
+  index?: string | null
+  inception?: string | null
+  offered: OfferedBenchmark[]
+  /**
+   * The references this install already holds a series for — the *déjà
+   * téléchargé* column, and the only thing that makes #760's promise visible:
+   * up to seven consulted series are kept alive so switching back is instant.
+   */
+  consulted: string[]
+  rebuild?: BenchmarkRebuild
+  excluded_accounts?: BenchmarkExclusion[]
+  covered_from?: string
+  covered_to?: string
+  /** The first day the perimeter was written, before any seeding. */
+  portfolio_from?: string
+  /**
+   * Whether the **fund** is what shortened the period. `false` when the
+   * accounts simply start later than it does: same date, different cause, and
+   * naming the wrong one sends the reader looking for a history that is
+   * already there.
+   */
+  truncated_by_fund?: boolean
+  /** Why the period ended early, or `null` — `exhausted`, `awaiting_rate`. */
+  ended?: string | null
+  /** The perimeter, and the two terms the head figure is the difference of. */
+  accounts?: string[]
+  portfolio_value?: number | null
+  reference_value?: number
+  /** The head figure, in euros. `null` when the portfolio is unvalued. */
+  gap_gross?: number | null
+  /**
+   * The same gap once the wrappers have taken their cut, or `null` — and
+   * `null` means **one account could not project**, never a tax of zero. That
+   * account is named in `net_unavailable`.
+   */
+  gap_net?: number | null
+  net_unavailable?: BenchmarkExclusion[]
+  portfolio_tax?: number | null
+  reference_tax?: number | null
+  portfolio_return?: number | null
+  reference_return?: number | null
+  /**
+   * Cash sitting in the perimeter on the last covered day. The replay puts
+   * every euro to work the day it lands, so this is what the comparison did
+   * *not* account for — published rather than corrected for.
+   */
+  idle_cash?: number | null
+  series?: BenchmarkPoint[]
 }
 
 // ------------------------------------------------------------------------- //
@@ -1713,6 +1834,7 @@ export const api = {
   positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
   movers: () => get<MoversResponse>(ROUTES.movers),
   investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
+  benchmark: () => get<BenchmarkResponse>(ROUTES.benchmark),
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
