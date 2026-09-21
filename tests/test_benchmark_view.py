@@ -471,3 +471,45 @@ def test_an_account_that_ended_early_closes_the_period_for_every_term(named):
     # the period — so the denominator is 2 000 € and not 12 000 €.
     assert payload['reference_value'] == pytest.approx(2000.0)
     assert payload['portfolio_return'] == pytest.approx(0.0)
+
+
+def test_two_accounts_whose_periods_never_overlap_have_nothing_to_compare(named):
+    """An intersection can be empty, and then there is no period to sum over.
+
+    One account closed in January, another opened in February: the latest start
+    falls after the earliest end. Every term would be read at a day one of them
+    never lived, and the screen would state a period running backwards.
+    """
+    _write_curve(named, 'old', first='2024-01-01', last='2024-01-20')
+    _write_curve(named, 'new', first='2024-02-01', last='2024-02-29')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'old', 1000.0),
+                          _deposit('2024-02-01', 'new', 1000.0)],
+                         accounts=('old', 'new')), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert 'gap_gross' not in payload
+
+
+def test_the_end_reason_belongs_to_the_account_that_ended_the_period(named):
+    """An account that ran out *after* the boundary did not stop anything.
+
+    The period closes at the earliest end. Naming a later account's reason
+    against that day tells the owner a withdrawal emptied the reference on a
+    day nothing happened — the same mistake as blaming the fund for a
+    truncation its accounts caused.
+    """
+    # `short` simply has fewer written days and ends naturally on 10 February.
+    _write_curve(named, 'short', first='2024-01-01', last='2024-02-10')
+    # `long` runs to the end of the window and exhausts its reference *later*.
+    _write_curve(named, 'long', first='2024-01-01', last='2024-02-29')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'short', 1000.0),
+                          _deposit('2024-01-01', 'long', 1000.0),
+                          _deposit('2024-02-20', 'long', -5000.0)],
+                         accounts=('short', 'long')), NOW)
+
+    assert payload['covered_to'] == '2024-02-10'
+    assert payload['ended'] is None

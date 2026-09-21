@@ -124,8 +124,14 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': NOTHING_TO_COMPARE,
                 'excluded_accounts': excluded}
 
-    return {**head, 'state': READY, 'excluded_accounts': excluded,
-            **_aggregate(store, snapshot, replayed, opened, min(prices), now)}
+    aggregate = _aggregate(store, snapshot, replayed, opened, min(prices), now)
+    if aggregate is None:
+        # The accounts replayed, and their periods do not overlap. Nothing to
+        # compare is the honest answer, not a comparison over no days at all.
+        return {**head, 'state': NOTHING_TO_COMPARE,
+                'excluded_accounts': excluded}
+
+    return {**head, 'state': READY, 'excluded_accounts': excluded, **aggregate}
 
 
 def _offered() -> List[Dict[str, Any]]:
@@ -249,15 +255,32 @@ def _unconverted_days(store, symbol: str) -> List[date]:
 def _aggregate(store, snapshot, replayed: Dict[str, Any],
                opened: Dict[str, date], quoted_from: date,
                now: datetime) -> Dict[str, Any]:
-    """Sum the accounts over the period they share, gross and net."""
+    """Sum the accounts over the period they share, gross and net.
+
+    ``None`` when they share none: see the empty-intersection guard below.
+    """
     # **The period is the intersection**: the latest of the starts, because an
     # account opened later has nothing to say about the years before it, and
     # the earliest of the ends, because a reference exhausted in one account
     # stops the comparison there rather than carrying a frozen figure forward.
     covered_from = max(result.first_day for result, _ in replayed.values())
     covered_to = min(result.last_day for result, _ in replayed.values())
+
+    # **An intersection can be empty**, and then there is no period to sum
+    # over: an account closed in 2020 beside one opened in 2022 gives a start
+    # after its own end. Every term below would be read at a day one of them
+    # never lived, and the screen would state a period running backwards.
+    if covered_from > covered_to:
+        return None
+
+    # **Why it ended is the boundary account's reason, or none at all.** The
+    # period stops at the earliest end; an account whose reference was
+    # exhausted *after* that day did not stop anything, and naming its reason
+    # against `covered_to` tells the owner a withdrawal emptied the reference
+    # on a day nothing happened. Same class of mistake as blaming the fund for
+    # a truncation its accounts caused.
     ended = next((result.ended for result, _ in replayed.values()
-                  if result.ended), None)
+                  if result.ended and result.last_day == covered_to), None)
 
     # **Every term read on the covered day**, not on each replay's own last
     # one. The period ends at the *earliest* of the accounts' ends, so an
