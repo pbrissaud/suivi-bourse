@@ -23,7 +23,12 @@ def latest_quote(symbol: str,
     for attempt in range(max_retries):
         try:
             ticker = yf.Ticker(symbol)
-            ticker_history = ticker.history()
+            # `auto_adjust=False` for the same reason as the history fetch
+            # (#1008): the default swaps `Close` for `Adj Close`, which is net
+            # of every dividend paid since. The newest bar is its own reference
+            # so it is unmoved -- but `dropna` falls back to an earlier one when
+            # the venue has not printed yet, and that one is not.
+            ticker_history = ticker.history(auto_adjust=False)
             if ticker_history.empty:
                 logger.warning(f"No price history returned for {symbol}")
                 return None, None
@@ -91,6 +96,16 @@ def price_history(symbol: str, start: datetime, end: datetime,
                   ) -> Tuple[Optional[List[Dict]], Optional[Dict[date, float]]]:
     """One symbol's closes over ``[start, end]`` and its splits, or ``(None, None)``.
 
+    Two adjustments stand between Yahoo and the close the market printed, and
+    they are undone in two different places because Yahoo applies them in two
+    different places. ``auto_adjust=False`` turns off the one yfinance makes
+    locally — it swaps ``Close`` for ``Adj Close``, which is **net of every
+    dividend paid since** (#1008), and a dividend is already in the ledger as an
+    event crediting cash, so leaving it in the price counts it twice and values
+    the whole past short. The split half is applied by the chart endpoint
+    upstream and no flag reaches it, which is what
+    :func:`market_info.as_printed` is for.
+
     The splits ride along because they are read here and nowhere else, and
     because :func:`market_info.as_printed` **consumes** them: it puts the closes
     back in the share the market printed them in and the ratios are gone by the
@@ -107,7 +122,8 @@ def price_history(symbol: str, start: datetime, end: datetime,
             ticker = yf.Ticker(symbol)
             interval = scheduling.history_interval(
                 start, datetime.now(timezone.utc))
-            history = ticker.history(start=start, end=end, interval=interval)
+            history = ticker.history(start=start, end=end, interval=interval,
+                                     auto_adjust=False)
 
             if history.empty:
                 logger.debug(f"No historical data for {symbol} from {start} to {end}")

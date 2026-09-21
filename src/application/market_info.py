@@ -95,8 +95,9 @@ def as_printed(prices: Sequence[MutableMapping],
     therefore valued in two units at once — three shares of a symbol that
     reverse-split 1-for-1000 are carried at a thousand times what they were
     worth, for the whole of their pre-split history. ``auto_adjust=False`` does
-    not reach this: the chart endpoint applies the split upstream, so the caller
-    cannot turn it off and the correction has to be made here.
+    not reach this: it only turns off the adjustment yfinance makes locally, the
+    dividend one (#1008). The chart endpoint applies the split upstream, so the
+    caller cannot turn it off and the correction has to be made here.
 
     The printed close is the served one multiplied back by **every split that
     came after it**; the close of the split day itself already stands in the new

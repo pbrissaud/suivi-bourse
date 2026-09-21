@@ -673,6 +673,48 @@ def _drop_split_adjusted_prices(connection) -> None:
 
     A no-op on a file created today, where all four tables are empty.
     """
+    _buy_the_series_again(connection)
+
+
+def _drop_dividend_adjusted_prices(connection) -> None:
+    """Throw the series away a second time, for the other adjustment (#1008).
+
+    Same defect one adjustment along, and the same remedy for the same reason.
+    yfinance defaults ``auto_adjust`` to ``True``, which serves ``Adj Close`` —
+    the close **net of every dividend paid since** — under the name ``Close``.
+    A dividend is already in the store as a ``DIVIDEND`` event crediting cash,
+    so carrying it in the price too counts it twice: every close before an
+    ex-date is short by the whole compounded stream behind it, the portfolio
+    looks to have grown from lower than it did, and every return derived from it
+    is overstated. A custodian's statement of four French lines put it at
+    −19,1 % on a day with no event of any kind.
+
+    Mixed exactly as #987 was, and for the same mechanical reason: a point
+    written on the day it happened had no later dividend to be net of, one
+    backfilled after an ex-date does. Nothing in the row says which, so there is
+    no factor to apply and the series can only be bought again — anchors back to
+    ``NULL`` so the three passes really rebuild rather than resume past it.
+
+    ``symbol_split`` is left alone: the ratios are a fact about the share count
+    and no dividend moves them.
+    """
+    _buy_the_series_again(connection)
+
+
+def _buy_the_series_again(connection) -> None:
+    """Forget every stored close and the two series computed from them.
+
+    Shared by the two steps above because they are the same act: a price series
+    stored in a unit the ledger does not hold, which nothing in the rows lets
+    you correct in place. ``symbol_quote`` keeps ``last_price_native`` — the
+    live price is refetched on the next cycle and no adjustment has ever moved
+    the newest close, which is its own reference.
+
+    The two derived series go with it. They are rewritten whole on the first
+    perf cycle and pruned to what that cycle could compute, so keeping them
+    would buy nothing but a window of wrong figures — one that lasts until the
+    boot's rebuild lands, and for as long as this store stands if it fails.
+    """
     connection.execute('DELETE FROM price_point')
     connection.execute('UPDATE symbol_quote '
                        '   SET oldest_window_tried = NULL, '
@@ -700,6 +742,7 @@ STEPS = (
     ('add_symbol_classification', _add_symbol_classification),
     ('drop_split_adjusted_prices', _drop_split_adjusted_prices),
     ('add_splits_read_at', _add_splits_read_at),
+    ('drop_dividend_adjusted_prices', _drop_dividend_adjusted_prices),
 )
 
 
