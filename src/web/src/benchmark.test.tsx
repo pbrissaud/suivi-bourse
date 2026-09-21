@@ -282,14 +282,20 @@ describe('what the period costs, and what the comparison did not account for', (
     expect(await screen.findByText(/de liquidités/)).toBeInTheDocument()
   })
 
-  it('names an account a grant with no declared price took out of the perimeter', async () => {
+  it('names the grant, and not just the account, that left the perimeter', async () => {
     renderBenchmark(
       ready({
-        excluded_accounts: [{ account: 'pee', reason: 'undeclared_grant', symbols: 'ACME' }],
+        excluded_accounts: [
+          { account: 'pee', reason: 'undeclared_grant', symbols: 'ACME,WIDGET' },
+        ],
       }),
     )
 
-    expect(await screen.findByText(/pee.*exclu.*sans prix déclaré/)).toBeInTheDocument()
+    // The account alone is not actionable: the reader has to know which line
+    // to go and price.
+    expect(
+      await screen.findByText(/pee.*ACME, WIDGET.*sans prix déclaré/),
+    ).toBeInTheDocument()
   })
 })
 

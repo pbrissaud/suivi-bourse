@@ -391,18 +391,36 @@ function elapsedYears(from: string, to: string): number {
   return tm > fm || (tm === fm && td >= fd) ? whole : whole - 1
 }
 
-/** The accounts a grant with no declared price took out of the perimeter. */
+function names(rows: readonly BenchmarkExclusion[]): string {
+  return rows.map((row) => row.account).join(', ')
+}
+
+/**
+ * The accounts a grant with no declared price took out of the perimeter.
+ *
+ * **One line per account, and each names its own symbols.** Knowing a wrapper
+ * is out is not actionable; knowing which grant did it is the whole gesture —
+ * the reader goes to the ledger and prices that line. The payload has carried
+ * `symbols` since #760, so the join below is the only thing that was missing.
+ */
 function Excluded({ rows }: { rows: readonly BenchmarkExclusion[] }) {
   const { t } = useI18n()
 
   if (rows.length === 0) return null
   return (
-    <p className="max-w-prose text-sm text-muted-foreground">
-      {t('benchmark.excluded', { accounts: names(rows), count: rows.length })}
-    </p>
+    <div className="max-w-prose space-y-1 text-sm text-muted-foreground">
+      {rows.map((row) => {
+        const symbols = (row.symbols ?? '').split(',').filter(Boolean)
+        return (
+          <p key={row.account}>
+            {t('benchmark.excluded', {
+              account: row.account,
+              symbols: symbols.join(', '),
+              count: symbols.length,
+            })}
+          </p>
+        )
+      })}
+    </div>
   )
-}
-
-function names(rows: readonly BenchmarkExclusion[]): string {
-  return rows.map((row) => row.account).join(', ')
 }

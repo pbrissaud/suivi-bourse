@@ -627,7 +627,7 @@
   "benchmark.cash": "Your accounts hold {amount} in cash. The reference is fully invested from day one.",
   "benchmark.net.unavailable": "No after-tax figure: {accounts} {count, plural, one {has} other {have}} no usable taxation.",
   "benchmark.net.reason": "{reason, select, no_model {no taxation declared} unreadable_model {a taxation model this version refuses} no_assiette {unvalued lines} other {unreadable taxation}}",
-  "benchmark.excluded": "{accounts} {count, plural, one {is} other {are}} out of the comparison: a grant was recorded there with no declared price.",
+  "benchmark.excluded": "{account} is out of the comparison: {symbols} {count, plural, one {was granted} other {were granted}} there with no declared price.",
   "benchmark.rebuild.title": "Rebuilding {symbol}'s history.",
   "benchmark.rebuild.progress": "Back to {reached} so far.",
   "benchmark.rebuild.target": "Back to {reached} so far, on a history that starts on {target}.",

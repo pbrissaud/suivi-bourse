@@ -627,7 +627,7 @@
   "benchmark.cash": "Vos comptes portent {amount} de liquidités. La référence, elle, est investie à 100 % dès le premier jour.",
   "benchmark.net.unavailable": "Pas de net d’impôt : {accounts} {count, plural, one {n’a} other {n’ont}} pas de fiscalité exploitable.",
   "benchmark.net.reason": "{reason, select, no_model {aucune fiscalité déclarée} unreadable_model {une fiscalité que cette version refuse} no_assiette {des lignes non valorisées} other {une fiscalité illisible}}",
-  "benchmark.excluded": "{accounts} {count, plural, one {est exclu} other {sont exclus}} de la comparaison : une attribution y a été enregistrée sans prix déclaré.",
+  "benchmark.excluded": "{account} est exclu de la comparaison : {symbols} {count, plural, one {y a été attribué} other {y ont été attribués}} sans prix déclaré.",
   "benchmark.rebuild.title": "Reconstitution de l’historique de {symbol}.",
   "benchmark.rebuild.progress": "Remonté jusqu’au {reached}.",
   "benchmark.rebuild.target": "Remonté jusqu’au {reached}, sur un historique qui commence le {target}.",
