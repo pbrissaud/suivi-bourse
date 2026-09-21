@@ -80,6 +80,15 @@ export default function BenchmarkPage() {
   const data = comparison.data ?? null
   if (data === null) return null
 
+  // **And again on the payload itself.** The guard above reads `/api/config`,
+  // a *different* request: when it is slow or refuses, the page would render
+  // amounts with no unit on the strength of a predicate that never ran. The
+  // comparison carries its own `base_currency`, so the invariant is local —
+  // no unit, no figures — instead of inferred from two reads agreeing.
+  if (data.base_currency === null) {
+    return <NoBaseCurrency />
+  }
+
   const currency = data.base_currency
 
   if (data.state === 'no_reference') {

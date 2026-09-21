@@ -371,3 +371,17 @@ describe('what truncation is counted in', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('the unit every figure is in', () => {
+  it('says why the page is empty from the payload, not from a second read', async () => {
+    // The config guard reads a different request. When that one is slow or
+    // refuses, the page would render amounts with no unit on the strength of
+    // a predicate that never ran — so the comparison's own `base_currency`
+    // decides too.
+    server.use(http.get(ROUTES.config, () => new Promise(() => {})))
+    renderBenchmark(ready({ base_currency: null }))
+
+    expect(await screen.findByText('Aucune devise de base')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
+  })
+})

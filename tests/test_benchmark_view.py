@@ -513,3 +513,30 @@ def test_the_end_reason_belongs_to_the_account_that_ended_the_period(named):
 
     assert payload['covered_to'] == '2024-02-10'
     assert payload['ended'] is None
+
+
+def test_no_net_when_the_portfolio_kept_living_past_the_covered_day(named):
+    """The two assiettes would be months apart, so neither is published.
+
+    `positions` and `symbol_quote` hold the portfolio as it stands, not as it
+    stood: there is no per-day cost basis in this store. While the period runs
+    to the portfolio's own last written day the two dates coincide — every
+    ordinary comparison — and when it does not, taxing one side today and the
+    other in February and publishing the difference is the kind of figure
+    nobody can check.
+    """
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29')
+    _flat_model(named, 'pea')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+                          # Closes the period on 1 February; the ledger and the
+                          # curve run on to the 29th.
+                          _deposit('2024-02-01', 'pea', -5000.0)]), NOW)
+
+    assert payload['covered_to'] == '2024-02-01'
+    assert payload['gap_net'] is None
+    assert payload['net_unavailable'] == [
+        {'account': 'pea', 'reason': 'basis_after_period'}]
+    # The gross side is untouched: it reads both curves on the covered day.
+    assert payload['gap_gross'] is not None

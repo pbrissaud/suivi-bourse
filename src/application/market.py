@@ -1,5 +1,6 @@
 """The market edge: the one module that talks to yfinance (issue #846)."""
 
+import math
 import time
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -70,7 +71,15 @@ def _splits(ticker, symbol: str) -> Optional[Dict[date, float]]:
         series = getattr(ticker, 'splits', None)
         if series is None or len(series) == 0:
             return {}
-        return {index.date(): float(ratio) for index, ratio in series.items()}
+        # **A ratio is a positive, finite number or it is not a ratio.** Yahoo
+        # serves these out of a pandas frame, where an empty cell is `NaN` --
+        # and `NaN` is truthy, so a replay multiplying units by it turns the
+        # whole holding into `NaN` and every figure downstream with it. A zero
+        # would be silently skipped and a negative would flip the position.
+        # Rejected here, at the edge, so nothing further down has to ask.
+        kept = {index.date(): float(ratio) for index, ratio in series.items()}
+        return {day: ratio for day, ratio in kept.items()
+                if math.isfinite(ratio) and ratio > 0}
     except Exception as e:
         logger.error(f"Could not read the splits of {symbol}: {e}")
         return None

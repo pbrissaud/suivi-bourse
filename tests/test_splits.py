@@ -336,3 +336,32 @@ def test_a_store_that_predates_the_table_is_brought_forward_unmarked(tmp_path):
         assert quotes.splits_were_read(brought, 'AAPL') is True
     finally:
         brought.close()
+
+
+def test_a_ratio_that_is_not_a_positive_finite_number_is_not_a_ratio(opened):
+    """Yahoo serves these out of a pandas frame, where an empty cell is `NaN`.
+
+    And `NaN` is **truthy**: a replay multiplying units by it turns the holding
+    into `NaN` and every figure downstream with it, silently. A zero would be
+    skipped and a negative would flip the position. Rejected where they are
+    written, so nothing further down has to ask.
+    """
+    quotes.record_splits(opened, 'AAPL', {
+        date(2020, 8, 31): 4.0,
+        date(2021, 1, 4): float('nan'),
+        date(2022, 3, 1): 0.0,
+        date(2023, 6, 5): -2.0,
+        date(2024, 2, 2): float('inf'),
+    })
+
+    assert quotes.read_splits(opened, 'AAPL') == {date(2020, 8, 31): 4.0}
+
+
+def test_the_market_edge_drops_them_before_they_are_ever_written(mocker):
+    """The same rule one floor up, where the frame is read."""
+    prices, splits = _fetch(
+        mocker, [('2022-01-31', 100.0)],
+        {'2024-03-22': 0.001, '2024-06-01': float('nan')})
+
+    assert splits == {date(2024, 3, 22): 0.001}
+    assert prices[0]['price'] == pytest.approx(0.1)

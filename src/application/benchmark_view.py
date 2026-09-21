@@ -444,6 +444,21 @@ def _net(store, snapshot, replayed: Dict[str, Any], at_covered: Dict[str, Any],
     latent = _real_latent_gains(store, snapshot, replayed, now)
 
     unavailable: List[Dict[str, str]] = []
+    # **The portfolio's assiette is today's, and the reference's is the covered
+    # day's.** `positions` and `symbol_quote` hold the state as it stands, not
+    # as it stood: there is no per-day cost basis in this store to read one
+    # off. While the period runs to the portfolio's own last written day the
+    # two dates are the same and the net is sound — which is every ordinary
+    # comparison. When it does not, the two sides would be taxed months apart
+    # and the difference published as a figure, so the net goes instead. Same
+    # all-or-nothing rule as a missing model, and the account is named.
+    for account, (_, days) in sorted(replayed.items()):
+        if days and day < max(days):
+            unavailable.append({'account': account, 'reason': 'basis_after_period'})
+    if unavailable:
+        return {'net_unavailable': unavailable,
+                'portfolio_tax': None, 'reference_tax': None}
+
     portfolio_tax = 0.0
     reference_tax = 0.0
     for account, (result, _) in sorted(replayed.items()):

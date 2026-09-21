@@ -1,4 +1,5 @@
 """The market's own two tables: ``symbol_quote`` and ``price_point`` (issue #700)."""
+import math
 import threading
 from datetime import date, datetime, timezone
 from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
@@ -177,7 +178,11 @@ def record_splits(store, symbol: str, splits: Mapping[date, float]) -> int:
     different fact from *these are the ratios*, and a symbol that has never
     split would otherwise never carry one.
     """
-    incoming = {day: float(ratio) for day, ratio in splits.items()}
+    # The same rule `market._splits` applies at the edge, kept here too: this
+    # function is public and a caller reaching it another way must not be able
+    # to write a ratio a replay would multiply units by.
+    incoming = {day: float(ratio) for day, ratio in splits.items()
+                if math.isfinite(float(ratio)) and float(ratio) > 0}
     unchanged = read_splits(store, symbol) == incoming
 
     with store.transaction():
