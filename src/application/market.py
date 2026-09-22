@@ -24,10 +24,14 @@ def latest_quote(symbol: str,
         try:
             ticker = yf.Ticker(symbol)
             # `auto_adjust=False` for the same reason as the history fetch
-            # (#1008): the default swaps `Close` for `Adj Close`, which is net
-            # of every dividend paid since. The newest bar is its own reference
-            # so it is unmoved -- but `dropna` falls back to an earlier one when
-            # the venue has not printed yet, and that one is not.
+            # (#1008), though **not** for the same stake: the factor is anchored
+            # on the newest bar, so the one this function reads comes back the
+            # same either way and the stored live price was never wrong.
+            # Passed anyway so the two call sites read the same column rather
+            # than the same column under one invariant -- a dividend cannot go
+            # ex after the last bar in the window, but that is a fact about
+            # Yahoo, not about this code, and it is the kind that stops being
+            # true quietly.
             ticker_history = ticker.history(auto_adjust=False)
             if ticker_history.empty:
                 logger.warning(f"No price history returned for {symbol}")

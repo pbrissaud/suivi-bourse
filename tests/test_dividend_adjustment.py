@@ -86,12 +86,13 @@ def test_the_backfill_stores_the_close_the_market_printed(served):
 
 
 def test_the_live_quote_is_the_close_the_market_printed(served):
-    """Same keyword on the live fetch, for the bar that is not the newest.
+    """Same keyword on the live fetch, and here it is a guard, not a repair.
 
-    The newest bar is its own reference and no adjustment moves it — but
-    ``latest_quote`` drops the NaN rows and takes the last one left, so on a
-    venue that has not printed yet it reads an earlier bar, and that one carries
-    the whole stream.
+    The adjustment factor is anchored on the newest bar, so the one this reads
+    comes back the same either way and the stored live price was never short.
+    Pinned all the same: the two edges have to read the same column, or the
+    stored history and the price drawn at the end of it drift apart the day
+    that invariant stops holding — and nothing would say so.
     """
     served([('2026-09-18', 100.0), ('2026-09-21', 101.0)], 0.9)
 

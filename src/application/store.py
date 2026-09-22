@@ -706,9 +706,12 @@ def _buy_the_series_again(connection) -> None:
 
     Shared by the two steps above because they are the same act: a price series
     stored in a unit the ledger does not hold, which nothing in the rows lets
-    you correct in place. ``symbol_quote`` keeps ``last_price_native`` — the
-    live price is refetched on the next cycle and no adjustment has ever moved
-    the newest close, which is its own reference.
+    you correct in place. ``symbol_quote`` keeps the four ``last_price_*``
+    columns, deliberately and for a reason worth writing down because it reads
+    like an omission: the adjustment factor is **anchored on the newest bar**,
+    so the close ``latest_quote`` reads is served identically adjusted or not
+    and the live price was never in the wrong unit. Blanking it would buy
+    nothing and cost every symbol its price until the next quote cycle lands.
 
     The two derived series go with it. They are rewritten whole on the first
     perf cycle and pruned to what that cycle could compute, so keeping them
