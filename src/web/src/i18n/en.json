@@ -612,7 +612,7 @@
   "benchmark.verdict.equal": "Your holdings and the {index} end at the same amount, to the euro.",
   "benchmark.period": "Compared from {from} to {to}.",
   "benchmark.period.truncated": "Compared from {from}, this fund's first close. Your {years, plural, one {# earlier year is} other {# earlier years are}} not in this gap.",
-  "benchmark.period.exhausted": "The period ends on {to}: a sale that day is one the reference could not have funded.",
+  "benchmark.period.exhausted": "The period ends on {to}: money leaving your securities that day is more than the reference could have funded.",
   "benchmark.period.awaitingRate": "The period ends on {to}: the next day's close has no exchange rate.",
   "benchmark.term.gap": "Gap in points",
   "benchmark.term.yours": "Your portfolio",
