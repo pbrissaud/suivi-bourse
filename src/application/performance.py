@@ -322,14 +322,19 @@ def compute_account(timeline: Timeline, account: Account, symbols,
         started = True
 
         cash_balance = cash.cash_balance if cash else 0.0
-        net_contributed = cash.net_contributed if cash else 0.0
         total_value = cash_balance + holdings
         daily.append(DailyPerf(
             date=day,
             cash_balance=cash_balance,
             holdings_value=holdings,
             total_value=total_value,
-            net_contributed=net_contributed,
+            # The **same** running contribution the gain is taken against, and
+            # that is the whole point (issue #1012): the cash ledger's own
+            # ``net_contributed`` moves on DEPOSIT and WITHDRAWAL alone, so
+            # pricing a GRANT moved ``gain_absolu`` and left the figure shown
+            # beside it behind — the card then stated a value, a contribution
+            # and a P&L that did not subtract. One number, published and used.
+            net_contributed=contributed,
             external_flow=flow_by_date.get(day, 0.0),
             gain_absolu=total_value - contributed,
         ))
