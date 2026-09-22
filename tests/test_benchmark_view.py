@@ -10,12 +10,10 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from application import accounts as accounts_module
 from application import benchmark_view
 from application import counterfactual
 from application import main
 from application import quotes
-from application import taxation
 from application.events.schemas import Account, Event, EventType, Portfolio
 
 UTC = timezone.utc
@@ -58,20 +56,31 @@ def _quote_the_reference(store, first='2024-01-01', last='2024-02-29',
 
 def _write_curve(store, account, first='2024-01-01', last='2024-02-29',
                  value=1000.0, cash=0.0):
+    """The account's own curve — `holdings_value` is what #1018 compares."""
     store.execute('INSERT INTO account (id, label) VALUES (?, ?) '
                   'ON CONFLICT (id) DO NOTHING', [account, account])
     day = date.fromisoformat(first)
     end = date.fromisoformat(last)
     while day <= end:
         store.execute(
-            'INSERT INTO account_metrics (account, day, total_value, '
-            'cash_balance) VALUES (?, ?, ?, ?)', [account, day, value, cash])
+            'INSERT INTO account_metrics (account, day, holdings_value, '
+            'total_value, cash_balance) VALUES (?, ?, ?, ?, ?)',
+            [account, day, value, value + cash, cash])
         day += timedelta(days=1)
 
 
-def _deposit(day, account, amount):
-    return Event(date.fromisoformat(day), EventType.DEPOSIT, None, None,
-                 amount=amount, account=account)
+def _invest(day, account, amount, symbol='AAPL'):
+    """Money into the securities, or — negative — money back out of them.
+
+    A purchase on the way in; a **dividend** on the way out rather than a sale,
+    because a sale has to own the shares it sells and the amount is all these
+    tests are about. Both are the same signed flow to the replay (#1018).
+    """
+    if amount >= 0:
+        return Event(date.fromisoformat(day), EventType.BUY, symbol, symbol,
+                     quantity=amount, unit_price=1.0, account=account)
+    return Event(date.fromisoformat(day), EventType.DIVIDEND, symbol, symbol,
+                 amount=-amount, account=account)
 
 
 @pytest.fixture
@@ -115,7 +124,7 @@ def test_a_reference_still_backfilling_publishes_a_bar_and_no_figure(store):
     _write_curve(store, 'pea')
 
     payload = benchmark_view.comparison(
-        store, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        store, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['state'] == benchmark_view.REBUILDING
     assert payload['rebuild']['symbol'] == REFERENCE
@@ -133,7 +142,7 @@ def test_terminality_is_read_from_the_store_and_survives_a_restart(named):
     _write_curve(named, 'pea')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['state'] == benchmark_view.READY
 
@@ -154,13 +163,59 @@ def test_a_flat_reference_and_a_flat_portfolio_end_level(named):
     _write_curve(named, 'pea', value=1000.0)
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['portfolio_value'] == pytest.approx(1000.0)
     assert payload['reference_value'] == pytest.approx(1000.0)
     assert payload['gap_gross'] == pytest.approx(0.0)
     assert payload['covered_from'] == '2024-01-01'
     assert payload['covered_to'] == '2024-02-29'
+
+
+def test_a_deposit_that_never_bought_anything_stays_out_of_both_sides(named):
+    """#1018's whole point, in one payload.
+
+    Five hundred euros land in the account and buy nothing. The reference is
+    handed the thousand that bought shares and not the fifteen hundred that
+    arrived, so it is invested exactly when the owner was — and the cash sitting
+    beside the securities is out of both sides rather than named in a footnote.
+    """
+    _write_curve(named, 'pea', value=1000.0, cash=500.0)
+
+    payload = benchmark_view.comparison(
+        named,
+        _snapshot([Event(date(2024, 1, 1), EventType.DEPOSIT, None, None,
+                         amount=1500.0, account='pea'),
+                   _invest('2024-01-01', 'pea', 1000.0)]),
+        NOW)
+
+    assert payload['portfolio_value'] == pytest.approx(1000.0)
+    assert payload['reference_value'] == pytest.approx(1000.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
+    # The cash was never published and is not silently loaded on either side.
+    assert 'idle_cash' not in payload
+
+
+def test_a_dividend_takes_the_same_money_out_of_the_reference(named):
+    """The negative flow is what makes the rule hold.
+
+    The money left the securities on the owner's side, so for both sides to
+    keep the same euros deployed on the same days the reference has to take the
+    same money out — `counterfactual.replay`'s existing withdrawal handling,
+    and no new arithmetic. Two hundred out of a thousand at a flat hundred a
+    share leaves eight hundred on each side.
+    """
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
+                 value=1000.0)
+    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-29',
+                 value=800.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'pea', -200.0)]), NOW)
+
+    assert payload['reference_value'] == pytest.approx(800.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
 
 
 def test_the_two_returns_share_the_denominator_they_are_compared_on(named):
@@ -173,7 +228,7 @@ def test_the_two_returns_share_the_denominator_they_are_compared_on(named):
                  value=1500.0)
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['portfolio_return'] == pytest.approx(0.5)
     assert payload['reference_return'] == pytest.approx(0.0)
@@ -190,8 +245,8 @@ def test_the_period_is_the_intersection_of_the_accounts_own(named):
     _write_curve(named, 'cto', first='2024-02-01', last='2024-02-20')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-02-01', 'cto', 500.0)],
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'cto', 500.0)],
                          accounts=('pea', 'cto')), NOW)
 
     assert payload['covered_from'] == '2024-02-01'
@@ -209,8 +264,8 @@ def test_a_reference_exhausted_in_one_account_closes_the_whole_period(named):
     _write_curve(named, 'pea', value=1000.0)
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-02-01', 'pea', -5000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'pea', -5000.0)]), NOW)
 
     assert payload['ended'] == counterfactual.EXHAUSTED
     assert payload['covered_to'] == '2024-02-01'
@@ -221,30 +276,15 @@ def test_the_curves_are_published_on_one_day_axis(named):
     _write_curve(named, 'pea', value=1000.0)
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['series'][0] == {'t': '2024-01-01', 'portfolio': 1000.0,
                                     'reference': 1000.0}
     assert len(payload['series']) == 60          # every calendar day of Jan+Feb
 
 
-def test_idle_cash_is_published_rather_than_corrected_for(named):
-    """The replay puts every euro to work the day it lands.
-
-    A portfolio sitting on cash is compared against a reference that never did.
-    Correcting for it would answer a question nobody asked; hiding it would let
-    the comparison look unfair with nothing on screen saying why.
-    """
-    _write_curve(named, 'pea', value=1000.0, cash=250.0)
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
-
-    assert payload['idle_cash'] == pytest.approx(250.0)
-
-
 # --------------------------------------------------------------------------- #
-# The perimeter, and the net
+# The perimeter
 # --------------------------------------------------------------------------- #
 
 def test_an_account_granted_shares_at_no_declared_price_leaves_the_perimeter(
@@ -258,88 +298,12 @@ def test_an_account_granted_shares_at_no_declared_price_leaves_the_perimeter(
                     quantity=3, account='pea')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0), granted]),
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0), granted]),
         NOW)
 
     assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
     assert payload['excluded_accounts'] == [
         {'account': 'pea', 'reason': 'undeclared_grant', 'symbols': 'AAPL'}]
-
-
-def test_an_account_with_no_taxation_model_removes_the_net_entirely(named):
-    """All or nothing, and the account is named.
-
-    A net summed over the accounts that happened to project is a figure the
-    owner reads as their own and that is short by a wrapper — the shape of
-    error nobody catches, on the one screen of this product carrying a tax
-    number.
-    """
-    _write_curve(named, 'pea', value=1500.0)
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
-
-    assert payload['gap_net'] is None
-    assert payload['net_unavailable'] == [
-        {'account': 'pea', 'reason': 'no_model'}]
-    assert payload['gap_gross'] is not None      # the gross side is unaffected
-
-
-def _flat_model_on(store, account, rate=0.3):
-    """Attach a second account to the model the first one created."""
-    model = accounts_module.read_models(store)[0]
-    accounts_module.set_taxation_model(store, account, model.id)
-    return model
-
-
-def _flat_model(store, account, rate=0.3):
-    """A flat-rate wrapper on ``account``, created through the real write path."""
-    model = accounts_module.create_model(store, 'Flat', taxation.FLAT_REALISED,
-                                         {'rate': rate})
-    accounts_module.set_taxation_model(store, account, model.id)
-    return model
-
-
-def test_the_net_taxes_each_side_on_its_own_latent_gain(named):
-    """Two projections per account, never one rate applied to a difference.
-
-    `_bracketed` is not linear, so an effective rate averaged out of the real
-    side and applied to the reference is the same mistake made one module
-    further out. Each side carries its own gain into `projected_tax`.
-    """
-    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
-                 value=1000.0)
-    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-29',
-                 value=1400.0)
-    _flat_model(named, 'pea')
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
-
-    # The reference is flat, so it owes nothing; the portfolio has no position
-    # rows, so its own assiette is a known zero. Both sides projected, and the
-    # net gap is the gross one less two taxes rather than one netted rate.
-    assert payload['net_unavailable'] == []
-    assert payload['reference_tax'] == pytest.approx(0.0)
-    assert payload['gap_net'] == pytest.approx(
-        payload['gap_gross'] - payload['portfolio_tax'])
-
-
-def test_one_account_short_of_a_model_removes_the_net_for_all_of_them(named):
-    """All or nothing across the perimeter, and both accounts keep their gross."""
-    _write_curve(named, 'pea')
-    _write_curve(named, 'cto')
-    _flat_model(named, 'pea')
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-01-01', 'cto', 500.0)],
-                         accounts=('pea', 'cto')), NOW)
-
-    assert payload['gap_net'] is None
-    assert payload['net_unavailable'] == [{'account': 'cto',
-                                           'reason': 'no_model'}]
-    assert payload['gap_gross'] is not None
 
 
 def test_a_reference_whose_splits_were_never_read_publishes_no_figure(named):
@@ -356,7 +320,7 @@ def test_a_reference_whose_splits_were_never_read_publishes_no_figure(named):
     _write_curve(named, 'pea')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['state'] == benchmark_view.SPLITS_UNKNOWN
     assert 'gap_gross' not in payload
@@ -368,7 +332,7 @@ def test_the_next_fetch_establishes_the_history_and_the_figure_returns(named):
     named.execute("UPDATE symbol_quote SET splits_read_at = NULL "
                   "WHERE symbol = ?", [REFERENCE])
     _write_curve(named, 'pea')
-    snapshot = _snapshot([_deposit('2024-01-01', 'pea', 1000.0)])
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
 
     assert benchmark_view.comparison(
         named, snapshot, NOW)['state'] == benchmark_view.SPLITS_UNKNOWN
@@ -391,7 +355,7 @@ def test_the_fund_is_blamed_for_a_short_period_only_when_it_is_the_cause(named):
     _write_curve(named, 'pea', first='2024-02-01', last='2024-02-29')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-02-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-02-01', 'pea', 1000.0)]), NOW)
 
     assert payload['portfolio_from'] == '2024-02-01'
     assert payload['truncated_by_fund'] is False
@@ -406,7 +370,7 @@ def test_the_fund_is_named_when_the_portfolio_predates_it(named):
     quotes.record_window_tried(named, REFERENCE, date(2023, 6, 1))
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2023-06-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2023-06-01', 'pea', 1000.0)]), NOW)
 
     assert payload['state'] == benchmark_view.READY
     assert payload['portfolio_from'] == '2023-06-01'
@@ -435,7 +399,7 @@ def test_an_off_list_reference_gets_no_progress_bar_it_cannot_honour(named):
     _write_curve(named, 'pea')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
     assert payload['index'] is None          # off the list, and rendered anyway
     assert payload['state'] == benchmark_view.REBUILDING
@@ -450,22 +414,19 @@ def test_an_account_that_ended_early_closes_the_period_for_every_term(named):
     One account's reference is exhausted in February while the other runs to
     the end. The period stops at the earlier date, and a term taken from the
     longer replay's last day would mix in months the screen says are not in
-    the comparison — the contribution behind the return, and the gain the tax
-    rests on.
+    the comparison — the contribution behind the return, among them.
     """
     _write_curve(named, 'pea', value=1000.0)
     _write_curve(named, 'cto', value=1000.0)
-    _flat_model(named, 'pea')
-    _flat_model_on(named, 'cto')
 
     payload = benchmark_view.comparison(
         named,
-        _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+        _snapshot([_invest('2024-01-01', 'pea', 1000.0),
                    # Empties the reference on 1 February, closing the period.
-                   _deposit('2024-02-01', 'pea', -5000.0),
-                   _deposit('2024-01-01', 'cto', 1000.0),
+                   _invest('2024-02-01', 'pea', -5000.0),
+                   _invest('2024-01-01', 'cto', 1000.0),
                    # Paid in *after* the period ends: must not reach any term.
-                   _deposit('2024-02-15', 'cto', 10_000.0)],
+                   _invest('2024-02-15', 'cto', 10_000.0)],
                   accounts=('pea', 'cto')),
         NOW)
 
@@ -488,8 +449,8 @@ def test_two_accounts_whose_periods_never_overlap_have_nothing_to_compare(named)
     _write_curve(named, 'new', first='2024-02-01', last='2024-02-29')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'old', 1000.0),
-                          _deposit('2024-02-01', 'new', 1000.0)],
+        named, _snapshot([_invest('2024-01-01', 'old', 1000.0),
+                          _invest('2024-02-01', 'new', 1000.0)],
                          accounts=('old', 'new')), NOW)
 
     assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
@@ -510,40 +471,13 @@ def test_the_end_reason_belongs_to_the_account_that_ended_the_period(named):
     _write_curve(named, 'long', first='2024-01-01', last='2024-02-29')
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'short', 1000.0),
-                          _deposit('2024-01-01', 'long', 1000.0),
-                          _deposit('2024-02-20', 'long', -5000.0)],
+        named, _snapshot([_invest('2024-01-01', 'short', 1000.0),
+                          _invest('2024-01-01', 'long', 1000.0),
+                          _invest('2024-02-20', 'long', -5000.0)],
                          accounts=('short', 'long')), NOW)
 
     assert payload['covered_to'] == '2024-02-10'
     assert payload['ended'] is None
-
-
-def test_no_net_when_the_portfolio_kept_living_past_the_covered_day(named):
-    """The two assiettes would be months apart, so neither is published.
-
-    `positions` and `symbol_quote` hold the portfolio as it stands, not as it
-    stood: there is no per-day cost basis in this store. While the period runs
-    to the portfolio's own last written day the two dates coincide — every
-    ordinary comparison — and when it does not, taxing one side today and the
-    other in February and publishing the difference is the kind of figure
-    nobody can check.
-    """
-    _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29')
-    _flat_model(named, 'pea')
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          # Closes the period on 1 February; the ledger and the
-                          # curve run on to the 29th.
-                          _deposit('2024-02-01', 'pea', -5000.0)]), NOW)
-
-    assert payload['covered_to'] == '2024-02-01'
-    assert payload['gap_net'] is None
-    assert payload['net_unavailable'] == [
-        {'account': 'pea', 'reason': 'basis_after_period'}]
-    # The gross side is untouched: it reads both curves on the covered day.
-    assert payload['gap_gross'] is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -580,8 +514,8 @@ def test_the_dates_are_worth_what_the_schedule_would_not_have_caught(named):
     _write_curve(named, 'pea', value=1000.0)
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-01-15', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-01-15', 'pea', 1000.0)]), NOW)
 
     assert payload['state'] == benchmark_view.READY
     assert payload['reference_value'] == pytest.approx(4000.0)
@@ -600,47 +534,9 @@ def test_a_schedule_the_owner_already_follows_earns_nothing(named):
     _write_curve(named, 'pea', value=1000.0)
 
     payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-02-01', 'pea', 1000.0)]), NOW)
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'pea', 1000.0)]), NOW)
 
     assert payload['date_effect'] == pytest.approx(0.0)
     assert payload['smoothed_value'] == pytest.approx(
         payload['reference_value'])
-
-
-def test_the_dates_are_taxed_through_the_same_model_as_the_two_other_sides(named):
-    """The toggle governs all three replays or it lies about one of them.
-
-    Four thousand against three on the same wrapper: the real dates carry two
-    thousand of latent gain and the schedule one, so a flat thirty per cent
-    takes six hundred against three hundred and the dates are worth seven
-    hundred net of the wrapper rather than a thousand. A net averaged out of
-    one rate would answer a thousand times zero-seven and be wrong the moment
-    the ladder stops being flat.
-    """
-    _double_the_reference_in_february(named)
-    _write_curve(named, 'pea', value=1000.0)
-    _flat_model(named, 'pea')
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-01-15', 'pea', 1000.0)]), NOW)
-
-    assert payload['net_unavailable'] == []
-    assert payload['reference_tax'] == pytest.approx(600.0)
-    assert payload['smoothed_tax'] == pytest.approx(300.0)
-    assert payload['date_effect_net'] == pytest.approx(700.0)
-
-
-def test_no_model_takes_the_net_side_of_the_dates_with_it(named):
-    """Same all-or-nothing rule as `gap_net`, and the gross survives it."""
-    _double_the_reference_in_february(named)
-    _write_curve(named, 'pea', value=1000.0)
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
-                          _deposit('2024-01-15', 'pea', 1000.0)]), NOW)
-
-    assert payload['smoothed_tax'] is None
-    assert payload['date_effect_net'] is None
-    assert payload['date_effect'] == pytest.approx(1000.0)

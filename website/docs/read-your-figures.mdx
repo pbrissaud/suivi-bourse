@@ -406,33 +406,38 @@ a sold-out position the two sit side by side, and they mean different things.
 The comparison screen answers one question, in euros: **would an index fund have
 left you with more?**
 
-It is not a comparison of returns. The app takes your own deposits and
-withdrawals, on the days they actually happened, and buys shares of the fund
-with them instead. That is why the sentence under the figure says *with the same
-contributions*: two portfolios with the same percentage return end on different
-amounts when the money arrived on different days, and the euro is the number
-that answers what you have left.
+It is not a comparison of returns. The app takes the money you actually put
+into securities — your purchases, on the days they actually happened — and buys
+shares of the fund with it instead. That is why the sentence under the figure
+says *with the same money invested*: two portfolios with the same percentage
+return end on different amounts when the money arrived on different days, and
+the euro is the number that answers what you have left.
 
-Four things bound the answer, and each one is stated on screen rather than left
+**The question is about your securities, so only your securities are in it.** A
+deposit that sat in cash never bought anything and never reaches the reference
+either; a sale or a dividend takes the same money back out of both sides, which
+is how your dividends are counted. Both sides also sit in the same wrapper under
+the same taxation, so tax would say something about your choice of wrapper
+rather than about your choice of securities — the account page publishes
+*Projected tax* with its base and its rate for that question.
+
+Three things bound the answer, and each one is stated on screen rather than left
 to be inferred:
 
 - **The period is the one the computation honours**, not the fund's age. It
   starts at the later of the fund's first close and your own first recorded day,
   so a fund launched in 2024 compares against 2024 onwards and says how many of
   your earlier years are not in the gap.
-- **A withdrawal the reference could not have funded ends the period that day.**
-  Your withdrawal happened — your portfolio had the money. A reference that has
-  fallen may not, and selling shares it does not own would produce a negative
-  holding that compounds into a figure that still looks like an answer.
-- **The reference is fully invested from day one.** Your accounts may hold cash;
-  the replay never does. When that cash is material the screen says how much, so
-  the difference is visible rather than silently loaded onto the comparison.
-- **The after-tax reading is per account.** Each wrapper projects its own tax on
-  its own gain, and a loss in one account owes nothing rather than offsetting a
-  gain in another. If any one account of the perimeter has no taxation this
-  version can read, there is no after-tax figure at all and that account is
-  named — a net that is short by one wrapper reads exactly like a net that is
-  right.
+- **Money leaving your securities that the reference could not have funded ends
+  the period that day.** A sale or a dividend takes the same money out of both
+  sides. Yours happened — your portfolio held the shares. A reference that has
+  fallen may not be worth as much, and selling shares it does not own would
+  produce a negative holding that compounds into a figure that still looks like
+  an answer.
+- **An account holding a security nobody priced leaves the comparison.** A grant
+  recorded with no price would hand your portfolio shares on a day the reference
+  is handed nothing, and the gap would carry that difference for ever. The
+  screen names the account and the line to go and price.
 
 While the fund's history is still being fetched, **no figure appears at all**.
 A gap computed over half a series is not a smaller answer, it is a wrong one.

@@ -7,7 +7,8 @@ from typing import Dict, List, Optional, Tuple
 
 from .schemas import (
     CASH_EVENT_TYPES, DEFAULT_ACCOUNT, Event, EventType, ShareState,
-    Timeline, InKindFlow, CashFlow, CashState, declared_value, unit_cost,
+    Timeline, InKindFlow, CashFlow, CashState, SecurityFlow, declared_value,
+    unit_cost,
 )
 
 
@@ -94,6 +95,11 @@ class EventAggregator:
 
             self._snapshot(timeline.snapshots[key], event.date, state)
 
+            moved = self._security_flow(event)
+            if moved is not None:
+                timeline.flows.append(
+                    SecurityFlow(event.date, account, moved))
+
             if self._apply_share_cash(cash, event):
                 self._snapshot(timeline.cash_snapshots[account], event.date, cash)
 
@@ -112,6 +118,24 @@ class EventAggregator:
             cash.cash_balance -= event.amount + fee
             cash.net_contributed -= event.amount
             timeline.flows.append(CashFlow(event.date, account, -event.amount))
+
+    @staticmethod
+    def _security_flow(event: Event) -> Optional[float]:
+        """What this line put into the securities (+) or took out of them (−).
+
+        The mirror of :meth:`_apply_share_cash`: whatever left the cash ledger
+        to buy shares entered the securities, and whatever a sale or a dividend
+        paid back into it left them. ``None`` for a GRANT, whose flow is the
+        :class:`InKindFlow` the caller already appends at its declared value.
+        """
+        fee = event.fee or 0.0
+        if event.event_type == EventType.BUY:
+            return event.quantity * event.unit_price + fee
+        if event.event_type == EventType.SELL:
+            return -(event.quantity * event.unit_price - fee)
+        if event.event_type == EventType.DIVIDEND:
+            return -(event.amount - fee)
+        return None
 
     def _apply_share_cash(self, cash: CashState, event: Event) -> bool:
         """Apply a share event's cash effect. Returns True if cash changed."""
