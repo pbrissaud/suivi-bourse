@@ -253,8 +253,21 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
         # same day; that one-day window then sets the whole perimeter's
         # intersection and blanks a screen with seven years of events behind
         # it. The pot starts at the first purchase, so the window does too.
+        #
+        # `(value or 0)` folds the two shapes of *no pot that day* together on
+        # purpose: `0.0` is what the column holds, and `NULL` is what a row
+        # written before `holdings_value` joined `ALWAYS_WRITTEN` would hold.
+        # Neither can be seeded — a comparison needs a position to buy the
+        # reference with — so both walk on to the next day rather than opening
+        # the replay on nothing.
         seeded = next(((day, value) for day, value in days
                        if day >= quoted_from and (value or 0) > 0), None)
+        # No day at all the account held securities while the fund was quoted:
+        # there is no comparison to make, not a short one. It leaves the
+        # perimeter unnamed — `excluded_accounts` carries the accounts taken
+        # out of a comparison they could otherwise have had, and this one never
+        # had it. Naming the causes the empty state currently lumps together is
+        # #1025's own third point and its own ticket.
         if seeded is None:
             continue
         seed_day, seed = seeded
