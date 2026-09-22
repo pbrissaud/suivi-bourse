@@ -15,6 +15,11 @@
  *    the same declared model, so the tax answered a question about the wrapper
  *    and not about the securities — and the account page already publishes
  *    *Impôt projeté* with its assiette and its rate for whoever asks it.
+ *  - **The head stays on the securities, and the dates join it** (#1020). The
+ *    date effect is a second statement under the verdict, not a second head:
+ *    the two terms share a middle and sum to the gap against a disciplined
+ *    index investor, but the figure the owner has learned to read is the first
+ *    of them alone.
  *  - **No range control.** A counterfactual replays the flows from the
  *    beginning: narrowing it to a year does not shorten the answer, it asks a
  *    different question. The page announces the period it covers instead.
@@ -203,6 +208,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
                   )}
             </p>
           )}
+          <DateEffect data={data} currency={currency} />
           <Period data={data} />
         </div>
 
@@ -227,6 +233,41 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * What the **dates** did — the other half of #983's decomposition.
+ *
+ * **A second statement, not a second head** (#1020, option A). The two are
+ * `portfolio − reference(your days)` and `reference(your days) − smoothed`:
+ * they share a middle term and sum to the gap against a disciplined index
+ * investor, but the head figure is the *first* of them. Printing this one
+ * under a head that already reads −4 401,96 would say the head contains both,
+ * which it does not — so the head stays where the owner learned to read it and
+ * this sentence explains the gap rather than enlarging it.
+ *
+ * **Zero is a figure here.** A perfectly regular contributor gets exactly
+ * zero, and *your timing cost nothing* is the answer — not the em dash that
+ * `null` gets. `null` is the all-or-nothing case of #1017: the smoothed replay
+ * exhausted the reference on a day the real one did not, so there is no
+ * decomposition at all, and it gets a sentence saying so rather than a dash.
+ */
+function DateEffect({ data, currency }: { data: BenchmarkResponse; currency: string | null }) {
+  const { t } = useI18n()
+  const f = useFormatters()
+
+  const effect = data.date_effect ?? null
+  const sign = signOf(effect)
+
+  if (sign === 'absent') return <p>{t('benchmark.dates.unavailable')}</p>
+  if (sign === 'zero') return <p>{t('benchmark.dates.none')}</p>
+  return (
+    <p>
+      {t(sign === 'gain' ? 'benchmark.dates.earned' : 'benchmark.dates.cost', {
+        amount: f.currency(Math.abs(effect as number), currency),
+      })}
+    </p>
   )
 }
 
