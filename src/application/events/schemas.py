@@ -125,6 +125,22 @@ class CashFlow:
 
 
 @dataclass
+class SecurityFlow:
+    """Money entering (+) or leaving (−) the **securities**: BUY, SELL, DIVIDEND.
+
+    The perimeter of #1018's comparison, and the reason it is not
+    :class:`CashFlow`: a deposit that sat in cash never bought anything, and a
+    dividend left the securities even though nothing was sold. Signed from the
+    securities' point of view — the exact mirror of the cash movement
+    ``_apply_share_cash`` applies, so the two can never disagree about what a
+    line moved.
+    """
+    date: date
+    account: str
+    amount: float
+
+
+@dataclass
 class CashState:
     """Per-account cash ledger state."""
     cash_balance: float = 0.0
@@ -164,7 +180,7 @@ class Timeline:
     snapshots: Dict[Tuple[str, str], List[Tuple[date, "ShareState"]]] = field(default_factory=dict)
     cash_snapshots: Dict[str, List[Tuple[date, "CashState"]]] = field(default_factory=dict)
     order: List[Tuple[str, str]] = field(default_factory=list)
-    flows: List[Union[InKindFlow, CashFlow]] = field(default_factory=list)
+    flows: List[Union[InKindFlow, CashFlow, SecurityFlow]] = field(default_factory=list)
 
     @staticmethod
     def state_at(pairs: List[Tuple[date, object]], target_date: date):

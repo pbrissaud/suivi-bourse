@@ -937,23 +937,8 @@ export interface BenchmarkResponse {
   reference_value?: number
   /** The head figure, in euros. `null` when the portfolio is unvalued. */
   gap_gross?: number | null
-  /**
-   * The same gap once the wrappers have taken their cut, or `null` — and
-   * `null` means **one account could not project**, never a tax of zero. That
-   * account is named in `net_unavailable`.
-   */
-  gap_net?: number | null
-  net_unavailable?: BenchmarkExclusion[]
-  portfolio_tax?: number | null
-  reference_tax?: number | null
   portfolio_return?: number | null
   reference_return?: number | null
-  /**
-   * Cash sitting in the perimeter on the last covered day. The replay puts
-   * every euro to work the day it lands, so this is what the comparison did
-   * *not* account for — published rather than corrected for.
-   */
-  idle_cash?: number | null
   series?: BenchmarkPoint[]
 }
 

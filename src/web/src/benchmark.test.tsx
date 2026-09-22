@@ -10,15 +10,9 @@
  *  - **while the fund's history is being rebuilt, no figure at all** — head
  *    included. That is the likeliest shipping bug of the whole ticket, because
  *    a gap over a half-built series looks exactly like a gap;
- *  - **the verdict is the gross one**, and the after-tax reading is a second
- *    look at the same slot rather than a second verdict;
- *  - **the inversion line is silent unless the two signs actually differ** —
- *    not on *the accounts have different rates*, which is true of nearly every
- *    French owner and would be a permanent warning nobody reads;
- *  - **truncation is a caption on a present figure**, not an absence;
- *  - **no after-tax figure at all when one account cannot project**, and that
- *    account is named. A net short by one wrapper reads like a net that is
- *    right.
+ *  - **one reading and one verdict** since #1018 took the tax out: both sides
+ *    sit in the same wrapper, so the tax answered a question about the wrapper;
+ *  - **truncation is a caption on a present figure**, not an absence.
  */
 import { screen, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -46,10 +40,6 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
     covered_to: '2026-09-17',
     ended: null,
     gap_gross: 4212.8,
-    gap_net: 3000,
-    net_unavailable: [],
-    portfolio_tax: 1500,
-    reference_tax: 287.2,
     portfolio_return: 0.112,
     reference_return: 0.048,
     excluded_accounts: [],
@@ -74,16 +64,16 @@ describe('the comparison', () => {
     within(screen.getByRole('group', { name: 'La référence' })).getByText('+4,8 %')
   })
 
-  it('says the gap was made with the same contributions, which is the whole claim', async () => {
+  it('says the gap was made with the same money invested, which is the whole claim', async () => {
     renderBenchmark(ready())
 
     // Drop the trailing clause and the screen lies without a line of wrong
     // code: the reader takes the gap for a difference of returns, and it is a
-    // replay of their own flows.
+    // replay of their own purchases.
     expect(
       await screen.findByText(/de plus que le MSCI World, sur la même période/),
     ).toBeInTheDocument()
-    expect(screen.getByText(/avec les mêmes versements/)).toBeInTheDocument()
+    expect(screen.getByText(/avec le même argent investi/)).toBeInTheDocument()
   })
 
   it('states the covered period, always', async () => {
@@ -162,7 +152,7 @@ describe('the two curves', () => {
     // trailing clause is the same one the verdict carries — read off the chart
     // rather than off the sentence, the two curves would otherwise look like
     // two returns.
-    expect(await screen.findByText('MSCI World, mêmes versements')).toBeInTheDocument()
+    expect(await screen.findByText('MSCI World, même argent investi')).toBeInTheDocument()
     // The portfolio's own name is deliberately the one the terms row already
     // uses: one thing, one name, twice on the screen.
     expect(screen.getAllByText('Votre portefeuille').length).toBeGreaterThan(1)
@@ -177,57 +167,7 @@ describe('the two curves', () => {
   })
 })
 
-describe('the after-tax reading', () => {
-  it('is a second look at the same slot, and the verdict stays the gross one', async () => {
-    const { user } = renderBenchmark(ready())
-
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Net d’impôt' }))
-
-    expect(within(await head()).getByText('+3 000,00 €')).toBeInTheDocument()
-  })
-
-  it('warns that the ranking flips, on the gross verdict the reader is looking at', async () => {
-    renderBenchmark(ready({ gap_gross: 4212.8, gap_net: -900 }))
-
-    // The verdict stays the gross one, and the line is the warning that it
-    // does not survive tax — said **beside** the figure it qualifies rather
-    // than hidden behind the toggle that would reveal it.
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    expect(
-      screen.getByText(/le classement s’inverse : vous passez derrière/),
-    ).toBeInTheDocument()
-  })
-
-  it('stays silent when both readings agree, whatever the rates behind them', async () => {
-    const { user } = renderBenchmark(ready({ gap_gross: 4212.8, gap_net: 3000 }))
-    await head()
-    await user.click(screen.getByRole('button', { name: 'Net d’impôt' }))
-
-    // Two accounts at two rates is nearly every French owner. Said here it
-    // would be a permanent warning, which is a warning nobody reads.
-    expect(screen.queryByText(/le classement s’inverse/)).not.toBeInTheDocument()
-  })
-
-  it('is absent entirely when one account cannot project, and names it', async () => {
-    const { user } = renderBenchmark(
-      ready({ gap_net: null, net_unavailable: [{ account: 'cto', reason: 'no_model' }] }),
-    )
-
-    // The gross side is untouched — the account's own figures are not in doubt.
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    expect(screen.getByText(/cto/)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Net d’impôt' }))
-
-    // A net summed over the accounts that happened to project is a figure the
-    // owner reads as their own and that is short by a wrapper.
-    expect(within(await head()).getByText('—')).toBeInTheDocument()
-  })
-})
-
-describe('what the period costs, and what the comparison did not account for', () => {
+describe('what the period costs', () => {
   it('captions a truncated history on a figure that is present', async () => {
     renderBenchmark(
       ready({
@@ -270,16 +210,8 @@ describe('what the period costs, and what the comparison did not account for', (
     renderBenchmark(ready({ ended: 'exhausted', covered_to: '2019-03-14' }))
 
     expect(
-      await screen.findByText(/un retrait de cette date, la référence n’aurait pas pu le financer/),
+      await screen.findByText(/une sortie de titres à cette date, la référence n’aurait pas pu la financer/),
     ).toBeInTheDocument()
-  })
-
-  it('names the idle cash rather than correcting the comparison for it', async () => {
-    renderBenchmark(ready({ idle_cash: 12_000 }))
-
-    // The replay puts every euro to work the day it lands. Hiding the
-    // difference would let the comparison look unfair with nothing saying why.
-    expect(await screen.findByText(/de liquidités/)).toBeInTheDocument()
   })
 
   it('names the grant, and not just the account, that left the perimeter', async () => {
@@ -301,18 +233,14 @@ describe('what the period costs, and what the comparison did not account for', (
 
 
 describe('the contract a non-visual reader gets', () => {
-  it('reads the head back when the reference or the reading changes', async () => {
-    const { user } = renderBenchmark(ready())
+  it('reads the head back when the reference changes', async () => {
+    renderBenchmark(ready())
 
     // The result of a **gesture**, not an ambient state — so it is announced,
     // and politely: the reader is already looking at the control they pressed
     // and an assertive region would interrupt them mid-sentence.
     const card = (await head()).closest('[aria-live]')
     expect(card).toHaveAttribute('aria-live', 'polite')
-
-    await user.click(screen.getByRole('button', { name: 'Net d’impôt' }))
-
-    expect(within(await head()).getByText('+3 000,00 €')).toBeInTheDocument()
   })
 
   it('hides the plot and leaves the legend readable', async () => {
@@ -328,20 +256,9 @@ describe('the contract a non-visual reader gets', () => {
     // Honest here and only here: the whole answer is in the head, in prose and
     // in figures, so what is lost is the shape. The legend is what says which
     // curve was which, and it stays.
-    const legend = await screen.findByText('MSCI World, mêmes versements')
+    const legend = await screen.findByText('MSCI World, même argent investi')
     expect(legend.closest('[aria-hidden]')).toBeNull()
     expect(document.querySelector('.recharts-wrapper')?.closest('[aria-hidden]')).not.toBeNull()
-  })
-
-  it('names the toggle as a switch between two readings, not as a setting', async () => {
-    renderBenchmark(ready())
-    await head()
-
-    // `aria-pressed` and not a radiogroup: it swaps what the slot below draws,
-    // and the page has no other setting for it to be one of.
-    const gross = screen.getByRole('button', { name: 'Brut' })
-    expect(gross).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 })
 

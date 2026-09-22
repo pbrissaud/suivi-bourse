@@ -6192,7 +6192,7 @@ def test_the_comparison_route_gates_every_figure_on_terminality(tmp_path):
 
     assert body['state'] == 'rebuilding'
     assert body['rebuild']['symbol'] == 'CW8.PA'
-    assert 'gap_gross' not in body and 'gap_net' not in body
+    assert 'gap_gross' not in body
 
 
 def test_naming_a_reference_still_adds_no_day_to_the_valuation_curve(tmp_path):

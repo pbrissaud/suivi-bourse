@@ -10,7 +10,7 @@ from typing import (
 
 from application.carrying import carrying_price, was_quoted
 from application.events.schemas import (
-    CashFlow, InKindFlow, Timeline, Account, declared_value,
+    CashFlow, InKindFlow, SecurityFlow, Timeline, Account, declared_value,
 )
 
 
@@ -234,6 +234,30 @@ def external_flows(timeline: Timeline, account: str) -> Dict[date, float]:
     negative, grants at their declared value.
     """
     return dict(_external_flow_by_date(*_account_flows(timeline, account)))
+
+
+def invested_flows(timeline: Timeline, account: str) -> Dict[date, float]:
+    """One account's net flow into the **securities** per day (#1018).
+
+    The sibling of :func:`external_flows`, and the perimeter the comparison of
+    #760 replays since #1018: a purchase is money deployed, a sale and a
+    dividend are money coming back out of it, and a deposit that sat in cash
+    never entered at all. A grant enters at its declared value, as it does on
+    the cash side — it is shares, and shares are the pot.
+
+    A dividend as a **negative** flow is what makes the rule hold: the money
+    left the securities, so for both sides to keep the same euros deployed on
+    the same days the reference has to take the same money out.
+    """
+    by_date: Dict[date, float] = defaultdict(float)
+    for flow in timeline.flows:
+        if flow.account != account:
+            continue
+        if isinstance(flow, SecurityFlow):
+            by_date[flow.date] += flow.amount
+        elif isinstance(flow, InKindFlow):
+            by_date[flow.date] += _grant_value(flow)
+    return dict(by_date)
 
 
 def undeclared_grants(timeline: Timeline, account: str) -> List[str]:
