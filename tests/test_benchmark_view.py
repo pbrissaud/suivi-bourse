@@ -196,6 +196,44 @@ def test_a_deposit_that_never_bought_anything_stays_out_of_both_sides(named):
     assert 'idle_cash' not in payload
 
 
+def test_an_account_funded_weeks_before_it_buys_is_seeded_on_its_purchase(
+        named):
+    """#1025: the days a wrapper is open and empty are not a comparison.
+
+    Every wrapper is opened by a deposit and buys days or weeks later, so since
+    #1018 its first written days carry a `holdings_value` of `0.0`. Seeded
+    there, the replay opens on nothing, reads it as an exhausted reference and
+    closes the same day — and that one-day window sets the intersection for the
+    whole perimeter, so a second account is enough to take the screen down to
+    *nothing to compare* over a ledger that has years in it.
+    """
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-21',
+                 value=0.0, cash=1000.0)
+    _write_curve(named, 'pea', first='2024-01-22', last='2024-02-29',
+                 value=1000.0)
+    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29',
+                 value=500.0)
+
+    payload = benchmark_view.comparison(
+        named,
+        _snapshot([Event(date(2024, 1, 1), EventType.DEPOSIT, None, None,
+                         amount=1000.0, account='pea'),
+                   _invest('2024-01-22', 'pea', 1000.0),
+                   _invest('2024-02-01', 'cto', 500.0)],
+                  accounts=('pea', 'cto')),
+        NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['covered_from'] == '2024-02-01'
+    assert payload['covered_to'] == '2024-02-29'
+    assert payload['gap_gross'] == pytest.approx(0.0)
+    # And the account's own row runs from its first purchase, not from the
+    # deposit: the three weeks it held cash are not days the reference ran.
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['pea']['covered_from'] == '2024-01-22'
+    assert rows['pea']['ended'] is None
+
+
 def test_a_dividend_takes_the_same_money_out_of_the_reference(named):
     """The negative flow is what makes the rule hold.
 
