@@ -40,10 +40,12 @@ jobs:
         with:
           enable-cache: true
 
-      # `-m "not network"` and not a path exclusion: the marker is what the
-      # probe of #760 carries, and a path would go stale the day a second
-      # live-market test lands beside it.
-      - run: uv run pytest tests/ -m "not network"
+      # Markers and not a path exclusion: the marker is what a test carries,
+      # and a path would go stale the day a second live-market or timing test
+      # lands beside the first. `network` is the probe of #760's closed list;
+      # `timing` is the ceilings of #995, which a runner shared with three
+      # other builds cannot time honestly. Both run nightly instead.
+      - run: uv run pytest tests/ -m "not network and not timing"
 
   web:
     name: "Front"
