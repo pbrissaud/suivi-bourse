@@ -38,7 +38,9 @@ longest window the closed list offers — 6 302 calendar days, 4 503 of them
 quoted, seventeen splits and 207 flows, which is heavier than a real portfolio
 — one replay takes **1,4 ms** (median of 20, 2026-09-20, Python 3.14 on an
 M-series laptop). The route runs one per account: 6,7 ms at five accounts,
-13,6 ms at ten.
+13,6 ms at ten. #983 adds a second replay per account over the same series and
+the same window, so double it — 27 ms at ten accounts, derived rather than
+re-measured, because it is the same loop run twice.
 
 That is the whole argument against persisting the series. #760 reserved the
 right to switch to a stored curve "past a threshold"; the threshold is two
@@ -48,9 +50,11 @@ exercises. The measurement is here rather than in a pull request body because
 this is where the next person to wonder will look.
 """
 
+import calendar
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Collection, List, Mapping, NamedTuple, Optional, Tuple
+from typing import (Collection, Dict, List, Mapping, NamedTuple, Optional,
+                    Tuple)
 
 ONE_DAY = timedelta(days=1)
 
@@ -210,6 +214,63 @@ def replay(window: Tuple[date, date],
     return Replay(seeded, last_day, ended, series)
 
 
+def smooth(flows: Mapping[date, float],
+           window: Tuple[date, date]) -> Dict[date, float]:
+    """The same money over the same window, paid in equal monthly instalments.
+
+    The third replay of #983. Handed to :func:`replay` in place of the real
+    ``flows``, with the same window, the same seed and the same prices, it
+    answers *what the reference would be worth had the money gone in on a
+    schedule instead of on your days* — so the difference between the two
+    replays is what the **dates** cost or earned, and the rest of the gap
+    against the portfolio is what the **securities** did.
+
+    **The convention, frozen here because two implementers write two different
+    ones and the one-month offset is the whole result.** Instalment *k* lands on
+    ``first + k months``, for every such day inside the window: **contribution
+    at end of period**, the convention ``docs/designs/monte-carlo-net-
+    projection.md`` already freezes for its cone — the first instalment is paid
+    *after* the first month's return, never before it. The residual part-month
+    at the end carries none, because its period has not ended.
+
+    Two invariants, and a test each:
+
+    - **The total, to the euro.** The sum is taken over exactly the days
+      :func:`replay` reads — ``(first, last]``, since a flow on ``first`` is
+      already inside the seed and one after ``last`` is outside the comparison —
+      so both replays end on the same ``contributed`` and the gap between them
+      is made of days and of nothing else.
+    - **The period, to the day.** Nothing lands outside ``window``. A window too
+      short to hold one whole month pays its single instalment on ``last``,
+      which is the end of the only period there is.
+
+    Day-of-month is clamped to the target month's length, so a window opening on
+    the 31st pays in February.
+    """
+    first, last = window
+    total = sum(amount for day, amount in flows.items()
+                if first < day <= last)
+
+    days = []
+    month = 1
+    while (day := _add_months(first, month)) <= last:
+        days.append(day)
+        month += 1
+    if not days:
+        days = [last]
+
+    return {day: total / len(days) for day in days}
+
+
+def _add_months(day: date, months: int) -> date:
+    """``day`` shifted by whole months, clamped to the target month's length."""
+    shifted = day.month - 1 + months
+    year = day.year + shifted // 12
+    month = shifted % 12 + 1
+    return day.replace(year=year, month=month,
+                       day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
 def _span(first: date, last: date):
     """Every calendar day of ``[first, last]``, empty when ``last`` is earlier."""
     day = first
@@ -218,4 +279,5 @@ def _span(first: date, last: date):
         day += ONE_DAY
 
 
-__all__ = ['Replay', 'Snapshot', 'replay', 'EXHAUSTED', 'AWAITING_RATE']
+__all__ = ['Replay', 'Snapshot', 'replay', 'smooth', 'EXHAUSTED',
+           'AWAITING_RATE']

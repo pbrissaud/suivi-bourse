@@ -23,6 +23,20 @@ The period is announced, never chosen: the latest of the accounts' starts and
 the earliest of their ends. A counterfactual replays the flows from the
 beginning, so narrowing it to a year does not shorten the answer, it asks a
 different question.
+
+**#983 splits the gap in two, and only one of the halves is new.** `gap_gross`
+already answers *what did my securities do* — the reference ran the owner's own
+flows on the owner's own days, so the dates are common to both sides and cancel
+out of the difference. What it cannot answer is what those days were themselves
+worth, and that needs a third replay: the same index, the same total, the same
+window, paid in equal monthly instalments (`counterfactual.smooth`). The
+distance between the second and the third is `date_effect`, and the sum of the
+two halves is the gap against an index investor who never chose a day.
+
+All-or-nothing, like the net: the smoothed replay can exhaust the reference on
+a different day than the real one, and a decomposition summed over the accounts
+whose third replay happened to reach the covered day is short by a wrapper
+without saying so.
 """
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -119,12 +133,14 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': SPLITS_UNKNOWN,
                 'rebuild': _rebuild(store, symbol, offered, now)}
 
-    replayed, excluded, opened = _by_account(store, snapshot, prices, symbol)
+    replayed, smoothed, excluded, opened = _by_account(
+        store, snapshot, prices, symbol)
     if not replayed:
         return {**head, 'state': NOTHING_TO_COMPARE,
                 'excluded_accounts': excluded}
 
-    aggregate = _aggregate(store, snapshot, replayed, opened, min(prices), now)
+    aggregate = _aggregate(store, snapshot, replayed, smoothed, opened,
+                           min(prices), now)
     if aggregate is None:
         # The accounts replayed, and their periods do not overlap. Nothing to
         # compare is the honest answer, not a comparison over no days at all.
@@ -175,9 +191,18 @@ def _rebuild(store, symbol: str, offered, now: datetime) -> Dict[str, Any]:
             'target': instants.iso(target), 'ratio': ratio}
 
 
-def _by_account(store, snapshot, prices: Dict[date, float],
-                symbol: str) -> Tuple[Dict[str, Any], List[Dict[str, str]]]:
-    """One replay per account, and the accounts that could not have one."""
+def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
+        Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, str]],
+              Dict[str, date]]):
+    """Two replays per account, and the accounts that could not have one.
+
+    **The same function, called twice with different flows** — #983's whole
+    economy. The second run swaps the owner's own dates for the equal monthly
+    instalments of :func:`counterfactual.smooth` and changes nothing else: same
+    window, same seed, same prices, same splits. What separates the two curves
+    is therefore the dates and nothing else, which is the only reason the
+    difference can be published as *what your dates cost or earned*.
+    """
     written = _written_days(store)
     quoted_from = min(prices)
     splits = quotes.read_splits(store, symbol)
@@ -185,6 +210,7 @@ def _by_account(store, snapshot, prices: Dict[date, float],
     timeline = EventAggregator().replay(snapshot.events or [])
 
     replayed: Dict[str, Any] = {}
+    smoothed: Dict[str, Any] = {}
     excluded: List[Dict[str, str]] = []
     for account in _perimeter(store, snapshot):
         days = written.get(account)
@@ -206,18 +232,21 @@ def _by_account(store, snapshot, prices: Dict[date, float],
         if not seeded or seeded[-1][1] is None:
             continue
 
+        window = (seed_day, days[-1][0])
+        flows = performance.external_flows(timeline, account)
         result = counterfactual.replay(
-            (seed_day, days[-1][0]), prices, splits,
-            performance.external_flows(timeline, account),
-            seeded[-1][1], unconverted)
+            window, prices, splits, flows, seeded[-1][1], unconverted)
         if result.first_day is None:
             continue
         replayed[account] = (result, dict(days))
+        smoothed[account] = counterfactual.replay(
+            window, prices, splits, counterfactual.smooth(flows, window),
+            seeded[-1][1], unconverted)
 
-    # The third value is the first day each replayed account was **written**,
+    # The last value is the first day each replayed account was **written**,
     # before any seeding: it is what tells who truncated the period, and the
     # wrong answer there names a cause the reader can go and check.
-    return (replayed, excluded,
+    return (replayed, smoothed, excluded,
             {account: written[account][0][0] for account in replayed})
 
 
@@ -253,8 +282,8 @@ def _unconverted_days(store, symbol: str) -> List[date]:
 
 
 def _aggregate(store, snapshot, replayed: Dict[str, Any],
-               opened: Dict[str, date], quoted_from: date,
-               now: datetime) -> Dict[str, Any]:
+               smoothed: Dict[str, Any], opened: Dict[str, date],
+               quoted_from: date, now: datetime) -> Dict[str, Any]:
     """Sum the accounts over the period they share, gross and net.
 
     ``None`` when they share none: see the empty-intersection guard below.
@@ -291,11 +320,20 @@ def _aggregate(store, snapshot, replayed: Dict[str, Any],
     at_covered = {account: _snapshot_at(result, covered_to)
                   for account, (result, _) in replayed.items()}
 
+    # The third replay, read on the same day as the second and **all or
+    # nothing**: different flows can exhaust the reference on a different day,
+    # and a date effect summed over the accounts whose smoothed run happened to
+    # reach `covered_to` is short by a wrapper without saying so.
+    smoothed_at = _smoothed_at(smoothed, covered_to)
+
     portfolio = _portfolio_at(replayed, covered_to)
     reference = sum(snap.value for snap in at_covered.values() if snap)
     contributed = sum(snap.contributed for snap in at_covered.values() if snap)
+    smoothed_value = (None if smoothed_at is None
+                      else sum(snap.value for snap in smoothed_at.values()))
 
-    taxes = _net(store, snapshot, replayed, at_covered, covered_to, now)
+    taxes = _net(store, snapshot, replayed, at_covered, smoothed_at,
+                 covered_to, now)
     # **Who truncated the period**, because the screen names a cause and a
     # wrong one is worse than none. The fund is the reason only when the
     # perimeter was written *before* the fund was ever quoted; an account
@@ -322,6 +360,18 @@ def _aggregate(store, snapshot, replayed: Dict[str, Any],
         'idle_cash': _idle_cash(store, replayed, covered_to),
         'series': _series(replayed, covered_from, covered_to),
         'gap_net': _gap_net(portfolio, reference, taxes),
+        # **#983: the gap splits in two, and only one of the halves is new.**
+        # `gap_gross` is already what the *securities* did — same dates, same
+        # flows, different holdings. What was missing is the other half: the
+        # same index bought on a schedule instead of on the owner's days, so
+        # `date_effect` is what those days cost or earned, and the total
+        # against a disciplined index investor is the sum of the two. Published
+        # as terms and not as that sum, because a reader who adds them is
+        # reading the decomposition and one who is handed the total is not.
+        'smoothed_value': smoothed_value,
+        'date_effect': (None if smoothed_value is None
+                        else reference - smoothed_value),
+        'date_effect_net': _date_effect_net(reference, smoothed_value, taxes),
         **taxes,
     }
 
@@ -339,6 +389,41 @@ def _gap_net(portfolio: Optional[float], reference: float,
     left = portfolio - taxes['portfolio_tax']
     theirs = reference - taxes['reference_tax']
     return left - theirs
+
+
+def _date_effect_net(reference: float, smoothed_value: Optional[float],
+                     taxes: Dict[str, Any]) -> Optional[float]:
+    """What the dates were worth once the wrappers have taken their cut.
+
+    Absent under the same rule as :func:`_gap_net`: one account that could not
+    project takes the whole net with it, because a net short by a wrapper is a
+    figure the owner reads as their own.
+    """
+    if smoothed_value is None or taxes['smoothed_tax'] is None:
+        return None
+    left = reference - taxes['reference_tax']
+    scheduled = smoothed_value - taxes['smoothed_tax']
+    return left - scheduled
+
+
+def _smoothed_at(smoothed: Dict[str, Any],
+                 day: date) -> Optional[Dict[str, Any]]:
+    """Every account's smoothed replay on ``day``, or ``None`` if one is short.
+
+    The real replays set the period, so this one only ever has to be *at least*
+    as long. When it is not — it never started, or its own flows exhausted the
+    reference earlier — there is no date effect at all rather than one summed
+    over a subset, for the reason `_net` refuses a partial net.
+    """
+    at: Dict[str, Any] = {}
+    for account, result in smoothed.items():
+        if result.first_day is None or result.last_day < day:
+            return None
+        snap = _snapshot_at(result, day)
+        if snap is None:
+            return None
+        at[account] = snap
+    return at
 
 
 def _portfolio_at(replayed: Dict[str, Any],
@@ -421,7 +506,8 @@ def _series(replayed: Dict[str, Any], first: date,
 
 
 def _net(store, snapshot, replayed: Dict[str, Any], at_covered: Dict[str, Any],
-         day: date, now: datetime) -> Dict[str, Any]:
+         smoothed_at: Optional[Dict[str, Any]], day: date,
+         now: datetime) -> Dict[str, Any]:
     """The after-tax side, or the reason there is none — **all or nothing**.
 
     One account whose model this version refuses makes the *whole* net absent,
@@ -456,11 +542,12 @@ def _net(store, snapshot, replayed: Dict[str, Any], at_covered: Dict[str, Any],
         if days and day < max(days):
             unavailable.append({'account': account, 'reason': 'basis_after_period'})
     if unavailable:
-        return {'net_unavailable': unavailable,
-                'portfolio_tax': None, 'reference_tax': None}
+        return {'net_unavailable': unavailable, 'portfolio_tax': None,
+                'reference_tax': None, 'smoothed_tax': None}
 
     portfolio_tax = 0.0
     reference_tax = 0.0
+    smoothed_tax = 0.0
     for account, (result, _) in sorted(replayed.items()):
         model = models.get(carried.get(account))
         if model is None:
@@ -486,17 +573,24 @@ def _net(store, snapshot, replayed: Dict[str, Any], at_covered: Dict[str, Any],
         covered = at_covered.get(account)
         theirs = taxation_projection.projected_tax(
             latent_gain=covered.latent_gain if covered else None, **facts)
+        # #983's third side, taxed through the same model on the same day and
+        # never through an effective rate, for the reason stated above.
+        scheduled = smoothed_at.get(account) if smoothed_at else None
+        regular = taxation_projection.projected_tax(
+            latent_gain=scheduled.latent_gain if scheduled else None, **facts)
         if real is None and model.kind in taxation_projection.PROJECTED_KINDS:
             unavailable.append({'account': account, 'reason': 'no_assiette'})
             continue
         portfolio_tax += real or 0.0
         reference_tax += theirs or 0.0
+        smoothed_tax += regular or 0.0
 
     if unavailable:
-        return {'net_unavailable': unavailable,
-                'portfolio_tax': None, 'reference_tax': None}
-    return {'net_unavailable': [],
-            'portfolio_tax': portfolio_tax, 'reference_tax': reference_tax}
+        return {'net_unavailable': unavailable, 'portfolio_tax': None,
+                'reference_tax': None, 'smoothed_tax': None}
+    return {'net_unavailable': [], 'portfolio_tax': portfolio_tax,
+            'reference_tax': reference_tax,
+            'smoothed_tax': smoothed_tax if smoothed_at is not None else None}
 
 
 def _real_latent_gains(store, snapshot, replayed: Dict[str, Any],

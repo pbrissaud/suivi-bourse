@@ -400,3 +400,125 @@ def test_a_close_of_zero_stops_the_replay_rather_than_dividing_by_it():
     assert result.ended == counterfactual.AWAITING_RATE
     assert result.last_day == date(2024, 1, 9)
     assert _final(result).value == pytest.approx(1000.0)
+
+
+# --------------------------------------------------------------------------- #
+# The smoothed schedule (#983)
+# --------------------------------------------------------------------------- #
+
+def test_the_instalments_land_at_the_end_of_each_month_and_never_at_its_start():
+    """The convention, on a hand-computed three-flow example.
+
+    Nine hundred euros over a window opening on 15 January and closing on 20
+    April: three whole months, three hundred each. **The first lands on 15
+    February**, after the first month's return — `contribution at end of
+    period`, the convention `monte-carlo-net-projection.md` already freezes.
+    Paid at the start of each month instead, the same schedule would earn a
+    month of market nobody gave it, and the one-month offset is the whole
+    result.
+
+    The part-month from 15 to 20 April carries nothing: its period has not
+    ended.
+    """
+    flows = {date(2024, 1, 20): 600.0,
+             date(2024, 2, 3): 200.0,
+             date(2024, 3, 9): 100.0}
+
+    assert counterfactual.smooth(
+        flows, _window('2024-01-15', '2024-04-20')) == {
+            date(2024, 2, 15): 300.0,
+            date(2024, 3, 15): 300.0,
+            date(2024, 4, 15): 300.0}
+
+
+def test_a_perfectly_regular_schedule_smooths_to_itself():
+    """The fixed point, and the reason the date effect is readable at all.
+
+    An owner already paying the same amount on the same day of every month has
+    nothing to gain from being smoothed, so the third replay has to come back
+    identical — and the clamping is in the same assertion: a window opening on
+    the 31st pays on 29 February, 30 April and 30 June.
+    """
+    window = _window('2024-01-31', '2024-07-05')
+    flows = {day: 500.0 for day in (date(2024, 2, 29), date(2024, 3, 31),
+                                    date(2024, 4, 30), date(2024, 5, 31),
+                                    date(2024, 6, 30))}
+
+    assert counterfactual.smooth(flows, window) == flows
+
+
+def test_a_constant_contribution_costs_no_days_at_all():
+    """The same fixed point, read where it is published: through the replay.
+
+    Over a price series that moves — a flat one would make any two schedules
+    agree — the smoothed reference ends on the same value as the real one, so
+    the date effect is zero to the cent.
+    """
+    window = _window('2024-01-31', '2024-07-05')
+    flows = {day: 500.0 for day in (date(2024, 2, 29), date(2024, 3, 31),
+                                    date(2024, 4, 30), date(2024, 5, 31),
+                                    date(2024, 6, 30))}
+    prices = _days('2024-01-31', '2024-07-05', 20.0)
+    for offset, day in enumerate(sorted(prices)):
+        prices[day] = 20.0 + offset % 7
+
+    real = counterfactual.replay(window, prices, {}, flows, 1000.0)
+    scheduled = counterfactual.replay(
+        window, prices, {}, counterfactual.smooth(flows, window), 1000.0)
+
+    assert _final(scheduled).value == pytest.approx(_final(real).value)
+
+
+def test_the_smoothed_schedule_keeps_the_total_and_stays_inside_the_window():
+    """Same euros, same days — the two invariants the decomposition rests on.
+
+    Anything outside ``(first, last]`` is dropped rather than redistributed:
+    the replay folds a flow on ``first`` into the seed and never reads one past
+    ``last``, so counting either would hand the smoothed side money the real
+    one never had.
+    """
+    window = _window('2024-01-15', '2024-04-20')
+    flows = {date(2024, 1, 10): 5000.0,    # before the window: already seeded
+             date(2024, 1, 15): 4000.0,    # the window's own first day: idem
+             date(2024, 2, 3): 900.0,
+             date(2024, 3, 9): -300.0,
+             date(2024, 9, 1): 7000.0}     # after the window: another question
+
+    smoothed = counterfactual.smooth(flows, window)
+
+    assert sum(smoothed.values()) == pytest.approx(600.0)
+    assert all(window[0] < day <= window[1] for day in smoothed)
+
+
+def test_a_window_too_short_for_one_month_still_pays_its_euros():
+    """Six weeks is one whole month and a stub; five is none at all.
+
+    With no anniversary inside the window the instalment lands on the last day
+    — the end of the only period there is — because the alternative is a
+    reference handed nothing while the portfolio was being funded.
+    """
+    flows = {date(2024, 1, 20): 800.0}
+
+    assert counterfactual.smooth(flows, _window('2024-01-15', '2024-02-05')) \
+        == {date(2024, 2, 5): 800.0}
+
+
+def test_the_replayed_totals_match_to_the_euro():
+    """The denominator both sides share, checked where it is actually read.
+
+    `contributed` is what the two returns divide by. Equal at the last day
+    means the gap between the curves is made of dates and of nothing else — and
+    it is the assertion that catches a flow dropped or double-counted by the
+    seeding window.
+    """
+    window = _window('2024-01-15', '2024-04-20')
+    flows = {date(2024, 2, 3): 900.0, date(2024, 3, 9): -300.0}
+    prices = _days('2024-01-15', '2024-04-20', 20.0)
+
+    real = counterfactual.replay(window, prices, {}, flows, 1000.0)
+    scheduled = counterfactual.replay(
+        window, prices, {}, counterfactual.smooth(flows, window), 1000.0)
+
+    assert _final(scheduled).contributed == pytest.approx(
+        _final(real).contributed)
+    assert _final(real).contributed == pytest.approx(1600.0)

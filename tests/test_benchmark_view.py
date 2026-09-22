@@ -540,3 +540,103 @@ def test_no_net_when_the_portfolio_kept_living_past_the_covered_day(named):
         {'account': 'pea', 'reason': 'basis_after_period'}]
     # The gross side is untouched: it reads both curves on the covered day.
     assert payload['gap_gross'] is not None
+
+
+# --------------------------------------------------------------------------- #
+# The decomposition (#983)
+# --------------------------------------------------------------------------- #
+
+def _double_the_reference_in_february(store):
+    """A hundred through January, two hundred through February.
+
+    A flat fund makes every schedule agree, which is exactly the series that
+    cannot tell a working decomposition from a broken one.
+    """
+    quotes.record_history(store, REFERENCE, [
+        {'timestamp': datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+         'price': 200.0, 'converted': 200.0, 'rate': 1.0}
+        for day in (date(2024, 2, 1) + timedelta(days=n) for n in range(29))])
+
+
+def test_the_dates_are_worth_what_the_schedule_would_not_have_caught(named):
+    """The third replay, hand-computed end to end.
+
+    The seed buys ten shares at a hundred on 1 January. A thousand euros land
+    on the 15th, still at a hundred: ten more shares. The smoothed schedule
+    holds one instalment — 1 February, the only month-end inside the window —
+    and by then the fund costs two hundred, so the same thousand buys five.
+    Twenty shares against fifteen, at two hundred on the last covered day: four
+    thousand against three, and the thousand euros of difference is what the
+    **dates** earned.
+
+    `gap_gross` is the other half and is untouched by any of this: same dates,
+    same flows, different securities.
+    """
+    _double_the_reference_in_february(named)
+    _write_curve(named, 'pea', value=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+                          _deposit('2024-01-15', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['reference_value'] == pytest.approx(4000.0)
+    assert payload['smoothed_value'] == pytest.approx(3000.0)
+    assert payload['date_effect'] == pytest.approx(1000.0)
+
+
+def test_a_schedule_the_owner_already_follows_earns_nothing(named):
+    """The fixed point, read on the payload rather than on the primitive.
+
+    One deposit, on the window's only month-end: smoothing it moves nothing,
+    so the whole gap belongs to the securities and the screen says the dates
+    cost zero rather than saying nothing about them.
+    """
+    _double_the_reference_in_february(named)
+    _write_curve(named, 'pea', value=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+                          _deposit('2024-02-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['date_effect'] == pytest.approx(0.0)
+    assert payload['smoothed_value'] == pytest.approx(
+        payload['reference_value'])
+
+
+def test_the_dates_are_taxed_through_the_same_model_as_the_two_other_sides(named):
+    """The toggle governs all three replays or it lies about one of them.
+
+    Four thousand against three on the same wrapper: the real dates carry two
+    thousand of latent gain and the schedule one, so a flat thirty per cent
+    takes six hundred against three hundred and the dates are worth seven
+    hundred net of the wrapper rather than a thousand. A net averaged out of
+    one rate would answer a thousand times zero-seven and be wrong the moment
+    the ladder stops being flat.
+    """
+    _double_the_reference_in_february(named)
+    _write_curve(named, 'pea', value=1000.0)
+    _flat_model(named, 'pea')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+                          _deposit('2024-01-15', 'pea', 1000.0)]), NOW)
+
+    assert payload['net_unavailable'] == []
+    assert payload['reference_tax'] == pytest.approx(600.0)
+    assert payload['smoothed_tax'] == pytest.approx(300.0)
+    assert payload['date_effect_net'] == pytest.approx(700.0)
+
+
+def test_no_model_takes_the_net_side_of_the_dates_with_it(named):
+    """Same all-or-nothing rule as `gap_net`, and the gross survives it."""
+    _double_the_reference_in_february(named)
+    _write_curve(named, 'pea', value=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_deposit('2024-01-01', 'pea', 1000.0),
+                          _deposit('2024-01-15', 'pea', 1000.0)]), NOW)
+
+    assert payload['smoothed_tax'] is None
+    assert payload['date_effect_net'] is None
+    assert payload['date_effect'] == pytest.approx(1000.0)
