@@ -6156,7 +6156,7 @@ def test_an_unknown_assiette_states_no_base_either(tmp_path):
 
 def test_the_comparison_route_answers_the_untouched_dial_with_the_list(tmp_path):
     """No reference named is not a failure, and the empty state's one action
-    is the selector — so the seven arrive with the emptiness."""
+    is the selector — so the five arrive with the emptiness."""
     client, _ = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
@@ -6164,7 +6164,10 @@ def test_the_comparison_route_answers_the_untouched_dial_with_the_list(tmp_path)
 
     assert body['state'] == 'no_reference'
     assert body['reference'] is None
-    assert len(body['offered']) == 7
+    assert len(body['offered']) == 5
+    # One flat list since #1019: no grouping key rides along with it.
+    assert all(set(entry) == {'symbol', 'index', 'inception'}
+               for entry in body['offered'])
     assert 'gap_gross' not in body
 
 

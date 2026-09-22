@@ -94,7 +94,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         'index': offered.index if offered else None,
         'inception': instants.iso(offered.inception) if offered else None,
         'offered': _offered(),
-        # **Which of the seven this install already holds a series for.** The
+        # **Which of the five this install already holds a series for.** The
         # consulted list and not a scan of `price_point`, because that list is
         # exactly what #760 keeps alive so switching back is instant — and the
         # selector's *déjà téléchargé* column is the only thing that makes the
@@ -152,7 +152,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
 
 def _offered() -> List[Dict[str, Any]]:
     """The closed list, as the selector renders it."""
-    return [{'symbol': entry.symbol, 'index': entry.index, 'pea': entry.pea,
+    return [{'symbol': entry.symbol, 'index': entry.index,
              'inception': instants.iso(entry.inception)}
             for entry in benchmarks.BENCHMARKS]
 

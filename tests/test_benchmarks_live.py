@@ -1,7 +1,7 @@
-"""The closed list of seven, against the live market (#760).
+"""The closed list of five, against the live market (#760).
 
 The one assertion in this suite that cannot be made against a fake, because
-what it checks is precisely whether the fake would be lying: seven tickers are
+what it checks is precisely whether the fake would be lying: five tickers are
 written into `benchmarks.py` as facts about Yahoo, and a fund that is delisted,
 renamed or moved to another venue goes on reading as a perfectly good constant.
 The owner finds out by choosing it and waiting two hours for a history that
@@ -82,7 +82,7 @@ def test_an_offered_reference_still_answers(benchmark):
 
     assert not history.empty, (
         f"{benchmark.symbol} ({benchmark.index}) returned no close in the last "
-        f"month. It is offered by the selector as one of seven, so either the "
+        f"month. It is offered by the selector as one of five, so either the "
         f"ticker moved and `benchmarks.py` follows it, or the fund is gone and "
         f"the entry goes.")
 

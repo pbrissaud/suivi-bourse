@@ -245,7 +245,7 @@ def _market_is_faked_or_refused(request, monkeypatch):
     as "Yahoo said nothing", which is the production behaviour under an outage.
 
     **A test marked ``network`` is let through** (#760). One exists: the probe
-    of the closed list of references, which asks the live market whether seven
+    of the closed list of references, which asks the live market whether five
     tickers still answer — an assertion no fake can make, since what it is
     checking is precisely that the fake would be lying. It is deselected
     everywhere but the nightly job, so the ordinary suite stays offline and

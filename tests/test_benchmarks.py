@@ -11,15 +11,19 @@ from datetime import date
 from application import benchmarks
 
 
-def test_the_list_is_closed_at_seven():
-    """#760's own number, asserted rather than assumed.
+def test_the_list_is_closed_and_names_each_index_once():
+    """Closed, and short enough that every entry can say what it costs.
 
     A free ticker field would answer with a curve for a single stock, a
-    currency pair or a typo. Seven is short enough that every entry can say
-    what it costs — its index, its currency and the history it cannot give you
-    — before it is picked.
+    currency pair or a typo. The second half is #1019: two entries used to
+    track an index already in the list on a strictly shorter history, so
+    picking one measured the same thing over fewer years — for a tax-wrapper
+    eligibility that enters no arithmetic at all.
     """
-    assert len(benchmarks.BENCHMARKS) == 7
+    assert len(benchmarks.BENCHMARKS) == 5
+
+    indices = [entry.index for entry in benchmarks.BENCHMARKS]
+    assert len(set(indices)) == len(indices)
 
 
 def test_every_reference_is_named_once():
@@ -28,20 +32,6 @@ def test_every_reference_is_named_once():
 
     assert len(set(symbols)) == len(symbols)
     assert set(benchmarks.BY_SYMBOL) == set(symbols)
-
-
-def test_the_pea_group_comes_last_because_that_is_how_it_is_rendered():
-    """The order of the constant **is** the order of the selector.
-
-    The group defuses a label that enters no computation: two of the seven are
-    PEA-eligible, and ungrouped they read as advice pointing at the worst
-    available answer — a 2024 fund that costs a long-standing owner a decade of
-    their own history.
-    """
-    flags = [entry.pea for entry in benchmarks.BENCHMARKS]
-
-    assert flags == sorted(flags)
-    assert flags.count(True) == 2
 
 
 def test_every_reference_declares_an_inception_and_a_currency():
@@ -70,3 +60,8 @@ def test_a_stored_value_outside_the_list_is_answered_with_none():
     assert benchmarks.offered('AAPL') is None
     assert benchmarks.offered(None) is None
     assert benchmarks.offered('') is None
+    # The two #1019 withdrew are exactly that case for an install that had
+    # already stored one: the setting survives, the screen renders it, and
+    # only the rebuild bar's target goes missing.
+    assert benchmarks.offered('WPEA.PA') is None
+    assert benchmarks.offered('PE500.PA') is None

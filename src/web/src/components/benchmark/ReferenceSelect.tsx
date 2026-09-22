@@ -1,7 +1,7 @@
 /**
  * The reference selector — and it says everything **before** the click.
  *
- * Three columns, each earning its place:
+ * One flat list, and three columns each earning its place:
  *
  *  - the **inception** makes truncation visible before the choice. Without it a
  *    2024 fund silently costs an owner who started in 2013 eleven years of
@@ -10,11 +10,12 @@
  *    seven consulted series are kept alive *precisely so switching back is
  *    instant*, and with no marker every switch is a coin flip between instant
  *    and two hours.
- *  - the **PEA group** defuses a label the ticket itself says enters no
- *    computation. Ungrouped and unexplained it reads as advice, and it points
- *    at the worst available answer.
  *
- * A stored value outside the seven is rendered as a named entry rather than
+ * No section headings: a tax-wrapper eligibility split the list in two until
+ * #1019, and the note under the group had to explain that the split meant
+ * nothing to the arithmetic.
+ *
+ * A stored value outside the five is rendered as a named entry rather than
  * dropped: `PUT /api/settings` stays open, and a reference missing from its own
  * selector is one the owner cannot switch away from.
  *
@@ -29,8 +30,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectLabel,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -66,8 +65,6 @@ export function ReferenceSelect({
     },
   })
 
-  const general = offered.filter((entry) => !entry.pea)
-  const pea = offered.filter((entry) => entry.pea)
   const chosen = offered.find((entry) => entry.symbol === value) ?? null
   const offList = value !== null && chosen === null
 
@@ -95,30 +92,10 @@ export function ReferenceSelect({
             <SelectItem value={value}>{t('benchmark.select.offList', { symbol: value })}</SelectItem>
           ) : null}
           <SelectGroup>
-            {general.map((entry) => (
+            {offered.map((entry) => (
               <Row key={entry.symbol} entry={entry} downloaded={downloaded} />
             ))}
           </SelectGroup>
-          {pea.length === 0 ? null : (
-            <>
-              <SelectSeparator />
-              <SelectGroup>
-                <SelectLabel>{t('benchmark.select.pea')}</SelectLabel>
-                {pea.map((entry) => (
-                  <Row key={entry.symbol} entry={entry} downloaded={downloaded} />
-                ))}
-              </SelectGroup>
-              {/* **Under the group it is about, inside the open menu.** The
-                  note defuses a label that enters no arithmetic, and it can
-                  only do that where the label is on screen. Rendered under the
-                  closed trigger it said *these funds are PEA-eligible* with no
-                  fund in sight — and beside a chosen fund that is not one, it
-                  said something false. */}
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                {t('benchmark.select.peaNote')}
-              </p>
-            </>
-          )}
         </SelectContent>
       </Select>
 
