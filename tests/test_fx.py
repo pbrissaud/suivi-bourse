@@ -691,19 +691,24 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
 
 def test_a_paris_bar_is_converted_at_the_rate_of_the_day_it_is_filed_under(
         store, mocker, monkeypatch, fake_ticker):
-    """The rate's day and the row's day are one day, and it is the **store's**.
+    """The rate's day and the row's day are one day, and it is the **session's**.
 
     yfinance localises a daily bar to the *exchange's* timezone, so Euronext
     Paris' session of the 15th arrives as `2024-01-15 00:00+01:00` — which is
     `2024-01-14 23:00` in UTC, and UTC is what `quotes.truncate` stores and what
-    every `CAST(ts AS DATE)` in the store reads back. Keying the conversion on
-    the bar's *local* calendar day therefore fetched the rate of a day the row
-    is not filed under: one day out for every market east of Greenwich, which is
-    this product's nominal case.
+    every `CAST(ts AS DATE)` in the store reads back. This test used to state
+    the agreement the other way round, keyed on the **store's** day: the rate
+    of the 14th, because the row was filed under the 14th. It held, and it was
+    the right invariant read off the wrong day — #1013 found that the filing
+    itself was a day early, for every market east of Greenwich, which is this
+    product's nominal case. `market.bar_instant` now anchors a daily bar at
+    noon UTC on the session's own date, so both halves say the 15th.
 
-    It is also what put the two writers of `fx_rate` in disagreement — the
-    lateral pass repairs by `CAST(ts AS DATE)` (issue #704) — so the same point
-    was worth two different rates depending on which pass got to it.
+    The agreement is what matters, and it is why this stays one test rather
+    than two: the two writers of `fx_rate` are the chunk's conversion and the
+    lateral pass, which repairs by `CAST(ts AS DATE)` (issue #704). Let those
+    disagree and the same point is worth two different rates depending on which
+    one got to it.
     """
     metrics = _metrics(store, shares=[_share('AI.PA')], base_currency='USD')
     metrics._share_info_cache['AI.PA'] = {'currency': 'EUR'}
@@ -725,12 +730,13 @@ def test_a_paris_bar_is_converted_at_the_rate_of_the_day_it_is_filed_under(
         'AI.PA', datetime(2024, 1, 10, tzinfo=UTC),
         datetime(2024, 1, 16, tzinfo=UTC))
 
-    # The row is filed under the 14th, so the rate on it is the 14th's.
+    # The row is filed under the 15th — the day Paris traded — so the rate on
+    # it is the 15th's.
     assert store.query(
         'SELECT CAST(ts AS DATE), price_native, price_converted, fx_rate '
         '  FROM price_point WHERE symbol = ?', ['AI.PA']) == [
-            (date(2024, 1, 14), 100.0, pytest.approx(110.0),
-             pytest.approx(1.10))]
+            (date(2024, 1, 15), 100.0, pytest.approx(120.0),
+             pytest.approx(1.20))]
 
 
 def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
