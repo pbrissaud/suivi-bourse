@@ -312,7 +312,32 @@ def get_positions_history():
 
 @api_bp.get('/prices/<symbol>')
 def get_prices(symbol: str):
-    """One symbol's series over a **rung of the retention ladder** (#719, #763)."""
+    """One symbol's series over a **rung of the retention ladder** (#719, #763).
+
+    With ``?at=<day>`` it answers **one close** instead, the last one at or
+    before that day, and says which day it belongs to (#1007). That is not a
+    narrower window: the grant form needs a single figure to suggest, and the
+    narrowest rung here is a month of points to find it in — 1 623 of them on
+    `MAX`, pulled on every keystroke, to read one.
+    """
+    try:
+        at = _day_argument('at')
+    except _InvalidParameter as exc:
+        return unprocessable_parameter(str(exc), key=exc.key)
+
+    if at is not None:
+        close = _reader().close_on_or_before(symbol, at)
+        return jsonify({
+            'symbol': symbol,
+            'base_currency': _base_currency(),
+            # **Both members are `null` together, and the pair is the answer.**
+            # No close before that day is a state of a fresh install and of a
+            # symbol nobody scraped yet; the form has nothing to suggest and
+            # says nothing, which is the field it was already offering.
+            'day': instants.iso(close['day']) if close else None,
+            'price': close['price'] if close else None,
+        })
+
     try:
         span_days, bucket, resolution = chart_window(request.args.get('window'))
     except ValueError as exc:

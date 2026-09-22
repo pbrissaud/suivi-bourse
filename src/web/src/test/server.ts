@@ -37,6 +37,7 @@ import {
   aPortfolioHistory,
   aPositionsHistory,
   aPositionsPayload,
+  aPriceAt,
   aPriceSeries,
   aReceipt,
   aRhythm,
@@ -125,9 +126,16 @@ export function defaultHandlers() {
     // resolution it announces is a function of that window: a
     // handler serving one frozen payload would make the presets look like four
     // spellings of the same range.
+    // And the **same route answers a second question** since #1007: `?at=` is
+    // one close rather than a rung, so the handler branches where the server
+    // does. A fake serving the series to both would let a caller that forgot
+    // the parameter read a `points` array as a price.
     http.get(ROUTES.prices, ({ params, request }) => {
-      const window = (new URL(request.url).searchParams.get('window') ?? '1Y') as ChartWindow
-      return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
+      const query = new URL(request.url).searchParams
+      const symbol = String(params.symbol)
+      if (query.get('at')) return HttpResponse.json(aPriceAt({ symbol }))
+      const window = (query.get('window') ?? '1Y') as ChartWindow
+      return HttpResponse.json(aPriceSeries({ symbol, window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
     // What the bell reads — the status dot's read since #819,

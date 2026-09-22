@@ -99,6 +99,7 @@ import type {
   Position,
   PositionsHistoryResponse,
   PositionsResponse,
+  PriceAtResponse,
   PriceSeriesResponse,
   Resolution,
   RuntimeState,
@@ -802,6 +803,24 @@ export function aPriceSeries(
       { t: NOW, price: 130 },
     ],
     ...rest,
+  }
+}
+
+/**
+ * **The one close the grant form is offered** (#1007).
+ *
+ * Its day is deliberately not the day a caller would ask for: the whole point
+ * of the resource is that a grant dated a Friday nobody quoted is priced off
+ * the Thursday, so a fixture answering the date it was handed would let a
+ * caption that never names its source pass.
+ */
+export function aPriceAt(overrides: Partial<PriceAtResponse> = {}): PriceAtResponse {
+  return {
+    symbol: 'ZZA',
+    base_currency: BASE_CURRENCY,
+    day: '2026-02-27',
+    price: 126,
+    ...overrides,
   }
 }
 

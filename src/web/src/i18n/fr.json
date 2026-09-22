@@ -439,6 +439,7 @@
   "data.form.quantity": "Quantité",
   "data.form.unitPrice": "Prix unitaire",
   "data.form.grantPrice.explain": "Laissez-le vide et l’attribution ajoute seulement des titres — rien de versé, rien qui vous ait coûté. Renseignez-le et les titres entrent dans vos versements et dans votre base de coût : la position démarre sans plus-value latente.",
+  "data.form.grantPrice.suggested": "Proposé : cours de clôture du {day}. Videz-le pour déclarer une attribution qui ne vous a rien coûté.",
   "data.form.fee": "Frais",
   "data.form.amount": "Montant",
   "data.form.notes": "Libellé",

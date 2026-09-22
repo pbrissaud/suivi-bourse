@@ -217,6 +217,10 @@ function pricesPath(symbol: string, window: ChartWindow): string {
   return `/api/prices/${encodeURIComponent(symbol)}?window=${window}`
 }
 
+function priceAtPath(symbol: string, day: string): string {
+  return `/api/prices/${encodeURIComponent(symbol)}?at=${encodeURIComponent(day)}`
+}
+
 /**
  * An RFC 9457 problem.
  *
@@ -1167,6 +1171,22 @@ export interface PriceSeriesResponse {
   points: SeriesPoint[]
 }
 
+/**
+ * **One close, and the day it belongs to** — the same resource asked `?at=`
+ * (#1007).
+ *
+ * The two members are `null` together: a symbol nobody scraped, or a day
+ * before the first point, has no close to suggest. And `day` is not the day
+ * that was asked for — a Friday the market did not quote is answered by the
+ * Thursday, which is exactly why the form has to be able to name it.
+ */
+export interface PriceAtResponse {
+  symbol: string
+  base_currency: string | null
+  day: string | null
+  price: number | null
+}
+
 // ------------------------------------------------------------------------- //
 // The app's own state — process memory, never a data query (#712 §11)
 // ------------------------------------------------------------------------- //
@@ -1855,6 +1875,9 @@ export const api = {
   benchmark: () => get<BenchmarkResponse>(ROUTES.benchmark),
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
+  /** The close a grant is **suggested** at, and the day it came from (#1007). */
+  priceAt: (symbol: string, day: string) =>
+    get<PriceAtResponse>(priceAtPath(symbol, day)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
   // Typed for the caller, and **narrowed all the same** where it is read
   // (`lib/status.ts`): this is the one payload whose shape the dot has to

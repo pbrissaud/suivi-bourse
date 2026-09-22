@@ -29,8 +29,8 @@
  * input mode: `<input type="number">` discards a decimal comma exactly as
  * silently, in a form whose French reader types one.
  */
-import { useEffect, useState, type ReactNode } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Refusal } from '@/components/Refusal'
 import { Explain } from '@/components/Explain'
@@ -58,6 +58,7 @@ import {
   DEFAULT_ACCOUNT_LABEL,
   submittedAccount,
 } from '@/lib/accounts'
+import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
 import { entryGone, problemSentence } from '@/lib/problem'
@@ -126,6 +127,7 @@ interface EventFormProps {
 
 export function EventForm({ open, event, accounts, accountsFailed, onClose }: EventFormProps) {
   const { t } = useI18n()
+  const format = useFormatters()
   const queryClient = useQueryClient()
 
   // `null` is *no type chosen yet*, and it is the state the form opens in: the
@@ -133,6 +135,8 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
   const [type, setType] = useState<LedgerEventType | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({})
+  /** What the grant-price suggestion last put in the field — see below. */
+  const offered = useRef('')
 
   // Opening on a row fills the form; opening on nothing empties it. Keyed on the
   // row's own id so reopening on another row does not inherit the last one.
@@ -141,6 +145,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
     setErrors({})
     setType(event?.event_type ?? null)
     setDraft(event === null ? EMPTY : draftOf(event))
+    offered.current = ''
   }, [open, event])
 
   const write = useMutation({
@@ -177,6 +182,62 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
   }
 
   const fields = type === null ? null : FIELDS[type]
+
+  /**
+   * **The grant's price is suggested, and never imposed** (#1007).
+   *
+   * An empty `unit_price` on a grant is a *declaration* — `_process_grant`
+   * writes it into the cost basis, so a server filling it in would move the
+   * real portfolio's contributions, its XIRR and its tax assiette, not just a
+   * comparison's. But typing it blind is what took a whole account out of the
+   * benchmark five years after the event was recorded. So the closest known
+   * close arrives **in the field**, says which day it came from — a grant
+   * dated a Friday nobody quoted is priced off the Thursday — and the first
+   * keystroke owns it from there.
+   *
+   * `optional` is the grant and only the grant: a purchase's price is the
+   * amount that left the account, which no close can stand in for.
+   */
+  const pricedDay = fields?.unitPrice === 'optional' ? parseDay(draft.date.trim()) : null
+  const pricedSymbol = draft.symbol.trim()
+  const { data: suggestion } = useQuery({
+    queryKey: ['price-at', pricedSymbol, pricedDay],
+    queryFn: () => api.priceAt(pricedSymbol, pricedDay as string),
+    enabled: pricedDay !== null && pricedSymbol !== '',
+    // A close in the past is settled: nothing about it changes while a panel is
+    // open, and a refetch would re-offer a suggestion the reader cleared.
+    staleTime: Infinity,
+    retry: false,
+  })
+  /**
+   * Three states and not two, which is what keeps a figure from outliving its
+   * question: `undefined` is *no answer yet* and touches nothing, `null` is
+   * *answered, and there is nothing to suggest* — a symbol nobody scraped, a
+   * day before the store's first point — and a string is the close. Folded
+   * together, the second would leave the previous symbol's price sitting under
+   * the new one's ticker.
+   */
+  const suggested = suggestion === undefined
+    ? undefined
+    : suggestion.price == null ? null : String(suggestion.price)
+  // **The day is shown only while it is a claim about what is in the field.**
+  // Over a figure the reader typed it would be a precise untruth.
+  const suggesting = typeof suggested === 'string' && draft.unitPrice === suggested
+
+  // Keyed on the suggestion rather than on the field being empty: a reader who
+  // clears the field has answered the question, and an effect watching the
+  // draft would walk the figure straight back in. What the suggestion itself
+  // put there is its own to replace when the question changes; anything else in
+  // the field belongs to the reader.
+  useEffect(() => {
+    if (suggested === undefined) return
+    setDraft((previous) => {
+      if (previous.unitPrice !== '' && previous.unitPrice !== offered.current) return previous
+      offered.current = suggested ?? ''
+      return { ...previous, unitPrice: offered.current }
+    })
+  }, [suggested])
+
   const choice = accountChoice(accounts, accountsFailed)
   // The two states nothing in this panel can repair: the declaration is not
   // there to be read, so the save is withheld and the field says why.
@@ -431,14 +492,30 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                   }
                 >
                   {(id, described) => (
-                    <Input
-                      id={id}
-                      inputMode="decimal"
-                      value={draft.unitPrice}
-                      aria-invalid={errors.unitPrice !== undefined}
-                      aria-describedby={described}
-                      onChange={(changed) => set('unitPrice', changed.target.value)}
-                    />
+                    <>
+                      <Input
+                        id={id}
+                        inputMode="decimal"
+                        value={draft.unitPrice}
+                        aria-invalid={errors.unitPrice !== undefined}
+                        // The source is bound to the field rather than left
+                        // floating beside it: a figure that arrived on its own
+                        // has to say so to the reader who cannot see it appear.
+                        aria-describedby={
+                          [described, suggesting ? `${id}-source` : null]
+                            .filter(Boolean)
+                            .join(' ') || undefined
+                        }
+                        onChange={(changed) => set('unitPrice', changed.target.value)}
+                      />
+                      {suggesting ? (
+                        <p id={`${id}-source`} className="text-xs text-muted-foreground">
+                          {t('data.form.grantPrice.suggested', {
+                            day: format.date(suggestion?.day),
+                          })}
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </Field>
               )}

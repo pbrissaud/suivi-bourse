@@ -22,6 +22,8 @@ import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aLedgerPayload,
   aLongLedger,
+  aPriceAt,
+  aPriceSeries,
   anAccountsPayload,
   anEvent,
   aTypedEvent,
@@ -1117,6 +1119,110 @@ describe('the create form, which is the onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire Prix unitaire' }))
     expect(await screen.findByText(/ajoute seulement des titres/)).toBeInTheDocument()
     expect(screen.getByText(/vos versements et dans votre base de coût/)).toBeInTheDocument()
+  })
+
+  it('suggests the grant price off the closest close, and names the day it came from', async () => {
+    // #1007: the price was typed blind on the day the event was recorded, and
+    // the consequence — the whole account out of the benchmark — surfaced five
+    // years later on another page. The figure arrives, and it says where from:
+    // the fixture answers 2026-02-27 for a grant dated the 28th, because a
+    // grant dated a day nobody quoted is priced off the day before.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), {
+      target: { value: '2026-02-28' },
+    })
+    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+
+    const price = screen.getByLabelText('Prix unitaire')
+    await waitFor(() => expect(price).toHaveValue('126'))
+    expect(screen.getByText(/cours de clôture du 27 févr\. 2026/)).toBeInTheDocument()
+
+    // **Cleared is cleared.** The emptiness of this field is a declaration —
+    // *the award cost me nothing* — so a suggestion that walked back in would
+    // overwrite the one answer the owner is the only one who can give.
+    await user.clear(price)
+    expect(price).toHaveValue('')
+    await waitFor(() =>
+      expect(screen.queryByText(/cours de clôture du/)).not.toBeInTheDocument(),
+    )
+    expect(price).toHaveValue('')
+  })
+
+  it('takes its own suggestion back when the security changes under it', async () => {
+    // The figure and the ticker have to be about the same security. A
+    // suggestion that stayed put while the symbol moved would leave one
+    // company's close under another's name — in a field that lands in the cost
+    // basis, which is the silent wrong price this ticket is about.
+    server.use(
+      http.get(ROUTES.prices, ({ params, request }) => {
+        const at = new URL(request.url).searchParams.get('at')
+        if (!at) return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol) }))
+        // `ZZA` is quoted; nothing was ever scraped for `ZZQ`.
+        return HttpResponse.json(
+          params.symbol === 'ZZA'
+            ? aPriceAt({ symbol: 'ZZA' })
+            : aPriceAt({ symbol: String(params.symbol), day: null, price: null }),
+        )
+      }),
+    )
+
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), {
+      target: { value: '2026-02-28' },
+    })
+    const ticker = screen.getByLabelText('Ticker')
+    await user.type(ticker, 'ZZA')
+    await waitFor(() => expect(screen.getByLabelText('Prix unitaire')).toHaveValue('126'))
+
+    await user.clear(ticker)
+    await user.type(ticker, 'ZZQ')
+    await waitFor(() => expect(screen.getByLabelText('Prix unitaire')).toHaveValue(''))
+    expect(screen.queryByText(/cours de clôture du/)).not.toBeInTheDocument()
+  })
+
+  it('suggests nothing on a purchase, whose price is the money that left', async () => {
+    // A close is what the market said; a purchase's unit price is what the
+    // account paid, fees and slippage and all. Suggesting one for the other
+    // would be a figure nobody transacted at, in a required field.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Achat' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), {
+      target: { value: '2026-02-28' },
+    })
+    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+
+    await waitFor(() => expect(screen.getByLabelText('Quantité')).toHaveValue(''))
+    expect(screen.getByLabelText('Prix unitaire')).toHaveValue('')
+    expect(screen.queryByText(/cours de clôture du/)).not.toBeInTheDocument()
+  })
+
+  it('leaves a grant already priced alone, and says nothing about a figure it did not put there', async () => {
+    // Correcting a row is not re-asking the question: the owner's own figure
+    // stands, and the day caption is a claim about *the field's* value — under
+    // somebody else's number it would be a precise untruth.
+    const priced = aTypedEvent({
+      id: 'g1', event_type: 'GRANT', date: '2026-02-28', symbol: 'ZZA',
+      quantity: 5, unit_price: 40, amount: null, fee: null,
+    })
+    const { user } = renderData([priced])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+
+    const price = await screen.findByLabelText('Prix unitaire')
+    await waitFor(() => expect(price).toHaveValue('40'))
+    expect(screen.queryByText(/cours de clôture du/)).not.toBeInTheDocument()
   })
 
   it('says a corrected row left the ledger elsewhere, in the panel that holds it', async () => {

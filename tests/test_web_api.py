@@ -1524,6 +1524,85 @@ def test_a_symbol_with_no_stored_price_is_200_and_an_empty_series(tmp_path):
                                    'resolution': 'hour', 'points': []}
 
 
+# --------------------------------------------------------------------- #
+# The one close a grant is priced against (#1007)
+#
+# The same resource, asked a different question: `?at=` is not a fifth rung of
+# the ladder but a single figure, and the day it belongs to travels with it
+# because the form has to name its source rather than fill a field in silence.
+# --------------------------------------------------------------------- #
+
+def test_a_close_asked_for_at_a_day_answers_the_last_one_at_or_before_it(tmp_path):
+    """The Friday nobody quoted is answered by the Thursday, **and says so**.
+
+    #1007's own case: `FDJU.PA` has no point on 2021-06-11, and the owner is
+    not to be sent hunting for a five-year-old close by hand. What comes back
+    is the figure *and* its day, so the form can suggest one and name the
+    other.
+    """
+    def seed(opened):
+        for day, price in ((date(2021, 6, 10), 34.5),
+                           (date(2021, 6, 13), 35.5)):
+            seed_quote(opened, price=price, currency='EUR', converted=price,
+                       rate=1.0,
+                       at=datetime(day.year, day.month, day.day, 17, 35,
+                                   tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client = build_client(tmp_path, seed=seed)
+
+    assert client.get('/api/prices/AAPL?at=2021-06-11').get_json() == {
+        'symbol': 'AAPL', 'base_currency': 'EUR',
+        'day': '2021-06-10', 'price': 34.5}
+
+    # The day itself, when it is quoted, is its own answer — `at` is inclusive,
+    # a grant dated a trading day being the ordinary case and not the edge one.
+    assert client.get(
+        '/api/prices/AAPL?at=2021-06-13').get_json()['day'] == '2021-06-13'
+
+
+def test_a_close_asked_for_before_the_first_one_is_null_and_never_a_later_one(tmp_path):
+    """Nothing known **before** that day is `null`, not the next point along.
+
+    A grant predating everything the store holds has no close to be priced
+    against, and answering the first one after it would suggest a figure from a
+    market that had not yet said anything — the one substitution the field's
+    emptiness exists to refuse.
+    """
+    def seed(opened):
+        seed_quote(opened, price=34.5, currency='EUR', converted=34.5,
+                   rate=1.0, at=datetime(2021, 6, 10, 17, 35,
+                                         tzinfo=timezone.utc))
+
+    payload = build_client(
+        tmp_path, seed=seed).get('/api/prices/AAPL?at=2019-01-04').get_json()
+
+    assert payload['day'] is None
+    assert payload['price'] is None
+
+
+def test_a_close_is_asked_for_by_a_day_and_never_by_a_window(tmp_path):
+    """`at` refuses what is not a calendar day, and `window` is not consulted.
+
+    The two questions are one resource and two shapes, so a malformed `at`
+    cannot be allowed to fall through to the series: the caller would get a
+    month of points where it asked for one figure, under a `200`.
+    """
+    client = build_client(tmp_path)
+
+    response = client.get('/api/prices/AAPL?at=11/06/2021&window=1M')
+    assert response.status_code == 422
+    assert response.get_json()['key'] == 'at'
+
+    # A well-formed `at` answers the close whatever the window says, and a
+    # blank one is the series' question again.
+    assert 'points' not in client.get(
+        '/api/prices/AAPL?at=2021-06-11&window=1M').get_json()
+    assert 'points' in client.get(
+        '/api/prices/AAPL?at=&window=1M').get_json()
+
+
 def test_the_price_series_propagates_a_storage_failure(tmp_path):
     """A query error is a `503`, never an empty chart."""
     response = build_client(
