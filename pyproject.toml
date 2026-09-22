@@ -70,12 +70,20 @@ package = false
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-# The one marker this suite has, and the one thing it means: **this test talks
-# to the live market**. Registered rather than left implicit so `-m` is a
-# supported selection and a typo in it is an error rather than a silent
-# no-match. Nothing in `tests/` carries it except the probe of #760's closed
-# list, which is the only assertion here that cannot be made against a fake:
-# what it checks is that seven tickers still answer on Yahoo.
+# The markers this suite has, and they are registered rather than left implicit
+# so `-m` is a supported selection and a typo in one is an error rather than a
+# silent no-match. Both name a test the pull request gate must *not* run, and
+# `.github/workflows/nightly-benchmarks.yml` is where both are run instead.
+#
+# `network`: talks to the live market. Nothing carries it except the probe of
+# #760's closed list, which is the only assertion here that cannot be made
+# against a fake: it checks that seven tickers still answer on Yahoo.
+#
+# `timing`: asserts seconds rather than rows (#995). Off the gate because a
+# clock shared with three other branches' builds is not a clock a review
+# comment can be written from, and because the ceilings exist to catch a
+# pathology coming back, not to be a budget anyone tunes per pull request.
 markers = [
     "network: talks to the live market; skipped everywhere but the nightly job",
+    "timing: asserts an operation's seconds; skipped everywhere but the nightly job",
 ]

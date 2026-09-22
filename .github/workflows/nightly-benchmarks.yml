@@ -1,11 +1,14 @@
 name: "Nightly benchmark probe"
 
-# **The repository's first scheduled workflow** (#760), and it exists for one
-# fact no other check can hold: the five references in `benchmarks.py` are
-# written down as truths about Yahoo, and a fund that is delisted, renamed or
-# moved to another venue goes on reading as a perfectly good constant. Nothing
-# in the offline suite can notice — the owner notices, by choosing it and
-# waiting hours for a history that never arrives.
+# **The repository's first scheduled workflow** (#760), and the home of every
+# check the pull request gate deselects: the market probe below, and the
+# timing ceilings of #995 in the second job.
+#
+# The probe exists for one fact no other check can hold: the five references
+# in `benchmarks.py` are written down as truths about Yahoo, and a fund that
+# is delisted, renamed or moved to another venue goes on reading as a
+# perfectly good constant. Nothing in the offline suite can notice — the owner
+# notices, by choosing it and waiting hours for a history that never arrives.
 #
 # Nightly rather than per pull request, because the answer changes with the
 # market and not with the diff: run on every PR it would fail on branches that
@@ -41,9 +44,33 @@ jobs:
         with:
           enable-cache: true
 
-      # `-m network` is the mirror of what `pr-checks.yml` deselects, so the
-      # two cannot drift: every test with the marker runs here and nowhere
-      # else. A throttled run skips rather than fails — Yahoo rate-limits
-      # GitHub's shared ranges, and a delisting reported off a 429 is the false
-      # alarm that makes a nightly job unreadable by the third week.
+      # `-m network` and the `timings` job's `-m timing` are together the
+      # mirror of what `pr-checks.yml` deselects, so the two files cannot
+      # drift: every marked test runs here and nowhere else. A throttled run
+      # skips rather than fails — Yahoo rate-limits GitHub's shared ranges, and
+      # a delisting reported off a 429 is the false alarm that makes a nightly
+      # job unreadable by the third week.
       - run: uv run pytest tests/ -m network -v
+
+  timings:
+    name: "The operations that already regressed once are still fast"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      # A job of its own and not a step of the probe above: this one owes the
+      # runner to itself. Sharing a job with a network probe would time the
+      # rewrite of a 13 k-row series against whatever Yahoo was doing, and a
+      # throttled probe would take the ceilings down with it.
+      #
+      # Nightly rather than per pull request because a shared runner is a noisy
+      # clock — the ceilings sit an order of magnitude above what the
+      # operations cost, so what fails here is a pathology come back (#972's
+      # row-by-row upsert, #967's shared connection), not a slow morning.
+      - run: uv run pytest tests/ -m timing -v
