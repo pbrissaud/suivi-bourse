@@ -683,3 +683,49 @@ def test_a_row_carries_the_gap_and_the_two_returns_of_its_own_account(named):
     assert row['gap_gross'] == pytest.approx(1000.0)
     assert row['portfolio_return'] == pytest.approx(1.0)
     assert row['reference_return'] == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
+# The start of the period, enforced (#1028)
+# --------------------------------------------------------------------------- #
+
+def test_the_aggregate_starts_where_it_says_it_starts(named):
+    """The head figure is measured over the period printed under it.
+
+    `pea` holds 1 000 € of flat securities since 1 January; `cto` puts 500 €
+    in on 1 February, which is where the aggregate's period starts. The fund
+    doubles on that very day, so a `pea` replay left on its own January seed
+    walks into February already worth 2 000 € — a thousand euros of head start
+    earned before the period, and the old aggregate counted every one of them
+    as this period's gap.
+
+    Re-seeded on 1 February with the pot the account really held that evening,
+    both sides open on the same 1 500 €, and a flat month later they are still
+    equal.
+    """
+    _double_the_reference_in_february(named)
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29',
+                 value=1000.0)
+    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29',
+                 value=500.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'cto', 500.0)],
+                         accounts=('pea', 'cto')), NOW)
+
+    assert payload['covered_from'] == '2024-02-01'
+    # The one number that proves it: on the stated first day the reference has
+    # bought exactly the portfolio and neither is ahead.
+    first = payload['series'][0]
+    assert first['t'] == '2024-02-01'
+    assert first['reference'] == pytest.approx(first['portfolio'])
+    assert payload['reference_value'] == pytest.approx(1500.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
+
+    # And the row keeps the whole life of the account, head start included:
+    # that thousand is real, it just belongs to January.
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['pea']['covered_from'] == '2024-01-01'
+    assert rows['pea']['reference_value'] == pytest.approx(2000.0)
+    assert rows['pea']['gap_gross'] == pytest.approx(-1000.0)

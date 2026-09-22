@@ -34,6 +34,15 @@ the earliest of their ends. A counterfactual replays the flows from the
 beginning, so narrowing it to a year does not shorten the answer, it asks a
 different question.
 
+**And both ends of it bind** (#1028). The end always did — every term is read
+back on the shared last day. The start did not: each account was replayed from
+its *own* first day and summed as it stood, so the oldest wrapper walked into
+the stated period with whatever its reference had already drifted by, and that
+drift was inside the headline. The aggregate re-seeds every account on the
+shared first day, at the pot it really held that evening, so the two curves
+open on the same euro — which is what makes the figure and the dates printed
+under it the same period.
+
 **And it is announced twice** (#1014). The aggregate keeps the intersection —
 one headline figure names one period — but the intersection is the youngest
 account's start, so opening a second account shortens the comparison of the
@@ -144,14 +153,14 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': SPLITS_UNKNOWN,
                 'rebuild': _rebuild(store, symbol, offered, now)}
 
-    replayed, smoothed, excluded, opened = _by_account(
+    replayed, excluded, opened, reseed = _by_account(
         store, snapshot, prices, symbol)
     if not replayed:
         return {**head, 'state': NOTHING_TO_COMPARE,
                 'excluded_accounts': excluded}
 
     rows = _rows(replayed)
-    aggregate = _aggregate(replayed, smoothed, opened, min(prices))
+    aggregate = _aggregate(replayed, reseed, opened, min(prices))
     if aggregate is None:
         # The accounts replayed, and their periods do not overlap. Nothing to
         # compare is the honest answer *for the aggregate*, not a comparison
@@ -209,16 +218,13 @@ def _rebuild(store, symbol: str, offered, now: datetime) -> Dict[str, Any]:
 
 
 def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
-        Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, str]],
-              Dict[str, date]]):
-    """Two replays per account, and the accounts that could not have one.
+        Tuple[Dict[str, Any], List[Dict[str, str]], Dict[str, date], Any]):
+    """One replay per account over its own window, and a way to redo them all.
 
-    **The same function, called twice with different flows** — #983's whole
-    economy. The second run swaps the owner's own dates for the equal monthly
-    instalments of :func:`counterfactual.smooth` and changes nothing else: same
-    window, same seed, same prices, same splits. What separates the two curves
-    is therefore the dates and nothing else, which is the only reason the
-    difference can be published as *what your dates cost or earned*.
+    The replays here are #1014's: each account from its **own** first day, which
+    is what :func:`_rows` publishes. The aggregate cannot sum them — see
+    :func:`_aggregate` — so it is handed ``reseed`` instead, which runs the same
+    accounts again from one shared day.
     """
     written = _written_days(store)
     quoted_from = min(prices)
@@ -227,7 +233,7 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
     timeline = EventAggregator().replay(snapshot.events or [])
 
     replayed: Dict[str, Any] = {}
-    smoothed: Dict[str, Any] = {}
+    materials: Dict[str, Any] = {}
     excluded: List[Dict[str, str]] = []
     for account in _perimeter(store, snapshot):
         days = written.get(account)
@@ -279,15 +285,57 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
         if result.first_day is None:
             continue
         replayed[account] = (result, dict(days))
-        smoothed[account] = counterfactual.replay(
-            window, prices, splits, counterfactual.smooth(flows, window),
-            seed, unconverted)
+        materials[account] = (window[1], flows)
 
-    # The last value is the first day each replayed account was **written**,
+    def reseed(start: date):
+        """Every account replayed again from **one** shared day (#1028).
+
+        The aggregate names a period, so its terms have to start in it. An
+        account replayed from its own first day carries into that period
+        whatever the reference had already drifted by — a head start the
+        headline then counts as this period's gap.
+
+        The seed is the same one :func:`counterfactual.replay` always takes:
+        the real pot at the close of the shared day, so both curves open on
+        the same euro. Nothing else moves — same prices, same splits, same
+        flows, each account's own window end — and the smoothed run of #983 is
+        built here too, over the shared window, because a date effect measured
+        on a different period from the gap beside it is two answers.
+
+        The day walks forward while any account holds nothing: a pot of zero
+        cannot be seeded, and the first day every account has one is the
+        earliest the aggregate can honestly open. ``None`` when no such day
+        exists before one of the replays runs out.
+        """
+        day = start
+        end = min(last for last, _ in materials.values())
+        while day <= end and any(
+                not (replayed[account][1].get(day) or 0) > 0
+                for account in materials):
+            day += counterfactual.ONE_DAY
+        if day > end:
+            return None
+
+        again: Dict[str, Any] = {}
+        smoothed: Dict[str, Any] = {}
+        for account, (last, flows) in materials.items():
+            window = (day, last)
+            seed = replayed[account][1][day]
+            result = counterfactual.replay(
+                window, prices, splits, flows, seed, unconverted)
+            if result.first_day is None:
+                return None
+            again[account] = (result, replayed[account][1])
+            smoothed[account] = counterfactual.replay(
+                window, prices, splits, counterfactual.smooth(flows, window),
+                seed, unconverted)
+        return again, smoothed
+
+    # The third value is the first day each replayed account was **written**,
     # before any seeding: it is what tells who truncated the period, and the
     # wrong answer there names a cause the reader can go and check.
-    return (replayed, smoothed, excluded,
-            {account: written[account][0][0] for account in replayed})
+    return (replayed, excluded,
+            {account: written[account][0][0] for account in replayed}, reseed)
 
 
 def _perimeter(store, snapshot) -> List[str]:
@@ -325,8 +373,8 @@ def _unconverted_days(store, symbol: str) -> List[date]:
     return quotes.unconverted_days(store, symbol, span[0], span[1])
 
 
-def _aggregate(replayed: Dict[str, Any], smoothed: Dict[str, Any],
-               opened: Dict[str, date], quoted_from: date) -> Dict[str, Any]:
+def _aggregate(replayed: Dict[str, Any], reseed, opened: Dict[str, date],
+               quoted_from: date) -> Dict[str, Any]:
     """Sum the accounts over the period they share.
 
     ``None`` when they share none: see the empty-intersection guard below.
@@ -344,6 +392,24 @@ def _aggregate(replayed: Dict[str, Any], smoothed: Dict[str, Any],
     # never lived, and the screen would state a period running backwards.
     if covered_from > covered_to:
         return None
+
+    # **And the start is enforced, not just printed** (#1028). The replays
+    # above each opened on their own account's first day; summed as they are,
+    # the older account hands the aggregate a reference that has been drifting
+    # since years before the period the screen names, and that drift is inside
+    # the headline gap. Re-seeded here, every account opens on `covered_from`
+    # with the pot it really held that evening — so both curves start equal,
+    # which is the one number that proves the period is the measured one.
+    # #1014's table keeps each account's whole life, where it belongs.
+    shared = reseed(covered_from)
+    if shared is None:
+        return None
+    replayed, smoothed = shared
+    covered_from = max(result.first_day for result, _ in replayed.values())
+    # **Read back after the re-seed, never before.** A reference seeded lower
+    # is a reference a withdrawal can empty sooner, so the day the comparison
+    # ends is a property of these replays and not of the ones `_rows` shows.
+    covered_to = min(result.last_day for result, _ in replayed.values())
 
     # **Why it ended is the boundary account's reason, or none at all.** The
     # period stops at the earliest end; an account whose reference was
