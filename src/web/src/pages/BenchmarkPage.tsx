@@ -20,6 +20,11 @@
  *    the two terms share a middle and sum to the gap against a disciplined
  *    index investor, but the figure the owner has learned to read is the first
  *    of them alone.
+ *  - **The head keeps the intersection, and the accounts keep their own
+ *    windows** (#1014). One headline figure names one period, so the aggregate
+ *    has to stop at the youngest account's start — but a table under it gives
+ *    each account its own period, gap and returns, so that opening a CTO in
+ *    2024 no longer takes a 2019 PEA out of the only screen that judges it.
  *  - **No range control.** A counterfactual replays the flows from the
  *    beginning: narrowing it to a year does not shorten the answer, it asks a
  *    different question. The page announces the period it covers instead.
@@ -42,7 +47,20 @@ import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
 import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
 import { ReferenceSelect } from '@/components/benchmark/ReferenceSelect'
 import { Card, CardContent } from '@/components/ui/card'
-import { api, type BenchmarkExclusion, type BenchmarkResponse } from '@/lib/api'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  api,
+  type BenchmarkAccountRow,
+  type BenchmarkExclusion,
+  type BenchmarkResponse,
+} from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -148,6 +166,7 @@ export default function BenchmarkPage() {
   return (
     <div className="space-y-6">
       <Head data={data} currency={currency} />
+      <PerAccount rows={data.per_account ?? []} currency={currency} />
       {controls}
       <BenchmarkChart
         points={data.series ?? []}
@@ -268,6 +287,93 @@ function DateEffect({ data, currency }: { data: BenchmarkResponse; currency: str
         amount: f.currency(Math.abs(effect as number), currency),
       })}
     </p>
+  )
+}
+
+/**
+ * Each account against the reference, over **its own** period (#1014).
+ *
+ * The head sums over the intersection of the accounts' periods, and that
+ * intersection is the *youngest* account's start: a CTO opened in 2024 pushes
+ * a PEA that has run since 2019 out of four years of its own history, and
+ * opening a second account is an ordinary act with no business shortening the
+ * judgement of the first. The replays are already there — the server runs one
+ * per account over its own window to build the head — so this table publishes
+ * them rather than recomputing anything.
+ *
+ * **Below the head, never instead of it.** A single headline figure has to name
+ * a single period, so the aggregate keeps the intersection; these rows explain
+ * why it starts where it does. Each one therefore carries its own period in the
+ * same line as its figures, and a row that ends early says so on itself: a
+ * reason read off the head would name the wrong account.
+ *
+ * **Nothing at all on a single account**, where the row would repeat the head
+ * figure by figure and the period with it. The table exists to show the
+ * divergence between windows; with one window there is none.
+ */
+function PerAccount({
+  rows,
+  currency,
+}: {
+  rows: readonly BenchmarkAccountRow[]
+  currency: string | null
+}) {
+  const { t } = useI18n()
+  const f = useFormatters()
+
+  if (rows.length < 2) return null
+
+  return (
+    <section className="rounded-xl border bg-card">
+      <h2 className="px-5 py-3.5 text-sm font-medium">{t('benchmark.accounts.title')}</h2>
+      <div className="border-t">
+        <Table>
+          <caption className="sr-only">{t('benchmark.accounts.caption')}</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('benchmark.accounts.column.account')}</TableHead>
+              <TableHead>{t('benchmark.accounts.column.period')}</TableHead>
+              <TableHead className="text-right">{t('benchmark.accounts.column.gap')}</TableHead>
+              <TableHead className="text-right">{t('benchmark.term.yours')}</TableHead>
+              <TableHead className="text-right">{t('benchmark.term.theirs')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.account}>
+                <TableCell className="font-medium">{row.account}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {t('benchmark.accounts.period', {
+                    from: f.date(row.covered_from),
+                    to: f.date(row.covered_to),
+                  })}
+                  {/* Its own reason, on its own row: the head names the account
+                      that closed the *aggregate*, which is rarely this one. */}
+                  {row.ended === null ? null : (
+                    <span className="block text-2xs">
+                      {t(
+                        row.ended === 'exhausted'
+                          ? 'benchmark.accounts.ended.exhausted'
+                          : 'benchmark.accounts.ended.awaitingRate',
+                      )}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className={`text-right tabular ${signClass(row.gap_gross)}`}>
+                  {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
+                </TableCell>
+                <TableCell className={`text-right tabular ${signClass(row.portfolio_return)}`}>
+                  {points(f, row.portfolio_return)}
+                </TableCell>
+                <TableCell className={`text-right tabular ${signClass(row.reference_return)}`}>
+                  {points(f, row.reference_return)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
   )
 }
 

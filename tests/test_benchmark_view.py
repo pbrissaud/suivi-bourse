@@ -540,3 +540,102 @@ def test_a_schedule_the_owner_already_follows_earns_nothing(named):
     assert payload['date_effect'] == pytest.approx(0.0)
     assert payload['smoothed_value'] == pytest.approx(
         payload['reference_value'])
+
+
+# --------------------------------------------------------------------------- #
+# Each account's own window (#1014)
+# --------------------------------------------------------------------------- #
+
+def test_the_older_account_keeps_the_years_the_younger_one_cut_off(named):
+    """A second account shortens the aggregate and must not shorten the rows.
+
+    `pea` has run since 1 January and `cto` since 1 February, so the aggregate
+    compares from 1 February — it has to, a single headline figure names a
+    single period. The PEA's January is not missing from the comparison, it is
+    missing from the *aggregate*, and the row publishes it.
+    """
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29')
+    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'cto', 500.0)],
+                         accounts=('pea', 'cto')), NOW)
+
+    assert payload['covered_from'] == '2024-02-01'
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['pea']['covered_from'] == '2024-01-01'
+    assert rows['cto']['covered_from'] == '2024-02-01'
+    assert [row['covered_to'] for row in payload['per_account']] == [
+        '2024-02-29', '2024-02-29']
+
+
+def test_a_row_is_read_on_its_own_last_day_and_not_on_the_covered_one(named):
+    """No all-or-nothing rule: a row is not a term of a sum.
+
+    `short` stops on 10 February and closes the aggregate there. `long` ran to
+    the 29th and its row says so — including the 500 € it received on the 20th,
+    which the aggregate is right to leave out of its own denominator.
+    """
+    _write_curve(named, 'short', first='2024-01-01', last='2024-02-10')
+    _write_curve(named, 'long', first='2024-01-01', last='2024-02-29')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'short', 1000.0),
+                          _invest('2024-01-01', 'long', 1000.0),
+                          _invest('2024-02-20', 'long', 500.0)],
+                         accounts=('short', 'long')), NOW)
+
+    assert payload['covered_to'] == '2024-02-10'
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['long']['covered_to'] == '2024-02-29'
+    # A flat fund: the reference ends at what went into it, seed included.
+    assert rows['long']['reference_value'] == pytest.approx(1500.0)
+    assert rows['short']['reference_value'] == pytest.approx(1000.0)
+    # And the aggregate's denominator still stops at the covered day.
+    assert payload['reference_value'] == pytest.approx(2000.0)
+
+
+def test_a_row_says_why_its_own_period_ended_early(named):
+    """The aggregate names the boundary account's reason; a row names its own.
+
+    `pea` empties its reference on 1 February and `cto` runs to the end. The
+    aggregate stops on the 1st — and the row that stopped it is the only one
+    carrying `exhausted`, so a reader cannot take the aggregate's reason for
+    the other account's.
+    """
+    _write_curve(named, 'pea', value=1000.0)
+    _write_curve(named, 'cto', value=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'pea', -5000.0),
+                          _invest('2024-01-01', 'cto', 1000.0)],
+                         accounts=('pea', 'cto')), NOW)
+
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['pea']['ended'] == counterfactual.EXHAUSTED
+    assert rows['pea']['covered_to'] == '2024-02-01'
+    assert rows['cto']['ended'] is None
+    assert rows['cto']['covered_to'] == '2024-02-29'
+
+
+def test_a_row_carries_the_gap_and_the_two_returns_of_its_own_account(named):
+    """The three figures the screen reads, on the account's own denominator.
+
+    The portfolio doubles to 2 000 € against a flat fund holding 1 000 €: the
+    row is ahead by a thousand, +100 % against 0 %.
+    """
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
+                 value=1000.0)
+    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-29',
+                 value=2000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    row, = payload['per_account']
+    assert row['portfolio_value'] == pytest.approx(2000.0)
+    assert row['gap_gross'] == pytest.approx(1000.0)
+    assert row['portfolio_return'] == pytest.approx(1.0)
+    assert row['reference_return'] == pytest.approx(0.0)

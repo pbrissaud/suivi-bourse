@@ -347,3 +347,83 @@ describe('the unit every figure is in', () => {
     expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
   })
 })
+
+describe('each account over its own period', () => {
+  /** A PEA running since 2019 beside a CTO opened in 2024 — the ticket's case. */
+  const TWO_ACCOUNTS = [
+    {
+      account: 'PEA.LCL',
+      covered_from: '2019-10-30',
+      covered_to: '2026-09-17',
+      ended: null,
+      portfolio_value: 48_200,
+      reference_value: 43_988,
+      gap_gross: 4212,
+      portfolio_return: 0.181,
+      reference_return: 0.078,
+    },
+    {
+      account: 'CTO.BD',
+      covered_from: '2024-02-26',
+      covered_to: '2026-09-17',
+      ended: null,
+      portfolio_value: 9_100,
+      reference_value: 9_800,
+      gap_gross: -700,
+      portfolio_return: 0.021,
+      reference_return: 0.055,
+    },
+  ]
+
+  it('gives the older account back the years the younger one cut off the head', async () => {
+    renderBenchmark(ready({ covered_from: '2024-02-26', per_account: TWO_ACCOUNTS }))
+
+    // The head compares from February 2024 because a second account exists,
+    // and that is 63 % of this owner's investing life outside the only screen
+    // that judges it. The row says 2019.
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText(/2019/)).toBeInTheDocument()
+    expect(within(row).getByText('+4 212,00 €')).toBeInTheDocument()
+    expect(within(row).getByText('+18,1 %')).toBeInTheDocument()
+    expect(within(row).getByText('+7,8 %')).toBeInTheDocument()
+  })
+
+  it('leaves the head on the aggregate, which still names one period', async () => {
+    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+
+    // A row may legitimately disagree with the head — here one account is
+    // ahead and the other behind — and it must never be read as the head
+    // having changed.
+    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
+    const row = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
+    expect(within(row).getByText('-700,00 €')).toBeInTheDocument()
+  })
+
+  it('says on the row itself why that account’s own period ended early', async () => {
+    renderBenchmark(
+      ready({
+        ended: null,
+        per_account: [
+          { ...TWO_ACCOUNTS[0], ended: 'exhausted', covered_to: '2021-03-14' },
+          TWO_ACCOUNTS[1],
+        ],
+      }),
+    )
+
+    // The head's reason belongs to the account that closed the *aggregate*.
+    // Read off the head, this row would name the wrong wrapper.
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText(/Arrêté là/)).toBeInTheDocument()
+    const other = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
+    expect(within(other).queryByText(/Arrêté là/)).toBeNull()
+  })
+
+  it('renders nothing on a single account, where the row repeats the head', async () => {
+    renderBenchmark(ready({ per_account: [TWO_ACCOUNTS[0]] }))
+
+    await head()
+    // One window means no divergence between windows, and the table exists
+    // only to show one.
+    expect(screen.queryByText('PEA.LCL')).not.toBeInTheDocument()
+  })
+})
