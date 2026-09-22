@@ -302,16 +302,21 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
         built here too, over the shared window, because a date effect measured
         on a different period from the gap beside it is two answers.
 
-        The day walks forward while any account holds nothing: a pot of zero
-        cannot be seeded, and the first day every account has one is the
-        earliest the aggregate can honestly open. ``None`` when no such day
-        exists before one of the replays runs out.
+        The day walks forward until it is **quoted** and every account has a
+        pot on it. A pot of zero cannot be seeded, and an unquoted day cannot
+        either — not because ``replay`` refuses it, but because it accepts it:
+        it lands the seed on the next quoted day instead, so the position read
+        on the closed day would open a series that starts days later, short by
+        whatever the portfolio's own holdings did over the gap. That is the
+        head start of #1028 again, in miniature. The seed day and the first
+        published day are the same day or the equality is not being claimed.
+        ``None`` when no such day exists before one of the replays runs out.
         """
         day = start
         end = min(last for last, _ in materials.values())
-        while day <= end and any(
-                not (replayed[account][1].get(day) or 0) > 0
-                for account in materials):
+        while day <= end and not (day in prices and all(
+                (replayed[account][1].get(day) or 0) > 0
+                for account in materials)):
             day += counterfactual.ONE_DAY
         if day > end:
             return None

@@ -729,3 +729,46 @@ def test_the_aggregate_starts_where_it_says_it_starts(named):
     assert rows['pea']['covered_from'] == '2024-01-01'
     assert rows['pea']['reference_value'] == pytest.approx(2000.0)
     assert rows['pea']['gap_gross'] == pytest.approx(-1000.0)
+
+
+def test_the_shared_start_is_a_day_the_fund_was_quoted_on(named):
+    """A closed market cannot carry the seed either.
+
+    `pea` sells out on 1 February — the day `cto` opens, so the shared start
+    has to walk forward to the first day both accounts hold something again.
+    That day is a Saturday here: the fund has no close, and `replay` does not
+    refuse it, it lands the seed on the next quoted day instead. Seeded on the
+    3rd and opened on the 4th, the reference would miss the 300 € the
+    portfolio's own holdings made in between — #1028's head start again, one
+    weekend wide.
+
+    So the day walks on to the 4th, where the pot read and the first published
+    point are the same day, and the two curves open on the same 1 800 €.
+    """
+    named.execute('DELETE FROM price_point WHERE symbol = ? '
+                  'AND CAST(ts AS DATE) = ?', [REFERENCE, date(2024, 2, 3)])
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
+                 value=1000.0)
+    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-02',
+                 value=0.0, cash=1000.0)
+    _write_curve(named, 'pea', first='2024-02-03', last='2024-02-03',
+                 value=1000.0)
+    _write_curve(named, 'pea', first='2024-02-04', last='2024-02-29',
+                 value=1300.0)
+    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29',
+                 value=500.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'pea', -1000.0),
+                          _invest('2024-02-03', 'pea', 1000.0),
+                          _invest('2024-02-01', 'cto', 500.0)],
+                         accounts=('pea', 'cto')), NOW)
+
+    assert payload['covered_from'] == '2024-02-04'
+    first = payload['series'][0]
+    assert first['t'] == '2024-02-04'
+    assert first['portfolio'] == pytest.approx(1800.0)
+    assert first['reference'] == pytest.approx(1800.0)
+    assert payload['reference_value'] == pytest.approx(1800.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
