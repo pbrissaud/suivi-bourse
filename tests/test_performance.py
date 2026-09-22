@@ -360,6 +360,40 @@ def test_a_grant_without_a_price_contributes_nothing():
     assert perf.gain_absolu == pytest.approx(500.0)
 
 
+def test_pricing_a_grant_moves_the_contribution_the_gain_is_shown_beside():
+    """The card's own subtraction, pinned (issue #1012).
+
+    ``net_contributed`` moved on ``DEPOSIT`` and ``WITHDRAWAL`` alone, while
+    ``gain_absolu`` was taken against a contribution that counts a priced
+    ``GRANT`` — so declaring the price of an award broke the one identity the
+    dashboard card exists to show, by exactly ``quantity × unit_price``.
+
+    Here: a 1 000,00 deposit, an award of 5 at 48,88 quoted at 60,00.
+    """
+    def perf_of(grant_price):
+        events = [
+            Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0,
+                  account="PEA"),
+            Event(date(2024, 1, 1), EventType.GRANT, "AAPL", "Apple",
+                  quantity=5, unit_price=grant_price, account="PEA"),
+        ]
+        tl = EventAggregator().replay(events)
+        return compute_account(
+            tl, PEA, {"AAPL"}, _price_at({"AAPL": {date(2024, 1, 1): 60.0}}),
+            start=date(2024, 1, 1), today=date(2024, 1, 1)).daily[-1]
+
+    for day in (perf_of(None), perf_of(48.88)):
+        assert (day.total_value - day.net_contributed
+                == pytest.approx(day.gain_absolu))
+
+    # And the price is what moved it: 5 × 48,88 = 244,40, out of the gain and
+    # into the contribution, both sides of the subtraction at once.
+    assert perf_of(None).net_contributed == pytest.approx(1000.0)
+    assert perf_of(48.88).net_contributed == pytest.approx(1244.40)
+    assert perf_of(48.88).gain_absolu == pytest.approx(
+        perf_of(None).gain_absolu - 244.40)
+
+
 def test_a_grants_contribution_does_not_move_with_the_backfill():
     """The declared price is read; no quote is, so nothing drifts (#672 D7).
 
