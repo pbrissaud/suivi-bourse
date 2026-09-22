@@ -2,7 +2,7 @@
 
 import math
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, time as time_of_day
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -11,6 +11,7 @@ from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
+from application import instants
 from application import market_info
 from application import scheduling
 
@@ -94,6 +95,32 @@ def _splits(ticker, symbol: str) -> Optional[Dict[date, float]]:
         return None
 
 
+def bar_instant(moment: datetime, interval: str) -> datetime:
+    """Where on the clock one fetched bar is stored (issue #1013).
+
+    **A daily bar is a date, not an instant.** yfinance stamps it at midnight
+    in the *exchange's own* timezone, and Paris midnight is 22:00Z the day
+    before — while everything downstream reads the UTC day: ``time_bucket`` in
+    :meth:`store_reads.PortfolioReader.chart_series`, ``CAST(ts AS DATE)`` in
+    the retention ladder and the conversion repair, and the day the rate is
+    looked up under. So every close of every exchange east of UTC was filed one
+    trading day early, and the store came out *mixed by exchange*, because a US
+    bar's local midnight is 04:00–05:00Z and still lands on the right day.
+
+    Anchored at **UTC noon on the exchange's date** instead. Noon is what makes
+    both halves agree without ``time_bucket`` having a say: it is twelve hours
+    from either edge, so UTC−11 through UTC+12 all land on the day the market
+    actually traded.
+
+    An intraday bar *is* an instant and is kept as one, normalized to UTC the
+    way every other instant in the tree is.
+    """
+    if interval == scheduling.DAILY:
+        return datetime.combine(moment.date(), time_of_day(12),
+                                tzinfo=timezone.utc)
+    return instants.utc(moment)
+
+
 def price_history(symbol: str, start: datetime, end: datetime,
                   delay: float,
                   max_retries: int = 3
@@ -138,9 +165,7 @@ def price_history(symbol: str, start: datetime, end: datetime,
                 close = row['Close']
                 if pd.isna(close):
                     continue
-                ts = idx.to_pydatetime()
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
+                ts = bar_instant(idx.to_pydatetime(), interval)
                 prices.append({'timestamp': ts, 'price': float(close)})
 
             if not prices:
@@ -193,10 +218,12 @@ def pair_series(pair: str, start: date, end: date) -> Dict[date, float]:
         close = row['Close']
         if pd.isna(close):
             continue
-        moment = index.to_pydatetime()
-        day = moment.date() if moment.tzinfo is None else moment.astimezone(
-            timezone.utc).date()
-        series[day] = float(close)
+        # The date the bar carries, **as the venue stamped it** — not the date
+        # its midnight falls on once moved to UTC (#1013). London midnight in
+        # summer is 23:00Z the day before, so converting first filed a whole
+        # pair's series one day early, and every price converted at that rate
+        # with it.
+        series[index.to_pydatetime().date()] = float(close)
     return series
 
 

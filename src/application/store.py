@@ -701,6 +701,41 @@ def _drop_dividend_adjusted_prices(connection) -> None:
     _buy_the_series_again(connection)
 
 
+def _refetch_prices_bucketed_in_utc(connection) -> None:
+    """Give the deep past back, where a bar was filed one trading day early (#1013).
+
+    A **daily** bar comes stamped at midnight in the exchange's timezone, and
+    every reader of ``ts`` buckets in UTC, so a Paris close was stored 22:00Z
+    the day before and served under that day. Not a rounding: the point
+    labelled 30/06 carried the close of 01/07, and the whole curve with it.
+
+    Unlike #987 and #1008 this one does **not** cost the series whole. Only the
+    daily bars are wrong — an intraday bar is stamped at a real trading hour
+    and lands on the right UTC day — and the fetch only ever asks for daily
+    bars beyond Yahoo's hourly ceiling, so *every* bad point is older than 729
+    days and no good one is. The literal is written out rather than read from
+    :mod:`scheduling`: a step already released is never edited, so it must not
+    move when that ceiling does.
+
+    The two derived series go, as they do in :func:`_buy_the_series_again` and
+    for the same reason — they were computed off the shifted closes and are
+    rewritten whole on the first perf cycle. ``oldest_window_tried`` goes back
+    to ``NULL`` so the backward pass really walks the deleted years again
+    instead of resuming past them; ``newest_window_tried`` stays, because what
+    it covers was never wrong.
+
+    The clock read is the database's, and it is the only one a step has: a step
+    is handed a connection and nothing else. ``now()`` is ``TIMESTAMPTZ`` in
+    DuckDB and ``ts`` is too, so the comparison is UTC against UTC — the one
+    clock, read through the other hand.
+    """
+    connection.execute(
+        "DELETE FROM price_point WHERE ts < now() - INTERVAL '729 days'")
+    connection.execute('UPDATE symbol_quote SET oldest_window_tried = NULL')
+    connection.execute('DELETE FROM account_metrics')
+    connection.execute('DELETE FROM portfolio_totals')
+
+
 def _buy_the_series_again(connection) -> None:
     """Forget every stored close and the two series computed from them.
 
@@ -746,6 +781,7 @@ STEPS = (
     ('drop_split_adjusted_prices', _drop_split_adjusted_prices),
     ('add_splits_read_at', _add_splits_read_at),
     ('drop_dividend_adjusted_prices', _drop_dividend_adjusted_prices),
+    ('refetch_prices_bucketed_in_utc', _refetch_prices_bucketed_in_utc),
 )
 
 
