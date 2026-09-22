@@ -146,17 +146,32 @@ export default function BenchmarkPage() {
   }
 
   if (data.state === 'nothing_to_compare') {
+    // **Two emptinesses, and the rows are what tell them apart.** Nothing
+    // replayed at all is *record your first events*. Accounts that each
+    // replayed but share no single day is the same state for the head — no
+    // period, so no headline figure — and the exact opposite reading for the
+    // owner: every account has a complete comparison, and the sentence below
+    // would send them to a ledger that is already full.
+    const rows = data.per_account ?? []
     return (
       <div className="space-y-6">
-        <EmptyState
-          title={t('benchmark.empty.noEvents.title')}
-          description={t('benchmark.empty.noEvents.body')}
-          action={
-            <Link to="/ledger" className="font-medium underline underline-offset-4">
-              {t('benchmark.empty.noEvents.link')}
-            </Link>
-          }
-        />
+        {rows.length > 1 ? (
+          <EmptyState
+            title={t('benchmark.empty.noOverlap.title')}
+            description={t('benchmark.empty.noOverlap.body')}
+          />
+        ) : (
+          <EmptyState
+            title={t('benchmark.empty.noEvents.title')}
+            description={t('benchmark.empty.noEvents.body')}
+            action={
+              <Link to="/ledger" className="font-medium underline underline-offset-4">
+                {t('benchmark.empty.noEvents.link')}
+              </Link>
+            }
+          />
+        )}
+        <PerAccount rows={rows} currency={currency} />
         <Excluded rows={data.excluded_accounts ?? []} />
         {controls}
       </div>

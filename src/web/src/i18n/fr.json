@@ -599,6 +599,8 @@
   "benchmark.empty.noEvents.title": "Rien à comparer pour l’instant",
   "benchmark.empty.noEvents.body": "La comparaison rejoue vos propres mouvements. Enregistrez vos premiers événements et elle se remplira.",
   "benchmark.empty.noEvents.link": "Ouvrir le grand livre",
+  "benchmark.empty.noOverlap.title": "Aucune période commune à vos comptes",
+  "benchmark.empty.noOverlap.body": "Vos comptes n’ont pas un seul jour en commun : un compte s’est arrêté avant que l’autre n’ouvre. Une figure unique nommerait une période qui n’existe pas — chaque compte est comparé ci-dessous, sur la sienne.",
   "benchmark.select.label": "Référence de comparaison",
   "benchmark.select.placeholder": "Choisir un fonds",
   "benchmark.select.since": "depuis {year}",

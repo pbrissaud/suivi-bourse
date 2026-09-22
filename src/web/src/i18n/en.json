@@ -599,6 +599,8 @@
   "benchmark.empty.noEvents.title": "Nothing to compare yet",
   "benchmark.empty.noEvents.body": "The comparison replays your own movements. Record your first events and it will fill in.",
   "benchmark.empty.noEvents.link": "Open the ledger",
+  "benchmark.empty.noOverlap.title": "Your accounts share no period",
+  "benchmark.empty.noOverlap.body": "Your accounts have not a single day in common: one closed before the other opened. A single figure would name a period that does not exist — each account is compared below, over its own.",
   "benchmark.select.label": "Comparison benchmark",
   "benchmark.select.placeholder": "Choose a fund",
   "benchmark.select.since": "since {year}",

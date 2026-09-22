@@ -418,6 +418,44 @@ describe('each account over its own period', () => {
     expect(within(other).queryByText(/Arrêté là/)).toBeNull()
   })
 
+  it('compares each account even when they share no single day', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      excluded_accounts: [],
+      per_account: [
+        { ...TWO_ACCOUNTS[0], covered_from: '2019-10-30', covered_to: '2023-01-12' },
+        TWO_ACCOUNTS[1],
+      ],
+    })
+
+    // The head has no period to state — one closed before the other opened —
+    // and that is the whole of what the state says. Sending the owner to a
+    // ledger that is already full would be the ticket's own bug at its worst:
+    // here the empty intersection hides *every* account entirely.
+    expect(await screen.findByText(/Aucune période commune/)).toBeInTheDocument()
+    expect(screen.queryByText(/Enregistrez vos premiers événements/)).not.toBeInTheDocument()
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText('+4 212,00 €')).toBeInTheDocument()
+  })
+
+  it('still sends an empty ledger to the ledger', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      excluded_accounts: [],
+      per_account: [],
+    })
+
+    // Nothing replayed at all is a different emptiness, and it keeps its way out.
+    expect(await screen.findByText(/Enregistrez vos premiers événements/)).toBeInTheDocument()
+    expect(screen.queryByText(/Aucune période commune/)).not.toBeInTheDocument()
+  })
+
   it('renders nothing on a single account, where the row repeats the head', async () => {
     renderBenchmark(ready({ per_account: [TWO_ACCOUNTS[0]] }))
 

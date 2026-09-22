@@ -150,15 +150,21 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': NOTHING_TO_COMPARE,
                 'excluded_accounts': excluded}
 
+    rows = _rows(replayed)
     aggregate = _aggregate(replayed, smoothed, opened, min(prices))
     if aggregate is None:
         # The accounts replayed, and their periods do not overlap. Nothing to
-        # compare is the honest answer, not a comparison over no days at all.
+        # compare is the honest answer *for the aggregate*, not a comparison
+        # over no days at all — but the rows are exactly what #1014 is about,
+        # and this is the case where an empty intersection hides not four
+        # years of one account but the whole of every one of them. The state
+        # stays, because no headline figure can be stated; the rows travel with
+        # it, because each of them can.
         return {**head, 'state': NOTHING_TO_COMPARE,
-                'excluded_accounts': excluded}
+                'excluded_accounts': excluded, 'per_account': rows}
 
     return {**head, 'state': READY, 'excluded_accounts': excluded,
-            'per_account': _rows(replayed), **aggregate}
+            'per_account': rows, **aggregate}
 
 
 def _offered() -> List[Dict[str, Any]]:

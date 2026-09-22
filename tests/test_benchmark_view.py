@@ -455,6 +455,12 @@ def test_two_accounts_whose_periods_never_overlap_have_nothing_to_compare(named)
 
     assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
     assert 'gap_gross' not in payload
+    # **And the rows survive the state** (#1014). The head has no period to
+    # state, which is what the state says; each account still has its own, and
+    # this is the case where the empty intersection hides not four years of one
+    # account but the whole of every one of them.
+    assert [row['account'] for row in payload['per_account']] == ['new', 'old']
+    assert payload['per_account'][1]['covered_to'] == '2024-01-20'
 
 
 def test_the_end_reason_belongs_to_the_account_that_ended_the_period(named):
