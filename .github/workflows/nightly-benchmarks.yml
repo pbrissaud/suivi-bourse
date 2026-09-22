@@ -1,7 +1,7 @@
 name: "Nightly benchmark probe"
 
 # **The repository's first scheduled workflow** (#760), and it exists for one
-# fact no other check can hold: the seven references in `benchmarks.py` are
+# fact no other check can hold: the five references in `benchmarks.py` are
 # written down as truths about Yahoo, and a fund that is delisted, renamed or
 # moved to another venue goes on reading as a perfectly good constant. Nothing
 # in the offline suite can notice — the owner notices, by choosing it and

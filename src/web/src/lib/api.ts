@@ -853,13 +853,11 @@ export interface InvestmentRhythmResponse extends RhythmFigures {
 // The comparison against a reference (#760)
 // ------------------------------------------------------------------------- //
 
-/** One of the seven references the selector offers. */
+/** One of the five references the selector offers. */
 export interface OfferedBenchmark {
   symbol: string
   /** The index it tracks. Named **first**; the ticker is subordinate. */
   index: string
-  /** Eligible to a PEA. Groups the selector, enters no arithmetic. */
-  pea: boolean
   /**
    * The fund's first quoted day — what truncation costs, said *before* the
    * click. A 2024 fund silently drops eleven years of a 2013 owner's history.

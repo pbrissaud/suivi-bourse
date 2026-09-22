@@ -1,8 +1,8 @@
-"""The seven references the comparison of #760 offers, and nothing else.
+"""The five references the comparison of #760 offers, and nothing else.
 
 A **closed** list, on purpose. A free ticker field would let an owner compare
 their portfolio against a single stock, a currency pair or a typo, and the
-screen would answer with a curve either way. Seven broad-market accumulating
+screen would answer with a curve either way. Five broad-market accumulating
 ETFs are the question #760 asks — *would an index fund have done better* — and
 the list is short enough that every entry can say what it costs before it is
 picked.
@@ -20,11 +20,12 @@ history rather than discovering it afterwards. The replay itself never reads
 it: the seed is anchored on the first quoted day **in the store**, which is the
 only one the computation can honour.
 
-``pea`` is a French tax-wrapper eligibility, and it enters no computation
-whatsoever -- the comparison replays the owner's flows in the owner's own
-accounts, under the taxation those accounts already declare. It is here because
-the selector groups by it and says so; ungrouped and unexplained it reads as
-advice.
+One index, one entry. A tax-wrapper eligibility used to split the list in two,
+and it entered no computation whatsoever -- the comparison replays the owner's
+flows in the owner's own accounts, under the taxation those accounts already
+declare. Dropping it (#1019) took its two entries with it: both tracked an
+index already here, on a strictly shorter history, so picking one measured the
+same thing over fewer years.
 """
 
 from dataclasses import dataclass
@@ -47,21 +48,17 @@ class Benchmark:
     currency: str
     #: The first daily close Yahoo serves. Truncation, made visible pre-click.
     inception: date
-    #: Eligible to a French PEA. Grouped in the selector, absent from the maths.
-    pea: bool = False
 
 
-#: The list, in the order the selector renders it: the general ones, then the
-#: PEA group. Seven, and #760 says seven — a longer list stops being a set of
-#: answers and becomes a search box with extra steps.
+#: The list, in the order the selector renders it — one flat list, and no
+#: index twice. Five: a longer list stops being a set of answers and becomes a
+#: search box with extra steps.
 BENCHMARKS: Tuple[Benchmark, ...] = (
     Benchmark('CW8.PA', 'MSCI World', 'EUR', date(2009, 6, 16)),
     Benchmark('CSPX.AS', 'S&P 500', 'EUR', date(2010, 5, 19)),
     Benchmark('MSE.PA', 'Euro Stoxx 50', 'EUR', date(2008, 1, 2)),
     Benchmark('C40.PA', 'CAC 40', 'EUR', date(2008, 1, 2)),
     Benchmark('AEEM.PA', 'MSCI Emerging Markets', 'EUR', date(2010, 11, 30)),
-    Benchmark('WPEA.PA', 'MSCI World', 'EUR', date(2024, 4, 2), pea=True),
-    Benchmark('PE500.PA', 'S&P 500', 'EUR', date(2019, 4, 25), pea=True),
 )
 
 BY_SYMBOL: Dict[str, Benchmark] = {

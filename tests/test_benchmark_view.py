@@ -421,13 +421,17 @@ def test_an_off_list_reference_gets_no_progress_bar_it_cannot_honour(named):
     it is going: it moves with the series, so a ratio taken against it reads
     full from the first chunk and stays there. An owner would watch a finished
     bar wait for a figure that is hours away. Better no bar than a lying one.
+
+    Named `WPEA.PA` on purpose: #1019 withdrew it from the list, so an install
+    that had already chosen it lands here. Nothing breaks — the reference is
+    still rendered, and only the bar's target goes missing.
     """
     named.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', 'IWDA.AS') "
+                  "('benchmark_symbol', 'WPEA.PA') "
                   "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-    named.execute("INSERT INTO symbol (symbol) VALUES ('IWDA.AS')")
+    named.execute("INSERT INTO symbol (symbol) VALUES ('WPEA.PA')")
     _quote_the_reference(named, first='2024-02-20', last='2024-02-29',
-                         symbol='IWDA.AS')
+                         symbol='WPEA.PA')
     _write_curve(named, 'pea')
 
     payload = benchmark_view.comparison(
