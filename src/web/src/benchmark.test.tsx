@@ -347,3 +347,121 @@ describe('the unit every figure is in', () => {
     expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
   })
 })
+
+describe('each account over its own period', () => {
+  /** A PEA running since 2019 beside a CTO opened in 2024 — the ticket's case. */
+  const TWO_ACCOUNTS = [
+    {
+      account: 'PEA.LCL',
+      covered_from: '2019-10-30',
+      covered_to: '2026-09-17',
+      ended: null,
+      portfolio_value: 48_200,
+      reference_value: 43_988,
+      gap_gross: 4212,
+      portfolio_return: 0.181,
+      reference_return: 0.078,
+    },
+    {
+      account: 'CTO.BD',
+      covered_from: '2024-02-26',
+      covered_to: '2026-09-17',
+      ended: null,
+      portfolio_value: 9_100,
+      reference_value: 9_800,
+      gap_gross: -700,
+      portfolio_return: 0.021,
+      reference_return: 0.055,
+    },
+  ]
+
+  it('gives the older account back the years the younger one cut off the head', async () => {
+    renderBenchmark(ready({ covered_from: '2024-02-26', per_account: TWO_ACCOUNTS }))
+
+    // The head compares from February 2024 because a second account exists,
+    // and that is 63 % of this owner's investing life outside the only screen
+    // that judges it. The row says 2019.
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText(/2019/)).toBeInTheDocument()
+    expect(within(row).getByText('+4 212,00 €')).toBeInTheDocument()
+    expect(within(row).getByText('+18,1 %')).toBeInTheDocument()
+    expect(within(row).getByText('+7,8 %')).toBeInTheDocument()
+  })
+
+  it('leaves the head on the aggregate, which still names one period', async () => {
+    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+
+    // A row may legitimately disagree with the head — here one account is
+    // ahead and the other behind — and it must never be read as the head
+    // having changed.
+    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
+    const row = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
+    expect(within(row).getByText('-700,00 €')).toBeInTheDocument()
+  })
+
+  it('says on the row itself why that account’s own period ended early', async () => {
+    renderBenchmark(
+      ready({
+        ended: null,
+        per_account: [
+          { ...TWO_ACCOUNTS[0], ended: 'exhausted', covered_to: '2021-03-14' },
+          TWO_ACCOUNTS[1],
+        ],
+      }),
+    )
+
+    // The head's reason belongs to the account that closed the *aggregate*.
+    // Read off the head, this row would name the wrong wrapper.
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText(/Arrêté là/)).toBeInTheDocument()
+    const other = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
+    expect(within(other).queryByText(/Arrêté là/)).toBeNull()
+  })
+
+  it('compares each account even when they share no single day', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      excluded_accounts: [],
+      per_account: [
+        { ...TWO_ACCOUNTS[0], covered_from: '2019-10-30', covered_to: '2023-01-12' },
+        TWO_ACCOUNTS[1],
+      ],
+    })
+
+    // The head has no period to state — one closed before the other opened —
+    // and that is the whole of what the state says. Sending the owner to a
+    // ledger that is already full would be the ticket's own bug at its worst:
+    // here the empty intersection hides *every* account entirely.
+    expect(await screen.findByText(/Aucune période commune/)).toBeInTheDocument()
+    expect(screen.queryByText(/Enregistrez vos premiers événements/)).not.toBeInTheDocument()
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText('+4 212,00 €')).toBeInTheDocument()
+  })
+
+  it('still sends an empty ledger to the ledger', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      excluded_accounts: [],
+      per_account: [],
+    })
+
+    // Nothing replayed at all is a different emptiness, and it keeps its way out.
+    expect(await screen.findByText(/Enregistrez vos premiers événements/)).toBeInTheDocument()
+    expect(screen.queryByText(/Aucune période commune/)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing on a single account, where the row repeats the head', async () => {
+    renderBenchmark(ready({ per_account: [TWO_ACCOUNTS[0]] }))
+
+    await head()
+    // One window means no divergence between windows, and the table exists
+    // only to show one.
+    expect(screen.queryByText('PEA.LCL')).not.toBeInTheDocument()
+  })
+})

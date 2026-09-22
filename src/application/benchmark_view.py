@@ -34,6 +34,13 @@ the earliest of their ends. A counterfactual replays the flows from the
 beginning, so narrowing it to a year does not shorten the answer, it asks a
 different question.
 
+**And it is announced twice** (#1014). The aggregate keeps the intersection —
+one headline figure names one period — but the intersection is the youngest
+account's start, so opening a second account shortens the comparison of the
+first by years it has every right to be judged on. ``per_account`` publishes
+each account's own window beside it, off the replays ``_by_account`` was
+already computing and ``_aggregate`` was discarding.
+
 **#983 splits the gap in two, and only one of the halves is new.** `gap_gross`
 already answers *what did my securities do* — the reference ran the owner's own
 flows on the owner's own days, so the dates are common to both sides and cancel
@@ -143,14 +150,21 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': NOTHING_TO_COMPARE,
                 'excluded_accounts': excluded}
 
+    rows = _rows(replayed)
     aggregate = _aggregate(replayed, smoothed, opened, min(prices))
     if aggregate is None:
         # The accounts replayed, and their periods do not overlap. Nothing to
-        # compare is the honest answer, not a comparison over no days at all.
+        # compare is the honest answer *for the aggregate*, not a comparison
+        # over no days at all — but the rows are exactly what #1014 is about,
+        # and this is the case where an empty intersection hides not four
+        # years of one account but the whole of every one of them. The state
+        # stays, because no headline figure can be stated; the rows travel with
+        # it, because each of them can.
         return {**head, 'state': NOTHING_TO_COMPARE,
-                'excluded_accounts': excluded}
+                'excluded_accounts': excluded, 'per_account': rows}
 
-    return {**head, 'state': READY, 'excluded_accounts': excluded, **aggregate}
+    return {**head, 'state': READY, 'excluded_accounts': excluded,
+            'per_account': rows, **aggregate}
 
 
 def _offered() -> List[Dict[str, Any]]:
@@ -374,6 +388,46 @@ def _aggregate(replayed: Dict[str, Any], smoothed: Dict[str, Any],
         'date_effect': (None if smoothed_value is None
                         else reference - smoothed_value),
     }
+
+
+def _rows(replayed: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Each account's own comparison, over **its own** window (#1014).
+
+    The aggregate has to sum over the intersection — a single headline figure
+    names a single period — but that intersection is set by the *youngest*
+    account, and opening a CTO in 2024 is what silently takes a PEA's four
+    earlier years out of the only screen that judges them. The replays those
+    years need are already here: :func:`_by_account` runs every account over
+    its own window, and the aggregate was throwing the rest away.
+
+    Every term is read on the account's **own** last day, which is why there is
+    no all-or-nothing rule here: a row is not a term of a sum, so one account
+    that ended early costs the others nothing. Nothing on a row may be read as
+    the aggregate's, and the screen states each row's period beside its figures
+    for exactly that reason.
+    """
+    rows = []
+    for account in sorted(replayed):
+        result, days = replayed[account]
+        # `None` for a replay exhausted on its seed day: it has a period and an
+        # empty series, so there is a row and it carries no figures.
+        snap = _snapshot_at(result, result.last_day)
+        reference = snap.value if snap else None
+        portfolio = days.get(result.last_day)
+        contributed = snap.contributed if snap else 0.0
+        rows.append({
+            'account': account,
+            'covered_from': instants.iso(result.first_day),
+            'covered_to': instants.iso(result.last_day),
+            'ended': result.ended,
+            'portfolio_value': portfolio,
+            'reference_value': reference,
+            'gap_gross': (None if portfolio is None or reference is None
+                          else portfolio - reference),
+            'portfolio_return': _return(portfolio, contributed),
+            'reference_return': _return(reference, contributed),
+        })
+    return rows
 
 
 def _smoothed_at(smoothed: Dict[str, Any],

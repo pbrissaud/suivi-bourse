@@ -883,6 +883,30 @@ export interface BenchmarkExclusion {
   symbols?: string
 }
 
+/**
+ * One account's own comparison, over **its own** window (#1014).
+ *
+ * The aggregate above sums over the intersection of the accounts' periods,
+ * which is the *youngest* account's start: a CTO opened in 2024 takes a PEA's
+ * four earlier years out of the headline figure, and opening a second account
+ * is an ordinary act that must not shorten the judgement of the first. Each
+ * row therefore states its own period beside its own figures — and nothing on
+ * a row may be read as the aggregate's, which is why the period is not
+ * optional on it.
+ */
+export interface BenchmarkAccountRow {
+  account: string
+  covered_from: string
+  covered_to: string
+  /** Why this account's period ended early, or `null`. Its own, not the head's. */
+  ended: string | null
+  portfolio_value: number | null
+  reference_value: number | null
+  gap_gross: number | null
+  portfolio_return: number | null
+  reference_return: number | null
+}
+
 /** One day of the two curves, on a shared axis. */
 export interface BenchmarkPoint {
   t: string
@@ -948,6 +972,8 @@ export interface BenchmarkResponse {
    * which is an absence and never a partial sum.
    */
   date_effect?: number | null
+  /** The same comparison per account, each over its own window (#1014). */
+  per_account?: BenchmarkAccountRow[]
   series?: BenchmarkPoint[]
 }
 
