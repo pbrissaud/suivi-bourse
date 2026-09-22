@@ -80,6 +80,24 @@ class PortfolioReader:
             ") WHERE rn = 1 ORDER BY bucket",
             [symbol] + parameters, ('ts', 'price'))
 
+    def close_on_or_before(self, symbol: str,
+                           day: date) -> Optional[Dict[str, Any]]:
+        """One symbol's last close at or **before** ``day``, and whose day it is.
+
+        :meth:`prices_at` for a single symbol, over a calendar day rather than
+        an instant. The day travels back beside the price because the answer is
+        a **suggestion the owner reads** (#1007): a grant dated a Friday the
+        market did not quote is priced off the Thursday, and a figure that
+        cannot say which day it belongs to is the blind typing this replaces.
+        """
+        rows = self._series(
+            'SELECT CAST(ts AS DATE) AS day, price_converted FROM price_point '
+            ' WHERE symbol = ? AND price_converted IS NOT NULL'
+            '   AND CAST(ts AS DATE) <= CAST(? AS DATE)'
+            ' ORDER BY ts DESC LIMIT 1',
+            [symbol, day], ('day', 'price'))
+        return rows[0] if rows else None
+
     def prices_at(self, moment: datetime) -> List[Dict[str, Any]]:
         """Each symbol's last price at or **before** ``moment``, with its instant."""
         return self._series(

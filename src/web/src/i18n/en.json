@@ -439,6 +439,7 @@
   "data.form.quantity": "Quantity",
   "data.form.unitPrice": "Unit price",
   "data.form.grantPrice.explain": "Leave it empty and the award only adds shares — nothing paid in, nothing it cost you. Fill it and the shares enter your contributions and your cost basis, so the position starts with no unrealised gain.",
+  "data.form.grantPrice.suggested": "Suggested: close of {day}. Clear it to declare the award as costing you nothing.",
   "data.form.fee": "Fee",
   "data.form.amount": "Amount",
   "data.form.notes": "Label",
