@@ -268,6 +268,22 @@ describe('the footing names the rate that produced the figure', () => {
     expect(await screen.findByText(/Le taux change le/)).toHaveTextContent('2104')
   })
 
+  it('names the calendar the day is on, the change landing at UTC midnight', async () => {
+    // #952: the day is decided against the UTC day and rendered in the
+    // reader's locale, so the two disagree by the reader's offset for up to
+    // fourteen hours — once, on the day the owner would look. The boundary is
+    // what lets a reader east of Greenwich read *the rate has not turned yet*
+    // off a line naming a day their own calendar has already begun.
+    renderAccounts({
+      taxation_kind: 'aged_flat_realised',
+      projected_tax: 96,
+      projected_rates: [0.3],
+      projected_rate_changes_on: '2104-03-01',
+    })
+
+    expect(await screen.findByText(/Le taux change le/)).toHaveTextContent('UTC')
+  })
+
   it('names every rung of a ladder, there being no single rate to name', async () => {
     renderAccounts({ taxation_kind: 'bracketed_realised', projected_tax: 400, projected_rates: [0.1, 0.3, 0.42] })
 

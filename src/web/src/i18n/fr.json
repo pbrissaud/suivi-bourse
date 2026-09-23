@@ -303,7 +303,7 @@
   "accounts.detail.projectedTax.base": "Sur une plus-value latente de",
   "accounts.detail.projectedTax.rate": "Taux appliqué",
   "accounts.detail.projectedTax.rates": "Taux appliqués",
-  "accounts.detail.projectedTax.changesOn": "Le taux change le {day}",
+  "accounts.detail.projectedTax.changesOn": "Le taux change le {day}, à minuit UTC",
   "accounts.detail.payers": "Titres distributeurs",
   "accounts.detail.payers.period": "Depuis l’ouverture de ce compte",
   "accounts.detail.events": "Derniers événements",

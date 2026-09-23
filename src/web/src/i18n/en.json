@@ -303,7 +303,7 @@
   "accounts.detail.projectedTax.base": "On a latent gain of",
   "accounts.detail.projectedTax.rate": "Rate applied",
   "accounts.detail.projectedTax.rates": "Rates applied",
-  "accounts.detail.projectedTax.changesOn": "The rate changes on {day}",
+  "accounts.detail.projectedTax.changesOn": "The rate changes on {day}, at UTC midnight",
   "accounts.detail.payers": "Distributing securities",
   "accounts.detail.payers.period": "Since this account opened",
   "accounts.detail.events": "Latest events",

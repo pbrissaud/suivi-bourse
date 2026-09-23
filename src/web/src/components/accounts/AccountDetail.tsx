@@ -647,7 +647,21 @@ export function AccountDetail({
                 {/* The kink, which is the most interesting thing the arithmetic
                     knows and is otherwise invisible: an owner three months from
                     their PEA's fifth anniversary would see one number with no
-                    hint it is about to fall. */}
+                    hint it is about to fall.
+
+                    **And the sentence names the calendar it is on** (#952). The
+                    day is the server's, decided against the UTC day; `f.date`
+                    renders it in the reader's own locale, and the two disagree
+                    by the reader's offset once in a wrapper's life — on
+                    precisely the day its owner would look. East of Greenwich
+                    the figure above still shows `rate_before` while this line
+                    names a day that has already begun; west of it the rate has
+                    already turned while the reader's calendar still reads the
+                    eve. Naming the boundary is what makes both readings true
+                    rather than contradictory: the hours are the offset, and the
+                    reader can place them. The alternative was to teach the app
+                    the reader's timezone, which is out of proportion to a
+                    fourteen-hour window nobody crosses twice. */}
                 {row.projected_rate_changes_on === undefined ? null : (
                   <p className="text-xs text-muted-foreground">
                     {t('accounts.detail.projectedTax.changesOn', {
