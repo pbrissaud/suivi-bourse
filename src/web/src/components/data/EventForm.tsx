@@ -58,7 +58,7 @@ import {
   DEFAULT_ACCOUNT_LABEL,
   submittedAccount,
 } from '@/lib/accounts'
-import { useFormatters } from '@/lib/format'
+import { currencyInput, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
 import { entryGone, problemSentence } from '@/lib/problem'
@@ -100,6 +100,15 @@ const EMPTY: Draft = {
   amount: '',
 }
 
+/**
+ * A stored row, back in the fields it was typed in.
+ *
+ * **Nothing is rounded here, and that is the difference with the suggestion
+ * below** (#1033). `unit_price` is a `DOUBLE` holding what somebody declared —
+ * typed in this form, or read out of a mounted file, where a price at four
+ * decimals is a price and not an artefact. A figure trimmed on open is a figure
+ * the next save rewrites, without the reader having touched the field.
+ */
 function draftOf(event: LedgerEvent): Draft {
   const text = (value: number | null) => (value === null ? '' : String(value))
   return {
@@ -219,7 +228,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
    */
   const suggested = suggestion === undefined
     ? undefined
-    : suggestion.price == null ? null : String(suggestion.price)
+    : suggestion.price == null ? null : currencyInput(suggestion.price, suggestion.base_currency)
   // **The day is shown only while it is a claim about what is in the field.**
   // Over a figure the reader typed it would be a precise untruth.
   const suggesting = typeof suggested === 'string' && draft.unitPrice === suggested
