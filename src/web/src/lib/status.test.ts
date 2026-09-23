@@ -11,8 +11,8 @@ import { ApiProblem } from '@/lib/api'
 import { formatMessage } from '@/lib/i18n'
 import { PROBLEM_TYPES, problemMessage, problemMessageKey } from '@/lib/problem'
 import * as status from '@/lib/status'
-import { installationState, oneFailure, readConditions } from '@/lib/status'
-import { NOW, aFrozenScrape, aHealth, aHealthJobs } from '@/test/factories'
+import { installationState, oneFailure, readConditions, stalePerfPass } from '@/lib/status'
+import { NOW, aFrozenScrape, aHealth, aHealthJobs, aRuntime } from '@/test/factories'
 
 describe('the bell’s colour is a state, never a count', () => {
   it('says nothing before the first answer, rather than saying "fine"', () => {
@@ -359,5 +359,38 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     expect(problem.detail).toBe(
       'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-09-15',
     )
+  })
+})
+
+describe('the last perf pass, read where its figures are', () => {
+  it('names the instant of a pass that raised', () => {
+    // The whole of #994: the pass wrote nothing, so the previous
+    // `account_metrics` and `portfolio_totals` rows are what the dashboard,
+    // the accounts page and the comparison are showing.
+    expect(stalePerfPass(aRuntime({ perf: { at: NOW, verdict: 'failed', error: 'boom' } })))
+      .toBe(NOW)
+  })
+
+  it('says nothing on a pass that went through', () => {
+    expect(stalePerfPass(aRuntime())).toBeNull()
+  })
+
+  it('says nothing where nothing was observed', () => {
+    // The three silences, and they are one answer. `undefined` is the read in
+    // flight **or** the read that refused — `/api/runtime` is optional, and
+    // the objection `absence.ts` raised against inheriting anything from it is
+    // exactly this: a diagnostic probe falling over must not make a claim
+    // about the reader's figures. `perf: null` is a process that has run no
+    // pass yet, which is not a failed one.
+    expect(stalePerfPass(undefined)).toBeNull()
+    expect(stalePerfPass(aRuntime({ perf: null }))).toBeNull()
+  })
+
+  it('refuses a verdict this front does not know', () => {
+    // A third word out of the recorder's vocabulary is not *failed*: the
+    // sentence is written on a positive observation and never on anything that
+    // merely is not `ran`.
+    expect(stalePerfPass(aRuntime({ perf: { at: NOW, verdict: 'skipped', error: null } })))
+      .toBeNull()
   })
 })

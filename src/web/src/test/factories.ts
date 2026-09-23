@@ -1085,6 +1085,10 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
       held: true,
     })),
     accounts: defaultAccounts().map((account) => ({ account: account.id, horizon: NOW })),
+    // The ordinary pass is the one that went through: the default says nothing
+    // on screen, and *the last recompute failed* is what a test asks for by
+    // name — `aRuntime({ perf: { at: NOW, verdict: 'failed', error: '…' } })`.
+    perf: { at: NOW, verdict: 'ran', error: null },
     ...overrides,
   }
 }

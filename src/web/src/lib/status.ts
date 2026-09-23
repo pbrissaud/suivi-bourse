@@ -6,13 +6,18 @@
  * state in prose.
  *
  * What is left below is the *page's own* failed read, which is a different
- * claim and has nowhere else to be said.
+ * claim and has nowhere else to be said — and, since #994, the one fact the
+ * bell cannot carry: **the last perf pass failed, so the figures on this page
+ * are the pass before it**. That is true of a page and not of an install, which
+ * is why it is read here and said there.
  */
 import {
   BACKFILL_RUNNING,
   HEALTH_STATUSES,
+  PERF_FAILED,
   type HealthState,
   type RuntimeAccount,
+  type RuntimeState,
 } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
@@ -242,3 +247,26 @@ export function readConditions(input: {
     .map((error) => ({ message: problemMessageKey(error) }))
 }
 
+
+/**
+ * **The last perf pass failed, so the figures on screen are the pass before
+ * it** — that pass's instant, or `null` where there is nothing to say (#994).
+ *
+ * `perf_job.recompute` has recorded a verdict on every cycle since #707 and
+ * nothing in the front read it. A pass that raises writes no row, so the
+ * previous `account_metrics` and `portfolio_totals` stand and the dashboard,
+ * the accounts page and the comparison serve them as though they were current
+ * — stale and right-looking, which is the class of wrong nobody reports.
+ *
+ * It is a **positive observation and never an inference**, which is the rule
+ * `rebuilding` already answers to and the objection `absence.ts` raised against
+ * this very read: `/api/runtime` is optional, so a request in flight, one that
+ * refused, and a process that has run no pass yet all say *nothing* here. The
+ * one thing this decides is whether a **sentence** is written beside the
+ * figures; no figure's existence and no arithmetic hangs off it, so a
+ * diagnostic probe falling over cannot empty a page.
+ */
+export function stalePerfPass(runtime: RuntimeState | undefined): string | null {
+  const perf = runtime?.perf
+  return perf != null && perf.verdict === PERF_FAILED ? perf.at : null
+}

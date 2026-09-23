@@ -42,6 +42,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Stat } from '@/components/Stat'
+import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
 import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
@@ -66,13 +67,18 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import { signClass, signOf } from '@/lib/sign'
-import { oneFailure, readConditions } from '@/lib/status'
+import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function BenchmarkPage() {
   const { t } = useI18n()
 
   const comparison = useQuery({ queryKey: ['benchmark'], queryFn: api.benchmark })
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  // The comparison's own curve **is** `account_metrics` (`benchmark_view`,
+  // #1018), so this page serves the perf job's figures like the two others —
+  // and it is the one read that says whether the last pass wrote them. Same
+  // query key as everywhere else: one request, no new API state.
+  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
 
   usePageHeading(t('page.benchmark'))
 
@@ -180,6 +186,11 @@ export default function BenchmarkPage() {
 
   return (
     <div className="space-y-6">
+      {/* The only branch of this page that puts figures on screen — the five
+          above are empty states, and a sentence about stale figures over a
+          screen that has none is a sentence about nothing. */}
+      <StaleFigures at={stalePerfPass(runtime.data)} />
+
       <Head data={data} currency={currency} />
       <PerAccount rows={data.per_account ?? []} currency={currency} />
       {controls}

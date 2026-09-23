@@ -37,6 +37,7 @@ import {
   aTotalsPayload,
   defaultAccounts,
   defaultPositions,
+  NOW,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -435,6 +436,44 @@ describe('during the reconstruction', () => {
     const head = await screen.findByRole('group', { name: 'Gain total' })
     expect(head).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
     expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
+  })
+})
+
+describe('a perf pass that raised', () => {
+  it('says the figures are the previous pass’s, and leaves every one of them standing', async () => {
+    // #994: `perf_job` records the verdict on every cycle and nothing in the
+    // front read it, so a pass that raises leaves the previous
+    // `account_metrics` and `portfolio_totals` rows on screen looking current.
+    // Stale and right-looking is the class of wrong nobody reports.
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(aRuntime({ perf: { at: NOW, verdict: 'failed', error: 'boom' } }))),
+    )
+    renderApp()
+
+    expect(await screen.findByText(/Le dernier recalcul a échoué/)).toBeInTheDocument()
+    // **And the figures stay.** The sentence qualifies them; it does not
+    // replace them, which is the whole objection `absence.ts` raised against
+    // letting an optional read decide what exists.
+    expect(figure('Gain total')).toHaveTextContent(/370,00/)
+  })
+
+  it('says nothing when the runtime read itself refuses', async () => {
+    // `/api/runtime` is an **optional** read: a diagnostic probe falling over
+    // is not an observation about the reader's figures, so the silence is the
+    // answer — and the page is untouched.
+    server.use(
+      problemHandler(ROUTES.runtime, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    await screen.findByRole('group', { name: 'Gain total' })
+    expect(screen.queryByText(/Le dernier recalcul a échoué/)).not.toBeInTheDocument()
+    expect(figure('Gain total')).toHaveTextContent(/370,00/)
   })
 })
 
