@@ -197,6 +197,24 @@ def test_a_refused_write_is_recorded_although_617s_counter_stays_zero(
         NOW + timedelta(seconds=120)
 
 
+def test_a_pass_with_nothing_held_says_so_instead_of_claiming_a_write(
+        store, fake_ticker, mocker, monkeypatch):
+    """Issue #986. The write is guarded by ``bool(holdings)``, so a symbol with
+    zero quantity persists nothing — and used to record ``wrote`` all the same,
+    a record contradicting its own ``wrote=False``. Not a failure, so it keeps
+    ``error=None``, but it is named rather than dressed up as a success."""
+    m = _metrics([_share(quantity=0)], store, mocker)
+    monkeypatch.setattr(market.yf, "Ticker",
+                        lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+    record = m.recorder.scrape_of("AAPL")
+
+    assert record.verdict == runtime_state.SCRAPE_NOTHING_TO_WRITE
+    assert record.wrote is False
+    assert record.error is None
+
+
 def test_a_closed_pass_is_recorded_without_touching_the_counter(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share()], store, mocker)

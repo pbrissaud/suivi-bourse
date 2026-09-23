@@ -42,7 +42,9 @@ def scrape_verdict(should_write: bool, state, wrote: bool,
         return runtime_state.SCRAPE_CLOSED
     if not should_write:
         return runtime_state.SCRAPE_NO_PRICE
-    if wrote or not has_holdings:
+    if not has_holdings:
+        return runtime_state.SCRAPE_NOTHING_TO_WRITE
+    if wrote:
         return runtime_state.SCRAPE_WROTE
     return runtime_state.SCRAPE_WRITE_FAILED
 
