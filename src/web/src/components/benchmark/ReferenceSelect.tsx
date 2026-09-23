@@ -36,6 +36,7 @@ import {
 import { api, type OfferedBenchmark } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
+import { cn } from '@/lib/utils'
 
 interface ReferenceSelectProps {
   /** The stored reference, or `null` while none is named. */
@@ -45,6 +46,8 @@ interface ReferenceSelectProps {
   downloaded: readonly string[]
   /** Under the control from the start — the wait is announced, not discovered. */
   hint?: boolean
+  /** The trigger's width where the default `sm:w-96` is too wide for its row. */
+  triggerClassName?: string
 }
 
 export function ReferenceSelect({
@@ -52,6 +55,7 @@ export function ReferenceSelect({
   offered,
   downloaded,
   hint = false,
+  triggerClassName,
 }: ReferenceSelectProps) {
   const { t } = useI18n()
   const client = useQueryClient()
@@ -74,7 +78,7 @@ export function ReferenceSelect({
         {/* Full width on a 390 px viewport, where ~350 px are left once the
             sidebar is a drawer, and 44 px tall — the touch minimum the kit's
             own 36 px falls under. */}
-        <SelectTrigger aria-label={t('benchmark.select.label')} className="w-full sm:w-96">
+        <SelectTrigger aria-label={t('benchmark.select.label')} className={cn('w-full sm:w-96', triggerClassName)}>
           {/* **The chosen fund, not the row it was chosen from.** Left to
               render itself, `SelectValue` echoes the whole `SelectItem` —
               inception and download state included — and those two columns

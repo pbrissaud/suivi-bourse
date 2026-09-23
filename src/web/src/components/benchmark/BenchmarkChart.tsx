@@ -18,6 +18,7 @@
  * **The legend names the index, never the ticker.** `CW8.PA` is an address; the
  * MSCI World is what the owner is being compared against.
  */
+import type { ReactNode } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -41,9 +42,15 @@ interface BenchmarkChartProps {
   /** The index both curves are named by — never the ticker. */
   index: string
   currency: string | null
+  /**
+   * The reference selector, in the card's corner. It comes after the head in
+   * reading order either way — the page still answers before it asks — and it
+   * sits beside the curves it changes rather than on a row of its own.
+   */
+  action?: ReactNode
 }
 
-export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps) {
+export function BenchmarkChart({ points, index, currency, action }: BenchmarkChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -53,7 +60,8 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
     // page returns before this mounts.
     return (
       <Card>
-        <CardContent className="py-6">
+        <CardContent className="space-y-4 py-6">
+          <Header action={action} />
           <EmptyState title={t('benchmark.chart.empty')} />
         </CardContent>
       </Card>
@@ -85,8 +93,12 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
 
   return (
     <Card>
-      <CardContent className="py-6">
-        {/* **`aria-hidden`, and the legend below is not.** Honest here and
+      <CardContent className="space-y-4 py-6">
+        <Header action={action}>
+          <Legend index={index} />
+        </Header>
+
+        {/* **`aria-hidden`, and the legend above is not.** Honest here and
             only here: §2 puts the whole answer in the head — in prose and in
             figures — so a non-visual reader loses the shape and nothing else.
             That no chart in this product has a non-visual reading is a
@@ -169,31 +181,52 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Written here rather than left to the library, for the reason
-            `PortfolioChart` gives: the legend pairs a curve to its **name**,
-            and that is all it does. */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <span className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className="inline-block h-0.75 w-3.5 rounded-xs"
-              style={{ backgroundColor: 'var(--color-price)' }}
-            />
-            <span className="text-muted-foreground">{t('benchmark.chart.yours')}</span>
-          </span>
-          <span className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className="inline-block h-0.5 w-4"
-              style={{ backgroundColor: 'var(--muted-foreground)' }}
-            />
-            <span className="text-muted-foreground">
-              {t('benchmark.chart.theirs', { index })}
-            </span>
-          </span>
-        </div>
       </CardContent>
     </Card>
+  )
+}
+
+/** The card's title and legend on one side, the selector on the other. */
+function Header({ action, children }: { action?: ReactNode; children?: ReactNode }) {
+  const { t } = useI18n()
+
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-1.5">
+        <h2 className="text-base font-semibold">{t('benchmark.chart.title')}</h2>
+        {children}
+      </div>
+      {action}
+    </div>
+  )
+}
+
+/**
+ * Written here rather than left to the library, for the reason
+ * `PortfolioChart` gives: the legend pairs a curve to its **name**, and that is
+ * all it does.
+ */
+function Legend({ index }: { index: string }) {
+  const { t } = useI18n()
+
+  return (
+    <div className="flex flex-col gap-1.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5">
+      <span className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="inline-block h-0.75 w-3.5 rounded-xs"
+          style={{ backgroundColor: 'var(--color-price)' }}
+        />
+        <span className="text-muted-foreground">{t('benchmark.chart.yours')}</span>
+      </span>
+      <span className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="inline-block h-0.5 w-4"
+          style={{ backgroundColor: 'var(--muted-foreground)' }}
+        />
+        <span className="text-muted-foreground">{t('benchmark.chart.theirs', { index })}</span>
+      </span>
+    </div>
   )
 }
