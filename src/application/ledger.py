@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
+from application import benchmarks
 from application import instants
 from application import quotes
 from application import settings_registry
@@ -20,9 +21,6 @@ LAST_WRITE_KEY = 'ledger_last_write'
 #: not a question anybody is asked, so it stays out of `settings_registry` and
 #: out of the Settings form.
 CONSULTED_KEY = 'benchmark_consulted'
-
-#: #760's own bound on the consulted series kept alive.
-CONSULTED_LIMIT = 7
 
 
 _EVENT_COLUMNS = (
@@ -123,21 +121,35 @@ class OrphanSymbol:
 
 
 def consulted_benchmarks(store) -> List[str]:
-    """The references this install has compared against, newest first."""
+    """The references this install has compared against, newest first.
+
+    **Confined to what the selector still offers**, and that filter is the
+    bound (#1034). The protection in :func:`orphan_symbols` keeps a consulted
+    series out of the purge for good, so a list open to every ticker ever typed
+    would make each one a permanent resident of a store the owner cannot clean.
+    A closed offer bounds it with nothing to count — and it is the only bound
+    that lets go: #760 evicted on an eighth consultation, which an offer of
+    five can never reach, so the two references #1019 pulled from the offer
+    held a slot and a series each, for good, on names the selector can no
+    longer propose.
+
+    Reading and not pruning: the stored row is rewritten by the next
+    :func:`record_consulted_benchmark`, and until then it costs a string.
+    """
     rows = store.query(
         'SELECT value FROM setting WHERE key = ?', [CONSULTED_KEY])
     stored = rows[0][0] if rows else None
-    return [symbol for symbol in str(stored or '').split(',') if symbol]
+    return [symbol for symbol in str(stored or '').split(',')
+            if symbol in benchmarks.BY_SYMBOL]
 
 
 def record_consulted_benchmark(store, *symbols: Optional[str]) -> List[str]:
     """Remember ``symbols`` as consulted, newest first. Returns the new list.
 
-    Bounded at :data:`CONSULTED_LIMIT`, and the bound **is** the guard: the
-    protection below keeps a series out of the purge for good, so an unbounded
-    list would turn every ticker ever typed into a permanent resident of the
-    store. The eighth consulted reference evicts the oldest, and that one's
-    series goes on the next purge like any other orphan.
+    It counts nothing: :func:`consulted_benchmarks` answers with offered
+    references alone, so the list this rebuilds is bounded by the offer itself
+    and an off-list ticker — ``PUT /api/settings`` takes one — lasts exactly
+    until the next write.
 
     Writes with a bare statement and no transaction of its own so it can be
     called from inside one — which is where :func:`settings.save` calls it,
@@ -148,7 +160,6 @@ def record_consulted_benchmark(store, *symbols: Optional[str]) -> List[str]:
     for symbol in consulted_benchmarks(store):
         if symbol not in kept:
             kept.append(symbol)
-    kept = kept[:CONSULTED_LIMIT]
 
     store.execute(
         'INSERT INTO setting (key, value) VALUES (?, ?) '
@@ -190,10 +201,12 @@ def orphan_symbols(store) -> List[OrphanSymbol]:
     the comparison curve goes missing and nothing says why.
 
     The fourth exists because the third is about the **current** value only, so
-    switching references would purge the one just left — and #760 keeps up to
-    seven consulted series precisely so switching back is instant rather than a
-    two-hour rebuild. Bounded at :data:`CONSULTED_LIMIT`; the eighth evicts the
-    oldest, which becomes an orphan again.
+    switching references would purge the one just left — and #760 keeps the
+    consulted series alive precisely so switching back is instant rather than a
+    two-hour rebuild. Offered references only (#1034): switching back is a
+    click in the selector, so a reference the selector no longer holds is one
+    nothing will ever switch back to, and its series goes on the purge list
+    like any other orphan.
     """
     rows = store.query(
         'SELECT s.symbol, count(p.symbol) '
@@ -254,7 +267,7 @@ def currency_to_adopt(store, declared: Optional[str]) -> Optional[str]:
 
 
 __all__ = [
-    'LAST_WRITE_KEY', 'CONSULTED_KEY', 'CONSULTED_LIMIT', 'OrphanSymbol',
+    'LAST_WRITE_KEY', 'CONSULTED_KEY', 'OrphanSymbol',
     'consulted_benchmarks', 'record_consulted_benchmark',
     'forget_consulted_benchmark',
     'read_events', 'stamp', 'last_write', 'first_payments',

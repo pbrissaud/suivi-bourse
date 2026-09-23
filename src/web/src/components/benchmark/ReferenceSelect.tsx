@@ -6,10 +6,10 @@
  *  - the **inception** makes truncation visible before the choice. Without it a
  *    2024 fund silently costs an owner who started in 2013 eleven years of
  *    their own history, discovered after a rebuild they have already paid for.
- *  - the **download state** is what finally makes #760's own rule useful: up to
- *    seven consulted series are kept alive *precisely so switching back is
- *    instant*, and with no marker every switch is a coin flip between instant
- *    and two hours.
+ *  - the **download state** is what finally makes #760's own rule useful: the
+ *    series of a reference already consulted is kept alive *precisely so
+ *    switching back is instant*, and with no marker every switch is a coin
+ *    flip between instant and two hours.
  *
  * No section headings: a tax-wrapper eligibility split the list in two until
  * #1019, and the note under the group had to explain that the split meant

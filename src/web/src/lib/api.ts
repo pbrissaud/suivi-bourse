@@ -959,7 +959,9 @@ export interface BenchmarkResponse {
   /**
    * The references this install already holds a series for — the *déjà
    * téléchargé* column, and the only thing that makes #760's promise visible:
-   * up to seven consulted series are kept alive so switching back is instant.
+   * the series of an offered reference already consulted is kept alive so
+   * switching back is instant. Offered ones only (#1034): a reference this
+   * list can no longer propose is one nothing will ever switch back to.
    */
   consulted: string[]
   rebuild?: BenchmarkRebuild
