@@ -51,6 +51,10 @@ dependencies = [
     # nothing in this app emits a span or a metric, and the read that used to be
     # a gauge is still the health body and the runtime tab.
     "mcp>=2.1.0",
+    # Named because `mcp_server.reading()` imports it (#958): it holds each
+    # answer to the schema the tool publishes before the SDK does, with the
+    # same validator the SDK uses — so a refusal arrives in words.
+    "pydantic>=2.0",
 ]
 
 # Development / test tooling — installed by `uv sync`, excluded in Docker via UV_NO_DEV.

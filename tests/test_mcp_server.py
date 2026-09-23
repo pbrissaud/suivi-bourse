@@ -11,7 +11,10 @@ the SDK's transport and nothing of ours; what is ours is the routing, and that i
 held in ``test_mcp_wiring.py``.
 """
 import asyncio
-from datetime import date, datetime, timezone
+import json
+import math
+import re
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from mcp import Client
@@ -89,13 +92,10 @@ def listed(runtime):
 
 
 def payload(result):
-    """The structured payload of a successful call.
-
-    The SDK wraps a mapping return under ``result``; unwrapping it here keeps
-    that detail in one place rather than in every assertion.
-    """
+    """The structured payload of a successful call — the copy a client holds
+    to the tool's published schema (#958)."""
     assert result.is_error is False, _text(result)
-    return result.structured_content['result']
+    return result.structured_content
 
 
 def _text(result):
@@ -171,7 +171,7 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
 
 def test_the_positions_description_names_the_members_the_row_actually_has(
         tmp_path):
-    """**A description is the only schema an agent gets**, so a member it names
+    """**A description is what an agent reads closely**, so a member it names
     and the payload does not carry is worse than silence.
 
     This one promised `unit_cost`, `market_value` and an unrealised gain. None
@@ -180,25 +180,24 @@ def test_the_positions_description_names_the_members_the_row_actually_has(
     total as a price per unit and is wrong by a factor of the quantity held —
     the same shape as the two figures called a gain that #951 had to separate on
     screen.
+
+    Which members the row has is no longer asserted here: every citation is
+    resolved against the published schema, and every published member must be
+    cited (#958, below). What stays is the reading each one needs.
     """
-    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+    runtime, _ = build_runtime(tmp_path)
 
     described = ' '.join({tool.name: tool.description or ''
                           for tool in listed(runtime)
                           }['list_positions'].split())
-    served = payload(call(runtime, 'list_positions'))['positions']
 
-    assert served, 'the ledger must hold a position for this to mean anything'
-    for absent in ('unit_cost', 'market_value', 'plus_value_latente'):
-        assert absent not in served[0], absent
-    assert 'READ cost_basis AS A TOTAL' in described
+    assert 'READ `cost_basis` AS A TOTAL' in described
     assert 'THERE IS NO market_value MEMBER' in described
     # And the currency exception, which contradicts the shared paragraph unless
     # it says so: price.value is the only amount here not in base_currency.
     assert 'EXCEPTIONS TO THAT PARAGRAPH' in described
-    assert 'market_cap especially is NOT in base_currency' in described
-    assert set(served[0]) >= {'quantity', 'cost_basis', 'realised',
-                              'dividends', 'price', 'converted'}
+    assert ('`fundamentals.market_cap` especially is NOT in `base_currency`'
+            in described)
 
 
 def test_a_row_says_what_the_instrument_is_and_where_it_is_from(tmp_path):
@@ -307,11 +306,11 @@ def test_the_accounts_description_frames_the_tax_and_the_index(tmp_path):
     # a valid model can still project nothing.
     assert 'absent independently' in described
     assert 'NOT on any taxation model' in described
-    assert 'taxation_kind CAN RIDE WITHOUT A FIGURE' in described
+    assert '`taxation_kind` CAN RIDE WITHOUT A FIGURE' in described
     # And the figure is not rate times base: a loss floors the tax at 0 while
     # the base stays negative, and a ladder does not serve its bounds.
-    assert 'DO NOT RECOMPUTE projected_tax' in described
-    assert 'negative projected_base and a' in described
+    assert 'DO NOT RECOMPUTE `projected_tax`' in described
+    assert 'negative `projected_base` and a' in described
 
     assert 'twr_since' in described
     # The sentence that sold the comparison the payload cannot support.
@@ -336,7 +335,7 @@ def test_the_totals_description_names_the_day_its_own_index_counts_from(tmp_path
                           for tool in listed(runtime)
                           }['get_portfolio_totals'].split())
 
-    assert 'twr_index is based at 100 on twr_since' in described
+    assert '`twr_index` is based at 100 on `twr_since`' in described
     assert 'not a sign that the accounts outperformed' in described
     # **And no claim about which anchor comes first.** The aggregate is clipped
     # to `max([start] + bounds)`, but `bounds` covers only the accounts that
@@ -865,3 +864,390 @@ def test_a_broken_store_is_a_failed_read_and_not_an_absent_rhythm(tmp_path):
 
     assert result.is_error is True
     assert 'could not answer' in _text(result)
+
+
+# --------------------------------------------------------------------- #
+# The schema the tools publish (#958)
+# --------------------------------------------------------------------- #
+
+def served(runtime):
+    """Every tool listed and called once through the client, with no
+    argument: ``{name: (tool, result)}``."""
+    async def _run():
+        """One session for the listing and the six calls."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            tools = (await client.list_tools()).tools
+            return {tool.name: (tool, await client.call_tool(tool.name, {}))
+                    for tool in tools}
+    return asyncio.run(_run())
+
+
+def schema_paths(schema):
+    """Every member path an ``outputSchema`` declares, ``[]`` marking the
+    items of an array — through ``$defs``, ``anyOf`` and ``items``."""
+    defs = schema.get('$defs', {})
+
+    def _walk(node, prefix):
+        """One node of the schema, under the path that reached it."""
+        if '$ref' in node:
+            node = defs[node['$ref'].rsplit('/', 1)[-1]]
+        for option in node.get('anyOf', ()):
+            yield from _walk(option, prefix)
+        if node.get('type') == 'array':
+            yield from _walk(node['items'], prefix + '[]')
+        for name, child in node.get('properties', {}).items():
+            path = f'{prefix}.{name}' if prefix else name
+            yield path
+            yield from _walk(child, path)
+    return set(_walk(schema, ''))
+
+
+def observed_paths(value, prefix=''):
+    """The member paths a payload carries **with a value** — a null is a
+    member the fixture did not exercise."""
+    if isinstance(value, dict):
+        for name, child in value.items():
+            path = f'{prefix}.{name}' if prefix else name
+            if child is not None:
+                yield path
+            yield from observed_paths(child, path)
+    elif isinstance(value, list):
+        for item in value:
+            yield from observed_paths(item, prefix + '[]')
+
+
+def rich_runtime(tmp_path):
+    """A portfolio that makes **every** published member carry a value.
+
+    Most of them are absent or null until data produces them — ``twr_since``,
+    ``ytd``, ``closed_at``, ``market_cap``, the whole projection — and a check
+    run on a thin ledger agrees with the schema about nothing. So: two
+    declared accounts, a USD line on an EUR base with its fundamentals, a line
+    sold to zero, twelve months of buys, a projecting model whose rate change
+    is still ahead, and a perf series that crosses a year end. **Every day is
+    counted from today**, because the rhythm's window and ``ytd`` both end
+    today and fixed days would rot.
+    """
+    today = datetime.now(timezone.utc).date()
+    opened = store_module.open_store(tmp_path / 'store.duckdb')
+    opened.execute("INSERT INTO setting (key, value) "
+                   "VALUES ('base_currency', 'EUR')")
+    accounts_module.create_account(opened, 'pea', 'Mon PEA')
+    accounts_module.create_account(opened, 'cto')
+    entries.create_many(opened, [
+        Event(today - timedelta(days=400), EventType.DEPOSIT, amount=5000.0,
+              fee=1.0, account='pea'),
+        Event(today - timedelta(days=300), EventType.BUY, 'MSFT', 'Microsoft',
+              quantity=5, unit_price=300.0, fee=2.0,
+              notes='a line sold since', account='cto'),
+        Event(today - timedelta(days=100), EventType.SELL, 'MSFT',
+              'Microsoft', quantity=5, unit_price=350.0, fee=2.0,
+              account='cto'),
+        Event(today - timedelta(days=50), EventType.DIVIDEND, 'AAPL',
+              'Apple Inc', amount=2.4, account='pea'),
+    ] + rhythmic(12, 150.0, account='pea', symbol='AAPL'))
+    accounts_module.set_opened_on(opened, 'pea', today - timedelta(days=410))
+    model = accounts_module.create_model(
+        opened, 'PEA', 'aged_flat_realised',
+        {'rate_before': 0.128, 'rate_after': 0.0, 'threshold_years': 5,
+         'age_basis': 'first_payment', 'social_rate': 0.172})
+    accounts_module.set_taxation_model(opened, 'pea', model.id)
+    quotes.record_quote(
+        opened, 'AAPL', datetime.now(timezone.utc) - timedelta(hours=1),
+        200.0, {'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',
+                'dividend_yield': 0.005, 'pe_ratio': 30.0,
+                'market_cap': 3.0e12, 'sector': 'Technology',
+                'industry': 'Consumer Electronics',
+                'country': 'United States'},
+        184.0, 0.92)
+    year_end = date(today.year - 1, 12, 31)
+    perf_series.write_portfolio_totals(opened, [
+        PortfolioTotalPoint(day=day, cash_balance=100.0, holdings_value=1000.0,
+                            total_value=1100.0, net_contributed=1000.0,
+                            xirr=0.05, gain_absolu=gain, twr_index=index)
+        for day, gain, index in ((year_end, 100.0, 100.0),
+                                 (today, 220.0, 108.0))])
+    perf_series.write_account_metrics(opened, [
+        AccountMetricPoint(account='pea', day=day, cash_balance=10.0,
+                           holdings_value=1000.0, total_value=1010.0,
+                           net_contributed=1000.0, xirr=0.05,
+                           gain_absolu=10.0, twr_index=index)
+        for day, index in ((year_end, 100.0), (today, 105.0))])
+    manager = main.ConfigurationManager(config_dir=str(tmp_path),
+                                        opened_store=opened)
+    runtime = main.Runtime(manager, None)
+    runtime.store = opened
+    manager.reload()
+    return runtime
+
+
+def test_every_member_a_tool_publishes_is_served_with_a_value(tmp_path):
+    """**Schema ⊆ observed**, per tool, on the rich portfolio.
+
+    A member declared and never emitted fails here, and so does a fixture
+    that rotted until some member stopped carrying a value — which is what
+    keeps every other check in this section meaning something.
+    """
+    for name, (tool, result) in served(rich_runtime(tmp_path)).items():
+        assert result.is_error is False, (name, _text(result))
+        unseen = (schema_paths(tool.output_schema)
+                  - set(observed_paths(result.structured_content)))
+        assert not unseen, (name, sorted(unseen))
+
+
+def test_the_structured_copy_is_the_text_copy(tmp_path):
+    """**Nothing is dropped or changed between the two copies of an answer.**
+
+    The SDK holds the structured copy to the declared schema and sends the
+    text copy as the body returned it, so a member a builder gains without a
+    declaration here vanishes from one and stays in the other — silently.
+    Compared by value, with Python's equality: a ``5`` served as ``5.0`` is
+    the same figure, and a ``"3"`` served as ``3.0`` is not.
+    """
+    for name, (_, result) in served(rich_runtime(tmp_path)).items():
+        assert result.is_error is False, (name, _text(result))
+        assert json.loads(_text(result)) == result.structured_content, name
+
+
+def test_a_nan_is_served_as_a_null_and_not_as_a_crash(tmp_path, monkeypatch):
+    """Under a plain ``float`` the SDK dumps a NaN as ``null`` and the
+    **client** then refuses its own answer, so the call raises instead of
+    answering. Under ``Optional`` it is the null the absence rule already means.
+
+    The store is not where it comes from: the reader already turns a stored
+    NaN into None (``store_reads._stamp``), and that is asserted first so this
+    test keeps saying which guard it is about. What it holds is the second one
+    — a NaN that a builder's own arithmetic would produce.
+    """
+    from application.store_reads import PortfolioReader
+
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    opened.execute("UPDATE position SET quantity = 'NaN'::DOUBLE "
+                   "WHERE symbol = 'MSFT'")
+    (row,) = PortfolioReader(opened).positions('MSFT')
+    assert row['quantity'] is None
+
+    built = mcp_server.portfolio_view.build_positions
+    monkeypatch.setattr(
+        mcp_server.portfolio_view, 'build_positions',
+        lambda *args: [{**row, 'cost_basis': math.nan}
+                       for row in built(*args)])
+
+    rows = payload(call(runtime, 'list_positions'))['positions']
+
+    assert rows and all(row['cost_basis'] is None for row in rows)
+
+
+def test_an_answer_the_schema_refuses_arrives_in_words(tmp_path, monkeypatch):
+    """The fixture foresees what it foresees; the rest must still speak.
+
+    Left to the SDK, a value of the wrong kind comes back as a bare *"Error
+    executing tool <name>"*. Held to the schema in ``reading()`` first, the
+    refusal names the member, and it does not read as a broken store.
+    """
+    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+    built = mcp_server.portfolio_view.build_positions
+    monkeypatch.setattr(
+        mcp_server.portfolio_view, 'build_positions',
+        lambda *args: [{**row, 'quantity': 'ten'} for row in built(*args)])
+
+    result = call(runtime, 'list_positions')
+
+    assert result.is_error is True
+    assert 'does not match the schema' in _text(result)
+    assert 'quantity' in _text(result)
+    assert 'store could not answer' not in _text(result)
+
+
+# --------------------------------------------------------------------- #
+# Every citation resolves, and every member is cited (#958)
+# --------------------------------------------------------------------- #
+#
+# A description is the only schema a model reads closely, and nothing held it
+# to the schema the tool publishes: #955 corrected eight false claims, seven of
+# them found by driving the tools. The convention that makes it checkable is
+# the backtick — **a member in backticks is served**. The three checks below
+# are functions of a text and the tools' schemas, so the #955 defects can be
+# fed to them as text and watched failing, for as long as this suite runs.
+
+#: The one shape a citation may take: a member, or a dotted path to one.
+CITATION = re.compile(r'[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*')
+
+#: A token outside backticks that *could* be a member: snake_case or dotted.
+#: One-word members cannot be told from English there, and are not checked.
+BARE = re.compile(r'(?<![`\w.])[a-z][a-z0-9]*(?:[_.][a-z0-9]+)+(?![`\w])')
+
+
+def surface(tools):
+    """``{tool: (arguments, member paths)}`` — what a description may cite."""
+    return {tool.name: (set((tool.input_schema or {}).get('properties', {})),
+                        schema_paths(tool.output_schema))
+            for tool in tools}
+
+
+def named(token, paths):
+    """The paths a token names — **one resolver for every rule here**.
+
+    Its full spelling (``accounts.monthly_amount``, ``[]`` dropped) names that
+    path; otherwise a partial suffix names the one path it ends, and names
+    nothing when it ends several. A bare `currency` on ``list_positions`` ends
+    three paths and says which of them it means about none.
+    """
+    spelt = {path: path.replace('[]', '') for path in paths}
+    whole = {path for path, spelling in spelt.items() if spelling == token}
+    if whole:
+        return whole
+    tail = {path for path, spelling in spelt.items()
+            if spelling.endswith('.' + token)}
+    return tail if len(tail) == 1 else set()
+
+
+def elsewhere(token, tools):
+    """The paths a ``<tool>.<member>`` token names in that other tool."""
+    head, _, rest = token.partition('.')
+    return named(rest, tools[head][1]) if rest and head in tools else set()
+
+
+def unresolved_citations(text, tool, tools):
+    """Every backtick span that is not a tool, an argument, a member of this
+    tool, or ``<tool>.<member>`` of another. ``tool`` is None for the server's
+    instructions, which belong to no tool."""
+    arguments, paths = tools[tool] if tool is not None else (set(), set())
+    for token in re.findall(r'`([^`]*)`', text):
+        if not CITATION.fullmatch(token):
+            yield token
+        elif not (token in tools or token in arguments
+                  or named(token, paths) or elsewhere(token, tools)):
+            yield token
+
+
+def served_but_bare(text, tool, tools):
+    """Every token outside backticks that names a served member — which is
+    what keeps a sentence *without* backticks honest when it says there is
+    no such member."""
+    paths = tools[tool][1] if tool is not None else set()
+    for token in BARE.findall(re.sub(r'`[^`]*`', ' ', text)):
+        token = token.rstrip('.')
+        if named(token, paths) or elsewhere(token, tools):
+            yield token
+
+
+def uncited(text, tool, tools):
+    """Every member this tool publishes that no citation names alone."""
+    paths = tools[tool][1]
+    cited = set()
+    for token in re.findall(r'`([^`]*)`', text):
+        cited |= named(token, paths)
+    return paths - cited
+
+
+def instructions(runtime):
+    """The server's instructions, as the client receives them."""
+    async def _handshake():
+        """Through the client, as :func:`listed` is."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            return client.instructions or ''
+    return asyncio.run(_handshake())
+
+
+def test_every_tool_publishes_the_schema_of_what_it_serves(tmp_path):
+    """Not the ``{"result": object}`` every tool published while it was
+    annotated ``Dict[str, Any]`` — the members themselves."""
+    runtime, _ = build_runtime(tmp_path)
+
+    for tool in listed(runtime):
+        assert 'result' not in tool.output_schema['properties'], tool.name
+        assert len(schema_paths(tool.output_schema)) > 5, tool.name
+
+
+def test_every_citation_in_a_description_is_served(tmp_path):
+    """A member in backticks is a promise, and this is who keeps it."""
+    runtime, _ = build_runtime(tmp_path)
+    tools = listed(runtime)
+    known = surface(tools)
+
+    for tool in tools:
+        assert not list(unresolved_citations(tool.description, tool.name,
+                                             known)), tool.name
+    assert not list(unresolved_citations(instructions(runtime), None, known))
+
+
+def test_no_served_member_is_named_outside_backticks(tmp_path):
+    """The converse, and the only thing standing behind a negation.
+
+    "THERE IS NO market_value MEMBER" is written bare because it is not
+    served; the day it is, this sentence fails here instead of lying.
+    """
+    runtime, _ = build_runtime(tmp_path)
+    tools = listed(runtime)
+    known = surface(tools)
+
+    for tool in tools:
+        assert not list(served_but_bare(tool.description, tool.name,
+                                        known)), tool.name
+    assert not list(served_but_bare(instructions(runtime), None, known))
+
+
+def test_every_served_member_is_cited(tmp_path):
+    """The reverse direction: a member a builder gains while the description
+    stays behind fails here — and so does a citation too vague to say which
+    member it means."""
+    runtime, _ = build_runtime(tmp_path)
+    tools = listed(runtime)
+    known = surface(tools)
+
+    for tool in tools:
+        assert not uncited(tool.description, tool.name, known), \
+            (tool.name, sorted(uncited(tool.description, tool.name, known)))
+
+
+# The #955 defects, as text, fed to the same three checks. Each case is a
+# sentence the published descriptions once carried or could carry, and each
+# must fail — otherwise the checks above pass because the descriptions are
+# right today, not because anything would notice them going wrong.
+
+def _positions(tmp_path):
+    """The real surface, and the real ``list_positions`` description."""
+    runtime, _ = build_runtime(tmp_path)
+    tools = listed(runtime)
+    return surface(tools), {tool.name: tool.description
+                            for tool in tools}['list_positions']
+
+
+def test_a_member_the_row_does_not_carry_fails_as_a_citation(tmp_path):
+    known, _ = _positions(tmp_path)
+
+    said = 'Each row carries `unit_cost` and `market_value`.'
+
+    assert list(unresolved_citations(said, 'list_positions', known)) == \
+        ['unit_cost', 'market_value']
+
+
+def test_dropping_the_currency_of_price_and_fundamentals_fails_as_uncited(
+        tmp_path):
+    known, described = _positions(tmp_path)
+
+    said = (described.replace('`price.currency`', 'its currency')
+                     .replace('`fundamentals.currency`', 'its own currency'))
+
+    assert {path.replace('[]', '')
+            for path in uncited(said, 'list_positions', known)} == \
+        {'positions.price.currency', 'positions.fundamentals.currency'}
+
+
+def test_a_served_member_written_bare_fails(tmp_path):
+    known, _ = _positions(tmp_path)
+
+    said = 'The holding is worth quantity x converted.value.'
+
+    assert list(served_but_bare(said, 'list_positions', known)) == \
+        ['converted.value']
+
+
+def test_a_citation_that_names_several_members_names_none(tmp_path):
+    known, _ = _positions(tmp_path)
+
+    said = 'The instrument is quoted in `currency`.'
+
+    assert list(unresolved_citations(said, 'list_positions', known)) == \
+        ['currency']
