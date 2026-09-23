@@ -772,3 +772,50 @@ def test_the_shared_start_is_a_day_the_fund_was_quoted_on(named):
     assert first['reference'] == pytest.approx(1800.0)
     assert payload['reference_value'] == pytest.approx(1800.0)
     assert payload['gap_gross'] == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
+# The shared window, per account (#1032)
+# --------------------------------------------------------------------------- #
+
+def test_the_shared_rows_sum_to_the_head_and_the_own_rows_do_not(named):
+    """The table under the head has to have a column that is its breakdown.
+
+    The ticket's own case, in miniature: `pea` has run since 1 January and
+    `cto` opened on 1 February, the day the fund doubles. Over its own window
+    the PEA is a thousand euros behind a reference that had all of January to
+    grow; over the shared window both accounts open on the pot they really
+    held and the head is exactly zero.
+
+    Both are true and they answer two questions — which is why the screen has
+    to publish both. Added up, the own-window rows land a thousand euros from
+    the figure above them; the shared ones land on it.
+    """
+    _double_the_reference_in_february(named)
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29',
+                 value=1000.0)
+    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29',
+                 value=500.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _invest('2024-02-01', 'cto', 500.0)],
+                         accounts=('pea', 'cto')), NOW)
+
+    shared = {row['account']: row for row in payload['per_account_shared']}
+    assert sorted(shared) == payload['accounts']
+    assert sum(row['gap_gross'] for row in payload['per_account_shared']) == (
+        pytest.approx(payload['gap_gross']))
+    assert sum(row['reference_value']
+               for row in payload['per_account_shared']) == (
+        pytest.approx(payload['reference_value']))
+    # Re-seeded on the shared first day, at the pot the account really held.
+    assert shared['pea']['portfolio_value'] == pytest.approx(1000.0)
+    assert shared['pea']['reference_value'] == pytest.approx(1000.0)
+    assert shared['pea']['contributed'] == pytest.approx(1000.0)
+    assert shared['pea']['gap_gross'] == pytest.approx(0.0)
+
+    # And #1014's rows are untouched — they are not a breakdown, and the whole
+    # point of publishing a second column is that this sum is a different one.
+    assert sum(row['gap_gross'] for row in payload['per_account']) == (
+        pytest.approx(-1000.0))

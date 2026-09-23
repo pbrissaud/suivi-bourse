@@ -911,6 +911,24 @@ export interface BenchmarkAccountRow {
   reference_return: number | null
 }
 
+/**
+ * The same account on the **shared** window, after the re-seed (#1032).
+ *
+ * The terms the head is summed from, published instead of discarded: these
+ * gaps add up to `gap_gross`, which the own-window rows never could. Two rows
+ * both ahead of the reference under a head that is behind is not a
+ * contradiction — it is two questions — and the screen has to carry both
+ * columns for that to be readable rather than alarming.
+ */
+export interface BenchmarkSharedRow {
+  account: string
+  portfolio_value: number | null
+  reference_value: number | null
+  /** The denominator both sides of the row share. */
+  contributed: number | null
+  gap_gross: number | null
+}
+
 /** One day of the two curves, on a shared axis. */
 export interface BenchmarkPoint {
   t: string
@@ -978,6 +996,8 @@ export interface BenchmarkResponse {
   date_effect?: number | null
   /** The same comparison per account, each over its own window (#1014). */
   per_account?: BenchmarkAccountRow[]
+  /** And per account over the head's own window, which sums to it (#1032). */
+  per_account_shared?: BenchmarkSharedRow[]
   series?: BenchmarkPoint[]
 }
 

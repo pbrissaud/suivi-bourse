@@ -465,3 +465,99 @@ describe('each account over its own period', () => {
     expect(screen.queryByText('PEA.LCL')).not.toBeInTheDocument()
   })
 })
+
+describe('the shared period, per account (#1032)', () => {
+  /** The ticket's own case: a PEA since 2019 beside a CTO opened in 2024. */
+  const OWN = [
+    {
+      account: 'PEA.LCL',
+      covered_from: '2019-11-21',
+      covered_to: '2026-09-22',
+      ended: null,
+      portfolio_value: 7_131.12,
+      reference_value: 3_613.25,
+      gap_gross: 3_517.87,
+      portfolio_return: 0.0298,
+      reference_return: -0.4785,
+    },
+    {
+      account: 'CTO.TR',
+      covered_from: '2024-02-26',
+      covered_to: '2026-09-22',
+      ended: null,
+      portfolio_value: 7_918.17,
+      reference_value: 8_590.45,
+      gap_gross: -672.28,
+      portfolio_return: 0.1549,
+      reference_return: 0.2529,
+    },
+  ]
+
+  /** The same two accounts read on the shared day, after the re-seed. */
+  const SHARED = [
+    {
+      account: 'PEA.LCL',
+      portfolio_value: 7_131.12,
+      reference_value: 10_649.0,
+      contributed: 8_222.57,
+      gap_gross: -3_517.88,
+    },
+    {
+      account: 'CTO.TR',
+      portfolio_value: 7_918.17,
+      reference_value: 8_590.45,
+      contributed: 6_856.33,
+      gap_gross: -672.28,
+    },
+  ]
+
+  const both = () =>
+    ready({
+      covered_from: '2024-02-26',
+      covered_to: '2026-09-22',
+      gap_gross: -4_190.16,
+      per_account: OWN,
+      per_account_shared: SHARED,
+    })
+
+  it('gives each account the head’s own period beside its own', async () => {
+    renderBenchmark(both())
+
+    // The row that made the ticket: over its own life since 2019 the PEA is
+    // ahead, over the period the head names it is 3 518 € behind. Both are
+    // true, and a table that publishes only the first reads as a breakdown of
+    // a figure it contradicts.
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText('-3 517,88 €')).toBeInTheDocument()
+    expect(within(row).getByText('+3 517,87 €')).toBeInTheDocument()
+    expect(within(row).getByText(/2019/)).toBeInTheDocument()
+  })
+
+  it('adds the shared column up to the head figure, at the foot of that column', async () => {
+    renderBenchmark(both())
+
+    // −3 517,88 − 672,28 = −4 190,16, which is the head. The point of the
+    // total row is that the reader can check the addition without leaving the
+    // table — and that adding the *other* column is visibly a different sum.
+    const total = (await screen.findByText('Ensemble des comptes')).closest('tr') as HTMLElement
+    expect(within(total).getByText('-4 190,16 €')).toBeInTheDocument()
+    expect(within(await head()).getByText('-4 190,16 €')).toBeInTheDocument()
+  })
+
+  it('drops the column where there is no shared period to state', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      excluded_accounts: [],
+      per_account: OWN,
+    })
+
+    // No intersection, no head, nothing to sum to: #1014's table stands alone
+    // rather than growing an empty column of em dashes.
+    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    expect(within(row).getByText('+3 517,87 €')).toBeInTheDocument()
+    expect(screen.queryByText('Ensemble des comptes')).not.toBeInTheDocument()
+  })
+})

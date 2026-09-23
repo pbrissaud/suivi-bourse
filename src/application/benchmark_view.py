@@ -50,6 +50,15 @@ first by years it has every right to be judged on. ``per_account`` publishes
 each account's own window beside it, off the replays ``_by_account`` was
 already computing and ``_aggregate`` was discarding.
 
+**And the shared window is published per account too** (#1032). A table under
+a headline figure is read as its breakdown, and the own-window rows are not
+one: two accounts both ahead of the reference sit under a head that is behind,
+and a reader who adds two rows lands hundreds of euros from the figure above.
+``per_account_shared`` carries the terms read on ``covered_to`` after the
+re-seed — the ones ``_aggregate`` summed one line below and threw away — so the
+screen has a column that adds up to the head beside the column that answers
+each wrapper on its own life.
+
 **#983 splits the gap in two, and only one of the halves is new.** `gap_gross`
 already answers *what did my securities do* — the reference ran the owner's own
 flows on the owner's own days, so the dates are common to both sides and cancel
@@ -464,6 +473,12 @@ def _aggregate(replayed: Dict[str, Any], reseed, opened: Dict[str, date],
         # but they are what makes that gap checkable, and `gap_gross` alone
         # cannot tell 2 000 against 2 000 from 12 000 against 12 000.
         'accounts': sorted(replayed),
+        # **The same terms, per account, before they were summed** (#1032).
+        # The table under the head is read as its breakdown and #1014's rows
+        # are not one: each is measured over its own window, so two rows that
+        # are both ahead sit under a head that is behind, and adding them lands
+        # euros away from the figure above. These add up.
+        'per_account_shared': _shared_rows(replayed, at_covered, covered_to),
         'portfolio_value': portfolio,
         'reference_value': reference,
         'gap_gross': None if portfolio is None else portfolio - reference,
@@ -520,6 +535,37 @@ def _rows(replayed: Dict[str, Any]) -> List[Dict[str, Any]]:
                           else portfolio - reference),
             'portfolio_return': _return(portfolio, contributed),
             'reference_return': _return(reference, contributed),
+        })
+    return rows
+
+
+def _shared_rows(replayed: Dict[str, Any], at_covered: Dict[str, Any],
+                 day: date) -> List[Dict[str, Any]]:
+    """Each account's terms on the covered day, **after the re-seed** (#1032).
+
+    These are the very terms the head is summed from — they were computed one
+    line above the sum and thrown away, the same defect shape #1014 fixed. A
+    table that sits under a headline figure is read as its breakdown, and
+    #1014's rows are not one: each is measured over its own window, so a PEA
+    running since 2019 reads +3 % beside a head that is negative, and two rows
+    a reader adds land hundreds of euros from the figure above. Published
+    beside them, these gaps sum to ``gap_gross``.
+
+    ``contributed`` travels too: it is the denominator both sides of a row
+    share, so it is what makes the row checkable rather than merely readable.
+    """
+    rows = []
+    for account in sorted(at_covered):
+        snap = at_covered[account]
+        portfolio = replayed[account][1].get(day)
+        reference = snap.value if snap else None
+        rows.append({
+            'account': account,
+            'portfolio_value': portfolio,
+            'reference_value': reference,
+            'contributed': snap.contributed if snap else None,
+            'gap_gross': (None if portfolio is None or reference is None
+                          else portfolio - reference),
         })
     return rows
 
