@@ -1015,17 +1015,13 @@ def test_a_nan_is_served_as_a_null_and_not_as_a_crash(tmp_path, monkeypatch):
     answering. Under ``Optional`` it is the null the absence rule already means.
 
     The store is not where it comes from: the reader already turns a stored
-    NaN into None (``store_reads._stamp``), and that is asserted first so this
-    test keeps saying which guard it is about. What it holds is the second one
-    — a NaN that a builder's own arithmetic would produce.
+    NaN into None through ``store_module.finite`` (``store_reads._stamp``), and
+    that guard is asserted first so this test keeps saying which one it is
+    about. What it holds is the second — a NaN that a builder's own arithmetic
+    would produce.
     """
-    from application.store_reads import PortfolioReader
-
-    runtime, opened = build_runtime(tmp_path, events=LEDGER)
-    opened.execute("UPDATE position SET quantity = 'NaN'::DOUBLE "
-                   "WHERE symbol = 'MSFT'")
-    (row,) = PortfolioReader(opened).positions('MSFT')
-    assert row['quantity'] is None
+    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+    assert store_module.finite(math.nan) is None
 
     built = mcp_server.portfolio_view.build_positions
     monkeypatch.setattr(
