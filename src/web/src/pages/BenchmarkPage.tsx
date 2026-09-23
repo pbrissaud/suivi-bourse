@@ -25,6 +25,12 @@
  *    has to stop at the youngest account's start — but a table under it gives
  *    each account its own period, gap and returns, so that opening a CTO in
  *    2024 no longer takes a 2019 PEA out of the only screen that judges it.
+ *  - **And that table carries a column that sums to the head** (#1032). Sitting
+ *    under a headline figure, it is read as its breakdown, and the own-window
+ *    column is not one: a reader adds two rows and lands hundreds of euros
+ *    away, or concludes both accounts beat a portfolio that is behind. The
+ *    shared-window gaps are the head's own terms, so they add up — and the
+ *    total row prints the head figure at the foot of that column to say so.
  *  - **No range control.** A counterfactual replays the flows from the
  *    beginning: narrowing it to a year does not shorten the answer, it asks a
  *    different question. The page announces the period it covers instead.
@@ -58,7 +64,6 @@ import {
 } from '@/components/ui/table'
 import {
   api,
-  type BenchmarkAccountRow,
   type BenchmarkExclusion,
   type BenchmarkResponse,
 } from '@/lib/api'
@@ -177,7 +182,7 @@ export default function BenchmarkPage() {
             }
           />
         )}
-        <PerAccount rows={rows} currency={currency} />
+        <PerAccount data={data} currency={currency} />
         <Excluded rows={data.excluded_accounts ?? []} />
         {controls}
       </div>
@@ -192,7 +197,7 @@ export default function BenchmarkPage() {
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
       <Head data={data} currency={currency} />
-      <PerAccount rows={data.per_account ?? []} currency={currency} />
+      <PerAccount data={data} currency={currency} />
       {controls}
       <BenchmarkChart
         points={data.series ?? []}
@@ -317,7 +322,8 @@ function DateEffect({ data, currency }: { data: BenchmarkResponse; currency: str
 }
 
 /**
- * Each account against the reference, over **its own** period (#1014).
+ * Each account against the reference — over the **shared** period, then over
+ * its own (#1014, #1032).
  *
  * The head sums over the intersection of the accounts' periods, and that
  * intersection is the *youngest* account's start: a CTO opened in 2024 pushes
@@ -326,6 +332,14 @@ function DateEffect({ data, currency }: { data: BenchmarkResponse; currency: str
  * judgement of the first. The replays are already there — the server runs one
  * per account over its own window to build the head — so this table publishes
  * them rather than recomputing anything.
+ *
+ * **Two columns, because a table under a figure is read as its breakdown**
+ * (#1032). The own-window column is not one: it is measured over a different
+ * period per row, so two accounts both ahead of the reference sit under a head
+ * that is behind, and a reader who adds two rows lands hundreds of euros from
+ * the figure above. The shared column adds up — it is literally the terms the
+ * head was summed from — and the total row under it says so by printing the
+ * head figure again at the foot of that column.
  *
  * **Below the head, never instead of it.** A single headline figure has to name
  * a single period, so the aggregate keeps the intersection; these rows explain
@@ -337,17 +351,17 @@ function DateEffect({ data, currency }: { data: BenchmarkResponse; currency: str
  * figure by figure and the period with it. The table exists to show the
  * divergence between windows; with one window there is none.
  */
-function PerAccount({
-  rows,
-  currency,
-}: {
-  rows: readonly BenchmarkAccountRow[]
-  currency: string | null
-}) {
+function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: string | null }) {
   const { t } = useI18n()
   const f = useFormatters()
 
+  const rows = data.per_account ?? []
   if (rows.length < 2) return null
+
+  // Absent on `nothing_to_compare`: no intersection, so no shared window to
+  // state and the table is #1014's alone. The column follows the aggregate.
+  const shared = new Map((data.per_account_shared ?? []).map((row) => [row.account, row]))
+  const hasShared = shared.size > 0 && Boolean(data.covered_from)
 
   return (
     <section className="rounded-xl border bg-card">
@@ -358,6 +372,11 @@ function PerAccount({
           <TableHeader>
             <TableRow>
               <TableHead>{t('benchmark.accounts.column.account')}</TableHead>
+              {hasShared ? (
+                <TableHead className="text-right">
+                  {t('benchmark.accounts.column.gapShared')}
+                </TableHead>
+              ) : null}
               <TableHead>{t('benchmark.accounts.column.period')}</TableHead>
               <TableHead className="text-right">{t('benchmark.accounts.column.gap')}</TableHead>
               <TableHead className="text-right">{t('benchmark.term.yours')}</TableHead>
@@ -365,40 +384,70 @@ function PerAccount({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.account}>
-                <TableCell className="font-medium">{row.account}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {t('benchmark.accounts.period', {
-                    from: f.date(row.covered_from),
-                    to: f.date(row.covered_to),
-                  })}
-                  {/* Its own reason, on its own row: the head names the account
-                      that closed the *aggregate*, which is rarely this one. */}
-                  {row.ended === null ? null : (
-                    <span className="block text-2xs">
-                      {t(
-                        row.ended === 'exhausted'
-                          ? 'benchmark.accounts.ended.exhausted'
-                          : 'benchmark.accounts.ended.awaitingRate',
-                      )}
-                    </span>
-                  )}
+            {rows.map((row) => {
+              const common = shared.get(row.account)?.gap_gross ?? null
+              return (
+                <TableRow key={row.account}>
+                  <TableCell className="font-medium">{row.account}</TableCell>
+                  {hasShared ? (
+                    <TableCell className={`text-right tabular ${signClass(common)}`}>
+                      {common === null ? '—' : f.signedCurrency(common, currency)}
+                    </TableCell>
+                  ) : null}
+                  <TableCell className="text-muted-foreground">
+                    {t('benchmark.accounts.period', {
+                      from: f.date(row.covered_from),
+                      to: f.date(row.covered_to),
+                    })}
+                    {/* Its own reason, on its own row: the head names the account
+                        that closed the *aggregate*, which is rarely this one. */}
+                    {row.ended === null ? null : (
+                      <span className="block text-2xs">
+                        {t(
+                          row.ended === 'exhausted'
+                            ? 'benchmark.accounts.ended.exhausted'
+                            : 'benchmark.accounts.ended.awaitingRate',
+                        )}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className={`text-right tabular ${signClass(row.gap_gross)}`}>
+                    {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
+                  </TableCell>
+                  <TableCell className={`text-right tabular ${signClass(row.portfolio_return)}`}>
+                    {points(f, row.portfolio_return)}
+                  </TableCell>
+                  <TableCell className={`text-right tabular ${signClass(row.reference_return)}`}>
+                    {points(f, row.reference_return)}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+            {/* The head figure at the foot of the column that sums to it. The
+                same number as above, on purpose: the claim being made is that
+                these rows add up to it, and the only way to make that claim
+                checkable is to print it where the addition ends. */}
+            {hasShared ? (
+              <TableRow className="font-medium">
+                <TableCell>{t('benchmark.accounts.total')}</TableCell>
+                <TableCell
+                  className={`text-right tabular ${signClass(data.gap_gross ?? null)}`}
+                >
+                  {data.gap_gross === null || data.gap_gross === undefined
+                    ? '—'
+                    : f.signedCurrency(data.gap_gross, currency)}
                 </TableCell>
-                <TableCell className={`text-right tabular ${signClass(row.gap_gross)}`}>
-                  {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
-                </TableCell>
-                <TableCell className={`text-right tabular ${signClass(row.portfolio_return)}`}>
-                  {points(f, row.portfolio_return)}
-                </TableCell>
-                <TableCell className={`text-right tabular ${signClass(row.reference_return)}`}>
-                  {points(f, row.reference_return)}
-                </TableCell>
+                <TableCell colSpan={4} />
               </TableRow>
-            ))}
+            ) : null}
           </TableBody>
         </Table>
       </div>
+      {hasShared ? (
+        <p className="max-w-prose border-t px-5 py-3 text-sm text-muted-foreground">
+          {t('benchmark.accounts.shared', { from: f.date(data.covered_from as string) })}
+        </p>
+      ) : null}
     </section>
   )
 }
