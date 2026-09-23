@@ -183,8 +183,8 @@ mistake a refusal:
 - **An event file naming an undeclared account is not imported at all** — not
   partially — and the message names the account you have to declare.
 - **An empty `account` column means `default`** for as long as no *real*
-  account exists — real meaning any account that is not the seeded `default`
-  (ADR-0008, ADR-0013). From the moment one does, an empty column is an
+  account exists — real meaning any account that is not the seeded `default`.
+  From the moment one does, an empty column is an
   **error**: at that point a blank cell is far more likely to be an omission
   than a choice, and guessing would silently pile a second account's events onto
   the first.

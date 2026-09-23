@@ -3,8 +3,8 @@ title: Coming from v4
 description: Everything is redone, accounts are redeclared, which figures are meant to differ — and how to go back
 ---
 
-A version 5 install is a **new install whose import folder happens to be full**
-(ADR-0008). There is no upgrade path, no migration command and no version
+A version 5 install is a **new install whose import folder happens to be full**.
+There is no upgrade path, no migration command and no version
 detection: you start a new container beside the old one, hand it the event files
 version 4 was already reading, and let it rebuild the history from scratch.
 
@@ -57,7 +57,7 @@ same six, and a column neither version knows is ignored rather than refused. Bot
 `.csv` and `.xlsx` are read, every sheet of a workbook included, so the files
 sitting in your version 4 `events/` directory go over as they are.
 
-That continuity is deliberate and it is the only one there is (ADR-0008). Its
+That continuity is deliberate and it is the only one there is. Its
 load-bearing half is the rule about the account column: **an empty `account`
 means `default`** for as long as no real account has been declared, which is
 version 4's own rule minus its opt-in.
@@ -66,8 +66,8 @@ What changes is not the file, it is what has to exist before you hand it over.
 
 ## Your accounts {#your-accounts}
 
-An account is user data, declared **in the app** and nowhere else (ADR-0034).
-There is no file that carries a declaration, in either direction.
+An account is user data, declared **in the app** and nowhere else. There is no
+file that carries a declaration, in either direction.
 
 **If version 4 had no `accounts:` block**, there is nothing to do. Your install
 already owns one account, called `default`, your rows carry an empty `account`
@@ -78,10 +78,9 @@ column, and the two meet. Rename it on the *Accounts* page whenever you like.
 whole of the continuity. `label` carries over as it was; `type` has nowhere to
 go either — version 5 asks for no account type, so put what it said into the
 name if you want to keep it — and `currency` has nowhere to go because version 5
-has one reporting currency for the whole install and none on an account at all
-(ADR-0002). A file naming an account you
-have not declared is **not imported at all** — not partially — and the message
-names the account. See
+has one reporting currency for the whole install and none on an account at all.
+A file naming an account you have not declared is **not imported at all** — not
+partially — and the message names the account. See
 [Declaring your accounts](./import-your-events.mdx#declaring-your-accounts).
 
 **`settings.yaml` is named and never read.** Its `accounts:` block mixed
@@ -94,8 +93,8 @@ with a pointer back to this page, and nothing is written.
 
 `~/.config/SuiviBourse` — whatever `SB_CONFIG_DIR` pointed at — has **no reader
 in version 5**. Not a deprecated one, not a fallback one: the app opens no
-configuration directory at all, and a file reaches it only by being handed over
-(ADR-0032).
+configuration directory at all, and a file reaches it only by being handed
+over.
 
 **Copy that directory somewhere before you start**, and keep it. It is where
 your event files live, and it is what version 4 will want back if you go back.
@@ -136,18 +135,18 @@ If one of those three disagrees, the import is what to look at — an account th
 took rows it should not have, or a file you handed over twice. Everything below
 is meant to disagree.
 
-**What is deliberately corrected**, and the record that decides it:
+**What is deliberately corrected:**
 
-| Figure | Version 4 | Version 5 | Decided by |
-|---|---|---|---|
-| Cost of a position | weighted average, with the transaction fee counted in a separate total beside it | weighted average with the **acquisition fee absorbed into the cost**, and the disposal fee taken out of the proceeds | ADR-0003 |
-| A free share (`GRANT`) | always free, valued at **the market price on the day it landed**, and counted as an in-kind contribution | valued at **the price its own row declares**, or at nothing at all — with a price it is a taxed award, without one it is dilution | ADR-0003 |
-| Your gain | one composite figure, `total value − contributions`, grants included in the contributions | **four named terms whose sum is its definition**: latent, realized, dividends, minus fees taken from your transfers | ADR-0018 |
-| A position with no price | counted as **zero**, which understates the account | **carried at its own cost**, so its latent gain is exactly zero rather than a loss | ADR-0004 |
-| The reporting currency | one per account, and portfolio totals only when every account shared one | **one for the whole install**, on every figure, with only prices ever converted | ADR-0002 |
-| Money-weighted return | XIRR over your cash flows **and** grants valued at market | the same rate, over cash flows and grants at their declared price | ADR-0003 |
-| Time-weighted return | base-100 index, re-anchored as the backfill filled earlier history | the same index, **re-based on every cycle** while the rebuild runs, with its base date shown beside it until it settles | ADR-0009 |
-| Price history | whatever your InfluxDB accumulated, at the fineness it was written | **refetched from scratch** and aged by the resolution ladder — hourly past a year, daily past two | ADR-0001, ADR-0010 |
+| Figure | Version 4 | Version 5 |
+|---|---|---|
+| Cost of a position | weighted average, with the transaction fee counted in a separate total beside it | weighted average with the **acquisition fee absorbed into the cost**, and the disposal fee taken out of the proceeds |
+| A free share (`GRANT`) | always free, valued at **the market price on the day it landed**, and counted as an in-kind contribution | valued at **the price its own row declares**, or at nothing at all — with a price it is a taxed award, without one it is dilution |
+| Your gain | one composite figure, `total value − contributions`, grants included in the contributions | **four named terms whose sum is its definition**: latent, realized, dividends, minus fees taken from your transfers |
+| A position with no price | counted as **zero**, which understates the account | **carried at its own cost**, so its latent gain is exactly zero rather than a loss |
+| The reporting currency | one per account, and portfolio totals only when every account shared one | **one for the whole install**, on every figure, with only prices ever converted |
+| Money-weighted return | XIRR over your cash flows **and** grants valued at market | the same rate, over cash flows and grants at their declared price |
+| Time-weighted return | base-100 index, re-anchored as the backfill filled earlier history | the same index, **re-based on every cycle** while the rebuild runs, with its base date shown beside it until it settles |
+| Price history | whatever your InfluxDB accumulated, at the fineness it was written | **refetched from scratch** and aged by the resolution ladder — hourly past a year, daily past two |
 
 Two of those are worth a sentence more, because they are the two that move a
 headline figure by a visible amount.

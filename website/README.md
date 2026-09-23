@@ -5,7 +5,7 @@ static website generator. Dependencies are managed with
 [pnpm](https://pnpm.io/).
 
 The documentation is **versioned, and every version has an address** — the
-current one included (ADR-0025). The `docs/` folder holds **v5**, served at
+current one included. The `docs/` folder holds **v5**, served at
 `/docs/v5`; `versioned_docs/version-4.x/` and `versioned_docs/version-3.x/` hold
 the frozen **v4** and **v3** docs, at `/docs/v4` and `/docs/v3`. Use the version
 selector in the navbar to switch between them. To snapshot a new version, run
@@ -29,10 +29,9 @@ French. The segment is frozen at the **major**: a 5.1 install still reads
 ## Translation
 
 The site ships in English and French. **English is the source**, not one of two
-translations (ADR-0024): the corpus is written in English, [Crowdin][crowdin]
-reads it, French comes back. There is **one** project for the whole product, the
-site and the interface's catalogue alike (ADR-0024, amended by #739) — a
-translation memory is per-project, so two projects would let the app and the page
+translations: the corpus is written in English, [Crowdin][crowdin] reads it,
+French comes back. There is **one** project for the whole product, the site and
+the interface's catalogue alike (#739) — a translation memory is per-project, so two projects would let the app and the page
 that explains it name the same figure two ways. Its configuration is therefore
 `crowdin.yml` at the **repository root**, not here: it is the only place that can
 name both halves.
@@ -73,7 +72,7 @@ serves the English source under `/fr/` in the meantime.
 
 Syncing is the [Crowdin CLI][cli] run against `crowdin.yml`, which lives at the
 **repository root** and covers the whole product in one project — the site and
-the interface's catalogue alike (ADR-0024, amended by #739). The project and its
+the interface's catalogue alike (#739). The project and its
 token come from the environment, `CROWDIN_PROJECT_ID` and
 `CROWDIN_PERSONAL_TOKEN`, so the file carries no secret and the GitHub
 integration can read the same one:
