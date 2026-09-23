@@ -87,10 +87,27 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
 
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: api.taxationModels })
   // The reporting currency — the ladder's missing unit (#953). Read here off
-  // the query the page already holds, so it is a cache hit and no second
-  // request leaves; threaded down instead it would cross `AccountForm`, which
-  // has no other use for it and would carry the prop only to hand it on.
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  // the query the page already holds rather than threaded down, which would
+  // cross `AccountForm`, a form with no other use for it that would carry the
+  // prop only to hand it on.
+  //
+  // **`refetchOnMount: false` because this dial cannot move under the field.**
+  // It is the whole argument of this change: the currency is refused a second
+  // answer the moment one event exists and the front presents it as fixed from
+  // the first. A second observer on the default would still re-ask on every
+  // mount past `staleTime` — the panel is opened per account, so that is one
+  // `GET /api/config` per account visited — to be told the same code back.
+  //
+  // It does not cost the cold path: `shouldLoadOnMount` is evaluated before the
+  // `refetchOnMount` branch, so a cache with no config in it still fetches, and
+  // a form opened on a fresh reload gets its unit. Nor does it cost the one
+  // gesture that *can* move the dial: `DialsBlock` invalidates `['config']`,
+  // and an invalidation reaches mounted observers whatever this flag says.
+  const config = useQuery({
+    queryKey: ['config'],
+    queryFn: api.config,
+    refetchOnMount: false,
+  })
   const currency = baseCurrency(config.data?.settings)
   const [editor, setEditor] = useState<Editor | null>(null)
 
