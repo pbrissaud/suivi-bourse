@@ -51,7 +51,7 @@ The lint names the two packages rather than `src/`, which would walk the front's
 `node_modules`. `src/application/boot.py` is the only boot path: the web API and
 the scheduler share one process and that file holds the whole sequence.
 
-**It runs on macOS**, and that is new (ADR-0039): the app no longer forks, so
+**It runs on macOS**, and that is new: the app no longer forks, so
 there is no longer a container to build in order to see it work.
 
 ### The front
@@ -165,8 +165,8 @@ trailer rides its own commit.
   about history: it declares nothing, and its message is left alone.
 
 `docs:` commits are hidden from the generated `CHANGELOG.md`
-(`release-please-config.json`). On a branch where twelve of them are the map's
-own ADRs, the generated notes would serve the journal of the work as the
-release notes of the product. The hand-written release-notes page of the
+(`release-please-config.json`). On a branch where a dozen of them rewrite the
+site's own corpus, the generated notes would serve the journal of the work as
+the release notes of the product. The hand-written release-notes page of the
 documentation is the surface that tells a reader what the release changes.
 
