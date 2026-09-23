@@ -9,17 +9,15 @@
  *    side's own return. The euro leads because the head answers *how much is
  *    left*, which is a euro question, and because a percentage gap is ambiguous
  *    on its face — difference of two returns? in points? annualised?
- *  - **The controls come last in reading order**, on a row of their own between
- *    the head and the chart. The page answers before it asks.
+ *  - **The controls come after the head in reading order**, in the corner of
+ *    the chart they redraw. The page answers before it asks.
  *  - **One reading, since #1018.** Both sides sit in the same wrapper under
  *    the same declared model, so the tax answered a question about the wrapper
  *    and not about the securities — and the account page already publishes
  *    *Impôt projeté* with its assiette and its rate for whoever asks it.
- *  - **The head stays on the securities, and the dates join it** (#1020). The
- *    date effect is a second statement under the verdict, not a second head:
- *    the two terms share a middle and sum to the gap against a disciplined
- *    index investor, but the figure the owner has learned to read is the first
- *    of them alone.
+ *  - **The head stays on the securities, and alone.** #1020 printed the date
+ *    effect as a second statement under the verdict; the redesign took it off
+ *    the screen. The payload still carries `date_effect`.
  *  - **The head keeps the intersection, and the accounts keep their own
  *    windows** (#1014). One headline figure names one period, so the aggregate
  *    has to stop at the youngest account's start — but a table under it gives
@@ -30,7 +28,8 @@
  *    column is not one: a reader adds two rows and lands hundreds of euros
  *    away, or concludes both accounts beat a portfolio that is behind. The
  *    shared-window gaps are the head's own terms, so they add up — and the
- *    total row prints the head figure at the foot of that column to say so.
+ *    total row prints the head figure at the foot of that column to say so,
+ *    which is the whole explanation: no sentence under the table repeats it.
  *  - **No range control.** A counterfactual replays the flows from the
  *    beginning: narrowing it to a year does not shorten the answer, it asks a
  *    different question. The page announces the period it covers instead.
@@ -42,18 +41,20 @@
  *    so neither the em dash nor an empty state applies.
  */
 import { Link } from '@tanstack/react-router'
+import { TriangleAlert } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
+import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
 import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
 import { ReferenceSelect } from '@/components/benchmark/ReferenceSelect'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -134,8 +135,8 @@ export default function BenchmarkPage() {
     )
   }
 
-  // One control left on the row since #1018 took the reading toggle out, and
-  // it keeps the row rather than moving: the page still answers before it asks.
+  // One control left since #1018 took the reading toggle out. On a ready page
+  // it sits in the chart's corner; the withheld states keep it on its own row.
   const controls = (
     <ReferenceSelect value={data.reference} offered={data.offered} downloaded={data.consulted} />
   )
@@ -182,8 +183,8 @@ export default function BenchmarkPage() {
             }
           />
         )}
-        <PerAccount data={data} currency={currency} />
         <Excluded rows={data.excluded_accounts ?? []} />
+        <PerAccount data={data} currency={currency} />
         {controls}
       </div>
     )
@@ -196,26 +197,50 @@ export default function BenchmarkPage() {
           screen that has none is a sentence about nothing. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
+      <Period data={data} />
       <Head data={data} currency={currency} />
-      <PerAccount data={data} currency={currency} />
-      {controls}
       <BenchmarkChart
         points={data.series ?? []}
         index={data.index ?? data.reference ?? ''}
         currency={currency}
+        action={
+          // The trigger's own `aria-label` names it; this word is for the eye.
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2.5">
+            <span aria-hidden className="text-sm whitespace-nowrap text-muted-foreground">
+              {t('benchmark.select.compare')}
+            </span>
+            <ReferenceSelect
+              value={data.reference}
+              offered={data.offered}
+              downloaded={data.consulted}
+              triggerClassName="sm:w-auto sm:min-w-56"
+            />
+          </div>
+        }
       />
       <Excluded rows={data.excluded_accounts ?? []} />
+      <PerAccount data={data} currency={currency} />
     </div>
   )
 }
 
-/** The one `Card`: a total and its terms, subordinated vertically. */
+/**
+ * The one `Card`: the verdict on the left, and its terms on the right.
+ *
+ * The two returns carry a bar each, on one scale, so *behind, by roughly how
+ * much* reads before the digits do. The bars take the curves' own colours —
+ * the same two things, drawn twice on the screen — and never a sign colour:
+ * the sign is the figure's, through `lib/sign.ts`.
+ */
 function Head({ data, currency }: { data: BenchmarkResponse; currency: string | null }) {
   const { t } = useI18n()
   const f = useFormatters()
 
   const shown = data.gap_gross ?? null
   const index = data.index ?? data.reference ?? ''
+  const difference = gap(data.portfolio_return, data.reference_return)
+  const scale =
+    Math.max(Math.abs(data.portfolio_return ?? 0), Math.abs(data.reference_return ?? 0)) * 1.25
 
   return (
     // **`aria-live="polite"`**, because this is the result of a gesture and not
@@ -223,31 +248,31 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
     // figure and the verdict back. Polite and never assertive — the reader is
     // already looking at the control they pressed, which is `Refusal`'s own
     // reasoning for keeping `role="status"`.
-    <Card className="bg-linear-160 from-chart-2/9 to-card" aria-live="polite">
-      <CardContent className="space-y-4 py-6">
-        <Stat
-          size="head"
-          // The ticker without its venue suffix, as the selector renders it:
-          // `CW8` and not `CW8.PA`. The exchange is an addressing detail of the
-          // fetch, and the eyebrow is the one place the reader meets the fund.
-          label={t('benchmark.head.label', {
-            index,
-            symbol: (data.reference ?? '').split('.')[0],
-          })}
-          value={shown === null ? '—' : f.signedCurrency(shown, currency)}
-          valueClassName={signClass(shown)}
-          explain={
-            <Explain
-              figure={t('benchmark.term.gap')}
-              body="benchmark.explain.gap"
-              anchor="benchmark"
-            />
-          }
-        />
-
-        <div className="max-w-prose space-y-1 text-sm">
+    <Card className="gap-0 overflow-hidden py-0" aria-live="polite">
+      <div className="grid grid-cols-1 md:grid-cols-2">
+        <div className="space-y-4 p-5 sm:p-8">
+          <Stat
+            size="head"
+            // The ticker without its venue suffix, as the selector renders it:
+            // `CW8` and not `CW8.PA`. The exchange is an addressing detail of
+            // the fetch, and the eyebrow is the one place the reader meets the
+            // fund.
+            label={t('benchmark.head.label', {
+              index,
+              symbol: (data.reference ?? '').split('.')[0],
+            })}
+            value={shown === null ? '—' : f.signedCurrency(shown, currency)}
+            valueClassName={signClass(shown)}
+            explain={
+              <Explain
+                figure={t('benchmark.term.gap')}
+                body="benchmark.explain.gap"
+                anchor="benchmark"
+              />
+            }
+          />
           {shown === null ? null : (
-            <p>
+            <p className="max-w-prose text-base leading-relaxed">
               {signOf(shown) === 'zero'
                 ? t('benchmark.verdict.equal', { index })
                 : t(
@@ -258,66 +283,51 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
                   )}
             </p>
           )}
-          <DateEffect data={data} currency={currency} />
-          <Period data={data} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 border-t pt-4 sm:grid-cols-3">
-          <Stat
-            size="term"
-            label={t('benchmark.term.gap')}
-            value={points(f, gap(data.portfolio_return, data.reference_return))}
-          />
+        <div className="flex flex-col justify-center gap-5 border-t bg-muted/40 p-5 sm:p-8 md:border-t-0 md:border-l">
+          <p className="text-xs font-medium text-muted-foreground">
+            {t('benchmark.returns.title')}
+          </p>
           <Stat
             size="term"
             label={t('benchmark.term.yours')}
             value={points(f, data.portfolio_return)}
             valueClassName={signClass(data.portfolio_return ?? null)}
-          />
+          >
+            <ShareBar
+              share={magnitude(data.portfolio_return)}
+              scale={scale}
+              fill="var(--color-price)"
+              size="block"
+              className="mt-1.5"
+            />
+          </Stat>
           <Stat
             size="term"
             label={t('benchmark.term.theirs')}
             value={points(f, data.reference_return)}
             valueClassName={signClass(data.reference_return ?? null)}
-          />
+          >
+            <ShareBar
+              share={magnitude(data.reference_return)}
+              scale={scale}
+              fill="var(--muted-foreground)"
+              size="block"
+              className="mt-1.5"
+            />
+          </Stat>
+          <div className="border-t pt-4">
+            <Stat
+              size="term"
+              label={t('benchmark.term.gap')}
+              value={points(f, difference)}
+              valueClassName={signClass(difference)}
+            />
+          </div>
         </div>
-      </CardContent>
+      </div>
     </Card>
-  )
-}
-
-/**
- * What the **dates** did — the other half of #983's decomposition.
- *
- * **A second statement, not a second head** (#1020, option A). The two are
- * `portfolio − reference(your days)` and `reference(your days) − smoothed`:
- * they share a middle term and sum to the gap against a disciplined index
- * investor, but the head figure is the *first* of them. Printing this one
- * under a head that already reads −4 401,96 would say the head contains both,
- * which it does not — so the head stays where the owner learned to read it and
- * this sentence explains the gap rather than enlarging it.
- *
- * **Zero is a figure here.** A perfectly regular contributor gets exactly
- * zero, and *your timing cost nothing* is the answer — not the em dash that
- * `null` gets. `null` is the all-or-nothing case of #1017: the smoothed replay
- * exhausted the reference on a day the real one did not, so there is no
- * decomposition at all, and it gets a sentence saying so rather than a dash.
- */
-function DateEffect({ data, currency }: { data: BenchmarkResponse; currency: string | null }) {
-  const { t } = useI18n()
-  const f = useFormatters()
-
-  const effect = data.date_effect ?? null
-  const sign = signOf(effect)
-
-  if (sign === 'absent') return <p>{t('benchmark.dates.unavailable')}</p>
-  if (sign === 'zero') return <p>{t('benchmark.dates.none')}</p>
-  return (
-    <p>
-      {t(sign === 'gain' ? 'benchmark.dates.earned' : 'benchmark.dates.cost', {
-        amount: f.currency(Math.abs(effect as number), currency),
-      })}
-    </p>
   )
 }
 
@@ -362,94 +372,126 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
   // state and the table is #1014's alone. The column follows the aggregate.
   const shared = new Map((data.per_account_shared ?? []).map((row) => [row.account, row]))
   const hasShared = shared.size > 0 && Boolean(data.covered_from)
+  const scale = Math.max(0, ...[...shared.values()].map((row) => Math.abs(row.gap_gross ?? 0)))
+
+  // **One table, two layouts.** On a phone each row stacks into a card — the
+  // same cells, `display` changed — so a row stays a `<tr>` for every reader
+  // and nothing is rendered twice.
+  const stack = 'max-sm:block max-sm:border-0 max-sm:p-0 max-sm:whitespace-normal'
 
   return (
-    <section className="rounded-xl border bg-card">
-      <h2 className="px-5 py-3.5 text-sm font-medium">{t('benchmark.accounts.title')}</h2>
-      <div className="border-t">
-        <Table>
-          <caption className="sr-only">{t('benchmark.accounts.caption')}</caption>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('benchmark.accounts.column.account')}</TableHead>
-              {hasShared ? (
-                <TableHead className="text-right">
-                  {t('benchmark.accounts.column.gapShared')}
-                </TableHead>
-              ) : null}
-              <TableHead>{t('benchmark.accounts.column.period')}</TableHead>
-              <TableHead className="text-right">{t('benchmark.accounts.column.gap')}</TableHead>
-              <TableHead className="text-right">{t('benchmark.term.yours')}</TableHead>
-              <TableHead className="text-right">{t('benchmark.term.theirs')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => {
-              const common = shared.get(row.account)?.gap_gross ?? null
-              return (
-                <TableRow key={row.account}>
-                  <TableCell className="font-medium">{row.account}</TableCell>
-                  {hasShared ? (
-                    <TableCell className={`text-right tabular ${signClass(common)}`}>
-                      {common === null ? '—' : f.signedCurrency(common, currency)}
-                    </TableCell>
-                  ) : null}
-                  <TableCell className="text-muted-foreground">
-                    {t('benchmark.accounts.period', {
-                      from: f.date(row.covered_from),
-                      to: f.date(row.covered_to),
-                    })}
-                    {/* Its own reason, on its own row: the head names the account
-                        that closed the *aggregate*, which is rarely this one. */}
-                    {row.ended === null ? null : (
-                      <span className="block text-2xs">
-                        {t(
-                          row.ended === 'exhausted'
-                            ? 'benchmark.accounts.ended.exhausted'
-                            : 'benchmark.accounts.ended.awaitingRate',
-                        )}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className={`text-right tabular ${signClass(row.gap_gross)}`}>
-                    {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
-                  </TableCell>
-                  <TableCell className={`text-right tabular ${signClass(row.portfolio_return)}`}>
-                    {points(f, row.portfolio_return)}
-                  </TableCell>
-                  <TableCell className={`text-right tabular ${signClass(row.reference_return)}`}>
-                    {points(f, row.reference_return)}
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-            {/* The head figure at the foot of the column that sums to it. The
-                same number as above, on purpose: the claim being made is that
-                these rows add up to it, and the only way to make that claim
-                checkable is to print it where the addition ends. */}
+    <section className="overflow-hidden rounded-xl border bg-card">
+      <h2 className="px-5 py-4 text-base font-semibold">{t('benchmark.accounts.title')}</h2>
+      <Table className="max-sm:block" containerClassName="border-t">
+        <caption className="sr-only">{t('benchmark.accounts.caption')}</caption>
+        <TableHeader className="max-sm:hidden">
+          <TableRow>
             {hasShared ? (
-              <TableRow className="font-medium">
-                <TableCell>{t('benchmark.accounts.total')}</TableCell>
-                <TableCell
-                  className={`text-right tabular ${signClass(data.gap_gross ?? null)}`}
-                >
-                  {data.gap_gross === null || data.gap_gross === undefined
-                    ? '—'
-                    : f.signedCurrency(data.gap_gross, currency)}
-                </TableCell>
-                <TableCell colSpan={4} />
-              </TableRow>
+              <TableHead colSpan={2} className="xl:px-5">
+                {t('benchmark.accounts.group.shared', { from: f.date(data.covered_from as string) })}
+              </TableHead>
             ) : null}
-          </TableBody>
-        </Table>
-      </div>
-      {hasShared ? (
-        <p className="max-w-prose border-t px-5 py-3 text-sm text-muted-foreground">
-          {t('benchmark.accounts.shared', { from: f.date(data.covered_from as string) })}
-        </p>
-      ) : null}
+            <TableHead colSpan={hasShared ? 3 : 4} className={hasShared ? 'border-l' : 'xl:px-5'}>
+              {t('benchmark.accounts.group.own')}
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody className="max-sm:block">
+          {rows.map((row) => {
+            const common = shared.get(row.account)?.gap_gross ?? null
+            return (
+              <TableRow
+                key={row.account}
+                className="max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:border-b max-sm:p-4"
+              >
+                <TableCell className={`font-semibold xl:px-5 ${stack}`}>{row.account}</TableCell>
+                {hasShared ? (
+                  <TableCell className={`sm:min-w-44 ${stack}`}>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-xs text-muted-foreground sm:hidden">
+                        {t('benchmark.accounts.column.gapShared')}
+                      </span>
+                      <span className={`tabular ml-auto font-semibold ${signClass(common)}`}>
+                        {common === null ? '—' : f.signedCurrency(common, currency)}
+                      </span>
+                    </div>
+                    <ShareBar
+                      share={magnitude(common)}
+                      scale={scale}
+                      fill={signOf(common) === 'loss' ? 'var(--loss)' : 'var(--gain)'}
+                      size="block"
+                      className="mt-2"
+                    />
+                  </TableCell>
+                ) : null}
+                <TableCell
+                  className={`text-muted-foreground ${hasShared ? 'sm:border-l' : ''} ${stack} max-sm:border-t max-sm:border-dashed max-sm:pt-2.5`}
+                >
+                  {t('benchmark.accounts.period', {
+                    from: f.date(row.covered_from),
+                    to: f.date(row.covered_to),
+                  })}
+                  {/* Its own reason, on its own row: the head names the account
+                      that closed the *aggregate*, which is rarely this one. */}
+                  {row.ended === null ? null : (
+                    <span className="block text-2xs">
+                      {t(
+                        row.ended === 'exhausted'
+                          ? 'benchmark.accounts.ended.exhausted'
+                          : 'benchmark.accounts.ended.awaitingRate',
+                      )}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell
+                  className={`tabular font-semibold sm:text-right ${signClass(row.gap_gross)} ${stack}`}
+                >
+                  {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
+                </TableCell>
+                <TableCell
+                  className={`tabular text-xs text-muted-foreground sm:text-right xl:pr-5 ${stack}`}
+                >
+                  {t('benchmark.accounts.yours')}{' '}
+                  <span className={signClass(row.portfolio_return)}>
+                    {points(f, row.portfolio_return)}
+                  </span>
+                  {' · '}
+                  {t('benchmark.accounts.theirs')}{' '}
+                  <span className={signClass(row.reference_return)}>
+                    {points(f, row.reference_return)}
+                  </span>
+                </TableCell>
+              </TableRow>
+            )
+          })}
+          {/* The head figure at the foot of the column that sums to it. The
+              same number as above, on purpose: the claim being made is that
+              these rows add up to it, and the only way to make that claim
+              checkable is to print it where the addition ends. */}
+          {hasShared ? (
+            <TableRow className="border-t-2 bg-muted/40 font-semibold max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:p-4">
+              <TableCell className={`xl:px-5 ${stack}`}>{t('benchmark.accounts.total')}</TableCell>
+              <TableCell className={`tabular text-right ${signClass(data.gap_gross ?? null)} ${stack}`}>
+                {data.gap_gross === null || data.gap_gross === undefined
+                  ? '—'
+                  : f.signedCurrency(data.gap_gross, currency)}
+              </TableCell>
+              <TableCell colSpan={3} className="border-l max-sm:hidden" />
+            </TableRow>
+          ) : null}
+        </TableBody>
+      </Table>
     </section>
   )
+}
+
+/**
+ * A figure's size, for a bar drawn beside it — `null` stays *no bar*. The bars
+ * compare magnitudes on one scale (`ShareBar`'s own), and the sign is the
+ * written figure's, in its colour.
+ */
+function magnitude(value: number | null | undefined): number | null {
+  return value === null || value === undefined ? null : Math.abs(value)
 }
 
 /**
@@ -508,7 +550,7 @@ function Period({ data }: { data: BenchmarkResponse }) {
       : 0
 
   return (
-    <p className="text-muted-foreground">
+    <p className="max-w-prose text-sm text-muted-foreground">
       {lost > 0
         ? t('benchmark.period.truncated', { from: f.date(data.covered_from), years: lost })
         : t('benchmark.period', {
@@ -552,19 +594,25 @@ function Excluded({ rows }: { rows: readonly BenchmarkExclusion[] }) {
 
   if (rows.length === 0) return null
   return (
-    <div className="max-w-prose space-y-1 text-sm text-muted-foreground">
-      {rows.map((row) => {
-        const symbols = (row.symbols ?? '').split(',').filter(Boolean)
-        return (
-          <p key={row.account}>
-            {t('benchmark.excluded', {
-              account: row.account,
-              symbols: symbols.join(', '),
-              count: symbols.length,
-            })}
-          </p>
-        )
-      })}
+    <div className="flex max-w-3xl gap-3 rounded-lg border border-attention/30 bg-attention/8 px-4 py-3 text-sm">
+      <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-attention" />
+      <div className="space-y-1">
+        {rows.map((row) => {
+          const symbols = (row.symbols ?? '').split(',').filter(Boolean)
+          return (
+            <p key={row.account}>
+              {t('benchmark.excluded', {
+                account: row.account,
+                symbols: symbols.join(', '),
+                count: symbols.length,
+              })}
+            </p>
+          )
+        })}
+        <Link to="/ledger" className="font-medium underline underline-offset-4">
+          {t('benchmark.empty.noEvents.link')}
+        </Link>
+      </div>
     </div>
   )
 }

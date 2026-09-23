@@ -169,40 +169,21 @@ describe('the two curves', () => {
 })
 
 describe('what the dates did', () => {
-  it('keeps the head on the securities and adds the dates as a second statement', async () => {
+  it('keeps the head on the securities and prints no second statement', async () => {
     renderBenchmark(ready())
 
-    // The two are not one number split in two: the head **is** `gap_gross`,
-    // and printing the date effect under an unchanged head would say the head
-    // contains both terms. So the head stays put and this is a sentence.
+    // #1020 printed the date effect under the verdict; the redesign took it
+    // off the screen. The payload still carries it, and the head is unchanged.
     expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    expect(screen.getByText(/ont coûté 1 339,20 € face au même total/)).toBeInTheDocument()
+    expect(screen.queryByText(/1 339,20 €/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Vos dates/)).not.toBeInTheDocument()
   })
 
-  it('reads a positive effect as dates that earned rather than cost', async () => {
-    renderBenchmark(ready({ date_effect: 812.5 }))
+  it('keeps the selector on a page that answered', async () => {
+    renderBenchmark(ready())
 
-    expect(await screen.findByText(/ont rapporté 812,50 € face au même total/)).toBeInTheDocument()
-  })
-
-  it('says a perfectly regular contributor’s timing cost nothing', async () => {
-    renderBenchmark(ready({ date_effect: 0 }))
-
-    // Zero is a figure, not an absence: the smoothed replay *is* the real one
-    // for someone who bought the same amount every month.
-    expect(await screen.findByText(/Vos dates n’ont rien coûté/)).toBeInTheDocument()
-    expect(screen.queryByText(/n’est pas isolable/)).not.toBeInTheDocument()
-  })
-
-  it('says why there is no decomposition rather than showing a dash', async () => {
-    renderBenchmark(ready({ date_effect: null }))
-
-    // All-or-nothing (#1017): a date effect summed over the accounts whose
-    // smoothed replay happened to reach the covered day is short by a wrapper
-    // without saying so, so the server withholds it whole.
-    expect(await screen.findByText(/La part de vos dates n’est pas isolable/)).toBeInTheDocument()
-    // And the head is untouched — the absent half withholds nothing else.
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
+    await head()
+    expect(screen.getByRole('combobox', { name: 'Référence de comparaison' })).toBeInTheDocument()
   })
 })
 
