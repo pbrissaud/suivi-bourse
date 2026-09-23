@@ -79,6 +79,7 @@
   "empty.noCurrency.body": "Rien n’est valorisé et aucun gain n’est calculé tant que vous n’avez pas choisi de devise de base. Vos événements sont enregistrés malgré tout, et le grand livre reste lisible.",
   "empty.noCurrency.link": "Répondre dans Réglages",
   "empty.unread.title": "Lecture impossible",
+  "figures.stale": "Le dernier recalcul a échoué le {date} : les chiffres ci-dessous sont ceux qu’a écrits la passe précédente.",
   "accounts.advisory.cash": "{share, number, percent} de cash",
   "page.dashboard": "Tableau de bord",
   "page.shares": "Titres",

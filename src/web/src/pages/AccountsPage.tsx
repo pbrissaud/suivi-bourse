@@ -38,6 +38,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AccountDetail } from '@/components/accounts/AccountDetail'
 import { AccountForm } from '@/components/accounts/AccountForm'
 import { AccountsChips, AccountsRail } from '@/components/accounts/AccountsRail'
+import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
@@ -54,7 +55,7 @@ import { api, type Account, type LedgerEvent, type PerfPoint, type Position } fr
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
-import { oneFailure, readConditions } from '@/lib/status'
+import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function AccountsPage() {
   const { t } = useI18n()
@@ -180,6 +181,11 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-6">
+      {/* The rail's cards and the detail's head are the same pass's rows, so
+          the claim is the page's and not a card's — one sentence over both,
+          rather than one per account, which is one fact said N times. */}
+      <StaleFigures at={stalePerfPass(runtime.data)} />
+
       {/* A read that has not landed is not a fact: nothing is claimed while the
           declaration is in flight, and above all not that there is none. */}
       {!accounts.data ? null : opened === null ? (

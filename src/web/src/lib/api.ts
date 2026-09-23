@@ -1302,6 +1302,26 @@ export interface RuntimeBuild {
   source: BuildSource
 }
 
+/**
+ * The perf job's two verdicts (`application/runtime_state.py`). Only the one
+ * the front branches on is named: `ran` is the ordinary word and nothing reads
+ * it, the way `BACKFILL_RUNNING` is the only backfill verdict spelled here.
+ */
+export const PERF_FAILED = 'failed'
+
+/**
+ * The last perf-recompute pass — `application/runtime_view.build_perf`.
+ *
+ * `at` is never `null`: the record is stamped where it is written, and the
+ * route serves the record or nothing at all.
+ */
+export interface RuntimePerf {
+  at: string
+  verdict: string
+  /** What raised, or `null` on a pass that went through. Never rendered raw. */
+  error: string | null
+}
+
 export interface RuntimeState {
   now: string
   scheduler_running: boolean
@@ -1317,6 +1337,17 @@ export interface RuntimeState {
    * reconstruction is done the base stops moving and the date stops being news.
    */
   rebuilding: boolean
+  /**
+   * The last perf pass, or `null` — this process has run none.
+   *
+   * It rides here for the reason `rebuilding` does: it is a fact about *this
+   * process* and not about the portfolio, so it stays out of the data requests
+   * and out of the figures themselves. What reads it is {@link stalePerfPass},
+   * and what that decides is a **sentence** beside the figures — never whether
+   * a figure exists, which is the objection `absence.ts` raised against
+   * inheriting anything load-bearing from this optional read.
+   */
+  perf: RuntimePerf | null
   symbols: RuntimeSymbol[]
   accounts: RuntimeAccount[]
 }

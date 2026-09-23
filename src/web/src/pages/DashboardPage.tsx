@@ -57,6 +57,7 @@ import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 
 import { Segmented } from '@/components/Segmented'
+import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { AccountsCard } from '@/components/dashboard/AccountsCard'
 import { DashboardHead } from '@/components/dashboard/Head'
@@ -78,7 +79,7 @@ import { useFormatters } from '@/lib/format'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { buildShareRows } from '@/lib/shares'
-import { oneFailure, readConditions } from '@/lib/status'
+import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 import { usePageHeading } from '@/lib/pageHeading'
 
 export default function DashboardPage() {
@@ -258,6 +259,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* **Every figure on this page comes out of the perf cache**, so the
+          sentence stands over the page rather than in one block: the head, the
+          chart and the comparison are all written by the same pass, and three
+          copies of one claim is three chances to disagree. */}
+      <StaleFigures at={stalePerfPass(runtime.data)} />
+
       <DashboardHead
         positions={positions.data ?? null}
         totals={totals.data ?? null}

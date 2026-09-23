@@ -79,6 +79,7 @@
   "empty.noCurrency.body": "Nothing is valued and no gain is computed until you choose a base currency. Your events are recorded all the same, and the ledger stays readable.",
   "empty.noCurrency.link": "Answer it in Settings",
   "empty.unread.title": "This could not be read",
+  "figures.stale": "The last recompute failed on {date}: the figures below are the ones the pass before it wrote.",
   "accounts.advisory.cash": "{share, number, percent} cash",
   "page.dashboard": "Dashboard",
   "page.shares": "Shares",
