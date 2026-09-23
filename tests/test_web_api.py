@@ -4154,37 +4154,33 @@ def test_switching_reference_keeps_the_series_of_the_one_left_behind(tmp_path):
         "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 2
 
 
-def test_the_eighth_consulted_reference_evicts_the_oldest(tmp_path):
-    """The bound is the guard, and there is no other one.
+def test_a_reference_the_offer_no_longer_holds_is_not_kept_alive(tmp_path):
+    """The offer is the bound, and it is the only one that lets go (#1034).
 
-    The protection keeps a series out of the purge for good, so an unbounded
-    list would turn every ticker ever typed into a permanent resident of a
-    store the owner cannot clean. Seven in, the eighth pushes the first out and
-    its series goes back on the list like any other orphan.
+    Every other exemption follows something the owner can still move: the dial,
+    an event, a position. The consulted list followed nothing — #760 evicted on
+    an eighth consultation, and an offer of five can never produce one — so the
+    two references #1019 pulled from it each held a slot and a series for good,
+    on a name the selector cannot propose again. Switching back is a click in
+    that selector; what is not in it is not coming back.
     """
-    client, opened = _reference_and_a_real_orphan(tmp_path)
+    client, opened = _reference_and_a_real_orphan(tmp_path, symbol='PE500.PA')
 
-    for symbol in ['CSPX.AS', 'MSE.PA', 'C40.PA', 'AEEM.PA', 'WPEA.PA',
-                   'PE500.PA', 'IWDA.AS']:
-        assert client.put(
-            '/api/settings',
-            json={'benchmark_symbol': symbol}).status_code == 200
+    assert client.put(
+        '/api/settings', json={'benchmark_symbol': 'CW8.PA'}).status_code == 200
 
-    assert ledger.consulted_benchmarks(opened) == [
-        'IWDA.AS', 'PE500.PA', 'WPEA.PA', 'AEEM.PA', 'C40.PA', 'MSE.PA',
-        'CSPX.AS']
-    assert {orphan['symbol']
-            for orphan in client.get('/api/store').get_json()['orphans']} == {
-        'CW8.PA', 'ZZORPHAN'}
-    assert opened.query(
-        "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 2
+    assert ledger.consulted_benchmarks(opened) == ['CW8.PA']
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'PE500.PA', 'points': 2},
+        {'symbol': 'ZZORPHAN', 'points': 1}]
+    assert client.get('/api/benchmark').get_json()['consulted'] == ['CW8.PA']
 
 
-def test_switching_back_and_forth_does_not_spend_the_bound(tmp_path):
+def test_switching_back_and_forth_does_not_lengthen_the_list(tmp_path):
     """A reference already consulted moves to the front rather than joining twice.
 
-    Otherwise four switches between two references fill the list with two names
-    and evict a third that was never touched.
+    Otherwise four switches between two references answer with four names, and
+    the *déjà téléchargé* column reads the same entry twice.
     """
     client, opened = _reference_and_a_real_orphan(tmp_path)
 
