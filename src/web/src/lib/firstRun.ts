@@ -128,6 +128,26 @@ export function currencyUnanswered(
 }
 
 /**
+ * The code the dial holds, or `null` — the unit every amount on screen is in.
+ *
+ * The same read as `currencyUnanswered`, answered the other way round: that one
+ * asks whether the dial is empty, this one hands over what is in it. It is the
+ * read a field asking for **money** needs (#953): a bracket ceiling is a bare
+ * number, and the currency it will be compared against lives here and nowhere
+ * near the model.
+ *
+ * `null` covers both silences — a read still in flight and a dial nobody has
+ * answered — and every caller renders nothing for it rather than guessing a
+ * unit, which is the same caution the two predicates above keep.
+ */
+export function baseCurrency(
+  settings: readonly SettingDescription[] | undefined,
+): string | null {
+  const dial = settings?.find((setting) => setting.key === CURRENCY_KEY)
+  return typeof dial?.value === 'string' ? dial.value : null
+}
+
+/**
  * *Immutable once set: the answer can be given late, it just cannot be taken
  * back.* The screen said something else and it said it twice: *you can still
  * change this: your ledger is empty*, over a dial whose second answer does not
