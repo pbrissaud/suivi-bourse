@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ABSENT,
+  currencyInput,
   formatBytes,
   formatCompact,
   formatCurrency,
@@ -140,5 +141,21 @@ describe('a size on disk (#724)', () => {
     // A zero here would read as *the purge worked*, on the one figure of the
     // product that a purge does not move.
     expect(formatBytes(FR, null)).toBe(ABSENT)
+  })
+})
+
+describe('a figure on its way into a money field (#1033)', () => {
+  it('cuts the store\u2019s float32 artefact at the currency\u2019s precision', () => {
+    // What `/api/prices/FDJU.PA?at=2021-07-01` answers, and what `String()`
+    // used to carry into the grant form's optional price — sixteen digits, in
+    // a field that lands in the cost basis and the tax assiette.
+    expect(currencyInput(49.27000045776367, 'EUR')).toBe('49.27')
+    // The digit count is the currency's own, not a `2` written by hand: a yen
+    // price has no decimals to keep.
+    expect(currencyInput(1234.56, 'JPY')).toBe('1235')
+    // Nothing padded on a round figure — this is an input, not a rendering, and
+    // the separator is the dot the field round-trips through `parseDecimal`.
+    expect(currencyInput(126, 'EUR')).toBe('126')
+    expect(currencyInput(49.271, null)).toBe('49.27')
   })
 })

@@ -39,6 +39,30 @@ export function formatCurrency(
 }
 
 /**
+ * A figure as a money **field's** value, rather than as a rendering (#1033).
+ *
+ * The store keeps closes in float32, so `/api/prices/…?at=` answers
+ * `49.27000045776367` — the right answer on the wire, where the chart reads it
+ * and precision costs nothing. `String()` carried those sixteen digits into the
+ * grant form's optional price, which is offered to be accepted or cleared, not
+ * corrected, and which lands in the cost basis, the XIRR and the tax assiette.
+ *
+ * The digit count is the **currency's** and not the reader's — two for the euro,
+ * none for the yen — so `Intl` is asked for it rather than a `2` written here.
+ * The separator is a dot and stays one: this is what a text input round-trips
+ * through `parseDecimal`, not what a reader is shown.
+ */
+export function currencyInput(value: number, currency: string | null | undefined): string {
+  const digits = currency
+    ? new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions()
+        .maximumFractionDigits
+    : 2
+  // Trailing zeros dropped: `126` is the close, and `126,00` in an input the
+  // reader is invited to edit is padding they did not type.
+  return String(Number(value.toFixed(digits)))
+}
+
+/**
  * A **delta** is signed, and a plain amount is not: `+40,69 €` says the gain
  * moved up, where `40,69 €` says only what it is worth.
  *

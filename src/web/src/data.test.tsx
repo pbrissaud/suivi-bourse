@@ -1152,6 +1152,55 @@ describe('the create form, which is the onboarding', () => {
     expect(price).toHaveValue('')
   })
 
+  it('offers the close at the currency\u2019s precision, not the store\u2019s float32', async () => {
+    // #1033: `/api/prices/FDJU.PA?at=2021-07-01` answers `49.27000045776367`,
+    // which is the right answer on the wire — the chart reads the same route.
+    // In this field it is a figure bound for the cost basis, the XIRR and the
+    // tax assiette, offered to a reader invited to accept it or clear it, never
+    // to correct it. Sixteen digits are exactly the shape nobody re-reads.
+    server.use(
+      http.get(ROUTES.prices, ({ params, request }) =>
+        HttpResponse.json(
+          new URL(request.url).searchParams.get('at')
+            ? aPriceAt({ symbol: String(params.symbol), price: 49.27000045776367 })
+            : aPriceSeries({ symbol: String(params.symbol) }),
+        ),
+      ),
+    )
+
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), {
+      target: { value: '2026-02-28' },
+    })
+    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+
+    const price = screen.getByLabelText('Prix unitaire')
+    await waitFor(() => expect(price).toHaveValue('49.27'))
+    // And the day still belongs to what is in the field: the caption is a claim
+    // about the value offered, so it has to survive the rounding of it.
+    expect(screen.getByText(/cours de cl\u00f4ture du 27 f\u00e9vr\. 2026/)).toBeInTheDocument()
+  })
+
+  it('leaves a stored price as it was declared, decimals and all', async () => {
+    // The edit path is **not** rounded (#1033). `unit_price` holds what somebody
+    // declared — typed here, or read out of a mounted file where four decimals
+    // is a price and not an artefact — and a figure trimmed on open is a figure
+    // the next save rewrites without the reader touching the field.
+    const precise = aTypedEvent({
+      id: 'g2', event_type: 'GRANT', date: '2026-02-28', symbol: 'ZZA',
+      quantity: 5, unit_price: 40.1234, amount: null, fee: null,
+    })
+    const { user } = renderData([precise])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await waitFor(() => expect(screen.getByLabelText('Prix unitaire')).toHaveValue('40.1234'))
+  })
+
   it('takes its own suggestion back when the security changes under it', async () => {
     // The figure and the ticker have to be about the same security. A
     // suggestion that stayed put while the symbol moved would leave one
