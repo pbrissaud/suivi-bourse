@@ -42,6 +42,7 @@ import {
   type TaxationParameter,
   type TaxationParameters,
 } from '@/lib/api'
+import { baseCurrency } from '@/lib/firstRun'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 
@@ -85,6 +86,12 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
   const queryClient = useQueryClient()
 
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: api.taxationModels })
+  // The reporting currency — the ladder's missing unit (#953). Read here off
+  // the query the page already holds, so it is a cache hit and no second
+  // request leaves; threaded down instead it would cross `AccountForm`, which
+  // has no other use for it and would carry the prop only to hand it on.
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const currency = baseCurrency(config.data?.settings)
   const [editor, setEditor] = useState<Editor | null>(null)
 
   const models = catalogue.data?.models ?? []
@@ -318,6 +325,7 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
               <Brackets
                 key={parameter.name}
                 rows={editor.brackets}
+                currency={currency}
                 onChange={(rows) => setEditor({ ...editor, brackets: rows })}
               />
             ) : (
@@ -428,8 +436,28 @@ function Labelled({
  * That is not a rendering choice: a set of bounded brackets says nothing about
  * the gain above the highest of them, so the last row says *and above* where its
  * bound would be, and the server refuses a ladder shaped any other way.
+ *
+ * **A ceiling carries its currency, beside the rate that carries its `%`**
+ * (#953). It is the one parameter of the whole model that *is* money — every
+ * rate is a fraction and a threshold is a count of years — and it was the one
+ * typed against no unit at all, while the rate an inch to its right had one.
+ * What the server stores is still a bare number and deliberately so: stamping
+ * the ladder would put money in a record whose whole argument is that it holds
+ * none, to guard a change `settings._refuse_a_reinterpretation` already refuses
+ * the moment a single event exists, and that `currencyFixed` presents as
+ * impossible from the first answer. The gap left is the reader's own — *ten
+ * thousand of what?* — and a unit on the field is the whole of it.
  */
-function Brackets({ rows, onChange }: { rows: Row[]; onChange: (rows: Row[]) => void }) {
+function Brackets({
+  rows,
+  currency,
+  onChange,
+}: {
+  rows: Row[]
+  /** The reporting currency, or `null` while the read is in flight. */
+  currency: string | null
+  onChange: (rows: Row[]) => void
+}) {
   const { t } = useI18n()
 
   function set(index: number, member: keyof Row, next: string) {
@@ -446,13 +474,24 @@ function Brackets({ rows, onChange }: { rows: Row[]; onChange: (rows: Row[]) => 
             {last ? (
               <span className="flex-1 text-sm text-muted-foreground">{t('taxation.brackets.top')}</span>
             ) : (
-              <Input
-                type="number"
-                inputMode="decimal"
-                aria-label={t('taxation.brackets.upperBound')}
-                value={row.upper_bound}
-                onChange={(changed) => set(index, 'upper_bound', changed.target.value)}
-              />
+              <>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  aria-label={t('taxation.brackets.upperBound')}
+                  aria-describedby={currency === null ? undefined : `taxation-bracket-${index}-currency`}
+                  value={row.upper_bound}
+                  onChange={(changed) => set(index, 'upper_bound', changed.target.value)}
+                />
+                {currency === null ? null : (
+                  <span
+                    id={`taxation-bracket-${index}-currency`}
+                    className="text-sm text-muted-foreground"
+                  >
+                    {currency}
+                  </span>
+                )}
+              </>
             )}
             <Input
               type="number"

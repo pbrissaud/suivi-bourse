@@ -16,6 +16,26 @@ Three things live here and nothing else:
 - **the wrapper templates**, and they carry **no money**. A template is *not
   stored*: it fills two fields of a form and does not survive the submission.
 
+**A bracket ceiling is a bare number, and it stays one** (#953). It is the
+single parameter here that *is* money — a rate is a fraction and a threshold is
+a count of years, both unitless by construction — so it is the only one the
+`base_currency` setting could silently reprice: a ladder written as *10 000 /
+50 000 / above* in euros keeps its numbers and starts meaning dollars.
+
+Stamping the ladder with the currency it was written in was weighed and
+refused. It would put money in the one record whose argument is that it holds
+none, to guard a gesture the app has already closed twice over:
+:func:`application.settings._refuse_a_reinterpretation` refuses a second answer
+the moment one event is recorded, `ledger.currency_to_adopt` refuses the same
+through an import, and the front's own `currencyFixed` presents the dial as
+fixed from the first answer rather than from the first event. What is left is a
+store with a ladder and no event at all — setup, before anything is imported —
+and there the reinterpretation costs a re-read of one form.
+
+So the answer is the third of the ticket's three, and it is said on the screen
+that asks: the ceiling field carries the reporting currency beside it, the way
+the rate beside it has always carried its `%`.
+
 It does not survive the check: the Portuguese regime has **two** thresholds,
 five years and eight, and the reduced rates are conditional on 35 % of the
 premiums having been paid in the first half of the contract. The owner reaches

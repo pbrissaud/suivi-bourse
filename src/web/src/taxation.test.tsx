@@ -447,4 +447,29 @@ describe('the two hazards of a form inside a form', () => {
       }),
     )
   })
+
+  it('says which currency a bracket ceiling is typed in', async () => {
+    // The ladder is the one parameter of the model that is money, and it was
+    // the one typed against no unit while the rate beside it showed a `%`
+    // (#953). Nothing is stamped on the record — the reading is the reader's,
+    // and it is given to them where they type.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.selectOptions(
+      within(panel).getByLabelText('Forme'),
+      within(panel).getByRole('option', { name: 'Un barème sur la plus-value' }),
+    )
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter une tranche' }))
+
+    // On the accessible description and not on the text of the row: what is
+    // asserted is that somebody reading the field with a screen reader is told
+    // the unit, which is the whole point of the change.
+    await waitFor(() =>
+      expect(within(panel).getByLabelText('Jusqu’à')).toHaveAccessibleDescription('EUR'),
+    )
+  })
 })
