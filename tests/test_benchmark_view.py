@@ -309,6 +309,34 @@ def test_a_reference_exhausted_in_one_account_closes_the_whole_period(named):
     assert payload['covered_to'] == '2024-02-01'
 
 
+def test_a_reference_a_day_behind_ends_the_comparison_on_its_last_close(
+        store):
+    """#1050: the reference is backfilled, the portfolio is scraped.
+
+    The reference's last close is yesterday's while the portfolio is written
+    through today. Carried forward, that close would put today's live portfolio
+    against an index standing still — so the comparison ends on the last day
+    both sides were measured, and the period printed under it says so.
+    """
+    store.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbol', ?)", [REFERENCE])
+    _quote_the_reference(store, last='2024-02-28')
+    _write_curve(store, 'pea', last='2024-02-28', value=1000.0)
+    _write_curve(store, 'pea', first='2024-02-29', last='2024-02-29',
+                 value=1200.0)
+
+    payload = benchmark_view.comparison(
+        store, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['covered_to'] == '2024-02-28'
+    assert payload['portfolio_value'] == pytest.approx(1000.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
+    assert payload['series'][-1]['t'] == '2024-02-28'
+    assert payload['per_account'][0]['covered_to'] == '2024-02-28'
+    assert payload['per_account'][0]['portfolio_value'] == pytest.approx(1000.0)
+
+
 def test_the_curves_are_published_on_one_day_axis(named):
     """The chart reads the area between them as the gap, so they share days."""
     _write_curve(named, 'pea', value=1000.0)
