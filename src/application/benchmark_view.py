@@ -223,6 +223,10 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
     quoted_from = min(prices)
     splits = quotes.read_splits(store, symbol)
     unconverted = _unconverted_days(store, symbol)
+    # A trailing close still waiting on its rate is part of the reference's
+    # history: the window reaches it so `replay` stops on it and says why,
+    # rather than ending cleanly the evening before.
+    quoted_to = max([max(prices), *unconverted])
     timeline = EventAggregator().replay(snapshot.events or [])
 
     replayed: Dict[str, Any] = {}
@@ -271,7 +275,14 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
             continue
         seed_day, seed = seeded
 
-        window = (seed_day, days[-1][0])
+        # **Both sides end on the same day** (#1050). The reference is fed by
+        # the backfill only, and `forward_backfill_window` waits a full day
+        # before advancing it, so its last close can trail the portfolio's last
+        # written day by two trading days. `replay` would carry that close
+        # forward and the head would put today's live portfolio against an
+        # index standing still. Ended on its last quote instead, the period
+        # stated under the figure is the one both sides were measured on.
+        window = (seed_day, min(days[-1][0], quoted_to))
         flows = performance.invested_flows(timeline, account)
         result = counterfactual.replay(
             window, prices, splits, flows, seed, unconverted)
