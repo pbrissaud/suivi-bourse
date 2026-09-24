@@ -987,15 +987,6 @@ export interface BenchmarkResponse {
   gap_gross?: number | null
   portfolio_return?: number | null
   reference_return?: number | null
-  /**
-   * **The other half of the gap (#983).** `gap_gross` is what the securities
-   * did — same dates on both sides, so they cancel out of it. This is what
-   * those dates were themselves worth: the same index, the same total, paid in
-   * equal monthly instalments instead. Signed — negative means the dates cost
-   * money — and `null` when the smoothed replay could not cover the period,
-   * which is an absence and never a partial sum.
-   */
-  date_effect?: number | null
   /** The same comparison per account, each over its own window (#1014). */
   per_account?: BenchmarkAccountRow[]
   /** And per account over the head's own window, which sums to it (#1032). */

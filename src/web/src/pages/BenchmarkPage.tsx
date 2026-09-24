@@ -17,7 +17,7 @@
  *    *Impôt projeté* with its assiette and its rate for whoever asks it.
  *  - **The head stays on the securities, and alone.** #1020 printed the date
  *    effect as a second statement under the verdict; the redesign took it off
- *    the screen. The payload still carries `date_effect`.
+ *    the screen, and #1048 took the replay behind it out of the payload.
  *  - **The head keeps the intersection, and the accounts keep their own
  *    windows** (#1014). One headline figure names one period, so the aggregate
  *    has to stop at the youngest account's start — but a table under it gives

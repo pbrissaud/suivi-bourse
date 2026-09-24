@@ -40,7 +40,6 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
     covered_to: '2026-09-17',
     ended: null,
     gap_gross: 4212.8,
-    date_effect: -1339.2,
     portfolio_return: 0.112,
     reference_return: 0.048,
     excluded_accounts: [],
@@ -168,14 +167,13 @@ describe('the two curves', () => {
   })
 })
 
-describe('what the dates did', () => {
-  it('keeps the head on the securities and prints no second statement', async () => {
+describe('what the head says, and only that', () => {
+  it('prints the gap alone, with no second statement under it', async () => {
     renderBenchmark(ready())
 
     // #1020 printed the date effect under the verdict; the redesign took it
-    // off the screen. The payload still carries it, and the head is unchanged.
+    // off the screen and #1048 took it out of the payload.
     expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    expect(screen.queryByText(/1 339,20 €/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Vos dates/)).not.toBeInTheDocument()
   })
 
