@@ -236,9 +236,13 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
     accounts again from one shared day.
     """
     written = _written_days(store)
-    quoted_from, quoted_to = min(prices), max(prices)
+    quoted_from = min(prices)
     splits = quotes.read_splits(store, symbol)
     unconverted = _unconverted_days(store, symbol)
+    # A trailing close still waiting on its rate is part of the reference's
+    # history: the window reaches it so `replay` stops on it and says why,
+    # rather than ending cleanly the evening before.
+    quoted_to = max([max(prices), *unconverted])
     timeline = EventAggregator().replay(snapshot.events or [])
 
     replayed: Dict[str, Any] = {}

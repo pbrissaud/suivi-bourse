@@ -337,6 +337,30 @@ def test_a_reference_a_day_behind_ends_the_comparison_on_its_last_close(
     assert payload['per_account'][0]['portfolio_value'] == pytest.approx(1000.0)
 
 
+def test_a_trailing_close_awaiting_its_rate_still_says_why_it_ended(store):
+    """#1050's bound must not swallow `AWAITING_RATE`.
+
+    The last close is stored and has no rate yet. Bounded on the converted
+    closes alone, the window would end the evening before it and the period
+    would read as complete; reaching it, the replay names what it waits for.
+    """
+    store.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbol', ?)", [REFERENCE])
+    _quote_the_reference(store, last='2024-02-28')
+    quotes.record_history(store, REFERENCE, [
+        {'timestamp': datetime(2024, 2, 29, tzinfo=UTC), 'price': 100.0,
+         'converted': None, 'rate': None}])
+    _write_curve(store, 'pea', value=1000.0)
+
+    payload = benchmark_view.comparison(
+        store, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['covered_to'] == '2024-02-28'
+    assert payload['ended'] == counterfactual.AWAITING_RATE
+    assert payload['per_account'][0]['ended'] == counterfactual.AWAITING_RATE
+
+
 def test_the_curves_are_published_on_one_day_axis(named):
     """The chart reads the area between them as the gap, so they share days."""
     _write_curve(named, 'pea', value=1000.0)
