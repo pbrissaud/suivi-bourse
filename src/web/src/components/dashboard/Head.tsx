@@ -152,20 +152,20 @@ export function DashboardHead({
   // the totals row by the last perf pass, and between two passes the identity
   // a reader checks by hand — *value − contributed = gain* — failed by whatever
   // the market moved since. The row defines `gain_absolu` as exactly that
-  // difference (`performance.py`), and the contribution and the cash move only
-  // with an event, which reruns the pass: so the value is the contribution plus
-  // the live gain, and the securities are that value less the cash. A gain the
-  // head cannot compute leaves the row's own figures, which then agree with
-  // nothing on screen they could contradict.
-  const liveValue =
+  // difference (`performance.py`), so the live gain less it is the market's
+  // move since the pass — and a market move moves the securities, never the
+  // cash or the contribution, which change only with an event and an event
+  // reruns the pass. The move is added to the row's own two figures, so nothing
+  // is read from one snapshot and subtracted from another. A gain the head
+  // cannot compute moves nothing: the row's figures then agree with nothing on
+  // screen they could contradict.
+  const drift =
     total.known && totalsRow?.total_value != null && totalsRow.net_contributed != null
-      ? totalsRow.net_contributed + total.value
-      : null
-  const totalValue = liveValue ?? totalsRow?.total_value ?? null
+      ? totalsRow.net_contributed + total.value - totalsRow.total_value
+      : 0
+  const totalValue = totalsRow?.total_value == null ? null : totalsRow.total_value + drift
   const holdingsValue =
-    liveValue !== null && totalsRow?.cash_balance != null
-      ? liveValue - totalsRow.cash_balance
-      : (totalsRow?.holdings_value ?? null)
+    totalsRow?.holdings_value == null ? null : totalsRow.holdings_value + drift
 
   const ytdGain = totalsRow?.ytd?.gain ?? null
   const ytdTwr = totalsRow?.ytd?.twr ?? null
