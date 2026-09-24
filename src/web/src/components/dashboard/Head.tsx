@@ -21,7 +21,8 @@
  * **The gain is computed, never read.** `portfolio_totals.gain_absolu` rides in
  * the payload and is ignored: it is the same number written down elsewhere, and
  * two producers for one figure is what the shares page spent a session
- * dismantling. The arithmetic lives in `lib/gain.ts`.
+ * dismantling. The arithmetic lives in `lib/gain.ts`. `Valeur totale` and
+ * `Titres` follow it rather than the pass (#1049), so the head reads one instant.
  *
  * **The gain stays alone at the top** (variant A), decided in front of the
  * board against the grid: *total value and gain side by side* fails **by
@@ -146,6 +147,25 @@ export function DashboardHead({
 
   const terms = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
   const total = gainTotal(terms)
+
+  // **The head is on one instant** (#1049). The gain is priced by the scrape,
+  // the totals row by the last perf pass, and between two passes the identity
+  // a reader checks by hand — *value − contributed = gain* — failed by whatever
+  // the market moved since. The row defines `gain_absolu` as exactly that
+  // difference (`performance.py`), and the contribution and the cash move only
+  // with an event, which reruns the pass: so the value is the contribution plus
+  // the live gain, and the securities are that value less the cash. A gain the
+  // head cannot compute leaves the row's own figures, which then agree with
+  // nothing on screen they could contradict.
+  const liveValue =
+    total.known && totalsRow?.total_value != null && totalsRow.net_contributed != null
+      ? totalsRow.net_contributed + total.value
+      : null
+  const totalValue = liveValue ?? totalsRow?.total_value ?? null
+  const holdingsValue =
+    liveValue !== null && totalsRow?.cash_balance != null
+      ? liveValue - totalsRow.cash_balance
+      : (totalsRow?.holdings_value ?? null)
 
   const ytdGain = totalsRow?.ytd?.gain ?? null
   const ytdTwr = totalsRow?.ytd?.twr ?? null
@@ -322,10 +342,10 @@ export function DashboardHead({
         and not 9**, measured: at 9 the five statistics came to more than the
         card holds and the row wrapped four and one. */}
         <div className="mt-6.5 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4.5">
-          {totalsRow?.total_value == null ? null : (
+          {totalValue === null ? null : (
             <Stat
               label={t('dashboard.totalValue')}
-              value={f.currency(totalsRow.total_value, currency)}
+              value={f.currency(totalValue, currency)}
             />
           )}
           {/* The securities, beside the value they are part of — and it is the
@@ -336,10 +356,10 @@ export function DashboardHead({
               figure, in the colour of text, read beside the em dash of the latent
               gain — the one place in the product where the two are side by side
               at the scale of the portfolio. */}
-          {totalsRow?.holdings_value == null ? null : (
+          {holdingsValue === null ? null : (
             <Stat
               label={t('dashboard.holdings')}
-              value={f.currency(totalsRow.holdings_value, currency)}
+              value={f.currency(holdingsValue, currency)}
             />
           )}
           {totalsRow?.net_contributed == null ? null : (
