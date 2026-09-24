@@ -71,6 +71,11 @@ def accounts_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
     return {
         'declared': accounts is not None,
         'accounts': [
+            # `now.date()` is the UTC day, which is the narrowing #952 is
+            # about and :mod:`taxation_projection` states the contract for.
+            # It rides beside a `latent` read live off the same `now`, and the
+            # two staying on one day is the reason it is not taken from the
+            # perf cache's newest row instead.
             _with_account_facts(summary.to_dict(), carried, opened_on, payments,
                                 usable, latent, twr_since, now.date())
             for summary in portfolio_view.build_accounts(

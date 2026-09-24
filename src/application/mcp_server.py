@@ -243,7 +243,11 @@ its figure cannot be reconstructed from what is served at all. Quote
 or rates are in force, never to derive the figure.
 
 `projected_rate_changes_on` is the day the rate would next change for this
-wrapper, absent when nothing is coming.
+wrapper, absent when nothing is coming. It is a UTC calendar day, and so is the
+day the whole projection was decided against: the change lands at UTC midnight,
+not at midnight where the reader is. Say the day with that boundary attached
+rather than as *today* or *tomorrow*, which are the reader's words and are off
+by their offset on the one day this member matters.
 
 {_CURRENCY}
 

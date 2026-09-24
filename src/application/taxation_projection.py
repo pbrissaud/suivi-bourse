@@ -22,6 +22,23 @@ than a formula inlined in the route:
 - **the floor is at zero, per account.** An account in aggregate loss owes
   nothing; it does not owe a negative that some other account could absorb.
 
+``now`` is **a UTC calendar day**, and the caller is what narrows an instant to
+one. That is a contract rather than an accident (#952): the rate turns at UTC
+midnight, so a wrapper ages by the reader's own offset late east of Greenwich
+and early west of it — up to fourteen hours, once in a wrapper's life, on
+precisely the day its owner would look. Nothing here can close that window: the
+reader's timezone is not a thing this app knows, and teaching it one for a
+threshold crossed once would cost more than the crossing. What the screen and
+the MCP description do instead is **name the boundary** where they name the day,
+so the figure and the sentence beside it cannot disagree in silence.
+
+Dating the projection off ``account_metrics`` instead was triaged and refused.
+It buys no calendar — the perf pass dates its own rows from the same
+``datetime.now(timezone.utc).date()`` — and it costs one: the assiette is read
+live off :func:`store_reads.PortfolioReader.positions`, so borrowing the perf
+cache's day would put the rate on a day the base is not on, which is the one
+disagreement this module exists to make unavailable.
+
 Only the three ``*_realised`` kinds project. ``none`` and ``withholding_income``
 return ``None`` here: what a ``none`` model is worth on the screen is ``0 €``,
 but that zero is *the model saying so*, not an arithmetic result, and the two
