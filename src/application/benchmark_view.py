@@ -58,22 +58,6 @@ and a reader who adds two rows lands hundreds of euros from the figure above.
 re-seed — the ones ``_aggregate`` summed one line below and threw away — so the
 screen has a column that adds up to the head beside the column that answers
 each wrapper on its own life.
-
-**#983 splits the gap in two, and only one of the halves is new.** `gap_gross`
-already answers *what did my securities do* — the reference ran the owner's own
-flows on the owner's own days, so the dates are common to both sides and cancel
-out of the difference. What it cannot answer is what those days were themselves
-worth, and that needs a third replay: the same index, the same total, the same
-window, paid in equal monthly instalments (`counterfactual.smooth`). The
-distance between the second and the third is `date_effect`, and the sum of the
-two halves is the gap against an index investor who never chose a day.
-
-All-or-nothing: the smoothed replay can exhaust the reference on a different
-day than the real one, and a decomposition summed over the accounts whose third
-replay happened to reach the covered day is short by a wrapper without saying
-so. Since #1018 ``counterfactual.smooth`` smooths the *purchases*, so the date
-effect measures when the owner bought rather than when they funded the account
-— the first is a decision an investor makes and the second is not.
 """
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -307,9 +291,7 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
         The seed is the same one :func:`counterfactual.replay` always takes:
         the real pot at the close of the shared day, so both curves open on
         the same euro. Nothing else moves — same prices, same splits, same
-        flows, each account's own window end — and the smoothed run of #983 is
-        built here too, over the shared window, because a date effect measured
-        on a different period from the gap beside it is two answers.
+        flows, each account's own window end.
 
         The day walks forward until it is **quoted** and every account has a
         pot on it. A pot of zero cannot be seeded, and an unquoted day cannot
@@ -331,7 +313,6 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
             return None
 
         again: Dict[str, Any] = {}
-        smoothed: Dict[str, Any] = {}
         for account, (last, flows) in materials.items():
             window = (day, last)
             seed = replayed[account][1][day]
@@ -340,10 +321,7 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
             if result.first_day is None:
                 return None
             again[account] = (result, replayed[account][1])
-            smoothed[account] = counterfactual.replay(
-                window, prices, splits, counterfactual.smooth(flows, window),
-                seed, unconverted)
-        return again, smoothed
+        return again
 
     # The third value is the first day each replayed account was **written**,
     # before any seeding: it is what tells who truncated the period, and the
@@ -415,10 +393,9 @@ def _aggregate(replayed: Dict[str, Any], reseed, opened: Dict[str, date],
     # with the pot it really held that evening — so both curves start equal,
     # which is the one number that proves the period is the measured one.
     # #1014's table keeps each account's whole life, where it belongs.
-    shared = reseed(covered_from)
-    if shared is None:
+    replayed = reseed(covered_from)
+    if replayed is None:
         return None
-    replayed, smoothed = shared
     covered_from = max(result.first_day for result, _ in replayed.values())
     # **Read back after the re-seed, never before.** A reference seeded lower
     # is a reference a withdrawal can empty sooner, so the day the comparison
@@ -443,17 +420,9 @@ def _aggregate(replayed: Dict[str, Any], reseed, opened: Dict[str, date],
     at_covered = {account: _snapshot_at(result, covered_to)
                   for account, (result, _) in replayed.items()}
 
-    # The third replay, read on the same day as the second and **all or
-    # nothing**: different flows can exhaust the reference on a different day,
-    # and a date effect summed over the accounts whose smoothed run happened to
-    # reach `covered_to` is short by a wrapper without saying so.
-    smoothed_at = _smoothed_at(smoothed, covered_to)
-
     portfolio = _portfolio_at(replayed, covered_to)
     reference = sum(snap.value for snap in at_covered.values() if snap)
     contributed = sum(snap.contributed for snap in at_covered.values() if snap)
-    smoothed_value = (None if smoothed_at is None
-                      else sum(snap.value for snap in smoothed_at.values()))
 
     # **Who truncated the period**, because the screen names a cause and a
     # wrong one is worse than none. The fund is the reason only when the
@@ -485,17 +454,6 @@ def _aggregate(replayed: Dict[str, Any], reseed, opened: Dict[str, date],
         'portfolio_return': _return(portfolio, contributed),
         'reference_return': _return(reference, contributed),
         'series': _series(replayed, covered_from, covered_to),
-        # **#983: the gap splits in two, and only one of the halves is new.**
-        # `gap_gross` is already what the *securities* did — same dates, same
-        # flows, different holdings. What was missing is the other half: the
-        # same index bought on a schedule instead of on the owner's days, so
-        # `date_effect` is what those days cost or earned, and the total
-        # against a disciplined index investor is the sum of the two. Published
-        # as terms and not as that sum, because a reader who adds them is
-        # reading the decomposition and one who is handed the total is not.
-        'smoothed_value': smoothed_value,
-        'date_effect': (None if smoothed_value is None
-                        else reference - smoothed_value),
     }
 
 
@@ -568,27 +526,6 @@ def _shared_rows(replayed: Dict[str, Any], at_covered: Dict[str, Any],
                           else portfolio - reference),
         })
     return rows
-
-
-def _smoothed_at(smoothed: Dict[str, Any],
-                 day: date) -> Optional[Dict[str, Any]]:
-    """Every account's smoothed replay on ``day``, or ``None`` if one is short.
-
-    The real replays set the period, so this one only ever has to be *at least*
-    as long. When it is not — it never started, or its own flows exhausted the
-    reference earlier — there is no date effect at all rather than one summed
-    over a subset: a decomposition short by a wrapper reads exactly like one
-    that is complete.
-    """
-    at: Dict[str, Any] = {}
-    for account, result in smoothed.items():
-        if result.first_day is None or result.last_day < day:
-            return None
-        snap = _snapshot_at(result, day)
-        if snap is None:
-            return None
-        at[account] = snap
-    return at
 
 
 def _portfolio_at(replayed: Dict[str, Any],

@@ -525,65 +525,19 @@ def test_the_end_reason_belongs_to_the_account_that_ended_the_period(named):
 
 
 # --------------------------------------------------------------------------- #
-# The decomposition (#983)
+# A reference that moves
 # --------------------------------------------------------------------------- #
 
 def _double_the_reference_in_february(store):
     """A hundred through January, two hundred through February.
 
-    A flat fund makes every schedule agree, which is exactly the series that
-    cannot tell a working decomposition from a broken one.
+    A flat fund values every schedule the same, which is exactly the series
+    that cannot tell a working comparison from a broken one.
     """
     quotes.record_history(store, REFERENCE, [
         {'timestamp': datetime.combine(day, datetime.min.time(), tzinfo=UTC),
          'price': 200.0, 'converted': 200.0, 'rate': 1.0}
         for day in (date(2024, 2, 1) + timedelta(days=n) for n in range(29))])
-
-
-def test_the_dates_are_worth_what_the_schedule_would_not_have_caught(named):
-    """The third replay, hand-computed end to end.
-
-    The seed buys ten shares at a hundred on 1 January. A thousand euros land
-    on the 15th, still at a hundred: ten more shares. The smoothed schedule
-    holds one instalment — 1 February, the only month-end inside the window —
-    and by then the fund costs two hundred, so the same thousand buys five.
-    Twenty shares against fifteen, at two hundred on the last covered day: four
-    thousand against three, and the thousand euros of difference is what the
-    **dates** earned.
-
-    `gap_gross` is the other half and is untouched by any of this: same dates,
-    same flows, different securities.
-    """
-    _double_the_reference_in_february(named)
-    _write_curve(named, 'pea', value=1000.0)
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
-                          _invest('2024-01-15', 'pea', 1000.0)]), NOW)
-
-    assert payload['state'] == benchmark_view.READY
-    assert payload['reference_value'] == pytest.approx(4000.0)
-    assert payload['smoothed_value'] == pytest.approx(3000.0)
-    assert payload['date_effect'] == pytest.approx(1000.0)
-
-
-def test_a_schedule_the_owner_already_follows_earns_nothing(named):
-    """The fixed point, read on the payload rather than on the primitive.
-
-    One deposit, on the window's only month-end: smoothing it moves nothing,
-    so the whole gap belongs to the securities and the screen says the dates
-    cost zero rather than saying nothing about them.
-    """
-    _double_the_reference_in_february(named)
-    _write_curve(named, 'pea', value=1000.0)
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
-                          _invest('2024-02-01', 'pea', 1000.0)]), NOW)
-
-    assert payload['date_effect'] == pytest.approx(0.0)
-    assert payload['smoothed_value'] == pytest.approx(
-        payload['reference_value'])
 
 
 # --------------------------------------------------------------------------- #
