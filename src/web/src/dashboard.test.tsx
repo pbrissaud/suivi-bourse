@@ -102,6 +102,28 @@ describe('the gain is computed, never read', () => {
     expect(within(head).queryByRole('group')).not.toBeInTheDocument()
   })
 
+  it('puts the value on the gain’s instant when prices moved since the pass (#1049)', async () => {
+    // The pass wrote `2 800 − 2 430 = 370`; the scrape has since lifted the line
+    // from 130 to 140, so the gain is 470 — and the value read beside it has to
+    // be the one that makes `value − contributed` that gain, not the pass's.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            aPosition({ price: 140, dividends: 25 }),
+            ...defaultPositions().slice(1),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/470,00/)
+    expect(figure('Versé net')).toHaveTextContent(/2\D?430,00/)
+    expect(figure('Valeur totale')).toHaveTextContent(/2\D?900,00/)
+    expect(figure('Titres')).toHaveTextContent(/2\D?400,00/)
+  })
+
   it('never mentions the fourth term to an install whose transfers are free', async () => {
     server.use(totalsOf({ transfer_fees: 0, gain_absolu: 375 }))
     renderApp()
