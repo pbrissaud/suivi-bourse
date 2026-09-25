@@ -19,6 +19,7 @@ from application import installation_facts
 from application import instants
 from application import ledger
 from application import main
+from application import portfolio_facts
 from application import portfolio_view
 from application import positions as positions_module
 from application import quotes
@@ -234,30 +235,14 @@ def get_portfolio_movers():
 @api_bp.get('/positions')
 def list_positions():
     """The hot read of the portfolio — one query for the whole of it."""
-    currency = _base_currency()
-    return jsonify({
-        'base_currency': currency,
-        'positions': portfolio_view.build_positions(
-            _reader().positions(), currency, _carried()),
-    })
+    return jsonify(portfolio_facts.positions_payload(
+        _store(), _snapshot(), datetime.now(timezone.utc)))
 
 
 @api_bp.get('/portfolio-totals')
 def get_portfolio_totals():
     """The newest day of the global perf series, plus three derived members."""
-    reader = _reader()
-    latest = reader.latest_totals()
-
-    totals = None
-    if latest is not None:
-        day = latest['day']
-        totals = portfolio_view.build_portfolio_totals(
-            latest,
-            reader.totals_on_or_before(portfolio_view.ytd_base_day(day)),
-            reader.twr_origin(),
-            reader.transfer_fees(day))
-
-    return jsonify({'base_currency': _base_currency(), 'totals': totals})
+    return jsonify(portfolio_facts.totals_payload(_store()))
 
 
 @api_bp.get('/portfolio-totals/history')

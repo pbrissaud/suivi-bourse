@@ -11,8 +11,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from application import account_facts
 from application import instants
-from application import portfolio_view
-from application import quotes
+from application import portfolio_facts
 from application import rhythm
 from application import store as store_module
 
@@ -599,23 +598,13 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         """The reporting currency, or ``None`` while the question is unanswered."""
         return _store().setting('base_currency')
 
-    def _carried():
-        """The symbols a position may be carried at cost on (#845)."""
-        return quotes.terminal_symbols(
-            _store(), _snapshot().backfill_windows(),
-            datetime.now(timezone.utc))
-
     @mcp.tool(description=LIST_POSITIONS_DESCRIPTION)
     def list_positions() -> Positions:
         """``/api/positions``' payload, field for field."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
-            currency = _base_currency()
-            return {
-                'base_currency': currency,
-                'positions': portfolio_view.build_positions(
-                    _reader().positions(), currency, _carried()),
-            }
+            return portfolio_facts.positions_payload(
+                _store(), _snapshot(), datetime.now(timezone.utc))
         return reading(_body, Positions)
 
     @mcp.tool(description=GET_PORTFOLIO_TOTALS_DESCRIPTION)
@@ -623,19 +612,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         """The newest day of the global perf series, plus its three derivations."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
-            reader = _reader()
-            latest = reader.latest_totals()
-
-            totals = None
-            if latest is not None:
-                day = latest['day']
-                totals = portfolio_view.build_portfolio_totals(
-                    latest,
-                    reader.totals_on_or_before(portfolio_view.ytd_base_day(day)),
-                    reader.twr_origin(),
-                    reader.transfer_fees(day))
-
-            return {'base_currency': _base_currency(), 'totals': totals}
+            return portfolio_facts.totals_payload(_store())
         return reading(_body, PortfolioTotals)
 
     @mcp.tool(description=GET_PORTFOLIO_HISTORY_DESCRIPTION)
