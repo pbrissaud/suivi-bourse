@@ -1511,6 +1511,7 @@ def test_an_unknown_window_is_refused_rather_than_defaulted(tmp_path):
         assert response.status_code == 422, query
         assert response.mimetype == 'application/problem+json'
         body = response.get_json()
+        assert body['type'] == problem.TYPE_BAD_REQUEST
         assert body['key'] == 'window'
         assert '1M' in body['detail']
 
@@ -2617,8 +2618,26 @@ def test_a_day_that_does_not_exist_is_refused_by_the_server(tmp_path):
 
     assert response.status_code == 422
     assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == problem.TYPE_BAD_REQUEST
     assert response.get_json()['key'] == 'date'
     assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_a_rewrite_is_refused_as_its_creation_is(tmp_path):
+    """``PATCH`` answers ``POST``'s refusals, the shape's and the ledger's."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    key = client.post('/api/events',
+                      json=_draft(account='pea')).get_json()['id']
+
+    for draft, field in ((_draft(account='pea', date='2026-02-31'), 'date'),
+                         (_draft(account='nope'), 'account')):
+        response = client.patch(f'/api/events/{key}', json=draft)
+        assert response.status_code == 422, field
+        assert response.get_json()['type'] == problem.TYPE_BAD_REQUEST
+        assert response.get_json()['key'] == field
+    assert opened.query('SELECT date, account FROM event WHERE id = ?',
+                        [int(key)]) == [(date(2024, 6, 3), 'pea')]
 
 
 def test_an_instant_is_not_a_calendar_day(tmp_path):
@@ -3382,6 +3401,8 @@ def test_a_bulk_delete_with_no_reduction_is_refused_and_writes_nothing(tmp_path)
 
     assert response.status_code == 422
     assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == problem.TYPE_BAD_REQUEST
+    assert 'key' not in response.get_json()
     assert opened.query('SELECT count(*) FROM event') == [(3,)]
     opened.close()
 
@@ -5521,6 +5542,20 @@ def test_a_model_whose_parameters_do_not_fit_its_kind_is_422(tmp_path):
     assert response.get_json()['type'] == '/problems/bad-request'
 
 
+def test_a_correction_whose_parameters_do_not_fit_is_422_too(tmp_path):
+    client = build_client(tmp_path)
+    key = _a_flat_model(client)
+
+    response = client.patch(f'/api/taxation-models/{key}',
+                            json={'name': 'Corrected',
+                                  'parameters': {'rate_before': 0.128}})
+
+    assert response.status_code == 422
+    assert response.get_json()['type'] == '/problems/bad-request'
+    (model,) = client.get('/api/taxation-models').get_json()['models']
+    assert (model['name'], model['parameters']) == ('Flat', {'rate': 0.3})
+
+
 def test_a_kind_outside_the_enumeration_is_422(tmp_path):
     response = build_client(tmp_path).post(
         '/api/taxation-models',
@@ -5814,6 +5849,20 @@ def test_a_malformed_opening_date_is_refused_and_writes_no_account(tmp_path):
         assert body['key'] == 'opened_on'
 
     assert opened.query("SELECT count(*) FROM account WHERE id = 'pea'") == [(0,)]
+
+
+def test_a_malformed_opening_date_leaves_the_declared_one_alone(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': 'PEA', 'opened_on': '2015-06-01'})
+
+    refused = client.patch('/api/accounts/pea', json={'opened_on': '2015-02-30'})
+
+    assert refused.status_code == 422
+    assert refused.get_json()['type'] == '/problems/bad-request'
+    assert refused.get_json()['key'] == 'opened_on'
+    assert opened.query('SELECT opened_on FROM account_fact') == [
+        (date(2015, 6, 1),)]
 
 
 def test_a_declared_date_later_than_the_first_payment_stands_as_an_advisory(
