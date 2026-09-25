@@ -1,7 +1,7 @@
 """The advisories — what the owner's **data** says about itself."""
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from logfmt_logger import getLogger
 
@@ -118,16 +118,12 @@ def _observe_cash_share(opened, now: datetime) -> List[Advisory]:
             kind=CASH_SHARE,
             subject=SUBJECT_ACCOUNTS,
             detail=detail,
-            message=_say_cash_share(detail),
+            message=(
+                f"{detail['label']} holds {detail['share'] * 100:.1f}% of its value in "
+                f"uninvested cash. Nothing is wrong with that if it is deliberate."),
             observed_at=now,
         ))
     return standing
-
-
-def _say_cash_share(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['label']} holds {detail['share'] * 100:.1f}% of its value in "
-        f"uninvested cash. Nothing is wrong with that if it is deliberate.")
 
 
 def _observe_opened_after_first_payment(opened, now: datetime) -> List[Advisory]:
@@ -169,17 +165,13 @@ def _observe_opened_after_first_payment(opened, now: datetime) -> List[Advisory]
             kind=OPENED_AFTER_FIRST_PAYMENT,
             subject=SUBJECT_ACCOUNTS,
             detail=detail,
-            message=_say_opened_after_first_payment(detail),
+            message=(
+                f"{detail['label']} is declared as opened on {detail['opened_on']}, "
+                f"and it received a payment on {detail['first_payment']}. One of the "
+                f"two is wrong."),
             observed_at=now,
         ))
     return standing
-
-
-def _say_opened_after_first_payment(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['label']} is declared as opened on {detail['opened_on']}, "
-        f"and it received a payment on {detail['first_payment']}. One of the "
-        f"two is wrong.")
 
 
 def _observe_opened_in_the_future(opened, now: datetime) -> List[Advisory]:
@@ -211,17 +203,13 @@ def _observe_opened_in_the_future(opened, now: datetime) -> List[Advisory]:
             kind=OPENED_IN_THE_FUTURE,
             subject=SUBJECT_ACCOUNTS,
             detail=detail,
-            message=_say_opened_in_the_future(detail),
+            message=(
+                f"{detail['label']} is declared as opened on {detail['opened_on']}, a "
+                f"day that has not happened yet, so nothing counted from it can be "
+                f"right."),
             observed_at=now,
         ))
     return standing
-
-
-def _say_opened_in_the_future(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['label']} is declared as opened on {detail['opened_on']}, a "
-        f"day that has not happened yet, so nothing counted from it can be "
-        f"right.")
 
 
 def _observe_no_taxation_model(opened, now: datetime) -> List[Advisory]:
@@ -253,16 +241,12 @@ def _observe_no_taxation_model(opened, now: datetime) -> List[Advisory]:
             kind=NO_TAXATION_MODEL,
             subject=SUBJECT_ACCOUNTS,
             detail=detail,
-            message=_say_no_taxation_model(detail),
+            message=(
+                f"{detail['label']} carries no taxation model, so the app cannot say "
+                f"what you would owe on it. Declare one and it will."),
             observed_at=now,
         ))
     return standing
-
-
-def _say_no_taxation_model(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['label']} carries no taxation model, so the app cannot say "
-        f"what you would owe on it. Declare one and it will.")
 
 
 def _observe_benchmark_never_priced(opened, now: datetime) -> List[Advisory]:
@@ -310,15 +294,11 @@ def _observe_benchmark_never_priced(opened, now: datetime) -> List[Advisory]:
         kind=BENCHMARK_NEVER_PRICED,
         subject=SUBJECT_HEALTH,
         detail=detail,
-        message=_say_benchmark_never_priced(detail),
+        message=(
+            f"{detail['symbol']} is named as the comparison reference, but the "
+            f"market returned no price for it. Check the ticker."),
         observed_at=now,
     )]
-
-
-def _say_benchmark_never_priced(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['symbol']} is named as the comparison reference, but the "
-        f"market returned no price for it. Check the ticker.")
 
 
 OBSERVATIONS = (

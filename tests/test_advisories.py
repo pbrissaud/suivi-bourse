@@ -130,6 +130,9 @@ def test_an_account_sitting_on_cash_raises_one_named_after_it(store):
     assert one.detail['account'] == 'cto'
     assert one.detail['label'] == 'CTO Trade Republic'
     assert one.detail['share'] == pytest.approx(0.2481, abs=1e-4)
+    assert one.message == (
+        'CTO Trade Republic holds 24.8% of its value in uninvested cash. '
+        'Nothing is wrong with that if it is deliberate.')
     # No `first_seen_at`: an advisory is derived on every read and stored
     # nowhere, so *noticed on* is *read on* and nothing older is claimed.
     assert one.observed_at == NOW
@@ -364,6 +367,9 @@ def test_a_wrapper_that_received_money_before_it_existed_raises_one(store):
         'opened_on': '2021-01-01',
         'first_payment': '2019-03-04',
     }
+    assert one.message == (
+        'PEA Bourso is declared as opened on 2021-01-01, and it received a '
+        'payment on 2019-03-04. One of the two is wrong.')
     assert one.observed_at == NOW
 
 
@@ -433,6 +439,9 @@ def test_a_wrapper_opened_on_a_day_to_come_raises_one(store):
         'label': 'PEA Bourso',
         'opened_on': '2099-01-01',
     }
+    assert one.message == (
+        'PEA Bourso is declared as opened on 2099-01-01, a day that has not '
+        'happened yet, so nothing counted from it can be right.')
     assert one.observed_at == NOW
     # And the row is still there, unarbitrated.
     assert accounts.opening_dates_by_account(store)['pea'] == date(2099, 1, 1)
@@ -488,7 +497,9 @@ def test_an_account_with_money_and_no_model_says_why_its_panel_is_silent(store):
     assert one.key == 'no_taxation_model:cto'
     assert one.subject == advisories.SUBJECT_ACCOUNTS
     assert one.detail['account'] == 'cto'
-    assert 'CTO Trade Republic' in one.message
+    assert one.message == (
+        'CTO Trade Republic carries no taxation model, so the app cannot say '
+        'what you would owe on it. Declare one and it will.')
 
 
 def test_an_account_carrying_a_model_raises_nothing(store):
@@ -586,7 +597,9 @@ def test_a_reference_the_market_returned_nothing_for_says_so(store):
     assert one.kind == advisories.BENCHMARK_NEVER_PRICED
     assert one.subject == advisories.SUBJECT_HEALTH
     assert one.detail == {'symbol': BENCHMARK}
-    assert BENCHMARK in one.message
+    assert one.message == (
+        f'{BENCHMARK} is named as the comparison reference, but the market '
+        'returned no price for it. Check the ticker.')
     assert one.observed_at == NOW
 
 
