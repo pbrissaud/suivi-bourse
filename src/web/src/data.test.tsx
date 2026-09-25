@@ -768,7 +768,7 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     server.use(
       http.delete(ROUTES.events, () =>
         HttpResponse.json(
-          { status: 422, type: PROBLEM_TYPES.badRequest, title: 'Invalid parameter' },
+          { status: 422, type: PROBLEM_TYPES.badRequest, title: 'Invalid request' },
           { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
         ),
       ),

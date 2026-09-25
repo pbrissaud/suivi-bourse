@@ -91,36 +91,16 @@ def unprocessable(detail: str, key: Optional[str] = None):
     return problem(422, 'Invalid setting', detail, TYPE_INVALID_SETTING, key=key or None)
 
 
-def unprocessable_parameter(detail: str, key: Optional[str] = None):
-    """422 — a query parameter parsed, and its value is outside a closed set."""
-    return problem(422, 'Invalid parameter', detail, TYPE_BAD_REQUEST, key=key or None)
+def unprocessable_request(detail: str, key: Optional[str] = None):
+    """422 — the request parsed, and what it asks for is not something the app takes.
 
-
-def unprocessable_entry(detail: str, key: Optional[str] = None):
-    """422 — the event parsed, and the ledger's own rules refuse it (issue #764)."""
-    return problem(422, 'Invalid event', detail, TYPE_BAD_REQUEST, key=key or None)
-
-
-def unprocessable_model(detail: str, key: Optional[str] = None):
-    """422 — the body parsed, and what is in it is not a taxation model (#752).
-
-    ``TYPE_BAD_REQUEST``'s identifier, like the two refusals above: the reader is
-    holding a form they filled, and a `type` of its own would buy a second
-    sentence saying what *this field is not one of the values* already says.
+    One helper for every parameter and form field (#932), under
+    ``TYPE_BAD_REQUEST``'s identifier: the reader holds the request they made,
+    and a `type` or a title of its own per field would buy a second sentence
+    saying what *this is not one of the values* already says. The title is
+    fixed; the front renders none.
     """
-    return problem(422, 'Invalid taxation model', detail, TYPE_BAD_REQUEST,
-                   key=key or None)
-
-
-def unprocessable_account(detail: str, key: Optional[str] = None):
-    """422 — the body parsed, and a fact declared about the account is not one.
-
-    ``unprocessable_model``'s own shape and its identifier (#918): the reader is
-    holding a form they filled, and *this field is not a day that exists* is the
-    whole of the news.
-    """
-    return problem(422, 'Invalid account', detail, TYPE_BAD_REQUEST,
-                   key=key or None)
+    return problem(422, 'Invalid request', detail, TYPE_BAD_REQUEST, key=key or None)
 
 
 def model_in_use(detail: str, accounts: Sequence[str]):
@@ -153,13 +133,3 @@ def foreign_origin(detail: str):
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
-
-
-__all__ = [
-    'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
-    'unreplayable', 'unprocessable', 'unprocessable_parameter',
-    'unprocessable_entry', 'unprocessable_file', 'unprocessable_model',
-    'model_in_use', 'too_large', 'foreign_origin',
-    'internal_error',
-    'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE',
-]

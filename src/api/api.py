@@ -50,11 +50,8 @@ from api.problem import (
     storage_unavailable,
     too_large,
     unprocessable,
-    unprocessable_account,
-    unprocessable_entry,
     unprocessable_file,
-    unprocessable_model,
-    unprocessable_parameter,
+    unprocessable_request,
     unreplayable,
     model_in_use,
 )
@@ -308,7 +305,7 @@ def get_prices(symbol: str):
     try:
         at = _day_argument('at')
     except _InvalidParameter as exc:
-        return unprocessable_parameter(str(exc), key=exc.key)
+        return unprocessable_request(str(exc), key=exc.key)
 
     if at is not None:
         close = _reader().close_on_or_before(symbol, at)
@@ -326,7 +323,7 @@ def get_prices(symbol: str):
     try:
         span_days, bucket, resolution = chart_window(request.args.get('window'))
     except ValueError as exc:
-        return unprocessable_parameter(str(exc), key='window')
+        return unprocessable_request(str(exc), key='window')
 
     start = (None if span_days is None
              else datetime.now(timezone.utc) - timedelta(days=span_days))
@@ -395,7 +392,7 @@ def create_account():
     try:
         day = _opening_day(body)
     except _InvalidBody as exc:
-        return unprocessable_account(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
     try:
@@ -416,7 +413,7 @@ def create_account():
     except accounts_module.DuplicateAccount as exc:
         return conflict(str(exc))
     except accounts_module.UnknownTaxationModel as exc:
-        return unprocessable_model(str(exc), 'taxation_model')
+        return unprocessable_request(str(exc), key='taxation_model')
     except accounts_module.AccountSourceError as exc:
         return bad_request(str(exc))
     except AggregationError as exc:
@@ -456,7 +453,7 @@ def update_account(account_id: str):
     try:
         day = _opening_day(body)
     except _InvalidBody as exc:
-        return unprocessable_account(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
     try:
@@ -488,7 +485,7 @@ def update_account(account_id: str):
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
     except accounts_module.UnknownTaxationModel as exc:
-        return unprocessable_model(str(exc), 'taxation_model')
+        return unprocessable_request(str(exc), key='taxation_model')
 
     main.replay_after_write(runtime)
     return jsonify(_account_to_dict(account, model, opened_on))
@@ -583,7 +580,7 @@ def create_taxation_model():
                 opened, body.get('name'), body.get('kind'),
                 body.get('parameters'))
     except taxation.ModelRejected as exc:
-        return unprocessable_model(str(exc))
+        return unprocessable_request(str(exc))
 
     return jsonify(asdict(model)), 201
 
@@ -605,7 +602,7 @@ def update_taxation_model(model_id: str):
     except accounts_module.UnknownTaxationModel as exc:
         return not_found(str(exc))
     except taxation.ModelRejected as exc:
-        return unprocessable_model(str(exc))
+        return unprocessable_request(str(exc))
 
     return jsonify(asdict(model))
 
@@ -664,14 +661,14 @@ def create_event():
     try:
         draft = _event_from_body(body)
     except _InvalidBody as exc:
-        return unprocessable_entry(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
     try:
         with runtime.config_manager.writing() as opened:
             created = entries.create(opened, draft)
     except entries.InvalidEntry as exc:
-        return unprocessable_entry(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 
@@ -847,7 +844,7 @@ def update_event(event_id: str):
     try:
         draft = _event_from_body(body)
     except _InvalidBody as exc:
-        return unprocessable_entry(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
     try:
@@ -856,7 +853,7 @@ def update_event(event_id: str):
     except entries.UnknownEntry as exc:
         return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
     except entries.InvalidEntry as exc:
-        return unprocessable_entry(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 
@@ -890,10 +887,10 @@ def delete_events():
     try:
         selection = _selection()
     except _InvalidParameter as exc:
-        return unprocessable_parameter(str(exc), key=exc.key)
+        return unprocessable_request(str(exc), key=exc.key)
 
     if not selection.reduces:
-        return unprocessable_parameter(
+        return unprocessable_request(
             "a bulk delete takes the ledger's own reduction: one of q, type, "
             "account, symbol, since or until. Reduce on something that covers "
             "the whole ledger to empty it")
@@ -998,7 +995,7 @@ def export_events():
     try:
         selection = _selection()
     except _InvalidParameter as exc:
-        return unprocessable_parameter(str(exc), key=exc.key)
+        return unprocessable_request(str(exc), key=exc.key)
 
     opened = _store()
     return _file_response(
@@ -1015,7 +1012,7 @@ def export_events_workbook():
     try:
         selection = _selection()
     except _InvalidParameter as exc:
-        return unprocessable_parameter(str(exc), key=exc.key)
+        return unprocessable_request(str(exc), key=exc.key)
 
     opened = _store()
     return _file_response(
