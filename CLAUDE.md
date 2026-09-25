@@ -18,3 +18,10 @@ Key routing rules:
 - Save progress → invoke /context-save
 - Resume context → invoke /context-restore
 - Author a backlog-ready spec/issue → invoke /spec
+
+## Shipping (release-please owns the version)
+
+`/ship` must skip its version and changelog steps: never create `VERSION`, never touch
+`version.txt`, `CHANGELOG.md` or `.release-please-manifest.json`. The PR title starts with
+the conventional type (`fix(web): …`), never with a `vX.Y.Z` prefix. Commit with `-s`,
+and put exactly one label on the PR: `fix`, `feat`, `chore` or `refactor`.
