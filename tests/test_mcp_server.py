@@ -25,6 +25,7 @@ from application import entries
 from application import main
 from application import mcp_server
 from application import perf_series
+from application import portfolio_facts
 from application import quotes
 from application import store as store_module
 from conftest import write_legacy_taxation_model
@@ -467,6 +468,41 @@ def test_the_agent_reads_the_day_each_accounts_index_is_based_at(tmp_path):
             for row in payload(call(runtime, 'list_accounts'))['accounts']}
 
     assert rows[accounts_module.DEFAULT_ACCOUNT]['twr_since'] == '2024-01-15'
+
+
+def test_the_agent_and_the_browser_are_served_the_same_positions_and_totals(tmp_path):
+    """The two other envelopes, held the way #920 holds the accounts (#1042).
+
+    Both surfaces call `portfolio_facts`, so what is pinned is the **key sets**:
+    a member added to one surface and not the other fails here. The totals carry
+    a `ytd` so the comparison is not made between two nulls.
+    """
+    runtime, opened = build_runtime(tmp_path, events=LEDGER)
+    perf_series.write_portfolio_totals(opened, [
+        PortfolioTotalPoint(day=date(2023, 12, 29), cash_balance=0.0,
+                            holdings_value=1100.0, total_value=1100.0,
+                            net_contributed=1000.0, xirr=0.1,
+                            gain_absolu=100.0, twr_index=110.0),
+        PortfolioTotalPoint(day=date(2024, 9, 15), cash_balance=0.0,
+                            holdings_value=1200.0, total_value=1200.0,
+                            net_contributed=1000.0, xirr=0.12,
+                            gain_absolu=200.0, twr_index=120.0),
+    ])
+    client = create_app(runtime).test_client()
+
+    served = client.get('/api/positions').get_json()
+    read = payload(call(runtime, 'list_positions'))
+    assert set(read) == set(served)
+    assert read['positions']
+    assert [set(row) for row in read['positions']] == \
+        [set(row) for row in served['positions']]
+
+    served = client.get('/api/portfolio-totals').get_json()
+    read = payload(call(runtime, 'get_portfolio_totals'))
+    assert set(read) == set(served)
+    assert read['totals']['ytd'] is not None
+    assert set(read['totals']) == set(served['totals'])
+    assert set(read['totals']['ytd']) == set(served['totals']['ytd'])
 
 
 def test_totals_are_null_rather_than_absent_when_nothing_is_computed(tmp_path):
@@ -1023,9 +1059,9 @@ def test_a_nan_is_served_as_a_null_and_not_as_a_crash(tmp_path, monkeypatch):
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
     assert store_module.finite(math.nan) is None
 
-    built = mcp_server.portfolio_view.build_positions
+    built = portfolio_facts.portfolio_view.build_positions
     monkeypatch.setattr(
-        mcp_server.portfolio_view, 'build_positions',
+        portfolio_facts.portfolio_view, 'build_positions',
         lambda *args: [{**row, 'cost_basis': math.nan}
                        for row in built(*args)])
 
@@ -1042,9 +1078,9 @@ def test_an_answer_the_schema_refuses_arrives_in_words(tmp_path, monkeypatch):
     refusal names the member, and it does not read as a broken store.
     """
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
-    built = mcp_server.portfolio_view.build_positions
+    built = portfolio_facts.portfolio_view.build_positions
     monkeypatch.setattr(
-        mcp_server.portfolio_view, 'build_positions',
+        portfolio_facts.portfolio_view, 'build_positions',
         lambda *args: [{**row, 'quantity': 'ten'} for row in built(*args)])
 
     result = call(runtime, 'list_positions')
