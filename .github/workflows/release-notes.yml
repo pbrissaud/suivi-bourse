@@ -1,0 +1,67 @@
+name: "Release notes"
+
+# A `pull_request` workflow on purpose: the release PR is opened by
+# github-actions[bot], so this run waits behind "Approve and run workflows" like
+# the other checks, and Claude only writes when that button is pressed.
+#
+# Release Please rebuilds its branch from master on every update and drops any
+# commit it did not write, so the notes are rewritten on each approved run: the
+# prompt has to be idempotent, and a hand edit only survives on the last push.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  write:
+    if: github.head_ref == 'release-please--branches--master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: "0"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git describe:*),Bash(git tag:*),Bash(cat:*),Bash(gh pr view:*),Bash(gh issue view:*)"
+          prompt: |
+            You are writing the user-facing release notes for SuiviBourse. The
+            release PR is #${{ github.event.pull_request.number }}; its branch is
+            checked out.
+
+            1. The new version is in `.release-please-manifest.json`. The previous
+               release is the latest tag (`git describe --tags --abbrev=0`).
+            2. Read every change since that tag: `git log <tag>..HEAD`, the diffs
+               where the message is not enough, and `gh pr view <n>` for the PRs
+               the commits reference. Ignore `deps`, `chore`, `ci`, `test` and
+               `docs` changes unless a user would notice them.
+            3. Edit `website/docs/release-notes.mdx`: add a `## <version> — <short title>`
+               section right after the introduction, above the previous release.
+               If a section for this version already exists, rewrite it in place.
+               Touch nothing else in the file, and no other file.
+
+            Write for someone who runs the app, not for a contributor: what they
+            can now do, what was wrong and is now right, and what they must know
+            before upgrading (a `### Before you upgrade` subsection only when there
+            is something to say). No commit hashes, no file or function names.
+            Match the tone, length and structure of the sections already in the
+            file — read them first. English only.
+
+      # Pushed with GITHUB_TOKEN, so it starts no new run and cannot loop.
+      - name: Commit the notes onto the release PR
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          git diff --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -s -am "docs: write the release notes"
+          git push origin "HEAD:$BRANCH"
