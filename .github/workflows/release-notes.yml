@@ -18,18 +18,28 @@ permissions:
 
 jobs:
   write:
-    if: github.head_ref == 'release-please--branches--master'
+    # Only Release Please's own updates: the notes commit below is pushed by a
+    # user token, so its run has a human sender and is skipped here — no loop,
+    # and a hand edit pushed to the branch is not overwritten either.
+    if: github.head_ref == 'release-please--branches--master' && github.event.sender.type == 'Bot'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: "0"
+          # Not GITHUB_TOKEN: a push made with it starts no workflow run, so the
+          # required checks would never report on the notes commit and the
+          # release PR could not be merged.
+          token: ${{ secrets.TOKEN }}
 
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The release PR is opened by this bot, and the action refuses
+          # non-human actors unless they are named.
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git describe:*),Bash(git tag:*),Bash(cat:*),Bash(gh pr view:*),Bash(gh issue view:*)"
           prompt: |
@@ -55,13 +65,18 @@ jobs:
             Match the tone, length and structure of the sections already in the
             file — read them first. English only.
 
-      # Pushed with GITHUB_TOKEN, so it starts no new run and cannot loop.
       - name: Commit the notes onto the release PR
         env:
           BRANCH: ${{ github.head_ref }}
+          NOTES: website/docs/release-notes.mdx
         run: |
-          git diff --quiet && exit 0
+          changed=$(git status --porcelain --untracked-files=all | cut -c4-)
+          [ -z "$changed" ] && exit 0
+          if [ "$changed" != "$NOTES" ]; then
+            echo "::error::Claude changed more than $NOTES:"; echo "$changed"; exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -s -am "docs: write the release notes"
+          git add -- "$NOTES"
+          git commit -s -m "docs: write the release notes"
           git push origin "HEAD:$BRANCH"
