@@ -1,5 +1,60 @@
 # Changelog
 
+## [5.2.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.2...v5.2.0) (2026-09-26)
+
+
+### Features
+
+* a symbol can be tracked without being held ([#991](https://github.com/pbrissaud/suivi-bourse/issues/991)) ([3c29520](https://github.com/pbrissaud/suivi-bourse/commit/3c295208c486a63b2fa3a159f9690b129bc1f5ae))
+* **benchmark:** compare the invested pot only, with dividends counted on both sides ([#1022](https://github.com/pbrissaud/suivi-bourse/issues/1022)) ([6a26b54](https://github.com/pbrissaud/suivi-bourse/commit/6a26b541d8b2e8df030ecf08711c8a3723ab696c))
+* **benchmark:** compare the portfolio against an index fund ([#760](https://github.com/pbrissaud/suivi-bourse/issues/760)) ([#1004](https://github.com/pbrissaud/suivi-bourse/issues/1004)) ([c807c4f](https://github.com/pbrissaud/suivi-bourse/commit/c807c4fdc85d2a0bdaab57736e6311a3572b06c6))
+* **benchmark:** offer one flat list of references, with no index twice ([#1021](https://github.com/pbrissaud/suivi-bourse/issues/1021)) ([f52f296](https://github.com/pbrissaud/suivi-bourse/commit/f52f29677b9e624d85ea17252c3729f361fa41b7)), closes [#1019](https://github.com/pbrissaud/suivi-bourse/issues/1019)
+* **benchmark:** publish each account's comparison over its own window ([#1024](https://github.com/pbrissaud/suivi-bourse/issues/1024)) ([50dd188](https://github.com/pbrissaud/suivi-bourse/commit/50dd18870ffcd5fcec8064a59cbda2b018449186))
+* **benchmark:** split the gap into what the securities did and what the dates did ([#1017](https://github.com/pbrissaud/suivi-bourse/issues/1017)) ([61a0e21](https://github.com/pbrissaud/suivi-bourse/commit/61a0e21b5c30466e4bcacdcc79de2b10137c81d0))
+* **benchmark:** state what the dates did beside what the securities did ([#1023](https://github.com/pbrissaud/suivi-bourse/issues/1023)) ([a793eb7](https://github.com/pbrissaud/suivi-bourse/commit/a793eb7a468ef7d08d59d8618e13a3682e09fb6b))
+* **ledger:** suggest the grant price off the closest close ([#1029](https://github.com/pbrissaud/suivi-bourse/issues/1029)) ([3628614](https://github.com/pbrissaud/suivi-bourse/commit/36286146684564017675c2643186120900a90f0f)), closes [#1007](https://github.com/pbrissaud/suivi-bourse/issues/1007)
+* **mcp:** hold each description to the schema its tool publishes ([#1043](https://github.com/pbrissaud/suivi-bourse/issues/1043)) ([a5eb4a3](https://github.com/pbrissaud/suivi-bourse/commit/a5eb4a3d241baca4d1f773bdc44f76e718fc0f92))
+* **web:** lay the benchmark page out verdict first, then the curves ([#1041](https://github.com/pbrissaud/suivi-bourse/issues/1041)) ([2f2c92f](https://github.com/pbrissaud/suivi-bourse/commit/2f2c92fc7a4f6c447fd62371e979dd2fd4031c9a))
+* **web:** say when the figures are the previous perf pass's ([#1040](https://github.com/pbrissaud/suivi-bourse/issues/1040)) ([5f70f0b](https://github.com/pbrissaud/suivi-bourse/commit/5f70f0bd184b4ce8c8905e4fa78d5f487aaa5144))
+* **web:** say which currency a bracket ceiling is typed in ([#1045](https://github.com/pbrissaud/suivi-bourse/issues/1045)) ([4ec5e2d](https://github.com/pbrissaud/suivi-bourse/commit/4ec5e2ddc45ed7ea8aec537d7275dae6bae750d4))
+
+
+### Bug Fixes
+
+* **benchmark:** confine the consulted list to the references still offered ([#1047](https://github.com/pbrissaud/suivi-bourse/issues/1047)) ([a784b1a](https://github.com/pbrissaud/suivi-bourse/commit/a784b1a05b8b2332839a7f167d4c0102ed9e89f8)), closes [#1034](https://github.com/pbrissaud/suivi-bourse/issues/1034)
+* **benchmark:** end the comparison on the reference's last close ([#1052](https://github.com/pbrissaud/suivi-bourse/issues/1052)) ([6decb0d](https://github.com/pbrissaud/suivi-bourse/commit/6decb0d5280bf9d9a2967f934afeff3161fe6c2a))
+* **benchmark:** publish each account over the head's own window ([#1039](https://github.com/pbrissaud/suivi-bourse/issues/1039)) ([0e8a161](https://github.com/pbrissaud/suivi-bourse/commit/0e8a1611b34e1f4b5dc1383b508ca121a69b5946))
+* **benchmark:** seed each account on the first day its pot exists ([#1026](https://github.com/pbrissaud/suivi-bourse/issues/1026)) ([b68f049](https://github.com/pbrissaud/suivi-bourse/commit/b68f049ba62acfa6920cd929b70c34f2dddf9665))
+* **benchmark:** seed the aggregate on the day it says it starts ([#1030](https://github.com/pbrissaud/suivi-bourse/issues/1030)) ([5a6178c](https://github.com/pbrissaud/suivi-bourse/commit/5a6178cf7bb9046301357aa2a99ed3615e7766b5))
+* **benchmark:** the exclusion notice names the grant, not just the account ([f815eed](https://github.com/pbrissaud/suivi-bourse/commit/f815eede0191ae781804bc3eeddb44083da98de0))
+* **market:** file a daily bar under the day the exchange traded it ([#1016](https://github.com/pbrissaud/suivi-bourse/issues/1016)) ([8f3295d](https://github.com/pbrissaud/suivi-bourse/commit/8f3295d497b884434c0ef31a4314cf0211477c92)), closes [#1013](https://github.com/pbrissaud/suivi-bourse/issues/1013)
+* **market:** store the close the market printed, not the one net of dividends ([#1010](https://github.com/pbrissaud/suivi-bourse/issues/1010)) ([f4ca3e3](https://github.com/pbrissaud/suivi-bourse/commit/f4ca3e3e99a62af48d02ea2a4ba4c189ccbb0f01))
+* **performance:** count a priced grant in the contribution beside the P&L ([#1015](https://github.com/pbrissaud/suivi-bourse/issues/1015)) ([6200af0](https://github.com/pbrissaud/suivi-bourse/commit/6200af05059848eeca47b5066b152da2c04f6353)), closes [#1012](https://github.com/pbrissaud/suivi-bourse/issues/1012)
+* **runtime:** name the pass that had nothing to write ([#1037](https://github.com/pbrissaud/suivi-bourse/issues/1037)) ([c0ac240](https://github.com/pbrissaud/suivi-bourse/commit/c0ac240e2a2337784a4c10145d91891b23ae472d))
+* **web:** name the calendar the projected rate change lands on ([#1046](https://github.com/pbrissaud/suivi-bourse/issues/1046)) ([7cef14a](https://github.com/pbrissaud/suivi-bourse/commit/7cef14a744bdcdbaffec2b4397d18470fde5de9c)), closes [#952](https://github.com/pbrissaud/suivi-bourse/issues/952)
+* **web:** offer the suggested grant price at the currency's precision ([#1038](https://github.com/pbrissaud/suivi-bourse/issues/1038)) ([a4ad903](https://github.com/pbrissaud/suivi-bourse/commit/a4ad903c08b10837622bae621e7cb68bd6b74496))
+* **web:** put the dashboard head's value on the live gain's instant ([#1051](https://github.com/pbrissaud/suivi-bourse/issues/1051)) ([e734bfa](https://github.com/pbrissaud/suivi-bourse/commit/e734bfa42d4b9cb080250f60196f3b0ec9f99932))
+
+
+### Dependencies
+
+* **app:** update dependency urllib3 to v2.8.0 ([#997](https://github.com/pbrissaud/suivi-bourse/issues/997)) ([e7e08db](https://github.com/pbrissaud/suivi-bourse/commit/e7e08dbe5e1e3dff5077e8f642031ad6c11255b3))
+* **repo:** update astral-sh/setup-uv action to v10.2.0 ([#1055](https://github.com/pbrissaud/suivi-bourse/issues/1055)) ([e2df85b](https://github.com/pbrissaud/suivi-bourse/commit/e2df85b861456c235689cfece6881b5c1bcd6907))
+* **website:** update pnpm to v12.5.0 ([#1006](https://github.com/pbrissaud/suivi-bourse/issues/1006)) ([1163112](https://github.com/pbrissaud/suivi-bourse/commit/116311236fcc53948da35b374db9653c261adc77))
+* **website:** update pnpm to v12.5.1 ([#1009](https://github.com/pbrissaud/suivi-bourse/issues/1009)) ([503bb5c](https://github.com/pbrissaud/suivi-bourse/commit/503bb5c730e6f24b29e697bca98108851e516a46))
+* **website:** update pnpm to v12.6.0 ([#1061](https://github.com/pbrissaud/suivi-bourse/issues/1061)) ([1d5b992](https://github.com/pbrissaud/suivi-bourse/commit/1d5b992c8568ac0cf2c4518a329251fef421b761))
+* **web:** update dependency @tanstack/react-query to v5.103.0 ([#998](https://github.com/pbrissaud/suivi-bourse/issues/998)) ([4dbd8ad](https://github.com/pbrissaud/suivi-bourse/commit/4dbd8adb43a574663c16dc2c98a025c6bbba3ede))
+* **web:** update dependency @tanstack/react-query to v5.103.1 ([#999](https://github.com/pbrissaud/suivi-bourse/issues/999)) ([cd8b3d4](https://github.com/pbrissaud/suivi-bourse/commit/cd8b3d45fb6864ae1ce8cf3ca7fc0d573f00a062))
+* **web:** update dependency @tanstack/react-query to v5.103.2 ([#1054](https://github.com/pbrissaud/suivi-bourse/issues/1054)) ([255f4a4](https://github.com/pbrissaud/suivi-bourse/commit/255f4a484734c5c3c2f0cc70d60a77c203f7f9aa))
+* **web:** update dependency @tanstack/react-router to v1.170.38 ([#1000](https://github.com/pbrissaud/suivi-bourse/issues/1000)) ([94a6c92](https://github.com/pbrissaud/suivi-bourse/commit/94a6c9268bfc87c0003a1b227bc831760951b6a1))
+* **web:** update dependency @tanstack/react-router to v1.170.39 ([#1062](https://github.com/pbrissaud/suivi-bourse/issues/1062)) ([2ced832](https://github.com/pbrissaud/suivi-bourse/commit/2ced832e1d5a8b51149cc67f1f4211d5ecd350e2))
+* **web:** update dependency @types/node to v26.6.0 ([#993](https://github.com/pbrissaud/suivi-bourse/issues/993)) ([89f7383](https://github.com/pbrissaud/suivi-bourse/commit/89f7383ad03fd7e7cbfcccab9e37f1b4d24492a8))
+* **web:** update dependency @types/node to v26.6.1 ([#996](https://github.com/pbrissaud/suivi-bourse/issues/996)) ([c4a2d09](https://github.com/pbrissaud/suivi-bourse/commit/c4a2d09f0b6c3cd0ae8f78b31f559bff9384a3cd))
+* **web:** update dependency @types/node to v26.6.2 ([#1011](https://github.com/pbrissaud/suivi-bourse/issues/1011)) ([348bc8d](https://github.com/pbrissaud/suivi-bourse/commit/348bc8dc3505fb3a100e72f2e26f4b19f6dc7962))
+* **web:** update dependency intl-messageformat to v12.1.1 ([#1005](https://github.com/pbrissaud/suivi-bourse/issues/1005)) ([844f077](https://github.com/pbrissaud/suivi-bourse/commit/844f0774fa9cf8b664804e886d4ee5e353bb247a))
+* **web:** update dependency intl-messageformat to v12.1.2 ([#1027](https://github.com/pbrissaud/suivi-bourse/issues/1027)) ([0e03a09](https://github.com/pbrissaud/suivi-bourse/commit/0e03a09738437de7e60097806aa26857cd99a285))
+* **web:** update dependency lucide-react to v1.47.0 ([#1002](https://github.com/pbrissaud/suivi-bourse/issues/1002)) ([f7104ae](https://github.com/pbrissaud/suivi-bourse/commit/f7104ae36be2607781e6946004955183267da160))
+
 ## [5.1.2](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.1...v5.1.2) (2026-09-18)
 
 
