@@ -205,6 +205,12 @@ export function Combobox({
         setActiveValue(items[items.length - 1]?.value ?? null)
         return
       case 'Enter':
+        // **An input method commits its composition with this key**, and that
+        // commit is not a choice: a reader assembling 任天堂 presses `Entrée` to
+        // accept what they are still typing, not to take the line the arrows
+        // left behind. `isComposing` is the only thing that tells the two
+        // apart, and without it the ticker would replace the text mid-word.
+        if (event.nativeEvent.isComposing) return
         // **Only over a line the reader arrowed onto.** Otherwise the key
         // belongs to the form, and the form records an event with it.
         if (!shown || active < 0) return

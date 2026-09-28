@@ -14,7 +14,7 @@
  * champ, ce qui referme la liste. Il se teste donc ici.
  */
 import { useState } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
@@ -89,6 +89,27 @@ describe('la ligne active du combobox', () => {
     expect(lines()).toHaveLength(1)
     expect(field).not.toHaveAttribute('aria-activedescendant')
     expect(lines().filter((l) => l.getAttribute('aria-selected') === 'true')).toHaveLength(0)
+  })
+
+  it('laisse une méthode de saisie valider sa composition', async () => {
+    // `Entrée` sur un clavier à méthode de saisie valide ce qui est en train
+    // d'être composé — ce n'est pas un choix dans la liste. Sans la garde, le
+    // ticker actif remplacerait le texte au milieu d'un mot.
+    const user = userEvent.setup()
+    render(<Harness items={[ZZA, ZZC]} />)
+    const field = screen.getByLabelText('Ticker')
+
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowDown}')
+    expect(lines()[0]).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
+    expect(field).toHaveValue('zz')
+    expect(list()).toBeInTheDocument()
+
+    // La même touche, composition terminée, choisit bien.
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(field).toHaveValue('ZZA')
   })
 
   it('ne désigne aucune liste tant qu’elle est fermée', () => {
