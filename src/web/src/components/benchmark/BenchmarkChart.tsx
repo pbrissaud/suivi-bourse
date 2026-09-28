@@ -29,6 +29,7 @@ import {
   YAxis,
 } from 'recharts'
 
+import { ChartReading } from '@/components/ChartReading'
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
@@ -54,19 +55,12 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
   const { t } = useI18n()
   const f = useFormatters()
 
-  if (points.length === 0) {
-    // A fact and not a wait: the payload answered `ready`, so there is a period
-    // and it holds no drawable day. *Not answered* never reaches here — the
-    // page returns before this mounts.
-    return (
-      <Card>
-        <CardContent className="space-y-4 py-6">
-          <Header action={action} />
-          <EmptyState title={t('benchmark.chart.empty')} />
-        </CardContent>
-      </Card>
-    )
-  }
+  // **One return, two bodies** (#1003). The empty state used to be an early
+  // return of its own, which put it and the drawing in two separate nodes — and
+  // a live region has to outlive what it reports on: pressing the reference
+  // selector can swap one for the other, and a region that unmounts announces
+  // nothing. So the two share a node below, and the `<Header>` is written once.
+  const empty = points.length === 0
 
   // Recharts fills from a baseline and not between two series, so the band is
   // stacked: the lower curve is an invisible floor, and the gap rides on it.
@@ -94,92 +88,129 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
   return (
     <Card>
       <CardContent className="space-y-4 py-6">
-        <Header action={action}>
-          <Legend index={index} />
-        </Header>
+        <Header action={action}>{empty ? null : <Legend index={index} />}</Header>
 
-        {/* **`aria-hidden`, and the legend above is not.** Honest here and
-            only here: §2 puts the whole answer in the head — in prose and in
-            figures — so a non-visual reader loses the shape and nothing else.
-            That no chart in this product has a non-visual reading is a
-            product-wide gap and has its own ticket, not a clause in this one.
+        {/* **The plot is reachable, and it is named** (#1003). It used to carry
+            `aria-hidden`, on the argument that the head says the whole answer in
+            prose and in figures, so a non-visual reader lost the shape and
+            nothing else. That argument was half right and the mechanism was
+            wrong: Recharts turns its own `accessibilityLayer` on by default, so
+            this `<svg>` is focusable and its arrows already walk seventeen years
+            of days — hiding it left a stop in the tab order that announced
+            nothing at all. The head still carries the verdict and the figure of
+            today, which is why the sentence below states the **crossings** and
+            never the gap.
+
+            The live region wraps the swap rather than the drawing: pressing the
+            reference selector can replace the plot with the empty state, and a
+            region living inside the drawn branch would unmount instead of
+            changing.
 
             Kept at 390 px, shorter. Seventeen years on 350 px does not read to
             the day, but *the gap is widening* and *the gap is closing* read
             perfectly well, and no other screen here removes content by width. */}
-        <div className="h-60 sm:h-75" aria-hidden>
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={rows}>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
-              <XAxis dataKey="t" hide />
-              {/* Floored at zero whenever nothing drawn is negative, which is
-                  `yFloor`'s own rule: neither a portfolio value nor a replayed
-                  holding goes below zero, so the plot keeps its baseline and
-                  the two curves keep their proportion to each other. */}
-              <YAxis
-                domain={[
-                  yFloor(rows.flatMap((row) => [row.portfolio, row.reference])),
-                  'auto',
+        <div aria-live="polite">
+          {empty ? (
+            // A fact and not a wait: the payload answered `ready`, so there is a
+            // period and it holds no drawable day. *Not answered* never reaches
+            // here — the page returns before this mounts.
+            <EmptyState title={t('benchmark.chart.empty')} />
+          ) : (
+            <figure>
+              <div className="h-60 sm:h-75">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={rows} aria-label={t('benchmark.chart.plot')}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+                    <XAxis dataKey="t" hide />
+                    {/* Floored at zero whenever nothing drawn is negative, which is
+                        `yFloor`'s own rule: neither a portfolio value nor a replayed
+                        holding goes below zero, so the plot keeps its baseline and
+                        the two curves keep their proportion to each other. */}
+                    <YAxis
+                      domain={[
+                        yFloor(rows.flatMap((row) => [row.portfolio, row.reference])),
+                        'auto',
+                      ]}
+                      hide
+                    />
+
+                    <ChartTooltip format={(value) => f.currency(value, currency)} />
+
+                    {/* All three bands answer the pointer with a figure the two
+                        lines already state, so they take function keys and drop out
+                        of the tooltip (`ChartTooltip`) — which is also why none of
+                        them carries a name: nothing renders it. */}
+                    <Area
+                      dataKey={(row: { floor: number | null }) => row.floor}
+                      stackId="gap"
+                      stroke="none"
+                      fill="none"
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                    <Area
+                      dataKey={(row: { gapAhead: number | null }) => row.gapAhead}
+                      stackId="gap"
+                      stroke="none"
+                      fill="var(--color-price)"
+                      fillOpacity={0.14}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                    <Area
+                      dataKey={(row: { gapBehind: number | null }) => row.gapBehind}
+                      stackId="gap"
+                      stroke="none"
+                      fill="var(--loss)"
+                      fillOpacity={0.14}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="portfolio"
+                      name={t('benchmark.chart.yours')}
+                      stroke="var(--color-price)"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="reference"
+                      name={t('benchmark.chart.theirs', { index })}
+                      stroke="var(--muted-foreground)"
+                      strokeWidth={1.25}
+                      strokeDasharray="4 4"
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              {/* The crossings are this screen's subject and nothing stated them:
+                  the head says the gap of today, the legend says which curve is
+                  which, and until now the day the two changed places was in the
+                  drawing alone. */}
+              <ChartReading
+                rows={rows}
+                curves={[
+                  { name: t('benchmark.chart.yours'), key: 'portfolio' },
+                  // **The index, and not the legend's own string.** The legend
+                  // reads `MSCI World, même argent investi` because it has a
+                  // swatch beside it and one line to make its claim; inside a
+                  // spoken sentence that clause comes back three times and
+                  // buries the figures. *Same money invested* is already said
+                  // once, by the card's heading above.
+                  { name: index, key: 'reference' },
                 ]}
-                hide
+                format={currency === null ? null : (value) => f.currency(value, currency)}
               />
-
-              <ChartTooltip format={(value) => f.currency(value, currency)} />
-
-              {/* All three bands answer the pointer with a figure the two
-                  lines already state, so they take function keys and drop out
-                  of the tooltip (`ChartTooltip`) — which is also why none of
-                  them carries a name: nothing renders it. */}
-              <Area
-                dataKey={(row: { floor: number | null }) => row.floor}
-                stackId="gap"
-                stroke="none"
-                fill="none"
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-              <Area
-                dataKey={(row: { gapAhead: number | null }) => row.gapAhead}
-                stackId="gap"
-                stroke="none"
-                fill="var(--color-price)"
-                fillOpacity={0.14}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-              <Area
-                dataKey={(row: { gapBehind: number | null }) => row.gapBehind}
-                stackId="gap"
-                stroke="none"
-                fill="var(--loss)"
-                fillOpacity={0.14}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-
-              <Line
-                type="monotone"
-                dataKey="portfolio"
-                name={t('benchmark.chart.yours')}
-                stroke="var(--color-price)"
-                strokeWidth={2}
-                dot={false}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="reference"
-                name={t('benchmark.chart.theirs', { index })}
-                stroke="var(--muted-foreground)"
-                strokeWidth={1.25}
-                strokeDasharray="4 4"
-                dot={false}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+            </figure>
+          )}
         </div>
       </CardContent>
     </Card>

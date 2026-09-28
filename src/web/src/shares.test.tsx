@@ -613,6 +613,41 @@ describe('the chart', () => {
     expect(await screen.findByText('Agrégé par jour')).toBeInTheDocument()
   })
 
+  it('says the price’s shape, and repeats neither the resolution nor the events', async () => {
+    const { user } = renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+    await user.click(screen.getByRole('button', { name: 'Zeta Alpha' }))
+    await screen.findByText('Au relevé')
+
+    // **Reachable, not hidden** (#1003): the `<svg>` is focusable under
+    // Recharts' accessibility layer and its arrows walk the series, so the
+    // drawing keeps its place and the sentence beside it carries the shape.
+    const figure = await waitFor(() => {
+      const found = document.querySelector('figure')
+      if (found === null) throw new Error('the price chart has not landed')
+      return found
+    })
+    expect(figure.closest('[aria-hidden]')).toBeNull()
+
+    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(
+      /[  ]/g,
+      ' ',
+    )
+    expect(said).toMatch(/^Cours, du .+ au .+\./)
+    expect(said).toMatch(/Cours : plus haut .+ le .+, plus bas .+ le .+\./)
+    // One curve and no reference line: nothing to say about a gap.
+    expect(said).not.toMatch(/reste (au-dessus|en dessous)|croise/)
+    // The *aggregated by X* caption and the marker labels are already readable
+    // text: repeating either here would put two announcers on one fact.
+    expect(said).not.toMatch(/Au relevé|Agrégé par/)
+
+    // **And no live region on this surface**: the window is in the cache key, so
+    // pressing a range refetches and unmounts the node a region would live on.
+    // The range control announces the window it selected, which is the answer
+    // the gesture gets.
+    expect(figure.closest('[aria-live]')).toBeNull()
+  })
+
   it('announces the resolution once, and reads it off the API', async () => {
     const { user } = renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
@@ -996,6 +1031,33 @@ describe('a click on the line opens its sheet', () => {
 // ------------------------------------------------------------------------- //
 
 describe('the allocation', () => {
+  it('keeps the ring out of the keyboard, and the legend the whole reading', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+
+    // **The one drawing this product hides on purpose** (#1003, D7). Every other
+    // chart keeps Recharts' accessibility layer because its arrows walk a series;
+    // this ring mounts no tooltip, so the arrows answer nothing, and its legend
+    // already names every slice with its exact percentage. A focus stop that
+    // answers no key is worse than no focus stop.
+    const legend = await screen.findByRole('list', { name: 'Répartition' })
+    const ring = legend.closest('[data-slot="card"]')?.querySelector('.recharts-responsive-container')
+    expect(ring).not.toBeNull()
+    expect(ring?.closest('[aria-hidden]')).not.toBeNull()
+
+    // What the hiding must **not** take with it: the legend, and the total in
+    // the ring's own hole, which is a real figure `Stat` keeps whole in the
+    // accessible tree.
+    expect(legend.closest('[aria-hidden]')).toBeNull()
+    const total = screen.getByRole('group', { name: 'Titres' })
+    expect(total.closest('[aria-hidden]')).toBeNull()
+    expect(total).toHaveTextContent(/2\D?300,00/)
+
+    // And no sentence here: the legend is the reading, and a second announcer on
+    // figures already written as text is what `ShareBar`'s rule forbids.
+    expect(legend.closest('[data-slot="card"]')?.querySelector('figcaption')).toBeNull()
+  })
+
   it('names every line in the slices’ own order, with its share', async () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))

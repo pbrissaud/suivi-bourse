@@ -28,6 +28,7 @@
  */
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
+import { ChartReading } from '@/components/ChartReading'
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -46,43 +47,64 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
     // **No heading of its own** (#838): the curve is drawn inside the head card
     // it is the history of, under the figure it plots — a title over it would
     // name the card a second time. Its accessible name is kept on the section,
-    // for a screen reader and for a test.
+    // for a screen reader and for a test — and since #1003 the plot inside it
+    // carries a **second, different** name of its own, because it is focusable
+    // and a reader who lands on it needs to know what they have landed on. Two
+    // names, deliberately: one label for two nodes makes a by-label query
+    // ambiguous.
     <section aria-label={t('accounts.detail.curve.title')} className="space-y-2">
-      <div className="h-26">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points as ValuePoint[]}>
-            {/* **Hidden, not removed** — the dashboard's chart to the letter
-                (#787): the grid and the gradations left, and what the axes
-                *decide* stayed. The domain is on the data and never on a window
-                asked for, so the two curves fill the plot they are drawn in. */}
-            <XAxis dataKey="t" hide />
-            <YAxis domain={['dataMin', 'dataMax']} hide />
-            {/* The exact figure is a hover away, which is what makes a chart
-                with no gradations readable at all — and this one had no pointer
-                to answer until the axes went. */}
-            <ChartTooltip format={(value) => f.currency(value, currency)} />
-            <Line
-              type="monotone"
-              dataKey="value"
-              name={t('accounts.detail.curve.value')}
-              stroke="var(--color-price)"
-              dot={false}
-              isAnimationActive={false}
-              connectNulls={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="contributed"
-              name={t('accounts.detail.curve.contributed')}
-              stroke="var(--color-muted-foreground)"
-              strokeDasharray="4 4"
-              dot={false}
-              isAnimationActive={false}
-              connectNulls={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {/* **The live region, on a node that outlives what it reports** (#1003):
+          opening another account from the rail redraws this curve in place, and
+          the sentence below is what says the new shape. */}
+      <figure aria-live="polite">
+        <div className="h-26">
+          <ResponsiveContainer width="100%" height="100%">
+            {/* **Named, and the name is not the section's** (#1003). The `<svg>`
+                is focusable and its arrows walk the series, so it needs a name of
+                its own — and it must differ from the section's `aria-label` one
+                line up, or a by-label query matches two nodes. */}
+            <LineChart data={points as ValuePoint[]} aria-label={t('accounts.detail.curve.plot')}>
+              {/* **Hidden, not removed** — the dashboard's chart to the letter
+                  (#787): the grid and the gradations left, and what the axes
+                  *decide* stayed. The domain is on the data and never on a window
+                  asked for, so the two curves fill the plot they are drawn in. */}
+              <XAxis dataKey="t" hide />
+              <YAxis domain={['dataMin', 'dataMax']} hide />
+              {/* The exact figure is a hover away, which is what makes a chart
+                  with no gradations readable at all — and this one had no pointer
+                  to answer until the axes went. */}
+              <ChartTooltip format={(value) => f.currency(value, currency)} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                name={t('accounts.detail.curve.value')}
+                stroke="var(--color-price)"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="contributed"
+                name={t('accounts.detail.curve.contributed')}
+                stroke="var(--color-muted-foreground)"
+                strokeDasharray="4 4"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <ChartReading
+          rows={points}
+          curves={[
+            { name: t('accounts.detail.curve.value'), key: 'value' },
+            { name: t('accounts.detail.curve.contributed'), key: 'contributed' },
+          ]}
+          format={currency === null ? null : (value) => f.currency(value, currency)}
+        />
+      </figure>
 
       {/* The legend is written rather than drawn by the chart: it has to be
           readable by a test and by a screen reader, and Recharts' own is

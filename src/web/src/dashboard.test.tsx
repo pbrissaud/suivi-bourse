@@ -248,6 +248,31 @@ describe('the accounts card, where the comparison moved', () => {
     return within(screen.getByRole('list', { name: 'Vos comptes, comparés' }))
   }
 
+  it('keeps its sparklines out of the keyboard, and the figures they repeat readable', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    const rows = await waitFor(() => {
+      const found = comparison().getAllByRole('listitem')
+      if (found.length < 2) throw new Error('the comparison has not landed')
+      return found
+    })
+
+    // **One sparkline per row, hidden on purpose and hidden completely** (#1003).
+    // It repeats the percentage written beside it, so `ShareBar`'s rule applies —
+    // but Recharts makes every plot's `<svg>` focusable by default, so hiding the
+    // drawing without switching that off would leave a stop in the tab order that
+    // announces nothing, once per account. The source walker holds the
+    // `accessibilityLayer={false}`; what is asserted here is the ancestry, which
+    // only the DOM can answer.
+    const plot = rows[0].querySelector('.recharts-responsive-container')
+    expect(plot).not.toBeNull()
+    expect(plot?.closest('[aria-hidden]')).not.toBeNull()
+
+    // What the hiding must not take with it: the figures the drawing repeats.
+    expect(rows[0]).toHaveTextContent(/%/)
+    expect(rows[0].closest('[aria-hidden]')).toBeNull()
+  })
+
   it('reads the page’s own four presets, and never an unbounded window', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
@@ -1029,6 +1054,43 @@ describe('one chart slot, two readings', () => {
       'MAX',
     ])
     expect(screen.queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
+  })
+
+  it('says the shape of the window to a reader who cannot see the plot', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    const chart = await chartCard()
+
+    // **The plot is reachable, and the sentence sits beside it** (#1003).
+    // Recharts makes the `<svg>` focusable and its arrows walk the series, so
+    // hiding the drawing would leave a stop in the tab order that says nothing.
+    // The `<svg>` itself does not render under jsdom — `chartReadingContract`
+    // holds its name on the source — but the `<figure>` this component writes
+    // does, and it must not be hidden.
+    const figure = chart.querySelector('figure')
+    expect(figure).not.toBeNull()
+    expect(figure?.closest('[aria-hidden]')).toBeNull()
+
+    // The four clauses, asserted by shape rather than by the fixture's figures:
+    // the extent, the opening of each curve, the dated extremes of the first,
+    // and which side of the other it stayed on.
+    const said = () =>
+      (chart.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
+    expect(said()).toMatch(/^Valeur totale et Versé net, du .+ au .+\./)
+    expect(said()).toMatch(/Valeur totale part de .+, Versé net de .+\./)
+    expect(said()).toMatch(/Valeur totale : plus haut .+ le .+, plus bas .+ le .+\./)
+    expect(said()).toMatch(/Valeur totale (reste (au-dessus|en dessous) de Versé net|croise)/)
+
+    // **The live region wraps the swap** (#1003), so a range press that empties
+    // the window is announced by the empty state rather than by nothing.
+    expect(chart.querySelector('[aria-live="polite"]')?.contains(figure!)).toBe(true)
+
+    // Pressing the other reading re-reads the slot, and the sentence follows the
+    // curve that is drawn: one curve, read against the zero line it draws.
+    const readings = within(await screen.findByRole('group', { name: 'Lecture' }))
+    fireEvent.click(readings.getByRole('button', { name: 'Performance' }))
+    await waitFor(() => expect(said()).toMatch(/^Performance, du .+ au .+\./))
+    expect(said()).toMatch(/Performance (reste (au-dessus|en dessous) de zéro|croise zéro)/)
   })
 
   it('names each curve and explains no rule under them', async () => {

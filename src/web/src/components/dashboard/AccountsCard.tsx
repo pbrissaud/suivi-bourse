@@ -179,7 +179,16 @@ export function AccountsCard({
                   <span aria-hidden className="block h-7.5">
                     {series && series.points.length > 1 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={series.points}>
+                        {/* **`accessibilityLayer={false}`, because the span above
+                            is `aria-hidden`** (#1003). Recharts turns that layer
+                            on by default, which makes every chart's `<svg>`
+                            focusable and `role="application"` — and a focusable
+                            node inside a hidden subtree is a stop in the tab
+                            order that announces nothing, once per account row.
+                            The sparkline is a repeat of the percentage written
+                            beside it, so hidden is right; it just has to be
+                            hidden *completely*. */}
+                        <LineChart data={series.points} accessibilityLayer={false}>
                           <Line
                             type="monotone"
                             dataKey="index"
