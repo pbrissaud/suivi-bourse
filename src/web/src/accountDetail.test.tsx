@@ -91,6 +91,39 @@ describe('the head states the account, and the curve is in it', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('says the curve’s shape, under a name that is not the section’s', async () => {
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
+
+    // **The curve is reachable and it speaks** (#1003). The `<svg>` is focusable
+    // under Recharts' own accessibility layer, so nothing here is hidden; the
+    // sentence beside it is what a reader who cannot see the plot gets.
+    const figure = await waitFor(() => {
+      const found = detail.querySelector('figure')
+      if (found === null) throw new Error('the curve has not landed')
+      return found
+    })
+    expect(figure.closest('[aria-hidden]')).toBeNull()
+
+    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(
+      /[  ]/g,
+      ' ',
+    )
+    expect(said).toMatch(/^Valeur totale et Versé net, du .+ au .+\./)
+    expect(said).toMatch(/Valeur totale : plus haut .+ le .+, plus bas .+ le .+\./)
+
+    // The plot's own name must differ from the section's, or a by-label query
+    // matches two nodes. The section keeps exactly one.
+    expect(
+      within(detail).getAllByLabelText('Valeur face à ce que vous avez versé'),
+    ).toHaveLength(1)
+
+    // Opening another account redraws this curve in place, so the region that
+    // reports it has to outlive the swap.
+    expect(figure).toHaveAttribute('aria-live', 'polite')
+  })
+
   it('states the fees this account paid, and what they are of what was paid in', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')

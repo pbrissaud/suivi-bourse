@@ -261,22 +261,55 @@ describe('the contract a non-visual reader gets', () => {
     expect(card).toHaveAttribute('aria-live', 'polite')
   })
 
-  it('hides the plot and leaves the legend readable', async () => {
+  it('keeps the plot reachable and says the shape, crossings included', async () => {
     renderBenchmark(
       ready({
+        // Chosen so the arrival is neither extreme: 1 050 is the last value and
+        // must appear nowhere in the sentence, because the head announces today.
         series: [
-          { t: '2024-01-01', portfolio: 1000, reference: 1000 },
-          { t: '2024-01-02', portfolio: 1100, reference: 1050 },
+          { t: '2024-01-02', portfolio: 1000, reference: 1000 },
+          { t: '2024-01-03', portfolio: 1200, reference: 1000 },
+          { t: '2024-01-04', portfolio: 900, reference: 1000 },
+          { t: '2024-01-05', portfolio: 1050, reference: 1000 },
         ],
       }),
     )
 
-    // Honest here and only here: the whole answer is in the head, in prose and
-    // in figures, so what is lost is the shape. The legend is what says which
-    // curve was which, and it stays.
+    // The legend stays readable, as it always was.
     const legend = await screen.findByText('MSCI World, même argent investi')
     expect(legend.closest('[aria-hidden]')).toBeNull()
-    expect(document.querySelector('.recharts-wrapper')?.closest('[aria-hidden]')).not.toBeNull()
+
+    // **Inverted at #1003.** This assertion used to require the plot to sit
+    // inside an `aria-hidden` subtree, on the argument that the head carries the
+    // whole answer — and it never ran: `.recharts-wrapper` does not exist under
+    // jsdom, so `querySelector` returned `null`, `?.closest()` returned
+    // `undefined`, and `expect(undefined).not.toBeNull()` passed on nothing. The
+    // contract is now the other way round and it is asserted on a node that
+    // exists: the `<figure>` this component writes, which must not be hidden
+    // from a reader because the `<svg>` inside it is focusable and its arrows
+    // walk the series.
+    const figure = document.querySelector('figure')
+    expect(figure).not.toBeNull()
+    expect(figure?.closest('[aria-hidden]')).toBeNull()
+
+    // The shape, and the crossings this screen exists to show. The gap of today
+    // is the head's and is deliberately absent from the sentence.
+    // French formats with narrow no-break spaces (U+202F, U+00A0) inside its
+    // figures. Normalising them here keeps the expectations below readable
+    // rather than seeded with invisible characters.
+    const said = (figure?.querySelector('figcaption')?.textContent ?? '').replace(
+      /[\u202f\u00a0]/g,
+      ' ',
+    )
+    expect(said).toContain('Votre portefeuille et MSCI World, du 2 janv. 2024 au 5 janv. 2024')
+    expect(said).toContain('Votre portefeuille part de 1 000,00 €, MSCI World de 1 000,00 €')
+    expect(said).toContain('plus haut 1 200,00 € le 3 janv. 2024')
+    expect(said).toContain('plus bas 900,00 € le 4 janv. 2024')
+    // The crossings are this screen's subject: above, above, below, above.
+    expect(said).toContain('croise MSCI World 2 fois, la dernière le 5 janv. 2024')
+    // **The arrival is never stated.** The head carries today, on the live
+    // instant, and a second figure for the same day would contradict it (#1051).
+    expect(said).not.toContain('1 050,00')
   })
 })
 

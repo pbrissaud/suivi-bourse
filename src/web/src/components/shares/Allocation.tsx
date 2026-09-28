@@ -147,24 +147,39 @@ export function Allocation({ rows, currency }: AllocationProps) {
              screens the redesign was drawn for. The page it is on now has one
              track and no rail at all. */
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-center">
+            {/* **The one drawing here that really is `aria-hidden`** (#1003), and
+                the reason is that nothing in it navigates. Every other chart in
+                this product keeps Recharts' `accessibilityLayer`, because its
+                arrows walk a series and a reader can ask about a day. This ring
+                mounts no tooltip at all, so the arrows have nowhere to go: left
+                focusable it would be a stop in the tab order that answers no key.
+                And its legend beside it already names every slice with its exact
+                percentage, which makes the arcs a repeat of the text — exactly
+                the case `ShareBar`'s rule was written for. */}
             <div className="relative h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={slices as AllocationSlice[]}
-                    dataKey="value"
-                    nameKey="symbol"
-                    innerRadius="62%"
-                    outerRadius="88%"
-                    isAnimationActive={false}
-                    stroke="var(--background)"
-                  >
-                    {slices.map((slice, rank) => (
-                      <Cell key={slice.symbol ?? 'others'} fill={stop(rank)} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              {/* `aria-hidden` on **this** node and not on the one above it: the
+                  total in the ring's hole is a real figure and `Stat` keeps it
+                  whole in the accessible tree, read *Titres, 2 300,00 €*. Hiding
+                  its container would have taken that with the arcs. */}
+              <div aria-hidden className="h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart accessibilityLayer={false}>
+                    <Pie
+                      data={slices as AllocationSlice[]}
+                      dataKey="value"
+                      nameKey="symbol"
+                      innerRadius="62%"
+                      outerRadius="88%"
+                      isAnimationActive={false}
+                      stroke="var(--background)"
+                    >
+                      {slices.map((slice, rank) => (
+                        <Cell key={slice.symbol ?? 'others'} fill={stop(rank)} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
               {/* The total, in the hole it left: the ring has a middle and the
                   figure it is the division of belongs in it. `pointer-events-none`
                   so the slices under it stay reachable. */}

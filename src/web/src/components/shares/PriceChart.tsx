@@ -36,6 +36,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
+import { ChartReading } from '@/components/ChartReading'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { api, CHART_WINDOWS, type ChartWindow, type LedgerEvent } from '@/lib/api'
@@ -125,67 +126,91 @@ export function PriceChart({
           <p className="text-xs text-muted-foreground">
             {t('shares.chart.resolution', { resolution: series.data.resolution })}
           </p>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series.data.points}>
-                {/* **The chrome comes from the tokens** (#841).
-                    Left to itself Recharts paints a `#ccc` grid and `#666`
-                    gradations, and it paints the *same two greys on both
-                    grounds* — which is not a light-ground defect but a chart
-                    with no theme at all, and it is why the audit that closed
-                    #837 route by route walked past it: the sheet only exists
-                    once something is clicked. Measured on midnight the grid
-                    stood at 11,6:1 against its ground where the dashboard's is
-                    at 1,2:1 — ten times too loud, so the scale read as data
-                    over the one curve it serves — and the gradations at 3,24:1,
-                    under the 4,5:1 floor that being **text** imposes on them.
+          {/* **No live region on this surface, and the reason is the cache key**
+              (#1003). `['prices', symbol, window]` carries the window, so
+              pressing *1A* refetches and this block renders `null` while the
+              read is in flight: a live region only announces reliably when its
+              node existed before the change, and here it is unmounted at the
+              moment the change happens. The gesture is not unanswered — the
+              range control is a `radiogroup` and announces the window it just
+              selected — what is lost is hearing the new shape without coming
+              back to the figure. The day that key drops the window, this gains
+              one attribute. */}
+          <figure>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                {/* **Named, and not hidden** (#1003): the `<svg>` Recharts
+                    renders is focusable and its arrows walk the series, so the
+                    name is what tells a reader where they have landed. */}
+                <LineChart data={series.data.points} aria-label={t('shares.chart.plot')}>
+                  {/* **The chrome comes from the tokens** (#841).
+                      Left to itself Recharts paints a `#ccc` grid and `#666`
+                      gradations, and it paints the *same two greys on both
+                      grounds* — which is not a light-ground defect but a chart
+                      with no theme at all, and it is why the audit that closed
+                      #837 route by route walked past it: the sheet only exists
+                      once something is clicked. Measured on midnight the grid
+                      stood at 11,6:1 against its ground where the dashboard's is
+                      at 1,2:1 — ten times too loud, so the scale read as data
+                      over the one curve it serves — and the gradations at 3,24:1,
+                      under the 4,5:1 floor that being **text** imposes on them.
 
-                    The two are therefore coloured **apart**, and that is the
-                    one place the substitution is not mechanical: Recharts fills
-                    a tick label with the axis' own `stroke`, so a single token
-                    would either shout the grid or hide the figures.
+                      The two are therefore coloured **apart**, and that is the
+                      one place the substitution is not mechanical: Recharts fills
+                      a tick label with the axis' own `stroke`, so a single token
+                      would either shout the grid or hide the figures.
 
-                     - the grid and the axis lines are **chrome**, so they carry
-                       `--border` — the dashboard's grid entire, its `2 4` hair
-                       included, a grid being no more legible for hanging in a
-                       sheet than on a card;
-                     - the gradations are **text**, so they carry
-                       `--muted-foreground`, which clears the floor on both
-                       grounds rather than being assumed to.
+                       - the grid and the axis lines are **chrome**, so they carry
+                         `--border` — the dashboard's grid entire, its `2 4` hair
+                         included, a grid being no more legible for hanging in a
+                         sheet than on a card;
+                       - the gradations are **text**, so they carry
+                         `--muted-foreground`, which clears the floor on both
+                         grounds rather than being assumed to.
 
-                    `chartChrome.test.ts` measures both, and refuses any chart
-                    that goes back to mounting a grid or an axis with no colour
-                    of its own. */}
-                <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
-                <XAxis
-                  dataKey="t"
-                  tickFormatter={(value: string) => f.date(value)}
-                  minTickGap={32}
-                  stroke="var(--border)"
-                  tick={{ fill: 'var(--muted-foreground)' }}
-                />
-                <YAxis
-                  // On the data, never on the window asked for — fixing the
-                  // domain to the request repeats on one axis the mistake the
-                  // dashboard corrected on the other.
-                  domain={['dataMin', 'dataMax']}
-                  tickFormatter={(value: number) => f.currency(value, currency, 0)}
-                  width={72}
-                  stroke="var(--border)"
-                  tick={{ fill: 'var(--muted-foreground)' }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="price"
-                  stroke="var(--color-price)"
-                  dot={false}
-                  isAnimationActive={false}
-                  // A missing conversion is a hole in the line, never a zero.
-                  connectNulls={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+                      `chartChrome.test.ts` measures both, and refuses any chart
+                      that goes back to mounting a grid or an axis with no colour
+                      of its own. */}
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+                  <XAxis
+                    dataKey="t"
+                    tickFormatter={(value: string) => f.date(value)}
+                    minTickGap={32}
+                    stroke="var(--border)"
+                    tick={{ fill: 'var(--muted-foreground)' }}
+                  />
+                  <YAxis
+                    // On the data, never on the window asked for — fixing the
+                    // domain to the request repeats on one axis the mistake the
+                    // dashboard corrected on the other.
+                    domain={['dataMin', 'dataMax']}
+                    tickFormatter={(value: number) => f.currency(value, currency, 0)}
+                    width={72}
+                    stroke="var(--border)"
+                    tick={{ fill: 'var(--muted-foreground)' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="price"
+                    stroke="var(--color-price)"
+                    dot={false}
+                    isAnimationActive={false}
+                    // A missing conversion is a hole in the line, never a zero.
+                    connectNulls={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {/* The shape, and **neither the resolution nor the events**: the
+                *aggregated by X* caption above is already readable text and the
+                markers already carry their own labels, so repeating either here
+                would put two announcers on one fact. */}
+            <ChartReading
+              rows={series.data.points}
+              curves={[{ name: t('shares.chart.title'), key: 'price' }]}
+              format={currency === null ? null : (value) => f.currency(value, currency)}
+            />
+          </figure>
 
           {/* A band with nothing in it does not exist: a symbol whose events are
               all outside the visible range shows no rail rather than an empty
