@@ -36,6 +36,7 @@ import { Refusal } from '@/components/Refusal'
 import { Explain } from '@/components/Explain'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import {
   Sheet,
@@ -60,7 +61,7 @@ import {
 } from '@/lib/accounts'
 import { currencyInput, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
+import { accountOf, FIELDS, fold, parseDay, parseDecimal, titlesFor, type Title } from '@/lib/ledger'
 import { entryGone, problemSentence } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
@@ -131,10 +132,23 @@ interface EventFormProps {
   accounts: AccountsResponse | undefined
   /** Whether that read **failed**, which is not the same absence (#729). */
   accountsFailed: boolean
+  /**
+   * Every title the ledger names, or `null` while the ledger has not answered
+   * (#1036). It is the page's read, folded there: the events carry the symbol
+   * and the name, so the suggestion costs no request of its own.
+   */
+  titles: readonly Title[] | null
   onClose: () => void
 }
 
-export function EventForm({ open, event, accounts, accountsFailed, onClose }: EventFormProps) {
+export function EventForm({
+  open,
+  event,
+  accounts,
+  accountsFailed,
+  titles,
+  onClose,
+}: EventFormProps) {
   const { t } = useI18n()
   const format = useFormatters()
   const queryClient = useQueryClient()
@@ -146,6 +160,17 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({})
   /** What the grant-price suggestion last put in the field — see below. */
   const offered = useRef('')
+  /**
+   * The panel itself, which the suggestion list is drawn **inside** (#1036):
+   * a modal sheet cancels the wheel everywhere but its own content, so a list
+   * portalled to the body would have a scrollbar answering no mouse.
+   *
+   * It is **state and not a ref**, because a ref read during render is `null`
+   * on the render that mounts the panel and nothing re-renders when it fills.
+   * A callback ref makes the fill a state change, which is the only version of
+   * this that is correct rather than accidentally correct.
+   */
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null)
 
   // Opening on a row fills the form; opening on nothing empties it. Keyed on the
   // row's own id so reopening on another row does not inherit the last one.
@@ -247,6 +272,66 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
     })
   }, [suggested])
 
+  /**
+   * **The suggestions, and the one sentence they cannot say** (#1036).
+   *
+   * Three states and not two, on the same rule as the price above: `null` is
+   * *the ledger has not answered*, and it opens nothing and says nothing — a
+   * list offering to record a new title would be claiming the portfolio holds
+   * no such ticker, over a read that has not landed. An empty match on a ledger
+   * that **has** answered is the normal case of this field, and it is the one
+   * that offers what was typed.
+   *
+   * **And the `null` branch is reached, not merely guarded.** The bar carrying
+   * *Saisir un événement* waits on `events.data`, but it is not the only door:
+   * `?open=event` opens this panel on mount — armed by the ⌘K palette's own
+   * action (`Palette.tsx`) and by the first-run card (`FirstRun.tsx`) — and
+   * `Ledger.tsx` mounts the form outside the block that waits for the read. So
+   * a reader who asks for the form from the palette while the ledger is still
+   * in flight lands here with `titles === null`, and what the field owes them
+   * is silence.
+   */
+  const typed = draft.symbol.trim()
+  const suggestions = titles === null ? [] : titlesFor(titles, draft.symbol)
+  const creating = titles !== null && typed !== '' && suggestions.length === 0
+  const items: ComboboxItem[] = creating
+    ? [{ value: typed, label: t('data.form.symbol.use', { typed }), hint: null }]
+    : suggestions.map((title) => ({
+        value: title.symbol,
+        label: title.symbol,
+        hint: title.name,
+        mono: true,
+      }))
+
+  /**
+   * The ticker the reader is one keystroke away from duplicating.
+   *
+   * Nothing normalises a symbol's case anywhere — not this form, not the file
+   * road, not the store — so `mc.pa` opens a **second position** on a security
+   * the ledger already names as `MC.PA`, with its own cost basis and its own
+   * scrape. *Names*, and not *holds*: the perimeter keeps the titles sold out
+   * of, and a dividend corrected on a closed line is an ordinary gesture. The
+   * list answers while it is open; this sentence answers once it is closed,
+   * which is the instant before the save. It refuses nothing: a ticker really
+   * spelled in lower case is somebody's to record.
+   */
+  /**
+   * The comparison is `fold` **plus compatibility**, and only here.
+   *
+   * `fold` is the ledger's search rule and stays what it is. A ticker is not
+   * prose: pasted from a broker's page it carries fullwidth forms (`ＭＣ.ＰＡ`)
+   * or a zero-width space, and neither survives a round trip through the store
+   * as the same security. `NFKC` folds the first, the property escape drops the
+   * second, and the near miss is named rather than silently opening a line.
+   */
+  const near = (value: string) =>
+    fold(value.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}]/gu, ''))
+  const collision =
+    typed === ''
+      ? null
+      : (titles?.find((title) => title.symbol !== typed && near(title.symbol) === near(typed))
+          ?.symbol ?? null)
+
   const choice = accountChoice(accounts, accountsFailed)
   // The two states nothing in this panel can repair: the declaration is not
   // there to be read, so the save is withheld and the field says why.
@@ -322,7 +407,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
         close()
       }}
     >
-      <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
+      <SheetContent ref={setPanel} className="w-full gap-6 overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>
             {t(event === null ? 'data.form.create.title' : 'data.form.edit.title')}
@@ -455,13 +540,29 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
               {fields.security ? (
                 <Field name="symbol" label="data.form.symbol" error={errors.symbol}>
                   {(id, described) => (
-                    <Input
-                      id={id}
-                      value={draft.symbol}
-                      aria-invalid={errors.symbol !== undefined}
-                      aria-describedby={described}
-                      onChange={(changed) => set('symbol', changed.target.value)}
-                    />
+                    <>
+                      <Combobox
+                        id={id}
+                        value={draft.symbol}
+                        items={items}
+                        // Drawn inside the panel and not on the body: the modal
+                        // sheet cancels the wheel everywhere else (#1036).
+                        container={panel}
+                        listLabel={t('data.form.symbol.suggestions')}
+                        aria-invalid={errors.symbol !== undefined}
+                        aria-describedby={
+                          [described, collision === null ? null : `${id}-collision`]
+                            .filter(Boolean)
+                            .join(' ') || undefined
+                        }
+                        onValueChange={(next) => set('symbol', next)}
+                      />
+                      {collision === null ? null : (
+                        <p id={`${id}-collision`} className="text-xs text-muted-foreground">
+                          {t('data.form.symbol.collision', { symbol: collision })}
+                        </p>
+                      )}
+                    </>
                   )}
                 </Field>
               ) : null}
