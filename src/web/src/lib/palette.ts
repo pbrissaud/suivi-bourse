@@ -17,10 +17,11 @@ import {
   accountOf,
   byDateDescending,
   filterEvents,
-  fold,
   identityOf,
+  matchesQuery,
   NO_FILTERS,
   type LedgerFilters,
+  type Title,
 } from '@/lib/ledger'
 
 /**
@@ -36,23 +37,8 @@ export const SHARES_SHOWN = 5
 const ACCOUNTS_SHOWN = 5
 export const EVENTS_SHOWN = 5
 
-/**
- * The one matching rule, and it is the ledger's: accents folded, case dropped,
- * a substring rather than a prefix — a French label is searched as it is heard.
- * An empty query matches, which is what makes a section *what you own* before it
- * is *what you typed*.
- */
-export function matchesQuery(query: string, texts: readonly (string | null | undefined)[]): boolean {
-  const needle = fold(query.trim())
-  if (needle === '') return true
-  return texts.some((text) => text != null && fold(text).includes(needle))
-}
-
-/** A title, which is a **symbol** and not a line (`lib/shares.ts`'s own rule). */
-export interface Title {
-  symbol: string
-  name: string | null
-}
+// The matching rule and the `Title` shape left for `lib/ledger.ts` at #1036: the
+// ledger cannot import this module, which already imports it.
 
 /**
  * The titles the owner holds, one entry per symbol.

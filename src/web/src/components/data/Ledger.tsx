@@ -66,7 +66,9 @@ import {
   PAGE,
   reduces,
   reveal,
+  titlesNamed,
   type LedgerFilters as Filters,
+  type Title,
 } from '@/lib/ledger'
 import { oneFailure, readConditions } from '@/lib/status'
 
@@ -185,6 +187,17 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
 
   const all = useMemo(() => byDateDescending(events.data ?? []), [events.data])
+  /**
+   * The titles the create form suggests (#1036) — **`null` until the ledger has
+   * answered**, and never `?? []`: an empty list and an unread one are two
+   * different sentences, and only one of them is about the reader's portfolio.
+   * It is folded here rather than read again, the events carrying the symbol
+   * and the name that `/api/positions` would have carried.
+   */
+  const titles: readonly Title[] | null = useMemo(
+    () => (events.data === undefined ? null : titlesNamed(events.data)),
+    [events.data],
+  )
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])
 
   // **The rendering budget**. It is a number of rows and not a page
@@ -451,6 +464,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
         event={editing ?? null}
         accounts={accounts.data}
         accountsFailed={accounts.isError}
+        titles={titles}
         onClose={() => setEditing(undefined)}
       />
 

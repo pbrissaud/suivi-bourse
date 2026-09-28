@@ -19,6 +19,7 @@ import {
   filterEvents,
   identityOf,
   isEditable,
+  matchesQuery,
   monthBounds,
   monthFacets,
   NO_FILTERS,
@@ -29,6 +30,9 @@ import {
   reduces,
   reveal,
   selectionParams,
+  startsWithQuery,
+  titlesFor,
+  titlesNamed,
   filtersFromSearch,
   ledgerSearchOf,
   typeFacets,
@@ -436,5 +440,172 @@ describe('emptying the ledger is a reduction that covers it', () => {
     expect(selectionParams(whole ?? NO_FILTERS).toString()).toBe('since=2025-12-24')
     // Nothing to empty is nothing to ask for.
     expect(wholeLedger([])).toBeNull()
+  })
+})
+
+// --------------------------------------------------------------------------- //
+// The titles the create form suggests (#1036)
+// --------------------------------------------------------------------------- //
+
+describe('the titles the ledger names', () => {
+  it('folds a symbol to one entry, whatever the number of events', () => {
+    const titles = titlesNamed([
+      anEvent({ symbol: 'ZZA', name: 'Zeta Alpha' }),
+      anEvent({ symbol: 'ZZA', name: 'Zeta Alpha', event_type: 'SELL' }),
+      anEvent({ symbol: 'ZZB', name: 'Zeta Beta' }),
+    ])
+    expect(titles).toEqual([
+      { symbol: 'ZZA', name: 'Zeta Alpha' },
+      { symbol: 'ZZB', name: 'Zeta Beta' },
+    ])
+  })
+
+  it('keeps the most recent name, whatever order the events arrive in', () => {
+    // The aggregator walks an account's events forward and keeps the last name
+    // it was given, so the newest is what every other surface shows. Reading it
+    // off the day rather than off the array means the server may reorder this
+    // collection without quietly renaming a security.
+    const events = [
+      anEvent({ date: '2026-02-10', symbol: 'ZZA', name: 'Zeta Alpha' }),
+      anEvent({ date: '2024-01-05', symbol: 'ZZA', name: 'Zeta Alpha SA' }),
+    ]
+    expect(titlesNamed(events)[0]?.name).toBe('Zeta Alpha')
+    expect(titlesNamed([...events].reverse())[0]?.name).toBe('Zeta Alpha')
+  })
+
+  it('breaks a same-day tie on the collection, and says so', () => {
+    // Le seul cas où le jour ne sépare pas : deux lignes du même jour nomment le
+    // même titre différemment. La règle est alors la première offerte — un
+    // départage assumé plutôt qu'un hasard, et c'est ce que cette assertion
+    // fige. Sans elle, passer `<=` à `<` renverse le choix en silence.
+    const early = anEvent({ id: 'a', date: '2026-02-10', symbol: 'ZZA', name: 'Zeta Alpha' })
+    const late = anEvent({ id: 'b', date: '2026-02-10', symbol: 'ZZA', name: 'Zeta Alpha SA' })
+    expect(titlesNamed([early, late])[0]?.name).toBe('Zeta Alpha')
+    expect(titlesNamed([late, early])[0]?.name).toBe('Zeta Alpha SA')
+  })
+
+  it('carries no name at all when no event ever gave one', () => {
+    // The whole of the typed portfolio: `EventDraft` has no `name` member, so
+    // a security only ever named in this form has none here either.
+    expect(titlesNamed([anEvent({ symbol: 'ZZQ', name: null })])).toEqual([
+      { symbol: 'ZZQ', name: null },
+    ])
+    expect(titlesNamed([anEvent({ symbol: 'ZZQ', name: '   ' })])[0]?.name).toBeNull()
+  })
+
+  it('is not a title when the event names no security', () => {
+    expect(titlesNamed([anEvent({ event_type: 'DEPOSIT', symbol: null, name: null })])).toEqual([])
+    expect(titlesNamed([anEvent({ symbol: '   ' })])).toEqual([])
+  })
+
+  it('is empty on an empty ledger', () => {
+    expect(titlesNamed([])).toEqual([])
+  })
+})
+
+describe('the order the suggestions arrive in', () => {
+  const titles = [
+    { symbol: 'MC.PA', name: 'LVMH' },
+    { symbol: 'AI.PA', name: 'Air Liquide' },
+    { symbol: 'CAP.PA', name: 'Capgemini' },
+  ]
+
+  it('starts with what starts with the query, then the rest, each alphabetical', () => {
+    // `ca` names CAP.PA by its ticker; AI.PA answers only in the middle of
+    // `Air Liquide`… which it does not. LVMH is out entirely.
+    expect(titlesFor(titles, 'ca').map((title) => title.symbol)).toEqual(['CAP.PA'])
+    // `a` starts AI.PA's ticker and `Air Liquide`. The two others carry it in
+    // the middle — `CAP.PA`, `Capgemini`, and the `.PA` suffix every Paris
+    // ticker ends with — so they follow, between themselves alphabetical.
+    expect(titlesFor(titles, 'a').map((title) => title.symbol)).toEqual([
+      'AI.PA',
+      'CAP.PA',
+      'MC.PA',
+    ])
+  })
+
+  it('ranks a name that starts with the query ahead of a ticker that carries it', () => {
+    // Le groupe de tête se lit sur le ticker **et** sur le nom. Sans le nom dans
+    // le prédicat, `lv` mettrait `ZLV.PA` devant `MC.PA` alors que c'est LVMH
+    // que le lecteur a en tête — et rien ne le signalerait.
+    const titles = [
+      { symbol: 'ZLV.PA', name: 'Zeta' },
+      { symbol: 'MC.PA', name: 'LVMH' },
+    ]
+    expect(titlesFor(titles, 'lv').map((title) => title.symbol)).toEqual(['MC.PA', 'ZLV.PA'])
+  })
+
+  it('folds the accents and the case like every other search here', () => {
+    const accented = [{ symbol: 'SGO.PA', name: 'Société Générale' }]
+    expect(titlesFor(accented, 'societe')).toHaveLength(1)
+    expect(titlesFor(accented, 'SGO')).toHaveLength(1)
+  })
+
+  it('hands back everything alphabetically on an empty query, and caps nothing', () => {
+    // The palette caps at five because a way through is not a field. Nineteen
+    // titles are nineteen lines here.
+    expect(titlesFor(titles, '').map((title) => title.symbol)).toEqual([
+      'AI.PA',
+      'CAP.PA',
+      'MC.PA',
+    ])
+    expect(titlesFor(titles, '   ')).toHaveLength(3)
+  })
+
+  it('names nothing when nothing matches', () => {
+    expect(titlesFor(titles, 'zzq')).toEqual([])
+  })
+})
+
+describe('the two folded predicates', () => {
+  it('matches on a substring and starts only on a prefix', () => {
+    expect(matchesQuery('mc', ['MC.PA', null])).toBe(true)
+    expect(matchesQuery('mc', ['XX.PA', 'Amcor'])).toBe(true)
+    expect(startsWithQuery('mc', ['XX.PA', 'Amcor'])).toBe(false)
+    expect(startsWithQuery('am', ['XX.PA', 'Amcor'])).toBe(true)
+  })
+
+  it('answers true to an empty query, both of them', () => {
+    expect(matchesQuery('  ', ['anything'])).toBe(true)
+    expect(startsWithQuery('  ', ['anything'])).toBe(true)
+  })
+})
+
+describe('a title the ledger never named', () => {
+  it('is still suggested, and answers on its ticker alone', () => {
+    // `EventDraft` has no `name` member, so every security recorded in the
+    // create form reaches this list with `name: null`. A predicate reading the
+    // pair has to walk past the nothing rather than stop at it — otherwise the
+    // titles a reader typed themselves are exactly the ones that stop being
+    // offered back.
+    const titles = [
+      { symbol: 'ZZQ', name: null },
+      { symbol: 'AI.PA', name: 'Air Liquide' },
+    ]
+    expect(startsWithQuery('zz', ['ZZQ', null])).toBe(true)
+    expect(matchesQuery('qz', ['ZZQ', null])).toBe(false)
+    expect(titlesFor(titles, 'zz').map((title) => title.symbol)).toEqual(['ZZQ'])
+    expect(titlesFor(titles, '').map((title) => title.symbol)).toEqual(['AI.PA', 'ZZQ'])
+  })
+
+  it('lets no dateless row outrank a dated one, in either order', () => {
+    // `date` is nullable on the wire, and a row that names no day cannot claim
+    // to be the most recent thing said about a security. It names it while
+    // nothing dated has, and steps aside the moment something does — whichever
+    // order the server hands the two over in.
+    const dateless = anEvent({ date: null, symbol: 'ZZA', name: 'Zeta Alpha ancienne' })
+    const dated = anEvent({ date: '2024-01-05', symbol: 'ZZA', name: 'Zeta Alpha' })
+    expect(titlesNamed([dateless, dated])[0]?.name).toBe('Zeta Alpha')
+    expect(titlesNamed([dated, dateless])[0]?.name).toBe('Zeta Alpha')
+    expect(titlesNamed([dateless])[0]?.name).toBe('Zeta Alpha ancienne')
+  })
+
+  it('folds a padded symbol onto the one it is, rather than beside it', () => {
+    // The trim is the same one the suggestion is compared against in the form,
+    // so a row carrying a stray space must not become a second security a
+    // reader is invited to open a position on.
+    expect(titlesNamed([anEvent({ symbol: ' ZZA ' }), anEvent({ symbol: 'ZZA' })])).toEqual([
+      { symbol: 'ZZA', name: expect.any(String) },
+    ])
   })
 })

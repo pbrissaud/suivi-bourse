@@ -9,14 +9,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { anEvent, aPosition, ledgerEvents } from '@/test/factories'
-import { NO_FILTERS, selectionParams } from '@/lib/ledger'
+import { matchesQuery, NO_FILTERS, selectionParams } from '@/lib/ledger'
 import {
   accountsMatching,
   eventReduction,
   eventsMatching,
   EVENTS_SHOWN,
   heldTitles,
-  matchesQuery,
   SHARES_SHOWN,
   titlesMatching,
 } from '@/lib/palette'

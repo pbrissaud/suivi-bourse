@@ -39,14 +39,13 @@ import { api } from '@/lib/api'
 import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/lib/accounts'
 import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { identityOf, ledgerSearchOf } from '@/lib/ledger'
+import { identityOf, ledgerSearchOf, matchesQuery } from '@/lib/ledger'
 import { oneFailure, readConditions } from '@/lib/status'
 import {
   accountsMatching,
   eventReduction,
   eventsMatching,
   heldTitles,
-  matchesQuery,
   titlesMatching,
 } from '@/lib/palette'
 

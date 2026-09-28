@@ -97,6 +97,122 @@ export function fold(value: string): string {
     .toLowerCase()
 }
 
+// ------------------------------------------------------------------------- //
+// The folded predicates, and the titles they reach (#797, #1036)
+// ------------------------------------------------------------------------- //
+
+/**
+ * The one matching rule, **and it is the ledger's** — which is the sentence the
+ * palette's own docstring carried for two hundred lines before the rule moved
+ * in beside `fold` (#1036). It had to move: the form's perimeter lives here,
+ * and a module the palette already imports cannot import the palette back.
+ *
+ * A substring rather than a prefix, and an empty query matches — which is what
+ * makes a list *what you own* before it is *what you typed*.
+ */
+export function matchesQuery(
+  query: string,
+  texts: readonly (string | null | undefined)[],
+): boolean {
+  const needle = fold(query.trim())
+  if (needle === '') return true
+  return texts.some((text) => text != null && fold(text).includes(needle))
+}
+
+/**
+ * The same rule **anchored at the start**, and it exists for one consumer: the
+ * order of the create form's suggestions (#1036).
+ *
+ * `mc` names `MC.PA` before it names a company carrying `mc` in the middle of
+ * its name, and that is the difference between the first arrow key landing on
+ * the line the reader meant and landing beside it. An empty query starts
+ * everything, so the two groups it sorts into are *all of them* and *none* —
+ * the alphabetical list, without a special case spelled a second time.
+ */
+export function startsWithQuery(
+  query: string,
+  texts: readonly (string | null | undefined)[],
+): boolean {
+  const needle = fold(query.trim())
+  if (needle === '') return true
+  return texts.some((text) => text != null && fold(text).startsWith(needle))
+}
+
+/** A title, which is a **symbol** and not a line (`lib/shares.ts`'s own rule). */
+export interface Title {
+  symbol: string
+  name: string | null
+}
+
+/**
+ * Every title the ledger names — held, or sold out of — one entry per symbol.
+ *
+ * **It reads the events and never the positions**, and that is the whole of
+ * #1036's perimeter. A position is derived from these same events, and the
+ * company name it shows comes from `event.name` and from nowhere else: the
+ * aggregator writes `state.name = event.name` and no scrape ever fills that
+ * column in. So `/api/positions` holds no symbol and no name this collection
+ * lacks, and the page drawing the create form has already read the ledger
+ * entire — the suggestion costs a fold, not a request.
+ *
+ * Two rules, and both are the server's:
+ *
+ *  - **A cash movement names no security**, so it is not a title. `symbol` is
+ *    `null` there by contract, not by accident.
+ *  - **The most recent non-empty name wins.** The aggregator walks an account's
+ *    events forward and keeps the last name it was given, so the newest one is
+ *    what every other surface shows. It is read off the event's own `date`
+ *    rather than off the array's order, because the order of this collection is
+ *    the server's business and the rule must not quietly follow it. **Two rows
+ *    of the same day are the one case where it does**: the day cannot separate
+ *    them, so the first the collection offers keeps the name. That is a tie
+ *    broken deliberately rather than left to chance, and it is asserted.
+ */
+export function titlesNamed(events: readonly LedgerEvent[]): Title[] {
+  const titles = new Map<string, Title>()
+  /** The day the retained name was given, per symbol. `null` — none yet. */
+  const named = new Map<string, string | null>()
+
+  for (const event of events) {
+    const symbol = event.symbol?.trim()
+    if (!symbol) continue
+    if (!titles.has(symbol)) {
+      titles.set(symbol, { symbol, name: null })
+      named.set(symbol, null)
+    }
+    const name = event.name?.trim()
+    if (!name) continue
+    // A row with no day cannot claim to be the most recent one; it names the
+    // security only while nothing dated has.
+    const given = named.get(symbol) ?? null
+    if (given !== null && (event.date ?? '') <= given) continue
+    const title = titles.get(symbol) as Title
+    title.name = name
+    named.set(symbol, event.date ?? '')
+  }
+
+  return [...titles.values()]
+}
+
+/**
+ * The titles a query names, **in the order the eye needs them** (#1036).
+ *
+ * Two groups, each alphabetical on the ticker: what *starts* with the query
+ * first, everything else after. No cap — nineteen titles are nineteen lines,
+ * and a list that hides what the reader owns answers the wrong question. The
+ * palette's own `titlesMatching` caps at five and stays the palette's: a way
+ * through is not a field.
+ */
+export function titlesFor(titles: readonly Title[], query: string): Title[] {
+  const byTicker = (one: Title, other: Title) => one.symbol.localeCompare(other.symbol)
+  const matching = titles.filter((title) => matchesQuery(query, [title.symbol, title.name]))
+  const starts = (title: Title) => startsWithQuery(query, [title.symbol, title.name])
+  return [
+    ...matching.filter(starts).sort(byTicker),
+    ...matching.filter((title) => !starts(title)).sort(byTicker),
+  ]
+}
+
 /**
  * What the search reads — everything the identity and the account column show.
  *

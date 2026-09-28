@@ -1482,3 +1482,492 @@ describe('the page in English', () => {
     expect(screen.getByText('The end of the ledger · 4 events')).toBeInTheDocument()
   })
 })
+
+// --------------------------------------------------------------------------- //
+// The ticker field suggests what the ledger already names (#1036)
+// --------------------------------------------------------------------------- //
+
+/** La liste des suggestions, une fois quelque chose tapé dans le champ Titre. */
+function suggestions() {
+  return screen.getByRole('listbox', { name: 'Titres que vous détenez ou avez détenus' })
+}
+
+/** Ses entrées, dans l'ordre où elles sont dessinées. */
+function lines() {
+  return within(suggestions()).getAllByRole('option')
+}
+
+/** Le panneau ouvert sur un achat, et son champ Titre. */
+async function openOnABuy(user: ReturnType<typeof renderApp>['user']) {
+  await openTheForm(user)
+  await user.click(screen.getByRole('radio', { name: 'Achat' }))
+  return screen.getByLabelText('Ticker')
+}
+
+describe('le champ Titre suggère', () => {
+
+  it('offers the titles the ledger names, ticker first and name beside it', async () => {
+    // The fixture's ledger names two securities and one cash movement. The
+    // movement names no security, so it is not a title.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+
+    const lines = within(suggestions()).getAllByRole('option')
+    expect(lines.map((line) => line.textContent)).toEqual(['ZZAZeta Alpha', 'ZZCZeta Gamma'])
+  })
+
+  it('is drawn inside the panel, where the wheel still works', async () => {
+    // A modal sheet cancels the wheel everywhere but its own content, so a list
+    // portalled to the body would scroll on the keyboard and nowhere else.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+
+    expect(screen.getByRole('dialog')).toContainElement(suggestions())
+  })
+
+  it('leaves Entrée to the form until an arrow key says otherwise', async () => {
+    // The gesture this product already had: type a ticker, press enter, the
+    // event is recorded. A pre-highlighted line would turn that reflex into
+    // *record the line I happen to be over*.
+    let recorded: unknown = null
+    server.use(
+      http.post(ROUTES.events, async ({ request }) => {
+        recorded = await request.json()
+        return HttpResponse.json(aTypedEvent({ id: 'created' }), { status: 201 })
+      }),
+    )
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
+    await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
+    await user.type(screen.getByLabelText('Quantité'), '3')
+    await user.type(screen.getByLabelText('Prix unitaire'), '120')
+    await user.type(field, 'ZZQ')
+    await user.type(field, '{Enter}')
+
+    await waitFor(() => expect(recorded).not.toBeNull())
+    expect(recorded).toMatchObject({ symbol: 'ZZQ', event_type: 'BUY' })
+  })
+
+  it('takes Entrée for itself once an arrow key has chosen a line', async () => {
+    let recorded: unknown = null
+    server.use(
+      http.post(ROUTES.events, async ({ request }) => {
+        recorded = await request.json()
+        return HttpResponse.json(aTypedEvent({ id: 'created' }), { status: 201 })
+      }),
+    )
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowDown}')
+    expect(within(suggestions()).getAllByRole('option')[0]).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await user.keyboard('{Enter}')
+
+    expect(field).toHaveValue('ZZA')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    // The panel is still open and nothing was written: Entrée chose, it did not
+    // record.
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(recorded).toBeNull()
+  })
+
+  it('does not inherit the active line when the list is reopened', async () => {
+    // Le troisième des trois tests de R7, et celui qui tient la garde : si
+    // l'index survivait à une fermeture, `Entrée` sur une liste rouverte
+    // choisirait une ligne que personne n'a désignée — l'accident que la
+    // décision « aucune ligne pré-active » existe pour rendre impossible.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowDown}')
+    expect(field).toHaveAttribute('aria-activedescendant')
+    await user.keyboard('{Escape}')
+
+    await user.type(field, 'a')
+    expect(suggestions()).toBeInTheDocument()
+    expect(field).not.toHaveAttribute('aria-activedescendant')
+    expect(
+      within(suggestions())
+        .getAllByRole('option')
+        .filter((line) => line.getAttribute('aria-selected') === 'true'),
+    ).toHaveLength(0)
+  })
+
+  it('keeps the caret in the field when a line is clicked', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zzc')
+    await user.click(within(suggestions()).getAllByRole('option')[0] as HTMLElement)
+
+    expect(field).toHaveValue('ZZC')
+    expect(field).toHaveFocus()
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('closes on Échap without closing the panel, and keeps what was typed', async () => {
+    // Radix registers its escape handler for the highest layer only, so the
+    // open list takes the key and the sheet underneath keeps it.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    expect(suggestions()).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(field).toHaveValue('zz')
+  })
+
+  it('offers to record a ticker nobody has ever held, which is the normal case', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'NVDA')
+
+    const only = within(suggestions()).getAllByRole('option')
+    expect(only).toHaveLength(1)
+    expect(only[0]).toHaveTextContent('Utiliser « NVDA »')
+    await user.click(only[0] as HTMLElement)
+    expect(field).toHaveValue('NVDA')
+  })
+
+  it('says nothing at all while the ledger has not answered', async () => {
+    // #775, dans le seul endroit où cette liste peut le rompre : *aucun titre ne
+    // correspond* est une affirmation sur le portefeuille du lecteur, et une
+    // lecture en vol ne l'a pas faite.
+    //
+    // L'état est atteignable : la barre qui porte *Saisir un événement* attend
+    // `events.data`, mais `?open=event` — armé par la palette ⌘K et par la carte
+    // du premier lancement — ouvre le panneau au montage, et `Ledger.tsx` monte
+    // le formulaire hors du bloc qui attend la lecture.
+    server.use(http.get(ROUTES.events, () => new Promise<never>(() => {})))
+    const { user } = renderApp({ url: '/ledger?open=event' })
+
+    await screen.findByRole('dialog')
+    await user.click(screen.getByRole('radio', { name: 'Achat' }))
+    const field = screen.getByLabelText('Ticker')
+    await user.type(field, 'NVDA')
+
+    // Ni liste, ni entrée « utiliser », ni phrase de quasi-collision : trois
+    // façons de parler d'un portefeuille que personne n'a encore lu.
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Utiliser/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/nomme déjà/)).not.toBeInTheDocument()
+    // Et le champ reste un champ : la valeur libre est saisissable.
+    expect(field).toHaveValue('NVDA')
+    await user.keyboard('{ArrowDown}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('names the ticker a near miss would duplicate, and refuses nothing', async () => {
+    // Nothing normalises a symbol's case, here or on the server, so `zza`
+    // opens a second position on a security already held as `ZZA`.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zza')
+    // **Les deux filets, au même instant.** La liste est ouverte sur `ZZA` et
+    // l'occulte : c'est voulu (Issue 5). Elle parle pendant la frappe, la phrase
+    // parle une fois la liste refermée, curseur vers *Enregistrer*.
+    expect(suggestions()).toBeInTheDocument()
+    expect(screen.getByText(/nomme déjà ZZA/)).toBeInTheDocument()
+    // Named, never refused: the value stands and the save is not withheld.
+    expect(field).toHaveValue('zza')
+    expect(screen.getByRole('button', { name: 'Enregistrer cet événement' })).toBeEnabled()
+
+    await user.clear(field)
+    await user.type(field, 'ZZQ')
+    expect(screen.queryByText(/nomme déjà/)).not.toBeInTheDocument()
+  })
+
+  it('offers a title the ledger has sold out of, which is half the perimeter', async () => {
+    // The whole reason the perimeter is the ledger and not the held positions:
+    // a security bought and sold in full is still a security this reader has
+    // recorded, and a dividend or a correction on it is an ordinary gesture.
+    const { user } = renderData([
+      anEvent({ id: 'b1', date: '2025-06-02', symbol: 'ZZD', name: 'Zeta Delta', quantity: 10 }),
+      anEvent({
+        id: 's1', date: '2025-09-09', event_type: 'SELL', symbol: 'ZZD',
+        name: 'Zeta Delta', quantity: 10,
+      }),
+    ])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zzd')
+
+    expect(within(suggestions()).getAllByRole('option')).toHaveLength(1)
+    expect(within(suggestions()).getAllByRole('option')[0]).toHaveTextContent('ZZDZeta Delta')
+  })
+
+  it('arms the grant price on a ticker chosen from the list, as on a typed one', async () => {
+    // #1007 reads `draft.symbol`, and choosing a line writes exactly that. The
+    // criterion is the ticket's own: the suggestion must not become a thing
+    // only typing can reach.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-28' } })
+    const field = screen.getByLabelText('Ticker')
+    await user.type(field, 'zza')
+    await user.keyboard('{ArrowDown}{Enter}')
+
+    expect(field).toHaveValue('ZZA')
+    await waitFor(() => expect(screen.getByLabelText('Prix unitaire')).toHaveValue('126'))
+    expect(screen.getByText(/cours de clôture du 27 févr\. 2026/)).toBeInTheDocument()
+  })
+
+  it('serves the same list on the four types that name a security', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+
+    for (const type of ['Achat', 'Vente', 'Attribution', 'Dividende']) {
+      await user.click(screen.getByRole('radio', { name: type }))
+      const field = screen.getByLabelText('Ticker')
+      await user.clear(field)
+      await user.type(field, 'zzc')
+      expect(within(suggestions()).getAllByRole('option')).toHaveLength(1)
+      await user.keyboard('{Escape}')
+    }
+  })
+})
+
+// --------------------------------------------------------------------------- //
+// The same field, at the keyboard and under the pointer (#1036)
+// --------------------------------------------------------------------------- //
+
+describe('le champ Titre se conduit', () => {
+
+  it('opens on the arrow alone, and the empty query is *everything you own*', async () => {
+    // `matchesQuery` answers true to an empty needle, which is what makes the
+    // list *what you hold* before it is *what you typed*. Nothing here has been
+    // typed at all: the arrow is the whole gesture.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    field.focus()
+    await user.keyboard('{ArrowDown}')
+
+    expect(lines().map((line) => line.textContent)).toEqual(['ZZAZeta Alpha', 'ZZCZeta Gamma'])
+    expect(lines()[0]).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens nothing at all when the ledger names no security', async () => {
+    // A ledger of cash movements has no title, and an empty field asks for no
+    // creation either — so there is no line to draw and the arrow answers with
+    // silence rather than with an empty box.
+    const { user } = renderData([
+      anEvent({
+        id: 'cash', date: '2026-01-05', event_type: 'DEPOSIT', symbol: null, name: null,
+        notes: 'Virement entrant', quantity: null, unit_price: null, fee: null, amount: 500,
+      }),
+    ])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    field.focus()
+    await user.keyboard('{ArrowDown}{ArrowUp}')
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('walks the list around, up from nothing landing on the last line', async () => {
+    // The index is a ring and `null` is a place in it, not an absence of one:
+    // the first `ArrowUp` means *the last line*, which is what a reader
+    // reaching for the bottom of a two-line list actually does.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowUp}')
+    expect(lines()[1]).toHaveAttribute('aria-selected', 'true')
+
+    await user.keyboard('{ArrowDown}')
+    expect(lines()[0]).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{ArrowUp}')
+    expect(lines()[1]).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('jumps to the ends with Origine and Fin', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.keyboard('{End}')
+    expect(lines()[1]).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{Home}')
+    expect(lines()[0]).toHaveAttribute('aria-selected', 'true')
+    // The field is what carries the caret, so the key that moved the active
+    // line must not also have moved the text.
+    expect(field).toHaveValue('zz')
+  })
+
+  it('gives Entrée back to the form as soon as something is typed again', async () => {
+    // The line stops being chosen the instant the query changes underneath it:
+    // otherwise `Entrée` would record `ZZA` over a reader who went on typing
+    // `zza`, which is a different ticker and the reader's to record.
+    let recorded: unknown = null
+    server.use(
+      http.post(ROUTES.events, async ({ request }) => {
+        recorded = await request.json()
+        return HttpResponse.json(aTypedEvent({ id: 'created' }), { status: 201 })
+      }),
+    )
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
+    await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
+    await user.type(screen.getByLabelText('Quantité'), '3')
+    await user.type(screen.getByLabelText('Prix unitaire'), '120')
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowDown}')
+    await user.type(field, 'a')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(recorded).not.toBeNull())
+    expect(recorded).toMatchObject({ symbol: 'zza' })
+  })
+
+  it('closes on Tabulation without choosing the line under the eye', async () => {
+    // Leaving the field is not answering it: what was typed stands, and the
+    // highlighted line is dropped with the list.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowDown}')
+    await user.tab()
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(field).toHaveValue('zz')
+    expect(field).not.toHaveFocus()
+  })
+
+  it('moves the one highlight under the pointer rather than painting a second', async () => {
+    // What the eye follows and what `aria-activedescendant` names have to be
+    // the same line, or the keyboard and the mouse are pointing at two.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.keyboard('{ArrowDown}')
+    await user.hover(lines()[1] as HTMLElement)
+
+    expect(lines().filter((line) => line.getAttribute('aria-selected') === 'true')).toHaveLength(1)
+    expect(lines()[1]).toHaveAttribute('aria-selected', 'true')
+    expect(field).toHaveAttribute('aria-activedescendant', lines()[1]?.id)
+  })
+
+  it('stays open when the caret is put back in the field', async () => {
+    // There is no trigger here — the anchor *is* the field — so radix counts a
+    // click on it as a click outside its layer. Without the exemption, reaching
+    // for the caret closes the list the reader was reading.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+    await user.click(field)
+
+    expect(suggestions()).toBeInTheDocument()
+  })
+
+  it('says nothing about a collision with the very ticker that was typed', async () => {
+    // `ZZA` **is** `ZZA`. The sentence is about the near miss that opens a
+    // second position, so the exact spelling of a held security has to be the
+    // one case it stays quiet on — otherwise it fires on every ticker in the
+    // portfolio and stops being read.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'ZZA')
+
+    expect(screen.queryByText(/nomme déjà/)).not.toBeInTheDocument()
+    expect(lines()[0]).toHaveTextContent('ZZAZeta Alpha')
+  })
+
+  it('attaches the collision sentence to the field it is about', async () => {
+    // It is a remark beside a value nothing refuses, so the only way a screen
+    // reader meets it at all is as the field's description.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zza')
+
+    expect(field).toHaveAccessibleDescription(/nomme déjà ZZA/)
+  })
+
+  it('opens on a row already recorded without accusing it of anything', async () => {
+    // The panel is the same one for a correction, and the row's own ticker is
+    // in the field before a key is pressed: no list opens on a value nobody
+    // typed, and the near-miss sentence has no near miss to name.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+
+    expect(await screen.findByLabelText('Ticker')).toHaveValue('ZZC')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/nomme déjà/)).not.toBeInTheDocument()
+  })
+
+  it('says the three sentences in English too', async () => {
+    // The keys carry a placeholder each, and a catalogue can hold the key with
+    // the wrong name inside it — `{type}` for `{typed}` — without the parity
+    // guard noticing. Rendering them is what closes that.
+    server.use(
+      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
+    )
+    const { user } = renderApp({ url: '/ledger', browserLanguages: ['en-GB'] })
+
+    await screen.findByRole('table', { name: 'Your events' })
+    await user.click(await screen.findByRole('button', { name: 'Enter an event' }))
+    await user.click(screen.getByRole('radio', { name: 'Buy' }))
+    const field = screen.getByLabelText('Ticker')
+
+    await user.type(field, 'zza')
+    expect(
+      screen.getByRole('listbox', { name: 'Securities you hold or have held' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Your ledger already names ZZA/)).toBeInTheDocument()
+
+    await user.clear(field)
+    await user.type(field, 'NVDA')
+    expect(screen.getByRole('option', { name: 'Use “NVDA”' })).toBeInTheDocument()
+  })
+})

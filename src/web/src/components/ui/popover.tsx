@@ -21,10 +21,22 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  container,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  /**
+   * Where the content is drawn, `document.body` by default (#1036).
+   *
+   * It is passed through because a popover inside a modal dialog has to be
+   * drawn **inside that dialog's content** to scroll at all: `react-remove-scroll`
+   * cancels wheel and touch outside the shards it was given, and radix's dialog
+   * declares exactly one — its own content node. The positioner runs `fixed`, so
+   * being inside an `overflow-y-auto` ancestor costs no clipping.
+   */
+  container?: React.ComponentProps<typeof PopoverPrimitive.Portal>["container"]
+}) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
