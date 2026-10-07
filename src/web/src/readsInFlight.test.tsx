@@ -114,7 +114,10 @@ function routeOf(url: string): string | null {
  */
 let lastActivity = 0
 
-/** Wait until nothing has crossed the wire for a moment — landed or hanging. */
+/**
+ * Wait until nothing has crossed the wire, nor changed on the page, for a
+ * moment — landed or hanging.
+ */
 async function quiet() {
   await waitFor(() => expect(performance.now() - lastActivity).toBeGreaterThan(60), {
     timeout: 5_000,
@@ -303,9 +306,27 @@ beforeAll(() => {
     visited.add(route)
     recording.add(route)
   })
-  server.events.on('request:end', () => {
+  // The end of a read is when the **app** has its whole answer, and that is read
+  // off `fetch` rather than off msw: since msw 3 answers through a socket, its
+  // `request:end` can precede the body reaching the page by a quarter of a
+  // second, and a baseline taken in that gap misses what the answer draws. The
+  // body is read here for the same reason — `fetch` settles on the headers.
+  const wire = globalThis.fetch
+  globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+    try {
+      const response = await wire(...args)
+      return new Response(await response.arrayBuffer(), response)
+    } finally {
+      lastActivity = performance.now()
+    }
+  }) as typeof fetch
+  // And the page counts as activity: a read that depends on another starts
+  // only once the first answer has rendered, and under load that render alone
+  // outlasts the quiet window — the baseline was then taken with the account's
+  // history neither asked for nor drawn.
+  new MutationObserver(() => {
     lastActivity = performance.now()
-  })
+  }).observe(document.body, { childList: true, subtree: true, characterData: true })
 })
 
 beforeEach(() => {

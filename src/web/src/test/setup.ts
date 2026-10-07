@@ -65,15 +65,26 @@ if (!globalThis.ResizeObserver) {
 // while `lib/api.ts` uses relative paths precisely because the app is served
 // from the same origin as its API. Resolve them the way a browser would, once,
 // here, rather than teaching the client an absolute base it does not need.
-const nodeFetch = globalThis.fetch
-globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-  if (typeof input === 'string' && input.startsWith('/')) {
-    return nodeFetch(new URL(input, window.location.origin), init)
-  }
-  return nodeFetch(input, init)
-}) as typeof fetch
-
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+//
+// A body goes out as bytes, and that is why this wraps msw's `fetch` rather than
+// the other way round (msw 3 patches `fetch` at `listen`). Under jsdom a
+// multipart upload reaching msw's socket announces its length, sends less, and
+// fails the fetch before the handler answers; Vitest's `Request` is what turns
+// jsdom's `FormData` into Node's, and reading it back gives msw a body it can
+// count.
+beforeAll(() => {
+  server.listen({ onUnhandledFrame: 'error' })
+  const mswFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === 'string' && input.startsWith('/')
+        ? new URL(input, window.location.origin)
+        : input
+    if (init?.body == null) return mswFetch(url, init)
+    const request = new Request(url, init)
+    return mswFetch(url, { ...init, headers: request.headers, body: await request.arrayBuffer() })
+  }) as typeof fetch
+})
 afterAll(() => server.close())
 
 beforeEach(() => {

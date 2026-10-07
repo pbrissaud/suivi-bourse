@@ -8,7 +8,7 @@
  * store: the handlers below serve the contract, and the day a route is renamed
  * they and `lib/api.ts` change while no page test moves.
  *
- * `onUnhandledRequest: 'error'` in the setup file is the second half of "no
+ * `onUnhandledFrame: 'error'` in the setup file is the second half of "no
  * network": a request this file does not name fails the test rather than
  * reaching outside.
  */
