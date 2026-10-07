@@ -939,3 +939,109 @@ def test_a_table_declared_after_this_step_does_not_break_it(tmp_path,
         assert opened.query('SELECT count(*) FROM account_note') == [(0,)]
     finally:
         opened.close()
+
+
+# --------------------------------------------------------------------------- #
+# One spelling per security (#1068)
+# --------------------------------------------------------------------------- #
+
+def _before_the_fold(path):
+    """Today's store, minus the fold's mark — the shape the step exists for.
+
+    Built from the current DDL and not written out, unlike
+    :data:`_GENERATION_ZERO_DDL`: what precedes this step is every other step,
+    and the rows the writer could still lay down before it folded anything.
+    """
+    created = store_module.open_store(path)
+    created.close()
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'fold_symbol_case'")
+    connection.execute(
+        "INSERT INTO symbol VALUES ('MC.PA'), ('mc.pa'), ('Mc.Pa'), "
+        "('air.pa'), ('AAPL')")
+    connection.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, name, "
+        "quantity, unit_price) VALUES "
+        "(1, '2024-01-02', 'BUY', 'default', 'MC.PA', 'LVMH', 1, 700.0), "
+        "(2, '2024-02-02', 'BUY', 'default', 'mc.pa', 'LVMH', 2, 710.0), "
+        "(3, '2024-03-02', 'BUY', 'default', 'Mc.Pa', 'LVMH', 3, 720.0), "
+        "(4, '2024-04-02', 'BUY', 'default', 'air.pa', 'Airbus', 4, 150.0), "
+        "(5, '2024-05-02', 'BUY', 'default', 'AAPL', 'Apple', 5, 180.0)")
+    connection.execute(
+        "INSERT INTO position (account, symbol, name, quantity, cost_basis, "
+        "realized_gain, received_dividend) VALUES "
+        "('default', 'MC.PA', 'LVMH', 1, 700, 0, 0), "
+        "('default', 'mc.pa', 'LVMH', 2, 1420, 0, 0), "
+        "('default', 'Mc.Pa', 'LVMH', 3, 2160, 0, 0), "
+        "('default', 'air.pa', 'Airbus', 4, 600, 0, 0), "
+        "('default', 'AAPL', 'Apple', 5, 900, 0, 0)")
+    connection.execute(
+        "INSERT INTO symbol_quote (symbol, last_price_native) VALUES "
+        "('MC.PA', 650.0), ('mc.pa', 1.0), ('air.pa', 160.0)")
+    connection.execute(
+        "INSERT INTO price_point (symbol, ts, price_native) VALUES "
+        "('MC.PA', TIMESTAMPTZ '2024-06-03 00:00:00+00', 650.0), "
+        "('mc.pa', TIMESTAMPTZ '2024-06-03 00:00:00+00', 1.0), "
+        "('air.pa', TIMESTAMPTZ '2024-06-03 00:00:00+00', 160.0)")
+    connection.execute(
+        "INSERT INTO portfolio_totals (day, total_value) "
+        "VALUES (DATE '2024-06-03', 1.0)")
+    connection.close()
+
+
+def test_the_fold_moves_every_spelling_onto_the_one_the_writer_keeps(tmp_path):
+    """``mc.pa`` and ``Mc.Pa`` join ``MC.PA``; ``air.pa`` becomes ``AIR.PA``.
+
+    The events move — that is the fix — and nothing else of theirs survives a
+    merge it could get wrong: the variants' positions go for the replay to sum,
+    their market data goes where the canonical spelling has its own, and moves
+    with them where it has none.
+    """
+    path = tmp_path / 'old.duckdb'
+    _before_the_fold(path)
+
+    opened = store_module.open_store(path)
+    try:
+        assert opened.query('SELECT id, symbol FROM event ORDER BY id') == [
+            (1, 'MC.PA'), (2, 'MC.PA'), (3, 'MC.PA'), (4, 'AIR.PA'),
+            (5, 'AAPL')]
+        assert opened.query('SELECT symbol FROM symbol ORDER BY symbol') == [
+            ('AAPL',), ('AIR.PA',), ('MC.PA',)]
+        assert opened.query(
+            'SELECT symbol, quantity FROM position ORDER BY symbol') == [
+                ('AAPL', 5.0), ('MC.PA', 1.0)]
+        assert opened.query(
+            'SELECT symbol, last_price_native FROM symbol_quote '
+            'ORDER BY symbol') == [('AIR.PA', 160.0), ('MC.PA', 650.0)]
+        assert opened.query(
+            'SELECT symbol, price_native FROM price_point '
+            'ORDER BY symbol') == [('AIR.PA', 160.0), ('MC.PA', 650.0)]
+        assert opened.query('SELECT count(*) FROM portfolio_totals') == [(0,)]
+        assert opened.query(
+            "SELECT count(*) FROM schema_step "
+            "WHERE step = 'fold_symbol_case'") == [(1,)]
+    finally:
+        opened.close()
+
+
+def test_the_fold_leaves_a_store_already_canonical_untouched(tmp_path):
+    """No rebuild where no spelling folds — the derived series stay."""
+    path = tmp_path / 'store.duckdb'
+    created = store_module.open_store(path)
+    created.close()
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'fold_symbol_case'")
+    connection.execute("INSERT INTO symbol VALUES ('MC.PA')")
+    connection.execute(
+        "INSERT INTO portfolio_totals (day, total_value) "
+        "VALUES (DATE '2024-06-03', 1.0)")
+    connection.close()
+
+    opened = store_module.open_store(path)
+    try:
+        assert opened.query('SELECT symbol FROM symbol') == [('MC.PA',)]
+        assert opened.query('SELECT count(*) FROM portfolio_totals') == [(1,)]
+    finally:
+        opened.close()

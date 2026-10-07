@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
-from .schemas import CASH_EVENT_TYPES, Event, EventType
+from .schemas import CASH_EVENT_TYPES, Event, EventType, is_ascii_symbol
 
 
 NUMERIC_FIELDS = ('quantity', 'unit_price', 'fee', 'amount')
@@ -65,6 +65,12 @@ class EventValidator:
         else:
             if not event.symbol:
                 errors.append(_issue('symbol', prefix, "symbol is required"))
+            elif not is_ascii_symbol(event.symbol):
+                errors.append(_issue(
+                    'symbol', prefix,
+                    f"symbol '{event.symbol}' holds a character no ticker "
+                    f"has — a lookalike letter, most often (tickers are "
+                    f"spelled in ASCII: MC.PA, ^FCHI, BTC-EUR)"))
             if not event.name:
                 errors.append(_issue('name', prefix, "name is required"))
 

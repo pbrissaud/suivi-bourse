@@ -1680,9 +1680,9 @@ describe('le champ Titre suggère', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
-  it('names the ticker a near miss would duplicate, and refuses nothing', async () => {
-    // Nothing normalises a symbol's case, here or on the server, so `zza`
-    // opens a second position on a security already held as `ZZA`.
+  it('names the ticker a near miss will be recorded under, and refuses nothing', async () => {
+    // The server folds a symbol's case (#1068), so `zza` joins the position
+    // already held as `ZZA` — and the sentence says so before the save.
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     const field = await openOnABuy(user)

@@ -304,25 +304,24 @@ export function EventForm({
       }))
 
   /**
-   * The ticker the reader is one keystroke away from duplicating.
+   * The ticker the save will fold what was typed into.
    *
-   * Nothing normalises a symbol's case anywhere — not this form, not the file
-   * road, not the store — so `mc.pa` opens a **second position** on a security
-   * the ledger already names as `MC.PA`, with its own cost basis and its own
-   * scrape. *Names*, and not *holds*: the perimeter keeps the titles sold out
-   * of, and a dividend corrected on a closed line is an ordinary gesture. The
-   * list answers while it is open; this sentence answers once it is closed,
-   * which is the instant before the save. It refuses nothing: a ticker really
-   * spelled in lower case is somebody's to record.
+   * The writer stores every symbol in one spelling (#1068) — `mc.pa` lands on
+   * the `MC.PA` the ledger already names, on both roads — so this sentence no
+   * longer warns of a second position: it says, before the save, which line
+   * the event joins. *Names*, and not *holds*: the perimeter keeps the titles
+   * sold out of, and a dividend corrected on a closed line is an ordinary
+   * gesture. A lookalike letter (a Cyrillic `С`) folds to nothing here and is
+   * the server's refusal, on this field.
    */
   /**
    * The comparison is `fold` **plus compatibility**, and only here.
    *
    * `fold` is the ledger's search rule and stays what it is. A ticker is not
    * prose: pasted from a broker's page it carries fullwidth forms (`ＭＣ.ＰＡ`)
-   * or a zero-width space, and neither survives a round trip through the store
-   * as the same security. `NFKC` folds the first, the property escape drops the
-   * second, and the near miss is named rather than silently opening a line.
+   * or a zero-width space, and the store folds both (`canonical_symbol`).
+   * `NFKC` folds the first, the property escape drops the second, so the
+   * sentence names the line the server will put the event on.
    */
   const near = (value: string) =>
     fold(value.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}]/gu, ''))

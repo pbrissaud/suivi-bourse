@@ -11,7 +11,7 @@ from application import settings_registry
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
 from application.events import export as events_export
-from application.events.schemas import DEFAULT_ACCOUNT, Event
+from application.events.schemas import DEFAULT_ACCOUNT, Event, canonical_symbol
 from application.store import INCOMING
 
 logger = getLogger("entries")
@@ -195,7 +195,7 @@ def content_key(event: Event) -> Tuple:
         event.date,
         event.event_type.value,
         (event.account or '').strip() or DEFAULT_ACCOUNT,
-        event.symbol,
+        canonical_symbol(event.symbol),
         _amount(event.quantity),
         _amount(event.unit_price),
         _amount(event.fee),
@@ -295,9 +295,16 @@ def _stamp_write(store) -> None:
 
 def _settled(store, draft: Event,
              known: Optional[Mapping[str, str]] = None) -> Event:
-    """The draft with the one thing the store decides before it is judged."""
+    """The draft with the things the store decides before it is judged.
+
+    The symbol among them (#1068): folded to :func:`canonical_symbol` here, the
+    one place the form, the file and the dry run all pass, so ``mc.pa`` lands on
+    the position ``MC.PA`` already is — and is named after it.
+    """
+    symbol = canonical_symbol(draft.symbol)
     return replace(draft, account=(draft.account or '').strip() or None,
-                   name=draft.name or _named(store, draft.symbol, known),
+                   symbol=symbol,
+                   name=draft.name or _named(store, symbol, known),
                    id=None)
 
 

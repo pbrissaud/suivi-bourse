@@ -86,13 +86,23 @@ another.
 | `date` | yes | ISO format, `YYYY-MM-DD` |
 | `event_type` | yes | one of the six below |
 | `account` | see [accounts](#declaring-your-accounts) | the id of a declared account |
-| `symbol` | share events | the Yahoo! Finance ticker, e.g. `AAPL`, `AI.PA` |
+| `symbol` | share events | the Yahoo! Finance ticker, e.g. `AAPL`, `AI.PA`; [case does not matter](#one-spelling-per-ticker) |
 | `name` | share events | the display name, e.g. `Apple Inc.` |
 | `quantity` | `BUY`, `SELL`, `GRANT` | number of shares; fractions are allowed |
 | `unit_price` | `BUY`, `SELL` | price per share, **in your base currency** |
 | `fee` | no | transaction fee; never negative |
 | `amount` | `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` | the sum received or moved |
 | `notes` | no | free text, kept and shown, never interpreted |
+
+### One spelling per ticker
+
+**A ticker's case does not matter.** `ai.pa`, `Ai.Pa` and `AI.PA` are one
+security, and it is stored as `AI.PA`, the way Yahoo! Finance spells it.
+Fullwidth characters and invisible ones (a zero-width space pasted in with
+the ticker) are folded away in the same way. A symbol holding a letter outside
+plain ASCII, such as a Cyrillic `С` that looks like a Latin `C`, is refused and
+the row is named: no ticker is spelled that way, and it would open a second line
+for a company you already hold.
 
 **Amounts are in your base currency, as you paid them.** An event records the
 debit — what actually left your account — rather than a foreign amount to be

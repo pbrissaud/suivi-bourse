@@ -183,6 +183,59 @@ def test_a_typed_row_is_read_back_with_its_key(store):
 
 
 # --------------------------------------------------------------------------- #
+# One spelling per security, on both roads (#1068)
+# --------------------------------------------------------------------------- #
+
+def test_a_typed_ticker_lands_on_the_position_its_case_already_names(store):
+    """``mc.pa`` typed after ``MC.PA`` is one more line of the same company."""
+    entries.create(store, _draft(symbol='MC.PA', name='LVMH'))
+    created = entries.create(store, _draft(symbol=' mc.pa\u200b'))
+
+    assert created.symbol == 'MC.PA'
+    assert created.name == 'LVMH'
+    assert store.query('SELECT symbol FROM symbol') == [('MC.PA',)]
+    assert store.query('SELECT DISTINCT symbol FROM event') == [('MC.PA',)]
+
+
+def test_a_file_s_ticker_is_folded_like_a_typed_one(store, tmp_path):
+    """The file road writes through the same settle, so it cannot disagree."""
+    _upload(store, tmp_path, body=(
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+        "2024-01-15,BUY,mc.pa,LVMH,1,700,,,\n"
+        "2024-02-15,BUY,\uff2d\uff23.\uff30\uff21,LVMH,2,710,,,\n"))
+
+    assert store.query('SELECT symbol FROM symbol') == [('MC.PA',)]
+    assert store.query(
+        'SELECT DISTINCT symbol FROM event') == [('MC.PA',)]
+
+
+def test_a_lookalike_letter_is_refused_and_nothing_lands(store):
+    """``MС.PA`` with a Cyrillic ``С`` would open a line nobody can tell apart."""
+    with pytest.raises(entries.InvalidEntry) as refusal:
+        entries.create(store, _draft(symbol='M\u0421.PA'))
+
+    assert refusal.value.field == 'symbol'
+    assert store.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_an_update_folds_the_ticker_it_rewrites(store):
+    created = entries.create(store, _draft(symbol='MC.PA'))
+
+    entries.update(store, created.id, _draft(symbol='mc.pa'))
+
+    assert store.query('SELECT symbol FROM event') == [('MC.PA',)]
+
+
+def test_a_file_line_differing_only_in_case_is_a_duplicate(store):
+    """The key folds too, or ``mc.pa`` re-imported would be a second purchase."""
+    entries.create(store, _draft(symbol='MC.PA'))
+
+    fresh, duplicates = entries.split_duplicates(store, [_draft(symbol='mc.pa')])
+
+    assert fresh == [] and len(duplicates) == 1
+
+
+# --------------------------------------------------------------------------- #
 # Nothing is written when anything refuses
 # --------------------------------------------------------------------------- #
 
