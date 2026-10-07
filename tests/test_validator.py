@@ -579,3 +579,27 @@ def test_an_event_dated_in_the_future_is_not_refused_here(validator):
 
     assert validator.validate([future]) == (True, [])
     assert validator.issues([future]) == []
+
+
+# --------------------------------------------------------------------------- #
+# A lookalike letter is not a ticker (#1068)
+# --------------------------------------------------------------------------- #
+
+def test_a_symbol_with_a_lookalike_letter_is_refused_on_its_field(validator):
+    """``MС.PA`` with a Cyrillic ``С`` reads as LVMH and is not its ticker."""
+    event = Event(date=date(2024, 1, 15), event_type=EventType.BUY,
+                  symbol='MС.PA', name='LVMH', quantity=1.0,
+                  unit_price=700.0)
+
+    (issue,) = validator.issues([event])
+
+    assert issue.field == 'symbol'
+    assert 'lookalike' in issue.message
+
+
+def test_every_ascii_ticker_shape_passes(validator):
+    """An index, a pair and an exchange suffix are all spelled in ASCII."""
+    for symbol in ('MC.PA', '^FCHI', 'BTC-EUR', 'EURUSD=X', 'BRK-B'):
+        event = Event(date=date(2024, 1, 15), event_type=EventType.BUY,
+                      symbol=symbol, name='x', quantity=1.0, unit_price=1.0)
+        assert validator.issues([event]) == []

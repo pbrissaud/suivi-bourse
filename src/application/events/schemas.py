@@ -1,6 +1,7 @@
 """Data schemas for the events module."""
 
 import bisect
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date  # noqa: F401 — used in dataclass field annotations (eager-evaluated on Python <3.14)
 from enum import Enum
@@ -10,6 +11,63 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 DEFAULT_ACCOUNT = "default"
 
 ACCOUNT_FILE_COLUMNS = ('id', 'type', 'label')
+
+
+#: The code points a ticker can carry and nobody can see: the format characters
+#: (zero-width space and joiners, the byte-order mark, the soft hyphen, the bidi
+#: marks — category ``Cf``) and the variation selectors, which are marks and not
+#: formats. The same set the form strips with ``\p{Default_Ignorable_Code_Point}``
+#: (#1036), as far as it reaches a ticker.
+_VARIATION_SELECTORS = frozenset(
+    [0x034F, *range(0x180B, 0x1810), *range(0xFE00, 0xFE10),
+     *range(0xE0100, 0xE01F0)])
+
+
+def _invisible(char: str) -> bool:
+    """A format character or a variation selector — see the set above."""
+    if ord(char) in _VARIATION_SELECTORS:
+        return True
+    return unicodedata.category(char) == 'Cf'
+
+
+def canonical_symbol(text: Optional[str]) -> Optional[str]:
+    """The one spelling a security is stored under (issue #1068).
+
+    ``mc.pa``, ``MC.PA``, ``ＭＣ.ＰＡ`` and ``MC.PA`` with a zero-width space in
+    it all read as one company, and the ledger keys a position on the raw
+    ``(account, symbol)`` pair — so each of them used to open a position of its
+    own. Applied **once, on the write path** (``entries._settled``), so the form
+    and the file agree, and by the schema step that brought the rows already
+    stored to it.
+
+    ``NFKC`` folds the compatibility forms, the invisible code points go, and
+    the result is upper-cased: every Yahoo ticker is (``MC.PA``, ``^FCHI``,
+    ``BTC-EUR``). What it does **not** fold is a lookalike letter — a Cyrillic
+    ``С`` is a different character under every normalisation — and that is
+    :func:`is_ascii_symbol`'s refusal, not this function's.
+
+    ``None`` for an absent or blank symbol, so a cell holding only a zero-width
+    space is the missing ticker it looks like.
+    """
+    if text is None:
+        return None
+    folded = ''.join(
+        char for char in unicodedata.normalize('NFKC', text)
+        if not _invisible(char))
+    folded = folded.strip().upper()
+    return folded or None
+
+
+def is_ascii_symbol(symbol: str) -> bool:
+    """Whether a canonical symbol is spelled in letters a ticker can hold.
+
+    Every Yahoo ticker is ASCII, so a character outside it after
+    :func:`canonical_symbol` is a lookalike (``MС.PA`` with a Cyrillic ``С``,
+    U+0421) or a typo — either way a second position on a security nobody can
+    tell apart from the first, and no quote to value it with. Refusing it
+    replaces a confusables table this product would have to keep current.
+    """
+    return symbol.isascii()
 
 
 class EventType(Enum):

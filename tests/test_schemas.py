@@ -8,6 +8,7 @@ from application.events.schemas import (
     Event,
     EventType,
     ShareState,
+    canonical_symbol,
     unit_cost,
 )
 from application.positions import POSITION_COLUMNS
@@ -414,3 +415,33 @@ def test_a_future_row_is_still_a_position_to_current_and_that_is_named():
     assert [(p['symbol'], p['quantity']) for p in tl.current()] == [
         ("LATER", 5.0)]
     assert tl.current_cash()["PEA"].cash_balance == 9_750.0
+
+
+# ---------------------------------------------------------------------------
+# canonical_symbol (#1068)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('typed', [
+    'MC.PA', 'mc.pa', 'Mc.Pa', '  mc.pa\t',
+    '\uff2d\uff23.\uff30\uff21',        # fullwidth, pasted from a broker's page
+    'MC\u200b.PA',                       # a zero-width space
+    '\ufeffMC.PA',                       # a byte-order mark
+    'MC.PA\ufe0f',                       # a variation selector
+])
+def test_every_spelling_of_one_ticker_folds_to_one(typed):
+    assert canonical_symbol(typed) == 'MC.PA'
+
+
+def test_a_lookalike_letter_is_not_folded_away():
+    """No normalisation knows a Cyrillic С from a Latin C: the validator's job."""
+    assert canonical_symbol('m\u0441.pa') == 'M\u0421.PA'
+
+
+@pytest.mark.parametrize('blank', [None, '', '   ', '\u200b'])
+def test_a_blank_symbol_is_an_absent_one(blank):
+    assert canonical_symbol(blank) is None
+
+
+def test_the_tickers_yahoo_spells_are_left_as_they_are():
+    for symbol in ('^FCHI', 'BTC-EUR', 'EURUSD=X', 'BRK-B', 'AAPL'):
+        assert canonical_symbol(symbol) == symbol

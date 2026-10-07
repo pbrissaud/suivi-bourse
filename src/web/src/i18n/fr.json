@@ -450,7 +450,7 @@
   "data.form.symbol": "Ticker",
   "data.form.symbol.suggestions": "Titres que vous détenez ou avez détenus",
   "data.form.symbol.use": "Utiliser « {typed} »",
-  "data.form.symbol.collision": "Votre grand livre nomme déjà {symbol} : enregistré tel quel, ce ticker ouvre une seconde ligne.",
+  "data.form.symbol.collision": "Votre grand livre nomme déjà {symbol} : ce ticker y sera enregistré sous ce nom.",
   "data.form.quantity": "Quantité",
   "data.form.unitPrice": "Prix unitaire",
   "data.form.grantPrice.explain": "Laissez-le vide et l’attribution ajoute seulement des titres — rien de versé, rien qui vous ait coûté. Renseignez-le et les titres entrent dans vos versements et dans votre base de coût : la position démarre sans plus-value latente.",

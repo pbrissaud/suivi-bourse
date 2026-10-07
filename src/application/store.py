@@ -13,6 +13,7 @@ from logfmt_logger import getLogger
 
 from application import boot_env
 from application import settings_registry
+from application.events.schemas import canonical_symbol
 
 logger = getLogger("store")
 
@@ -736,6 +737,81 @@ def _refetch_prices_bucketed_in_utc(connection) -> None:
     connection.execute('DELETE FROM portfolio_totals')
 
 
+def _fold_symbol_case(connection) -> None:
+    """Bring every stored symbol to the one spelling the writer now keeps (#1068).
+
+    Until this release nothing normalised a ticker, so ``mc.pa`` and ``MC.PA``
+    were two securities: two positions, two cost bases, two scrapes. The writer
+    folds every new symbol with :func:`canonical_symbol`; this brings the rows
+    written before it to the same rule, so the rule holds for the whole ledger
+    and not only for what was typed after the upgrade. **It moves events
+    between positions** — the ``mc.pa`` lines join ``MC.PA`` — and that move is
+    the fix: they were always the same company.
+
+    The rule is read live rather than written out here, unlike the literal in
+    :func:`_refetch_prices_bucketed_in_utc`: a store that has not run this step
+    must end on the rule the writer applies today, and a later change to the
+    rule is a later step for the stores that already ran this one.
+
+    Per spelling that folds to something else, in this order:
+
+    - **the events** move to the canonical symbol, declared if it was not;
+    - **the market data** moves with them only where the canonical symbol has
+      none of its own — a quote, a series or a split history is one symbol's
+      whole answer, and two half-answers merged is neither. Where it has one,
+      the variant's is dropped, and the backfill already covers what is kept;
+    - **the positions** go: two lines merging into one is a replay's sum, not
+      a rename, and the boot's replay writes it a breath later. The two
+      derived series go too, as they do in :func:`_buy_the_series_again`,
+      because they were computed off two positions where there is one.
+
+    Under :func:`rebuilding`, because DuckDB refuses to delete a ``symbol`` row
+    another row referenced earlier in the same transaction — and the variant's
+    row has to go, or the orphan list would offer to purge a ticker the owner
+    never typed. A lookalike letter folds to itself and stays: no
+    normalisation knows a Cyrillic ``С`` from a Latin one, and the writer now
+    refuses it on the way in.
+
+    A no-op on a store whose symbols are already canonical, which is every
+    file created today: it reads the ``symbol`` table and touches nothing.
+    """
+    moves = []
+    for (symbol,) in connection.execute(
+            'SELECT symbol FROM symbol ORDER BY symbol').fetchall():
+        target = canonical_symbol(symbol)
+        if target is not None and target != symbol:
+            moves.append((symbol, target))
+    if not moves:
+        return
+
+    with rebuilding(connection, 'symbol'):
+        for variant, target in moves:
+            connection.execute(
+                'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
+                [target])
+            connection.execute(
+                'UPDATE _step_event SET symbol = ? WHERE symbol = ?',
+                [target, variant])
+            connection.execute(
+                'DELETE FROM _step_position WHERE symbol = ?', [variant])
+            for table in ('_step_symbol_quote', 'price_point', 'symbol_split'):
+                held = connection.execute(
+                    f'SELECT 1 FROM {table} WHERE symbol = ? LIMIT 1',
+                    [target]).fetchall()
+                if held:
+                    connection.execute(
+                        f'DELETE FROM {table} WHERE symbol = ?', [variant])
+                else:
+                    connection.execute(
+                        f'UPDATE {table} SET symbol = ? WHERE symbol = ?',
+                        [target, variant])
+            connection.execute('DELETE FROM symbol WHERE symbol = ?', [variant])
+        connection.execute('DELETE FROM account_metrics')
+        connection.execute('DELETE FROM portfolio_totals')
+    folded = ', '.join(f'{variant} → {target}' for variant, target in moves)
+    logger.info(f'Folded the symbols stored under another spelling: {folded}')
+
+
 def _buy_the_series_again(connection) -> None:
     """Forget every stored close and the two series computed from them.
 
@@ -782,6 +858,7 @@ STEPS = (
     ('add_splits_read_at', _add_splits_read_at),
     ('drop_dividend_adjusted_prices', _drop_dividend_adjusted_prices),
     ('refetch_prices_bucketed_in_utc', _refetch_prices_bucketed_in_utc),
+    ('fold_symbol_case', _fold_symbol_case),
 )
 
 
