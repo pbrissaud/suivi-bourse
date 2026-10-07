@@ -18,20 +18,29 @@ permissions:
 
 jobs:
   write:
-    # Only Release Please's own updates: the notes commit below is pushed by a
-    # user token, so its run has a human sender and is skipped here — no loop,
-    # and a hand edit pushed to the branch is not overwritten either.
-    if: github.head_ref == 'release-please--branches--master' && github.event.sender.type == 'Bot'
+    # Only Release Please's own updates, matched by login and not by type: the
+    # notes commit below is pushed by the release app, whose run has a Bot sender
+    # too, so a type check would loop. A hand edit pushed to the branch has a
+    # human sender and is not overwritten either.
+    if: github.head_ref == 'release-please--branches--master' && github.event.sender.login == 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
+      # Not GITHUB_TOKEN: a push made with it starts no workflow run, so the
+      # required checks would never report on the notes commit and the release
+      # PR could not be merged. An app token does start them, lasts an hour and
+      # belongs to no one.
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: "0"
-          # Not GITHUB_TOKEN: a push made with it starts no workflow run, so the
-          # required checks would never report on the notes commit and the
-          # release PR could not be merged.
-          token: ${{ secrets.TOKEN }}
+          token: ${{ steps.app.outputs.token }}
 
       - uses: anthropics/claude-code-action@v1
         with:
@@ -69,14 +78,17 @@ jobs:
         env:
           BRANCH: ${{ github.head_ref }}
           NOTES: website/docs/release-notes.mdx
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           changed=$(git status --porcelain --untracked-files=all | cut -c4-)
           [ -z "$changed" ] && exit 0
           if [ "$changed" != "$NOTES" ]; then
             echo "::error::Claude changed more than $NOTES:"; echo "$changed"; exit 1
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bot_id=$(gh api "/users/$BOT" --jq .id)
+          git config user.name "$BOT"
+          git config user.email "$bot_id+$BOT@users.noreply.github.com"
           git add -- "$NOTES"
           git commit -s -m "docs: write the release notes"
           git push origin "HEAD:$BRANCH"
