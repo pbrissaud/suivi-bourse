@@ -32,7 +32,7 @@ jobs:
       - uses: actions/create-github-app-token@v3
         id: app
         with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
