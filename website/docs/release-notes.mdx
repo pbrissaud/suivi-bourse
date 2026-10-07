@@ -13,6 +13,84 @@ The version 4 history is not merged in here. It stays with the
 [version 4 documentation](/docs/v4/changelog), where the releases it announces
 can still be run.
 
+## 5.2 — Compare with an index fund, truer prices
+
+A feature release on top of 5.1. Same mounts: pull the image and restart the
+container.
+
+### Benchmark: would an index fund have done better?
+
+A new page replays your own contributions and withdrawals, on the same days, into
+a single index fund, and tells you how much would be left. The money is the same;
+only the investment differs.
+
+Pick the reference from a flat list of seven funds. Each entry shows when it
+started, so you can see how many of your own years it covers before you pick it.
+Switching back to a fund you already looked at is instant.
+
+The page opens on the verdict: the gap in euros, the two returns side by side, and
+the curves below. The gap is split in two: what your **securities** did against
+the index, and what your **dates** were worth — the same total paid in equal
+monthly instalments instead of the days you chose. Gross or net of tax follows the
+taxation model of each account.
+
+Each account is also compared over its own life, in a table under the headline, so
+a recently opened account no longer hides the years of an older one. Dividends are
+counted on both sides, and only the money you invested is compared — not the
+cash sitting idle.
+
+### Follow a symbol without holding it
+
+A symbol no longer has to be in your portfolio to be tracked. The benchmark
+reference is the first use: its prices are fetched and kept even though you own
+none of it.
+
+### Recording an event
+
+- The **Ticker** field suggests the titles your ledger already names, held or sold.
+  You can still type any ticker you like.
+- For a free-share grant, the form suggests the price from the closest close at or
+  before the grant date and says where it comes from. You can edit or clear it:
+  the price you leave empty stays empty.
+- A bracket ceiling now says which currency it is typed in.
+
+### Fixes
+
+- **One symbol, one spelling.** `mc.pa`, `MC.PA`, full-width letters or a hidden
+  character used to create separate positions for the same security. Symbols are
+  now stored in a single form, and a symbol mixing in a lookalike letter (a
+  Cyrillic С for a Latin C) is refused on its field. Lines already stored are
+  merged.
+- **Closes as the market printed them.** Prices were taken net of the dividends
+  paid since, which counted every dividend twice — once in the price, once in your
+  cash. Past values came out too low and returns too high: a PEA showed 3 402 €
+  against 4 205 € on its statement.
+- **Closes on the right day.** On exchanges east of Greenwich, such as Paris, each
+  daily close was filed one trading day early.
+- **The performance card adds up.** Declaring the price of a free-share grant used
+  to break *total value − net contributed = gain*; the contribution now counts it.
+- **The dashboard head tells one story.** Total value and securities are put on the
+  same instant as the live gain, so they no longer disagree by the market's move
+  since the last calculation.
+- The page says when the figures shown come from the previous calculation.
+- The projected tax names the day a rate changes together with its time zone
+  (midnight UTC), instead of a date that could be off by a day for you.
+- The suggested grant price is offered at the currency's own precision.
+- Charts can be read with a screen reader: each chart that you can walk through
+  announces its points and describes its window, and the purely decorative ones are
+  hidden.
+
+### Before you upgrade
+
+**Part of your stored price history is dropped at the first start** and bought
+back from Yahoo. Closes that were net of dividends are cleared and rebuilt, and
+daily closes older than about two years are fetched again to be filed on the right
+day. Expect a shorter curve on the dashboard for a few hours. Your ledger is
+untouched, and so are the prices shown today.
+
+**Symbols are merged at the first start.** If you had the same security under two
+spellings, it becomes one position.
+
 ## 5.1.2 — Prices in the share you hold
 
 Yahoo serves its closes adjusted to **today's** share; your ledger holds the
