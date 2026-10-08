@@ -294,6 +294,45 @@ def test_an_excel_utf8_export_loads_despite_its_byte_order_mark(tmp_path):
     assert event.symbol == "AAPL"
 
 
+def test_a_semicolon_separated_csv_loads(tmp_path):
+    """A spreadsheet saving under a French locale writes ``;``, not ``,``.
+
+    Read with ``,`` the header was one column, and the file was refused for
+    *Missing required columns: {event_type, date}* — both visibly there.
+    """
+    path = tmp_path / "PEA.csv"
+    path.write_text(
+        "date;event_type;account;symbol;name;quantity;unit_price;fee;amount;notes;base_currency\n"
+        "2019-11-08;DEPOSIT;PEA;;;;;;1000.0;Versement;EUR\n"
+        '2024-03-14;SELL;PEA;EMEIS.PA;ORPEA;3.0;0.0119;0.0;;"Vente; solde";EUR\n',
+        encoding="utf-8")
+
+    loader = EventLoader(str(path))
+    deposit, sell = loader.load()
+
+    assert deposit.event_type is EventType.DEPOSIT
+    assert deposit.amount == 1000.0
+    assert sell.symbol == "EMEIS.PA"
+    assert sell.unit_price == 0.0119
+    assert sell.notes == "Vente; solde"
+    assert loader.declared_currency == "EUR"
+
+
+def test_a_semicolon_csv_reads_its_decimal_commas(tmp_path):
+    """The locale that writes ``;`` writes ``19,5`` for nineteen and a half."""
+    path = tmp_path / "fr.csv"
+    path.write_text(
+        "\ufeffdate;event_type;symbol;name;quantity;unit_price;fee\n"
+        "2019-11-21;BUY;FDJU.PA;FDJ United;51;19,5;1,25\n", encoding="utf-8")
+
+    (event,) = EventLoader(str(path)).load()
+
+    assert event.date == date(2019, 11, 21)
+    assert event.quantity == 51.0
+    assert event.unit_price == 19.5
+    assert event.fee == 1.25
+
+
 def test_a_csv_headed_in_title_case_loads_like_its_xlsx_twin(tmp_path):
     """Excel capitalises a header by default, and the two routes must agree.
 
