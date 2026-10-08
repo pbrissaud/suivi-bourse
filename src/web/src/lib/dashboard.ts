@@ -44,7 +44,7 @@ import type {
   PositionsResponse,
   ValuationPoint,
 } from '@/lib/api'
-import { shifted, type Range as AccountRange } from '@/lib/accounts'
+import { shifted } from '@/lib/accounts'
 import { isClosed, type ShareRow } from '@/lib/shares'
 
 // ------------------------------------------------------------------------- //
@@ -104,22 +104,6 @@ export type DashboardRange = (typeof DASHBOARD_RANGES)[number]
 export const DEFAULT_DASHBOARD_RANGE: DashboardRange = '1Y'
 
 /** The two readings of the one slot. A **reading**, never a range. */
-/**
- * **The page's period, said in the two vocabularies it drives** (#838).
- *
- * The chart's window and the accounts comparison's are the same four choices,
- * and the comparison names its last one after what it actually is: the oldest
- * *opening* among the accounts rather than the oldest day of one series. One
- * control, so the mapping is stated once here rather than a second control
- * being drawn.
- */
-export const ACCOUNT_RANGE: Record<DashboardRange, AccountRange> = {
-  '1M': '1M',
-  YTD: 'YTD',
-  '1Y': '1Y',
-  MAX: 'SINCE_OPENING',
-}
-
 export const READINGS = ['amounts', 'performance'] as const
 
 export type Reading = (typeof READINGS)[number]

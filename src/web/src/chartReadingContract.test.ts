@@ -37,14 +37,14 @@ const SOURCE = path.join(path.resolve(import.meta.dirname), '.')
  * no index to move and a focusable ring answers no key. Its legend beside it
  * already names every slice with its exact percentage, which makes the arcs a
  * repeat of the text — exactly the case `ShareBar`'s rule was written for. An
- * entry here is a claim that both halves hold; there is one, and adding a second
- * should be as hard as writing its sentence.
+ * entry here is a claim that both halves hold, and adding one should be as hard
+ * as writing its sentence.
  */
 const HIDDEN_ON_PURPOSE: Record<string, string> = {
   'components/shares/Allocation.tsx':
     'no tooltip is mounted, so nothing navigates, and the legend is already the whole reading',
-  'components/dashboard/AccountsCard.tsx':
-    'a sparkline per row, and the percentage it repeats is written beside it in text — `ShareBar`’s rule, at 30 px',
+  'components/dashboard/HeroChart.tsx':
+    'the hero’s sparkline, and the value it draws is written beside it in text — the full chart, reading included, is behind the link under it',
 }
 
 /** Every `.tsx` the product writes by hand — `ui/` is the registry's, not ours. */
@@ -178,7 +178,7 @@ describe('every plot the product mounts', () => {
     expect(CHARTS.map((one) => one.rel).sort()).toEqual([
       'components/accounts/AccountCurve.tsx',
       'components/benchmark/BenchmarkChart.tsx',
-      'components/dashboard/AccountsCard.tsx',
+      'components/dashboard/HeroChart.tsx',
       'components/dashboard/PortfolioChart.tsx',
       'components/shares/Allocation.tsx',
       'components/shares/PriceChart.tsx',

@@ -44,6 +44,11 @@ interface SegmentedProps<T extends string> {
   mode: 'radio' | 'pressed'
   /** The track's own edge, for where it sits on the page rather than on a card. */
   bordered?: boolean
+  /**
+   * `compact` is the hero's: the range control under a 64 px sparkline, where
+   * the full-size segments would outweigh the curve they set.
+   */
+  size?: 'default' | 'compact'
   className?: string
 }
 
@@ -54,6 +59,7 @@ export function Segmented<T extends string>({
   onChange,
   mode,
   bordered = false,
+  size = 'default',
   className,
 }: SegmentedProps<T>) {
   return (
@@ -77,7 +83,8 @@ export function Segmented<T extends string>({
             aria-pressed={mode === 'pressed' ? on : undefined}
             onClick={() => onChange(option.value)}
             className={cn(
-              'rounded-md px-3.5 py-1.5 text-sm whitespace-nowrap transition-colors',
+              'rounded-md whitespace-nowrap transition-colors',
+              size === 'compact' ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-sm',
               on
                 ? 'bg-accent font-medium text-foreground'
                 : 'text-muted-foreground hover:text-foreground',

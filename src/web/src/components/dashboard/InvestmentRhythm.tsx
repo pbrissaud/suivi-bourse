@@ -82,7 +82,11 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
     }
 
     return (
-      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+      // The figure on the left at a fixed width and the twelve months filling
+      // the rest (direction 1a): the amount is read first, the months are
+      // what the width is for. Stacked under `sm`.
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-8">
+        <div className="shrink-0 sm:w-40">
         {/* The pair, and it is **one** group: the coverage is a child of the
             amount, so no reading of this markup detaches them. */}
         <Stat
@@ -96,6 +100,7 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
             })}
           </p>
         </Stat>
+        </div>
         <MonthStrip months={rhythm.months} currency={rhythm.base_currency} />
       </div>
     )
@@ -106,8 +111,9 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
  * The observed months as columns, oldest on the left, **right-aligned in
  * twelve slots**: a ledger four months old fills the last four and leaves the
  * rest empty, so the strip says *twelve is the window* on a young ledger too.
- * A covered month is a column in the mint — an unsigned amount, drawn in the
- * colour every unsigned curve is — and an observed month with no purchase is a
+ * The **current month** is the one column in the mint (`--primary`), the
+ * others a quiet grey: the month still being bought in is the one the reader
+ * compares against the eleven before it. An observed month with no purchase is a
  * tick on the baseline, which is a fact about the rhythm and not a gap in the
  * drawing. Each column names its month and its amount, for a pointer and for a
  * screen reader alike.
@@ -116,13 +122,17 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
   const { t } = useI18n()
   const f = useFormatters()
   const peak = Math.max(...months.map((one) => one.amount ?? 0))
+  // The window ends on the month the measure was taken in (`rhythm.py`
+  // anchors it on *now*), so the last column is the current month — read off
+  // the payload rather than off the browser's clock.
+  const current = months.at(-1)?.month ?? null
   const label = (month: string, year = true) => {
     const [y, m] = month.split('-')
     return year ? `${f.month(y, Number(m))} ${y}` : f.month(y, Number(m))
   }
 
   return (
-    <div className="min-w-48 max-w-2xl flex-1">
+    <div className="min-w-0 flex-1">
       <ol
         aria-label={t('dashboard.rhythm.months')}
         className="grid grid-cols-12 items-end gap-1.5"
@@ -151,7 +161,9 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
                   className={
                     one.amount === null
                       ? 'block h-0.5 w-full bg-muted-foreground/35'
-                      : 'block w-full rounded-t-[3px] bg-price'
+                      : one.month === current
+                        ? 'block w-full rounded-t-[3px] bg-primary'
+                        : 'block w-full rounded-t-[3px] bg-muted-foreground/40'
                   }
                   style={
                     one.amount === null
