@@ -18,6 +18,9 @@ REPLAY_ORDER = {
 
 BASE_CURRENCY_COLUMN = 'base_currency'
 
+CSV_DELIMITERS = (',', ';', '\t')
+NUMERIC_COLUMNS = ('quantity', 'unit_price', 'fee', 'amount')
+
 
 class EventLoaderError(Exception):
     """Exception raised when loading events fails."""
@@ -86,8 +89,10 @@ class EventLoader:
         """Load events from a CSV file."""
         events = []
 
-        with open(file_path, 'r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
+        with open(file_path, 'r', encoding='utf-8-sig', newline='') as f:
+            delimiter = self._sniff_delimiter(f.readline())
+            f.seek(0)
+            reader = csv.DictReader(f, delimiter=delimiter)
 
             if not reader.fieldnames:
                 raise EventLoaderError(f"Empty CSV file: {file_path}")
@@ -104,6 +109,8 @@ class EventLoader:
             for row_num, raw in enumerate(reader, start=2):
                 row = {header: raw.get(field)
                        for header, field in zip(headers, fields)}
+                if delimiter == ';':
+                    self._read_decimal_commas(row)
                 try:
                     event = self._parse_row(row, file_path, row_num)
                     events.append(event)
@@ -112,6 +119,25 @@ class EventLoader:
                         f"Error in {file_path} at row {row_num}: {e}")
 
         return events
+
+    @staticmethod
+    def _sniff_delimiter(header_line: str) -> str:
+        """The separator that splits the header into the most columns.
+
+        A spreadsheet saving a ``.csv`` under a French (or most European)
+        locale writes ``;``, and read with ``,`` the whole header became one
+        column — refused for missing columns that are visibly there.
+        """
+        return max(CSV_DELIMITERS, key=lambda d: len(
+            next(csv.reader([header_line], delimiter=d), [])))
+
+    @staticmethod
+    def _read_decimal_commas(row: dict) -> None:
+        """``19,5`` as ``19.5``: the locale that writes ``;`` writes this too."""
+        for column in NUMERIC_COLUMNS:
+            value = row.get(column)
+            if isinstance(value, str):
+                row[column] = value.replace(',', '.')
 
     def _load_xlsx(self, file_path: Path) -> List[Event]:
         """Load events from an XLSX file."""
