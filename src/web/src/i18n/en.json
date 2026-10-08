@@ -144,7 +144,7 @@
   "dashboard.chart.plot": "Portfolio chart",
   "dashboard.movers.title": "Movers",
   "dashboard.movers.since": "Since the close of {date}",
-  "dashboard.movers.others": "{count, plural, one {# other holding is} other {# other holdings are}} not shown here, {unchanged, plural, =0 {none of which moved by nothing} one {# of which moved by nothing} other {# of which moved by nothing}}.",
+  "dashboard.movers.others": "{count, plural, one {# other holding is} other {# other holdings are}} not shown here{unchanged, plural, =0 {} one {, # of which did not move} other {, # of which did not move}}.",
   "dashboard.movers.empty": "Nothing to compare",
   "dashboard.movers.empty.body": "A holding appears here once it has a price on two sessions.",
   "dashboard.rhythm.title": "Investment rhythm",

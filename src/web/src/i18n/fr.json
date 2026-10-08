@@ -144,7 +144,7 @@
   "dashboard.chart.plot": "Graphique du portefeuille",
   "dashboard.movers.title": "Mouvements",
   "dashboard.movers.since": "Depuis la clôture du {date}",
-  "dashboard.movers.others": "{count, plural, one {# autre ligne n’apparaît pas ici} other {# autres lignes n’apparaissent pas ici}}, {unchanged, plural, =0 {dont aucune n’a bougé de rien} one {dont # n’a pas bougé} other {dont # n’ont pas bougé}}.",
+  "dashboard.movers.others": "{count, plural, one {# autre ligne n’apparaît pas ici} other {# autres lignes n’apparaissent pas ici}}{unchanged, plural, =0 {} one {, dont # n’a pas bougé} other {, dont # n’ont pas bougé}}.",
   "dashboard.movers.empty": "Rien à comparer",
   "dashboard.movers.empty.body": "Une ligne apparaît ici dès qu’elle a un cours sur deux séances.",
   "dashboard.rhythm.title": "Rythme d’investissement",

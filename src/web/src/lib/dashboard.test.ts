@@ -226,17 +226,35 @@ describe('the movers', () => {
     expect(reading.unchanged).toBeLessThanOrEqual(reading.others)
   })
 
-  it('takes five, biggest first, whichever way they went', () => {
-    const symbols = Array.from({ length: 8 }, (_, index) => `U${index}`)
+  it('takes the five biggest moves, whichever way they went, best first', () => {
     // Four up and four down, so the list has to choose across the whole set and
-    // not five from one end of it: the day's best and its worst both belong.
+    // not five from one end of it: the day's best and its worst both belong
+    // (#1096). Sorted by sign and cut at five, this read the five best of eight
+    // and left the day's worst out.
+    const symbols = Array.from({ length: 8 }, (_, index) => `U${index}`)
     const movers = symbols.map((symbol, index) =>
-      aMover({ symbol, change_pct: (index - 3.5) / 100 }),
+      aMover({ symbol, change_pct: (index - 3.4) / 100 }),
     )
     const reading = moversList(movers, heldLines(symbols))
 
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U4', 'U3'])
+    // +3,6 −3,4 +2,6 −2,4 +1,6 are the five biggest, laid out best first: the
+    // two ends of the day are the two ends of the list.
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U1', 'U0'])
     expect(reading.others).toBe(3)
+  })
+
+  it('keeps a heavy loss over a light one', () => {
+    // The staging day the ticket was filed on, reduced: five small moves and one
+    // large fall. The fall is in the list, and it closes it.
+    const day = { SAN: 0.0143, MC: 0.0096, CAP: 0.005, C500: -0.0032, EUNL: -0.0044, BNP: -0.0382 }
+    const symbols = Object.keys(day)
+    const movers = symbols.map((symbol) =>
+      aMover({ symbol, change_pct: day[symbol as keyof typeof day] }),
+    )
+    const reading = moversList(movers, heldLines(symbols))
+
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['SAN', 'MC', 'CAP', 'EUNL', 'BNP'])
+    expect(reading.others).toBe(1)
   })
 })
 

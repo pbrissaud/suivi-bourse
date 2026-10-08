@@ -272,14 +272,15 @@ export function amountsValues(rows: readonly AmountsRow[]): (number | null)[] {
 // The movers
 // ------------------------------------------------------------------------- //
 
-/** Five each way. Ten lines is a block; twenty is the table one page down. */
+/** Five lines. Ten is a block; twenty is the table one page down. */
 const MOVERS_ROWS = 5
 
 /**
  * **One list, ordered by what moved most** (#838).
  *
  * The block was two columns — *Hausses* over *Baisses* — and the drawing has
- * one: five lines, the day's best at the top and its worst at the bottom, which
+ * one: the five lines that moved most, either way, the day's best at the top
+ * and its worst at the bottom, which
  * is the order the eye reads a movement in and the one that puts the two ends
  * of the day on one screen. The split cost a heading and a *nothing went down*
  * per column to say what the list says by being short.
@@ -299,10 +300,16 @@ export function moversList(movers: readonly Mover[], rows: readonly ShareRow[]):
   const held = rows.filter((row) => !isClosed(row))
   const holds = new Set(held.map((row) => row.symbol))
   const shown = movers.filter((mover) => holds.has(mover.symbol))
+  // **Chosen by size, ordered by sign** (#1096). Sorted best first and cut at
+  // five, the list was the day's five best and never its worst: on a day when
+  // twelve lines moved, `BNP.PA −3,82 %` sat under the cut while `EUNL.DE
+  // −0,44 %` closed the list. The cut is taken on the magnitude, and only then
+  // are the five laid out from the best to the worst.
   const moved = shown
     .filter((mover) => mover.change_pct !== null && mover.change_pct !== 0)
-    .sort((left, right) => (right.change_pct ?? 0) - (left.change_pct ?? 0))
+    .sort((left, right) => Math.abs(right.change_pct ?? 0) - Math.abs(left.change_pct ?? 0))
     .slice(0, MOVERS_ROWS)
+    .sort((left, right) => (right.change_pct ?? 0) - (left.change_pct ?? 0))
   return {
     rows: moved,
     others: Math.max(held.length - moved.length, 0),

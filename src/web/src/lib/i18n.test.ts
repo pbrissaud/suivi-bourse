@@ -161,6 +161,25 @@ describe('ICU is the format, and it is needed', () => {
   })
 })
 
+describe('the movers’ sentence', () => {
+  it('drops its second clause when every hidden line moved (#1096)', () => {
+    // *dont aucune n’a bougé de rien* read as *none of them moved* — the
+    // opposite of the truth. With nothing unchanged there is nothing to qualify.
+    expect(formatMessage('fr', 'dashboard.movers.others', { count: 7, unchanged: 0 })).toBe(
+      '7 autres lignes n’apparaissent pas ici.',
+    )
+    expect(formatMessage('en', 'dashboard.movers.others', { count: 7, unchanged: 0 })).toBe(
+      '7 other holdings are not shown here.',
+    )
+    expect(formatMessage('fr', 'dashboard.movers.others', { count: 2, unchanged: 1 })).toBe(
+      '2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé.',
+    )
+    expect(formatMessage('en', 'dashboard.movers.others', { count: 1, unchanged: 1 })).toBe(
+      '1 other holding is not shown here, 1 of which did not move.',
+    )
+  })
+})
+
 describe('the language is the reader’s, and lives in the browser', () => {
   it('reads absence, and anything unrecognised, as auto', () => {
     const storage = new Map<string, string>()
