@@ -24,13 +24,18 @@
  * dismantling. The arithmetic lives in `lib/gain.ts`. `Valeur totale` and
  * `Titres` follow it rather than the pass (#1049), so the head reads one instant.
  *
- * **The gain stays alone at the top** (variant A), decided in front of the
- * board against the grid: *total value and gain side by side* fails **by
- * height** — an eight-line gain block against a three-line value block, a
- * quarter of the strip empty, and the four terms folded 3 + 1, orphaning
- * precisely the term whose subordination is the thing being bought.
+ * **The value is the hero, and the gain is its subtitle** (dashboard redesign,
+ * direction 1a). The page answers *how much is my portfolio worth* first: the
+ * value is the one figure at hero size, the gain total is a pill under it
+ * beside the day's and the year's, and the four terms the gain is the sum of
+ * left the head for a card of their own (`GainBreakdown.tsx`). That reverses
+ * variant A, which kept the gain alone at the top — and it is the same
+ * argument read the other way round: the terms were subordinated by size, and
+ * they are subordinated by distance now, which a reader cannot sum by accident
+ * either.
  *
- * The other three go on `Versé net`, `TRI` and `TWR`.
+ * **The chart is the hero's right-hand side** (`HeroChart.tsx`), handed in by
+ * the page as `aside`: the block still reads nothing of its own.
  *
  * **The year-to-date is two figures that do not touch**: the euro on a pill
  * beside the head figure, the percentage filed inside the TWR statistic.
@@ -52,6 +57,7 @@
  * own condition and therefore costing no request of its own: one read, two
  * consumers.
  */
+import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 
@@ -62,28 +68,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import type { PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
-import {
-  GAIN_TERMS,
-  gainTotal,
-  portfolioTerms,
-  sumRendering,
-  termAmount,
-  termIsRendered,
-  termRendering,
-  termTone,
-  type GainTermName,
-} from '@/lib/gain'
+import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
 import { dayMove } from '@/lib/dashboard'
-import { useI18n, type MessageKey } from '@/lib/i18n'
+import { useI18n } from '@/lib/i18n'
 import { signClass, signOf, type Sign } from '@/lib/sign'
 import { cn } from '@/lib/utils'
-
-const TERM_LABELS: Record<GainTermName, MessageKey> = {
-  unrealised: 'gain.term.unrealised',
-  realised: 'gain.term.realised',
-  dividends: 'gain.term.dividends',
-  transferFees: 'gain.term.transferFees',
-}
 
 interface DashboardHeadProps {
   /**
@@ -101,6 +90,11 @@ interface DashboardHeadProps {
    * on which nothing moved, and the pill it feeds is then simply not drawn.
    */
   history: readonly PerfPoint[] | null
+  /**
+   * What the hero carries on its right — the sparkline and the range control,
+   * composed by the page, which owns the range. `null` draws the value alone.
+   */
+  aside?: ReactNode
 }
 
 export function DashboardHead({
@@ -108,6 +102,7 @@ export function DashboardHead({
   totals,
   rebuilding,
   history,
+  aside = null,
 }: DashboardHeadProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -166,6 +161,13 @@ export function DashboardHead({
   const totalValue = totalsRow?.total_value == null ? null : totalsRow.total_value + drift
   const holdingsValue =
     totalsRow?.holdings_value == null ? null : totalsRow.holdings_value + drift
+  // **The hero is the value, and on an install with no cash ledger the value
+  // is the securities' alone** (#708: `total_value` is `NULL` there, and
+  // `holdings_value` is written always). It is then said under its own name —
+  // *Titres* — rather than as the portfolio's value, which it is not, and the
+  // statistic of the same name below steps aside rather than repeat it.
+  const heroIsHoldings = totalValue === null && holdingsValue !== null
+  const heroValue = totalValue ?? holdingsValue
 
   const ytdGain = totalsRow?.ytd?.gain ?? null
   const ytdTwr = totalsRow?.ytd?.twr ?? null
@@ -242,126 +244,66 @@ export function DashboardHead({
     // midnight value would not.
     <Card className="gap-0 bg-linear-160 from-chart-2/9 to-card to-55% py-7">
       <CardContent className="px-7">
-        {/* Subordination is a **size** as much as a position, and `head` against
-        `term` is a factor of three: read here, nobody adds the four to the one.
-        What the ADR buys is that the reader cannot sum them by accident, and
-        this arrangement buys it. */}
-        {/* **A row that wraps, and not a grid of two fixed tracks** (#838).
-            The drawing lays the total and the four terms out with
-            `flex-wrap: wrap` and `space-between`: at the widths where the four
-            do not fit beside a 52 px figure they go **under** it, where a grid
-            column of `minmax(0,1fr)` instead squeezes the figure until it
-            overruns its own cell — measured at 1 160 px, the total ran into the
-            first term. */}
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-5">
+        {/* **A row that wraps, and not a grid of two fixed tracks** (#838):
+            the value on the left, the curve on the right, and under `sm` the
+            curve goes under the pills at the full width of the card. */}
+        <div className="flex flex-wrap items-end justify-between gap-6">
           <Stat
             size="head"
-            label={t('dashboard.gainTotal')}
-            // Unknown here has **two** causes since #775 and they read apart: a
-            // held position whose rate has not resolved is *named*, because the app
-            // repairs it by itself, while a fourth term nothing can bound wears the
-            // em dash — a total amputated of a term is not that total,
-            // and *there is nothing to compute* is the truth about it. That second
-            // one is also what `totals: null` now produces on a portfolio that has
-            // positions: the headline goes out, and the sentence at the foot of the
-            // block says why.
-            value={renderFigure(
-              sumRendering(total),
-              () => f.currency(total.known ? total.value : null, currency),
-              t,
-            )}
-            valueClassName={signClass(total.known ? total.value : null)}
-            explain={
-              <Explain
-                figure={t('dashboard.gainTotal')}
-                body="dashboard.gainTotal.explain"
-                anchor="total-gain"
-              />
-            }
+            label={t(heroIsHoldings ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
+            // A value is not a direction: it is set in the colour of text, and
+            // the sign lives on the pills under it.
+            value={f.currency(heroValue, currency)}
           >
-            {/* The two **periods of the total**, and they stay with it. */}
-            {totalsRow === null ? null : (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {today === null ? null : (
-                  <Period
-                    amount={today}
-                    text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
-                  />
-                )}
-                {ytdGain === null ? (
-                  // The one figure the rebuild degrades, and it says which figure
-                  // and why — the head above it is exact from the first cycle. It
-                  // stays a **sentence** rather than a pill: what it carries is a
-                  // reason, and a reason does not fit in a badge.
-                  <p className="text-sm text-muted-foreground">{ytdAbsence(ytdGain)}</p>
-                ) : (
-                  <Period
-                    amount={ytdGain}
-                    text={t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
-                  />
-                )}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {/* The gain is the value's subtitle now, and it keeps its named
+                  absences (#775): a rate on its way is said, a fourth term
+                  nothing can bound is the em dash. */}
+              {total.known ? (
+                <Period
+                  amount={total.value}
+                  text={t('dashboard.gain.pill', {
+                    amount: f.signedCurrency(total.value, currency),
+                  })}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t('dashboard.gain.pillAbsent', {
+                    reason: renderFigure(sumRendering(total), () => '', t),
+                  })}
+                </p>
+              )}
+              {/* The two **periods of the total**, and they stay with it. */}
+              {totalsRow === null || today === null ? null : (
+                <Period
+                  amount={today}
+                  text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
+                />
+              )}
+              {totalsRow === null ? null : ytdGain === null ? (
+                // The one figure the rebuild degrades, and it says which figure
+                // and why — the head above it is exact from the first cycle. It
+                // stays a **sentence** rather than a pill: what it carries is a
+                // reason, and a reason does not fit in a badge.
+                <p className="text-sm text-muted-foreground">{ytdAbsence(ytdGain)}</p>
+              ) : (
+                <Period
+                  amount={ytdGain}
+                  text={t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
+                />
+              )}
+            </div>
           </Stat>
 
-          {/* Two by two, so the four read as a block beside the total and not
-              as a row under it: at two columns the eye takes them as one
-              object. Below `md` they fall under it and the rule comes back —
-              side by side is a statement the width has to be able to make. */}
-          <div className="grid w-full grid-cols-1 gap-x-9 gap-y-2.5 border-t pt-4 sm:w-auto sm:grid-cols-[repeat(4,minmax(8.75rem,auto))] sm:border-0 sm:pt-1.5 xl:grid-cols-[repeat(2,minmax(8.75rem,auto))]">
-            {GAIN_TERMS.map((term) => {
-              const value = termAmount(terms, term)
-              if (!termIsRendered(term, value)) return null
-              return (
-                <Stat
-                  key={term}
-                  size="term"
-                  label={t(TERM_LABELS[term])}
-                  value={renderFigure(
-                    termRendering(terms, term),
-                    () => f.currency(value, currency),
-                    t,
-                  )}
-                  // Colour only where the sign can turn, and absence wherever
-                  // the *rendering* says absence — both decided in `gain.ts`,
-                  // once for the four surfaces (#860).
-                  valueClassName={termTone(terms, term)}
-                />
-              )
-            })}
-          </div>
+          {aside}
         </div>
 
         {/* The statistics, on a row of their own — and only the ones that exist.
-        They are **not** terms of the total: `Valeur totale` and `Versé net` are
-        what the gain is the difference of, and the two rates are not sums at
-        all, so they keep the full width the four do not.
-
-        `auto-fit` collapses the tracks nothing fills, so the figures that
-        **do** exist share the width whatever their number. The floor is **8rem
-        and not 9**, measured: at 9 the five statistics came to more than the
-        card holds and the row wrapped four and one. */}
-        <div className="mt-6.5 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4.5">
-          {totalValue === null ? null : (
-            <Stat
-              label={t('dashboard.totalValue')}
-              value={f.currency(totalValue, currency)}
-            />
-          )}
-          {/* The securities, beside the value they are part of — and it is the
-              one money statistic an install with **no cash ledger** still has:
-              `holdings_value` is written always (#708), where `total_value` and
-              both returns are `NULL`. It is also what makes *events, and nothing
-              held* an ordinary page rather than an empty one: `0,00 €` is a
-              figure, in the colour of text, read beside the em dash of the latent
-              gain — the one place in the product where the two are side by side
-              at the scale of the portfolio. */}
-          {holdingsValue === null ? null : (
-            <Stat
-              label={t('dashboard.holdings')}
-              value={f.currency(holdingsValue, currency)}
-            />
-          )}
+        They are **not** terms of the gain: `Versé net` and `Titres` are what
+        the value is made of, and the two rates are not sums at all. Four
+        columns from `sm`, two under it; a statistic that does not exist for
+        this installation leaves its slot rather than a dash in it. */}
+        <div className="mt-6.5 grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-4.5 sm:grid-cols-4">
           {totalsRow?.net_contributed == null ? null : (
             <Stat
               label={t('dashboard.netContributed')}
@@ -373,6 +315,20 @@ export function DashboardHead({
                   anchor="net-contributed"
                 />
               }
+            />
+          )}
+          {/* The securities, beside the value they are part of — and it is the
+              one money statistic an install with **no cash ledger** still has:
+              `holdings_value` is written always (#708), where `total_value` and
+              both returns are `NULL`. It is also what makes *events, and nothing
+              held* an ordinary page rather than an empty one: `0,00 €` is a
+              figure, in the colour of text, read beside the em dash of the latent
+              gain — the one place in the product where the two are side by side
+              at the scale of the portfolio. */}
+          {holdingsValue === null || heroIsHoldings ? null : (
+            <Stat
+              label={t('dashboard.holdings')}
+              value={f.currency(holdingsValue, currency)}
             />
           )}
           {totalsRow?.xirr == null ? null : (

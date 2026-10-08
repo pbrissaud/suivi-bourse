@@ -41,38 +41,33 @@
  *    own read is handed to that block. Folded into one, a failed accounts read
  *    would put the page in `failed` and empty it — the very disappearance being
  *    repaired, one level up.
- *  - **It is a column, and it was a plateau** (#787, #790, then #838). Two
- *    tracks from `lg` — the head and the chart drawn on the wide one, the
- *    movements and the comparison read down the rail — is what the drawing was
- *    read as on its source; read **rendered** it lays the head and the chart
- *    across the full width and puts the two lists side by side under them. The
- *    split the plateau encoded survives as that row: what is *drawn* is above,
- *    what is *read down* is below, and the two lists are half the page each
- *    from `md` instead of a third of it from `lg`.
- *  - **One range control, and it is the page's** (#838). It sits on a row of
- *    its own between the head and the chart, preceded by the extent it selects,
- *    and it drives the chart and the comparison alike.
+ *  - **The value first, the chart reduced** (dashboard redesign, direction
+ *    1a). The page answers *how much is my portfolio worth* before anything
+ *    else: the head's hero is the value, with the gain, the day and the year
+ *    as pills under it and a sparkline beside it. The full-width chart is one
+ *    click away in a dialog, and the accounts comparison left this page for
+ *    the accounts page, where it is the subject. Under the head: where the
+ *    gain comes from beside the day's movements, half the width each from
+ *    `md`, then the rhythm across the full width.
+ *  - **One range control, and it is the page's** (#838). It sits under the
+ *    sparkline it sets, and the dialog's chart reads the same state.
  */
 import { useMemo, useState } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
-import { Segmented } from '@/components/Segmented'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
-import { AccountsCard } from '@/components/dashboard/AccountsCard'
+import { GainBreakdown } from '@/components/dashboard/GainBreakdown'
 import { DashboardHead } from '@/components/dashboard/Head'
+import { HeroChart } from '@/components/dashboard/HeroChart'
 import { InvestmentRhythm } from '@/components/dashboard/InvestmentRhythm'
 import { Movers } from '@/components/dashboard/Movers'
-import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
-import { api, type PerfPoint } from '@/lib/api'
+import { api } from '@/lib/api'
 import {
-  ACCOUNT_RANGE,
-  DASHBOARD_RANGES,
   DEFAULT_DASHBOARD_RANGE,
   dashboardState,
   hasCashLedger,
-  windowFloor,
   type DashboardRange,
 } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
@@ -91,7 +86,6 @@ export default function DashboardPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
@@ -124,34 +118,6 @@ export default function DashboardPage() {
     queryFn: api.positionsHistory,
     enabled: state === 'portfolio' && !ledger,
   })
-
-  const declared = accounts.data?.accounts ?? []
-  // One read per account, and the whole series each time: the bound the card
-  // applies is a `max` over the accounts' openings, and no payload states an
-  // opening.
-  const histories = useQueries({
-    queries:
-      state === 'portfolio' && declared.length > 1
-        ? declared.map((account) => ({
-            queryKey: ['account-history', account.id],
-            queryFn: () => api.accountHistory(account.id),
-          }))
-        : [],
-  })
-
-  // `?? null` and never `?? []`: an empty series is a **payload** — an account
-  // whose perf cache says nothing — and a request that has not answered is not
-  // one. `useQueries` hands back a new array on every render, so the flattening
-  // is memoised against what actually moved: when each read landed, and which
-  // accounts there are.
-  const stamp = `${histories.map((one) => one.dataUpdatedAt).join('|')} ${declared
-    .map((account) => account.id)
-    .join('|')}`
-  const series: readonly (readonly PerfPoint[] | null)[] = useMemo(
-    () => histories.map((one) => one.data?.points ?? null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stamp],
-  )
 
   // The failure counter is a rendering concern there and has no subject here,
   // so the map is empty.
@@ -193,32 +159,13 @@ export default function DashboardPage() {
 
   // **One failure per block, handed to the block.** Each is the read that block
   // is made of, so what the reader loses is that block and what they are told
-  // is why — in the space the chart, the list or the comparison would have
-  // filled. The account series ride with the declaration: they are the same
-  // card's second read, and `AccountsCard` draws nothing without either.
+  // is why — in the space the sparkline, the list or the months would have
+  // filled.
   const chartFailure = oneFailure(
     readConditions({ errors: [perf.error, valuation.error] }),
   )
   const moversFailure = oneFailure(readConditions({ errors: [movers.error] }))
   const rhythmFailure = oneFailure(readConditions({ errors: [rhythm.error] }))
-  const accountsFailure = oneFailure(
-    readConditions({ errors: [accounts.error, ...histories.map((one) => one.error)] }),
-  )
-
-  // **The extent the period covers**, beside the control that sets it. It is
-  // read off the series the chart draws rather than computed from the range
-  // alone: `MAX` has no floor to state, and a window whose floor predates the
-  // first day recorded would announce an extent nothing was ever drawn over.
-  const drawnDays = (ledger ? perf.data?.points : valuation.data?.points) ?? null
-  const span = useMemo(() => {
-    if (drawnDays === null || drawnDays.length === 0) return null
-    const floor = windowFloor(range, new Date())
-    const days = drawnDays
-      .map((point) => point.t)
-      .filter((day): day is string => day !== null && (floor === null || day >= floor))
-    if (days.length === 0) return null
-    return f.daySpan(days[0], days[days.length - 1])
-  }, [drawnDays, range, f])
 
   // The freshest quote the page holds — one instant for the whole screen, and
   // nothing at all when nothing has ever been quoted: an invented *now* is
@@ -258,11 +205,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* **Every figure on this page comes out of the perf cache**, so the
-          sentence stands over the page rather than in one block: the head, the
-          chart and the comparison are all written by the same pass, and three
-          copies of one claim is three chances to disagree. */}
+          sentence stands over the page rather than in one block: the head,
+          the breakdown and the curve are all written by the same pass, and
+          three copies of one claim is three chances to disagree. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
       <DashboardHead
@@ -270,45 +217,28 @@ export default function DashboardPage() {
         totals={totals.data ?? null}
         rebuilding={runtime.data?.rebuilding ?? null}
         history={perf.data?.points ?? null}
+        aside={
+          state !== 'portfolio' ? null : (
+            <HeroChart
+              ledger={ledger}
+              range={range}
+              onRangeChange={setRange}
+              currency={totals.data?.base_currency ?? null}
+              performance={perf.data?.points ?? null}
+              valuation={valuation.data?.points ?? null}
+              failure={chartFailure}
+            />
+          )
+        }
       />
 
       {state !== 'portfolio' ? null : (
         <>
-          {/* **One range control, and it is the page's** (#838). The
-              drawing sets it on a row of its own between the head and the
-              chart, right-aligned and preceded by the extent it selects — so
-              the chart, the movements and the comparison read the same window
-              and no card announces a second one. Its two neighbours used to
-              carry one each, which put two controls of the same four options on
-              one screen saying different things. */}
-          <div className="flex flex-wrap items-center justify-end gap-x-3.5 gap-y-2">
-            {span === null ? null : (
-              <span className="tabular font-mono text-xs text-muted-foreground">{span}</span>
-            )}
-            <Segmented
-              bordered
-              mode="radio"
-              label={t('dashboard.chart.range')}
-              value={range}
-              onChange={setRange}
-              options={DASHBOARD_RANGES.map((candidate) => ({
-                value: candidate,
-                label: t('dashboard.chart.rangeName', { range: candidate }),
-              }))}
-            />
-          </div>
-
-          <PortfolioChart
-            ledger={ledger}
-            range={range}
-            currency={totals.data?.base_currency ?? null}
-            performance={perf.data?.points ?? null}
-            valuation={valuation.data?.points ?? null}
-            failure={chartFailure}
-          />
-
           {/* The two blocks that are **read down** rather than drawn, side by
-              side from `md` and stacked under it. */}
+              side from `md` and stacked under it. Stacked, the day's movements
+              come first and the breakdown goes under the fold: on a phone the
+              page is read for *today*, and the gain's decomposition is the
+              question one asks second. From `md` the breakdown takes the left. */}
           <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
             <Movers
               // `?? null` and never `?? []`: this read is armed only once the
@@ -321,23 +251,17 @@ export default function DashboardPage() {
               currency={positions.data?.base_currency ?? null}
               failure={moversFailure}
             />
-            {/* Allowed to render nothing at all: at one account a comparison is
-                the head's own figure with a border round it. */}
-            <AccountsCard
-              accounts={accounts.data?.accounts ?? null}
-              range={ACCOUNT_RANGE[range]}
-              currency={positions.data?.base_currency ?? null}
-              series={series}
-              failure={accountsFailure}
-            />
+            <div className="md:order-first">
+              <GainBreakdown positions={positions.data ?? null} totals={totals.data ?? null} />
+            </div>
           </div>
 
           {/* **A block and not a page**. The sidebar's five entries
               are argued as three and two, and a sixth would open a page holding
               one block; the eventual home is a `Projections` page, created the
               day #757 or #758 gives it a second occupant. Full width under the
-              two lists, like the chart above them: what it holds is a figure
-              and twelve months drawn, and the months are what the width is for.
+              two lists: what it holds is a figure and twelve months drawn, and
+              the months are what the width is for.
 
               `?? null` and never a shape assembled here: a read that has not
               answered renders nothing at all, title included. */}

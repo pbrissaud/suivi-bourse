@@ -16,13 +16,15 @@
  * *source*: a percentage width, computed and written into a `style`, is what a
  * hand-written share bar is made of, and there is one place it belongs.
  *
- * **The stacked bar is the one exemption, and it has a floor.** The rail draws
+ * **The stacked bars are the exemption, and it has a floor.** The rail draws
  * the accounts as adjacent segments closing a whole, which is a claim about the
  * total that no per-line bar makes (`AccountsRail.tsx` carries the argument for
  * keeping both). Its segments are therefore not `ShareBar`s and cannot be. So
  * the exemption is not *this file may do as it likes*: the offenders are
- * asserted to be **exactly** that one bar, by file, which is what makes a second
+ * asserted to be **exactly** those bars, by file, which is what makes a second
  * hand-written bar in the same file fail like a hand-written bar anywhere else.
+ * The gain's breakdown on the dashboard is the second, for the rail's reason:
+ * four terms closing one total.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -38,7 +40,12 @@ const PRIMITIVE = path.join(SOURCE, 'components', 'ShareBar.tsx')
  * The stacked bar of the accounts rail — kept, argued for on the file, and
  * spelled here so that it is an exemption of one drawing rather than of a file.
  */
-const STACKED_BAR = 'src/components/accounts/AccountsRail.tsx'
+const STACKED_BARS = [
+  'src/components/accounts/AccountsRail.tsx',
+  // The gain's four terms as adjacent parts of the total (dashboard redesign,
+  // direction 1a) — the same claim about a whole, argued on its file.
+  'src/components/dashboard/GainBreakdown.tsx',
+]
 
 /**
  * The surfaces that draw a share, spelled out — the other half of the rule.
@@ -100,10 +107,10 @@ describe('one component draws a share', () => {
     if (DRAWN_WIDTH.test(fs.readFileSync(file, 'utf8'))) offenders.push(path.relative(ROOT, file))
   }
 
-  it('leaves every share bar to the primitive, the stacked bar apart', () => {
-    // Exactly the stacked bar, and nothing beside it: every other surface that
-    // draws a share mounts `ShareBar`, which is why none of them is here.
-    expect(offenders).toEqual([STACKED_BAR])
+  it('leaves every share bar to the primitive, the stacked bars apart', () => {
+    // Exactly the stacked bars, and nothing beside them: every other surface
+    // that draws a share mounts `ShareBar`, which is why none of them is here.
+    expect(offenders.sort()).toEqual([...STACKED_BARS].sort())
   })
 
   it.each(MOUNTS)('is mounted by %s, which draws a share', (file) => {
