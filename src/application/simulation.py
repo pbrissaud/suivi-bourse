@@ -83,7 +83,11 @@ def simulate_sale(account: Account, symbol: str, qty: float, *,
     line = next((line for line in account.lines
                  if line.symbol == symbol and line.quantity > 0), None)
     if line is None:
-        raise SimulationRefused(f'{symbol} is not held in {account.id}')
+        holds = sorted({line.symbol for line in account.lines
+                        if line.quantity > 0})
+        raise SimulationRefused(
+            f'{symbol} is not held in {account.id}; it holds: '
+            f'{", ".join(holds) or "nothing"}')
     if not _finite(line.price) or line.price <= 0:
         raise SimulationRefused(f'{symbol} has no price in {account.id}')
     held = line.quantity

@@ -122,21 +122,27 @@ LEDGER = [
 # The surface itself
 # --------------------------------------------------------------------- #
 
-def test_the_surface_is_six_tools_and_nothing_else(tmp_path):
-    """Six, named, and no seventh arriving by accident.
+def test_the_surface_is_eight_tools_and_nothing_else(tmp_path):
+    """Eight, named, and no ninth arriving by accident.
 
     Either should fail a test rather than a user's setup.
 
     The sixth is the investment rhythm (#751), and it arrived with a route of
     its own: this module's opening promise — *it computes nothing* — is kept at
-    the word rather than gaining a second exception.
+    the word rather than gaining a second exception. The seventh and eighth
+    are the two simulators (#1109), with flat arguments.
     """
     runtime, _ = build_runtime(tmp_path)
 
     names = sorted(tool.name for tool in listed(runtime))
     assert names == ['get_investment_rhythm', 'get_portfolio_history',
                      'get_portfolio_totals', 'list_accounts', 'list_events',
-                     'list_positions']
+                     'list_positions', 'simulate_arbitrage', 'simulate_sale']
+    arguments = {tool.name: list(tool.input_schema['properties'])
+                 for tool in listed(runtime)}
+    assert arguments['simulate_sale'] == ['account', 'symbol', 'quantity']
+    assert arguments['simulate_arbitrage'] == [
+        'from_account', 'symbol', 'quantity', 'to_account']
 
 
 def test_every_description_states_the_absence_rule(tmp_path):
@@ -906,15 +912,37 @@ def test_a_broken_store_is_a_failed_read_and_not_an_absent_rhythm(tmp_path):
 # The schema the tools publish (#958)
 # --------------------------------------------------------------------- #
 
+#: The calls each tool is served with, where ``{}`` is not one. Together they
+#: put a value on every member a simulator publishes: no single sale can carry
+#: both a ``reason`` and an ``if_withdrawn``.
+SERVED_WITH = {
+    'simulate_sale': [
+        {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 4},
+        {'account': 'pea', 'symbol': 'AAPL', 'quantity': 2},
+        {'account': 'other', 'symbol': 'AAPL', 'quantity': 2},
+    ],
+    'simulate_arbitrage': [
+        {'from_account': 'cto', 'symbol': 'MC.PA', 'quantity': 10,
+         'to_account': 'pea'},
+        {'from_account': 'pea', 'symbol': 'AAPL', 'quantity': 2,
+         'to_account': 'cto'},
+        {'from_account': 'other', 'symbol': 'AAPL', 'quantity': 1,
+         'to_account': 'pea'},
+    ],
+}
+
+
 def served(runtime):
-    """Every tool listed and called once through the client, with no
-    argument: ``{name: (tool, result)}``."""
+    """Every tool listed and called through the client, with no argument
+    unless :data:`SERVED_WITH` says otherwise: ``{name: (tool, [result])}``."""
     async def _run():
-        """One session for the listing and the six calls."""
+        """One session for the listing and every call."""
         async with Client(mcp_server.build_server(runtime)) as client:
             tools = (await client.list_tools()).tools
-            return {tool.name: (tool, await client.call_tool(tool.name, {}))
-                    for tool in tools}
+            return {tool.name: (tool, [
+                await client.call_tool(tool.name, arguments)
+                for arguments in SERVED_WITH.get(tool.name, [{}])])
+                for tool in tools}
     return asyncio.run(_run())
 
 
@@ -960,7 +988,10 @@ def rich_runtime(tmp_path):
     run on a thin ledger agrees with the schema about nothing. So: two
     declared accounts, a USD line on an EUR base with its fundamentals, a line
     sold to zero, twelve months of buys, a projecting model whose rate change
-    is still ahead, and a perf series that crosses a year end. **Every day is
+    is still ahead, and a perf series that crosses a year end. For the
+    simulators: a flat model on ``cto`` over a priced line, a third account
+    ``other`` with no model and an unpriced line, and a PEA 1 000 under its
+    ceiling, so a CTO-to-PEA arbitrage crosses it. **Every day is
     counted from today**, because the rhythm's window and ``ytd`` both end
     today and fixed days would rot.
     """
@@ -970,7 +1001,14 @@ def rich_runtime(tmp_path):
                    "VALUES ('base_currency', 'EUR')")
     accounts_module.create_account(opened, 'pea', 'Mon PEA')
     accounts_module.create_account(opened, 'cto')
+    accounts_module.create_account(opened, 'other')
     entries.create_many(opened, [
+        Event(today - timedelta(days=200), EventType.BUY, 'MC.PA', 'LVMH',
+              quantity=10, unit_price=100.0, fee=0.0, account='cto'),
+        Event(today - timedelta(days=200), EventType.BUY, 'AAPL', 'Apple Inc',
+              quantity=2, unit_price=150.0, account='other'),
+        Event(today - timedelta(days=200), EventType.BUY, 'XYZ', 'Unpriced',
+              quantity=1, unit_price=10.0, account='other'),
         Event(today - timedelta(days=400), EventType.DEPOSIT, amount=5000.0,
               fee=1.0, account='pea'),
         Event(today - timedelta(days=300), EventType.BUY, 'MSFT', 'Microsoft',
@@ -988,6 +1026,12 @@ def rich_runtime(tmp_path):
         {'rate_before': 0.128, 'rate_after': 0.0, 'threshold_years': 5,
          'age_basis': 'first_payment', 'social_rate': 0.172})
     accounts_module.set_taxation_model(opened, 'pea', model.id)
+    flat = accounts_module.create_model(opened, 'CTO', 'flat_realised',
+                                        {'rate': 0.30})
+    accounts_module.set_taxation_model(opened, 'cto', flat.id)
+    quotes.record_quote(
+        opened, 'MC.PA', datetime.now(timezone.utc) - timedelta(hours=1),
+        150.0, {'currency': 'EUR'}, 150.0, 1.0)
     quotes.record_quote(
         opened, 'AAPL', datetime.now(timezone.utc) - timedelta(hours=1),
         200.0, {'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',
@@ -1006,7 +1050,7 @@ def rich_runtime(tmp_path):
     perf_series.write_account_metrics(opened, [
         AccountMetricPoint(account='pea', day=day, cash_balance=10.0,
                            holdings_value=1000.0, total_value=1010.0,
-                           net_contributed=1000.0, xirr=0.05,
+                           net_contributed=149_000.0, xirr=0.05,
                            gain_absolu=10.0, twr_index=index)
         for day, index in ((year_end, 100.0), (today, 105.0))])
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
@@ -1024,10 +1068,12 @@ def test_every_member_a_tool_publishes_is_served_with_a_value(tmp_path):
     that rotted until some member stopped carrying a value — which is what
     keeps every other check in this section meaning something.
     """
-    for name, (tool, result) in served(rich_runtime(tmp_path)).items():
-        assert result.is_error is False, (name, _text(result))
-        unseen = (schema_paths(tool.output_schema)
-                  - set(observed_paths(result.structured_content)))
+    for name, (tool, results) in served(rich_runtime(tmp_path)).items():
+        observed = set()
+        for result in results:
+            assert result.is_error is False, (name, _text(result))
+            observed |= set(observed_paths(result.structured_content))
+        unseen = schema_paths(tool.output_schema) - observed
         assert not unseen, (name, sorted(unseen))
 
 
@@ -1040,9 +1086,10 @@ def test_the_structured_copy_is_the_text_copy(tmp_path):
     Compared by value, with Python's equality: a ``5`` served as ``5.0`` is
     the same figure, and a ``"3"`` served as ``3.0`` is not.
     """
-    for name, (_, result) in served(rich_runtime(tmp_path)).items():
-        assert result.is_error is False, (name, _text(result))
-        assert json.loads(_text(result)) == result.structured_content, name
+    for name, (_, results) in served(rich_runtime(tmp_path)).items():
+        for result in results:
+            assert result.is_error is False, (name, _text(result))
+            assert json.loads(_text(result)) == result.structured_content, name
 
 
 def test_a_nan_is_served_as_a_null_and_not_as_a_crash(tmp_path, monkeypatch):
@@ -1283,3 +1330,164 @@ def test_a_citation_that_names_several_members_names_none(tmp_path):
 
     assert list(unresolved_citations(said, 'list_positions', known)) == \
         ['currency']
+
+
+# --------------------------------------------------------------------- #
+# The simulators (#1109)
+# --------------------------------------------------------------------- #
+
+def test_a_cto_sale_is_the_figure_worked_by_hand(tmp_path):
+    """10 units bought at 100, priced 150, 4 sold under a flat 30 %."""
+    body = payload(call(rich_runtime(tmp_path), 'simulate_sale',
+                        {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 4}))
+
+    assert body['base_currency'] == 'EUR'
+    assert body['proceeds'] == pytest.approx(600.0)
+    assert body['gain'] == pytest.approx(200.0)
+    assert body['tax_now'] == pytest.approx(60.0)
+    assert body['net_proceeds'] == pytest.approx(540.0)
+    assert body['position_after'] == pytest.approx(
+        {'quantity': 6, 'cost_basis': 600.0, 'unit_cost': 100.0})
+    assert body['reason'] is None
+
+
+def test_a_sale_is_priced_at_the_price_list_positions_serves(tmp_path):
+    runtime = rich_runtime(tmp_path)
+
+    sale = payload(call(runtime, 'simulate_sale',
+                        {'account': 'pea', 'symbol': 'AAPL', 'quantity': 1}))
+    row = next(row for row in payload(call(runtime, 'list_positions'))
+               ['positions']
+               if row['account'] == 'pea' and row['symbol'] == 'AAPL')
+
+    assert sale['price'] == row['converted']['value']
+
+
+def test_a_sale_on_an_account_with_no_model_has_no_tax_figure(tmp_path):
+    """``no_model``, and a null that is no figure — never a tax of zero."""
+    body = payload(call(rich_runtime(tmp_path), 'simulate_sale',
+                        {'account': 'other', 'symbol': 'AAPL', 'quantity': 2}))
+
+    assert body['reason'] == 'no_model'
+    assert body['tax_now'] is None
+    assert body['net_proceeds'] is None
+
+
+def test_a_delisted_line_enters_the_plan_at_its_carried_value(tmp_path,
+                                                              monkeypatch):
+    """As ``list_accounts`` values it — and is never sold at that price."""
+    from application import account_facts
+
+    runtime = rich_runtime(tmp_path)
+    monkeypatch.setattr(account_facts.quotes, 'terminal_symbols',
+                        lambda *args: {'XYZ'})
+
+    def price(selling):
+        """XYZ's price on ``other``, with ``selling`` the symbol sold."""
+        built = account_facts.simulation_accounts(
+            runtime.store.reader(), runtime.config_manager.current(),
+            datetime.now(timezone.utc), ['other'], selling)
+        return next(line.price for line in built['other'].lines
+                    if line.symbol == 'XYZ')
+
+    assert price('AAPL') == pytest.approx(10.0)
+    assert price('XYZ') is None
+
+
+def test_an_unpriced_line_not_sold_enters_the_plan_unpriced(tmp_path):
+    """No quote and not delisted: no carried value, so no price is made up."""
+    from application import account_facts
+
+    runtime = rich_runtime(tmp_path)
+    built = account_facts.simulation_accounts(
+        runtime.store.reader(), runtime.config_manager.current(),
+        datetime.now(timezone.utc), ['other'], 'AAPL')
+
+    assert next(line.price for line in built['other'].lines
+                if line.symbol == 'XYZ') is None
+
+
+def test_a_line_with_no_quantity_is_never_divided_into():
+    from types import SimpleNamespace
+    from application import account_facts
+
+    share = SimpleNamespace(symbol='MSFT', price=300.0)
+    for quantity in (0, None):
+        holding = SimpleNamespace(quantity=quantity, market_value=None)
+        assert account_facts._line_price(share, holding, 'AAPL') == 300.0
+
+
+def test_an_arbitrage_out_of_a_pea_pays_the_net_less_the_withdrawal(tmp_path):
+    """The money leaves the wrapper, so its exit tax comes off the payment."""
+    body = payload(call(rich_runtime(tmp_path), 'simulate_arbitrage',
+                        {'from_account': 'pea', 'symbol': 'AAPL',
+                         'quantity': 2, 'to_account': 'cto'}))
+
+    sale = body['sale']
+    assert sale['if_withdrawn'] > 0
+    assert body['payment'] == pytest.approx(
+        sale['net_proceeds'] - sale['if_withdrawn'])
+    assert [warning['code'] for warning in body['warnings']] == [
+        'pea_withdrawal_before_threshold']
+
+
+def _refuse_cto_model(runtime):
+    """Leave ``cto`` a model this version refuses, as a past one could."""
+    runtime.store.execute('DELETE FROM account_fact WHERE account = ?', ['cto'])
+    write_legacy_taxation_model(runtime.store, account='cto')
+
+
+@pytest.mark.parametrize('tool, arguments, cause, setup', [
+    ('simulate_sale', {'account': 'nope', 'symbol': 'AAPL', 'quantity': 1},
+     'the declared accounts are: cto, other, pea', None),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'CW8.PA', 'quantity': 1},
+     'CW8.PA is not held in cto; it holds: MC.PA', None),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 11},
+     'cto holds 10', None),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 0},
+     'cannot sell a quantity of 0', None),
+    ('simulate_sale', {'account': 'other', 'symbol': 'XYZ', 'quantity': 1},
+     'XYZ has no price in other', None),
+    ('simulate_arbitrage', {'from_account': 'cto', 'symbol': 'MC.PA',
+                            'quantity': 1, 'to_account': 'nope'},
+     'the declared accounts are: cto, other, pea', None),
+    ('simulate_arbitrage', {'from_account': 'cto', 'symbol': 'MC.PA',
+                            'quantity': 1, 'to_account': 'cto'},
+     'source and target are the same account', None),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 1},
+     'carries a taxation model this version refuses', _refuse_cto_model),
+    ('simulate_arbitrage', {'from_account': 'pea', 'symbol': 'AAPL',
+                            'quantity': 1, 'to_account': 'cto'},
+     'carries a taxation model this version refuses', _refuse_cto_model),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': True},
+     'quantity', None),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': '5'},
+     'quantity', None),
+])
+def test_a_refused_simulation_arrives_in_words(tmp_path, tool, arguments,
+                                                cause, setup):
+    """Each refusal names its cause, and none reads as a broken store."""
+    runtime = rich_runtime(tmp_path)
+    if setup is not None:
+        setup(runtime)
+
+    result = call(runtime, tool, arguments)
+
+    assert result.is_error is True
+    assert cause in _text(result)
+    assert 'store could not answer' not in _text(result)
+
+
+def test_an_arbitrage_past_the_pea_ceiling_says_by_how_much(tmp_path):
+    """149 000 contributed, 1 350 paid in: 350 over the 150 000."""
+    body = payload(call(rich_runtime(tmp_path), 'simulate_arbitrage',
+                        {'from_account': 'cto', 'symbol': 'MC.PA',
+                         'quantity': 10, 'to_account': 'pea'}))
+
+    assert body['payment'] == pytest.approx(1350.0)
+    assert [warning['code'] for warning in body['warnings']] == [
+        'pea_ceiling_exceeded', 'pea_eligibility_unknown']
+    figures = body['warnings'][0]['figures']
+    assert figures['excess'] == pytest.approx(
+        figures['net_contributed'] + body['payment'] - 150_000)
+    assert figures['excess'] == pytest.approx(350.0)

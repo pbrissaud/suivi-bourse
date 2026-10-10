@@ -315,3 +315,14 @@ def test_an_unknown_exit_tax_leaves_the_payment_unknown():
                                 now=NOW)
 
     assert result['payment'] is None
+
+
+def test_a_symbol_not_held_names_what_the_account_holds():
+    """A line sold to zero is not held, and an empty account says so."""
+    sold_out = Line('GONE', 0, 0.0, 10.0)
+    with pytest.raises(SimulationRefused, match='it holds: CW8.PA$'):
+        simulate_sale(account(taxation.FLAT_REALISED, CTO, [CW8, sold_out]),
+                      'X', 1, now=NOW)
+    with pytest.raises(SimulationRefused, match='it holds: nothing$'):
+        simulate_sale(account(taxation.FLAT_REALISED, CTO, [sold_out]),
+                      'X', 1, now=NOW)
