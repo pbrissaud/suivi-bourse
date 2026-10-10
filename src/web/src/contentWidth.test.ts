@@ -1,6 +1,6 @@
 /**
  * **The content column may be narrower than what is in it** (#832), held on the
- * source for the same reason `gridColumns.test.ts` is: nothing makes it true by
+ * source for the same reason `lint/grid-base-columns.grit` is: nothing makes it true by
  * construction, and no rendering test could see it — jsdom lays nothing out, so
  * a table 976 px wide inside a 672 px column is a fact only a browser has.
  *
@@ -56,9 +56,8 @@ describe('the content column may be narrower than what is in it', () => {
   })
 
   it('reads the tag it is supposed to be reading', () => {
-    // The coverage half, in the taste of `gridColumns.test.ts`: a pattern that
-    // stopped matching would make the assertions above pass on a shell that had
-    // lost the rule entirely.
+    // The coverage half: a pattern that stopped matching would make the
+    // assertions above pass on a shell that had lost the rule entirely.
     expect(SHELL).toMatch(/SidebarInset/)
     expect(INSET.test('<SidebarInset>')).toBe(true)
   })

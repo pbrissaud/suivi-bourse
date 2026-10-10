@@ -2,8 +2,6 @@
  * What is true of the installation, what a page says of its own failed read,
  * and the problem table both of them come out of.
  */
-import fs from 'node:fs'
-import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -158,30 +156,7 @@ describe('a surface names its own failed read, and nothing above it can do it', 
     })
   })
 
-  it('takes no shell error, `/api/runtime` being in no surface’s list', () => {
-    // The docstring used to promise that a page lists `/api/runtime` first
-    // among its own errors, and no page did. It is in no list on purpose: it
-    // answers from process memory and never opens the store, so it refuses only
-    // when every store read refuses with it and says so. What names *the app is
-    // not answering* as a fact about the installation is the bell, which reads
-    // `/health` — a stricter route that falls wherever this one falls.
-    // `SettingsPage` joined the list at #830, the surface it names having
-    // become a page of its own — and it is the one that reads the
-    // runtime for something, which is exactly why it is worth asserting.
-    const pages = ['DashboardPage', 'SharesPage', 'AccountsPage', 'SettingsPage']
-    for (const page of pages) {
-      const source = fs.readFileSync(
-        path.join(import.meta.dirname, '..', 'pages', `${page}.tsx`),
-        'utf8',
-      )
-      expect(source, page).not.toMatch(/runtime\.error/)
-    }
-    const source = fs.readFileSync(
-      path.join(import.meta.dirname, '..', 'components', 'data', 'Ledger.tsx'),
-      'utf8',
-    )
-    expect(source, 'data/Ledger').not.toMatch(/runtime\.error/)
-  })
+  // `takes no shell error` is a Biome rule now: lint/no-runtime-error-on-surfaces.grit
 
   it('says nothing where a surface above it is already saying it', () => {
     // The one caller left is the notifications panel, whose health card says

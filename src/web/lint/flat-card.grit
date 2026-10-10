@@ -1,0 +1,8 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// The card is flat: depth comes from the step between grounds (#1111).
+or { JsStringLiteralExpression(), JsxString(), JsTemplateChunkElement(), JsLiteralMemberName() } as $s where {
+  $s <: r"[\s\S]*(?:^|[\s'\"`:])shadow(?:-[^\s'\"`]*)?(?:[\s'\"`]|$)[\s\S]*",
+  register_diagnostic(span = $s, message = "[flat-card] The card carries no shadow (#1111)")
+}

@@ -1,0 +1,10 @@
+engine biome(1.0)
+language css
+
+// The overline is gone, and so is what it was made of (#1111).
+or {
+  CssAtRule() as $hit where { $hit <: r"@utility\s+eyebrow\b[\s\S]*" },
+  CssDeclarationWithSemicolon() as $hit where { $hit <: r"[\s\S]*--tracking-caps(?:[^\w-][\s\S]*)?" }
+} where {
+  register_diagnostic(span = $hit, message = "[no-overline-css] No eyebrow utility and no caps tracking (#1111)")
+}

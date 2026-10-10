@@ -1,0 +1,17 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// A Refusal answers a write the reader just made; a read that did not answer
+// renders Unreadable instead (#829). A child expression is read, never an
+// attribute: Biome's GritQL cannot address the child list itself.
+or {
+  JsxElement(opening_element = $opening) as $hit where {
+    $opening <: r"<Refusal[\s>][\s\S]*",
+    not $hit <: contains JsxExpressionChild() as $child where {
+      $child <: r"[\s\S]*\b(?:write|remove|move)\.error\b[\s\S]*"
+    }
+  },
+  JsxSelfClosingElement(name = r"Refusal") as $hit
+} where {
+  register_diagnostic(span = $hit, message = "[refusal-for-writes] Mount a Refusal for a write's error only (write, remove or move)")
+}

@@ -1,0 +1,7 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// The table of tones lives in Notifications.tsx only: a copy drifts.
+JsVariableDeclarator(id = r"STATE_TONE") as $hit where {
+  register_diagnostic(span = $hit, message = "[one-tone-table] STATE_TONE is declared in components/Notifications.tsx only")
+}

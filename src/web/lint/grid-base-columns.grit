@@ -1,0 +1,11 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// A grid that names a column at a breakpoint names one without a breakpoint
+// too: the implicit `auto` track grows past its container (#787).
+or { JsStringLiteralExpression(), JsxString(), JsTemplateChunkElement(), JsLiteralMemberName() } as $s where {
+  $s <: r"[\s\S]*(?:^|[\s'\"`])grid(?:[\s'\"`]|$)[\s\S]*",
+  $s <: r"[\s\S]*(?:^|[\s'\"`])(?:sm|md|lg|xl|2xl):grid-cols-[\s\S]*",
+  not $s <: r"[\s\S]*(?:^|[\s'\"`])grid-cols-[\s\S]*",
+  register_diagnostic(span = $s, message = "[grid-base-columns] Name a base grid-cols-* beside the breakpoint one (#787)")
+}
