@@ -82,8 +82,7 @@ describe('the page title, now the header’s', () => {
 
   it('drops the previous page’s subtitle rather than letting the next one wear it', async () => {
     const { user } = renderApp()
-    const banner = () =>
-      screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement
+    const banner = () => screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement
     await waitFor(() => expect(banner()).toHaveTextContent(/Cours au/))
 
     // *Grand livre* dates nothing: it declares a name and no subtitle, and
@@ -104,7 +103,10 @@ describe('the page title, now the header’s', () => {
 
 describe('the navigation, six entries in four and two', () => {
   /** The nav's links, in the order a reader — and a screen reader — meets them. */
-  const entries = () => within(nav()).getAllByRole('link').map((link) => link.textContent)
+  const entries = () =>
+    within(nav())
+      .getAllByRole('link')
+      .map((link) => link.textContent)
 
   it('says Grand livre and Réglages, and puts both at the foot of the list', async () => {
     renderApp()
@@ -183,8 +185,7 @@ describe('the navigation, six entries in four and two', () => {
 })
 
 describe('the bell is the one global indicator (#829)', () => {
-  const bell = (hidden = false) =>
-    screen.getByRole('button', { name: /^Notifications/, hidden })
+  const bell = (hidden = false) => screen.getByRole('button', { name: /^Notifications/, hidden })
 
   /** The tone the icon is worn in, read off the one node that carries it. */
   const toneOf = (node: HTMLElement) =>
@@ -287,7 +288,11 @@ describe('the bell is the one global indicator (#829)', () => {
     // `Banner.tsx`, `Band.tsx` and `StatusDot.tsx` are gone (#829):
     // the banner is retired without replacement, its conditions are cards in
     // the panel, and its sentence descends into each page's empty state.
-    for (const gone of ['components/Banner.tsx', 'components/Band.tsx', 'components/StatusDot.tsx']) {
+    for (const gone of [
+      'components/Banner.tsx',
+      'components/Band.tsx',
+      'components/StatusDot.tsx',
+    ]) {
       expect(fs.existsSync(path.join(import.meta.dirname, gone)), gone).toBe(false)
     }
   })
@@ -319,13 +324,17 @@ describe('the density, the reader’s third preference', () => {
     expect(table).toHaveAttribute('data-density', 'comfortable')
 
     await chooseInMenu(user, 'Densité des tableaux', 'Compact')
-    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'))
+    await waitFor(() =>
+      expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),
+    )
 
     unmount()
     renderApp({ url: '/shares' })
     // Read back from the browser, where the three preferences live — the store
     // has no dial for any of them.
-    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'))
+    await waitFor(() =>
+      expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),
+    )
     expect(written).toBe(0)
   })
 

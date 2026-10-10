@@ -157,7 +157,9 @@ describe('where an entry leads', () => {
 
     // Not the data page with the form shut, which would be a page entry wearing
     // an action's name.
-    expect(await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
+    ).toBeInTheDocument()
   })
 })
 

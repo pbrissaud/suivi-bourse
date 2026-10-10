@@ -237,7 +237,10 @@ describe('a grid is not more legible for being elsewhere', () => {
     for (const ground of GROUNDS) {
       const sheet = ratio(grid, surfaceOf('sheet.tsx')!, ground)
       const card = ratio(grid, surfaceOf('card.tsx')!, ground)
-      expect(Math.abs(sheet - card), `the two grids part company on the ${ground} ground`).toBeLessThan(0.25)
+      expect(
+        Math.abs(sheet - card),
+        `the two grids part company on the ${ground} ground`,
+      ).toBeLessThan(0.25)
     }
   })
 })

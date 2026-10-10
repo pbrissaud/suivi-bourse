@@ -132,9 +132,7 @@ function ColumnHead({ label, column, sort, onSort, numeric, className }: ColumnH
           {t(label)}
           {inForce ? <Arrow className="size-3" aria-hidden /> : null}
         </button>
-        {explain ? (
-          <Explain figure={t(label)} body={explain.body} anchor={explain.anchor} />
-        ) : null}
+        {explain ? <Explain figure={t(label)} body={explain.body} anchor={explain.anchor} /> : null}
       </span>
     </TableHead>
   )
@@ -153,13 +151,7 @@ interface SharesTableProps {
   onSelect: (symbol: string) => void
 }
 
-export function SharesTable({
-  groups,
-  currency,
-  sort,
-  onSort,
-  onSelect,
-}: SharesTableProps) {
+export function SharesTable({ groups, currency, sort, onSort, onSelect }: SharesTableProps) {
   const { t } = useI18n()
 
   return (
@@ -168,7 +160,13 @@ export function SharesTable({
       <TableHeader>
         <TableRow>
           <ColumnHead label="shares.column.symbol" column="symbol" sort={sort} onSort={onSort} />
-          <ColumnHead label="shares.column.price" column="price" sort={sort} onSort={onSort} numeric />
+          <ColumnHead
+            label="shares.column.price"
+            column="price"
+            sort={sort}
+            onSort={onSort}
+            numeric
+          />
           <ColumnHead
             label="shares.column.quantity"
             column="quantity"
@@ -176,8 +174,20 @@ export function SharesTable({
             onSort={onSort}
             numeric
           />
-          <ColumnHead label="shares.column.avgCost" column="avgCost" sort={sort} onSort={onSort} numeric />
-          <ColumnHead label="shares.column.value" column="value" sort={sort} onSort={onSort} numeric />
+          <ColumnHead
+            label="shares.column.avgCost"
+            column="avgCost"
+            sort={sort}
+            onSort={onSort}
+            numeric
+          />
+          <ColumnHead
+            label="shares.column.value"
+            column="value"
+            sort={sort}
+            onSort={onSort}
+            numeric
+          />
           <ColumnHead
             label="shares.column.unrealised"
             column="unrealised"
@@ -185,7 +195,13 @@ export function SharesTable({
             onSort={onSort}
             numeric
           />
-          <ColumnHead label="shares.column.realised" column="realised" sort={sort} onSort={onSort} numeric />
+          <ColumnHead
+            label="shares.column.realised"
+            column="realised"
+            sort={sort}
+            onSort={onSort}
+            numeric
+          />
           <ColumnHead
             label="shares.column.dividends"
             column="dividends"
@@ -237,11 +253,7 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
       {/* It is the account's **valuation** and nothing else since #838 — the
       drawing puts one figure here, and the strip above the table is where the
       four totals of the whole are read. */}
-      <th
-        scope="rowgroup"
-        colSpan={9}
-        className="px-1.5 py-2 text-left label text-primary xl:px-4"
-      >
+      <th scope="rowgroup" colSpan={9} className="px-1.5 py-2 text-left label text-primary xl:px-4">
         {group.account}
         {' · '}
         <span className="tabular">

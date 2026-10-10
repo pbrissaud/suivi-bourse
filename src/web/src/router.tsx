@@ -92,9 +92,7 @@ const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts',
   component: AccountsPage,
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { account?: string; open?: 'account' } => {
+  validateSearch: (search: Record<string, unknown>): { account?: string; open?: 'account' } => {
     const account = typeof search.account === 'string' ? search.account.trim() : ''
     return {
       ...(account === '' ? {} : { account }),

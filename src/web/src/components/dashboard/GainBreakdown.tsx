@@ -98,7 +98,10 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
     <Section title={t('dashboard.breakdown.title')}>
       <div className="space-y-4">
         {whole === 0 ? null : (
-          <div aria-hidden className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-muted">
+          <div
+            aria-hidden
+            className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-muted"
+          >
             {segments.map(({ term, amount }) =>
               amount === 0 ? null : (
                 <span
@@ -149,7 +152,9 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
               anchor="total-gain"
             />
           </span>
-          <span className={cn('tabular font-semibold', signClass(total.known ? total.value : null))}>
+          <span
+            className={cn('tabular font-semibold', signClass(total.known ? total.value : null))}
+          >
             {renderFigure(
               sumRendering(total),
               () => f.currency(total.known ? total.value : null, currency),

@@ -59,7 +59,14 @@ export type Receipt =
    * to read twice — which is why this is a second *kind* and not a second
    * *shape*.
    */
-  | { kind: 'import.forecast'; count: number; from: string; to: string; accounts: number; symbols: number }
+  | {
+      kind: 'import.forecast'
+      count: number
+      from: string
+      to: string
+      accounts: number
+      symbols: number
+    }
   /** The forecast for a file with no row in it: there is nothing to write. */
   | { kind: 'import.forecast.empty'; filename: string }
   /**
@@ -90,7 +97,14 @@ export type Receipt =
    * is UTC midnight and renders a day early west of Greenwich). This module
    * stays pure and holds no second one.
    */
-  | { kind: 'import.written'; count: number; from: string; to: string; accounts: number; symbols: number }
+  | {
+      kind: 'import.written'
+      count: number
+      from: string
+      to: string
+      accounts: number
+      symbols: number
+    }
   /** It landed and wrote nothing: a header with no row under it. */
   | { kind: 'import.empty'; filename: string }
   /**

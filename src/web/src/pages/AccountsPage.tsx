@@ -275,7 +275,9 @@ export default function AccountsPage() {
         // `null` while the ledger has not landed: the count a refusal
         // is made of comes off it, and a removal offered before it lands offers
         // a gesture the server is about to refuse.
-        removal={editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))}
+        removal={
+          editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))
+        }
         onClose={() => setEditing(undefined)}
       />
     </div>

@@ -57,9 +57,7 @@ export function OrphansBlock({ orphans }: OrphansBlockProps) {
           {t('installation.orphans')}
         </h2>
         {/* The count, said rather than counted off the rows below it. */}
-        <p className="font-medium">
-          {t('installation.store.orphans', { count: orphans.length })}
-        </p>
+        <p className="font-medium">{t('installation.store.orphans', { count: orphans.length })}</p>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="max-w-prose text-sm text-muted-foreground">

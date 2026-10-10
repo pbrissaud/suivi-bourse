@@ -104,9 +104,7 @@ export default function DashboardPage() {
   // content would have filled; it never puts the page in `failed`, which is a
   // screen with nothing on it but a sentence.
   const state = dashboardState({
-    failed: Boolean(
-      oneFailure(readConditions({ errors: [positions.error, totals.error] })),
-    ),
+    failed: Boolean(oneFailure(readConditions({ errors: [positions.error, totals.error] }))),
     positions: positions.data,
     totals: totals.data,
   })
@@ -162,17 +160,13 @@ export default function DashboardPage() {
   // **The two reads the page is made of**, and what they say when they fail:
   // the page is empty, and this is why. `oneFailure` keeps the first — an
   // unreadable store fails both at once, and one screen owes one sentence.
-  const pageFailure = oneFailure(
-    readConditions({ errors: [positions.error, totals.error] }),
-  )
+  const pageFailure = oneFailure(readConditions({ errors: [positions.error, totals.error] }))
 
   // **One failure per block, handed to the block.** Each is the read that block
   // is made of, so what the reader loses is that block and what they are told
   // is why — in the space the sparkline, the list or the months would have
   // filled.
-  const chartFailure = oneFailure(
-    readConditions({ errors: [perf.error, valuation.error] }),
-  )
+  const chartFailure = oneFailure(readConditions({ errors: [perf.error, valuation.error] }))
   const moversFailure = oneFailure(readConditions({ errors: [movers.error] }))
   const rhythmFailure = oneFailure(readConditions({ errors: [rhythm.error] }))
 

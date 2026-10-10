@@ -33,10 +33,7 @@ const SOURCE = path.resolve(import.meta.dirname)
 
 const SHELL = fs.readFileSync(path.join(SOURCE, 'components', 'Shell.tsx'), 'utf8')
 const TABLE = fs.readFileSync(path.join(SOURCE, 'components', 'ui', 'table.tsx'), 'utf8')
-const FACETS = fs.readFileSync(
-  path.join(SOURCE, 'components', 'data', 'LedgerFacets.tsx'),
-  'utf8',
-)
+const FACETS = fs.readFileSync(path.join(SOURCE, 'components', 'data', 'LedgerFacets.tsx'), 'utf8')
 
 /** The opening tag of the content column, whatever else is on it. */
 const INSET = /<SidebarInset\b[^>]*>/
@@ -89,7 +86,8 @@ describe('the facet panel folds where there is no room for it', () => {
   it('keeps the toggle off the wide layout, where it would do nothing', () => {
     // The first class list after the control's own attribute, which is that
     // control's: an arrow function in between makes `>` a poor terminator.
-    const [, classes] = FACETS.match(/aria-controls="ledger-facets"[\s\S]*?className="([^"]*)"/) ?? []
+    const [, classes] =
+      FACETS.match(/aria-controls="ledger-facets"[\s\S]*?className="([^"]*)"/) ?? []
     expect(classes).toBeDefined()
     expect(classes).toMatch(/\bmd:hidden\b/)
   })

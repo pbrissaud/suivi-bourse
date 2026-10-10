@@ -78,7 +78,10 @@ export function ReferenceSelect({
         {/* Full width on a 390 px viewport, where ~350 px are left once the
             sidebar is a drawer, and 44 px tall — the touch minimum the kit's
             own 36 px falls under. */}
-        <SelectTrigger aria-label={t('benchmark.select.label')} className={cn('w-full sm:w-96', triggerClassName)}>
+        <SelectTrigger
+          aria-label={t('benchmark.select.label')}
+          className={cn('w-full sm:w-96', triggerClassName)}
+        >
           {/* **The chosen fund, not the row it was chosen from.** Left to
               render itself, `SelectValue` echoes the whole `SelectItem` —
               inception and download state included — and those two columns
@@ -93,7 +96,9 @@ export function ReferenceSelect({
         </SelectTrigger>
         <SelectContent>
           {offList ? (
-            <SelectItem value={value}>{t('benchmark.select.offList', { symbol: value })}</SelectItem>
+            <SelectItem value={value}>
+              {t('benchmark.select.offList', { symbol: value })}
+            </SelectItem>
           ) : null}
           <SelectGroup>
             {offered.map((entry) => (
@@ -113,13 +118,7 @@ export function ReferenceSelect({
 }
 
 /** One offered fund: the index first, then what it costs and what it holds. */
-function Row({
-  entry,
-  downloaded,
-}: {
-  entry: OfferedBenchmark
-  downloaded: readonly string[]
-}) {
+function Row({ entry, downloaded }: { entry: OfferedBenchmark; downloaded: readonly string[] }) {
   const { t } = useI18n()
 
   return (

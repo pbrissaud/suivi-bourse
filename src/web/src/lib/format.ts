@@ -200,11 +200,7 @@ export function formatBytes(locale: string, value: number | null | undefined): s
  * Every locale but French comes back through `format` untouched, so this costs
  * one `startsWith` on the English path.
  */
-function formatted(
-  locale: string,
-  date: Date,
-  options: Intl.DateTimeFormatOptions,
-): string {
+function formatted(locale: string, date: Date, options: Intl.DateTimeFormatOptions): string {
   const shape = new Intl.DateTimeFormat(locale, options)
   if (!locale.startsWith('fr') || date.getDate() !== 1) return shape.format(date)
   return shape
@@ -235,9 +231,7 @@ export function formatDate(
 ): string {
   if (value === null || value === undefined) return ABSENT
   const day = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null
-  const date = day
-    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
-    : new Date(value)
+  const date = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(value)
   if (Number.isNaN(date.getTime())) return ABSENT
   return formatted(locale, date, { dateStyle: 'medium' })
 }
@@ -321,8 +315,11 @@ export function useFormatters() {
   return useMemo(
     () => ({
       locale,
-      currency: (value: number | null | undefined, currency: string | null | undefined, digits?: number) =>
-        formatCurrency(locale, value, currency, digits),
+      currency: (
+        value: number | null | undefined,
+        currency: string | null | undefined,
+        digits?: number,
+      ) => formatCurrency(locale, value, currency, digits),
       signedCurrency: (value: number | null | undefined, currency: string | null | undefined) =>
         formatSignedCurrency(locale, value, currency),
       number: (value: number | null | undefined, digits?: number) =>

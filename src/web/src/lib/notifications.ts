@@ -47,9 +47,7 @@ export const SUBJECTS = ['health', 'installation', 'portfolio', 'accounts'] as c
 export type Subject = (typeof SUBJECTS)[number]
 
 /** A catalogue key and what it interpolates — or a sentence nobody translated. */
-export type Said =
-  | { key: MessageKey; values?: MessageValues }
-  | { text: string }
+export type Said = { key: MessageKey; values?: MessageValues } | { text: string }
 
 /**
  * Where a card's link lands. **On the figure, never on the page**:
@@ -233,9 +231,7 @@ function sentences(advisory: Advisory, label: string): Pick<Entry, 'title' | 'bo
 
 /** A subject this front knows, or the portfolio — the server decides, we render. */
 function subjectOf(subject: string): Subject {
-  return (SUBJECTS as readonly string[]).includes(subject)
-    ? (subject as Subject)
-    : 'portfolio'
+  return (SUBJECTS as readonly string[]).includes(subject) ? (subject as Subject) : 'portfolio'
 }
 
 interface NotificationsInput {

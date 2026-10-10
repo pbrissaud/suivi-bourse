@@ -131,11 +131,15 @@ describe('the controls the browser paints itself', () => {
     const source = read()
     // The value is the accent's; the track is the half `accent-color` does not
     // reach, and it is the one that broke on the light ground.
-    expect(source).toMatch(/progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--input\)/)
-    expect(
-      source,
-    ).toMatch(/progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--primary\)/)
-    expect(source).toMatch(/progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--primary\)/)
+    expect(source).toMatch(
+      /progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--input\)/,
+    )
+    expect(source).toMatch(
+      /progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--primary\)/,
+    )
+    expect(source).toMatch(
+      /progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--primary\)/,
+    )
   })
 
   it('keeps the track apart from the card it is drawn on', () => {
@@ -217,7 +221,11 @@ const DESIGN_COLOURS: Record<string, readonly string[]> = {
   'text-muted': ['--muted-foreground'],
   rule: ['--border', '--sidebar-border'],
   primary: ['--primary', '--ring', '--sidebar-primary', '--sidebar-ring'],
-  'on-primary': ['--primary-foreground', '--sidebar-primary-foreground', '--destructive-foreground'],
+  'on-primary': [
+    '--primary-foreground',
+    '--sidebar-primary-foreground',
+    '--destructive-foreground',
+  ],
   gain: ['--gain'],
   loss: ['--loss'],
 }

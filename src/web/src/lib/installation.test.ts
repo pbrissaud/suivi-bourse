@@ -18,7 +18,14 @@ function runtimeWith(symbols: RuntimeState['symbols']): RuntimeState {
 }
 
 function symbol(overrides: Partial<RuntimeState['symbols'][number]> = {}) {
-  return { symbol: 'ZZA', next_run: null, failure_count: 0, closed: false, held: true, ...overrides }
+  return {
+    symbol: 'ZZA',
+    next_run: null,
+    failure_count: 0,
+    closed: false,
+    held: true,
+    ...overrides,
+  }
 }
 
 describe('what a new cadence reaches', () => {
@@ -78,7 +85,9 @@ describe('what the form sends', () => {
     // The comparison is against the store's **effective** value, so re-posting
     // `120` on a dial that already reads `120` reports no change — and re-arms
     // nothing.
-    expect(changedValues(settings, { ...draftFrom(settings), regular_interval: ' 120 ' })).toEqual({})
+    expect(changedValues(settings, { ...draftFrom(settings), regular_interval: ' 120 ' })).toEqual(
+      {},
+    )
   })
 
   it('never reads an emptied field as a request for the default', () => {

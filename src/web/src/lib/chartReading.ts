@@ -171,11 +171,7 @@ export function chartShape(
     })),
     high,
     low,
-    gap: gapOf(
-      primary.values,
-      drawn.length > 1 ? drawn[1].values : reference,
-      days,
-    ),
+    gap: gapOf(primary.values, drawn.length > 1 ? drawn[1].values : reference, days),
   }
 }
 

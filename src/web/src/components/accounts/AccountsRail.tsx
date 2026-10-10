@@ -60,7 +60,6 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
   empty: 'accounts.reason.empty',
 }
 
-
 /**
  * The advisory a rail entry wears, **as a chip and never as a gesture** (#829).
  *
@@ -76,10 +75,7 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
  * is the same rendering for two different truths and legitimately so: an
  * absent chip asserts nothing at all.
  */
-function cashShare(
-  advisories: readonly Advisory[] | null,
-  account: string,
-): number | null {
+function cashShare(advisories: readonly Advisory[] | null, account: string): number | null {
   const found = (advisories ?? []).find(
     (advisory) => advisory.kind === 'cash_share' && advisory.detail.account === account,
   )
@@ -250,7 +246,9 @@ export function AccountsRail({
                   </span>
                   {/* The id, in the slot the type held since #838 — opposite
                       the name, never beneath it (#916). */}
-                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.id}</span>
+                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                    {row.id}
+                  </span>
                 </span>
 
                 {/* The value is the absolute the share above is a share *of*. */}
@@ -263,7 +261,6 @@ export function AccountsRail({
                     {t(REASON_LABELS[reason])}
                   </span>
                 )}
-
               </Link>
             </li>
           )

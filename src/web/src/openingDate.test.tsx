@@ -69,7 +69,9 @@ const AGED_FROM_PAYMENT = aTaxationModel({
 function renderAccounts(account: Partial<Account>) {
   server.use(
     http.get(ROUTES.accounts, () =>
-      HttpResponse.json(anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', ...account })])),
+      HttpResponse.json(
+        anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', ...account })]),
+      ),
     ),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
     http.get(ROUTES.taxationModels, () =>
@@ -265,7 +267,9 @@ describe('the contradiction, said out loud', () => {
   it('names the account, both dates, and where to go — in French', async () => {
     const panel = await openNotifications(['fr-FR'])
 
-    expect(within(panel).getByText(/Alpha · ouvert après son premier versement/)).toBeInTheDocument()
+    expect(
+      within(panel).getByText(/Alpha · ouvert après son premier versement/),
+    ).toBeInTheDocument()
     expect(panel.textContent).toContain('déclaré ce compte ouvert le 2021-01-01')
     expect(panel.textContent).toContain('versement le 2019-03-04')
     // It states the contradiction and does not decide which side is wrong.
@@ -304,7 +308,9 @@ describe('the day that has not happened, said out loud', () => {
   it('names the date and what it does to the projection — in French', async () => {
     const panel = await openNotifications(['fr-FR'])
 
-    expect(within(panel).getByText(/Alpha · ouvert un jour qui n’est pas arrivé/)).toBeInTheDocument()
+    expect(
+      within(panel).getByText(/Alpha · ouvert un jour qui n’est pas arrivé/),
+    ).toBeInTheDocument()
     expect(panel.textContent).toContain('ouvert le 2099-01-01')
     // The figure is the reason this is said at all.
     expect(panel.textContent).toContain('n’est jamais atteint')

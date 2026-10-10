@@ -160,9 +160,7 @@ describe('a position whose history is still being rebuilt', () => {
     expect(valuationTotal(rebuilding)).toEqual({ known: false, because: 'rebuilding' })
 
     // And the rate keeps its own sentence where it is the real reason.
-    const waiting = rowsOf([
-      aPosition({ symbol: 'ZZB', price: 125, currency: 'USD', rate: null }),
-    ])
+    const waiting = rowsOf([aPosition({ symbol: 'ZZB', price: 125, currency: 'USD', rate: null })])
     expect(valuationTotal(waiting)).toEqual({ known: false, because: 'awaitingRate' })
   })
 
@@ -202,7 +200,9 @@ describe('the two orderings', () => {
 
 describe('the percentage under the latent gain', () => {
   it('is the gain over the basis, and is undefined on a nil basis', () => {
-    const [held] = rowsOf([aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 })])
+    const [held] = rowsOf([
+      aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+    ])
     expect(unrealisedRatio(held)).toBeCloseTo(0.3, 10)
 
     // A pure grant costs nothing: dividing by it would be a percentage of zero.
@@ -282,14 +282,10 @@ describe('the chart’s event markers', () => {
     // The series opens on an afternoon close; a purchase made that morning is
     // still a purchase of the visible range, and dropping it would lose the
     // very event that opened the line.
-    const markers = eventMarkers(
-      [anEvent({ date: '2026-02-28' })],
-      'ZZA',
-      [
-        { t: '2026-02-28T17:30:00.000Z', price: 126 },
-        { t: '2026-03-02T12:00:00.000Z', price: 130 },
-      ],
-    )
+    const markers = eventMarkers([anEvent({ date: '2026-02-28' })], 'ZZA', [
+      { t: '2026-02-28T17:30:00.000Z', price: 126 },
+      { t: '2026-03-02T12:00:00.000Z', price: 130 },
+    ])
     expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-02-28', 0]])
   })
 
@@ -358,7 +354,14 @@ describe('the weight of a line', () => {
     const rows = rowsOf([
       aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 500, price: 130 }),
       aPosition({ symbol: 'ZZB', quantity: 10, cost_basis: 500, price: 70 }),
-      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: 125, currency: 'USD', rate: null }),
+      aPosition({
+        symbol: 'ZZC',
+        quantity: 6,
+        cost_basis: 600,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
     ])
     const whole = placedValue(rows)
 
@@ -366,12 +369,22 @@ describe('the weight of a line', () => {
     expect(weightShare(rows[0], whole)).toBeCloseTo(0.65, 6)
     expect(weightShare(rows[1], whole)).toBeCloseTo(0.35, 6)
     // The three shares close on the placed lines alone.
-    expect((weightShare(rows[0], whole) ?? 0) + (weightShare(rows[1], whole) ?? 0)).toBeCloseTo(1, 6)
+    expect((weightShare(rows[0], whole) ?? 0) + (weightShare(rows[1], whole) ?? 0)).toBeCloseTo(
+      1,
+      6,
+    )
   })
 
   it('has no share where the line has no value, and none where the whole is nothing', () => {
     const [awaitingRate] = rowsOf([
-      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: 125, currency: 'USD', rate: null }),
+      aPosition({
+        symbol: 'ZZC',
+        quantity: 6,
+        cost_basis: 600,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
     ])
     expect(weightShare(awaitingRate, 2000)).toBeNull()
 
@@ -389,18 +402,22 @@ describe('the weight of a line', () => {
     // absence is how four renderings become five.
     const [priced, awaitingRate] = rowsOf([
       aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 500, price: 130 }),
-      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: 125, currency: 'USD', rate: null }),
+      aPosition({
+        symbol: 'ZZC',
+        quantity: 6,
+        cost_basis: 600,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
     ])
 
     expect(weightRendering(priced, 1300).kind).toBe('figure')
-    expect(weightRendering(awaitingRate, 1300)).toEqual(
-      positionRenderings(awaitingRate).valuation,
-    )
+    expect(weightRendering(awaitingRate, 1300)).toEqual(positionRenderings(awaitingRate).valuation)
     // The one case of its own: a figure of a valuation, over a whole of nothing.
     expect(weightRendering(priced, 0).kind).toBe('dash')
   })
 })
-
 
 /**
  * The rows the allocation divides, with no failure counter: it is a rendering
@@ -423,7 +440,13 @@ describe('the allocation', () => {
     // that by making the fold **say what it holds** — the count is in the slice
     // — and by putting every line it hides in the table under the ring.
     const positions = Array.from({ length: 15 }, (_, index) =>
-      aPosition({ symbol: `Z${index}`, name: `Zeta ${index}`, quantity: 1, cost_basis: 1, price: 15 - index }),
+      aPosition({
+        symbol: `Z${index}`,
+        name: `Zeta ${index}`,
+        quantity: 1,
+        cost_basis: 1,
+        price: 15 - index,
+      }),
     )
     const { slices, total } = allocation(allocationRows(positions))
 
@@ -440,7 +463,13 @@ describe('the allocation', () => {
     // word — the drawing's own rule, and the one place the fold is *not* the
     // simple `> cap - 1` it would be if the eighth slice were always the tail.
     const eight = Array.from({ length: 8 }, (_, index) =>
-      aPosition({ symbol: `Z${index}`, name: `Zeta ${index}`, quantity: 1, cost_basis: 1, price: 8 - index }),
+      aPosition({
+        symbol: `Z${index}`,
+        name: `Zeta ${index}`,
+        quantity: 1,
+        cost_basis: 1,
+        price: 8 - index,
+      }),
     )
     const { slices } = allocation(allocationRows(eight))
 
@@ -455,7 +484,14 @@ describe('the allocation', () => {
     const { slices, unplaced } = allocation(
       allocationRows([
         aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
-        aPosition({ symbol: 'ZZB', quantity: 4, cost_basis: 400, price: 125, currency: 'USD', rate: null }),
+        aPosition({
+          symbol: 'ZZB',
+          quantity: 4,
+          cost_basis: 400,
+          price: 125,
+          currency: 'USD',
+          rate: null,
+        }),
       ]),
     )
 

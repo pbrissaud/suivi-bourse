@@ -51,9 +51,7 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
 
   if (rhythm === null) return failure === null ? null : <Unreadable failure={failure} />
 
-  return (
-    <Section title={t('dashboard.rhythm.title')}>{body()}</Section>
-  )
+  return <Section title={t('dashboard.rhythm.title')}>{body()}</Section>
 
   function body() {
     // **Two absences, two sentences.** Nothing observed at all is a ledger with
@@ -82,19 +80,19 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
       // what the width is for. Stacked under `sm`.
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-8">
         <div className="shrink-0 sm:w-40">
-        {/* The pair, and it is **one** group: the coverage is a child of the
+          {/* The pair, and it is **one** group: the coverage is a child of the
             amount, so no reading of this markup detaches them. */}
-        <Stat
-          label={t('dashboard.rhythm.amount')}
-          value={f.currency(rhythm.monthly_amount, rhythm.base_currency)}
-        >
-          <p className="text-xs text-muted-foreground">
-            {t('dashboard.rhythm.coverage', {
-              covered: rhythm.months_covered,
-              observed: rhythm.months_observed,
-            })}
-          </p>
-        </Stat>
+          <Stat
+            label={t('dashboard.rhythm.amount')}
+            value={f.currency(rhythm.monthly_amount, rhythm.base_currency)}
+          >
+            <p className="text-xs text-muted-foreground">
+              {t('dashboard.rhythm.coverage', {
+                covered: rhythm.months_covered,
+                observed: rhythm.months_observed,
+              })}
+            </p>
+          </Stat>
         </div>
         <MonthStrip months={rhythm.months} currency={rhythm.base_currency} />
       </div>
@@ -128,10 +126,7 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
 
   return (
     <div className="min-w-0 flex-1">
-      <ol
-        aria-label={t('dashboard.rhythm.months')}
-        className="grid grid-cols-12 items-end gap-1.5"
-      >
+      <ol aria-label={t('dashboard.rhythm.months')} className="grid grid-cols-12 items-end gap-1.5">
         {months.map((one, index) => {
           const said =
             one.amount === null
@@ -176,7 +171,10 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
       </ol>
       {/* Under `md` the twelve names do not fit, and the two ends say the extent. */}
       {months.length < 2 ? null : (
-        <p aria-hidden className="mt-1.5 flex justify-between text-2xs text-muted-foreground md:hidden">
+        <p
+          aria-hidden
+          className="mt-1.5 flex justify-between text-2xs text-muted-foreground md:hidden"
+        >
           <span>{label(months[0].month)}</span>
           <span>{label(months.at(-1)!.month)}</span>
         </p>

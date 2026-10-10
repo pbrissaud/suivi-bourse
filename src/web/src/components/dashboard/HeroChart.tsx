@@ -28,7 +28,13 @@ import { Line, LineChart, ResponsiveContainer, YAxis } from 'recharts'
 import { Segmented } from '@/components/Segmented'
 import { Unreadable } from '@/components/Unreadable'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import type { PerfPoint, ValuationPoint } from '@/lib/api'
 import {
   DASHBOARD_RANGES,
@@ -99,7 +105,11 @@ export function HeroChart({
       <span aria-hidden className="block h-16 w-full">
         {rows.length > 1 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows} accessibilityLayer={false} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
+            <LineChart
+              data={rows}
+              accessibilityLayer={false}
+              margin={{ top: 4, right: 2, bottom: 4, left: 2 }}
+            >
               <YAxis hide domain={['dataMin', 'dataMax']} />
               <Line
                 type="monotone"

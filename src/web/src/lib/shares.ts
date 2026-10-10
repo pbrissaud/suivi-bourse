@@ -221,7 +221,10 @@ export function buildShareRows(
     // Read, never added: the attributes describe the security, and holding it
     // on two accounts does not double its market capitalisation.
     row.fundamentals = row.fundamentals ?? position.fundamentals
-    if (position.closed_at !== null && (row.closedAt === null || position.closed_at > row.closedAt)) {
+    if (
+      position.closed_at !== null &&
+      (row.closedAt === null || position.closed_at > row.closedAt)
+    ) {
       row.closedAt = position.closed_at
     }
     rows.set(position.symbol, row)
@@ -355,7 +358,10 @@ function sortRows(rows: readonly ShareRow[], sort: ShareSort): ShareRow[] {
  * The live table, in the order asked for — heaviest first until one is.
  */
 export function heldRows(rows: readonly ShareRow[], sort: ShareSort = DEFAULT_SORT): ShareRow[] {
-  return sortRows(rows.filter((row) => !isClosed(row)), sort)
+  return sortRows(
+    rows.filter((row) => !isClosed(row)),
+    sort,
+  )
 }
 
 /**
@@ -364,14 +370,12 @@ export function heldRows(rows: readonly ShareRow[], sort: ShareSort = DEFAULT_SO
  * column that discriminates its rows, and the live table does not have it.
  */
 export function closedRows(rows: readonly ShareRow[]): ShareRow[] {
-  return rows
-    .filter(isClosed)
-    .sort((a, b) => {
-      if (a.closedAt === b.closedAt) return a.symbol.localeCompare(b.symbol)
-      if (a.closedAt === null) return 1
-      if (b.closedAt === null) return -1
-      return a.closedAt < b.closedAt ? 1 : -1
-    })
+  return rows.filter(isClosed).sort((a, b) => {
+    if (a.closedAt === b.closedAt) return a.symbol.localeCompare(b.symbol)
+    if (a.closedAt === null) return 1
+    if (b.closedAt === null) return -1
+    return a.closedAt < b.closedAt ? 1 : -1
+  })
 }
 
 // ------------------------------------------------------------------------- //
@@ -629,7 +633,10 @@ export function valuationTotal(rows: readonly ShareRow[]): Sum {
   for (const row of rows) {
     const value = marketValue(row)
     if (value === null) {
-      return { known: false, because: absenceCase(row) === 'rebuilding' ? 'rebuilding' : 'awaitingRate' }
+      return {
+        known: false,
+        because: absenceCase(row) === 'rebuilding' ? 'rebuilding' : 'awaitingRate',
+      }
     }
     total += value
   }
@@ -669,10 +676,7 @@ export function accountBreakdown(
 }
 
 /** The events of one security, newest first — what the sheet's list renders. */
-export function shareEvents(
-  events: readonly LedgerEvent[],
-  symbol: string,
-): LedgerEvent[] {
+export function shareEvents(events: readonly LedgerEvent[], symbol: string): LedgerEvent[] {
   return byDateDescending(events.filter((event) => event.symbol === symbol))
 }
 

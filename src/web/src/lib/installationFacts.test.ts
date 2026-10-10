@@ -72,9 +72,7 @@ describe('the gesture a notice carries', () => {
     // `detail: null` is the honest answer of a runtime that cannot see the
     // source — never an error, and never a gesture pointing at nothing.
     expect(factGesture(fact({ key: 'assumed_base_currency', detail: null }))).toBeNull()
-    expect(
-      factGesture(fact({ key: 'assumed_base_currency', detail: { symbols: [] } })),
-    ).toBeNull()
+    expect(factGesture(fact({ key: 'assumed_base_currency', detail: { symbols: [] } }))).toBeNull()
   })
 })
 
@@ -122,7 +120,10 @@ describe('the sentence a notice is read in', () => {
       expect(fr, `fr:${key}`).not.toBe(en)
       // A catalogue miss renders the key as itself, and an unfilled placeholder
       // renders as a brace: both are silent on screen and neither is a sentence.
-      for (const [language, sentence] of [['fr', fr], ['en', en]] as const) {
+      for (const [language, sentence] of [
+        ['fr', fr],
+        ['en', en],
+      ] as const) {
         expect(sentence, `${language}:${key}`).not.toContain('{')
         expect(sentence, `${language}:${key}`).not.toContain('undefined')
         expect(sentence.length, `${language}:${key}`).toBeGreaterThan(40)
@@ -175,13 +176,15 @@ describe('the sentence a notice is read in', () => {
     })
     expect(say('fr', alone)).toContain('1 événement sur 1 ligne cotée')
     expect(say('en', alone)).toContain('1 event on 1 line')
-    expect(say('fr', fact({ key: 'assumed_base_currency', detail: DETAILS.assumed_base_currency })))
-      .toContain('4 événements sur 3 lignes cotées')
+    expect(
+      say('fr', fact({ key: 'assumed_base_currency', detail: DETAILS.assumed_base_currency })),
+    ).toContain('4 événements sur 3 lignes cotées')
 
     // The reconstruction counts its own noun, and French agrees the verb where
     // English does not.
-    expect(say('fr', fact({ key: 'reconstruction_running', detail: { complete: 1, total: 19 } })))
-      .toContain('1 série remonte au premier achat')
+    expect(
+      say('fr', fact({ key: 'reconstruction_running', detail: { complete: 1, total: 19 } })),
+    ).toContain('1 série remonte au premier achat')
     expect(
       say('fr', fact({ key: 'reconstruction_running', detail: DETAILS.reconstruction_running })),
     ).toContain('7 séries remontent au premier achat')

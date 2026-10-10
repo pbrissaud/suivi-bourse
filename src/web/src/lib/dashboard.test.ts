@@ -78,9 +78,9 @@ describe('the value axis', () => {
   it('is floored at zero when nothing drawn is negative', () => {
     // The measured defect: a graduation at `−1 411 €` under a series that has
     // never been negative, which the reader has no way to know is an artefact.
-    expect(yFloor(amountsValues(amountsFromTotals(aPortfolioHistory().points, null)))).toBeGreaterThan(
-      0,
-    )
+    expect(
+      yFloor(amountsValues(amountsFromTotals(aPortfolioHistory().points, null))),
+    ).toBeGreaterThan(0)
   })
 
   it('does not spend the plot on the space between zero and the series', () => {
@@ -137,9 +137,30 @@ describe('the performance reading', () => {
     // A series may open with days carrying no index at all (#708: `twr_index`
     // follows `total_value`), and dividing by one of those answers infinity.
     const points = aPortfolioHistory([
-      { t: '2026-01-01', cash_balance: null, holdings_value: 600, total_value: null, net_contributed: null, twr_index: null },
-      { t: '2026-02-02', cash_balance: 500, holdings_value: 1300, total_value: 1800, net_contributed: 1380, twr_index: 120 },
-      { t: '2026-03-02', cash_balance: 500, holdings_value: 1300, total_value: 1800, net_contributed: 1380, twr_index: 132 },
+      {
+        t: '2026-01-01',
+        cash_balance: null,
+        holdings_value: 600,
+        total_value: null,
+        net_contributed: null,
+        twr_index: null,
+      },
+      {
+        t: '2026-02-02',
+        cash_balance: 500,
+        holdings_value: 1300,
+        total_value: 1800,
+        net_contributed: 1380,
+        twr_index: 120,
+      },
+      {
+        t: '2026-03-02',
+        cash_balance: 500,
+        holdings_value: 1300,
+        total_value: 1800,
+        net_contributed: 1380,
+        twr_index: 132,
+      },
     ]).points
 
     const rows = performanceRows(points, null)
@@ -291,9 +312,7 @@ describe('the day’s move', () => {
     // `total_value` and `net_contributed` are both `NULL` there (#708), where
     // `gain_absolu` is written always — so the year-to-date pill survives this
     // one and an absent pill is not a false one.
-    expect(
-      dayMove([day('2026-03-01', null, null), day('2026-03-02', null, null)], now),
-    ).toBeNull()
+    expect(dayMove([day('2026-03-01', null, null), day('2026-03-02', null, null)], now)).toBeNull()
   })
 })
 
@@ -302,7 +321,11 @@ describe('the four states of the page', () => {
     // The first is one sentence and a link; the second is an ordinary page
     // whose blocks each say why they are empty.
     expect(
-      dashboardState({ failed: false, positions: aPositionsPayload([], null), totals: aTotalsPayload(null, null) }),
+      dashboardState({
+        failed: false,
+        positions: aPositionsPayload([], null),
+        totals: aTotalsPayload(null, null),
+      }),
     ).toBe('empty')
     expect(
       dashboardState({ failed: false, positions: aPositionsPayload([]), totals: aTotalsPayload() }),

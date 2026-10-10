@@ -32,7 +32,9 @@ import {
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
-function renderAccounts(accounts = anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha' })])) {
+function renderAccounts(
+  accounts = anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha' })]),
+) {
   server.use(
     http.get(ROUTES.accounts, () => HttpResponse.json(accounts)),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
@@ -318,7 +320,9 @@ describe('removing a model', () => {
     await user.selectOptions(await modelField(panel), 'model-one')
     await user.click(within(panel).getByRole('button', { name: 'Supprimer ce modèle' }))
 
-    expect(await within(panel).findByText(/les comptes alpha, beta portent encore/)).toBeInTheDocument()
+    expect(
+      await within(panel).findByText(/les comptes alpha, beta portent encore/),
+    ).toBeInTheDocument()
   })
 
   it('removes one nothing carries, and the account stops pointing at it', async () => {
@@ -328,9 +332,7 @@ describe('removing a model', () => {
     const panel = await openPanel(user)
 
     server.use(
-      http.get(ROUTES.taxationModels, () =>
-        HttpResponse.json(aTaxationCatalogue({ models: [] })),
-      ),
+      http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue({ models: [] }))),
     )
 
     await user.click(within(panel).getByRole('button', { name: 'Supprimer ce modèle' }))

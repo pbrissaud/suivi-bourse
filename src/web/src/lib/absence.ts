@@ -217,7 +217,11 @@ export function positionRenderings(input: PositionAbsenceInput): PositionRenderi
       // that reads *Valorisation* while contributing its cost to the total
       // above it, which is the header disagreeing with its own column.
       return {
-        price: { kind: 'named', message: 'absence.noQuote', values: { count: input.consecutiveFailures } },
+        price: {
+          kind: 'named',
+          message: 'absence.noQuote',
+          values: { count: input.consecutiveFailures },
+        },
         valuation: FIGURE,
         unrealised: FIGURE,
       }
@@ -228,7 +232,11 @@ export function positionRenderings(input: PositionAbsenceInput): PositionRenderi
       // asked nothing yet is the rebuild itself, and it says so.
       const named: Rendering =
         input.consecutiveFailures > 0
-          ? { kind: 'named', message: 'absence.noQuote', values: { count: input.consecutiveFailures } }
+          ? {
+              kind: 'named',
+              message: 'absence.noQuote',
+              values: { count: input.consecutiveFailures },
+            }
           : REBUILDING
       return { price: named, valuation: named, unrealised: named }
     }
