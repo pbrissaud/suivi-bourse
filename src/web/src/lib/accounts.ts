@@ -431,19 +431,10 @@ export function degradedReason(
 
 /**
  * What a figure is worth **against what was paid in** — the maquette's *sur
- * versé*, and the arithmetic behind two figures rather than one (#833).
- *
- * `gain ÷ versé net` is what the maquette calls **`Performance totale`**, at the
- * head of the detail and on every card of the rail; `dividendes ÷ versé net` is
- * what it writes under the dividends encashed. The two are the same ratio on the
- * same denominator, so they are one function: the contribution is the one base
- * this page already has, and a third — the account's value, or its cost — would
- * be a second denominator for one surface to explain.
- *
- * It is a **cumulative ratio and not a rate**: it covers the account's whole
- * life, which is what *totale* says, so it implies no window and needs none
- * stated. That is the whole of why it can stand where a time-weighted
- * return could not.
+ * versé*, under the dividends encashed and beside the fees (#833). Both
+ * divide the contribution: it is the one base this page already has, and a
+ * second — the account's value, or its cost — would be a second denominator
+ * for one surface to explain.
  *
  * `null` on all three of *no numerator yet*, *nothing paid in* and *more taken
  * out than put in*: none of the three is a ratio, and the em dash says so.
@@ -454,26 +445,29 @@ export function onContributed(amount: number | null, contributed: number | null)
 }
 
 /**
- * **`Performance totale`, and there is one producer of it** (#970).
+ * What selling everything today would cost in tax, summed over the accounts —
+ * the figure the dashboard's net line subtracts from the hero (#1112).
  *
- * The rail divided the stored `gain_absolu`; the detail's head divided a total
- * it re-summed from the four terms of `/api/positions`. The two formulas
- * telescope — that much was true, and tested — but they read **two endpoints at
- * two moments**, so a quote scrape landing between the page's two requests put
- * `+6,82 %` on the card and `+6,85 %` on the panel beside it, and the panel's
- * own subtraction (`total_value − net_contributed`) agreed with the card rather
- * than with itself.
- *
- * One row of one read is what closes it: the value, the contribution and the
- * gain at the head of a detail are the members of the same `account_metrics`
- * row the rail divides, so nothing on the page can be a scrape apart from its
- * neighbour. The four terms stay where they are *read* — the dividends have a
- * card, the fees are the line under the gain, the latent gain is a column of
- * the lines table — which is a decomposition at another altitude and never a
- * second producer for this headline.
+ * `none` and `withholding_income` count zero: the first owes nothing on a sale,
+ * the second is taxed on its income as it is paid. Every other account is
+ * either a figure or a reason there is none — no model declared (`unmodelled`)
+ * or a model the server could not apply, a line having no quote (`unvalued`).
+ * A sum over a missing term is not a smaller sum, so the caller states no
+ * amount at all while either list is non-empty.
  */
-export function totalPerformance(row: AccountRow): number | null {
-  return onContributed(row.gain_absolu, row.net_contributed)
+export function projectedTaxTotal(rows: readonly AccountRow[]): {
+  tax: number
+  unmodelled: AccountRow[]
+  unvalued: AccountRow[]
+} {
+  const total = { tax: 0, unmodelled: [] as AccountRow[], unvalued: [] as AccountRow[] }
+  for (const row of rows) {
+    if (row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income') continue
+    if (row.taxation_kind === undefined) total.unmodelled.push(row)
+    else if (row.projected_tax === undefined) total.unvalued.push(row)
+    else total.tax += row.projected_tax
+  }
+  return total
 }
 
 // ------------------------------------------------------------------------- //

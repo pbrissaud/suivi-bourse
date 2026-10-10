@@ -38,7 +38,8 @@
  * the page as `aside`: the block still reads nothing of its own.
  *
  * **The year-to-date is two figures that do not touch**: the euro on a pill
- * beside the head figure, the percentage filed inside the TWR statistic.
+ * beside the head figure, the percentage inside the IRR's bubble, with the TWR
+ * it belongs to (#1112: one performance figure per screen, and it is the IRR).
  * Measured on the real portfolio, `+40,69 €` and `−1,25 %` over the same
  * period, of opposite signs and both correct — the portfolio grew by 6 673 € of
  * deposits while its holdings lost 1,25 %. Side by side they read as a
@@ -66,6 +67,12 @@ import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { Card, CardContent } from '@/components/ui/card'
 import type { PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
+import {
+  declaredLabel,
+  DEFAULT_ACCOUNT_LABEL,
+  projectedTaxTotal,
+  type AccountRow,
+} from '@/lib/accounts'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
 import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
@@ -91,6 +98,12 @@ interface DashboardHeadProps {
    */
   history: readonly PerfPoint[] | null
   /**
+   * The accounts, for the net-of-tax line under the hero (#1112). `null` while
+   * the read is in flight or when it failed: the line is then not drawn, and
+   * the hero above it is exact either way.
+   */
+  accounts?: readonly AccountRow[] | null
+  /**
    * What the hero carries on its right — the sparkline and the range control,
    * composed by the page, which owns the range. `null` draws the value alone.
    */
@@ -102,6 +115,7 @@ export function DashboardHead({
   totals,
   rebuilding,
   history,
+  accounts = null,
   aside = null,
 }: DashboardHeadProps) {
   const { t } = useI18n()
@@ -222,6 +236,27 @@ export function DashboardHead({
   // moved.
   const today = dayMove(history, new Date())
 
+  // **What would be left after tax** (#1112), off the hero *as displayed*, drift
+  // included, so the line always differs from the figure above it by exactly
+  // the tax. An account the tax cannot be stated for is named rather than
+  // counted as zero: a net that leaves a term out is a net that flatters.
+  const net = accounts === null ? null : projectedTaxTotal(accounts)
+  const names = (rows: readonly AccountRow[]) =>
+    rows.map((row) => declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)).join(', ')
+  const netLines =
+    net === null || heroValue === null
+      ? []
+      : net.unmodelled.length === 0 && net.unvalued.length === 0
+        ? [t('dashboard.net.amount', { amount: f.currency(heroValue - net.tax, currency) })]
+        : [
+            ...(net.unmodelled.length === 0
+              ? []
+              : [t('dashboard.net.unmodelled', { accounts: names(net.unmodelled) })]),
+            ...(net.unvalued.length === 0
+              ? []
+              : [t('dashboard.net.unvalued', { accounts: names(net.unvalued) })]),
+          ]
+
   return (
     // The hero card, and the one gradient in the product (#787): it is the
     // page's first object, so it is the one that may say *start here* without
@@ -293,6 +328,11 @@ export function DashboardHead({
                 />
               )}
             </div>
+            {netLines.map((line) => (
+              <p key={line} className="text-sm text-muted-foreground">
+                {line}
+              </p>
+            ))}
           </Stat>
 
           {aside}
@@ -345,40 +385,27 @@ export function DashboardHead({
               }
               valueClassName={signClass(totalsRow.xirr)}
               explain={
-                <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
+                // The TWR lives here since #1112: one rate per screen, and the
+                // bubble is where the second one says why it differs.
+                twrMove === null ? (
+                  <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
+                ) : (
+                  <Explain
+                    figure={t('dashboard.xirr')}
+                    body="dashboard.xirr.explainTwr"
+                    values={{
+                      explain: t('dashboard.xirr.explain'),
+                      twr: f.percent(twrMove),
+                      ytd:
+                        ytdTwr === null
+                          ? ''
+                          : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
+                    }}
+                    anchor="xirr"
+                  />
+                )
               }
             />
-          )}
-          {twrMove === null ? null : (
-            <Stat
-              label={t('dashboard.twr')}
-              value={f.percent(twrMove)}
-              valueClassName={signClass(twrMove)}
-              explain={
-                <Explain figure={t('dashboard.twr')} body="dashboard.twr.explain" anchor="twr" />
-              }
-            >
-              {/* The base date rides the origin scalar **only while it moves**.
-                  Once the reconstruction is done the base stops moving, and a
-                  date that never changes again is not news. */}
-              {rebuilding && totalsRow?.twr_since ? (
-                <p className="text-xs text-muted-foreground">
-                  {t('dashboard.twr.since', { date: f.date(totalsRow.twr_since) })}
-                </p>
-              ) : null}
-              {/* The other half of the year-to-date pair — and it degrades the
-                  same way, sentence included. The two are **deliberately** far
-                  apart (they read as a contradiction side by side), so a reader
-                  looking at this one never sees the caption written under the
-                  other: a bare dash here says, by the product's own rule, *there
-                  is nothing to compute*, when what is going on is a history not
-                  yet rebuilt that far — nameable and repairable. */}
-              <p className="text-xs text-muted-foreground">
-                {ytdTwr === null
-                  ? ytdAbsence(ytdTwr)
-                  : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
-              </p>
-            </Stat>
           )}
         </div>
 
