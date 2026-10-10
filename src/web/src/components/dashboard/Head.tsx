@@ -202,8 +202,8 @@ export function DashboardHead({
   // 31 December exists for the delta to count from. Written as one sentence,
   // the app announced a reconstruction to somebody who has nothing to
   // reconstruct. It is the exact defect `totals: null` had one resource up, and
-  // the discriminant is already read: `runtime.rebuilding`. No fourth kind of absence is
-  // invented for it and no field is added to any payload.
+  // the discriminant is already read: `runtime.rebuilding`. No fourth kind of
+  // absence is invented for it and no field is added to any payload.
   //
   // The second sentence needs a **positive** observation, which is #709's rule
   // about the third answer applied here: a runtime read that has not landed —

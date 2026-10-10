@@ -466,7 +466,7 @@ export function projectedTaxTotal(rows: readonly AccountRow[]): {
   for (const row of rows) {
     if (row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income') continue
     if (row.taxation_kind === undefined && row.taxation_model === undefined) total.unmodelled.push(row)
-    else if (row.projected_tax === undefined) total.uncomputable.push(row)
+    else if (row.taxation_kind === undefined || row.projected_tax === undefined) total.uncomputable.push(row)
     else total.tax += row.projected_tax
   }
   return total
