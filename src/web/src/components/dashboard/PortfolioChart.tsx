@@ -12,7 +12,7 @@
  *
  *  - **The reading selector is a reading selector, and it is not tabs** (#831).
  *    It was `Tabs` for three tickets and the maquette never drew one: both
- *    controls of this card are segmented **buttons** there (`readingTabs`,
+ *    controls of this chart are segmented **buttons** there (`readingTabs`,
  *    whose name is the only tab left in the drawing). A tab is a *place* the
  *    reader goes — the shell's own navigation is what the product has of those
  *    — and what these two press is which curve the same slot draws. So they are
@@ -84,7 +84,6 @@ import { ChartTooltip } from '@/components/ChartTooltip'
 import { Segmented } from '@/components/Segmented'
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
-import { Card, CardContent } from '@/components/ui/card'
 import type { PerfPoint, ValuationPoint } from '@/lib/api'
 import {
   amountsFromTotals,
@@ -112,7 +111,7 @@ interface PortfolioChartProps {
   ledger: boolean
   /**
    * The page's period. There is **one** range control on the dashboard and it
-   * is not this card's (#838): the drawing sets it above the chart, where it
+   * is not this chart's (#838): the drawing sets it above the chart, where it
    * governs the movements and the comparison beside them too.
    */
   range: DashboardRange
@@ -190,15 +189,16 @@ export function PortfolioChart({
       : (value: number) => f.percent(value)
 
   return (
-    <Card className="gap-4">
-      <CardContent className="space-y-3">
+    // Bare, with no card of its own: it is drawn inside the hero, which sits
+    // on the ground, and a card there would decorate nothing the user decides.
+    <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
               this selector segmented exactly as it draws the range one row up,
               and nothing here is a place to go: pressing one swaps what the
               slot below draws, which is what `aria-pressed` says and what a tab
               would misname. At one reading there is nothing to choose, so there
-              is no control at all — and the range is nowhere near this card
+              is no control at all — and the range is nowhere near this chart
               since #838: the page has **one**, and it drives this chart, the
               movements and the comparison alike. */}
           {ledger ? (
@@ -217,7 +217,7 @@ export function PortfolioChart({
               }))}
             />
           ) : (
-            <h2 className="eyebrow">{t('dashboard.chart.amounts')}</h2>
+            <h2 className="label">{t('dashboard.chart.amounts')}</h2>
           )}
         </div>
         {/* **The live region wraps the swap, and not the plot** (#1003). A range
@@ -271,7 +271,7 @@ export function PortfolioChart({
                     {/* What the pointer answers, and since #787 the **only**
                         thing that does: the axes went with the grid, so the exact
                         figure is a hover away and the magnitude at rest is the
-                        head's two statistics one card up. */}
+                        head's two statistics above. */}
                     <ChartTooltip
                       format={(value) =>
                         reading === 'amounts' ? f.currency(value, currency) : f.percent(value)
@@ -426,7 +426,6 @@ export function PortfolioChart({
             null}
           </>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

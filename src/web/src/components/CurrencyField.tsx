@@ -66,7 +66,7 @@ export function CurrencyField({ id, value, onChange, fixed, suggested }: Currenc
               : isSupported(value) ? value
               : t('currency.offList', { code: value })}
           </span>
-          <span className="eyebrow rounded-md bg-accent px-1.5 py-0.5">
+          <span className="label rounded-md bg-accent px-1.5 py-0.5">
             {t('currency.fixed.mark')}
           </span>
         </p>

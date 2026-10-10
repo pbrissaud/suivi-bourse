@@ -45,7 +45,7 @@ export function BuildBlock({ build }: BuildBlockProps) {
   return (
     <Card role="region" aria-labelledby={BUILD_HEADING}>
       <CardHeader>
-        <h2 id={BUILD_HEADING} className="eyebrow">
+        <h2 id={BUILD_HEADING} className="label">
           {t('installation.build')}
         </h2>
       </CardHeader>

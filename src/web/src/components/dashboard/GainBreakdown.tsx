@@ -20,7 +20,7 @@
  * and the list under it names the missing one.
  */
 import { Explain } from '@/components/Explain'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import type { PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
 import { renderFigure } from '@/lib/absence'
 import { useFormatters } from '@/lib/format'
@@ -95,11 +95,8 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
     : 0
 
   return (
-    <Card>
-      <CardHeader>
-        <h2 className="eyebrow">{t('dashboard.breakdown.title')}</h2>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Section title={t('dashboard.breakdown.title')}>
+      <div className="space-y-4">
         {whole === 0 ? null : (
           <div aria-hidden className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-muted">
             {segments.map(({ term, amount }) =>
@@ -160,7 +157,7 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
             )}
           </span>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Section>
   )
 }

@@ -192,7 +192,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           which is what the tests take hold of. */}
           <div role="group" aria-label={t('shares.gainTotal')} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <span className="eyebrow flex items-center gap-1.5">
+              <span className="label flex items-center gap-1.5">
                 {t('shares.gainTotal')}
                 <Explain
                   figure={t('shares.gainTotal')}
@@ -232,7 +232,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                     aria-label={t(TERM_LABELS[term])}
                     className="flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-3 py-2.75"
                   >
-                    <span className="eyebrow flex items-center gap-1">
+                    <span className="label flex items-center gap-1">
                       {t(TERM_LABELS[term])}
                       <Explain
                         figure={t(TERM_LABELS[term])}
@@ -338,7 +338,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           {/* Absent at one account: it would repeat the block above it. */}
           {breakdown.length === 0 ? null : (
             <section className="space-y-3 border-t pt-6">
-              <h3 className="eyebrow">{t('shares.breakdown.title')}</h3>
+              <h3 className="label">{t('shares.breakdown.title')}</h3>
               <Table>
                 <caption className="sr-only">{t('shares.breakdown.label')}</caption>
                 <TableHeader>
@@ -445,7 +445,7 @@ function Fundamentals({ row }: { row: ShareRow }) {
 
   return (
     <section className="space-y-3 border-t pt-6">
-      <h3 className="eyebrow">{t('shares.fundamentals.title')}</h3>
+      <h3 className="label">{t('shares.fundamentals.title')}</h3>
       <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-3">
         {lines.map((line) => (
           <div key={line.label} className="min-w-0">

@@ -53,7 +53,7 @@ export function OrphansBlock({ orphans }: OrphansBlockProps) {
   return (
     <Card role="region" aria-labelledby={ORPHANS_HEADING}>
       <CardHeader>
-        <h2 id={ORPHANS_HEADING} className="eyebrow">
+        <h2 id={ORPHANS_HEADING} className="label">
           {t('installation.orphans')}
         </h2>
         {/* The count, said rather than counted off the rows below it. */}
