@@ -2,14 +2,29 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "root": true,
   "files": { "includes": ["src/**", "lint/fixtures/**"] },
-  "formatter": { "enabled": false },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
   "assist": { "enabled": false },
-  "css": { "parser": { "tailwindDirectives": true } },
+  "css": { "parser": { "tailwindDirectives": true }, "formatter": { "enabled": true } },
+  "json": { "formatter": { "enabled": true } },
   "linter": { "enabled": true, "rules": { "recommended": false } },
   "plugins": [
     {
       "path": "./lint/no-wait-dressing.grit",
-      "includes": ["**/src/**/*.{ts,tsx}", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.{ts,tsx}"]
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}"
+      ]
     },
     { "path": "./lint/no-overline.grit", "includes": ["**/src/**/*.tsx", "!**/*.test.tsx"] },
     { "path": "./lint/no-overline-css.grit", "includes": ["**/src/index.css"] },
