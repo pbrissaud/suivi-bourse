@@ -361,48 +361,54 @@ def test_a_draft_cannot_choose_its_own_key(store):
 
 
 # --------------------------------------------------------------------------- #
-# The bulk removal: the reduction is the subject, and the row's origin is not
+# The bulk removal: the ticked keys are the subject (#1113)
 # --------------------------------------------------------------------------- #
 
 def test_the_bulk_removal_takes_an_uploaded_row_like_any_other(store, tmp_path):
-    """Undoing an import reaches the rows the import laid down without asking any
-    of them where they came from. The typed row beside them is untouched, so
-    what is asserted is the **reduction** and not *everything*.
-    """
+    """The keys given leave, whatever laid them down; the others stay."""
     _upload(store, tmp_path)
     entries.create(store, _draft(date=date(2024, 8, 1), symbol='MSFT'))
+    [aapl] = store.query("SELECT id FROM event WHERE symbol = 'AAPL'")
 
-    removed = entries.remove_selection(
-        store, events_export.Selection(symbols=('AAPL',)))
-
-    assert removed == 1
+    assert entries.remove_keys(store, [aapl[0]]) == 1
     assert store.query('SELECT symbol FROM event') == [('MSFT',)]
 
 
-def test_a_reduction_that_retains_nothing_removes_nothing(store):
-    """Zero is a state, not a complaint — the export's empty file, one road over."""
-    entries.create(store, _draft())
+def test_a_key_already_gone_is_skipped_and_not_counted(store, monkeypatch):
+    """An id another tab deleted first is no error: what is counted is what left."""
+    kept = entries.create(store, _draft())
+    gone = entries.create(store, _draft(quantity=3.0))
 
-    assert entries.remove_selection(
-        store, events_export.Selection(account='zzz')) == 0
-    assert store.query('SELECT count(*) FROM event') == [(1,)]
+    assert entries.remove_keys(store, [gone.id, gone.id, 999_999]) == 1
+    # Nothing left to delete is nothing to replay either.
+    replays = []
+    monkeypatch.setattr(entries, '_replays', replays.append)
+    assert entries.remove_keys(store, [999_999]) == 0
+    assert replays == []
+    assert store.query('SELECT id FROM event') == [(kept.id,)]
+
+
+def test_a_bulk_removal_replays_once_however_many_keys(store, monkeypatch):
+    replays = []
+    first = entries.create(store, _draft())
+    second = entries.create(store, _draft(quantity=3.0))
+    monkeypatch.setattr(entries, '_replays', replays.append)
+
+    assert entries.remove_keys(store, [first.id, second.id]) == 2
+    assert replays == [store]
 
 
 def test_a_bulk_removal_that_would_oversell_is_refused_whole(store):
-    """A reduction can take the purchases and leave the sales (issue #814).
-
-    The single-row refusal on a wider perimeter, and it has to roll back the
-    **whole** reduction: a ledger committed half-deleted is one that raises on
-    every reload, and that raise is fatal at boot.
+    """Taking the purchases and leaving the sales rolls the whole delete back
+    (issue #814): a ledger committed half-deleted raises on every reload.
     """
-    entries.create(store, _draft(quantity=10.0))
+    buy = entries.create(store, _draft(quantity=10.0))
     entries.create(store, _draft(date=date(2024, 6, 10),
                                  event_type=EventType.SELL, quantity=10.0,
                                  unit_price=120.0))
 
     with pytest.raises(AggregationError):
-        entries.remove_selection(
-            store, events_export.Selection(event_type='BUY'))
+        entries.remove_keys(store, [buy.id])
 
     assert store.query('SELECT count(*) FROM event') == [(2,)]
 

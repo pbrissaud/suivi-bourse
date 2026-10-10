@@ -10,7 +10,6 @@ from application import ledger
 from application import settings_registry
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
-from application.events import export as events_export
 from application.events.schemas import DEFAULT_ACCOUNT, Event, canonical_symbol
 from application.store import INCOMING
 
@@ -173,20 +172,24 @@ def remove(store, event_id: int) -> None:
         logger.info(f"Removed event {event_id}")
 
 
-def remove_selection(store, selection: events_export.Selection) -> int:
-    """Delete every event a reduction retains. Returns how many left (#814)."""
+def remove_keys(store, keys: Sequence[int]) -> int:
+    """Delete the events under ``keys``, skipping the ones already gone (#1113).
+
+    Returns how many actually left. One block delete and one replay, however
+    many keys — and neither when none of them is still there.
+    """
     with store.transaction():
-        keys = [event.id for event
-                in events_export.select(ledger.read_events(store), selection)
-                if event.id is not None]
+        known = {row[0] for row in store.query('SELECT id FROM event')}
+        present = [key for key in set(keys) if key in known]
+        if not present:
+            return 0
         store.write_arrow(
             f'DELETE FROM event WHERE id IN (SELECT id FROM {INCOMING})',
-            ('id',), [[key] for key in keys])
-        if keys:
-            _stamp_write(store)
+            ('id',), [[key] for key in present])
+        _stamp_write(store)
         _replays(store)
-        logger.info(f"Removed {len(keys)} event(s) on a reduction")
-    return len(keys)
+        logger.info(f"Removed {len(present)} event(s) by selection")
+    return len(present)
 
 
 def content_key(event: Event) -> Tuple:
@@ -360,6 +363,6 @@ def _replays(store) -> None:
 __all__ = [
     'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
     'UnknownEntry', 'InvalidEntry', 'Duplicate',
-    'create', 'create_many', 'update', 'remove', 'remove_selection',
+    'create', 'create_many', 'update', 'remove', 'remove_keys',
     'content_key', 'split_duplicates', 'judge',
 ]
