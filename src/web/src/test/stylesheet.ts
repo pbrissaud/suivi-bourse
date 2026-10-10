@@ -1,12 +1,9 @@
 /**
  * `index.css`, read as a structure rather than as text.
  *
- * Two tests need the same three things out of that file — which block a token
- * was declared in, what its `oklch()` components are, and what the ground of
- * each theme is — and they need them for the same reason: **the stylesheet is
- * the only source of those values**. `alloc.ts` generates the twelve allocation
- * stops but does not know the ground they are drawn on; `index.css` knows the
- * ground but generates nothing.
+ * Two tests need the same two things out of that file — which block a token
+ * was declared in and what its `oklch()` components are — and they need them
+ * for the same reason: **the stylesheet is the only source of those values**.
  *
  * The parse is deliberately shallow: three banner comments cut the file into
  * blocks, and inside a block a `:root {` / `.dark {` header opens a run of
@@ -17,7 +14,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import type { Ground } from '@/lib/alloc'
+import type { Ground } from '@/lib/theme'
 
 export const WEB_ROOT = path.resolve(import.meta.dirname, '..', '..')
 export const INDEX_CSS = path.join(WEB_ROOT, 'src', 'index.css')
@@ -85,19 +82,4 @@ export function oklch(value: string): Oklch {
   const match = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/.exec(value)
   if (!match) throw new Error(`not a plain oklch() value: ${value}`)
   return { lightness: Number(match[1]), chroma: Number(match[2]), hue: Number(match[3]) }
-}
-
-/**
- * The ground a theme is drawn on — `--background`, wherever it was declared.
- *
- * This is what makes *rank 1 is the most contrasted* testable: the claim is
- * about the ramp **against the ground**, and until now the ramp was only ever
- * compared with its own other end.
- */
-export function ground(theme: Ground): Oklch {
-  for (const block of blocks()) {
-    const background = declarations(block, theme).get('--background')
-    if (background) return oklch(background)
-  }
-  throw new Error(`no --background declared for the ${theme} theme`)
 }

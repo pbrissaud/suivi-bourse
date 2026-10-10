@@ -3,6 +3,7 @@
 @theme inline {
   --tracking-caps: 0.08em; /* expect: no-overline-css */
   --tracking-tight: -0.01em;
+  --color-gain: var(--gain);
 }
 
 @utility eyebrow { /* expect: no-overline-css */
@@ -16,4 +17,16 @@
 
 @utility eyebrowish {
   font-size: 0.75rem;
+}
+
+:root {
+  --primary: oklch(0.48 0.1 164);
+  --gain: var(--primary);
+  --alloc-2: color-mix(in oklch, var(--primary) 88%, var(--background));
+  --gain: oklch(0.5 0.1 160); /* expect: semantic-token-alias */
+}
+
+.dark {
+  --gain: oklch(0.5 0.1 160); /* expect: semantic-token-alias */
+  --bad: var(--gain); /* expect: semantic-token-alias */
 }

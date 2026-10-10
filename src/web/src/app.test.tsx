@@ -23,7 +23,6 @@ import {
   defaultAccounts,
 } from '@/test/factories'
 import { setPrefersDark, setViewportWidth } from '@/test/media'
-import { ALLOCATION_SLICES } from '@/lib/alloc'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -169,26 +168,6 @@ describe('the reader preferences', () => {
 
     setPrefersDark(true)
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
-  })
-
-  it('write the eight allocation stops for the ground in force', async () => {
-    const { user } = renderApp()
-    await screen.findByRole('heading', { name: 'Tableau de bord' })
-
-    const stopsOf = () =>
-      Array.from({ length: ALLOCATION_SLICES }, (_, index) =>
-        document.documentElement.style.getPropertyValue(`--alloc-${index + 1}`),
-      )
-
-    const light = stopsOf()
-    expect(light.every(Boolean)).toBe(true)
-
-    await chooseInMenu(user, 'Thème', 'Sombre')
-    const dark = stopsOf()
-    expect(dark.every(Boolean)).toBe(true)
-    // The ramp is not merely re-tinted between grounds: it is reversed, because
-    // rank 1 has to be the most contrasted on both.
-    expect(dark[0]).not.toBe(light[0])
   })
 })
 

@@ -47,10 +47,21 @@ import {
   type PositionAbsenceInput,
   type Rendering,
 } from '@/lib/absence'
-import { ALLOCATION_SLICES } from '@/lib/alloc'
 import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
 import { type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/lib/ledger'
+
+/**
+ * **Seven ranked slices and the fold, which is eight** (#838). The drawing caps
+ * the ring at seven arcs and gives the rest one slice of its own — *Autres · 13
+ * lignes* — and it folds only past **eight** lines: at exactly eight there is
+ * nothing to gain by hiding one behind a word. It was twelve here, which drew a
+ * ring nobody could read as a ranking and a legend two columns of six deep.
+ *
+ * The fold takes the ramp's **last** stop, `--alloc-8`, the least contrasted of
+ * the eight, which is what a fold of the smallest lines should be.
+ */
+export const ALLOCATION_SLICES = 8
 
 /** One line of the page — one symbol, whatever the number of accounts on it. */
 export interface ShareRow extends PositionAbsenceInput {

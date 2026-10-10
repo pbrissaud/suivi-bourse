@@ -45,7 +45,7 @@ def test_the_one_path_is_a_directory_and_never_a_file():
 
 
 @pytest.mark.parametrize('name', [
-    'SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL',
+    'SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL', 'SB_TWEAKCN_THEME',
 ])
 def test_a_blank_value_counts_as_unset_for_every_one_of_the_three(name):
     """Compose renders an undefined substitution as the **empty string** rather
@@ -163,7 +163,7 @@ def test_the_read_set_is_exactly_the_inventory():
     """A name absent from the inventory but read somewhere would be reported as
     ignored while being obeyed, which is the one thing worse than silence."""
     assert boot_env.READ == {name for name, _ in boot_env.INVENTORY}
-    assert len(boot_env.INVENTORY) == 3
+    assert len(boot_env.INVENTORY) == 4
 
 
 # --------------------------------------------------------------------- #

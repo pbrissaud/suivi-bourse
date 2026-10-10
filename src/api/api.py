@@ -6,7 +6,7 @@ from typing import Any, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 import duckdb
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from werkzeug.exceptions import HTTPException
 from logfmt_logger import getLogger
 
@@ -21,6 +21,7 @@ from application import ledger
 from application import main
 from application import portfolio_facts
 from application import portfolio_view
+from application import tweakcn
 from application import positions as positions_module
 from application import quotes
 from application import reassignment
@@ -1281,6 +1282,31 @@ def get_config():
         'unread_environment': installation_facts.unread_environment(),
         'shares': _snapshot().shares,
     })
+
+
+#: The theme stylesheet, computed on the first request. Per process, not per
+#: theme id: ``SB_TWEAKCN_THEME`` cannot change without a restart, so a process
+#: fetches at most once.
+_served: Optional[str] = None
+
+
+@api_bp.get('/theme.css')
+def get_theme_css():
+    """The tweakcn theme ``SB_TWEAKCN_THEME`` names, over the bundled Atelier (#1130)."""
+    global _served
+    if _served is None:
+        theme_id = current_app.config.get('TWEAKCN_THEME')
+        entry = None
+        if theme_id:
+            entry, reason = tweakcn.load(theme_id, current_app.config['TWEAKCN_CACHE_DIR'],
+                                         current_app.config['TWEAKCN_FETCH'])
+            if reason:
+                logger.warning("tweakcn theme %s: %s", theme_id, reason)
+        _served = ('/* default theme */' if entry is None
+                   else '\n'.join(tweakcn.font_imports(entry) + [tweakcn.render_css(entry)]))
+    response = Response(_served, mimetype='text/css')
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
 
 
 @api_bp.get('/settings')

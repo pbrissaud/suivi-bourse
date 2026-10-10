@@ -26,14 +26,14 @@
  *    reach — a grid carries none, and the whole defect was it claiming to.
  *
  * The stylesheet is read through `test/stylesheet.ts` for the same reason
- * `themeCut.test.ts` reads it: `index.css` is the only source of a token's
+ * `stylesheet.test.ts` reads it: `index.css` is the only source of a token's
  * value, and a test that pinned a copy would pass while the theme moved.
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import type { Ground } from '@/lib/alloc'
+import type { Ground } from '@/lib/theme'
 import { contrast, luminance } from '@/test/oklch'
 import { blocks, declarations, oklch, WEB_ROOT } from '@/test/stylesheet'
 
