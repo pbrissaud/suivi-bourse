@@ -16,6 +16,7 @@
   "css": { "parser": { "tailwindDirectives": true }, "formatter": { "enabled": true } },
   "json": { "formatter": { "enabled": true } },
   "linter": { "enabled": true, "rules": { "recommended": false } },
+  "overrides": [{ "includes": ["lint/fixtures/**"], "formatter": { "enabled": false } }],
   "plugins": [
     {
       "path": "./lint/no-wait-dressing.grit",
