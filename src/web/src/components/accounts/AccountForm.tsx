@@ -162,7 +162,6 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     },
   })
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the form reloads when the panel opens or the account changes, not when a mutation object does
   useEffect(() => {
     if (!open) return
     setErrors({})
@@ -195,7 +194,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
             label: declaredLabel(account) ?? '',
           },
     )
-  }, [open, account])
+  }, [open, account, write.reset, remove.reset])
 
   function set(field: FieldName, value: string) {
     setDraft((previous) => ({ ...previous, [field]: value }))
