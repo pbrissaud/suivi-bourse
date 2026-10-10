@@ -95,8 +95,8 @@ export default function DashboardPage() {
   // net line is simply not drawn.
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const accountRows = useMemo(
-    () => (accounts.data ? buildAccountRows(accounts.data.accounts) : null),
-    [accounts.data],
+    () => (accounts.data && !accounts.isError ? buildAccountRows(accounts.data.accounts) : null),
+    [accounts.data, accounts.isError],
   )
 
   // **The two reads the page is made of, and them alone.** A block's own read

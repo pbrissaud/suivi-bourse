@@ -398,17 +398,27 @@ describe('the net-of-tax line under the hero (#1112)', () => {
   })
 
   it('states no amount and names an account whose tax is not computable', async () => {
-    const { projected_tax: _, ...unvalued } = cto()
-    server.use(accountsOf(unvalued, pea()))
+    const { projected_tax: _, ...uncomputable } = cto()
+    server.use(accountsOf(uncomputable, pea()))
     renderApp()
     const head = await hero()
 
     await waitFor(() =>
-      expect(head).toHaveTextContent(
-        /impôt non calculable pour CTO \(une ligne sans cours\)/,
-      ),
+      expect(head).toHaveTextContent(/Net d’impôt incomplet : impôt non calculable pour CTO\./),
     )
     expect(head).not.toHaveTextContent(/Il vous resterait/)
+  })
+
+  it('never says *no model declared* of a model the server rejected', async () => {
+    // A declared model the server could not apply leaves `taxation_kind`
+    // absent: the declaration needs repairing, it was not forgotten.
+    const { taxation_kind: _, projected_tax: __, ...rejected } = cto({ taxation_model: 'broken' })
+    server.use(accountsOf(rejected, pea()))
+    renderApp()
+    const head = await hero()
+
+    await waitFor(() => expect(head).toHaveTextContent(/impôt non calculable pour CTO/))
+    expect(head).not.toHaveTextContent(/aucun modèle/)
   })
 
   it('counts an account taxed on its income as zero, and never as incomplete', async () => {

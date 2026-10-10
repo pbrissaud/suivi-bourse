@@ -14,9 +14,9 @@
  *  compares accounts. Here there is one series on one axis, so the defect has
  *  no subject and the control was buying a choice at the price of a second
  *  announcer for *how did this period go*. What stands at the head instead is
- *  `Performance totale`, `gain ÷ versé net` — cumulative, of the same family as
- *  the *sur versé* under the dividends, and covering the account's whole life
- *  so that it implies no window and needs none stated.
+ *  the annualised IRR (#1112), the one rate on the screen: it runs from the
+ *  account's origin, so it has no window to narrow, and the TWR is said inside
+ *  its bubble rather than beside it.
  *  - **The head is one row of one read** (#970). The gain it announces is the
  *    payload's `gain_absolu`, beside the value and the contribution it is the
  *    difference of, which is what makes the subtraction printed on that line
@@ -375,10 +375,12 @@ export function AccountDetail({
                 className={cn('tabular text-4xl font-heavy tracking-tight', signClass(row.xirr))}
               >
                 {f.percent(row.xirr)}
-                <span className="text-xs font-normal text-muted-foreground">
-                  {' '}
-                  {t('accounts.xirr.unit')}
-                </span>
+                {row.xirr == null ? null : (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {' '}
+                    {t('accounts.xirr.unit')}
+                  </span>
+                )}
               </span>
             </div>
           </div>

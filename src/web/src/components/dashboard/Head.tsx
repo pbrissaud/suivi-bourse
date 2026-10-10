@@ -202,8 +202,7 @@ export function DashboardHead({
   // 31 December exists for the delta to count from. Written as one sentence,
   // the app announced a reconstruction to somebody who has nothing to
   // reconstruct. It is the exact defect `totals: null` had one resource up, and
-  // the discriminant is already on screen: `runtime.rebuilding`, which the TWR
-  // statistic consumes below for its base date. No fourth kind of absence is
+  // the discriminant is already read: `runtime.rebuilding`. No fourth kind of absence is
   // invented for it and no field is added to any payload.
   //
   // The second sentence needs a **positive** observation, which is #709's rule
@@ -246,15 +245,15 @@ export function DashboardHead({
   const netLines =
     net === null || heroValue === null
       ? []
-      : net.unmodelled.length === 0 && net.unvalued.length === 0
+      : net.unmodelled.length === 0 && net.uncomputable.length === 0
         ? [t('dashboard.net.amount', { amount: f.currency(heroValue - net.tax, currency) })]
         : [
             ...(net.unmodelled.length === 0
               ? []
               : [t('dashboard.net.unmodelled', { accounts: names(net.unmodelled) })]),
-            ...(net.unvalued.length === 0
+            ...(net.uncomputable.length === 0
               ? []
-              : [t('dashboard.net.unvalued', { accounts: names(net.unvalued) })]),
+              : [t('dashboard.net.uncomputable', { accounts: names(net.uncomputable) })]),
           ]
 
   return (
@@ -290,6 +289,12 @@ export function DashboardHead({
             // the sign lives on the pills under it.
             value={f.currency(heroValue, currency)}
           >
+            {/* Right under the value, before the pills (DESIGN.md, Atelier). */}
+            {netLines.map((line) => (
+              <p key={line} className="text-sm text-muted-foreground">
+                {line}
+              </p>
+            ))}
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {/* The gain is the value's subtitle now, and it keeps its named
                   absences (#775): a rate on its way is said, a fourth term
@@ -328,11 +333,6 @@ export function DashboardHead({
                 />
               )}
             </div>
-            {netLines.map((line) => (
-              <p key={line} className="text-sm text-muted-foreground">
-                {line}
-              </p>
-            ))}
           </Stat>
 
           {aside}

@@ -120,7 +120,7 @@
   "dashboard.xirr.explainTwr.ytd": " ({percent} depuis le 1ᵉʳ janvier)",
   "dashboard.net.amount": "Il vous resterait {amount} net d’impôt en vendant tout aujourd’hui.",
   "dashboard.net.unmodelled": "Net d’impôt incomplet : aucun modèle d’imposition déclaré pour {accounts}.",
-  "dashboard.net.unvalued": "Net d’impôt incomplet : impôt non calculable pour {accounts} (une ligne sans cours).",
+  "dashboard.net.uncomputable": "Net d’impôt incomplet : impôt non calculable pour {accounts}.",
   "dashboard.awaitingCurrency": "Votre valeur totale, votre versé net et vos deux rendements attendent une devise de base.",
   "dashboard.withoutLedger": "Enregistrez vos versements et vos retraits pour voir votre valeur totale, votre versé net et vos deux rendements.",
   "dashboard.empty.title": "Aucun événement",

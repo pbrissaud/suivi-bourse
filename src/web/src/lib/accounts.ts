@@ -451,20 +451,22 @@ export function onContributed(amount: number | null, contributed: number | null)
  * `none` and `withholding_income` count zero: the first owes nothing on a sale,
  * the second is taxed on its income as it is paid. Every other account is
  * either a figure or a reason there is none — no model declared (`unmodelled`)
- * or a model the server could not apply, a line having no quote (`unvalued`).
+ * or a figure the server could not state (`uncomputable`): a model it rejected,
+ * a line with no quote, an aged rate with no date to age from. The server does
+ * not say which, so neither does the sentence.
  * A sum over a missing term is not a smaller sum, so the caller states no
  * amount at all while either list is non-empty.
  */
 export function projectedTaxTotal(rows: readonly AccountRow[]): {
   tax: number
   unmodelled: AccountRow[]
-  unvalued: AccountRow[]
+  uncomputable: AccountRow[]
 } {
-  const total = { tax: 0, unmodelled: [] as AccountRow[], unvalued: [] as AccountRow[] }
+  const total = { tax: 0, unmodelled: [] as AccountRow[], uncomputable: [] as AccountRow[] }
   for (const row of rows) {
     if (row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income') continue
-    if (row.taxation_kind === undefined) total.unmodelled.push(row)
-    else if (row.projected_tax === undefined) total.unvalued.push(row)
+    if (row.taxation_kind === undefined && row.taxation_model === undefined) total.unmodelled.push(row)
+    else if (row.projected_tax === undefined) total.uncomputable.push(row)
     else total.tax += row.projected_tax
   }
   return total

@@ -120,7 +120,7 @@
   "dashboard.xirr.explainTwr.ytd": " ({percent} since 1 January)",
   "dashboard.net.amount": "You would keep {amount} net of tax if you sold everything today.",
   "dashboard.net.unmodelled": "Net of tax incomplete: no tax model declared for {accounts}.",
-  "dashboard.net.unvalued": "Net of tax incomplete: tax not computable for {accounts} (a line with no price).",
+  "dashboard.net.uncomputable": "Net of tax incomplete: tax not computable for {accounts}.",
   "dashboard.awaitingCurrency": "Your total value, your net contributed and both returns are waiting for a base currency.",
   "dashboard.withoutLedger": "Record your deposits and withdrawals to see your total value, your net contributed and both returns.",
   "dashboard.empty.title": "No events yet",
