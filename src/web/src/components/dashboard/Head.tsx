@@ -65,7 +65,6 @@ import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
-import { Card, CardContent } from '@/components/ui/card'
 import type { PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
 import {
   declaredLabel,
@@ -257,30 +256,16 @@ export function DashboardHead({
           ]
 
   return (
-    // The hero card, and the one gradient in the product (#787): it is the
-    // page's first object, so it is the one that may say *start here* without
-    // another card having to compete. The ground stays `--card` and the wash
-    // sits over it — a figure read against a saturated field is a figure read
-    // badly.
-    //
-    // **It falls from the top left**, which is the maquette's own `160deg` and
-    // the reverse of what shipped: `bg-gradient-to-br` piled the tint into the
-    // bottom right corner, under nothing, while the figure the card exists for
-    // sits at the top left. A wash is a light source, and a light source behind
-    // the reader's back lights nothing.
-    //
-    // And it is `--accent` rather than the mint. The preset states that token as
-    // *a muted raise of the ground*, which is exactly what the maquette paints
-    // there — a cool lift of the surface, not a mark. Taking the mint instead
-    // put a **meaning** into the chrome: it is `--gain` and `--price`, and a
-    // card washed in the colour of a gain is a card that says something about
-    // the figure on it. It also survives the light ground, which a hand-written
-    // midnight value would not.
-    <Card className="gap-0 bg-linear-160 from-chart-2/9 to-card to-55% py-7">
-      <CardContent className="px-7">
+    // **The hero sits on the ground, not in a card** (DESIGN.md): the value,
+    // its pills and the curve are the page's first object without a box to
+    // say so, and the gradient that used to say *start here* went with the
+    // card. `mb-5` doubles the page's 20 px rhythm, so the hero stands 40 px
+    // off the first section, the one large gap the layout allows there.
+    <div className="mb-5">
+      <div>
         {/* **A row that wraps, and not a grid of two fixed tracks** (#838):
             the value on the left, the curve on the right, and under `sm` the
-            curve goes under the pills at the full width of the card. */}
+            curve goes under the pills at the full width of the content. */}
         <div className="flex flex-wrap items-end justify-between gap-6">
           <Stat
             size="head"
@@ -421,8 +406,8 @@ export function DashboardHead({
             {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 

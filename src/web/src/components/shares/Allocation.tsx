@@ -108,8 +108,8 @@ export function Allocation({ rows, currency }: AllocationProps) {
       <CardHeader className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {/* A real heading, and not the primitive's `<div>`: the block is a
             section of the page and a reader jumping by heading must find it.
-            Set as the eyebrow every card is headed with (#838). */}
-        <h2 className="eyebrow">
+            Set as the label (DESIGN.md). */}
+        <h2 className="label">
           {t('shares.allocation.title')}
         </h2>
         {/* What the ring divides and what it folds — the drawing states it

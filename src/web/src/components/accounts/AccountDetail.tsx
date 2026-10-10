@@ -257,10 +257,10 @@ export function AccountDetail({
                     identifier rides beside it as ordinary text, which is where
                     the drawing puts it and where a screen reader reads it after
                     the heading rather than inside it. */}
-                <h2 id={heading} className="eyebrow">
+                <h2 id={heading} className="label">
                   {name}
                 </h2>
-                <span className="eyebrow">· {row.id}</span>
+                <span className="label">· {row.id}</span>
                 {/* **The gesture is a pencil beside the name**, where it was
                     the name itself. One control for one gesture: a heading that
                     is also a button reads as a link to somewhere, and the
@@ -412,7 +412,7 @@ export function AccountDetail({
       )}
 
       {/* **Three cards, one figure each, and a footing under it** (#838). The
-          drawing gives them one shape — the eyebrow, the figure at 34 px, and
+          drawing gives them one shape — the label, the figure at 34 px, and
           one subordinate row pinned to the foot — so what a card holds is
           readable before any of it is read. `items-stretch` and the `mt-auto`
           inside each footing are what put those three rows on one line
@@ -420,7 +420,7 @@ export function AccountDetail({
       <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="gap-3">
           <CardHeader>
-            <h3 className="eyebrow">{t('accounts.detail.composition')}</h3>
+            <h3 className="label">{t('accounts.detail.composition')}</h3>
           </CardHeader>
           <CardContent className="flex h-full flex-col gap-3">
             {/* **The securities, and not the whole**: the drawing leads this
@@ -482,7 +482,7 @@ export function AccountDetail({
         ) : (
           <Card className="gap-3">
             <CardHeader>
-              <h3 className="eyebrow flex items-center gap-1.5">
+              <h3 className="label flex items-center gap-1.5">
                 {t('accounts.detail.dividends')}
                 <Explain
                   figure={t('accounts.detail.dividends.encashed')}
@@ -546,7 +546,7 @@ export function AccountDetail({
       {row.taxation_kind === undefined || (terms === null && !failures.positions) ? null : (
         <Card className="gap-3">
           <CardHeader>
-            <h3 className="eyebrow">{t('accounts.detail.projectedTax')}</h3>
+            <h3 className="label">{t('accounts.detail.projectedTax')}</h3>
           </CardHeader>
           {/* `flex h-full flex-col gap-3` and not `space-y-2.5`: it is what makes
               the footing's `mt-auto` mean anything, and it is the shape the two
@@ -703,7 +703,7 @@ export function AccountDetail({
       {lines === null || lines.length === 0 ? null : (
         <Card>
           <CardHeader>
-            <h3 className="eyebrow">{t('accounts.detail.lines')}</h3>
+            <h3 className="label">{t('accounts.detail.lines')}</h3>
           </CardHeader>
           <CardContent className="space-y-2.5">
             {/* **Four columns and a header row** (#838). The block was one line
@@ -807,7 +807,7 @@ export function AccountDetail({
         {payers === null || payers.length === 0 ? null : (
           <Card>
             <CardHeader className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="eyebrow">{t('accounts.detail.payers')}</h3>
+              <h3 className="label">{t('accounts.detail.payers')}</h3>
               <span className="text-xs text-muted-foreground">
                 {t('accounts.detail.payers.period')}
               </span>
@@ -841,7 +841,7 @@ export function AccountDetail({
         ) : last.length === 0 ? null : (
           <Card>
             <CardHeader>
-              <h3 className="eyebrow">{t('accounts.detail.events')}</h3>
+              <h3 className="label">{t('accounts.detail.events')}</h3>
             </CardHeader>
             <CardContent className="space-y-3">
               <ul aria-label={t('accounts.detail.events')} className="divide-y divide-border/60">

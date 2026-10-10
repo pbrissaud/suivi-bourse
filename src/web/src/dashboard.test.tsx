@@ -67,9 +67,9 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
 async function chartCard(): Promise<HTMLElement> {
   // The full chart is behind the hero's link since the redesign (direction
   // 1a): the page draws a sparkline, and the chart with its readings, its
-  // legend and its sentence opens in a dialog. The frame is the card carrying
-  // the **reading** selector — the group where there are two readings, the
-  // heading where there is only one.
+  // legend and its sentence opens in a dialog. The frame is that dialog, found
+  // from the **reading** selector — the group where there are two readings,
+  // the heading where there is only one. The chart has no card of its own.
   if (screen.queryByRole('dialog') === null) {
     fireEvent.click(await screen.findByRole('button', { name: 'Voir la courbe' }))
   }
@@ -80,7 +80,7 @@ async function chartCard(): Promise<HTMLElement> {
     if (found === null) throw new Error('the chart slot has not landed')
     return found
   })
-  return anchor.closest('[data-slot="card"]') as HTMLElement
+  return anchor.closest('[role="dialog"]') as HTMLElement
 }
 
 describe('the value is the hero (direction 1a)', () => {
@@ -120,13 +120,11 @@ describe('the value is the hero (direction 1a)', () => {
     expect(dialog.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
   })
 
-  it('puts the four terms on a card of their own, under the total they add up to', async () => {
+  it('puts the four terms in a section of their own, under the total they add up to', async () => {
     renderApp()
     await hero()
 
-    const card = within(
-      screen.getByRole('heading', { name: 'D’où vient le gain' }).closest('[data-slot="card"]') as HTMLElement,
-    )
+    const card = within(screen.getByRole('region', { name: 'D’où vient le gain' }))
     expect(card.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/300,00/)
     expect(card.getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(/50,00/)
     expect(card.getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/25,00/)
@@ -1291,6 +1289,32 @@ describe('the movers', () => {
     // The **reference**, never the cut: naming the cut announced a session that
     // had not happened yet.
     expect(await screen.findAllByText(/Depuis la clôture du 1ᵉʳ mars 2026/)).toHaveLength(1)
+  })
+})
+
+describe('the page is a sequence of sections, not a grid of cards (DESIGN.md)', () => {
+  it('draws its three blocks as sections and no card at all', async () => {
+    const { container } = renderApp()
+    await screen.findByRole('list', { name: 'Mouvements' })
+    await screen.findByRole('region', { name: 'Rythme d’investissement' })
+
+    // A card is for something the user decides; nothing on this page is.
+    expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(0)
+    const sections = container.querySelectorAll('[data-slot="section"]')
+    expect([...sections].map((one) => one.querySelector('h2')?.textContent)).toEqual([
+      'D’où vient le gain',
+      'Mouvements',
+      'Rythme d’investissement',
+    ])
+    // And never one inside another.
+    expect(container.querySelectorAll('[data-slot="section"] [data-slot="section"]')).toHaveLength(0)
+  })
+
+  it('sets the close the movements compare against on the title’s row', async () => {
+    renderApp()
+    const movers = await screen.findByRole('region', { name: 'Mouvements' })
+    const titleRow = within(movers).getByRole('heading', { name: 'Mouvements' }).parentElement!
+    expect(titleRow).toHaveTextContent(/Depuis la clôture du 1ᵉʳ mars 2026/)
   })
 })
 

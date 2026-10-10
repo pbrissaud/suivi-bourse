@@ -144,7 +144,7 @@ export function AccountsRail({
     <div className="space-y-3 wide:sticky wide:top-7">
       <Card className="gap-3 py-4">
         <CardHeader className="px-4">
-          <h2 className="eyebrow">{t('accounts.rail.title')}</h2>
+          <h2 className="label">{t('accounts.rail.title')}</h2>
         </CardHeader>
         <CardContent className="space-y-3 px-4">
           {drawable.length === 0 ? null : (

@@ -172,7 +172,7 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
     // inherited from a `<section>` — the shape one page over (`AccountDetail`).
     <Card role="region" aria-labelledby={DIALS_HEADING}>
       <CardHeader>
-        <h2 id={DIALS_HEADING} className="eyebrow">
+        <h2 id={DIALS_HEADING} className="label">
           {t('installation.settings.editable')}
         </h2>
         {/* The counterpart of the environment card's own note, and the reason

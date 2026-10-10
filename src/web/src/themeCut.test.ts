@@ -188,6 +188,131 @@ describe('the controls the browser paints itself', () => {
   })
 })
 
+/**
+ * **`DESIGN.md` is the source of truth, and this is where it is held** (#1111).
+ *
+ * The front matter of `DESIGN.md` names each colour and type rung; `index.css`
+ * says them in the preset's names. The table below is the one place the two
+ * vocabularies meet. The preset goes through tweakcn, which stores colours as
+ * sRGB hex, so a regenerated value drifts in its last decimals (light
+ * `--primary` comes back at ΔE_OK 0,0076): the bound is 0,01, under the ~0,02
+ * a reader can see, rather than an equality the registry cannot keep.
+ */
+const DESIGN_MD = path.join(REPO_ROOT, 'DESIGN.md')
+
+/** DESIGN.md's colour name → every token `index.css` says it with. */
+const DESIGN_COLOURS: Record<string, readonly string[]> = {
+  background: ['--background', '--sidebar'],
+  surface: ['--card', '--popover'],
+  tint: ['--muted', '--secondary'],
+  text: [
+    '--foreground',
+    '--card-foreground',
+    '--popover-foreground',
+    '--secondary-foreground',
+    '--accent-foreground',
+    '--sidebar-foreground',
+    '--sidebar-accent-foreground',
+  ],
+  'text-muted': ['--muted-foreground'],
+  rule: ['--border', '--sidebar-border'],
+  primary: ['--primary', '--ring', '--sidebar-primary', '--sidebar-ring'],
+  'on-primary': ['--primary-foreground', '--sidebar-primary-foreground', '--destructive-foreground'],
+  gain: ['--gain'],
+  loss: ['--loss'],
+}
+
+/** The front matter's `colors:` block, `dark-` keys folded onto their ground. */
+function designColours(): Record<'light' | 'dark', Map<string, Oklch>> {
+  const front = fs.readFileSync(DESIGN_MD, 'utf8').split(/^---$/m)[1]
+  const block = /^colors:\n((?: {2}.*\n)+)/m.exec(front)
+  if (!block) throw new Error('DESIGN.md has no colors: block')
+  const colours = { light: new Map<string, Oklch>(), dark: new Map<string, Oklch>() }
+  for (const line of block[1].matchAll(/^ {2}([\w-]+): "(oklch\([^)]+\))"$/gm)) {
+    const dark = line[1].startsWith('dark-')
+    colours[dark ? 'dark' : 'light'].set(line[1].replace(/^dark-/, ''), oklch(line[2]))
+  }
+  return colours
+}
+
+/** One rung of the front matter's `typography:` block, by name and key. */
+function designType(rung: string, key: string): string {
+  const front = fs.readFileSync(DESIGN_MD, 'utf8').split(/^---$/m)[1]
+  const block = new RegExp(`^ {2}${rung}:\\n((?: {4}.*\\n)+)`, 'm').exec(front)
+  const value = block && new RegExp(`^ {4}${key}: (.+)$`, 'm').exec(block[1])
+  if (!value) throw new Error(`DESIGN.md says no ${key} for ${rung}`)
+  return value[1].trim()
+}
+
+/** Euclidean distance in OKLab, the space oklch() is the polar form of. */
+function deltaOk(one: Oklch, other: Oklch): number {
+  const lab = ({ lightness, chroma, hue }: Oklch) => [
+    lightness,
+    chroma * Math.cos((hue * Math.PI) / 180),
+    chroma * Math.sin((hue * Math.PI) / 180),
+  ]
+  const [a, b] = [lab(one), lab(other)]
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+}
+
+describe('index.css says what DESIGN.md says', () => {
+  it('declares every DESIGN.md colour, on both grounds, within what a reader can see', () => {
+    const design = designColours()
+    for (const ground of ['light', 'dark'] as const) {
+      for (const [name, tokens] of Object.entries(DESIGN_COLOURS)) {
+        const wanted = design[ground].get(name)
+        expect(wanted, `DESIGN.md names no ${ground} ${name}`).toBeDefined()
+        for (const token of tokens) {
+          expect(
+            deltaOk(declared(token, ground), wanted!),
+            `${token} is not DESIGN.md's ${ground} ${name}`,
+          ).toBeLessThanOrEqual(0.01)
+        }
+      }
+    }
+  })
+
+  it('states the type ladder DESIGN.md sets', () => {
+    const source = read()
+    const said = (name: string) => {
+      const value = new RegExp(`^\\s*${name}:\\s*([^;]+);`, 'm').exec(source)
+      if (!value) throw new Error(`index.css declares no ${name}`)
+      return value[1].trim()
+    }
+    const rem = (px: string) => `${Number.parseFloat(px) / 16}rem`
+    expect(said('--text-xs')).toBe(rem(designType('label', 'fontSize')))
+    expect(said('--text-xs--line-height')).toBe(rem(designType('label', 'lineHeight')))
+    expect(said('--text-base')).toBe(rem(designType('body', 'fontSize')))
+    expect(said('--text-base--line-height')).toBe(rem(designType('body', 'lineHeight')))
+    expect(said('--text-md')).toBe(said('--text-base'))
+    expect(said('--text-prose')).toBe(rem(designType('prose', 'fontSize')))
+    expect(said('--text-prose--line-height')).toBe(rem(designType('prose', 'lineHeight')))
+    expect(said('--text-2xl')).toBe(rem(designType('section-title', 'fontSize')))
+    expect(said('--text-2xl--line-height')).toBe(rem(designType('section-title', 'lineHeight')))
+    expect(said('--text-4xl')).toBe(rem(designType('figure', 'fontSize')))
+    expect(said('--text-4xl--line-height')).toBe(rem(designType('figure', 'lineHeight')))
+    // The hero is fluid, and DESIGN.md's 60 px is its ceiling.
+    expect(said('--text-hero')).toBe(
+      `clamp(2.25rem, 1rem + 4.5vw, ${rem(designType('hero', 'fontSize'))})`,
+    )
+    expect(said('--text-hero--line-height')).toBe('calc(64 / 60)')
+    expect(said('--tracking-hero')).toBe(designType('hero', 'letterSpacing'))
+  })
+
+  it('keeps muted text readable on the section plane', () => {
+    for (const ground of ['light', 'dark'] as const) {
+      const painted = (name: string) => {
+        const { lightness, chroma, hue } = declared(name, ground)
+        return luminance(lightness, chroma, hue)
+      }
+      expect(
+        contrast(painted('--muted-foreground'), painted('--muted')),
+        `muted text on the ${ground} tint`,
+      ).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+})
+
 describe('what the theme must not bring with it', () => {
   it('versions no theme JSON anywhere in the repository', () => {
     // The failure is invisible until the domain layer has grown back, so it is

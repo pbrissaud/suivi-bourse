@@ -149,7 +149,7 @@ export function LedgerChips({ filters, onChange }: LedgerChipsProps) {
 
   return (
     <div role="group" aria-label={t('data.chips.title')} className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+      <span className="label">
         {t('data.chips.title')}
       </span>
       {chips.map((chip) => (

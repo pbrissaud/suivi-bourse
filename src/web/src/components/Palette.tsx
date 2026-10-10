@@ -325,7 +325,7 @@ function Section({ title, entries }: { title: string; entries: readonly Entry[] 
   if (entries.length === 0) return null
   return (
     <div className="py-1">
-      <p className="px-3 py-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+      <p className="px-3 py-1 label">
         {title}
       </p>
       <ul aria-label={title}>
