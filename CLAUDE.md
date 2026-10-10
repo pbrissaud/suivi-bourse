@@ -30,3 +30,10 @@ and put exactly one label on the PR: `fix`, `feat`, `chore` or `refactor`.
 
 Write every issue, issue comment, pull request title and body, and review comment in
 English, whatever language the conversation is held in.
+
+## Design System
+
+Always read DESIGN.md before making any visual or UI decisions.
+All font choices, colors, spacing, and aesthetic direction are defined there.
+Do not deviate without explicit user approval.
+In QA mode, flag any code that doesn't match DESIGN.md.
