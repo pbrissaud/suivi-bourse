@@ -37,7 +37,6 @@ import {
   ledgerSearchOf,
   typeFacets,
   validateLedgerSearch,
-  wholeLedger,
   yearBounds,
   yearFacets,
   yearsNamed,
@@ -420,26 +419,14 @@ describe('the facets, and the axis each count excludes', () => {
   })
 })
 
-describe('emptying the ledger is a reduction that covers it', () => {
-  it('is nothing at all while nothing is reduced, and one bound for the whole', () => {
+describe('what counts as a reduction', () => {
+  it('is nothing at all while nothing is reduced', () => {
     // `reduces` is asked of the parameters and not of the six members: what
     // reduces is what crosses the wire, so a blank search is not one.
     expect(reduces(NO_FILTERS)).toBe(false)
     expect(reduces({ ...NO_FILTERS, query: '   ' })).toBe(false)
     expect(reduces({ ...NO_FILTERS, symbols: [] })).toBe(false)
     expect(reduces({ ...NO_FILTERS, since: '2026-01-01' })).toBe(true)
-  })
-
-  it('reduces on the oldest day the ledger holds, and retains all of it', () => {
-    // `DELETE /api/events` refuses an empty query string and says what to do
-    // instead: reduce on something that covers the ledger. `event.date` is
-    // `NOT NULL`, so the oldest day is that something.
-    const whole = wholeLedger(ledgerEvents())
-    expect(whole).toEqual({ ...NO_FILTERS, since: '2025-12-24' })
-    expect(filterEvents(ledgerEvents(), whole ?? NO_FILTERS)).toHaveLength(4)
-    expect(selectionParams(whole ?? NO_FILTERS).toString()).toBe('since=2025-12-24')
-    // Nothing to empty is nothing to ask for.
-    expect(wholeLedger([])).toBeNull()
   })
 })
 

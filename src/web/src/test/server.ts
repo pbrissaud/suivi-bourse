@@ -155,10 +155,11 @@ export function defaultHandlers() {
       const draft = (await request.json()) as EventDraft
       return HttpResponse.json(aTypedEvent({ id: String(params.id), ...draft }))
     }),
-    // The bulk removal (#814). It answers what **left**, which is the store's
-    // to say — the front counted what the reduction retained before the click,
-    // and the two are deliberately two. The default is a count of its own so a
-    // test that does not care what came back cannot mistake it for the table's.
+    // The bulk removal (#1113): the ticked ids, in a body. It answers what
+    // **left**, which is the store's to say — the front counted what was ticked
+    // before the click, and the two are deliberately two. The default is a
+    // count of its own so a test that does not care what came back cannot
+    // mistake it for the table's.
     http.delete(ROUTES.events, () => HttpResponse.json({ events_removed: 7 })),
 
     // The way in (#811): one file, one receipt. The receipt is the fixture's

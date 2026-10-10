@@ -441,34 +441,10 @@ export function monthFacets(
  * **Is anything reduced at all**, and it is asked of the parameters rather than
  * of the six members: a reduction is what crosses the wire, so a member that
  * reduces nothing — a blank search, an empty set of securities — is not one
- * here either. The button, the box and the request cannot come to disagree
- * about it, all three reading this.
+ * here either.
  */
 export function reduces(filters: LedgerFilters): boolean {
   return selectionParams(filters).toString() !== ''
-}
-
-/**
- * **The reduction that covers the ledger entire** — what *empty the ledger* is
- * made of (#834).
- *
- * `DELETE /api/events` refuses a request with no parameter at all, on purpose,
- * and says what to do instead in as many words: *reduce on something that
- * covers the whole ledger to empty it*. This is that something. `event.date` is
- * `NOT NULL` in the store, so a lower bound on the oldest day the ledger holds
- * retains every row of it — and the count the box states is read back through
- * {@link filterEvents}, so what the reader is shown is what the request
- * retains rather than a second reading of *all of them*.
- *
- * `null` where there is nothing to empty.
- */
-export function wholeLedger(events: readonly LedgerEvent[]): LedgerFilters | null {
-  let earliest: string | null = null
-  for (const event of events) {
-    if (event.date === null) continue
-    if (earliest === null || event.date < earliest) earliest = event.date
-  }
-  return earliest === null ? null : { ...NO_FILTERS, since: earliest }
 }
 
 /**

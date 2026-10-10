@@ -16,6 +16,8 @@
  * #794 — the drop zone and the export menu. The declaration of the accounts
  * left at #793: a declaration is made where its subject is looked at.
  *
+ * Rows are deleted in bulk by **ticking them** (#1113), not by the reduction.
+ *
  * **The reduction is laid out in three places since #834**, and they are three
  * questions: the **panel** on the left, where an axis is chosen and every
  * option carries the count it would leave (`LedgerFacets.tsx`); the **search**
@@ -41,6 +43,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import type { RowSelectionState } from '@tanstack/react-table'
 
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
@@ -199,6 +202,29 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     [events.data],
   )
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])
+
+  // **The ticked rows, by id** (#1113). Held here because the button that
+  // deletes them sits above the table, and kept across reductions: a row a
+  // chip hides comes back ticked when the chip is let go of. What is deleted
+  // is only what the reduction still shows — ids hidden by it stay ticked here
+  // and are never sent.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  // An id the ledger no longer holds — deleted by its own row's button, or in
+  // another tab — leaves the selection with the re-read: the store may reissue
+  // a freed key, and a new row must not arrive ticked. Adjusted during the
+  // render, the budget's own pattern below.
+  const [held, setHeld] = useState(all)
+  if (held !== all) {
+    setHeld(all)
+    const ids = new Set(all.map((event) => event.id))
+    setRowSelection((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id))),
+    )
+  }
+  const selected = useMemo(
+    () => shown.flatMap((event) => (typeof event.id === 'string' && rowSelection[event.id] ? [event.id] : [])),
+    [shown, rowSelection],
+  )
 
   // **The rendering budget**. It is a number of rows and not a page
   // index, and the difference is the whole record: `GET /api/events` answered
@@ -369,15 +395,10 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
             <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <LedgerSearch filters={filters} onChange={reduce} shown={shown.length} />
-                {/* **The destructive gesture sits under the reduction it
-                    consumes** (#814, #834), and not in the bar above
-                    where the export menu is: what it acts on is the reduction,
-                    and a button one surface away from its subject is how
-                    somebody deletes two hundred rows believing they are
-                    removing one thing. With nothing reduced it is a refusal
-                    naming the other gesture, never the same box with a bigger
-                    number. */}
-                <BulkDelete selection={filters} selected={shown.length} events={all} />
+                {/* **The destructive gesture sits beside the table it
+                    consumes** (#814, #1113), and not in the bar above where the
+                    export menu is: what it deletes is the rows ticked below. */}
+                <BulkDelete selected={selected} onDeleted={() => setRowSelection({})} />
                 <Button type="button" className="ml-auto" onClick={() => setEditing(null)}>
                   {t('data.new')}
                 </Button>
@@ -401,8 +422,11 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 // card's own edge, rather than floating under it.
                 <Card className="gap-0 overflow-hidden py-0">
                   <LedgerTable
-                    events={page.rows}
+                    events={shown}
+                    budget={budget}
                     currency={currency}
+                    rowSelection={rowSelection}
+                    onRowSelectionChange={setRowSelection}
                     onEdit={setEditing}
                     onRemove={setRemoving}
                   />

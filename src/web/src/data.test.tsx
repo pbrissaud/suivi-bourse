@@ -96,6 +96,8 @@ describe('the columns of the ledger', () => {
     // the row's **removal**, a control named for the reader who cannot see the
     // icon in it.
     expect(columnNames(ledger())).toEqual([
+      // The checkbox ticking every filtered row (#1113): a control, no text.
+      '',
       'Date',
       'Type',
       'De quoi il s’agit',
@@ -159,7 +161,7 @@ describe('the columns of the ledger', () => {
     // A ledger is opened to check what has just happened.
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(
-      rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[0].textContent),
+      rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[1].textContent),
     ).toEqual(['10 févr. 2026', '12 janv. 2026', '5 janv. 2026', '24 déc. 2025'])
     expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
@@ -235,7 +237,7 @@ describe('the reduction, which is what pays for no pagination', () => {
       'aria-pressed',
       'true',
     )
-    expect(screen.getByText('Réduction · 1 événement')).toBeInTheDocument()
+    expect(screen.getByText('1 événement filtré')).toBeInTheDocument()
 
     // And it offers the way out, which is the option beside it.
     await user.click(within(types).getByRole('button', { name: /^Tous les types/ }))
@@ -311,7 +313,7 @@ describe('the reduction, which is what pays for no pagination', () => {
 
     await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
-    expect(screen.getByText('Réduction · 1 événement')).toBeInTheDocument()
+    expect(screen.getByText('1 événement filtré')).toBeInTheDocument()
   })
 
   it('reduces to a period, names the interval on a pastille, and lets it go', async () => {
@@ -331,7 +333,7 @@ describe('the reduction, which is what pays for no pagination', () => {
     // Both bounds retain the day they name: the 24th and the 12th are in, and
     // a half-open reading would have dropped one of the three rows.
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
-    expect(screen.getByText('Réduction · 3 événements')).toBeInTheDocument()
+    expect(screen.getByText('3 événements filtrés')).toBeInTheDocument()
 
     const chips = screen.getByRole('group', { name: 'Filtres actifs' })
     const chip = within(chips).getByRole('button', {
@@ -546,14 +548,14 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     await user.click(within(types).getByRole('button', { name: /^Achat/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
     expect(screen.getByText('40 sur 120 affichés')).toBeInTheDocument()
-    expect(screen.getByText('Réduction · 120 événements')).toBeInTheDocument()
+    expect(screen.getByText('120 événements filtrés')).toBeInTheDocument()
 
     await user.click(within(types).getByRole('button', { name: /^Versement/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
     // **Of the reduction, never of the store** (#834): *the end of
     // the ledger* said over three rows out of a hundred and twenty-three is the
     // sentence that record refuses by name.
-    expect(screen.getByText('Fin de la réduction · 3 événements')).toBeInTheDocument()
+    expect(screen.getByText('Fin des résultats · 3 événements')).toBeInTheDocument()
     expect(screen.queryByText(/Fin du grand livre/)).not.toBeInTheDocument()
   })
 })
@@ -588,7 +590,8 @@ describe('a reduction in force always has the chip that releases it', () => {
     await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
 
-    await user.click(screen.getByRole('button', { name: 'Supprimer l’événement' }))
+    await user.click(within(rowsOf(ledger())[0]).getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’événement sélectionné' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -622,146 +625,206 @@ describe('a reduction in force always has the chip that releases it', () => {
   })
 })
 
-describe('deleting the reduction, which is what replaces forgetting an import', () => {
-  it('is not offered while a reduction retains nothing, and never on an empty ledger', async () => {
-    // A reduction that retains nothing has a subject and no rows: *delete these
-    // 0 events* beside *no event matches* is the same button saying two things
-    // at once.
+describe('deleting the ticked rows (#1113)', () => {
+  function rowBox(table: HTMLElement, index: number) {
+    return within(rowsOf(table)[index]).getByRole('checkbox')
+  }
+
+  it('is offered disabled with nothing ticked, and no string on the page says “réduction”', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.type(screen.getByLabelText('Rechercher'), 'zzzz')
-    expect(await screen.findByText('Aucun événement ne correspond')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Supprimer/ })).not.toBeInTheDocument()
-  })
+    expect(screen.getByRole('button', { name: 'Supprimer la sélection' })).toBeDisabled()
+    expect(document.body.textContent).not.toMatch(/réduction/i)
 
-  it('recites the reduction in full, and counts its rows, before destroying anything', async () => {
-    // Never a bare *are you sure*: the rule #794 wrote when three consecutive
-    // rows showed three identical red buttons — the reader has to read the
-    // **subject** of what they are destroying, and here the subject is the
-    // dimensions in force rather than a file name. Since #834 it is a
-    // **sentence**: the clauses are the pastilles', in the vocabulary they
-    // carry, and the period reads the interval out of the same key the pastille
-    // does.
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-
+    // The reduced wordings only render under a filter.
     const types = screen.getByRole('group', { name: 'Type' })
     await user.click(within(types).getByRole('button', { name: /^Achat/ }))
-    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-01' } })
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements' }))
-
-    const box = await screen.findByRole('dialog')
-    expect(
-      within(box).getByRole('heading', {
-        name: 'Supprimer les 2 événements de type Achat, depuis le 1ᵉʳ janv. 2026 ?',
-      }),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('2 événements filtrés')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/réduction/i)
   })
 
-  it('refuses the gesture with nothing reduced, and points at the other one', async () => {
-    // **The criterion** (#834, #787): with no reduction the box is a
-    // **different** box, not the same one with a bigger number. It says no
-    // reduction is active and names the gesture that does empty a ledger, which
-    // then asks for itself — the whole ledger counted, and what stays said.
+  it('sends the ticked ids in a body, says what left, and clears the selection', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Supprimer la réduction' }))
-
-    const refusal = await screen.findByRole('dialog')
-    expect(
-      within(refusal).getByRole('heading', { name: 'Aucune réduction active' }),
-    ).toBeInTheDocument()
-    expect(within(refusal).getByText(/il s’appelle Vider le grand livre/)).toBeInTheDocument()
-    // The count of the ledger is nowhere in it: this is not the reduction's box
-    // wearing four instead of two.
-    expect(within(refusal).queryByText(/4 événements/)).not.toBeInTheDocument()
-
-    await user.click(within(refusal).getByRole('button', { name: 'Vider le grand livre' }))
-    const wipe = await screen.findByRole('dialog')
-    expect(
-      within(wipe).getByRole('heading', { name: 'Vider le grand livre · 4 événements ?' }),
-    ).toBeInTheDocument()
-    expect(within(wipe).getByText(/Les comptes déclarés et vos réglages restent/)).toBeInTheDocument()
-  })
-
-  it('empties the ledger by reducing on its own first day, which is what the server asks for', async () => {
-    // `DELETE /api/events` refuses a request with no parameter at all and says
-    // what to do instead in as many words: *reduce on something that covers the
-    // whole ledger*. `event.date` is `NOT NULL`, so a lower bound on the oldest
-    // day retains every row — and the request carries that, never an empty
-    // query string the server would answer `422` to.
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-
-    let asked: string | null = null
+    let asked: { search: string; body: unknown } | null = null
     server.use(
-      http.delete(ROUTES.events, ({ request }) => {
-        asked = new URL(request.url).search
-        server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
-        return HttpResponse.json({ events_removed: 4 })
-      }),
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Supprimer la réduction' }))
-    await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', {
-        name: 'Vider le grand livre',
-      }),
-    )
-    await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', {
-        name: 'Vider le grand livre',
-      }),
-    )
-
-    await waitFor(() => expect(asked).toBe('?since=2025-12-24'))
-    expect(await screen.findByText('4 événements supprimés.')).toBeInTheDocument()
-  })
-
-  it('sends the reduction’s own five parameters, and says what actually left', async () => {
-    // What travels is the *question*, never a list of rows: the reduction is
-    // applied against the store, not against the snapshot this table drew.
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-
-    let asked: string | null = null
-    server.use(
-      http.delete(ROUTES.events, ({ request }) => {
-        asked = new URL(request.url).search
-        // The re-read that follows: the two purchases are gone from the store.
-        server.use(
-          http.get(ROUTES.events, () =>
-            HttpResponse.json(aLedgerPayload(ledgerEvents().slice(2))),
-          ),
-        )
+      http.delete(ROUTES.events, async ({ request }) => {
+        asked = { search: new URL(request.url).search, body: await request.json() }
         return HttpResponse.json({ events_removed: 2 })
       }),
     )
 
+    await user.click(rowBox(ledger(), 0))
+    await user.click(rowBox(ledger(), 2))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }))
+
+    const box = await screen.findByRole('dialog')
+    expect(
+      within(box).getByRole('heading', { name: 'Supprimer les 2 événements sélectionnés ?' }),
+    ).toBeInTheDocument()
+    await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
+
+    await waitFor(() => expect(asked).toEqual({ search: '', body: { ids: ['1', '3'] } }))
+    expect(await screen.findByText('2 événements supprimés.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Supprimer la sélection' })).toBeDisabled()
+  })
+
+  it('keeps the selection and deletes nothing when the box is cancelled', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let deleted = false
+    server.use(
+      http.delete(ROUTES.events, () => {
+        deleted = true
+        return HttpResponse.json({ events_removed: 1 })
+      }),
+    )
+
+    await user.click(rowBox(ledger(), 1))
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’événement sélectionné' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les garder' }),
+    )
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(deleted).toBe(false)
+    expect(rowBox(ledger(), 1)).toBeChecked()
+  })
+
+  it('does not open the editor from a checkbox, and still does from the row', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(rowBox(ledger(), 0))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(within(rowsOf(ledger())[0]).getAllByRole('cell')[1])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('renders the header indeterminate on a partial selection', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const header = screen.getByRole('checkbox', { name: 'Sélectionner les 4 événements filtrés' })
+    await user.click(rowBox(ledger(), 0))
+    expect(header).toHaveAttribute('data-state', 'indeterminate')
+  })
+
+  it('ticks every filtered row from the header, the ones not revealed yet included', async () => {
+    const mixed = [
+      ...aLongLedger(120),
+      anEvent({ id: '200', date: '2025-06-01', event_type: 'DEPOSIT', symbol: null }),
+    ]
+    const { user } = renderData(mixed)
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
+
+    await user.click(screen.getByRole('checkbox', { name: 'Sélectionner les 120 événements filtrés' }))
+    expect(
+      screen.getByRole('button', { name: 'Supprimer les 120 événements sélectionnés' }),
+    ).toBeEnabled()
+
+    // Revealing more shows the new rows already ticked.
+    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
+    expect(rowBox(ledger(), 79)).toBeChecked()
+  })
+
+  it('drops a ticked row a filter hides from the count, and ticks it again when lifted', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(rowBox(ledger(), 0))
+    await user.click(rowBox(ledger(), 2))
+    expect(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' })).toBeEnabled()
+
+    // Row 2 is the deposit; filtering on purchases hides it.
     const types = screen.getByRole('group', { name: 'Type' })
     await user.click(within(types).getByRole('button', { name: /^Achat/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements' }))
+    expect(screen.getByRole('button', { name: 'Supprimer l’événement sélectionné' })).toBeEnabled()
+
+    // Cancelled here: what is sent is checked in the next case.
+    await user.click(within(types).getByRole('button', { name: /^Tous les types/ }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
+    expect(rowBox(ledger(), 2)).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' })).toBeEnabled()
+  })
+
+  it('never sends an id a filter hides, and reads the header off the shown rows', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let asked: unknown = null
+    server.use(
+      http.delete(ROUTES.events, async ({ request }) => {
+        asked = await request.json()
+        return HttpResponse.json({ events_removed: 1 })
+      }),
+    )
+
+    await user.click(rowBox(ledger(), 2))
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+    // The deposit is ticked but hidden: nothing shown is ticked.
+    expect(
+      screen.getByRole('checkbox', { name: 'Sélectionner les 2 événements filtrés' }),
+    ).toHaveAttribute('data-state', 'unchecked')
+
+    await user.click(rowBox(ledger(), 0))
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’événement sélectionné' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
+    await waitFor(() => expect(asked).toEqual({ ids: ['1'] }))
+  })
 
-    await waitFor(() => expect(asked).toBe('?type=BUY'))
-    // The count in the receipt is the **server's** — what left — where the one
-    // in the box was the table's, what the reduction retained. Two counts,
-    // deliberately, and only the second is a fact about the store.
-    expect(await screen.findByText('2 événements supprimés.')).toBeInTheDocument()
+  it('says “filtered” and never “reduction” under a filter, in English too', async () => {
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())))
+    const { user } = renderApp({ url: '/ledger', browserLanguages: ['en-GB'] })
+    await screen.findByRole('table', { name: 'Your events' })
+
+    expect(screen.getByRole('button', { name: 'Delete the selection' })).toBeDisabled()
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: /^Buy/ }))
+    expect(await screen.findByText('2 filtered events')).toBeInTheDocument()
+    expect(screen.getByText('End of the results · 2 events')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/reduction/i)
+  })
+
+  it('empties the ledger through the header, with no box of its own', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let asked: unknown = null
+    server.use(
+      http.delete(ROUTES.events, async ({ request }) => {
+        asked = await request.json()
+        return HttpResponse.json({ events_removed: 4 })
+      }),
+    )
+
+    await user.click(screen.getByRole('checkbox', { name: 'Sélectionner les 4 événements filtrés' }))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 4 événements sélectionnés' }))
+    const box = await screen.findByRole('dialog')
+    expect(within(box).queryByText(/Vider le grand livre/)).not.toBeInTheDocument()
+    await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
+
+    await waitFor(() => expect(asked).toEqual({ ids: ['1', '2', '3', 'typed-1'] }))
   })
 
   it('keeps the box open on a refusal and says it in the reader’s language', async () => {
-    // A `422` the reader could not foresee — a client that lost its query
-    // string, or a reduction that emptied itself between the render and the
-    // click. The sentence is read by `problem.type`, never by the English
-    // `detail` the server wrote for a log.
+    // A `422` the reader could not foresee — a client that lost its body. The
+    // sentence is read by `problem.type`, never by the English `detail` the
+    // server wrote for a log.
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
@@ -774,9 +837,9 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
       ),
     )
 
-    const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
-    await user.click(await screen.findByRole('button', { name: 'Supprimer les 2 événements' }))
+    await user.click(rowBox(ledger(), 0))
+    await user.click(rowBox(ledger(), 1))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -787,15 +850,15 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     )
     // The box stays open on the failure — everything behind the overlay is
     // `aria-hidden`, so a refusal rendered on the page behind it would be a
-    // sentence nobody can read — and it still recites the reduction it was
+    // sentence nobody can read — and it still counts the selection it was
     // opened on.
     expect(
-      within(box).getByRole('heading', { name: 'Supprimer les 2 événements de type Achat ?' }),
+      within(box).getByRole('heading', { name: 'Supprimer les 2 événements sélectionnés ?' }),
     ).toBeInTheDocument()
   })
 
   it('says a withdrawal a later sale rests on in its own words (#824)', async () => {
-    // A reduction can take the purchases away and leave the sales — and that is
+    // A selection can take the purchases away and leave the sales — and that is
     // **not** the news a file that oversells is: what is refused here is a
     // withdrawal, and what it would break is elsewhere in the ledger. The
     // server names the gesture, because no payload distinguishes the two, and
@@ -822,9 +885,9 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
       ),
     )
 
-    const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
-    await user.click(await screen.findByRole('button', { name: 'Supprimer les 2 événements' }))
+    await user.click(rowBox(ledger(), 0))
+    await user.click(rowBox(ledger(), 1))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -877,7 +940,7 @@ describe('the editor, and where it does not appear', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    await user.click(within(row).getAllByRole('cell')[0])
+    await user.click(within(row).getAllByRole('cell')[1])
 
     expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
     expect(screen.getByRole('radio', { name: 'Attribution' })).toHaveAttribute(
@@ -1320,7 +1383,7 @@ describe('the create form, which is the onboarding', () => {
     // row that is perfectly alive is a precise untruth, which is worse than the
     // vague one it replaced.
     const alive = within(ledger()).getByText('Versement programmé mensuel').closest('tr')
-    await user.click(within(alive as HTMLElement).getAllByRole('cell')[0])
+    await user.click(within(alive as HTMLElement).getAllByRole('cell')[1])
     expect(await screen.findByLabelText('Quantité')).toHaveValue('3')
     expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()
   })
@@ -1462,6 +1525,7 @@ describe('the page in English', () => {
 
     const table = await screen.findByRole('table', { name: 'Your events' })
     expect(columnNames(table)).toEqual([
+      '',
       'Date',
       'Type',
       'What it is',

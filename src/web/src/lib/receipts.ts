@@ -94,10 +94,11 @@ export type Receipt =
   /** It landed and wrote nothing: a header with no row under it. */
   | { kind: 'import.empty'; filename: string }
   /**
-   * A reduction was deleted, and this is **what actually left** (#814).
+   * The ticked rows were deleted, and this is **what actually left** (#814,
+   * #1113).
    *
-   * The count is the server's, not the table's: the confirmation said what the
-   * reduction retained *before* the click, and this says what the store removed.
+   * The count is the server's, not the table's: the confirmation said what was
+   * ticked *before* the click, and this says what the store removed.
    * A gesture the reader made, whose end the app owes them — and there is no
    * undo behind it, which is why the number is said out loud rather than left
    * to be counted off a table that has just changed shape.
