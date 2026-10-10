@@ -174,7 +174,7 @@ def test_removing_an_event_erases_the_points_it_made(tmp_path, mocker):
 
 def test_a_bulk_removal_carries_the_series_and_the_positions_with_it(
         tmp_path, mocker):
-    """``DELETE /api/events?…`` — the fourth write, and the same seam (#814).
+    """``DELETE /api/events`` — the fourth write, and the same seam (#814).
 
     Undoing a whole import is the gesture that moves the most history at once,
     so it is the one where a series left to the next ``PERF_TICK`` would be most
@@ -188,9 +188,10 @@ def test_a_bulk_removal_carries_the_series_and_the_positions_with_it(
     assert _days(opened)[0] == date(2022, 6, 3)
     assert _cash_on(opened, _TODAY) == pytest.approx(1750.0)
 
-    # The reduction the reader is looking at: everything typed on that account
-    # before the drop folder's own deposit. Both rows leave in one gesture.
-    removed = client.delete('/api/events?until=2023-12-31')
+    # The two typed rows, ticked: both leave in one gesture.
+    typed = [row[0] for row in opened.query(
+        "SELECT id FROM event WHERE date <= DATE '2023-12-31'")]
+    removed = client.delete('/api/events', json={'ids': typed})
     assert removed.status_code == 200
     assert removed.get_json() == {'events_removed': 2}
 

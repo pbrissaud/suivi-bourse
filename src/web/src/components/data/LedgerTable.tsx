@@ -46,10 +46,27 @@
  *
  * **Zero explanation icons.** The page's two live on the create form, where the
  * sentence can still change a behaviour (#684 D7).
+ *
+ * **A first column of checkboxes** (#1113), and the table is drawn by TanStack
+ * Table for it: the data is every row the reduction retains, and the reveal is
+ * a slice of the row model, so the header box ticks the rows not drawn yet too.
+ * The selection itself is the caller's state — it outlives a reduction, and a
+ * row hidden by a chip comes back ticked when the chip is let go of.
  */
+import { useMemo } from 'react'
+import {
+  flexRender,
+  rowSelectionFeature,
+  tableFeatures,
+  useTable,
+  type ColumnDef,
+  type OnChangeFn,
+  type RowSelectionState,
+} from '@tanstack/react-table'
 import { Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
   TableBody,
@@ -63,6 +80,8 @@ import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, identityOf, isEditable, rowKey } from '@/lib/ledger'
 import { cn } from '@/lib/utils'
+
+const features = tableFeatures({ rowSelectionFeature })
 
 /** The six, named by their **effect** and never by their code. */
 export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
@@ -111,21 +130,195 @@ const TYPE_BADGE: Record<LedgerEventType, string> = {
 }
 
 interface LedgerTableProps {
+  /** Every row the reduction retains — not only the ones drawn. */
   events: readonly LedgerEvent[]
+  /** How many of them are drawn: the reveal's budget. */
+  budget: number
   currency: string | null
+  /** The ticked rows, by id — held by the caller. */
+  rowSelection: RowSelectionState
+  onRowSelectionChange: OnChangeFn<RowSelectionState>
   /** Opens the panel on a row. Offered for every row that has a key. */
   onEdit: (event: LedgerEvent) => void
   /** Asks for a row to be removed — the confirmation is the caller's. */
   onRemove: (event: LedgerEvent) => void
 }
 
-export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableProps) {
+/** The classes a column's heading and cells share, by column id. */
+const ALIGN: Partial<Record<string, string>> = {
+  select: 'w-9 pr-0',
+  quantity: 'text-right',
+  unitPrice: 'text-right',
+  fee: 'text-right',
+  amount: 'text-right',
+  remove: 'w-11',
+}
+
+export function LedgerTable({
+  events,
+  budget,
+  currency,
+  rowSelection,
+  onRowSelectionChange,
+  onEdit,
+  onRemove,
+}: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
+  const columns = useMemo<ColumnDef<typeof features, LedgerEvent>[]>(() => {
+    // The four money columns are set in the **mono** face on top of the tabular
+    // figures: read down a column of forty rows, the two together are what lets
+    // a comma line up with a comma.
+    const money = (
+      id: string,
+      heading: MessageKey,
+      value: (event: LedgerEvent) => string,
+    ): ColumnDef<typeof features, LedgerEvent> => ({
+      id,
+      header: () => t(heading),
+      cell: ({ row }) => <span className="font-mono tabular">{value(row.original)}</span>,
+    })
+    return [
+      {
+        id: 'select',
+        // Ticks **every** row the reduction retains, drawn or not. Its state
+        // is read off those rows only: the table's own `getIsSomeRowsSelected`
+        // counts the raw selection, ids a filter hides included, and would
+        // leave the box indeterminate over a table where nothing is ticked.
+        header: ({ table }) => {
+          const rows = table.getCoreRowModel().rows.filter((row) => row.getCanSelect())
+          const ticked = rows.filter((row) => row.getIsSelected()).length
+          return (
+            <Checkbox
+              aria-label={t('data.select.all', { count: rows.length })}
+              checked={
+                rows.length > 0 && ticked === rows.length
+                  ? true
+                  : ticked > 0
+                    ? 'indeterminate'
+                    : false
+              }
+              onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
+            />
+          )
+        },
+        // The click stops here: ticking a row must not open its editor.
+        cell: ({ row }) => (
+          <Checkbox
+            aria-label={t('data.select.row', {
+              date: f.date(row.original.date),
+              type: t(TYPE_LABEL[row.original.event_type]),
+              symbol: identityOf(row.original).ticker ?? identityOf(row.original).label ?? ABSENT,
+            })}
+            checked={row.getIsSelected()}
+            disabled={!row.getCanSelect()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            onClick={(click) => click.stopPropagation()}
+          />
+        ),
+      },
+      {
+        id: 'date',
+        header: () => t('data.column.date'),
+        cell: ({ row }) => (
+          <span className="tabular whitespace-nowrap">{f.date(row.original.date)}</span>
+        ),
+      },
+      {
+        id: 'type',
+        header: () => t('data.column.type'),
+        cell: ({ row }) => (
+          <span
+            className={cn(
+              'inline-block rounded-md px-2 py-0.5 text-2xs font-medium',
+              TYPE_BADGE[row.original.event_type],
+            )}
+          >
+            {t(TYPE_LABEL[row.original.event_type])}
+          </span>
+        ),
+      },
+      {
+        id: 'what',
+        header: () => t('data.column.what'),
+        // The ticker in first rank, the label in second — and the label alone
+        // where there is no security to name.
+        cell: ({ row }) => {
+          const identity = identityOf(row.original)
+          return (
+            <>
+              <Identity event={row.original} onEdit={onEdit} />
+              {identity.ticker !== null && identity.label !== null ? (
+                <span className="block text-2xs text-muted-foreground">{identity.label}</span>
+              ) : null}
+            </>
+          )
+        },
+      },
+      money('quantity', 'data.column.quantity', (event) => f.quantity(event.quantity)),
+      money('unitPrice', 'data.column.unitPrice', (event) =>
+        f.currency(event.unit_price, currency),
+      ),
+      money('fee', 'data.column.fee', (event) => f.currency(event.fee, currency)),
+      money('amount', 'data.column.amount', (event) => f.currency(event.amount, currency)),
+      {
+        id: 'account',
+        header: () => t('data.column.account'),
+        // An account id is typed, not written: the mono face is what says so,
+        // and it is the one the accounts page already sets an id in
+        // (`AccountDetail`, `AccountsRail`).
+        cell: ({ row }) => (
+          <span className="inline-block rounded-md bg-accent px-2 py-0.5 font-mono text-2xs text-foreground/85">
+            {accountOf(row.original)}
+          </span>
+        ),
+      },
+      {
+        id: 'remove',
+        // The last heading is the row's own gesture, and it is named for a
+        // reader who cannot see the icon under it. It is not the provenance
+        // column coming back: what it carries discriminates on every row,
+        // which is the exact test the padlock failed.
+        header: () => <span className="sr-only">{t('data.row.delete')}</span>,
+        // The removal, at the unit. It stops the click from reaching the row:
+        // the two gestures live on one line, and a reader who asks to delete
+        // must not be handed the editor underneath the box that asks them to
+        // confirm.
+        cell: ({ row }) =>
+          isEditable(row.original) ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('data.row.delete')}
+              className="size-7 text-muted-foreground hover:text-destructive"
+              onClick={(click) => {
+                click.stopPropagation()
+                onRemove(row.original)
+              }}
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+            </Button>
+          ) : null,
+      },
+    ]
+  }, [t, f, currency, onEdit, onRemove])
+
+  const table = useTable({
+    features,
+    columns,
+    data: events as LedgerEvent[],
+    getRowId: (event, index) => rowKey(event, index),
+    // A row with no key is addressable by nothing, so it cannot be ticked.
+    enableRowSelection: (row) => isEditable(row.original),
+    state: { rowSelection },
+    onRowSelectionChange,
+  })
+
   // The header stays put while the body scrolls under it: on a table revealed
   // forty rows at a time, a heading that leaves the viewport takes the meaning
-  // of nine columns with it. The ground is opaque because the rows pass beneath.
+  // of ten columns with it. The ground is opaque because the rows pass beneath.
   // The rule under it is a `box-shadow` and not the row's `border-b`: preflight
   // sets `border-collapse: collapse`, and under collapsed borders the border
   // belongs to the table box rather than to the cell — so a stuck header keeps
@@ -137,107 +330,51 @@ export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableP
     <Table containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto rounded-md border">
       <caption className="sr-only">{t('data.ledger.label')}</caption>
       <TableHeader>
-        <TableRow>
-          <TableHead className={head}>{t('data.column.date')}</TableHead>
-          <TableHead className={head}>{t('data.column.type')}</TableHead>
-          <TableHead className={head}>{t('data.column.what')}</TableHead>
-          <TableHead className={cn(head, 'text-right')}>{t('data.column.quantity')}</TableHead>
-          <TableHead className={cn(head, 'text-right')}>{t('data.column.unitPrice')}</TableHead>
-          <TableHead className={cn(head, 'text-right')}>{t('data.column.fee')}</TableHead>
-          <TableHead className={cn(head, 'text-right')}>{t('data.column.amount')}</TableHead>
-          <TableHead className={head}>{t('data.column.account')}</TableHead>
-          {/* The ninth heading is the row's own gesture, and it is named for a
-              reader who cannot see the icon under it. It is not the provenance
-              column coming back: what it carries discriminates on every row,
-              which is the exact test the padlock failed. */}
-          <TableHead className={cn(head, 'w-11')}>
-            <span className="sr-only">{t('data.row.delete')}</span>
-          </TableHead>
-        </TableRow>
+        {table.getHeaderGroups().map((group) => (
+          <TableRow key={group.id}>
+            {group.headers.map((header) => (
+              <TableHead key={header.id} className={cn(head, ALIGN[header.column.id])}>
+                {flexRender(header.column.columnDef.header, header.getContext())}
+              </TableHead>
+            ))}
+          </TableRow>
+        ))}
       </TableHeader>
       <TableBody>
-        {events.map((event, index) => {
-          const identity = identityOf(event)
-          return (
+        {/* The reveal is a slice of the row model, never of the data: what is
+            not drawn yet is still in the table, and still tickable. */}
+        {table
+          .getRowModel()
+          .rows.slice(0, Math.max(budget, 0))
+          .map((row) => (
             // **The whole row opens the editor** (#834), which is the shares
             // table's own gesture one page over: the button on the name stays,
             // and it is the keyboard's way in rather than a duplicate. A row
             // with no key is addressable by nothing, so it opens nothing.
             <TableRow
-              key={rowKey(event, index)}
-              className={cn(isEditable(event) && 'cursor-pointer')}
-              onClick={isEditable(event) ? () => onEdit(event) : undefined}
+              key={row.id}
+              data-state={row.getIsSelected() ? 'selected' : undefined}
+              className={cn(isEditable(row.original) && 'cursor-pointer')}
+              onClick={isEditable(row.original) ? () => onEdit(row.original) : undefined}
             >
-              <TableCell className="tabular whitespace-nowrap">{f.date(event.date)}</TableCell>
-              <TableCell>
-                <span
+              {row.getAllCells().map((cell) => (
+                <TableCell
+                  key={cell.id}
                   className={cn(
-                    'inline-block rounded-md px-2 py-0.5 text-2xs font-medium',
-                    TYPE_BADGE[event.event_type],
+                    ALIGN[cell.column.id],
+                    cell.column.id === 'remove' && 'p-0 pr-2 text-right',
                   )}
+                  // A click that misses the box by a few pixels is still a
+                  // tick, never the editor.
+                  onClick={
+                    cell.column.id === 'select' ? (click) => click.stopPropagation() : undefined
+                  }
                 >
-                  {t(TYPE_LABEL[event.event_type])}
-                </span>
-              </TableCell>
-
-              {/* The ticker in first rank, the label in second — and the label
-                  alone where there is no security to name. */}
-              <TableCell>
-                <Identity event={event} onEdit={onEdit} />
-                {identity.ticker !== null && identity.label !== null ? (
-                  <span className="block text-2xs text-muted-foreground">{identity.label}</span>
-                ) : null}
-              </TableCell>
-
-              {/* The four money columns are set in the **mono** face on top of the
-              tabular figures: read down a column of forty rows, the two
-              together are what lets a comma line up with a comma. */}
-              <TableCell className="text-right font-mono tabular">
-                {f.quantity(event.quantity)}
-              </TableCell>
-              <TableCell className="text-right font-mono tabular">
-                {f.currency(event.unit_price, currency)}
-              </TableCell>
-              <TableCell className="text-right font-mono tabular">
-                {f.currency(event.fee, currency)}
-              </TableCell>
-              <TableCell className="text-right font-mono tabular">
-                {f.currency(event.amount, currency)}
-              </TableCell>
-
-              {/* An account id is typed, not written: the mono face is what
-                  says so, and it is the one the accounts page already sets an
-                  id in (`AccountDetail`, `AccountsRail`). */}
-              <TableCell>
-                <span className="inline-block rounded-md bg-accent px-2 py-0.5 font-mono text-2xs text-foreground/85">
-                  {accountOf(event)}
-                </span>
-              </TableCell>
-
-              {/* The removal, at the unit. It stops the click from
-                  reaching the row: the two gestures live on one line, and a
-                  reader who asks to delete must not be handed the editor
-                  underneath the box that asks them to confirm. */}
-              <TableCell className="p-0 pr-2 text-right">
-                {isEditable(event) ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('data.row.delete')}
-                    className="size-7 text-muted-foreground hover:text-destructive"
-                    onClick={(click) => {
-                      click.stopPropagation()
-                      onRemove(event)
-                    }}
-                  >
-                    <Trash2 className="size-3.5" aria-hidden />
-                  </Button>
-                ) : null}
-              </TableCell>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              ))}
             </TableRow>
-          )
-        })}
+          ))}
       </TableBody>
     </Table>
   )

@@ -301,7 +301,7 @@ async function get<T>(path: string): Promise<T> {
  * `problem+json` whose `type` the caller branches on, exactly like a failed
  * read. There is no second error contract for writes.
  */
-async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unknown): Promise<T> {
+async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body: unknown): Promise<T> {
   return unwrap<T>(
     await fetch(path, {
       method,
@@ -1748,7 +1748,7 @@ interface PurgeResult {
 // There was a `GET /api/imports` and a `DELETE /api/imports/<id>` here, with a
 // record type and a revocation to go with them. They left with the population
 // they existed for (#816): nothing persists that could be listed, and undoing an
-// import is `deleteEvents` over the ledger's own reduction. What is left is the
+// import is `deleteEvents` over its ticked rows. What is left is the
 // receipt, which describes a gesture and outlives nothing.
 // ------------------------------------------------------------------------- //
 
@@ -1894,19 +1894,14 @@ export const api = {
    */
   removeEvent: (id: string) => remove<{ id: string; removed: boolean }>(eventPath(id)),
   /**
-   * The reduction, deleted whole (#814).
+   * The ticked rows, deleted whole (#1113).
    *
-   * It carries the **five export parameters** and never a list of ids: what the
-   * table shows is what the server retains, arrived at once over one contract —
-   * and a list assembled here would be a second reading of the reduction, made
-   * against a snapshot rather than against the store.
-   *
-   * An empty query string is refused by the server in `422`, deliberately: the
-   * caller is expected not to offer the gesture at all, and the route is the
-   * guard for the client that forgot its own.
+   * The ids travel in a JSON body and never in the query string: a few
+   * thousand of them overflow a proxy's URL limit. An id already gone is
+   * skipped by the server, and the answer counts what actually left.
    */
-  deleteEvents: (params: URLSearchParams) =>
-    remove<BulkRemoval>(`${ROUTES.events}?${params.toString()}`),
+  deleteEvents: (ids: readonly string[]) =>
+    send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
   accountHistory: (account: string) =>
     get<AccountHistoryResponse>(accountHistoryPath(account)),
   positions: () => get<PositionsResponse>(ROUTES.positions),

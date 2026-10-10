@@ -883,27 +883,45 @@ def delete_event(event_id: str):
 
 @api_bp.delete('/events')
 def delete_events():
-    """Remove every event the ledger's own reduction retains (#814)."""
-    try:
-        selection = _selection()
-    except _InvalidParameter as exc:
-        return unprocessable_request(str(exc), key=exc.key)
+    """Remove the events the reader ticked (#1113).
 
-    if not selection.reduces:
+    The ids travel in a JSON body, ``{"ids": ["12", "13"]}``, and never in the
+    query string: a few thousand of them overflow a proxy's URL limit. An id
+    that no longer exists is skipped, and the answer counts what actually left.
+    """
+    body = _json_object()
+    raw = body.get('ids') if body is not None else None
+    if not isinstance(raw, list) or not raw:
         return unprocessable_request(
-            "a bulk delete takes the ledger's own reduction: one of q, type, "
-            "account, symbol, since or until. Reduce on something that covers "
-            "the whole ledger to empty it")
+            "a bulk delete takes a non-empty list of event ids", key='ids')
+    keys = [_ticked_key(item) for item in raw]
+    if None in keys:
+        return unprocessable_request(
+            "every event id must be an integer", key='ids')
 
     runtime = current_runtime()
     try:
         with runtime.config_manager.writing() as opened:
-            removed = entries.remove_selection(opened, selection)
+            removed = entries.remove_keys(opened, keys)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_REMOVE)
 
     main.replay_after_write(runtime)
     return jsonify({'events_removed': removed})
+
+
+def _ticked_key(item: Any) -> Optional[int]:
+    """One member of ``ids`` as a key: an integer, or a string of digits only."""
+    if isinstance(item, bool):
+        return None
+    if isinstance(item, int):
+        return item
+    if isinstance(item, str) and _DIGITS.fullmatch(item):
+        return int(item)
+    return None
+
+
+_DIGITS = re.compile(r'[0-9]+')
 
 
 def _entry_key(event_id: str) -> Optional[int]:

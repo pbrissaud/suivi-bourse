@@ -15,9 +15,9 @@ that a method was called — the ticket's rules are rules about *rows*:
 import pytest
 
 from application import entries
+from application import ledger
 from application import positions
 from application.events.loader import EventLoader
-from application.events import export as events_export
 from application.events.aggregator import AggregationError
 from application.events.schemas import CashState
 from application.main import ConfigurationManager
@@ -111,14 +111,14 @@ def test_an_account_with_no_cash_event_has_no_state_row(store, tmp_path):
 def test_emptying_the_ledger_takes_the_positions_with_it(store, tmp_path):
     """What forgetting an import used to do, done by the gesture that replaced it.
 
-    The bulk deletion over the ledger's own reduction (#814): the rows
+    The bulk deletion of every ticked row (#814, #1113): the rows
     go, and the two tables the replay owns go with them.
     """
     manager = _manager(store, tmp_path)
     manager.current()
     assert positions.read_positions(store)
 
-    entries.remove_selection(store, events_export.Selection())
+    entries.remove_keys(store, [event.id for event in ledger.read_events(store)])
     manager.replay()
 
     assert positions.read_positions(store) == []
@@ -132,7 +132,7 @@ def test_a_position_the_ledger_no_longer_names_leaves(store, tmp_path):
     # The ledger stops naming AAPL: the rows it holds are removed and the
     # corrected ones written — which is what *re-drop the corrected file*
     # became once a row could be reached one at a time.
-    entries.remove_selection(store, events_export.Selection())
+    entries.remove_keys(store, [event.id for event in ledger.read_events(store)])
     _write(store, tmp_path / "events" / "2024.csv",
            EVENTS_CSV.replace("AAPL,Apple Inc", "MSFT,Microsoft"))
     manager.reload()
