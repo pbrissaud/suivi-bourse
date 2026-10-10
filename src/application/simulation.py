@@ -140,7 +140,10 @@ def _tax(account: Account, gain: float, proceeds: float,
         # The money stays in the wrapper; what it would owe on the way out is
         # the plan's prorata, so the other lines' latent losses lower it.
         return 0.0, _if_withdrawn(account, proceeds, now), None
-    return _project(account, gain, now), None, None
+    tax = _project(account, gain, now)
+    # A model this version would refuse projects nothing, and says so rather
+    # than leaving a null tax that reads like an unpriced line.
+    return tax, None, None if tax is not None else 'unreadable_model'
 
 
 def _if_withdrawn(account: Account, proceeds: float,
@@ -186,6 +189,12 @@ def simulate_arbitrage(from_account: Account, symbol: str, qty: float,
         raise SimulationRefused('source and target are the same account')
     sale = simulate_sale(from_account, symbol, qty, now=now)
     payment = sale['net_proceeds']
+    if from_account.kind == taxation.AGED_FLAT_REALISED:
+        # Paid into another account, the money leaves the wrapper: the exit
+        # tax the sale prices as ``if_withdrawn`` is due on the way out.
+        withdrawn = sale['if_withdrawn']
+        payment = (None if payment is None or withdrawn is None
+                   else payment - withdrawn)
 
     warnings: List[Dict[str, Any]] = []
     if is_pea(to_account):

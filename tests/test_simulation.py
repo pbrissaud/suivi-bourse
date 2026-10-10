@@ -288,3 +288,30 @@ def test_pea_to_pea_warnings_come_in_table_order():
 
     assert codes(result) == ['pea_ceiling_exceeded', 'pea_eligibility_unknown',
                              'pea_withdrawal_before_threshold']
+
+
+def test_an_unreadable_model_says_so():
+    sale = simulate_sale(account(taxation.FLAT_REALISED, {'rate': 'high'},
+                                 [CW8]), 'CW8.PA', 10, now=NOW)
+
+    assert (sale['tax_now'], sale['reason']) == (None, 'unreadable_model')
+    assert sale['net_proceeds'] is None
+
+
+def test_a_payment_out_of_an_aged_wrapper_is_net_of_its_exit_tax():
+    target = account(taxation.FLAT_REALISED, CTO, id='cto')
+
+    result = simulate_arbitrage(pea(), 'A', 9, target, now=date(2025, 6, 1))
+
+    # proceeds 1 800, exit tax 200 × 30 % = 60.
+    assert result['sale']['net_proceeds'] == pytest.approx(1_800.0)
+    assert result['payment'] == pytest.approx(1_740.0)
+
+
+def test_an_unknown_exit_tax_leaves_the_payment_unknown():
+    target = account(taxation.FLAT_REALISED, CTO, id='cto')
+
+    result = simulate_arbitrage(pea(first_payment=None), 'A', 9, target,
+                                now=NOW)
+
+    assert result['payment'] is None
