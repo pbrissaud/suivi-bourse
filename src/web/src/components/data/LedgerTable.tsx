@@ -323,8 +323,7 @@ export function LedgerTable({
   // sets `border-collapse: collapse`, and under collapsed borders the border
   // belongs to the table box rather than to the cell — so a stuck header keeps
   // its ground and lets its own separator scroll away with the rows.
-  const head =
-    'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)]'
+  const head = 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)]'
 
   return (
     <Table containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto rounded-md border">
@@ -386,13 +385,7 @@ export function LedgerTable({
  * has a key. A column for it would fail the same test the padlock failed: one
  * heading repeating on 285 rows what 285 rows already share.
  */
-function Identity({
-  event,
-  onEdit,
-}: {
-  event: LedgerEvent
-  onEdit: (event: LedgerEvent) => void
-}) {
+function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: LedgerEvent) => void }) {
   const identity = identityOf(event)
   const name = identity.ticker ?? identity.label
 

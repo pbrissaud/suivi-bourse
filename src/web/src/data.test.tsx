@@ -67,7 +67,9 @@ describe('one route, one thing', () => {
     // `/settings`, and a bar holding a choice of one is not a bar.
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
-    expect(await screen.findByRole('heading', { level: 1, name: 'Grand livre' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Grand livre' }),
+    ).toBeInTheDocument()
   })
 
   it('renders the ledger for a hash that used to name a tab, and for any other', async () => {
@@ -118,8 +120,7 @@ describe('the columns of the ledger', () => {
     // read-only per row rendered 285 identical locks on 285 rows: a marker that
     // does not discriminate is noise however correct it is — which is now true
     // of the provenance too, every row having the same nothing to say about it.
-    for (const absent of ['Nom', 'Symbole', 'Notes', 'Lecture seule', 'Verrou',
-                          'Provenance']) {
+    for (const absent of ['Nom', 'Symbole', 'Notes', 'Lecture seule', 'Verrou', 'Provenance']) {
       expect(within(ledger()).queryByRole('columnheader', { name: absent })).not.toBeInTheDocument()
     }
     expect(screen.queryByText('🔒')).not.toBeInTheDocument()
@@ -160,9 +161,12 @@ describe('the columns of the ledger', () => {
 
     // A ledger is opened to check what has just happened.
     expect(rowsOf(ledger())).toHaveLength(4)
-    expect(
-      rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[1].textContent),
-    ).toEqual(['10 févr. 2026', '12 janv. 2026', '5 janv. 2026', '24 déc. 2025'])
+    expect(rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[1].textContent)).toEqual([
+      '10 févr. 2026',
+      '12 janv. 2026',
+      '5 janv. 2026',
+      '24 déc. 2025',
+    ])
     expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
   })
@@ -380,9 +384,7 @@ describe('the reduction, which is what pays for no pagination', () => {
 
     const months = await screen.findByRole('group', { name: 'Mois' })
     expect(within(months).getAllByRole('button')).toHaveLength(12)
-    expect(
-      within(months).getByRole('button', { name: 'janv. · 2 événements' }),
-    ).toBeInTheDocument()
+    expect(within(months).getByRole('button', { name: 'janv. · 2 événements' })).toBeInTheDocument()
 
     await user.click(within(months).getByRole('button', { name: /^janv\./ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
@@ -571,10 +573,7 @@ describe('a reduction in force always has the chip that releases it', () => {
     // The gesture was *forget this import* until #816; it is the deletion on
     // the reduction now, which is a **better** subject for this
     // case: the rows that leave are exactly the rows the chip retains.
-    const withBeta = [
-      ...ledgerEvents(),
-      anEvent({ id: '12', date: '2026-02-11', account: 'beta' }),
-    ]
+    const withBeta = [...ledgerEvents(), anEvent({ id: '12', date: '2026-02-11', account: 'beta' })]
     server.use(
       http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(withBeta))),
       http.delete(ROUTES.events, () => {
@@ -658,7 +657,9 @@ describe('deleting the ticked rows (#1113)', () => {
 
     await user.click(rowBox(ledger(), 0))
     await user.click(rowBox(ledger(), 2))
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }),
+    )
 
     const box = await screen.findByRole('dialog')
     expect(
@@ -726,7 +727,9 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(within(types).getByRole('button', { name: /^Achat/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
 
-    await user.click(screen.getByRole('checkbox', { name: 'Sélectionner les 120 événements filtrés' }))
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Sélectionner les 120 événements filtrés' }),
+    )
     expect(
       screen.getByRole('button', { name: 'Supprimer les 120 événements sélectionnés' }),
     ).toBeEnabled()
@@ -743,7 +746,9 @@ describe('deleting the ticked rows (#1113)', () => {
 
     await user.click(rowBox(ledger(), 0))
     await user.click(rowBox(ledger(), 2))
-    expect(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' })).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }),
+    ).toBeEnabled()
 
     // Row 2 is the deposit; filtering on purchases hides it.
     const types = screen.getByRole('group', { name: 'Type' })
@@ -755,7 +760,9 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(within(types).getByRole('button', { name: /^Tous les types/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
     expect(rowBox(ledger(), 2)).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' })).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }),
+    ).toBeEnabled()
   })
 
   it('never sends an id a filter hides, and reads the header off the shown rows', async () => {
@@ -812,8 +819,12 @@ describe('deleting the ticked rows (#1113)', () => {
       }),
     )
 
-    await user.click(screen.getByRole('checkbox', { name: 'Sélectionner les 4 événements filtrés' }))
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 4 événements sélectionnés' }))
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Sélectionner les 4 événements filtrés' }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'Supprimer les 4 événements sélectionnés' }),
+    )
     const box = await screen.findByRole('dialog')
     expect(within(box).queryByText(/Vider le grand livre/)).not.toBeInTheDocument()
     await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
@@ -839,7 +850,9 @@ describe('deleting the ticked rows (#1113)', () => {
 
     await user.click(rowBox(ledger(), 0))
     await user.click(rowBox(ledger(), 1))
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }),
+    )
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -887,7 +900,9 @@ describe('deleting the ticked rows (#1113)', () => {
 
     await user.click(rowBox(ledger(), 0))
     await user.click(rowBox(ledger(), 1))
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Supprimer les 2 événements sélectionnés' }),
+    )
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -1091,14 +1106,11 @@ describe('the create form, which is the onboarding', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     const types = await openTheForm(user)
 
-    expect(within(types).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
-      'Achat',
-      'Vente',
-      'Attribution',
-      'Dividende',
-      'Versement',
-      'Retrait',
-    ])
+    expect(
+      within(types)
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
+    ).toEqual(['Achat', 'Vente', 'Attribution', 'Dividende', 'Versement', 'Retrait'])
     // Six codes are a decoding exercise at the exact moment nothing is there to
     // decode them against.
     for (const code of ['BUY', 'SELL', 'GRANT', 'DIVIDEND', 'DEPOSIT', 'WITHDRAWAL']) {
@@ -1144,7 +1156,9 @@ describe('the create form, which is the onboarding', () => {
     await openTheForm(user)
     const panel = screen.getByRole('dialog')
     expect(panel).toHaveAttribute('data-slot', 'sheet-content')
-    expect(within(panel).getByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('radiogroup', { name: 'Ce qui s’est passé' }),
+    ).toBeInTheDocument()
   })
 
   it('carries the two icons of the page, and the table carries none', async () => {
@@ -1209,9 +1223,7 @@ describe('the create form, which is the onboarding', () => {
     // overwrite the one answer the owner is the only one who can give.
     await user.clear(price)
     expect(price).toHaveValue('')
-    await waitFor(() =>
-      expect(screen.queryByText(/cours de clôture du/)).not.toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.queryByText(/cours de clôture du/)).not.toBeInTheDocument())
     expect(price).toHaveValue('')
   })
 
@@ -1254,8 +1266,14 @@ describe('the create form, which is the onboarding', () => {
     // is a price and not an artefact — and a figure trimmed on open is a figure
     // the next save rewrites without the reader touching the field.
     const precise = aTypedEvent({
-      id: 'g2', event_type: 'GRANT', date: '2026-02-28', symbol: 'ZZA',
-      quantity: 5, unit_price: 40.1234, amount: null, fee: null,
+      id: 'g2',
+      event_type: 'GRANT',
+      date: '2026-02-28',
+      symbol: 'ZZA',
+      quantity: 5,
+      unit_price: 40.1234,
+      amount: null,
+      fee: null,
     })
     const { user } = renderData([precise])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
@@ -1324,8 +1342,14 @@ describe('the create form, which is the onboarding', () => {
     // stands, and the day caption is a claim about *the field's* value — under
     // somebody else's number it would be a precise untruth.
     const priced = aTypedEvent({
-      id: 'g1', event_type: 'GRANT', date: '2026-02-28', symbol: 'ZZA',
-      quantity: 5, unit_price: 40, amount: null, fee: null,
+      id: 'g1',
+      event_type: 'GRANT',
+      date: '2026-02-28',
+      symbol: 'ZZA',
+      quantity: 5,
+      unit_price: 40,
+      amount: null,
+      fee: null,
     })
     const { user } = renderData([priced])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
@@ -1488,7 +1512,9 @@ describe('the ledger at zero', () => {
     expect(action).toHaveAttribute('data-variant', 'outline')
 
     await user.click(action)
-    expect(await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
+    ).toBeInTheDocument()
   })
 })
 
@@ -1569,7 +1595,6 @@ async function openOnABuy(user: ReturnType<typeof renderApp>['user']) {
 }
 
 describe('le champ Titre suggère', () => {
-
   it('offers the titles the ledger names, ticker first and name beside it', async () => {
     // The fixture's ledger names two securities and one cash movement. The
     // movement names no security, so it is not a title.
@@ -1635,10 +1660,7 @@ describe('le champ Titre suggère', () => {
 
     await user.type(field, 'zz')
     await user.keyboard('{ArrowDown}')
-    expect(within(suggestions()).getAllByRole('option')[0]).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    expect(within(suggestions()).getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true')
     await user.keyboard('{Enter}')
 
     expect(field).toHaveValue('ZZA')
@@ -1773,8 +1795,12 @@ describe('le champ Titre suggère', () => {
     const { user } = renderData([
       anEvent({ id: 'b1', date: '2025-06-02', symbol: 'ZZD', name: 'Zeta Delta', quantity: 10 }),
       anEvent({
-        id: 's1', date: '2025-09-09', event_type: 'SELL', symbol: 'ZZD',
-        name: 'Zeta Delta', quantity: 10,
+        id: 's1',
+        date: '2025-09-09',
+        event_type: 'SELL',
+        symbol: 'ZZD',
+        name: 'Zeta Delta',
+        quantity: 10,
       }),
     ])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
@@ -1826,7 +1852,6 @@ describe('le champ Titre suggère', () => {
 // --------------------------------------------------------------------------- //
 
 describe('le champ Titre se conduit', () => {
-
   it('opens on the arrow alone, and the empty query is *everything you own*', async () => {
     // `matchesQuery` answers true to an empty needle, which is what makes the
     // list *what you hold* before it is *what you typed*. Nothing here has been
@@ -1848,8 +1873,16 @@ describe('le champ Titre se conduit', () => {
     // silence rather than with an empty box.
     const { user } = renderData([
       anEvent({
-        id: 'cash', date: '2026-01-05', event_type: 'DEPOSIT', symbol: null, name: null,
-        notes: 'Virement entrant', quantity: null, unit_price: null, fee: null, amount: 500,
+        id: 'cash',
+        date: '2026-01-05',
+        event_type: 'DEPOSIT',
+        symbol: null,
+        name: null,
+        notes: 'Virement entrant',
+        quantity: null,
+        unit_price: null,
+        fee: null,
+        amount: 500,
       }),
     ])
     await waitFor(() => expect(ledger()).toBeInTheDocument())

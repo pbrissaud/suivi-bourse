@@ -82,9 +82,7 @@ describe('the head states the account, and the curve is in it', () => {
     expect(within(detail).getByRole('group', { name: 'Valeur totale' })).toHaveTextContent(
       /1\s?800,00/,
     )
-    expect(within(detail).getByRole('group', { name: 'Versé net' })).toHaveTextContent(
-      /1\s?478,00/,
-    )
+    expect(within(detail).getByRole('group', { name: 'Versé net' })).toHaveTextContent(/1\s?478,00/)
     expect(within(detail).queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
     expect(
       within(detail).queryByRole('group', { name: 'Plus-value latente' }),
@@ -106,18 +104,13 @@ describe('the head states the account, and the curve is in it', () => {
     })
     expect(figure.closest('[aria-hidden]')).toBeNull()
 
-    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(
-      /[  ]/g,
-      ' ',
-    )
+    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
     expect(said).toMatch(/^Valeur totale et Versé net, du .+ au .+\./)
     expect(said).toMatch(/Valeur totale : plus haut .+ le .+, plus bas .+ le .+\./)
 
     // The plot's own name must differ from the section's, or a by-label query
     // matches two nodes. The section keeps exactly one.
-    expect(
-      within(detail).getAllByLabelText('Valeur face à ce que vous avez versé'),
-    ).toHaveLength(1)
+    expect(within(detail).getAllByLabelText('Valeur face à ce que vous avez versé')).toHaveLength(1)
 
     // Opening another account redraws this curve in place, so the region that
     // reports it has to outlive the swap.
@@ -309,7 +302,13 @@ describe('the five blocks', () => {
   it('draws the weight of each line beside the figure that states it', async () => {
     const { user } = renderAccounts(defaultAccounts(), [
       ...defaultPositions(),
-      aPosition({ account: 'alpha', symbol: 'ZZF', name: 'Zeta Phi', quantity: 2, cost_basis: 200 }),
+      aPosition({
+        account: 'alpha',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 2,
+        cost_basis: 200,
+      }),
     ])
     const detail = await open(user, 'Alpha')
 
@@ -389,7 +388,9 @@ describe('the five blocks', () => {
     // resolved.
     server.use(
       http.get(ROUTES.events, () =>
-        HttpResponse.json(aLedgerPayload(ledgerEvents().map((event) => ({ ...event, account: '' })))),
+        HttpResponse.json(
+          aLedgerPayload(ledgerEvents().map((event) => ({ ...event, account: '' }))),
+        ),
       ),
     )
     const { user } = renderAccounts()
@@ -422,9 +423,7 @@ describe('no range control, and a cumulative ratio in its place', () => {
     const detail = await open(user, 'Gamma')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
-    expect(
-      within(detail).getByRole('group', { name: 'Performance totale' }),
-    ).toHaveTextContent('—')
+    expect(within(detail).getByRole('group', { name: 'Performance totale' })).toHaveTextContent('—')
   })
 
   it('offers no window to read it over, on this page or anywhere in it', async () => {

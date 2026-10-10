@@ -70,9 +70,7 @@ describe('The bubble’s form, naked', () => {
 
     // Zeta Alpha: 1 300,00 − 1 000,00 = +300,00 latent, nothing realised,
     // 25,00 of dividends — and their sum is the head, checkable by eye.
-    expect(within(head).getByRole('group', { name: 'Latente' })).toHaveTextContent(
-      /300,00/,
-    )
+    expect(within(head).getByRole('group', { name: 'Latente' })).toHaveTextContent(/300,00/)
     expect(within(head).getByRole('group', { name: 'Dividendes' })).toHaveTextContent(/25,00/)
     expect(head).toHaveTextContent(/325,00/)
   })
@@ -81,9 +79,7 @@ describe('The bubble’s form, naked', () => {
     const { user } = renderShares()
     const sheet = await openSheet(user)
 
-    await user.click(
-      within(sheet).getByRole('button', { name: 'Ce que veut dire Gain total' }),
-    )
+    await user.click(within(sheet).getByRole('button', { name: 'Ce que veut dire Gain total' }))
     // The bubble is portalled beside the sheet, so both are dialogs: the one
     // under test is named by what it says, which is the point of the bubble.
     const bubble = (await screen.findAllByRole('dialog')).find((node) =>
@@ -137,8 +133,22 @@ describe('the per-account breakdown', () => {
   it('comes back the moment the share is held on two accounts', async () => {
     const { user } = renderShares([
       ...sharesPortfolio(),
-      aPosition({ account: 'alpha', symbol: 'ZZF', name: 'Zeta Phi', quantity: 2, cost_basis: 200, price: 110 }),
-      aPosition({ account: 'beta', symbol: 'ZZF', name: 'Zeta Phi', quantity: 3, cost_basis: 300, price: 110 }),
+      aPosition({
+        account: 'alpha',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 2,
+        cost_basis: 200,
+        price: 110,
+      }),
+      aPosition({
+        account: 'beta',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 3,
+        cost_basis: 300,
+        price: 110,
+      }),
     ])
     await waitFor(() =>
       expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?850,00/),
@@ -148,7 +158,9 @@ describe('the per-account breakdown', () => {
 
     const table = within(sheet).getByRole('table', { name: 'Ce titre, compte par compte' })
     expect(
-      within(table).getAllByRole('columnheader').map((cell) => cell.textContent?.trim()),
+      within(table)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent?.trim()),
     ).toEqual(['Compte', 'Détenu', 'PRU', 'Valorisation', 'Latente'])
     // 2 × 110 = 220,00 against 200,00 and 3 × 110 = 330,00 against 300,00.
     const rows = within(table).getAllByRole('row').slice(1)
@@ -167,8 +179,20 @@ describe('the same dash is the same grey (#860)', () => {
     // dash, one column, two greys.
     const { user } = renderShares([
       ...sharesPortfolio(),
-      aClosedPosition({ account: 'alpha', symbol: 'ZZF', name: 'Zeta Phi', realised: 70, closed_at: '2025-06-01' }),
-      aClosedPosition({ account: 'beta', symbol: 'ZZF', name: 'Zeta Phi', realised: 30, closed_at: '2025-07-01' }),
+      aClosedPosition({
+        account: 'alpha',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        realised: 70,
+        closed_at: '2025-06-01',
+      }),
+      aClosedPosition({
+        account: 'beta',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        realised: 30,
+        closed_at: '2025-07-01',
+      }),
     ])
     await waitFor(() =>
       expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?300,00/),
@@ -198,12 +222,11 @@ describe('the chart, the list and the fundamentals stay', () => {
     const sheet = await openSheet(user)
 
     const range = within(sheet).getByRole('radiogroup', { name: 'Plage' })
-    expect(within(range).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
-      '1M',
-      '1A',
-      '2A',
-      'MAX',
-    ])
+    expect(
+      within(range)
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
+    ).toEqual(['1M', '1A', '2A', 'MAX'])
     expect(await within(sheet).findByText('Au relevé')).toBeInTheDocument()
   })
 

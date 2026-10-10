@@ -94,9 +94,7 @@ describe('the panel holds three registers under four subjects', () => {
     await openPanel({ facts: [], advisories: [anAdvisory()] })
 
     const advisory = card(/de liquidités non investies/)
-    expect(
-      within(advisory).getByRole('button', { name: 'Acquitter 30 jours' }),
-    ).toBeInTheDocument()
+    expect(within(advisory).getByRole('button', { name: 'Acquitter 30 jours' })).toBeInTheDocument()
     expect(panel().textContent).toContain('Réapparaîtra si la situation dure.')
   })
 
@@ -145,9 +143,7 @@ describe('the control that clears says what it clears', () => {
       advisories: [anAdvisory()],
     })
 
-    expect(
-      within(panel()).getByRole('button', { name: 'Tout acquitter (3)' }),
-    ).toBeEnabled()
+    expect(within(panel()).getByRole('button', { name: 'Tout acquitter (3)' })).toBeEnabled()
   })
 
   it('is disabled **with its reason in prose** when there is nothing in it', async () => {

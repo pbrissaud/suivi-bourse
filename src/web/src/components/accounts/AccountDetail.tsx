@@ -86,7 +86,6 @@ import { signClass } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
-
 const REASON_LABELS: Record<DegradedReason, MessageKey> = {
   withoutCashLedger: 'accounts.reason.withoutCashLedger',
   rebuilding: 'accounts.reason.rebuilding',
@@ -210,7 +209,8 @@ export function AccountDetail({
   const feesOnContributed = onContributed(row.transfer_fees ?? null, row.net_contributed)
   // The time-weighted rate the drawing puts under the annualised one. Stored as
   // an index on 100, read as a move — the dashboard's own arithmetic.
-  const twr = row.twr_index === null || row.twr_index === undefined ? null : (row.twr_index - 100) / 100
+  const twr =
+    row.twr_index === null || row.twr_index === undefined ? null : (row.twr_index - 100) / 100
 
   // **The whole series, and no window at all** (#833). The curve is drawn over
   // the account's own history from end to end: there is no control to ask for
@@ -296,67 +296,67 @@ export function AccountDetail({
                   reason left to hold them back while the positions are in
                   flight. The curve below still waits on its own read: one
                   frame, one wait, and it costs the figures nothing. */}
-                <p
-                  role="group"
-                  aria-label={t('accounts.figure.totalValue')}
-                  className="tabular text-5xl font-heavy tracking-tight"
-                >
-                  {f.currency(row.total_value, currency)}
-                </p>
-                {/* The two figures the value is a change **of** and **by**, on
+              <p
+                role="group"
+                aria-label={t('accounts.figure.totalValue')}
+                className="tabular text-5xl font-heavy tracking-tight"
+              >
+                {f.currency(row.total_value, currency)}
+              </p>
+              {/* The two figures the value is a change **of** and **by**, on
                     one line and a rung down: neither is the subject. */}
-                <p className="text-sm text-muted-foreground">
-                  <span role="group" aria-label={t('accounts.figure.netContributed')}>
-                    {t('accounts.figure.netContributed')}{' '}
-                    <span className="tabular font-mono text-foreground">
-                      {f.currency(row.net_contributed, currency)}
-                    </span>
+              <p className="text-sm text-muted-foreground">
+                <span role="group" aria-label={t('accounts.figure.netContributed')}>
+                  {t('accounts.figure.netContributed')}{' '}
+                  <span className="tabular font-mono text-foreground">
+                    {f.currency(row.net_contributed, currency)}
                   </span>
-                  {' · '}
-                  <span
-                    role="group"
-                    aria-label={t('accounts.figure.gain')}
-                    className="inline-flex items-baseline gap-1"
-                  >
-                    {t('accounts.figure.gain')}
-                    <Explain
-                      figure={t('accounts.figure.gain')}
-                      body="accounts.detail.gainTotal.explain"
-                      anchor="total-gain"
-                    />
-                    <span className={cn('tabular font-mono', signClass(row.gain_absolu))}>
-                      {f.currency(row.gain_absolu, currency)}
-                    </span>
+                </span>
+                {' · '}
+                <span
+                  role="group"
+                  aria-label={t('accounts.figure.gain')}
+                  className="inline-flex items-baseline gap-1"
+                >
+                  {t('accounts.figure.gain')}
+                  <Explain
+                    figure={t('accounts.figure.gain')}
+                    body="accounts.detail.gainTotal.explain"
+                    anchor="total-gain"
+                  />
+                  <span className={cn('tabular font-mono', signClass(row.gain_absolu))}>
+                    {f.currency(row.gain_absolu, currency)}
                   </span>
-                </p>
-                {/* Dropped at **zero and only at zero**: an install whose
+                </span>
+              </p>
+              {/* Dropped at **zero and only at zero**: an install whose
                 transfers are free reads no fourth term and never learns it
                 exists. `null` is a different sentence — the server has no day
                 to bound the fees by — and it renders, as a dash, because a
                 total that goes out incomplete owes the reader the cause under
                 it (#775). */}
-                {row.transfer_fees === 0 ? null : (
-                  <p
-                    role="group"
-                    aria-label={t('accounts.figure.fees')}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {t('accounts.figure.fees')}{' '}
-                    <span className="tabular font-mono">
-                      {f.currency(row.transfer_fees ?? null, currency)}
-                    </span>
-                    {feesOnContributed === null ? null : (
-                      <>
-                        {' · '}
-                        <span className="tabular font-mono">
-                          {t('accounts.figure.feesOnContributed', {
-                            percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
-                          })}
-                        </span>
-                      </>
-                    )}
-                  </p>
-                )}
+              {row.transfer_fees === 0 ? null : (
+                <p
+                  role="group"
+                  aria-label={t('accounts.figure.fees')}
+                  className="text-xs text-muted-foreground"
+                >
+                  {t('accounts.figure.fees')}{' '}
+                  <span className="tabular font-mono">
+                    {f.currency(row.transfer_fees ?? null, currency)}
+                  </span>
+                  {feesOnContributed === null ? null : (
+                    <>
+                      {' · '}
+                      <span className="tabular font-mono">
+                        {t('accounts.figure.feesOnContributed', {
+                          percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
+                        })}
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
             </div>
 
             {/* **`Performance totale`, and it is a change** — hence `f.percent`
@@ -516,7 +516,9 @@ export function AccountDetail({
             first thing on the page made of the positions and the sentence about
             them belongs to it. */}
         {terms === null ? (
-          failures.positions ? <Unreadable failure={failures.positions} /> : null
+          failures.positions ? (
+            <Unreadable failure={failures.positions} />
+          ) : null
         ) : (
           <Card className="gap-3">
             <CardHeader>
@@ -759,9 +761,7 @@ export function AccountDetail({
               <span className="hidden w-30 shrink-0 md:block lg:w-45">
                 {t('accounts.detail.lines.weight')}
               </span>
-              <span className="w-23 shrink-0 text-right lg:w-27.5">
-                {t('shares.column.value')}
-              </span>
+              <span className="w-23 shrink-0 text-right lg:w-27.5">{t('shares.column.value')}</span>
               <span className="w-15.5 shrink-0 text-right lg:w-20">
                 {t('shares.column.unrealised')}
               </span>
@@ -856,9 +856,7 @@ export function AccountDetail({
                   <li key={payer.symbol} className="flex flex-col gap-1 py-2 text-sm">
                     <span className="flex items-baseline gap-3">
                       <span className="min-w-0 flex-1 truncate font-medium">{payer.symbol}</span>
-                      <span className="tabular shrink-0">
-                        {f.currency(payer.amount, currency)}
-                      </span>
+                      <span className="tabular shrink-0">{f.currency(payer.amount, currency)}</span>
                       <span className="tabular w-16 shrink-0 text-right text-muted-foreground">
                         {f.percentPoints(payer.share * 100)}
                       </span>
@@ -875,7 +873,9 @@ export function AccountDetail({
         )}
 
         {last === null ? (
-          failures.events ? <Unreadable failure={failures.events} /> : null
+          failures.events ? (
+            <Unreadable failure={failures.events} />
+          ) : null
         ) : last.length === 0 ? null : (
           <Card>
             <CardHeader>

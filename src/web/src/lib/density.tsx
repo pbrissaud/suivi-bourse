@@ -26,9 +26,7 @@ export const DENSITY_STORAGE_KEY = 'sb.density'
 const CHOICES: DensityChoice[] = ['comfortable', 'compact']
 
 /** Absence — and anything unrecognised — means the roomier of the two. */
-function readDensityChoice(
-  storage: Pick<Storage, 'getItem'> | null | undefined,
-): DensityChoice {
+function readDensityChoice(storage: Pick<Storage, 'getItem'> | null | undefined): DensityChoice {
   const stored = storage?.getItem(DENSITY_STORAGE_KEY)
   return CHOICES.find((choice) => choice === stored) ?? 'comfortable'
 }
@@ -41,7 +39,9 @@ interface DensityContextValue {
 const DensityContext = createContext<DensityContextValue | null>(null)
 
 export function DensityProvider({ children }: { children: ReactNode }) {
-  const [choice, setChoiceState] = useState<DensityChoice>(() => readDensityChoice(browserStorage()))
+  const [choice, setChoiceState] = useState<DensityChoice>(() =>
+    readDensityChoice(browserStorage()),
+  )
 
   const setChoice = useCallback((next: DensityChoice) => {
     setChoiceState(next)

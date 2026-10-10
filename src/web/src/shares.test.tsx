@@ -152,13 +152,7 @@ describe('the folded section', () => {
     await user.click(fold())
 
     const table = screen.getByRole('table', { name: 'Positions soldées' })
-    expect(columnNames(table)).toEqual([
-      'Titre',
-      'Soldée le',
-      'Réalisée',
-      'Dividendes',
-      'Compte',
-    ])
+    expect(columnNames(table)).toEqual(['Titre', 'Soldée le', 'Réalisée', 'Dividendes', 'Compte'])
     // Those four would be an em dash on every row of the section.
     for (const absent of ['Cours', 'Détenu', 'PRU', 'Latente']) {
       expect(within(table).queryByRole('columnheader', { name: absent })).not.toBeInTheDocument()
@@ -262,7 +256,6 @@ describe('the nine columns of the live table', () => {
     expect(carried).toHaveTextContent(/—/)
     expect(carried).toHaveTextContent(/600,00/)
     expect(carried).toHaveTextContent(/0,00/)
-
   })
 
   it('names the missing rate instead of dashing it', async () => {
@@ -357,12 +350,15 @@ describe('the nine columns of the live table', () => {
     // *en attente du taux* over a portfolio whose currency was answered — and
     // sent its owner to a dial that had nothing to do with it.
     renderShares(
-      defaultPositions().map((position) => ({ ...position, terminal: false, price: null, converted: null })),
+      defaultPositions().map((position) => ({
+        ...position,
+        terminal: false,
+        price: null,
+        converted: null,
+      })),
     )
 
-    await waitFor(() =>
-      expect(head()).toHaveTextContent(/historique en cours de reconstitution/),
-    )
+    await waitFor(() => expect(head()).toHaveTextContent(/historique en cours de reconstitution/))
     expect(head()).not.toHaveTextContent(/en attente du taux/)
     // Named, never dashed: an em dash says *there is nothing to compute*
     // about a portfolio that is simply not finished being read.
@@ -526,16 +522,31 @@ describe('the account column at N ≥ 2', () => {
     // most ordinary case of the domain — so it is the rendering that bends.
     renderShares([
       ...sharesPortfolio(),
-      aPosition({ account: 'alpha', symbol: 'ZZF', name: 'Zeta Phi', quantity: 2, cost_basis: 200, price: 110 }),
-      aPosition({ account: 'beta', symbol: 'ZZF', name: 'Zeta Phi', quantity: 3, cost_basis: 300, price: 110 }),
+      aPosition({
+        account: 'alpha',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 2,
+        cost_basis: 200,
+        price: 110,
+      }),
+      aPosition({
+        account: 'beta',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 3,
+        cost_basis: 300,
+        price: 110,
+      }),
     ])
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?850,00/))
 
     const row = screen.getByRole('button', { name: 'Zeta Phi' }).closest('tr') as HTMLElement
-    expect(within(row).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      'alpha',
-      'beta',
-    ])
+    expect(
+      within(row)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['alpha', 'beta'])
     // One line, not two: 2 + 3 held, 500,00 of basis, 550,00 of value.
     expect(row).toHaveTextContent(/550,00/)
     expect(screen.getAllByRole('button', { name: 'Zeta Phi' })).toHaveLength(1)
@@ -594,12 +605,11 @@ describe('the chart', () => {
 
     await user.click(screen.getByRole('button', { name: 'Zeta Alpha' }))
     const range = await screen.findByRole('radiogroup', { name: 'Plage' })
-    expect(within(range).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
-      '1M',
-      '1A',
-      '2A',
-      'MAX',
-    ])
+    expect(
+      within(range)
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
+    ).toEqual(['1M', '1A', '2A', 'MAX'])
     // `3M` is gone: from February to December, the year-to-date covers it.
     expect(within(range).queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
 
@@ -629,10 +639,7 @@ describe('the chart', () => {
     })
     expect(figure.closest('[aria-hidden]')).toBeNull()
 
-    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(
-      /[  ]/g,
-      ' ',
-    )
+    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
     expect(said).toMatch(/^Cours, du .+ au .+\./)
     expect(said).toMatch(/Cours : plus haut .+ le .+, plus bas .+ le .+\./)
     // One curve and no reference line: nothing to say about a gap.
@@ -702,9 +709,7 @@ describe('the page in English', () => {
 
     const total = await screen.findByRole('group', { name: 'Value' })
     expect(total).toHaveTextContent(/2,300\.00/)
-    expect(
-      columnNames(screen.getByRole('table', { name: 'Held positions' })),
-    ).toEqual([
+    expect(columnNames(screen.getByRole('table', { name: 'Held positions' }))).toEqual([
       'Share',
       'Price',
       'Held',
@@ -726,7 +731,9 @@ describe('a portfolio with nothing closed', () => {
     renderShares(defaultPositions())
     // 1 300,00 + 400,00 + 600,00 carried at its cost = 2 300,00.
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    expect(screen.queryByRole('button', { name: /position(s)? soldée(s)?/ })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /position(s)? soldée(s)?/ }),
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -827,7 +834,11 @@ describe('every column sorts', () => {
     return within(liveTable())
       .getAllByRole('row')
       .slice(1)
-      .map((row) => within(row).getAllByRole('cell')[0].textContent?.replace(/Z[A-Z]+$/, ''))
+      .map((row) =>
+        within(row)
+          .getAllByRole('cell')[0]
+          .textContent?.replace(/Z[A-Z]+$/, ''),
+      )
   }
 
   it('gives all nine a control of their own, and its name is the column’s', async () => {
@@ -997,7 +1008,9 @@ describe('the grouping by account', () => {
     // One group would repeat the page header line for line — which is the
     // argument `accountBreakdown` already makes for the sheet — so the control
     // is not offered rather than offered and inert.
-    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))))
+    server.use(
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
+    )
     renderApp({ url: '/shares?account=alpha' })
     await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
     expect(screen.queryByRole('button', { name: 'Grouper par compte' })).not.toBeInTheDocument()
@@ -1041,7 +1054,9 @@ describe('the allocation', () => {
     // already names every slice with its exact percentage. A focus stop that
     // answers no key is worse than no focus stop.
     const legend = await screen.findByRole('list', { name: 'Répartition' })
-    const ring = legend.closest('[data-slot="card"]')?.querySelector('.recharts-responsive-container')
+    const ring = legend
+      .closest('[data-slot="card"]')
+      ?.querySelector('.recharts-responsive-container')
     expect(ring).not.toBeNull()
     expect(ring?.closest('[aria-hidden]')).not.toBeNull()
 
@@ -1132,9 +1147,9 @@ describe('the allocation', () => {
     await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
 
     const legend = within(await screen.findByRole('list', { name: 'Répartition' }))
-    expect(legend.getAllByRole('listitem').map((row) => (row.textContent ?? '').replace(/\s/g, ''))).toEqual([
-      'ZetaAlpha100,0%',
-    ])
+    expect(
+      legend.getAllByRole('listitem').map((row) => (row.textContent ?? '').replace(/\s/g, '')),
+    ).toEqual(['ZetaAlpha100,0%'])
     const card = screen
       .getByRole('list', { name: 'Répartition' })
       .closest('[data-slot="card"]') as HTMLElement

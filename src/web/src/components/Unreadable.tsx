@@ -19,9 +19,6 @@ export function Unreadable({ failure }: { failure: ReadFailure }) {
   const { t } = useI18n()
 
   return (
-    <EmptyState
-      title={t('empty.unread.title')}
-      description={t(failure.message, failure.values)}
-    />
+    <EmptyState title={t('empty.unread.title')} description={t(failure.message, failure.values)} />
   )
 }

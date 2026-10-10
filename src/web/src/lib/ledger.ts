@@ -368,7 +368,10 @@ export function yearBounds(year: string): { since: string; until: string } {
 export function monthBounds(year: string, month: number): { since: string; until: string } {
   const last = new Date(Date.UTC(Number(year), month, 0)).getUTCDate()
   const padded = String(month).padStart(2, '0')
-  return { since: `${year}-${padded}-01`, until: `${year}-${padded}-${String(last).padStart(2, '0')}` }
+  return {
+    since: `${year}-${padded}-01`,
+    until: `${year}-${padded}-${String(last).padStart(2, '0')}`,
+  }
 }
 
 /**
@@ -665,7 +668,12 @@ export function reveal(events: readonly LedgerEvent[], upTo: number): Reveal {
   // Clamped on both sides: a budget below zero draws nothing rather than
   // slicing from the end, and one above the reduction is simply the whole of it.
   const shown = Math.min(Math.max(upTo, 0), events.length)
-  return { rows: events.slice(0, shown), shown, total: events.length, atEnd: shown >= events.length }
+  return {
+    rows: events.slice(0, shown),
+    shown,
+    total: events.length,
+    atEnd: shown >= events.length,
+  }
 }
 
 /** The accounts an install actually uses, in the order they first appear. */

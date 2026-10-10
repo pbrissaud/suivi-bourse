@@ -129,10 +129,9 @@ describe('the allocation ramp', () => {
       const distances = allocationRamp(theme)
         .map(components)
         .map((stop) => Math.abs(stop.lightness - surface.lightness))
-      expect(
-        distances[0],
-        `rank 1 must be the furthest from the ${theme} ground`,
-      ).toBe(Math.max(...distances))
+      expect(distances[0], `rank 1 must be the furthest from the ${theme} ground`).toBe(
+        Math.max(...distances),
+      )
     }
   })
 

@@ -301,7 +301,11 @@ async function get<T>(path: string): Promise<T> {
  * `problem+json` whose `type` the caller branches on, exactly like a failed
  * read. There is no second error contract for writes.
  */
-async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body: unknown): Promise<T> {
+async function send<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  body: unknown,
+): Promise<T> {
   return unwrap<T>(
     await fetch(path, {
       method,
@@ -394,7 +398,10 @@ function filenameOf(response: Response, path: string): string {
  * collection is remove it whole (#724).
  */
 async function remove<T>(path: string): Promise<T> {
-  return unwrap<T>(await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }), path)
+  return unwrap<T>(
+    await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }),
+    path,
+  )
 }
 
 // ------------------------------------------------------------------------- //
@@ -1155,7 +1162,6 @@ export interface PortfolioTotalsResponse {
   totals: PortfolioTotals | null
 }
 
-
 /**
  * What the store actually served, **announced rather than guessed**.
  *
@@ -1874,11 +1880,7 @@ export const api = {
   removeTaxationModel: (id: string) =>
     remove<{ id: string; removed: boolean }>(taxationModelPath(id)),
   reassignEvents: (id: string) =>
-    send<{ account: string; reassigned: number }>(
-      accountReassignmentPath(id),
-      'POST',
-      {},
-    ),
+    send<{ account: string; reassigned: number }>(accountReassignmentPath(id), 'POST', {}),
   events: () => get<EventsResponse>(ROUTES.events),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
@@ -1900,14 +1902,11 @@ export const api = {
    * thousand of them overflow a proxy's URL limit. An id already gone is
    * skipped by the server, and the answer counts what actually left.
    */
-  deleteEvents: (ids: readonly string[]) =>
-    send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
-  accountHistory: (account: string) =>
-    get<AccountHistoryResponse>(accountHistoryPath(account)),
+  deleteEvents: (ids: readonly string[]) => send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
+  accountHistory: (account: string) => get<AccountHistoryResponse>(accountHistoryPath(account)),
   positions: () => get<PositionsResponse>(ROUTES.positions),
   portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
-  portfolioTotalsHistory: () =>
-    get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
+  portfolioTotalsHistory: () => get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
   positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
   movers: () => get<MoversResponse>(ROUTES.movers),
   investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
@@ -1915,8 +1914,7 @@ export const api = {
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   /** The close a grant is **suggested** at, and the day it came from (#1007). */
-  priceAt: (symbol: string, day: string) =>
-    get<PriceAtResponse>(priceAtPath(symbol, day)),
+  priceAt: (symbol: string, day: string) => get<PriceAtResponse>(priceAtPath(symbol, day)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
   // Typed for the caller, and **narrowed all the same** where it is read
   // (`lib/status.ts`): this is the one payload whose shape the dot has to
@@ -1946,8 +1944,7 @@ export const api = {
    * inventory, the chip went out with the card and the record's distinction had
    * no effect anybody could observe.
    */
-  standingAdvisories: () =>
-    get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
+  standingAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
   acknowledgeAdvisory: (key: string) =>
     send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
   // The way in (#811), and since #813 it is made twice on purpose: once with

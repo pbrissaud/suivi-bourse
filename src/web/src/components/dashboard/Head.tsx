@@ -158,8 +158,7 @@ export function DashboardHead({
       ? totalsRow.net_contributed + total.value - totalsRow.total_value
       : 0
   const totalValue = totalsRow?.total_value == null ? null : totalsRow.total_value + drift
-  const holdingsValue =
-    totalsRow?.holdings_value == null ? null : totalsRow.holdings_value + drift
+  const holdingsValue = totalsRow?.holdings_value == null ? null : totalsRow.holdings_value + drift
   // **The hero is the value, and on an install with no cash ledger the value
   // is the securities' alone** (#708: `total_value` is `NULL` there, and
   // `holdings_value` is written always). It is then said under its own name —
@@ -311,10 +310,7 @@ export function DashboardHead({
               gain — the one place in the product where the two are side by side
               at the scale of the portfolio. */}
           {holdingsValue === null || heroIsHoldings ? null : (
-            <Stat
-              label={t('dashboard.holdings')}
-              value={f.currency(holdingsValue, currency)}
-            />
+            <Stat label={t('dashboard.holdings')} value={f.currency(holdingsValue, currency)} />
           )}
           {totalsRow?.xirr == null ? null : (
             <Stat

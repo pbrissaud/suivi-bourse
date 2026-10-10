@@ -82,74 +82,73 @@ export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockPr
         </h2>
       </CardHeader>
       <CardContent className="space-y-4">
-      {/* It dominates. Not a note under the size, not a notice in the block
+        {/* It dominates. Not a note under the size, not a notice in the block
           above — the one screen where a trial run learns what it is. */}
-      {runtimeStore?.persistence === 'ephemeral' ? (
-        <div className="rounded-lg border border-attention/50 bg-attention/10 p-4">
-          <p className="font-medium">{t('installation.store.ephemeral.title')}</p>
-          <p className="mt-1 max-w-prose text-sm text-muted-foreground">
-            {t('installation.store.ephemeral.body')}
-          </p>
-        </div>
-      ) : null}
+        {runtimeStore?.persistence === 'ephemeral' ? (
+          <div className="rounded-lg border border-attention/50 bg-attention/10 p-4">
+            <p className="font-medium">{t('installation.store.ephemeral.title')}</p>
+            <p className="mt-1 max-w-prose text-sm text-muted-foreground">
+              {t('installation.store.ephemeral.body')}
+            </p>
+          </div>
+        ) : null}
 
-      <dl className="divide-y rounded-lg border text-sm">
-        {/* Same rule on the other read: *« Impossible d’observer d’ici »* is
+        <dl className="divide-y rounded-lg border text-sm">
+          {/* Same rule on the other read: *« Impossible d’observer d’ici »* is
             one of the three answers the kernel gives, so writing it while
             `/api/runtime` is in flight states an observation nobody made — and
             the em dash beside it said *there is nothing to compute* about a
             path that exists. Found by widening the net, in the block the
             widening was written for. */}
-        {runtimeStore ? (
-          <div className="space-y-1 px-4 py-3">
-            <dt className="text-muted-foreground">{t('installation.store.path')}</dt>
-            {/* The `??` the row was gated out of was carrying two states at once —
+          {runtimeStore ? (
+            <div className="space-y-1 px-4 py-3">
+              <dt className="text-muted-foreground">{t('installation.store.path')}</dt>
+              {/* The `??` the row was gated out of was carrying two states at once —
             that one and a read that had said nothing yet — and only the second
             is #777's. */}
-            <dd className="font-mono text-xs break-all">{runtimeStore.path ?? ABSENT}</dd>
-            <p className="text-xs text-muted-foreground">
-              {t('installation.store.persistence', { state: runtimeStore.persistence })}
-            </p>
-          </div>
-        ) : null}
+              <dd className="font-mono text-xs break-all">{runtimeStore.path ?? ABSENT}</dd>
+              <p className="text-xs text-muted-foreground">
+                {t('installation.store.persistence', { state: runtimeStore.persistence })}
+              </p>
+            </div>
+          ) : null}
 
-        {/* Both were written from the absence of a value, which a silence is not.
+          {/* Both were written from the absence of a value, which a silence is not.
         It is the block's own rule — *a block that waits renders nothing, title
         included* — applied one notch lower, exactly as #775 applied it to the
         accounts table's `perf` cells; and it is what lets the path and the
         persistence stay on screen, which is the whole point of #668's split and
         the moment *« où sont passées mes données ? »* is asked. */}
-        {store ? (
-          <>
-            <div className="space-y-1 px-4 py-3">
-              <dt className="text-muted-foreground">{t('installation.store.size')}</dt>
-              <dd className="tabular">{format.bytes(store.size_bytes)}</dd>
-              {/* The sentence travels with the figure, always — it is what stops
+          {store ? (
+            <>
+              <div className="space-y-1 px-4 py-3">
+                <dt className="text-muted-foreground">{t('installation.store.size')}</dt>
+                <dd className="tabular">{format.bytes(store.size_bytes)}</dd>
+                {/* The sentence travels with the figure, always — it is what stops
                   the purge below reading as a way to get bytes back. */}
-              <p className="max-w-prose text-xs text-muted-foreground">
-                {t('installation.store.size.note')}
-              </p>
-            </div>
+                <p className="max-w-prose text-xs text-muted-foreground">
+                  {t('installation.store.size.note')}
+                </p>
+              </div>
 
-            <div className="space-y-1 px-4 py-3">
-              <dt className="text-muted-foreground">{t('installation.store.lastWrite')}</dt>
-              <dd className="tabular">
-                {store.ledger_last_write
-                  ? format.dateTime(store.ledger_last_write)
-                  : t('installation.store.lastWrite.never')}
-              </dd>
-            </div>
-          </>
-        ) : failure !== null ? (
-          // **The two rows the read owns, replaced by the reason they are not
-          // there** (#829). In flight they simply do not exist yet;
-          // refused, they never will, and the path and the persistence beside
-          // them — which ride on `/api/runtime` — must not make the block look
-          // whole. It sits in the list, in the slot the rows would have taken.
-          <Unreadable failure={failure} />
-        ) : null}
-      </dl>
-
+              <div className="space-y-1 px-4 py-3">
+                <dt className="text-muted-foreground">{t('installation.store.lastWrite')}</dt>
+                <dd className="tabular">
+                  {store.ledger_last_write
+                    ? format.dateTime(store.ledger_last_write)
+                    : t('installation.store.lastWrite.never')}
+                </dd>
+              </div>
+            </>
+          ) : failure !== null ? (
+            // **The two rows the read owns, replaced by the reason they are not
+            // there** (#829). In flight they simply do not exist yet;
+            // refused, they never will, and the path and the persistence beside
+            // them — which ride on `/api/runtime` — must not make the block look
+            // whole. It sits in the list, in the slot the rows would have taken.
+            <Unreadable failure={failure} />
+          ) : null}
+        </dl>
       </CardContent>
     </Card>
   )

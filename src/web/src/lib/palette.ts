@@ -85,11 +85,13 @@ export function accountsMatching(
   accounts: readonly NamedAccountEntry[],
   query: string,
 ): NamedAccountEntry[] {
-  return accounts
-    // The id as well as the name: it is what the ledger's own column shows, and
-    // what an address carries.
-    .filter((account) => matchesQuery(query, [account.name, account.id]))
-    .slice(0, ACCOUNTS_SHOWN)
+  return (
+    accounts
+      // The id as well as the name: it is what the ledger's own column shows, and
+      // what an address carries.
+      .filter((account) => matchesQuery(query, [account.name, account.id]))
+      .slice(0, ACCOUNTS_SHOWN)
+  )
 }
 
 /**

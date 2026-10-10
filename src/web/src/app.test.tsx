@@ -67,16 +67,12 @@ describe('the walking skeleton', () => {
       // `level: 1` is the page's own name, which the header draws (#789). The
       // settings page needs it said: the block it renders is *called* the
       // settings too, one level down, and that block is #830's to reshape.
-      expect(
-        await screen.findByRole('heading', { level: 1, name: entry }),
-      ).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { level: 1, name: entry })).toBeInTheDocument()
     }
 
     // Back to French, on the page we happen to be standing on.
     await chooseInMenu(user, 'Language', 'Français')
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Réglages' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
     // The ground did not move when the language did.
     expect(document.documentElement).toHaveClass('dark')
     // Two seconds and a half in a quiet run, and the default five is not a
@@ -92,9 +88,7 @@ describe('the five routes', () => {
 
     for (const entry of ['Titres', 'Comptes', 'Grand livre', 'Réglages']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
-      expect(
-        await screen.findByRole('heading', { level: 1, name: entry }),
-      ).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { level: 1, name: entry })).toBeInTheDocument()
     }
   })
 

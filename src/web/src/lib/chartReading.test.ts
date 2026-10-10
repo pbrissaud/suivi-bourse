@@ -16,9 +16,7 @@ const VALUE: ReadingCurve = { name: 'Total value', key: 'value' }
 const CONTRIBUTED: ReadingCurve = { name: 'Net contributed', key: 'contributed' }
 
 /** Rows in the shape every chart here hands Recharts: a day and its fields. */
-function rows(
-  ...days: [string, number | null, (number | null)?][]
-): Record<string, unknown>[] {
+function rows(...days: [string, number | null, (number | null)?][]): Record<string, unknown>[] {
   return days.map(([t, value, contributed]) => ({ t, value, contributed }))
 }
 
@@ -28,10 +26,10 @@ describe('nothing to read', () => {
   })
 
   it('returns null when every value of every curve is a hole', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', null, null], ['2026-01-02', null, null]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', null, null], ['2026-01-02', null, null]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     // The rows exist and the plot draws nothing: that is a fact about the
     // window, and `ChartReading` says so rather than announcing a figure.
     expect(shape).toBeNull()
@@ -58,10 +56,10 @@ describe('the extent and the opening', () => {
   })
 
   it('opens on the first drawn value and not on the first row', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', null, 90], ['2026-01-02', 100, 95]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', null, 90], ['2026-01-02', 100, 95]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     // A hole at the first day is skipped, per curve: the value curve opens on
     // the 2nd at 100, the contributed one on the 1st at 90.
     expect(shape?.opening).toEqual([
@@ -71,10 +69,10 @@ describe('the extent and the opening', () => {
   })
 
   it('drops a curve that is never drawn', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 100, null], ['2026-01-02', 120, null]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', 100, null], ['2026-01-02', 120, null]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     // An install with no cash event has `net_contributed` at `null` for ever
     // (#708). Naming it would claim a line the reader cannot find.
     expect(shape?.opening).toEqual([{ name: 'Total value', value: 100 }])
@@ -92,10 +90,10 @@ describe('the extent and the opening', () => {
 
 describe('the extremes', () => {
   it('belong to the first drawn curve and never to the reference', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 100, 400], ['2026-01-02', 120, 10]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', 100, 400], ['2026-01-02', 120, 10]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     // 400 and 10 are the contributed curve's and must not surface: the second
     // curve is what the first is read against, not a second measurement.
     expect(shape?.high).toEqual({ value: 120, day: '2026-01-02' })
@@ -103,36 +101,34 @@ describe('the extremes', () => {
   })
 
   it('keeps the earliest day on a tie', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 100], ['2026-01-02', 80], ['2026-01-03', 100]),
-      [VALUE],
-    )
+    const shape = chartShape(rows(['2026-01-01', 100], ['2026-01-02', 80], ['2026-01-03', 100]), [
+      VALUE,
+    ])
     expect(shape?.high).toEqual({ value: 100, day: '2026-01-01' })
   })
 
   it('skips holes rather than reading them as zero', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 100], ['2026-01-02', null], ['2026-01-03', 120]),
-      [VALUE],
-    )
+    const shape = chartShape(rows(['2026-01-01', 100], ['2026-01-02', null], ['2026-01-03', 120]), [
+      VALUE,
+    ])
     expect(shape?.low).toEqual({ value: 100, day: '2026-01-01' })
   })
 })
 
 describe('the gap between two curves', () => {
   it('states the side when the first never leaves it', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 100, 90], ['2026-01-02', 120, 95]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', 100, 90], ['2026-01-02', 120, 95]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     expect(shape?.gap).toEqual({ side: 'above' })
   })
 
   it('states the other side too', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 80, 90], ['2026-01-02', 85, 95]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', 80, 90], ['2026-01-02', 85, 95]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     expect(shape?.gap).toEqual({ side: 'below' })
   })
 
@@ -205,10 +201,10 @@ describe('the gap between two curves', () => {
   })
 
   it('says nothing about a gap between two curves that never part', () => {
-    const shape = chartShape(
-      rows(['2026-01-01', 90, 90], ['2026-01-02', 95, 95]),
-      [VALUE, CONTRIBUTED],
-    )
+    const shape = chartShape(rows(['2026-01-01', 90, 90], ['2026-01-02', 95, 95]), [
+      VALUE,
+      CONTRIBUTED,
+    ])
     // No side was ever taken, so there is no side to state and no crossing to
     // count. The sentence says less rather than something untrue.
     expect(shape?.gap).toBeNull()

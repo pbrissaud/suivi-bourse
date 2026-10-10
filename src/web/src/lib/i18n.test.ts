@@ -111,7 +111,9 @@ describe('ICU is the format, and it is needed', () => {
     // it now.
     for (const state of ['ok', 'attention', 'rebuilding', 'unreachable'] as const) {
       for (const language of ['fr', 'en'] as const) {
-        expect(formatMessage(language, 'status.dot', { state }), `${language}:${state}`).not.toBe('')
+        expect(formatMessage(language, 'status.dot', { state }), `${language}:${state}`).not.toBe(
+          '',
+        )
       }
     }
 
@@ -122,7 +124,9 @@ describe('ICU is the format, and it is needed', () => {
     for (const state of ['attention', 'unreachable'] as const) {
       for (const key of ['notification.health.title', 'notification.health.body'] as const) {
         for (const language of ['fr', 'en'] as const) {
-          expect(formatMessage(language, key, { state }), `${language}:${key}:${state}`).not.toBe('')
+          expect(formatMessage(language, key, { state }), `${language}:${key}:${state}`).not.toBe(
+            '',
+          )
         }
       }
     }

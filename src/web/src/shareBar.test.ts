@@ -53,10 +53,7 @@ const ROOT = path.resolve(import.meta.dirname, '..')
  * still hand-written, still argued for on the file, and still asserted to be
  * the only hand-written bar in it.
  */
-const MOUNTS = [
-  'src/components/shares/Allocation.tsx',
-  'src/components/accounts/AccountDetail.tsx',
-]
+const MOUNTS = ['src/components/shares/Allocation.tsx', 'src/components/accounts/AccountDetail.tsx']
 
 describe('one component draws a share', () => {
   // `leaves every share bar to the primitive` is a Biome rule now: lint/share-width.grit

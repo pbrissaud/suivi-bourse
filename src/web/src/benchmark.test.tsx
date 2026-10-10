@@ -130,9 +130,7 @@ describe('the comparison', () => {
     // The one way out **is** the control, not a link to where the control is.
     // Named for what it is a reference **for**: *Référence* alone is the page's
     // own title, and a control sharing its page's name says nothing.
-    expect(
-      screen.getByRole('combobox', { name: 'Référence de comparaison' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Référence de comparaison' })).toBeInTheDocument()
     // And the wait is announced before it is discovered.
     expect(screen.getByText(/la page se remplira toute seule/)).toBeInTheDocument()
   })
@@ -202,7 +200,9 @@ describe('what the period costs', () => {
 
     // Not an absence: the answer is complete and correct over a shorter window,
     // so it is a caption and the figure stays.
-    expect(await screen.findByText(/Comparé depuis le .*premier cours de ce fonds/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/Comparé depuis le .*premier cours de ce fonds/),
+    ).toBeInTheDocument()
     expect(screen.getByText(/11 années antérieures ne sont pas dans cet écart/)).toBeInTheDocument()
     expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
   })
@@ -228,27 +228,24 @@ describe('what the period costs', () => {
     renderBenchmark(ready({ ended: 'exhausted', covered_to: '2019-03-14' }))
 
     expect(
-      await screen.findByText(/une sortie de titres à cette date, la référence n’aurait pas pu la financer/),
+      await screen.findByText(
+        /une sortie de titres à cette date, la référence n’aurait pas pu la financer/,
+      ),
     ).toBeInTheDocument()
   })
 
   it('names the grant, and not just the account, that left the perimeter', async () => {
     renderBenchmark(
       ready({
-        excluded_accounts: [
-          { account: 'pee', reason: 'undeclared_grant', symbols: 'ACME,WIDGET' },
-        ],
+        excluded_accounts: [{ account: 'pee', reason: 'undeclared_grant', symbols: 'ACME,WIDGET' }],
       }),
     )
 
     // The account alone is not actionable: the reader has to know which line
     // to go and price.
-    expect(
-      await screen.findByText(/pee.*ACME, WIDGET.*sans prix déclaré/),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/pee.*ACME, WIDGET.*sans prix déclaré/)).toBeInTheDocument()
   })
 })
-
 
 describe('the contract a non-visual reader gets', () => {
   it('reads the head back when the reference changes', async () => {

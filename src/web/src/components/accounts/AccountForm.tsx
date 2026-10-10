@@ -111,13 +111,7 @@ interface AccountFormProps {
   onClose: () => void
 }
 
-export function AccountForm({
-  open,
-  account,
-  offer,
-  removal,
-  onClose,
-}: AccountFormProps) {
+export function AccountForm({ open, account, offer, removal, onClose }: AccountFormProps) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
 
@@ -250,11 +244,11 @@ export function AccountForm({
             // is a request, and a client that never asks must never perform one.
             ...(offered && reassign ? { reassign: true } : {}),
           }
-        // **Sent when the reader moved it**, `null` included — detaching is a
-        // gesture, and it is this one. Left alone, the member is absent, which
-        // is what a client with no such control sends and what keeps a rename a
-        // rename: the server reads an absent member as *leave it alone*.
-        : {
+        : // **Sent when the reader moved it**, `null` included — detaching is a
+          // gesture, and it is this one. Left alone, the member is absent, which
+          // is what a client with no such control sends and what keeps a rename a
+          // rename: the server reads an absent member as *leave it alone*.
+          {
             label,
             ...(taxationModel === (account.taxation_model ?? null)
               ? {}
@@ -269,11 +263,7 @@ export function AccountForm({
       <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>
-            {t(
-              account === null
-                ? 'accounts.form.create.title'
-                : 'accounts.form.edit.title',
-            )}
+            {t(account === null ? 'accounts.form.create.title' : 'accounts.form.edit.title')}
           </SheetTitle>
           <SheetDescription>{t('accounts.form.description')}</SheetDescription>
         </SheetHeader>
@@ -388,10 +378,7 @@ export function AccountForm({
             a declaration — there is no row yet to remove — and nothing while
             the ledger has not landed. */}
         {account === null || removal === null ? null : (
-          <section
-            aria-labelledby="account-removal"
-            className="space-y-2 border-t px-4 pb-8 pt-6"
-          >
+          <section aria-labelledby="account-removal" className="space-y-2 border-t px-4 pb-8 pt-6">
             <h3 id="account-removal" className="text-sm font-medium">
               {t('accounts.remove.title')}
             </h3>

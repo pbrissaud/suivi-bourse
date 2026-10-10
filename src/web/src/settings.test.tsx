@@ -39,11 +39,7 @@ import {
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-async function openSettings(
-  facts?: InstallationFact[],
-  store?: StoreState,
-  health?: HealthState,
-) {
+async function openSettings(facts?: InstallationFact[], store?: StoreState, health?: HealthState) {
   if (facts) {
     server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json(facts)))
   }
@@ -90,13 +86,12 @@ describe('the page, and the cards it is made of', () => {
     // Six cards set `role="region"` and `aria-labelledby`, and this one did
     // not: navigating by region skipped the card carrying the page's heaviest
     // gesture, which is the one a reader arrives at from the bell (#861).
-    server.use(
-      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
-    )
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     await openSettings()
 
-    expect(await screen.findByRole('region', { name: 'Reconstruction en cours' }))
-      .toBeInTheDocument()
+    expect(
+      await screen.findByRole('region', { name: 'Reconstruction en cours' }),
+    ).toBeInTheDocument()
   })
 
   it('says nothing about the notices, which live behind the bell', async () => {
@@ -107,7 +102,6 @@ describe('the page, and the cards it is made of', () => {
     expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
   })
 })
-
 
 describe('the settings, which are one surface', () => {
   it('has two cards and no separate effective-configuration card', async () => {
@@ -202,9 +196,7 @@ describe('the settings, which are one surface', () => {
     // enough: it has to be **settable**, and the one value with a meaning of
     // its own has to say what it means — `0` disables the sonde altogether,
     // which is the registry's own reading (`settings_registry.py`).
-    expect(
-      screen.getByText(/0 pour ne jamais signaler/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/0 pour ne jamais signaler/)).toBeInTheDocument()
 
     let sent: Record<string, string> | null = null
     server.use(
@@ -230,7 +222,9 @@ describe('the settings, which are one surface', () => {
     // Two markets open, one shut: a portfolio-wide dial that reaches part of
     // the portfolio has to say so, or the other symbols read as misconfigured.
     expect(
-      screen.getByText(/S’applique maintenant à 2 titres, et à 1 autre à l’ouverture de son marché/),
+      screen.getByText(
+        /S’applique maintenant à 2 titres, et à 1 autre à l’ouverture de son marché/,
+      ),
     ).toBeInTheDocument()
     // No interface can hide it: the number in the form is the number in the
     // back-off's own formula.
@@ -287,7 +281,9 @@ describe('the settings, which are one surface', () => {
     expect(within(imposed).queryByText('SB_PROMETHEUS_ENABLED')).not.toBeInTheDocument()
     expect(within(imposed).queryByText('SB_METRICS_PORT')).not.toBeInTheDocument()
     // Written once for the section, never under each of four rows.
-    expect(within(imposed).getAllByText(/En changer une, c’est recréer le conteneur/)).toHaveLength(1)
+    expect(within(imposed).getAllByText(/En changer une, c’est recréer le conteneur/)).toHaveLength(
+      1,
+    )
   })
 })
 
@@ -321,7 +317,9 @@ describe('the store', () => {
   it('lets an ephemeral store dominate the block instead of noting it', async () => {
     server.use(
       http.get(ROUTES.runtime, () =>
-        HttpResponse.json(aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } })),
+        HttpResponse.json(
+          aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } }),
+        ),
       ),
     )
     await openSettings()
@@ -439,7 +437,9 @@ describe('the version', () => {
   it('keeps the card when nothing stamped the build', async () => {
     server.use(
       http.get(ROUTES.runtime, () =>
-        HttpResponse.json(aRuntime({ build: { version: null, revision: null, source: 'unknown' } })),
+        HttpResponse.json(
+          aRuntime({ build: { version: null, revision: null, source: 'unknown' } }),
+        ),
       ),
     )
     await openSettings()
@@ -690,9 +690,7 @@ describe('the page in English', () => {
   it('renders the cards whole', async () => {
     renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
 
-    expect(
-      await screen.findByRole('heading', { name: 'What you can change' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'What you can change' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'The workloads' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'The store' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What the container imposes' })).toBeInTheDocument()

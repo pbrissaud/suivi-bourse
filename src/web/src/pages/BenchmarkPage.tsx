@@ -63,11 +63,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  api,
-  type BenchmarkExclusion,
-  type BenchmarkResponse,
-} from '@/lib/api'
+import { api, type BenchmarkExclusion, type BenchmarkResponse } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -124,12 +120,7 @@ export default function BenchmarkPage() {
         // The one way out **is** the selector: this empty state's action is the
         // control itself, not a link to somewhere the control lives.
         action={
-          <ReferenceSelect
-            hint
-            value={null}
-            offered={data.offered}
-            downloaded={data.consulted}
-          />
+          <ReferenceSelect hint value={null} offered={data.offered} downloaded={data.consulted} />
         }
       />
     )
@@ -388,7 +379,9 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
           <TableRow>
             {hasShared ? (
               <TableHead colSpan={2} className="xl:px-5">
-                {t('benchmark.accounts.group.shared', { from: f.date(data.covered_from as string) })}
+                {t('benchmark.accounts.group.shared', {
+                  from: f.date(data.covered_from as string),
+                })}
               </TableHead>
             ) : null}
             <TableHead colSpan={hasShared ? 3 : 4} className={hasShared ? 'border-l' : 'xl:px-5'}>
@@ -471,7 +464,9 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
           {hasShared ? (
             <TableRow className="border-t-2 bg-muted/40 font-semibold max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:p-4">
               <TableCell className={`xl:px-5 ${stack}`}>{t('benchmark.accounts.total')}</TableCell>
-              <TableCell className={`tabular text-right ${signClass(data.gap_gross ?? null)} ${stack}`}>
+              <TableCell
+                className={`tabular text-right ${signClass(data.gap_gross ?? null)} ${stack}`}
+              >
                 {data.gap_gross === null || data.gap_gross === undefined
                   ? '—'
                   : f.signedCurrency(data.gap_gross, currency)}
@@ -513,10 +508,7 @@ function points(f: ReturnType<typeof useFormatters>, value: number | null | unde
 }
 
 /** The difference of two returns, which share a denominator by construction. */
-function gap(
-  yours: number | null | undefined,
-  theirs: number | null | undefined,
-): number | null {
+function gap(yours: number | null | undefined, theirs: number | null | undefined): number | null {
   if (yours === null || yours === undefined || theirs === null || theirs === undefined) return null
   return yours - theirs
 }

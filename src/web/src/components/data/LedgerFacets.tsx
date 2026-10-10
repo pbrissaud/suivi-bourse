@@ -85,10 +85,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
         : accounts,
     [accounts, filters.account],
   )
-  const forAccounts = useMemo(
-    () => accountFacets(events, filters, named),
-    [events, filters, named],
-  )
+  const forAccounts = useMemo(() => accountFacets(events, filters, named), [events, filters, named])
   const years = useMemo(() => yearFacets(events, filters), [events, filters])
   const months = useMemo(() => monthFacets(events, filters), [events, filters])
   const year = rangeYear(filters)
@@ -99,9 +96,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
       className="flex flex-col gap-4 rounded-lg border p-4 lg:sticky lg:top-4"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="label">
-          {t('data.facets.title')}
-        </h2>
+        <h2 className="label">{t('data.facets.title')}</h2>
         {/* The way out of **everything at once**, offered only while there is
             something to come out of — the chips above the table are the way out
             of one dimension, and this is the way out of the reduction. */}
@@ -126,10 +121,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
         {t('data.facets.toggle', { open: open ? 'yes' : 'no' })}
       </button>
 
-      <div
-        id="ledger-facets"
-        className={cn('flex-col gap-5', open ? 'flex' : 'hidden md:flex')}
-      >
+      <div id="ledger-facets" className={cn('flex-col gap-5', open ? 'flex' : 'hidden md:flex')}>
         <Axis label={t('data.filter.type')}>
           {types.map((facet) => (
             <FacetButton
@@ -180,10 +172,12 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
             is where a month lets go to. */}
         {year === null ? null : (
           <div className="flex flex-col gap-2">
-            <h3 className="label">
-              {t('data.filter.months')}
-            </h3>
-            <div role="group" aria-label={t('data.filter.months')} className="grid grid-cols-3 gap-1.5">
+            <h3 className="label">{t('data.filter.months')}</h3>
+            <div
+              role="group"
+              aria-label={t('data.filter.months')}
+              className="grid grid-cols-3 gap-1.5"
+            >
               {months.map((facet) => (
                 <button
                   key={facet.value}
@@ -224,10 +218,11 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
             string for a day it refuses, and that reads as *left blank* one line
             later. */}
         <div className="flex flex-col gap-2">
-          <h3 className="label">
-            {t('data.filter.exact')}
-          </h3>
-          <label htmlFor="ledger-since" className="flex items-center gap-2 text-xs text-muted-foreground">
+          <h3 className="label">{t('data.filter.exact')}</h3>
+          <label
+            htmlFor="ledger-since"
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+          >
             <span className="w-6 shrink-0">{t('data.filter.since')}</span>
             <Input
               id="ledger-since"
@@ -237,7 +232,10 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
               onChange={(event) => onChange({ ...filters, since: parseDay(event.target.value) })}
             />
           </label>
-          <label htmlFor="ledger-until" className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label
+            htmlFor="ledger-until"
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+          >
             <span className="w-6 shrink-0">{t('data.filter.until')}</span>
             <Input
               id="ledger-until"
@@ -257,9 +255,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
 function Axis({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="label">
-        {label}
-      </h3>
+      <h3 className="label">{label}</h3>
       <div role="group" aria-label={label} className="flex flex-col gap-0.5">
         {children}
       </div>

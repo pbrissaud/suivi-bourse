@@ -51,7 +51,6 @@ const TERM_LABELS: Record<(typeof SHARES_TERMS)[number], MessageKey> = {
   dividends: 'shares.column.dividends',
 }
 
-
 /** Identical to the dashboard head's, and for the same reason: written per site,
  *  the dash wins every time — including where the rule says *name it*. */
 
@@ -68,9 +67,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
   const valuation = valuationTotal(rows)
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b px-4 py-3.5">
-      <h2 className="label">
-        {t('shares.head.title')}
-      </h2>
+      <h2 className="label">{t('shares.head.title')}</h2>
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
         <Figure
           label={t('shares.column.value')}
@@ -105,15 +102,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
  * rung above it in the mono face — subordination said in size, on one line,
  * which is what a header of a table has room for.
  */
-function Figure({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: ReactNode
-  tone?: string
-}) {
+function Figure({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
   return (
     <span
       role="group"

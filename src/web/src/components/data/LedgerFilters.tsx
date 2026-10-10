@@ -148,10 +148,12 @@ export function LedgerChips({ filters, onChange }: LedgerChipsProps) {
   if (chips.length === 0) return null
 
   return (
-    <div role="group" aria-label={t('data.chips.title')} className="flex flex-wrap items-center gap-2">
-      <span className="label">
-        {t('data.chips.title')}
-      </span>
+    <div
+      role="group"
+      aria-label={t('data.chips.title')}
+      className="flex flex-wrap items-center gap-2"
+    >
+      <span className="label">{t('data.chips.title')}</span>
       {chips.map((chip) => (
         <button
           key={chip.key}

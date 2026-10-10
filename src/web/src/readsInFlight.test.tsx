@@ -339,54 +339,48 @@ afterEach(() => {
 
 describe('a read that has not landed is never rendered as an absence', () => {
   for (const surface of SURFACES) {
-    it(
-      `${surface.name} says nothing about what it has not read`,
-      async () => {
-        // 1. What this surface reads, and what it says when everything answers.
+    it(`${surface.name} says nothing about what it has not read`, async () => {
+      // 1. What this surface reads, and what it says when everything answers.
+      stage(surface)
+      recording = new Set()
+      const view = renderApp({ url: surface.url })
+      await screen.findByRole('heading', { level: 1, name: surface.heading })
+      await surface.open?.(view)
+      await quiet()
+
+      const baseline = emptyMarkers()
+      const said = phrases()
+      const requested = Array.from(recording)
+      cleanup()
+
+      // 2. The same surface, one read at a time left in flight for ever.
+      for (const route of requested) {
         stage(surface)
-        recording = new Set()
-        const view = renderApp({ url: surface.url })
-        await screen.findByRole('heading', { level: 1, name: surface.heading })
-        await surface.open?.(view)
+        server.use(http.get(route, () => new Promise<never>(() => {})))
+        const replay = renderApp({ url: surface.url })
+        await screen.findByRole('heading', { level: 1, name: surface.heading }).catch(() => null)
+        // The gesture may not be available at all — a table that has not
+        // rendered has no row to click — and that is an ordinary outcome
+        // here: what is asserted is an absence either way.
+        await surface.open?.(replay).catch(() => null)
         await quiet()
 
-        const baseline = emptyMarkers()
-        const said = phrases()
-        const requested = Array.from(recording)
+        const appeared = emptyMarkers().filter((marker) => !baseline.includes(marker))
+        expect(
+          appeared,
+          `${surface.name} declares something empty while ${route} is in flight`,
+        ).toEqual([])
+        const invented = phrases().filter((phrase) => !said.includes(phrase))
+        expect(
+          invented,
+          `${surface.name} says something it has not read while ${route} is in flight`,
+        ).toEqual([])
         cleanup()
+      }
 
-        // 2. The same surface, one read at a time left in flight for ever.
-        for (const route of requested) {
-          stage(surface)
-          server.use(http.get(route, () => new Promise<never>(() => {})))
-          const replay = renderApp({ url: surface.url })
-          await screen
-            .findByRole('heading', { level: 1, name: surface.heading })
-            .catch(() => null)
-          // The gesture may not be available at all — a table that has not
-          // rendered has no row to click — and that is an ordinary outcome
-          // here: what is asserted is an absence either way.
-          await surface.open?.(replay).catch(() => null)
-          await quiet()
-
-          const appeared = emptyMarkers().filter((marker) => !baseline.includes(marker))
-          expect(
-            appeared,
-            `${surface.name} declares something empty while ${route} is in flight`,
-          ).toEqual([])
-          const invented = phrases().filter((phrase) => !said.includes(phrase))
-          expect(
-            invented,
-            `${surface.name} says something it has not read while ${route} is in flight`,
-          ).toEqual([])
-          cleanup()
-        }
-
-        // Every surface reads something, or the loop above asserted nothing.
-        expect(requested.length).toBeGreaterThan(0)
-      },
-      60_000,
-    )
+      // Every surface reads something, or the loop above asserted nothing.
+      expect(requested.length).toBeGreaterThan(0)
+    }, 60_000)
   }
 
   it('leaves no declared route unvisited', () => {
