@@ -5,8 +5,9 @@
  *
  *  - **The head figure is in euros.** `Stat.tsx` states the rule this obeys:
  *    the euro and the percentage are two figures that must never share a line.
- *    The percentage gap is filed one weight down, in a `term` row with each
- *    side's own return. The euro leads because the head answers *how much is
+ *    Each side's own return is filed one weight down, in a `term` row, and
+ *    their gap in points is not printed at all (#1112): a third percentage
+ *    beside two is one more rate to tell apart. The euro leads because the head answers *how much is
  *    left*, which is a euro question, and because a percentage gap is ambiguous
  *    on its face — difference of two returns? in points? annualised?
  *  - **The controls come after the head in reading order**, in the corner of
@@ -238,7 +239,6 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
 
   const shown = data.gap_gross ?? null
   const index = data.index ?? data.reference ?? ''
-  const difference = gap(data.portfolio_return, data.reference_return)
   const scale =
     Math.max(Math.abs(data.portfolio_return ?? 0), Math.abs(data.reference_return ?? 0)) * 1.25
 
@@ -298,7 +298,9 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
             <ShareBar
               share={magnitude(data.portfolio_return)}
               scale={scale}
-              fill="var(--color-price)"
+              // The sign's colour, as on the per-account bars: a loss drawn in
+              // the gain's green read as a gain (#1112).
+              fill={signOf(data.portfolio_return ?? null) === 'loss' ? 'var(--loss)' : 'var(--gain)'}
               size="block"
               className="mt-1.5"
             />
@@ -317,14 +319,6 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
               className="mt-1.5"
             />
           </Stat>
-          <div className="border-t pt-4">
-            <Stat
-              size="term"
-              label={t('benchmark.term.gap')}
-              value={points(f, difference)}
-              valueClassName={signClass(difference)}
-            />
-          </div>
         </div>
       </div>
     </Card>
@@ -510,15 +504,6 @@ function points(f: ReturnType<typeof useFormatters>, value: number | null | unde
   if (value === null || value === undefined) return '—'
   const scaled = value * 100
   return `${scaled > 0 ? '+' : ''}${f.percentPoints(scaled, 1)}`
-}
-
-/** The difference of two returns, which share a denominator by construction. */
-function gap(
-  yours: number | null | undefined,
-  theirs: number | null | undefined,
-): number | null {
-  if (yours === null || yours === undefined || theirs === null || theirs === undefined) return null
-  return yours - theirs
 }
 
 /**

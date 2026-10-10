@@ -183,17 +183,6 @@ describe('the head states the account, and the curve is in it', () => {
     )
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/99 999/))
-
-    // And the one percentage is read twice on one screen, so the two must be
-    // the same character for character: 99 999 / 1 478 = +6 765,83 %.
-    const rail = screen.getByRole('list', { name: 'Vos comptes' })
-    const card = within(rail).getByRole('link', { name: /Alpha/ })
-    const shown = within(detail)
-      .getByRole('group', { name: 'Performance totale' })
-      .textContent?.replace('Performance totale', '')
-      .trim()
-    expect(shown).toMatch(/\+6\s?765,83\s?%/)
-    expect(card.textContent).toContain(shown)
   })
 
   it('refuses a four-term total rendered from three (#775)', async () => {
@@ -402,29 +391,33 @@ describe('the five blocks', () => {
   })
 })
 
-describe('no range control, and a cumulative ratio in its place', () => {
-  it('reads the whole gain against what was paid in', async () => {
-    // 322,00 of 1 478,00 — the head's own total divided by the contribution
-    // one line above it, which is what `Performance totale` is. It is a
-    // **change**, so it carries its sign, where the *sur versé* under the
-    // dividends is a share and carries none.
+describe('no range control, and one rate in the head (#1112)', () => {
+  it('leads with the IRR, the one performance figure on the screen', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    const figure = await within(detail).findByRole('group', { name: 'Performance totale' })
-    await waitFor(() => expect(figure).toHaveTextContent(/\+21,79\s?%/))
+    const card = within(detail)
+      .getByRole('group', { name: 'Valeur totale' })
+      .closest('[data-slot="card"]') as HTMLElement
+    const xirr = within(card).getByRole('group', { name: 'TRI' })
+    expect(xirr).toHaveTextContent(/\+5,12\s?%\s?\/ an/)
+    // One signed percentage in the head: the fees' share of the contribution
+    // is a share and carries no sign.
+    expect(card.textContent?.match(/[+−-]\d[\d\s]*,\d+\s?%/g)).toHaveLength(1)
+    expect(within(detail).queryByRole('group', { name: 'Performance totale' })).toBeNull()
+    expect(within(detail).queryByRole('group', { name: 'TWR' })).toBeNull()
+    expect(within(detail).queryByRole('heading', { name: /TRI annualisé|Rendement/ })).toBeNull()
   })
 
   it('says nothing to compute where nothing was ever paid in', async () => {
-    // `gamma` has no cash movement at all, so there is no contribution to
-    // divide by — the em dash's own sentence, and not a ratio of zero.
+    // `gamma` has no cash movement at all, so there is no rate — the em dash's
+    // own sentence, and not a rate of zero.
     const { user } = renderAccounts()
     const detail = await open(user, 'Gamma')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
-    expect(
-      within(detail).getByRole('group', { name: 'Performance totale' }),
-    ).toHaveTextContent('—')
+    expect(within(detail).getByRole('group', { name: 'TRI' })).toHaveTextContent('—')
   })
 
   it('offers no window to read it over, on this page or anywhere in it', async () => {
@@ -507,7 +500,7 @@ describe('a read in flight is not an absence', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('draws no curve while the series has not answered, and keeps the ratio', async () => {
+  it('draws no curve while the series has not answered, and keeps the rate', async () => {
     server.use(http.get(ROUTES.accountHistory, () => new Promise<never>(() => {})))
     const { user } = renderApp({ url: '/accounts' })
     const detail = await open(user, 'Alpha')
@@ -518,12 +511,10 @@ describe('a read in flight is not an absence', () => {
     expect(
       within(detail).queryByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
     ).not.toBeInTheDocument()
-    // And the head figure stands, because it reads none of that: `Performance
-    // totale` divides the four terms by the contribution, both of which landed.
-    // A read that failed never costs the reader a block that did answer.
-    expect(within(detail).getByRole('group', { name: 'Performance totale' })).toHaveTextContent(
-      /\+21,79\s?%/,
-    )
+    // And the head figure stands, because it reads none of that: the IRR is a
+    // member of the account row. A read that failed never costs the reader a
+    // block that did answer.
+    expect(within(detail).getByRole('group', { name: 'TRI' })).toHaveTextContent(/\+5,12\s?%/)
   })
 
   it('names the read it could not make rather than summing nothing', async () => {
@@ -569,26 +560,24 @@ describe('the bubbles', () => {
     )
   })
 
-  it('says the ratio covers the whole life and no window, on click and not on hover', async () => {
+  it('files the TWR inside the IRR’s bubble, on click and not on hover', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
-    const trigger = await within(detail).findByRole('button', {
-      name: 'Ce que veut dire Performance totale',
-    })
+    const trigger = await within(detail).findByRole('button', { name: 'Ce que veut dire TRI' })
 
     await user.hover(trigger)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     await user.click(trigger)
     const bubble = await screen.findByRole('dialog')
-    // What the figure is **not**, which is the whole reason it can stand with no
-    // range beside it: a cumulative ratio, not annualised, saying nothing about
-    // when the money went in.
-    expect(bubble).toHaveTextContent(/ce n’est pas un taux annuel/)
-    expect(bubble).toHaveTextContent(/toute la vie du compte/)
+    // 171,5 on base 100 is a move of +71,5 %, said with why it is not the IRR.
+    expect(bubble).toHaveTextContent(/Ce que vos versements sur ce compte ont rapporté/)
+    expect(bubble).toHaveTextContent(/Le TWR, \+71,5\d?\s?%/)
+    expect(bubble).toHaveTextContent(/c’est pourquoi il diffère du TRI/)
     expect(within(bubble).getByRole('link')).toHaveAttribute(
       'href',
-      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#total-performance',
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#xirr',
     )
   })
+
 })

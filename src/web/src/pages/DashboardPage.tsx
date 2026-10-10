@@ -64,6 +64,7 @@ import { InvestmentRhythm } from '@/components/dashboard/InvestmentRhythm'
 import { Movers } from '@/components/dashboard/Movers'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { api } from '@/lib/api'
+import { buildAccountRows } from '@/lib/accounts'
 import {
   DEFAULT_DASHBOARD_RANGE,
   dashboardState,
@@ -89,6 +90,14 @@ export default function DashboardPage() {
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  // The accounts page's own read, for the projected tax under the hero (#1112).
+  // It is not one of the reads the page is made of: in flight or failed, the
+  // net line is simply not drawn.
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  const accountRows = useMemo(
+    () => (accounts.data && !accounts.isError ? buildAccountRows(accounts.data.accounts) : null),
+    [accounts.data, accounts.isError],
+  )
 
   // **The two reads the page is made of, and them alone.** A block's own read
   // failing removes that block and is named **by that block**, in the slot the
@@ -217,6 +226,7 @@ export default function DashboardPage() {
         totals={totals.data ?? null}
         rebuilding={runtime.data?.rebuilding ?? null}
         history={perf.data?.points ?? null}
+        accounts={accountRows}
         aside={
           state !== 'portfolio' ? null : (
             <HeroChart

@@ -42,11 +42,13 @@ interface ExplainProps {
   figure: string
   /** The one text: what it means, then the rule. */
   body: MessageKey
+  /** What the text interpolates — a figure it names, already formatted. */
+  values?: Record<string, string>
   /** Where the whole rule lives, on the versioned documentation page. */
   anchor: DocsAnchor
 }
 
-export function Explain({ figure, body, anchor }: ExplainProps) {
+export function Explain({ figure, body, values, anchor }: ExplainProps) {
   const { t, language } = useI18n()
   const [open, setOpen] = useState(false)
 
@@ -81,7 +83,7 @@ export function Explain({ figure, body, anchor }: ExplainProps) {
         collisionPadding={16}
         className="space-y-3 text-sm leading-relaxed"
       >
-        <p>{t(body)}</p>
+        <p>{t(body, values)}</p>
         <a
           href={docsHref(language, anchor)}
           target="_blank"

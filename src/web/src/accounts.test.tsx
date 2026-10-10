@@ -93,9 +93,11 @@ describe('the rail', () => {
     expect(entries()).toHaveLength(3)
     expect(entries()[0]).toContain('Alpha')
     expect(entries()[0]).toMatch(/1\D?800,00/)
-    // The name is announced, the card carrying a value and a type already.
-    expect(entries()[0]).toMatch(/\+21,79\s?%/)
-    expect(entries()[0]).toContain('Performance totale')
+    // No rate on the card (#1112): the detail's IRR is the screen's one.
+    expect(entries()[0]).not.toMatch(/%/)
+    expect(entries()[0]).not.toContain('Performance totale')
+    // Nor on the chips the narrow width draws instead.
+    expect(screen.getByRole('group', { name: 'Vos comptes' }).textContent).not.toMatch(/%/)
 
     expect(weights()[0]).toContain('Alpha')
     // A share of a whole, never a change: `+54,55 %` would put the sign of a
@@ -121,10 +123,7 @@ describe('the rail', () => {
     expect(entries()[2]).toContain('Gamma')
     expect(entries()[2]).toMatch(/600,00/)
     expect(weights()[2]).toMatch(/18,18\s%/)
-    // Its ratio is the em dash and never a zero: with nothing ever paid in
-    // there is no contribution to divide by, which is *nothing to compute*.
     expect(entries()[2]).not.toMatch(/%/)
-    expect(entries()[2]).toContain(ABSENT)
   })
 
   it('states no share at all where there is none, and never a zero', async () => {
@@ -279,7 +278,6 @@ describe('what the page stopped doing', () => {
         ),
       ).toEqual([
         'Ce que veut dire Gain',
-        'Ce que veut dire Performance totale',
         'Ce que veut dire TRI',
         'Ce que veut dire Encaissés',
       ]),

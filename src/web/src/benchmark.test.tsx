@@ -57,11 +57,30 @@ describe('the comparison', () => {
     renderBenchmark(ready())
 
     // The euro and the percentage never share a line: the head answers *how
-    // much is left*, and the gap in points sits in the terms row under it.
+    // much is left*, and each side's return sits in the terms row under it.
     expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    within(screen.getByRole('group', { name: 'Écart en points' })).getByText('+6,4 %')
     within(screen.getByRole('group', { name: 'Votre portefeuille' })).getByText('+11,2 %')
     within(screen.getByRole('group', { name: 'La référence' })).getByText('+4,8 %')
+    // And their gap in points is not a third percentage beside them (#1112).
+    expect(screen.queryByText('Écart en points')).not.toBeInTheDocument()
+    expect(screen.queryByText('+6,4 %')).not.toBeInTheDocument()
+  })
+
+  it('draws your return in the colour of its sign (#1112)', async () => {
+    const fillOf = () =>
+      screen
+        .getByRole('group', { name: 'Votre portefeuille' })
+        .querySelector('[data-share-bar] > span')
+        ?.getAttribute('style')
+
+    const { unmount } = renderBenchmark(ready())
+    await head()
+    expect(fillOf()).toContain('var(--gain)')
+    unmount()
+
+    renderBenchmark(ready({ portfolio_return: -0.05, gap_gross: -1200 }))
+    await head()
+    expect(fillOf()).toContain('var(--loss)')
   })
 
   it('says the gap was made with the same money invested, which is the whole claim', async () => {

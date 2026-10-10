@@ -7,13 +7,13 @@ description: One convention per figure — the rules the app links to from the f
   THE ANCHORS ON THIS PAGE ARE A CONTRACT WITH THE APPLICATION.
 
   Every information icon in SuiviBourse points at one of the anchors below,
-  version included. The twelve linked anchors are fixed — they are
+  version included. The linked anchors are fixed — they are
   `DOCS_ANCHORS` in `src/web/src/lib/docs.ts`, and the two lists are the same
   list:
 
     #avg-cost  #total-gain  #latent-gain  #realized-gain  #dividends
-    #net-contributed  #deposit-fees  #total-performance  #twr  #xirr
-    #carrying-price  #absence
+    #net-contributed  #deposit-fees  #xirr  #carrying-price
+    #absence  #benchmark
 
   They are written by hand, on every heading, and NEVER left to be derived from
   the heading text. Reword a title and a derived anchor changes with it: the
@@ -25,9 +25,10 @@ description: One convention per figure — the rules the app links to from the f
   without changing the front in the same breath.
 
   A heading no bubble links to still writes its anchor by hand and stays OUT of
-  `DOCS_ANCHORS` — `#projected-tax` is the first of those. The list above is the
-  linked twelve, not every anchor on the page; the day a bubble points at one of
-  the others, it joins the twelve and this comment says thirteen.
+  `DOCS_ANCHORS` — `#projected-tax` and `#twr` are two of those (the TWR is said
+  inside the money-weighted return's bubble since #1112). The list above is the
+  linked ones, not every anchor on the page; the day a bubble points at one of
+  the others, it joins the list.
 */}
 
 This page holds the **conventions** the app's figures rest on — one rule per
@@ -183,32 +184,6 @@ not the other. The gap has to land somewhere, and it lands in [fees taken from
 your transfers](#deposit-fees) — a term of its own rather than a silent
 adjustment here.
 
-## Total performance {#total-performance}
-
-**Total performance: this account's whole gain divided by what you have paid
-into it.**
-
-It is what a euro left in the account since the beginning has become, and it is
-a **cumulative ratio rather than a rate**. Three things follow from that, and
-each is a question it does not answer.
-
-It covers the account's **entire life** and no shorter period. That is why it
-carries no range beside it: there is no window to choose, so there is nothing
-for a control to say and nothing for a legend to state. A
-[time-weighted return](#twr) without its period is a figure you cannot read;
-this one has only one period it could ever mean.
-
-It is **not annualised**. Two accounts showing the same total performance may
-have taken two years and twenty to get there, so it ranks nothing across
-accounts of different ages — that is the [money-weighted return](#xirr)'s job,
-and it is the figure directly under this one for that reason.
-
-And it says nothing about **when** the money went in. Every euro counts the
-same whether it arrived before a rise or after it. Paying more in lowers the
-ratio until that money earns something, which is exactly what makes it legible:
-it is a gain read against its own base, not a measure of the holdings on their
-own.
-
 ## Time-weighted return {#twr}
 
 **Time-weighted return: how the positions themselves performed, independent of
@@ -232,8 +207,7 @@ further back than the youngest of the things being compared.
 every cycle.** The series starts at the earliest day on which everything you held
 has a price, and that day walks backwards as the rebuild advances — so this
 percentage, alone among the figures on the page, can change without a price
-having changed. The base date is shown beside it for exactly as long as it is
-still moving. See
+having changed. See
 [the base of the time-weighted return](./rebuild-and-resolution.mdx#the-base-of-the-time-weighted-return-moves-while-the-rebuild-runs).
 
 **Returns are computed from the dates of your events.** Nothing else dates
@@ -245,8 +219,10 @@ them: no event, no date, no return.
 
 It is the single annual rate that reconciles everything that entered and left —
 each deposit and each withdrawal on its own date — with what the account is
-worth today. Unlike the time-weighted return, it counts *when* you paid in:
-money added before a rise weighs more than money added after it.
+worth today. Unlike the [time-weighted return](#twr), it counts *when* you
+paid in: money added before a rise weighs more than money added after it. It is
+the one rate the app shows; the time-weighted return is given inside its
+information bubble, with why the two differ.
 
 It needs at least one movement of money in or out to mean anything. With nothing
 ever paid in there is no schedule to solve, and the app leaves the figure

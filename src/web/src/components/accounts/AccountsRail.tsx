@@ -3,23 +3,10 @@
  *
  * Four things about it are decisions:
  *
- *  Neither of the two figures on a card is a period: a **share of a total on a
- *  stated day** is not one, and `Performance totale` — `gain ÷ versé net`, the
- *  same figure the detail leads with since #833 — covers the account's whole
- *  life, which is what *totale* says.
- *  - **The ratio is divided out of `gain_absolu`**, and the detail's head
- *    divides that same stored figure since #970 — one producer, named once
- *    (`totalPerformance`). It was the sum of the four terms over there, which
- *    telescopes to the same number but is read off a **second endpoint**: a
- *    scrape landing between the page's two requests was all it took for the
- *    card and the panel beside it to disagree. The rail reads no positions at
- *    all, which is the whole reason it costs one request for the page rather
- *    than one per account.
- *  - **The weights' legend carries neither.** The maquette puts its `perf` on
- *    the *accounts* — the cards, and the sticky strip that is those same cards
- *    at a narrow width — and never on the bar's legend, whose one figure is the
- *    share. Two unlabelled percentages on a twelve-pixel row would be two
- *    figures the reader has to tell apart by guessing.
+ *  - **A card carries no rate** (#1112). One performance figure per screen,
+ *    and on this one it is the detail's annualised IRR: a percentage on each
+ *    card beside it was a second rate the reader had to tell apart from the
+ *    first.
  *  - **The entry is a link, so the selection is a URL.** It survives a reload,
  *    it can be handed to somebody else, and the way back out is the browser's
  *    own button. `aria-current` is what says which one is open — a class alone
@@ -56,7 +43,6 @@ import {
   accountWorth,
   declaredLabel,
   degradedReason,
-  totalPerformance,
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
   type AccountRow,
@@ -66,7 +52,6 @@ import {
 import type { Advisory } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 const REASON_LABELS: Record<DegradedReason, MessageKey> = {
@@ -205,7 +190,7 @@ export function AccountsRail({
                         {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
                       </span>
                     </span>
-                    <span className="tabular shrink-0 font-mono">
+                    <span className="tabular shrink-0">
                       {share === null ? ABSENT : f.percentPoints(share * 100)}
                     </span>
                   </span>
@@ -232,9 +217,6 @@ export function AccountsRail({
           const reason = degradedReason(row, rebuilding)
           const cash = cashShare(advisories, row.id)
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-          // `null` where there is no ratio to state — nothing written about this
-          // account yet, nothing ever paid in, or more taken out than put in.
-          const performance = totalPerformance(row)
           return (
             <li key={row.id}>
               <Link
@@ -272,24 +254,8 @@ export function AccountsRail({
                 </span>
 
                 {/* The value is the absolute the share above is a share *of*. */}
-                <span className="mt-1 flex items-baseline justify-between gap-3">
-                  <span className="tabular text-xl font-heavy tracking-tight">
-                    {f.currency(accountWorth(row), currency)}
-                  </span>
-                  {/* The name is announced and not drawn: the card already carries
-                  a value and a type, so a bare percentage read out after them
-                  says nothing about which figure it is. */}
-                  <span
-                    className={cn(
-                      'tabular shrink-0 font-mono text-xs',
-                      signClass(performance),
-                    )}
-                  >
-                    <span className="sr-only">
-                      {t('accounts.figure.totalPerformance')}{' '}
-                    </span>
-                    {performance === null ? ABSENT : f.percent(performance)}
-                  </span>
+                <span className="tabular mt-1 block text-xl font-heavy tracking-tight">
+                  {f.currency(accountWorth(row), currency)}
                 </span>
 
                 {reason === null ? null : (
@@ -397,7 +363,6 @@ export function AccountsChips({
       className="sticky top-0 z-10 -mt-1.5 flex gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5 wide:hidden"
     >
       {rows.map((row, index) => {
-        const performance = totalPerformance(row)
         return (
           <Link
             key={row.id}
@@ -417,20 +382,8 @@ export function AccountsChips({
             <span className="text-sm font-semibold whitespace-nowrap">
               {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
             </span>
-            <span className="tabular font-mono text-sm whitespace-nowrap">
+            <span className="tabular text-sm whitespace-nowrap">
               {f.currency(accountWorth(row), currency)}
-            </span>
-            {/* The name is announced and not drawn: a bare percentage read
-                out after a label and a value says nothing about which figure
-                it is. */}
-            <span
-              className={cn(
-                'tabular font-mono text-xs whitespace-nowrap',
-                signClass(performance),
-              )}
-            >
-              <span className="sr-only">{t('accounts.figure.totalPerformance')} </span>
-              {performance === null ? ABSENT : f.percent(performance)}
             </span>
           </Link>
         )

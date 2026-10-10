@@ -20,6 +20,8 @@ import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aClosedPosition,
+  anAccount,
+  anAccountsPayload,
   aMover,
   aMoversPayload,
   aPosition,
@@ -95,9 +97,11 @@ describe('the value is the hero (direction 1a)', () => {
     expect(value?.className).not.toMatch(/text-(gain|loss)/)
     // `Valeur totale` left the row of statistics: it is the hero now.
     expect(screen.queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
-    for (const name of ['Versé net', 'Titres', 'TRI', 'TWR']) {
+    for (const name of ['Versé net', 'Titres', 'TRI']) {
       expect(figure(name)).toBeInTheDocument()
     }
+    // One performance figure per screen (#1112): the TWR is not a statistic.
+    expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
   })
 
   it('draws a sparkline and keeps the full chart one click away', async () => {
@@ -220,19 +224,21 @@ describe('the gain is computed, never read', () => {
 })
 
 describe('the year-to-date is two figures that do not touch', () => {
-  it('puts the euro under the head and the percentage inside the TWR statistic', async () => {
-    renderApp()
+  it('puts the euro under the head and the percentage inside the IRR’s bubble', async () => {
+    const { user } = renderApp()
 
     const head = await hero()
-    const twr = figure('TWR')
 
     // `+40,69 €` and `−1,25 %` are of opposite signs over the same period and
     // both correct: the portfolio grew by deposits while its holdings lost.
     // Side by side they read as a contradiction.
     expect(head).toHaveTextContent(/40,69/)
-    expect(twr).toHaveTextContent(/1,25\D?%/)
     expect(head).not.toHaveTextContent(/1,25/)
-    expect(twr).not.toHaveTextContent(/40,69/)
+
+    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
+    const bubble = await screen.findByRole('dialog')
+    expect(bubble).toHaveTextContent(/1,25\D?% depuis le 1ᵉʳ janvier/)
+    expect(bubble).not.toHaveTextContent(/40,69/)
   })
 
   it('leaves the head **no** range control, and gives each figure one', async () => {
@@ -243,7 +249,6 @@ describe('the year-to-date is two figures that do not touch', () => {
     // *second* range control **on the head**, and two sibling controls read as
     // two settings of the same thing — so the head carries none (#718, #727).
     expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
-    expect(within(figure('TWR')).queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
 
     // **One on the page**, and it is the page's (#838).
@@ -326,25 +331,128 @@ describe('the two periods of the total', () => {
   })
 })
 
-describe('the two time-weighted scalars', () => {
-  it('carries the base date while the rebuild is still moving it', async () => {
+describe('one performance figure, and the TWR behind it (#1112)', () => {
+  it('files the TWR inside the IRR’s bubble, with why the two differ', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
-    renderApp()
+    const { user } = renderApp()
+    await hero()
 
-    await waitFor(() => expect(figure('TWR')).toHaveTextContent(/30 oct\. 2019/))
-    expect(figure('TWR')).toHaveTextContent(/\+102,89/)
+    expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/\+102,89/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
+    const bubble = await screen.findByRole('dialog')
+    expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
+    expect(bubble).toHaveTextContent(/Le TWR, \+102,89\D?%/)
+    expect(bubble).toHaveTextContent(/c’est pourquoi il diffère du TRI/)
+    // The rebuild's base date went with the statistic.
+    expect(bubble).not.toHaveTextContent(/2019/)
   })
 
-  it('drops it once the reconstruction is over', async () => {
-    // A base date that never changes again is not news, and the origin scalar
-    // is the one that has to keep saying it *is* moving while it does.
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
+  it('keeps the plain IRR text where there is no TWR', async () => {
+    server.use(totalsOf({ twr_index: null, ytd: { gain: 40.69, twr: null } }))
+    const { user } = renderApp()
+    await hero()
 
-    expect(figure('TWR')).not.toHaveTextContent(/2019/)
-    // Both scalars are there all the same — origin and year-to-date.
-    expect(figure('TWR')).toHaveTextContent(/\+102,89/)
-    expect(figure('TWR')).toHaveTextContent(/1,25/)
+    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
+    const bubble = await screen.findByRole('dialog')
+    expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
+    expect(bubble).not.toHaveTextContent(/TWR/)
+  })
+})
+
+describe('the net-of-tax line under the hero (#1112)', () => {
+  const cto = (overrides: Parameters<typeof anAccount>[0] = {}) =>
+    anAccount({ id: 'cto', label: 'CTO', taxation_kind: 'flat_realised', projected_tax: 1200, ...overrides })
+  const pea = (overrides: Parameters<typeof anAccount>[0] = {}) =>
+    anAccount({ id: 'pea', label: 'PEA', taxation_kind: 'none', ...overrides })
+  const accountsOf = (...accounts: ReturnType<typeof anAccount>[]) =>
+    http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts)))
+
+  it('states what would be left, the hero less the projected tax', async () => {
+    server.use(accountsOf(cto(), pea()))
+    renderApp()
+    const head = await hero()
+
+    // 2 800,00 on the hero, 1 200,00 of tax on the CTO, nothing on the PEA.
+    await waitFor(() =>
+      expect(head).toHaveTextContent(/Il vous resterait 1\D?600,00\D?€ net d’impôt/),
+    )
+    expect(head).toHaveTextContent(/2\D?800,00/)
+  })
+
+  it('states no amount and names an account with no tax model', async () => {
+    const { taxation_kind: _, ...unmodelled } = pea()
+    server.use(accountsOf(cto(), unmodelled))
+    renderApp()
+    const head = await hero()
+
+    await waitFor(() =>
+      expect(head).toHaveTextContent(
+        /Net d’impôt incomplet : aucun modèle d’imposition déclaré pour PEA\./,
+      ),
+    )
+    expect(head).not.toHaveTextContent(/Il vous resterait/)
+  })
+
+  it('states no amount and names an account whose tax is not computable', async () => {
+    const { projected_tax: _, ...uncomputable } = cto()
+    server.use(accountsOf(uncomputable, pea()))
+    renderApp()
+    const head = await hero()
+
+    await waitFor(() =>
+      expect(head).toHaveTextContent(/Net d’impôt incomplet : impôt non calculable pour CTO\./),
+    )
+    expect(head).not.toHaveTextContent(/Il vous resterait/)
+  })
+
+  it('never says *no model declared* of a model the server rejected', async () => {
+    // A declared model the server could not apply leaves `taxation_kind`
+    // absent: the declaration needs repairing, it was not forgotten.
+    const { taxation_kind: _, projected_tax: __, ...rejected } = cto({ taxation_model: 'broken' })
+    server.use(accountsOf(rejected, pea()))
+    renderApp()
+    const head = await hero()
+
+    await waitFor(() => expect(head).toHaveTextContent(/impôt non calculable pour CTO/))
+    expect(head).not.toHaveTextContent(/aucun modèle/)
+  })
+
+  it('counts an account taxed on its income as zero, and never as incomplete', async () => {
+    server.use(accountsOf(cto(), pea({ taxation_kind: 'withholding_income' })))
+    renderApp()
+    const head = await hero()
+
+    await waitFor(() => expect(head).toHaveTextContent(/Il vous resterait 1\D?600,00/))
+    expect(head).not.toHaveTextContent(/incomplet/)
+  })
+
+  it('draws no line while the accounts are in flight, or when they failed', async () => {
+    server.use(
+      http.get(ROUTES.accounts, async () => {
+        await delay('infinite')
+        return HttpResponse.json(anAccountsPayload([cto()]))
+      }),
+    )
+    const { unmount } = renderApp()
+    const head = await hero()
+    expect(head).toHaveTextContent(/2\D?800,00/)
+    expect(head).not.toHaveTextContent(/net d’impôt|Net d’impôt/)
+    unmount()
+
+    server.use(
+      problemHandler(ROUTES.accounts, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+    const failed = await hero()
+    await screen.findByRole('group', { name: 'Gain total' })
+    expect(failed).toHaveTextContent(/2\D?800,00/)
+    expect(failed).not.toHaveTextContent(/net d’impôt|Net d’impôt/)
   })
 })
 
@@ -363,15 +471,11 @@ describe('during the reconstruction', () => {
     // Everything else is untouched — the degradation is the year-to-date and
     // nothing but it.
     expect(figure('Valeur du portefeuille')).toHaveTextContent(/2\D?800,00/)
-    expect(figure('TWR')).toHaveTextContent(/\+102,89/)
   })
 
-  it('degrades **both** halves of the year-to-date, each with the sentence', async () => {
-    // The year-to-date is two figures, and the two are deliberately kept apart
-    // — the euro under the head, the percentage inside the TWR statistic —
-    // because side by side they read as a contradiction. A reader looking at
-    // one therefore never sees the other's caption, so a sentence written once
-    // covers one figure and leaves the other wearing a bare `—`.
+  it('degrades the euro half of the year-to-date with the sentence', async () => {
+    // The percentage half lives in the IRR's bubble since #1112 and is simply
+    // left out of it there; the euro half is on screen and owes its reason.
     server.use(
       totalsOf({ ytd: null }),
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
@@ -382,12 +486,7 @@ describe('during the reconstruction', () => {
     expect(head).toHaveTextContent(/—/)
     expect(head).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
 
-    const twr = figure('TWR')
-    expect(twr).toHaveTextContent(/—/)
-    expect(twr).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
-
-    // Twice, once per figure — never a third time somewhere neither of them is.
-    expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(2)
+    expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(1)
   })
 
   it('does not announce a rebuild to a portfolio younger than the year', async () => {
@@ -406,7 +505,6 @@ describe('during the reconstruction', () => {
 
     const head = await hero()
     expect(head).toHaveTextContent(/rien d’enregistré avant le 1ᵉʳ janvier/)
-    expect(figure('TWR')).toHaveTextContent(/rien d’enregistré avant le 1ᵉʳ janvier/)
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
   })
 
@@ -427,7 +525,6 @@ describe('during the reconstruction', () => {
 
     const head = await hero()
     await waitFor(() => expect(head).toHaveTextContent(/40,69/))
-    expect(figure('TWR')).toHaveTextContent('—')
     // Neither sentence, on either figure — both would be false here.
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
     expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
@@ -754,7 +851,7 @@ describe('the convention bubble', () => {
     const { user } = renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TWR' }))
+    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
     await screen.findByRole('dialog')
 
     // Mounted `position: fixed`, the board's bubble stayed pinned above
@@ -774,7 +871,7 @@ describe('the convention bubble', () => {
     )
   })
 
-  it('puts four icons on the head, not nine', async () => {
+  it('puts three icons on the head, not nine', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
@@ -786,7 +883,6 @@ describe('the convention bubble', () => {
     expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
       'Ce que veut dire Versé net',
       'Ce que veut dire TRI',
-      'Ce que veut dire TWR',
       'Ce que veut dire Gain total',
     ])
   })

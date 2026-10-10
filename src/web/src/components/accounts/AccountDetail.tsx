@@ -14,9 +14,9 @@
  *  compares accounts. Here there is one series on one axis, so the defect has
  *  no subject and the control was buying a choice at the price of a second
  *  announcer for *how did this period go*. What stands at the head instead is
- *  `Performance totale`, `gain ÷ versé net` — cumulative, of the same family as
- *  the *sur versé* under the dividends, and covering the account's whole life
- *  so that it implies no window and needs none stated.
+ *  the annualised IRR (#1112), the one rate on the screen: it runs from the
+ *  account's origin, so it has no window to narrow, and the TWR is said inside
+ *  its bubble rather than beside it.
  *  - **The head is one row of one read** (#970). The gain it announces is the
  *    payload's `gain_absolu`, beside the value and the contribution it is the
  *    difference of, which is what makes the subtraction printed on that line
@@ -60,7 +60,6 @@ import {
   distinctSymbols,
   dividendPayers,
   onContributed,
-  totalPerformance,
   valueSeries,
   DEFAULT_ACCOUNT_LABEL,
   type AccountRow,
@@ -187,29 +186,16 @@ export function AccountDetail({
     () => (held === null ? null : portfolioTerms(held, row.transfer_fees)),
     [held, row.transfer_fees],
   )
-  // **What this account has done, cumulatively** — `gain ÷ versé net`, the
-  // maquette's `Performance totale`, and it is **the stored gain the rail
-  // divides** (#970). It was the total re-summed from the four terms here, on
-  // the argument that the two telescope exactly; they do, and it was not
-  // enough, because the four terms come off `/api/positions` while the two
-  // figures printed beside this one come off `/api/accounts` — two reads, two
-  // moments, and one scrape landing between them was all it took for the head
-  // to contradict its own subtraction and the card one column over to
-  // contradict the head. The four terms are still read, and still rendered
-  // where each of them *is* read: the dividends have a card, the fees are the
-  // line under the gain, the latent gain is a column of the lines table. What
-  // none of them is any more is a second producer for this headline.
-  const performance = totalPerformance(row)
-  // What the dividends are worth against the same denominator — the maquette's
-  // *sur versé*, one arithmetic shared with the figure above (`onContributed`).
+  // What the dividends are worth against the net contribution — the maquette's
+  // *sur versé*, one arithmetic shared with the fees below (`onContributed`).
   const dividendsOnContributed =
     terms === null ? null : onContributed(termAmount(terms, 'dividends'), row.net_contributed)
   // And what the broker took, against that same denominator — the drawing's
   // *x % du versé*. Signed negative in the store, read here as a share, so its
   // magnitude is what the sentence carries.
   const feesOnContributed = onContributed(row.transfer_fees ?? null, row.net_contributed)
-  // The time-weighted rate the drawing puts under the annualised one. Stored as
-  // an index on 100, read as a move — the dashboard's own arithmetic.
+  // The time-weighted rate, said inside the IRR's bubble (#1112). Stored as an
+  // index on 100, read as a move — the dashboard's own arithmetic.
   const twr = row.twr_index === null || row.twr_index === undefined ? null : (row.twr_index - 100) / 100
 
   // **The whole series, and no window at all** (#833). The curve is drawn over
@@ -308,7 +294,7 @@ export function AccountDetail({
                 <p className="text-sm text-muted-foreground">
                   <span role="group" aria-label={t('accounts.figure.netContributed')}>
                     {t('accounts.figure.netContributed')}{' '}
-                    <span className="tabular font-mono text-foreground">
+                    <span className="tabular text-foreground">
                       {f.currency(row.net_contributed, currency)}
                     </span>
                   </span>
@@ -324,7 +310,7 @@ export function AccountDetail({
                       body="accounts.detail.gainTotal.explain"
                       anchor="total-gain"
                     />
-                    <span className={cn('tabular font-mono', signClass(row.gain_absolu))}>
+                    <span className={cn('tabular', signClass(row.gain_absolu))}>
                       {f.currency(row.gain_absolu, currency)}
                     </span>
                   </span>
@@ -342,13 +328,13 @@ export function AccountDetail({
                     className="text-xs text-muted-foreground"
                   >
                     {t('accounts.figure.fees')}{' '}
-                    <span className="tabular font-mono">
+                    <span className="tabular">
                       {f.currency(row.transfer_fees ?? null, currency)}
                     </span>
                     {feesOnContributed === null ? null : (
                       <>
                         {' · '}
-                        <span className="tabular font-mono">
+                        <span className="tabular">
                           {t('accounts.figure.feesOnContributed', {
                             percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
                           })}
@@ -359,31 +345,42 @@ export function AccountDetail({
                 )}
             </div>
 
-            {/* **`Performance totale`, and it is a change** — hence `f.percent`
-                and its sign, where the *sur versé* under the dividends is a
-                share and carries none (`lib/format.ts`). Same arithmetic, two
-                readings, and the formatter is what says which of the two a
-                percentage is. It divides the gain printed beside it, out of the
-                same row (#970), so the two are absent together or not at all —
-                where it used to inherit the *positions'* absence and leave the
-                head waiting on a read nothing on it was made of. */}
+            {/* **The one rate on this screen, the annualised IRR** (#1112). It
+                took the slot `Performance totale` held, and the TWR it used to
+                sit beside went into its bubble, which says why the two differ:
+                three rates on one head read as three answers to one question. */}
             <div
               role="group"
-              aria-label={t('accounts.figure.totalPerformance')}
+              aria-label={t('accounts.figure.xirr')}
               className="flex min-w-0 flex-col gap-0.5"
             >
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {t('accounts.figure.totalPerformance')}
-                <Explain
-                  figure={t('accounts.figure.totalPerformance')}
-                  body="accounts.totalPerformance.explain"
-                  anchor="total-performance"
-                />
+                {t('accounts.figure.xirr')}
+                {twr === null ? (
+                  <Explain
+                    figure={t('accounts.figure.xirr')}
+                    body="accounts.xirr.explain"
+                    anchor="xirr"
+                  />
+                ) : (
+                  <Explain
+                    figure={t('accounts.figure.xirr')}
+                    body="accounts.xirr.explainTwr"
+                    values={{ explain: t('accounts.xirr.explain'), twr: f.percent(twr) }}
+                    anchor="xirr"
+                  />
+                )}
               </span>
               <span
-                className={cn('tabular text-4xl font-heavy tracking-tight', signClass(performance))}
+                className={cn('tabular text-4xl font-heavy tracking-tight', signClass(row.xirr))}
               >
-                {performance === null ? ABSENT : f.percent(performance)}
+                {f.percent(row.xirr)}
+                {row.xirr == null ? null : (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {' '}
+                    {t('accounts.xirr.unit')}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -455,7 +452,7 @@ export function AccountDetail({
                   style={{ backgroundColor: accountColour(hue) }}
                 />
                 {t('accounts.figure.holdings')}
-                <span className="tabular ml-auto font-mono text-foreground">
+                <span className="tabular ml-auto text-foreground">
                   {f.currency(row.holdings_value, currency)}
                 </span>
               </li>
@@ -466,46 +463,11 @@ export function AccountDetail({
               >
                 <span aria-hidden className="inline-block size-2 shrink-0 rounded-xs bg-input" />
                 {t('accounts.figure.cash')}
-                <span className="tabular ml-auto font-mono text-foreground">
+                <span className="tabular ml-auto text-foreground">
                   {f.currency(row.cash_balance, currency)}
                 </span>
               </li>
             </ul>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-3">
-          <CardHeader>
-            <h3 className="label flex items-center gap-1.5">
-              {t('accounts.detail.return')}
-              <Explain
-                figure={t('accounts.figure.xirr')}
-                body="accounts.xirr.explain"
-                anchor="xirr"
-              />
-            </h3>
-          </CardHeader>
-          <CardContent className="flex h-full flex-col gap-3">
-            <p
-              role="group"
-              aria-label={t('accounts.figure.xirr')}
-              className={cn('tabular text-5xl font-heavy tracking-tight', signClass(row.xirr))}
-            >
-              {f.percent(row.xirr)}
-            </p>
-            {/* The other rate, and the drawing puts it here rather than in a
-                card of its own: two ways of reading one account's return, the
-                annualised one leading and the time-weighted one under it. */}
-            {twr === null ? null : (
-              <div
-                role="group"
-                aria-label={t('accounts.figure.twr')}
-                className="mt-auto flex items-baseline justify-between gap-2.5 border-t pt-3"
-              >
-                <span className="text-xs text-muted-foreground">{t('accounts.figure.twr')}</span>
-                <span className="tabular font-mono text-lg font-semibold">{f.percent(twr)}</span>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -557,7 +519,7 @@ export function AccountDetail({
                 <span className="text-xs text-muted-foreground">
                   {t('accounts.detail.dividends.onContributed')}
                 </span>
-                <span className="tabular font-mono text-lg font-semibold">
+                <span className="tabular text-lg font-semibold">
                   {dividendsOnContributed === null
                     ? ABSENT
                     : f.percentPoints(dividendsOnContributed * 100)}
@@ -698,7 +660,7 @@ export function AccountDetail({
                         <span className="text-xs text-muted-foreground">
                           {t('accounts.detail.projectedTax.base')}
                         </span>
-                        <span className="tabular min-w-0 text-right font-mono text-sm">
+                        <span className="tabular min-w-0 text-right text-sm">
                           {f.currency(row.projected_base, currency)}
                         </span>
                       </div>
@@ -719,7 +681,7 @@ export function AccountDetail({
                             : 'accounts.detail.projectedTax.rate',
                         )}
                       </span>
-                      <span className="tabular min-w-0 text-right font-mono text-lg font-semibold">
+                      <span className="tabular min-w-0 text-right text-lg font-semibold">
                         {row.projected_rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
                       </span>
                     </div>
@@ -797,7 +759,7 @@ export function AccountDetail({
                         className="min-w-0 flex-1"
                         fill={accountColour(hue)}
                       />
-                      <span className="tabular w-11 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                      <span className="tabular w-11 shrink-0 text-right text-xs text-muted-foreground">
                         {renderFigure(
                           weightRendering(line, placed),
                           // `?? 0` is never reached: `weightRendering` answers
@@ -809,12 +771,12 @@ export function AccountDetail({
                         )}
                       </span>
                     </span>
-                    <span className="tabular w-23 shrink-0 text-right font-mono lg:w-27.5">
+                    <span className="tabular w-23 shrink-0 text-right lg:w-27.5">
                       {f.currency(marketValue(line), currency)}
                     </span>
                     <span
                       className={cn(
-                        'tabular w-15.5 shrink-0 text-right font-mono text-xs lg:w-20',
+                        'tabular w-15.5 shrink-0 text-right text-xs lg:w-20',
                         signClass(ratio),
                       )}
                     >
