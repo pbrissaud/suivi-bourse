@@ -13,13 +13,13 @@ from the basis and leaves ``unit_cost`` where it was.
 The only tax arithmetic is :func:`taxation_projection.projected_tax`, applied to
 **the lot** — never the change in the whole account's projected tax.
 """
+import math
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from application import taxation
-from application.taxation_projection import (age_date, projected_tax,
-                                             threshold_day)
+from application.taxation_projection import projected_tax, rate_changes_on
 
 #: The French PEA's contribution ceiling, in the base currency.
 PEA_CEILING = 150_000.0
@@ -38,6 +38,10 @@ MESSAGES = {
     'pea_withdrawal_before_threshold':
         'Withdrawing from this PEA before its fifth anniversary may close it.',
 }
+
+#: The ``fr_pea`` template's values, which are what makes an account a PEA.
+_PEA_SHAPE = next(template['values'] for template in taxation.TEMPLATES
+                  if template['id'] == 'fr_pea')
 
 #: What an arbitrage leaves out, whatever the sale itself does.
 ARBITRAGE_NOT_MODELLED = ('progressive_scale_option (#1106)', 'loss_offset',
@@ -71,13 +75,16 @@ class Account:
 def simulate_sale(account: Account, symbol: str, qty: float, *,
                   now: date) -> Dict[str, Any]:
     """Sell ``qty`` of ``symbol`` out of ``account`` on ``now``, fees at 0."""
-    if qty <= 0:
-        raise SimulationRefused(f'cannot sell a quantity of {qty}')
+    # **The quantity crosses a trust boundary**: #1109 takes it from the model.
+    # A NaN passes every comparison below and comes out as a NaN sale with no
+    # tax, and a JSON ``true`` would sell one share.
+    if not _finite(qty) or qty <= 0:
+        raise SimulationRefused(f'cannot sell a quantity of {qty!r}')
     line = next((line for line in account.lines
                  if line.symbol == symbol and line.quantity > 0), None)
     if line is None:
         raise SimulationRefused(f'{symbol} is not held in {account.id}')
-    if line.price is None or line.price <= 0:
+    if not _finite(line.price) or line.price <= 0:
         raise SimulationRefused(f'{symbol} has no price in {account.id}')
     held = line.quantity
     if qty > held * (1 + _EPSILON):
@@ -113,7 +120,14 @@ def simulate_sale(account: Account, symbol: str, qty: float, *,
     }
 
 
-def _tax(account: Account, gain: float, proceeds: float, now: date):
+def _finite(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value)
+
+
+def _tax(account: Account, gain: float, proceeds: float,
+         now: date) -> Tuple[Optional[float], Optional[float], Optional[str]]:
     """``(tax_now, if_withdrawn, reason)`` for the lot, by the account's kind."""
     kind = account.kind
     if kind is None:
@@ -135,7 +149,7 @@ def _if_withdrawn(account: Account, proceeds: float,
     for line in account.lines:
         if not line.quantity:
             continue        # a closed line is worth nothing, and that is known
-        if line.price is None:
+        if not _finite(line.price):
             return None
         market_value = line.quantity * line.price
         value += market_value
@@ -153,10 +167,16 @@ def _project(account: Account, base: float, now: date) -> Optional[float]:
 
 def is_pea(account: Account) -> bool:
     """The shape of the ``fr_pea`` template: declarations carry no wrapper
-    type, so this is the only way to tell one."""
-    return all((account.kind == taxation.AGED_FLAT_REALISED,
-                account.parameters.get('threshold_years') == 5,
-                account.parameters.get('age_basis') == taxation.FIRST_PAYMENT))
+    type, so this is the only way to tell one. Read off the parameters as the
+    record would accept them, so a ``"5"`` a hand edit left is a five."""
+    if account.kind != taxation.AGED_FLAT_REALISED:
+        return False
+    try:
+        parameters = taxation.validate(account.kind, account.parameters)
+    except taxation.ModelRejected:
+        return False
+    return all(parameters.get(name) == value
+               for name, value in _PEA_SHAPE.items())
 
 
 def simulate_arbitrage(from_account: Account, symbol: str, qty: float,
@@ -180,10 +200,11 @@ def simulate_arbitrage(from_account: Account, symbol: str, qty: float,
                 excess=contributed + payment - PEA_CEILING))
         warnings.append(_warning('pea_eligibility_unknown'))
     if is_pea(from_account):
-        day = threshold_day(from_account.parameters, age_date(
-            from_account.parameters, from_account.opened_on,
-            from_account.first_payment))
-        if day is not None and now < day:
+        day = rate_changes_on(
+            kind=from_account.kind, parameters=from_account.parameters,
+            opened_on=from_account.opened_on,
+            first_payment=from_account.first_payment, now=now)
+        if day is not None:
             warnings.append(_warning(
                 'pea_withdrawal_before_threshold',
                 threshold_day=day.isoformat(), days_left=(day - now).days))
