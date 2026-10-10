@@ -137,6 +137,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
 
   // A selection is about one security: carrying it to the next sheet would mark
   // a day that share has no event on, and grow a marker that is not there.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the effect resets on a change of security, `symbol` is its trigger and not its input
   useEffect(() => {
     setSelectedDay(null)
     setScrollRequest(0)

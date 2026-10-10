@@ -63,6 +63,7 @@ export function Segmented<T extends string>({
   className,
 }: SegmentedProps<T>) {
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is computed, and both `radiogroup` and `group` take `aria-label`
     <div
       role={mode === 'radio' ? 'radiogroup' : 'group'}
       aria-label={label}
@@ -75,6 +76,7 @@ export function Segmented<T extends string>({
       {options.map((option) => {
         const on = option.value === value
         return (
+          // biome-ignore lint/a11y/useAriaPropsSupportedByRole: `aria-checked` is only set when the computed role is `radio`
           <button
             key={option.value}
             type="button"

@@ -24,6 +24,7 @@ const queryClient = new QueryClient({
   },
 })
 
+// biome-ignore lint/style/noNonNullAssertion: `index.html` ships the `#root` element
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App router={createAppRouter()} queryClient={queryClient} />

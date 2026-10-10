@@ -20,7 +20,7 @@
  * the accounts as adjacent segments closing a whole, which is a claim about the
  * total that no per-line bar makes (`AccountsRail.tsx` carries the argument for
  * keeping both). Its segments are therefore not `ShareBar`s and cannot be, and
- * `lint/share-width.grit` exempts that file by name in `biome.json`. The gain's
+ * `lint/share-width.grit` exempts that file by name in `biome.jsonc`. The gain's
  * breakdown on the dashboard is the second, for the rail's reason: four terms
  * closing one total.
  */

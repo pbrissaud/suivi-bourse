@@ -282,6 +282,7 @@ export function Notifications() {
                           size="sm"
                           className="ml-auto"
                           disabled={acknowledge.isPending || acknowledgeAll.isPending}
+                          // biome-ignore lint/style/noNonNullAssertion: the button only renders when `entry.acknowledge` is not null, the closure loses the narrowing
                           onClick={() => acknowledge.mutate(entry.acknowledge!)}
                         >
                           {t(

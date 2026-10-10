@@ -156,6 +156,7 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
   // The panel is mounted once for the page and reused for every account, so a
   // refusal earned on one model must not be on screen under the next — the same
   // rule, and the same reason, as `AccountForm`'s own two resets.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the effect resets on a change of model, `value` is its trigger and not its input
   useEffect(() => {
     setEditor(null)
     write.reset()
@@ -248,6 +249,7 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
       {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
 
       {editor === null ? null : (
+        // biome-ignore lint/a11y/noStaticElementInteractions: the keydown bubbles up from the fields inside, the block itself is never a target (see below)
         <div
           className="space-y-4 rounded-md border border-border p-3"
           // **Enter saves the model, and never the account.** This block sits
@@ -487,6 +489,7 @@ function Brackets({
       {rows.map((row, index) => {
         const last = index === rows.length - 1
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a bracket has no identity but its rank, and rows are never reordered
           <div key={index} className="flex items-center gap-2">
             {last ? (
               <span className="flex-1 text-sm text-muted-foreground">{t('taxation.brackets.top')}</span>

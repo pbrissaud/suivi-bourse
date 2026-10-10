@@ -570,6 +570,7 @@ export function AccountDetail({
               // `none` is the one kind whose figure rests on no read at all:
               // the model *says* zero, and a refused positions read is not a
               // reason to withhold an answer that was never derived from it.
+              // biome-ignore lint/style/noNonNullAssertion: the card only renders with `terms === null` when `failures.positions` is set (the predicate above)
               <Unreadable failure={failures.positions!} />
             ) : (
               <>

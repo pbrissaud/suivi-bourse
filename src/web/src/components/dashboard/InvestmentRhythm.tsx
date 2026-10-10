@@ -178,7 +178,7 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
       {months.length < 2 ? null : (
         <p aria-hidden className="mt-1.5 flex justify-between text-2xs text-muted-foreground md:hidden">
           <span>{label(months[0].month)}</span>
-          <span>{label(months.at(-1)!.month)}</span>
+          <span>{label(months[months.length - 1].month)}</span>
         </p>
       )}
     </div>

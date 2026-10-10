@@ -168,6 +168,7 @@ export function AccountForm({
     },
   })
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the form reloads when the panel opens or the account changes, not when a mutation object does
   useEffect(() => {
     if (!open) return
     setErrors({})

@@ -144,14 +144,14 @@ describe('a read in flight is not an absence, held on the source', () => {
   for (const file of program.getSourceFiles()) {
     if (file.isDeclarationFile) continue
     const relative = path.relative(ROOT, file.fileName)
-    if (!relative.startsWith('src' + path.sep)) continue
+    if (!relative.startsWith(`src${path.sep}`)) continue
     // **The suite is not judged.** A test mounting a block on `[]` is
     // constructing *landed and empty* on purpose — that state is a payload and
     // exercising it is what a test is for. The rule is about what the app
     // composes, and a gate that forbade the fixture would forbid the very
     // assertion the two states exist to be told apart by.
     const inSuite =
-      /\.test\.tsx?$/.test(relative) || relative.startsWith('src' + path.sep + 'test' + path.sep)
+      /\.test\.tsx?$/.test(relative) || relative.startsWith(`src${path.sep}test${path.sep}`)
     if (inSuite) continue
 
     const at = (node: ts.Node) =>

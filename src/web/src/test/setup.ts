@@ -105,8 +105,9 @@ afterEach(() => {
   // alone leaves the element standing, removing alone leaves the store holding
   // it.
   toast.dismiss()
-  document.querySelectorAll('[data-sonner-toaster]').forEach((node) => node.remove())
+  for (const node of document.querySelectorAll('[data-sonner-toaster]')) node.remove()
   window.localStorage.clear()
+  // biome-ignore lint/suspicious/noDocumentCookie: clears shadcn's sidebar state cookie, which the sidebar writes with `document.cookie`
   document.cookie = 'sidebar_state=; Max-Age=0; path=/'
   document.documentElement.className = ''
   document.documentElement.removeAttribute('style')
