@@ -124,7 +124,9 @@ describe('the modal opens on a predicate, never on a moment', () => {
   it('opens wherever the reader landed, because first run is not a place', async () => {
     await firstRun({ url: '/shares' })
 
-    expect(within(modal()).getByRole('heading', { name: /Bienvenue dans SuiviBourse/ })).toBeInTheDocument()
+    expect(
+      within(modal()).getByRole('heading', { name: /Bienvenue dans SuiviBourse/ }),
+    ).toBeInTheDocument()
     // The page the reader asked for is behind it — no route of its own, and no
     // redirection conditioned on the data. `hidden`, because a modal dialog
     // hides the rest of the document from the accessibility tree.
@@ -154,7 +156,9 @@ describe('what it says, and what it refuses to say', () => {
     await firstRun()
 
     const described = within(modal())
-    expect(described.getByText(/vos achats et vos ventes : le titre, la date, le prix/)).toBeInTheDocument()
+    expect(
+      described.getByText(/vos achats et vos ventes : le titre, la date, le prix/),
+    ).toBeInTheDocument()
     expect(described.getByText(/relève les cours tout seul/)).toBeInTheDocument()
     expect(described.getByText(/Trois passages pour démarrer/)).toBeInTheDocument()
     expect(described.queryByText(/PRU|prix de revient|moyen pondéré/i)).not.toBeInTheDocument()
@@ -163,7 +167,9 @@ describe('what it says, and what it refuses to say', () => {
   it('warns that an ephemeral container keeps nothing, being the only surface every trial user meets', async () => {
     server.use(
       http.get(ROUTES.runtime, () =>
-        HttpResponse.json(aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } })),
+        HttpResponse.json(
+          aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } }),
+        ),
       ),
     )
     await firstRun()
@@ -176,7 +182,9 @@ describe('what it says, and what it refuses to say', () => {
   it('says nothing about persistence on a mounted store', async () => {
     await firstRun()
 
-    await waitFor(() => expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument(),
+    )
     expect(within(modal()).queryByText(/ne garde rien/)).not.toBeInTheDocument()
   })
 })
@@ -258,14 +266,18 @@ describe('the currency itself', () => {
     const field = within(modal()).getByLabelText('Devise de base') as HTMLSelectElement
     expect(field.value).toBe('CHF')
     // A suggestion poses nothing: the reservation is on screen where it applies.
-    expect(within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/)).toBeInTheDocument()
+    expect(
+      within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/),
+    ).toBeInTheDocument()
   })
 
   it('drops the pre-filled note the moment the reader overrides the suggestion', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     const field = within(modal()).getByLabelText('Devise de base')
-    expect(within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/)).toBeInTheDocument()
+    expect(
+      within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/),
+    ).toBeInTheDocument()
 
     await user.selectOptions(field, 'CHF')
     // The reservation is about a value the browser named. Left standing over a
@@ -394,9 +406,7 @@ describe('the band is gone and its sentence descends (#829)', () => {
     // ones that are missing — and it *says why*, in place of the em dashes it
     // would otherwise line up.
     expect(await screen.findByText('Aucune devise de base')).toBeInTheDocument()
-    expect(
-      screen.getByText(/Rien n’est valorisé et aucun gain n’est calculé/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Rien n’est valorisé et aucun gain n’est calculé/)).toBeInTheDocument()
 
     // **The ledger stays readable throughout**: the events are declared, and it
     // is their valuation that waits.

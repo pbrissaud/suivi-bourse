@@ -277,15 +277,4 @@ describe('every plot the product mounts', () => {
   })
 })
 
-describe('the sentence has one author', () => {
-  it('is composed in ChartReading and nowhere else', () => {
-    const writers = sources()
-      .map((file) => ({ rel: path.relative(SOURCE, file), body: code(file) }))
-      .filter((one) => one.body.includes("'chart.reading."))
-      .map((one) => one.rel)
-    // Four surfaces mounting one primitive, and not four spellings of one
-    // sentence: `Stat`, `EmptyState`, `Refusal`, `EntryPair` and `ShareBar` all
-    // exist because the prototype held several copies of one object.
-    expect(writers).toEqual(['components/ChartReading.tsx'])
-  })
-})
+// `is composed in ChartReading and nowhere else` is a Biome rule now: lint/chart-reading-one-author.grit

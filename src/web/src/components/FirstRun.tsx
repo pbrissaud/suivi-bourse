@@ -103,10 +103,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { api, type AccountDraft, type ConfigResponse } from '@/lib/api'
-import {
-  DEFAULT_ACCOUNT_LABEL,
-  declaredLabel,
-} from '@/lib/accounts'
+import { DEFAULT_ACCOUNT_LABEL, declaredLabel } from '@/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
@@ -517,10 +514,7 @@ function PassageRail({ current }: { current: Passage }) {
             {index < PASSAGES.length - 1 ? (
               <span
                 aria-hidden
-                className={cn(
-                  'h-px min-w-2.5 flex-1',
-                  walked ? 'bg-primary/45' : 'bg-border',
-                )}
+                className={cn('h-px min-w-2.5 flex-1', walked ? 'bg-primary/45' : 'bg-border')}
               />
             ) : null}
           </div>

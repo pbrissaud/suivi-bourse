@@ -154,7 +154,13 @@ describe('the four terms and their sum', () => {
     // Before it, one line quoted in a unit nothing names turned the gain of the
     // **whole portfolio** into *waiting for a rate*, for a rate that was never
     // coming: there is no pair to fetch one for.
-    const unitless = aPosition({ symbol: 'ZZG', quantity: 6, cost_basis: 600, price: 130, currency: null })
+    const unitless = aPosition({
+      symbol: 'ZZG',
+      quantity: 6,
+      cost_basis: 600,
+      price: 130,
+      currency: null,
+    })
     expect(positionTerms([unitless]).unrealised).toEqual(known(0))
 
     const withOpenLines = positionTerms([...defaultPositions(), unitless])
@@ -231,7 +237,14 @@ describe('what the terms are allowed to do on screen', () => {
     // that owner still has, so the total stays a figure.
     const sold = portfolioTerms(
       [
-        aPosition({ symbol: 'ZZD', quantity: 0, cost_basis: 0, realised: 120, dividends: 10, price: null }),
+        aPosition({
+          symbol: 'ZZD',
+          quantity: 0,
+          cost_basis: 0,
+          realised: 120,
+          dividends: 10,
+          price: null,
+        }),
         aPosition({ symbol: 'ZZE', quantity: 0, cost_basis: 0, realised: -45, price: null }),
       ],
       -5,

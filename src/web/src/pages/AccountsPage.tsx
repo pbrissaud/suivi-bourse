@@ -206,7 +206,7 @@ export default function AccountsPage() {
         // max-content)` — so one long event label took this column past the
         // width of a phone and every card under it with it. `grid-cols-1` is
         // `repeat(1, minmax(0, 1fr))`, and the `0` is what puts the truncations
-        // back in charge (`src/gridColumns.test.ts`).
+        // back in charge (`lint/grid-base-columns.grit`).
         <>
           {/* **The stacked width's rail, and it is a bar** (#838). It is
               mounted here rather than inside `AccountsRail` because a sticky
@@ -275,7 +275,9 @@ export default function AccountsPage() {
         // `null` while the ledger has not landed: the count a refusal
         // is made of comes off it, and a removal offered before it lands offers
         // a gesture the server is about to refuse.
-        removal={editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))}
+        removal={
+          editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))
+        }
         onClose={() => setEditing(undefined)}
       />
     </div>

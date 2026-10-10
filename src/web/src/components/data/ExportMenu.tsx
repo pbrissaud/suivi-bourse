@@ -42,7 +42,7 @@
  * and the sentence leaves when the file is there.
  *
  * The receipt shows the library's own indicator while it stands, and that is
- * not the spinner the product refuses: `noSpinner.test.ts` holds a rule about
+ * not the spinner the product refuses: `lint/no-wait-dressing.grit` holds a rule about
  * **reads** — nothing may be claimed about a subject nobody has heard from, so
  * a wait on one is not dressed, it renders nothing. This wait is the reader's
  * own act, it is not a claim about anything, and #796 asks in as many words for
@@ -124,9 +124,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
       <DropdownMenuContent align="end" className="w-72">
         {/* The menu says what the four entries answer, once, rather than four
             times over: *what you are exporting*. */}
-        <DropdownMenuLabel className="label">
-          {t('data.export.heading')}
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="label">{t('data.export.heading')}</DropdownMenuLabel>
         {files.events ? (
           <>
             <Entry

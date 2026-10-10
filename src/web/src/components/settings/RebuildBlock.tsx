@@ -67,9 +67,12 @@ export function RebuildBlock({ runtime, firstEvent, accounts }: RebuildBlockProp
   if (runtime === null || runtime.rebuilding !== true) return null
 
   const { account, ratio } = rebuildProgress(runtime.accounts ?? [], firstEvent, new Date())
-  const declared = account === null ? null : (accounts?.accounts ?? []).find((one) => one.id === account)
+  const declared =
+    account === null ? null : (accounts?.accounts ?? []).find((one) => one.id === account)
   const name =
-    account === null ? null : (declared ? declaredLabel(declared) : null) ?? t(DEFAULT_ACCOUNT_LABEL)
+    account === null
+      ? null
+      : ((declared ? declaredLabel(declared) : null) ?? t(DEFAULT_ACCOUNT_LABEL))
   const percent = ratio === null ? null : Math.round(ratio * 100)
 
   return (

@@ -273,14 +273,10 @@ describe('what the page stopped doing', () => {
     expect(screen.queryByText(/annualisé depuis l’origine/)).not.toBeInTheDocument()
     await waitFor(() =>
       expect(
-        screen.getAllByRole('button', { name: /^Ce que veut dire/ }).map((button) =>
-          button.getAttribute('aria-label'),
-        ),
-      ).toEqual([
-        'Ce que veut dire Gain',
-        'Ce que veut dire TRI',
-        'Ce que veut dire Encaissés',
-      ]),
+        screen
+          .getAllByRole('button', { name: /^Ce que veut dire/ })
+          .map((button) => button.getAttribute('aria-label')),
+      ).toEqual(['Ce que veut dire Gain', 'Ce que veut dire TRI', 'Ce que veut dire Encaissés']),
     )
   })
 

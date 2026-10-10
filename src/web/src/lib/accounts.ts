@@ -51,13 +51,7 @@
  *    have declared none* is not *the list has not arrived* is not *the list
  *    could not be read*.
  */
-import type {
-  Account,
-  AccountsResponse,
-  LedgerEvent,
-  PerfPoint,
-  Position,
-} from '@/lib/api'
+import type { Account, AccountsResponse, LedgerEvent, PerfPoint, Position } from '@/lib/api'
 import type { MessageKey } from '@/lib/i18n'
 import { accountOf, byDateDescending } from '@/lib/ledger'
 
@@ -111,9 +105,8 @@ interface NamedAccount {
  */
 export function declaredLabel(account: NamedAccount): string | null {
   const label = account.label?.trim() || null
-  return isDefaultAccount(account.id) ? label : label ?? account.id
+  return isDefaultAccount(account.id) ? label : (label ?? account.id)
 }
-
 
 // ------------------------------------------------------------------------- //
 // The one range control — the dashboard's accounts card, and nowhere else
@@ -369,7 +362,7 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     // shows `−6 517,26 €` of cash to an owner who never recorded a transfer:
     // the replay debits every purchase, so with no `DEPOSIT` the balance is
     // exactly minus what was invested. Defined, and false.
-    cash_balance: (account.total_value ?? null) === null ? null : account.cash_balance ?? null,
+    cash_balance: (account.total_value ?? null) === null ? null : (account.cash_balance ?? null),
     net_contributed: account.net_contributed ?? null,
     gain_absolu: account.gain_absolu ?? null,
     xirr: account.xirr ?? null,
@@ -377,24 +370,14 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     twr_index: account.twr_index ?? null,
     // Spread, never `?? null` (#919): the five optional members carry the
     // distinction between *absent* and *null*, and the idiom above erases it.
-    ...(account.taxation_model === undefined
-      ? {}
-      : { taxation_model: account.taxation_model }),
-    ...(account.taxation_kind === undefined
-      ? {}
-      : { taxation_kind: account.taxation_kind }),
-    ...(account.projected_base === undefined
-      ? {}
-      : { projected_base: account.projected_base }),
-    ...(account.projected_rates === undefined
-      ? {}
-      : { projected_rates: account.projected_rates }),
+    ...(account.taxation_model === undefined ? {} : { taxation_model: account.taxation_model }),
+    ...(account.taxation_kind === undefined ? {} : { taxation_kind: account.taxation_kind }),
+    ...(account.projected_base === undefined ? {} : { projected_base: account.projected_base }),
+    ...(account.projected_rates === undefined ? {} : { projected_rates: account.projected_rates }),
     ...(account.projected_rate_changes_on === undefined
       ? {}
       : { projected_rate_changes_on: account.projected_rate_changes_on }),
-    ...(account.projected_tax === undefined
-      ? {}
-      : { projected_tax: account.projected_tax }),
+    ...(account.projected_tax === undefined ? {} : { projected_tax: account.projected_tax }),
   }))
 }
 
@@ -427,7 +410,6 @@ export function degradedReason(
   // together or not at all, and `holdings_value` is written either way.
   return row.total_value === null ? 'withoutCashLedger' : null
 }
-
 
 /**
  * What a figure is worth **against what was paid in** — the maquette's *sur
@@ -465,8 +447,10 @@ export function projectedTaxTotal(rows: readonly AccountRow[]): {
   const total = { tax: 0, unmodelled: [] as AccountRow[], uncomputable: [] as AccountRow[] }
   for (const row of rows) {
     if (row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income') continue
-    if (row.taxation_kind === undefined && row.taxation_model === undefined) total.unmodelled.push(row)
-    else if (row.taxation_kind === undefined || row.projected_tax === undefined) total.uncomputable.push(row)
+    if (row.taxation_kind === undefined && row.taxation_model === undefined)
+      total.unmodelled.push(row)
+    else if (row.taxation_kind === undefined || row.projected_tax === undefined)
+      total.uncomputable.push(row)
     else total.tax += row.projected_tax
   }
   return total
@@ -575,10 +559,7 @@ export function accountEvents(
  * say, and dropping them here would produce the other correct figure — the one
  * the shares page spent a session refusing to show as the owner's gain.
  */
-export function accountPositions(
-  positions: readonly Position[],
-  account: string,
-): Position[] {
+export function accountPositions(positions: readonly Position[], account: string): Position[] {
   return positions.filter((position) => position.account === account)
 }
 
@@ -640,7 +621,9 @@ export function dividendPayers(positions: readonly Position[]): DividendPayer[] 
 
   return [...paid.entries()]
     .map(([symbol, amount]) => ({ symbol, amount, share: amount / whole }))
-    .sort((a, b) => (a.amount === b.amount ? a.symbol.localeCompare(b.symbol) : b.amount - a.amount))
+    .sort((a, b) =>
+      a.amount === b.amount ? a.symbol.localeCompare(b.symbol) : b.amount - a.amount,
+    )
 }
 
 /** One day of the account's own curve — value against what was paid in. */
@@ -888,5 +871,3 @@ const ACCOUNT_HUES = [165, 225, 285, 345, 45, 105] as const
 export function accountColour(index: number): string {
   return `oklch(0.62 0.15 ${ACCOUNT_HUES[index % ACCOUNT_HUES.length]})`
 }
-
-

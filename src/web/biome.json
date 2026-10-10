@@ -1,0 +1,86 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "root": true,
+  "files": { "includes": ["src/**", "lint/fixtures/**"] },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "assist": { "enabled": false },
+  "css": { "parser": { "tailwindDirectives": true }, "formatter": { "enabled": true } },
+  "json": { "formatter": { "enabled": true } },
+  "linter": { "enabled": true, "rules": { "recommended": false } },
+  "overrides": [{ "includes": ["lint/fixtures/**"], "formatter": { "enabled": false } }],
+  "plugins": [
+    {
+      "path": "./lint/no-wait-dressing.grit",
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}"
+      ]
+    },
+    { "path": "./lint/no-overline.grit", "includes": ["**/src/**/*.tsx", "!**/*.test.tsx"] },
+    { "path": "./lint/no-overline-css.grit", "includes": ["**/src/index.css"] },
+    { "path": "./lint/flat-card.grit", "includes": ["**/components/ui/card.tsx"] },
+    {
+      "path": "./lint/grid-base-columns.grit",
+      "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]
+    },
+    {
+      "path": "./lint/share-width.grit",
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}",
+        "!**/components/ShareBar.tsx",
+        "!**/accounts/AccountsRail.tsx",
+        "!**/dashboard/GainBreakdown.tsx"
+      ]
+    },
+    {
+      "path": "./lint/chart-chrome-tokens.grit",
+      "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]
+    },
+    {
+      "path": "./lint/chart-reading-one-author.grit",
+      "includes": [
+        "**/src/**/*.tsx",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.tsx",
+        "!**/components/ChartReading.tsx"
+      ]
+    },
+    {
+      "path": "./lint/no-colour-literal.grit",
+      "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]
+    },
+    {
+      "path": "./lint/one-tone-table.grit",
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}",
+        "!**/components/Notifications.tsx"
+      ]
+    },
+    {
+      "path": "./lint/refusal-for-writes.grit",
+      "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]
+    },
+    {
+      "path": "./lint/no-runtime-error-on-surfaces.grit",
+      "includes": ["**/src/pages/*Page.tsx", "**/components/data/Ledger.tsx"]
+    }
+  ]
+}

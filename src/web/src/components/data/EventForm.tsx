@@ -61,7 +61,15 @@ import {
 } from '@/lib/accounts'
 import { currencyInput, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { accountOf, FIELDS, fold, parseDay, parseDecimal, titlesFor, type Title } from '@/lib/ledger'
+import {
+  accountOf,
+  FIELDS,
+  fold,
+  parseDay,
+  parseDecimal,
+  titlesFor,
+  type Title,
+} from '@/lib/ledger'
 import { entryGone, problemSentence } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
@@ -251,9 +259,12 @@ export function EventForm({
    * together, the second would leave the previous symbol's price sitting under
    * the new one's ticker.
    */
-  const suggested = suggestion === undefined
-    ? undefined
-    : suggestion.price == null ? null : currencyInput(suggestion.price, suggestion.base_currency)
+  const suggested =
+    suggestion === undefined
+      ? undefined
+      : suggestion.price == null
+        ? null
+        : currencyInput(suggestion.price, suggestion.base_currency)
   // **The day is shown only while it is a claim about what is in the field.**
   // Over a figure the reader typed it would be a precise untruth.
   const suggesting = typeof suggested === 'string' && draft.unitPrice === suggested
@@ -378,7 +389,11 @@ export function EventForm({
     }
 
     const quantity = number('quantity', true, fields.quantity)
-    const unitPrice = number('unitPrice', fields.unitPrice === 'required', fields.unitPrice !== 'none')
+    const unitPrice = number(
+      'unitPrice',
+      fields.unitPrice === 'required',
+      fields.unitPrice !== 'none',
+    )
     const fee = number('fee', false, fields.fee)
     const amount = number('amount', true, fields.amount)
 
@@ -424,7 +439,11 @@ export function EventForm({
           {/* The first question, and the only one on screen until it is answered. */}
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">{t('data.form.type')}</legend>
-            <div role="radiogroup" aria-label={t('data.form.type')} className="grid grid-cols-2 gap-2">
+            <div
+              role="radiogroup"
+              aria-label={t('data.form.type')}
+              className="grid grid-cols-2 gap-2"
+            >
               {EVENT_TYPES.map((candidate) => (
                 <button
                   key={candidate}

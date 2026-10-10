@@ -1,6 +1,6 @@
 /**
  * **The content column may be narrower than what is in it** (#832), held on the
- * source for the same reason `gridColumns.test.ts` is: nothing makes it true by
+ * source for the same reason `lint/grid-base-columns.grit` is: nothing makes it true by
  * construction, and no rendering test could see it — jsdom lays nothing out, so
  * a table 976 px wide inside a 672 px column is a fact only a browser has.
  *
@@ -33,10 +33,7 @@ const SOURCE = path.resolve(import.meta.dirname)
 
 const SHELL = fs.readFileSync(path.join(SOURCE, 'components', 'Shell.tsx'), 'utf8')
 const TABLE = fs.readFileSync(path.join(SOURCE, 'components', 'ui', 'table.tsx'), 'utf8')
-const FACETS = fs.readFileSync(
-  path.join(SOURCE, 'components', 'data', 'LedgerFacets.tsx'),
-  'utf8',
-)
+const FACETS = fs.readFileSync(path.join(SOURCE, 'components', 'data', 'LedgerFacets.tsx'), 'utf8')
 
 /** The opening tag of the content column, whatever else is on it. */
 const INSET = /<SidebarInset\b[^>]*>/
@@ -56,9 +53,8 @@ describe('the content column may be narrower than what is in it', () => {
   })
 
   it('reads the tag it is supposed to be reading', () => {
-    // The coverage half, in the taste of `gridColumns.test.ts`: a pattern that
-    // stopped matching would make the assertions above pass on a shell that had
-    // lost the rule entirely.
+    // The coverage half: a pattern that stopped matching would make the
+    // assertions above pass on a shell that had lost the rule entirely.
     expect(SHELL).toMatch(/SidebarInset/)
     expect(INSET.test('<SidebarInset>')).toBe(true)
   })
@@ -90,7 +86,8 @@ describe('the facet panel folds where there is no room for it', () => {
   it('keeps the toggle off the wide layout, where it would do nothing', () => {
     // The first class list after the control's own attribute, which is that
     // control's: an arrow function in between makes `>` a poor terminator.
-    const [, classes] = FACETS.match(/aria-controls="ledger-facets"[\s\S]*?className="([^"]*)"/) ?? []
+    const [, classes] =
+      FACETS.match(/aria-controls="ledger-facets"[\s\S]*?className="([^"]*)"/) ?? []
     expect(classes).toBeDefined()
     expect(classes).toMatch(/\bmd:hidden\b/)
   })

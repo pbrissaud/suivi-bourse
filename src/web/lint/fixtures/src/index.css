@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme inline {
+  --tracking-caps: 0.08em; /* expect: no-overline-css */
+  --tracking-tight: -0.01em;
+}
+
+@utility eyebrow { /* expect: no-overline-css */
+  font-size: 0.75rem;
+}
+
+.kicker {
+  letter-spacing: var(--tracking-caps); /* expect: no-overline-css */
+  word-spacing: var(--tracking-capsule);
+}
+
+@utility eyebrowish {
+  font-size: 0.75rem;
+}

@@ -178,7 +178,8 @@ export function Combobox({
     if (items.length === 0) return
     arrowed.current = true
     setOpen(true)
-    const next = active < 0 ? (step > 0 ? 0 : items.length - 1) : (active + step + items.length) % items.length
+    const next =
+      active < 0 ? (step > 0 ? 0 : items.length - 1) : (active + step + items.length) % items.length
     setActiveValue(items[next]?.value ?? null)
   }
 

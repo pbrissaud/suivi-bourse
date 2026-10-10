@@ -16,7 +16,8 @@
  *  - **Nothing is left implicit.** Every grid and every axis the front mounts
  *    either says its colour or is hidden — the guard that makes *one chart was
  *    fixed* into *no chart escapes*, which is what #841 asked for after #837
- *    found this one by hand and could not have found a second.
+ *    found this one by hand and could not have found a second. That claim is
+ *    `lint/chart-chrome-tokens.grit` now, run by `pnpm lint`.
  *  - **The gradations are text**, so they clear WCAG's 4,5:1 against the
  *    surface they are drawn on, on both grounds. The token is read off the
  *    component and its value off `index.css`: nothing here is a copy of either.
@@ -44,22 +45,6 @@ const SURFACES = ['--background', '--card'] as const
 
 const PRICE_CHART = path.join(SOURCE, 'components', 'shares', 'PriceChart.tsx')
 const PORTFOLIO_CHART = path.join(SOURCE, 'components', 'dashboard', 'PortfolioChart.tsx')
-
-/**
- * Every `.tsx` the product writes by hand.
- *
- * `ui/` is out, and for `gridColumns.test.ts`'s reason rather than a new one:
- * it is generated from the registry and a rule enforced there would
- * be undone by the next `add`. Nothing under it mounts a chart today.
- */
-function sources(directory: string = SOURCE): string[] {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(directory, entry.name)
-    if (entry.isDirectory()) return entry.name === 'ui' || entry.name === 'test' ? [] : sources(full)
-    if (!/\.tsx$/.test(entry.name) || /\.test\.tsx$/.test(entry.name)) return []
-    return [full]
-  })
-}
 
 /**
  * The file with its comments taken out.
@@ -189,54 +174,7 @@ function surfaceOf(primitive: string): string | null {
   return found ? `--${found[1]}` : null
 }
 
-describe('nothing is left to Recharts’ own greys', () => {
-  /**
-   * A grid says its stroke; an axis says its stroke **and** the fill of its
-   * gradations, or is hidden and paints nothing at all. The two are separate
-   * props on purpose: Recharts fills a tick label with the axis' own `stroke`,
-   * so one token for both would either shout the grid or hide the figures —
-   * which is why *take the dashboard's line and paste it* was the wrong repair.
-   */
-  const offenders: string[] = []
-  let scanned = 0
-
-  for (const file of sources()) {
-    const source = code(file)
-    const relative = path.relative(WEB_ROOT, file)
-    for (const tag of openingTags(source, 'CartesianGrid')) {
-      scanned += 1
-      if (!token(prop(tag, 'stroke'))) offenders.push(`${relative} — a grid with no stroke`)
-    }
-    for (const element of ['XAxis', 'YAxis']) {
-      for (const tag of openingTags(source, element)) {
-        scanned += 1
-        if (prop(tag, 'hide') !== null) continue
-        if (!token(prop(tag, 'stroke'))) offenders.push(`${relative} — ${element} with no stroke`)
-        // `tick={false}` draws no label, so there is nothing to colour.
-        const tick = prop(tag, 'tick')
-        if (tick !== '{false}' && !token(tick)) {
-          offenders.push(`${relative} — ${element} with no tick colour`)
-        }
-      }
-    }
-    for (const tag of openingTags(source, 'Tooltip')) {
-      scanned += 1
-      // The cursor is the band Recharts drags under the pointer, and its
-      // default paints over the very marks it is helping read.
-      if (!token(prop(tag, 'cursor'))) offenders.push(`${relative} — a tooltip with no cursor`)
-    }
-  }
-
-  it('mounts no grid, axis or cursor without a token of its own', () => {
-    expect(offenders).toEqual([])
-  })
-
-  it('is reading the tags it is supposed to be reading', () => {
-    // The coverage half, in `gridColumns.test.ts`'s taste: a scan that stopped
-    // matching would pass on a front that had lost the rule entirely.
-    expect(scanned).toBeGreaterThan(5)
-  })
-})
+// `mounts no grid, axis or cursor without a token` is a Biome rule now: lint/chart-chrome-tokens.grit
 
 describe('the gradations are text, and text has a floor', () => {
   it('clears 4,5:1 against both surfaces, on both grounds', () => {
@@ -299,7 +237,10 @@ describe('a grid is not more legible for being elsewhere', () => {
     for (const ground of GROUNDS) {
       const sheet = ratio(grid, surfaceOf('sheet.tsx')!, ground)
       const card = ratio(grid, surfaceOf('card.tsx')!, ground)
-      expect(Math.abs(sheet - card), `the two grids part company on the ${ground} ground`).toBeLessThan(0.25)
+      expect(
+        Math.abs(sheet - card),
+        `the two grids part company on the ${ground} ground`,
+      ).toBeLessThan(0.25)
     }
   })
 })

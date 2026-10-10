@@ -1,0 +1,7 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// /api/runtime is in no surface's list of errors: the bell names it.
+JsStaticMemberExpression(object = r"(?:[\s\S]*\.)?runtime", member = r"error") as $hit where {
+  register_diagnostic(span = $hit, message = "[no-runtime-error-on-surfaces] A surface takes no shell error: the bell reads /health")
+}

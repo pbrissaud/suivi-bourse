@@ -82,8 +82,7 @@ describe('the page title, now the header’s', () => {
 
   it('drops the previous page’s subtitle rather than letting the next one wear it', async () => {
     const { user } = renderApp()
-    const banner = () =>
-      screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement
+    const banner = () => screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement
     await waitFor(() => expect(banner()).toHaveTextContent(/Cours au/))
 
     // *Grand livre* dates nothing: it declares a name and no subtitle, and
@@ -104,7 +103,10 @@ describe('the page title, now the header’s', () => {
 
 describe('the navigation, six entries in four and two', () => {
   /** The nav's links, in the order a reader — and a screen reader — meets them. */
-  const entries = () => within(nav()).getAllByRole('link').map((link) => link.textContent)
+  const entries = () =>
+    within(nav())
+      .getAllByRole('link')
+      .map((link) => link.textContent)
 
   it('says Grand livre and Réglages, and puts both at the foot of the list', async () => {
     renderApp()
@@ -183,8 +185,7 @@ describe('the navigation, six entries in four and two', () => {
 })
 
 describe('the bell is the one global indicator (#829)', () => {
-  const bell = (hidden = false) =>
-    screen.getByRole('button', { name: /^Notifications/, hidden })
+  const bell = (hidden = false) => screen.getByRole('button', { name: /^Notifications/, hidden })
 
   /** The tone the icon is worn in, read off the one node that carries it. */
   const toneOf = (node: HTMLElement) =>
@@ -281,73 +282,22 @@ describe('the bell is the one global indicator (#829)', () => {
     expect(bell(true)).toBeInTheDocument()
   })
 
-  it('holds the table of tones in one module, and one only', () => {
-    // Held on the source, because no rendering can see it: a second copy of the
-    // mapping renders identically on the day it is written and drifts on the
-    // next state added. It used to be the dot's and to be read a second time by
-    // the sidebar card; there is one consumer now.
-    const declaring = ['components/Notifications.tsx', 'components/AppSidebar.tsx', 'lib/status.ts']
-      .filter((file) =>
-        /STATE_TONE(\s*:\s*Record|\s*=)/.test(
-          fs.readFileSync(path.join(import.meta.dirname, file), 'utf8'),
-        ),
-      )
-    expect(declaring).toEqual(['components/Notifications.tsx'])
-  })
+  // `holds the table of tones in one module` is a Biome rule now: lint/one-tone-table.grit
 
   it('leaves no band anywhere, and no component named for one', () => {
     // `Banner.tsx`, `Band.tsx` and `StatusDot.tsx` are gone (#829):
     // the banner is retired without replacement, its conditions are cards in
     // the panel, and its sentence descends into each page's empty state.
-    for (const gone of ['components/Banner.tsx', 'components/Band.tsx', 'components/StatusDot.tsx']) {
+    for (const gone of [
+      'components/Banner.tsx',
+      'components/Band.tsx',
+      'components/StatusDot.tsx',
+    ]) {
       expect(fs.existsSync(path.join(import.meta.dirname, gone)), gone).toBe(false)
     }
   })
 
-  it('mounts the refusal for a gesture only, which is what makes the band gone', () => {
-    // **A file name is not the criterion.** `Refusal.tsx` renders the same
-    // destructive `Alert` the band did, so *there is no band anywhere* holds
-    // only while no surface mounts it for a **read** — mounted on one it would
-    // be the strip back under another import, which is exactly what a rename
-    // buys and nothing else.
-    //
-    // Held on the source because the rule is about **where** a component may be
-    // mounted, which no single rendering can show. What a read that did not
-    // answer renders instead is `Unreadable`, an `EmptyState` standing in the
-    // slot the content would have taken — asserted on the rendering in
-    // `app.test.tsx`, `dashboard.test.tsx` and five others.
-    const READ = /<Refusal>\{?\s*(?:t\()?\w*(?:failure|series|ledger|events|positions|accounts|config|store|totals|perf|history|movers)\w*\.?/i
-    const mounted = fs
-      .readdirSync(path.join(import.meta.dirname, 'components'), {
-        recursive: true,
-        encoding: 'utf8',
-      })
-      .filter((file) => file.endsWith('.tsx'))
-      .map((file) => path.join('components', file))
-      .concat(
-        fs
-          .readdirSync(path.join(import.meta.dirname, 'pages'))
-          .filter((file) => file.endsWith('.tsx'))
-          .map((file) => path.join('pages', file)),
-      )
-      .filter((file) => {
-        const source = fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')
-        return /<Refusal[\s>]/.test(source)
-      })
-
-    // Every mount that is left answers a **write** the reader just made: the
-    // mutation's own error, beside the control that made it.
-    for (const file of mounted) {
-      const source = fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')
-      for (const [mount] of source.matchAll(/\{[^{}\n]*<Refusal>[^\n]*/g)) {
-        expect(mount, `${file}: ${mount.trim()}`).toMatch(
-          /\b(write|remove|move)\.error\b/,
-        )
-      }
-      expect(READ.test(source), `${file} mounts a Refusal for a read`).toBe(false)
-    }
-    expect(mounted.length).toBeGreaterThan(0)
-  })
+  // `mounts the refusal for a gesture only` is a Biome rule now: lint/refusal-for-writes.grit
 })
 
 describe('the density, the reader’s third preference', () => {
@@ -374,13 +324,17 @@ describe('the density, the reader’s third preference', () => {
     expect(table).toHaveAttribute('data-density', 'comfortable')
 
     await chooseInMenu(user, 'Densité des tableaux', 'Compact')
-    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'))
+    await waitFor(() =>
+      expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),
+    )
 
     unmount()
     renderApp({ url: '/shares' })
     // Read back from the browser, where the three preferences live — the store
     // has no dial for any of them.
-    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'))
+    await waitFor(() =>
+      expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),
+    )
     expect(written).toBe(0)
   })
 

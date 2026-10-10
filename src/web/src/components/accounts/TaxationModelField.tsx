@@ -489,14 +489,18 @@ function Brackets({
         return (
           <div key={index} className="flex items-center gap-2">
             {last ? (
-              <span className="flex-1 text-sm text-muted-foreground">{t('taxation.brackets.top')}</span>
+              <span className="flex-1 text-sm text-muted-foreground">
+                {t('taxation.brackets.top')}
+              </span>
             ) : (
               <>
                 <Input
                   type="number"
                   inputMode="decimal"
                   aria-label={t('taxation.brackets.upperBound')}
-                  aria-describedby={currency === null ? undefined : `taxation-bracket-${index}-currency`}
+                  aria-describedby={
+                    currency === null ? undefined : `taxation-bracket-${index}-currency`
+                  }
                   value={row.upper_bound}
                   onChange={(changed) => set(index, 'upper_bound', changed.target.value)}
                 />
@@ -543,7 +547,9 @@ function Brackets({
         size="sm"
         // The new rung goes **under** the open-topped one: the top of a ladder
         // is where it ends, and appending would leave the bounded row last.
-        onClick={() => onChange([...rows.slice(0, -1), { upper_bound: '', rate: '' }, rows[rows.length - 1]])}
+        onClick={() =>
+          onChange([...rows.slice(0, -1), { upper_bound: '', rate: '' }, rows[rows.length - 1]])
+        }
       >
         {t('taxation.brackets.add')}
       </Button>

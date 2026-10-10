@@ -2,8 +2,6 @@
  * What is true of the installation, what a page says of its own failed read,
  * and the problem table both of them come out of.
  */
-import fs from 'node:fs'
-import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -133,7 +131,10 @@ describe('the banner is retired, and nothing replaces it (#829)', () => {
     // longer forbids is two surfaces each explaining their own emptiness — a
     // block that lost its chart and a block that lost its comparison are two
     // holes, and neither is filled by a sentence about the other.
-    const failure = oneFailure([{ message: 'problem.unreachable' }, { message: 'problem.internal' }])
+    const failure = oneFailure([
+      { message: 'problem.unreachable' },
+      { message: 'problem.internal' },
+    ])
     expect(failure).toEqual({ message: 'problem.unreachable' })
   })
 
@@ -158,30 +159,7 @@ describe('a surface names its own failed read, and nothing above it can do it', 
     })
   })
 
-  it('takes no shell error, `/api/runtime` being in no surface’s list', () => {
-    // The docstring used to promise that a page lists `/api/runtime` first
-    // among its own errors, and no page did. It is in no list on purpose: it
-    // answers from process memory and never opens the store, so it refuses only
-    // when every store read refuses with it and says so. What names *the app is
-    // not answering* as a fact about the installation is the bell, which reads
-    // `/health` — a stricter route that falls wherever this one falls.
-    // `SettingsPage` joined the list at #830, the surface it names having
-    // become a page of its own — and it is the one that reads the
-    // runtime for something, which is exactly why it is worth asserting.
-    const pages = ['DashboardPage', 'SharesPage', 'AccountsPage', 'SettingsPage']
-    for (const page of pages) {
-      const source = fs.readFileSync(
-        path.join(import.meta.dirname, '..', 'pages', `${page}.tsx`),
-        'utf8',
-      )
-      expect(source, page).not.toMatch(/runtime\.error/)
-    }
-    const source = fs.readFileSync(
-      path.join(import.meta.dirname, '..', 'components', 'data', 'Ledger.tsx'),
-      'utf8',
-    )
-    expect(source, 'data/Ledger').not.toMatch(/runtime\.error/)
-  })
+  // `takes no shell error` is a Biome rule now: lint/no-runtime-error-on-surfaces.grit
 
   it('says nothing where a surface above it is already saying it', () => {
     // The one caller left is the notifications panel, whose health card says
@@ -199,20 +177,24 @@ describe('a surface names its own failed read, and nothing above it can do it', 
 
 describe('the front branches on problem.type, never on status', () => {
   it('maps each declared type to its own sentence', () => {
-    expect(problemMessageKey(new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable })))
-      .toBe('problem.storageUnavailable')
-    expect(problemMessageKey(new ApiProblem({ status: 404, type: PROBLEM_TYPES.notFound })))
-      .toBe('problem.notFound')
-    expect(problemMessageKey(new ApiProblem({ status: 400, type: PROBLEM_TYPES.badRequest })))
-      .toBe('problem.badRequest')
+    expect(
+      problemMessageKey(new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable })),
+    ).toBe('problem.storageUnavailable')
+    expect(problemMessageKey(new ApiProblem({ status: 404, type: PROBLEM_TYPES.notFound }))).toBe(
+      'problem.notFound',
+    )
+    expect(problemMessageKey(new ApiProblem({ status: 400, type: PROBLEM_TYPES.badRequest }))).toBe(
+      'problem.badRequest',
+    )
   })
 
   it('has a sentence for a setting the registry refuses, which is not "unexpected"', () => {
     // `PUT /api/settings` answers `/problems/invalid-setting`, and the table
     // did not know it: a refusal **by design** fell through to *an error it did
     // not expect*, which is the one thing that is certainly untrue of it (#861).
-    expect(problemMessageKey(new ApiProblem({ status: 422, type: PROBLEM_TYPES.invalidSetting })))
-      .toBe('problem.invalidSetting')
+    expect(
+      problemMessageKey(new ApiProblem({ status: 422, type: PROBLEM_TYPES.invalidSetting })),
+    ).toBe('problem.invalidSetting')
   })
 
   it('does not know foreign-origin, and that is the answer', () => {
@@ -229,8 +211,9 @@ describe('the front branches on problem.type, never on status', () => {
     // a fault; the sentence here is unchanged, because an unknown type already
     // falls back to *an unexpected error*.
     expect(Object.values(PROBLEM_TYPES)).not.toContain('/problems/refused')
-    expect(problemMessageKey(new ApiProblem({ status: 405, type: '/problems/refused' })))
-      .toBe('problem.internal')
+    expect(problemMessageKey(new ApiProblem({ status: 405, type: '/problems/refused' }))).toBe(
+      'problem.internal',
+    )
   })
 
   it('does not read a 503 as a store failure when the type says otherwise', () => {
@@ -241,8 +224,9 @@ describe('the front branches on problem.type, never on status', () => {
   })
 
   it('treats an unknown type, and anything that is not a problem, as the app not answering', () => {
-    expect(problemMessageKey(new ApiProblem({ status: 500, type: '/problems/from-the-future' })))
-      .toBe('problem.internal')
+    expect(
+      problemMessageKey(new ApiProblem({ status: 500, type: '/problems/from-the-future' })),
+    ).toBe('problem.internal')
     expect(problemMessageKey(new ApiProblem({ status: 502 }))).toBe('problem.unreachable')
     expect(problemMessageKey(new TypeError('Failed to fetch'))).toBe('problem.unreachable')
   })
@@ -263,21 +247,29 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     // same three numbers arrive whether the ledger stopped replaying because
     // something was written or because something was taken away.
     const values = { symbol: 'AAPL', wanted: 12, owned: 10 }
-    expect(problemMessage(oversell({ ...values, gesture: 'write' })))
-      .toEqual({ message: 'problem.unreplayableLedger.write', values })
-    expect(problemMessage(oversell({ ...values, gesture: 'remove' })))
-      .toEqual({ message: 'problem.unreplayableLedger.remove', values })
+    expect(problemMessage(oversell({ ...values, gesture: 'write' }))).toEqual({
+      message: 'problem.unreplayableLedger.write',
+      values,
+    })
+    expect(problemMessage(oversell({ ...values, gesture: 'remove' }))).toEqual({
+      message: 'problem.unreplayableLedger.remove',
+      values,
+    })
   })
 
   it('falls back to the sentence with no values when the facts did not travel', () => {
     // `AggregationError` admits all four members being absent — a raise from
     // somewhere that does not know them — so the front must have something true
     // to say rather than render an ICU source with a hole in it.
-    expect(problemMessage(oversell({ gesture: 'write' })))
-      .toEqual({ message: 'problem.unreplayableLedger', values: {} })
+    expect(problemMessage(oversell({ gesture: 'write' }))).toEqual({
+      message: 'problem.unreplayableLedger',
+      values: {},
+    })
     // And a member of the wrong shape is an absent member, not a cast.
-    expect(problemMessage(oversell({ symbol: 'AAPL', wanted: '12', owned: 10 })))
-      .toEqual({ message: 'problem.unreplayableLedger', values: {} })
+    expect(problemMessage(oversell({ symbol: 'AAPL', wanted: '12', owned: 10 }))).toEqual({
+      message: 'problem.unreplayableLedger',
+      values: {},
+    })
   })
 
   it('names the security in both catalogues, and renders the server’s prose in neither', () => {
@@ -305,10 +297,14 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     // able to say *this account*, or it contradicts a reader whose own shares
     // page shows them holding the security.
     const values = { symbol: 'EMEIS.PA', wanted: 3, owned: 0, account: 'PEA.LCL' }
-    expect(problemMessage(oversell({ ...values, gesture: 'write' })))
-      .toEqual({ message: 'problem.unreplayableLedger.write.inAccount', values })
-    expect(problemMessage(oversell({ ...values, gesture: 'remove' })))
-      .toEqual({ message: 'problem.unreplayableLedger.remove.inAccount', values })
+    expect(problemMessage(oversell({ ...values, gesture: 'write' }))).toEqual({
+      message: 'problem.unreplayableLedger.write.inAccount',
+      values,
+    })
+    expect(problemMessage(oversell({ ...values, gesture: 'remove' }))).toEqual({
+      message: 'problem.unreplayableLedger.remove.inAccount',
+      values,
+    })
 
     for (const language of ['fr', 'en'] as const) {
       const said = problemMessage(oversell({ ...values, gesture: 'write' }))
@@ -325,10 +321,14 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     // about accounts is not dead code, and a member of the wrong shape is an
     // absent member rather than a cast.
     const values = { symbol: 'AAPL', wanted: 12, owned: 10 }
-    expect(problemMessage(oversell({ ...values, gesture: 'write' })))
-      .toEqual({ message: 'problem.unreplayableLedger.write', values })
-    expect(problemMessage(oversell({ ...values, gesture: 'write', account: 42 })))
-      .toEqual({ message: 'problem.unreplayableLedger.write', values })
+    expect(problemMessage(oversell({ ...values, gesture: 'write' }))).toEqual({
+      message: 'problem.unreplayableLedger.write',
+      values,
+    })
+    expect(problemMessage(oversell({ ...values, gesture: 'write', account: 42 }))).toEqual({
+      message: 'problem.unreplayableLedger.write',
+      values,
+    })
   })
 
   it('agrees the counted noun with the quantity, from the catalogue', () => {
@@ -340,11 +340,15 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     expect(formatMessage('fr', one.message, one.values)).toContain('vend 1 part de AAPL')
     expect(formatMessage('en', one.message, one.values)).toContain('sells 1 share of AAPL')
 
-    const many = problemMessage(oversell({ gesture: 'remove', symbol: 'AAPL', wanted: 2, owned: 0 }))
+    const many = problemMessage(
+      oversell({ gesture: 'remove', symbol: 'AAPL', wanted: 2, owned: 0 }),
+    )
     expect(formatMessage('fr', many.message, many.values)).toContain('vend 2 parts')
     expect(formatMessage('en', many.message, many.values)).toContain('sells 2 shares')
 
-    const half = problemMessage(oversell({ gesture: 'write', symbol: 'AAPL', wanted: 1.5, owned: 0 }))
+    const half = problemMessage(
+      oversell({ gesture: 'write', symbol: 'AAPL', wanted: 1.5, owned: 0 }),
+    )
     expect(formatMessage('fr', half.message, half.values)).toContain('vend 1,5 part de AAPL')
     expect(formatMessage('en', half.message, half.values)).toContain('sells 1.5 shares of AAPL')
   })
@@ -354,11 +358,12 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     // on a `422`, `limit` on a `413`. `ApiProblem` used to drop all of them.
     const problem = oversell({ gesture: 'write', symbol: 'AAPL', wanted: 12, owned: 10 })
     expect(problem.members).toEqual({
-      gesture: 'write', symbol: 'AAPL', wanted: 12, owned: 10,
+      gesture: 'write',
+      symbol: 'AAPL',
+      wanted: 12,
+      owned: 10,
     })
-    expect(problem.detail).toBe(
-      'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-09-15',
-    )
+    expect(problem.detail).toBe('Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-09-15')
   })
 })
 
@@ -367,8 +372,9 @@ describe('the last perf pass, read where its figures are', () => {
     // The whole of #994: the pass wrote nothing, so the previous
     // `account_metrics` and `portfolio_totals` rows are what the dashboard,
     // the accounts page and the comparison are showing.
-    expect(stalePerfPass(aRuntime({ perf: { at: NOW, verdict: 'failed', error: 'boom' } })))
-      .toBe(NOW)
+    expect(stalePerfPass(aRuntime({ perf: { at: NOW, verdict: 'failed', error: 'boom' } }))).toBe(
+      NOW,
+    )
   })
 
   it('says nothing on a pass that went through', () => {
@@ -390,7 +396,8 @@ describe('the last perf pass, read where its figures are', () => {
     // A third word out of the recorder's vocabulary is not *failed*: the
     // sentence is written on a positive observation and never on anything that
     // merely is not `ran`.
-    expect(stalePerfPass(aRuntime({ perf: { at: NOW, verdict: 'skipped', error: null } })))
-      .toBeNull()
+    expect(
+      stalePerfPass(aRuntime({ perf: { at: NOW, verdict: 'skipped', error: null } })),
+    ).toBeNull()
   })
 })

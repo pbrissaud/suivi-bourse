@@ -109,9 +109,7 @@ export function Allocation({ rows, currency }: AllocationProps) {
         {/* A real heading, and not the primitive's `<div>`: the block is a
             section of the page and a reader jumping by heading must find it.
             Set as the label (DESIGN.md). */}
-        <h2 className="label">
-          {t('shares.allocation.title')}
-        </h2>
+        <h2 className="label">{t('shares.allocation.title')}</h2>
         {/* What the ring divides and what it folds — the drawing states it
             beside the heading, because a ring of twelve over a portfolio of
             twenty is a reading and not a truncation. Said only where there is

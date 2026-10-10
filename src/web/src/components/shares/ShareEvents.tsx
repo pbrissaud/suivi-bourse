@@ -107,9 +107,7 @@ export function ShareEvents({
                   {fields.amount && event.amount !== null ? (
                     <span className="tabular">{f.currency(event.amount, currency)}</span>
                   ) : null}
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {accountOf(event)}
-                  </span>
+                  <span className="ml-auto text-xs text-muted-foreground">{accountOf(event)}</span>
                 </button>
               </li>
             )

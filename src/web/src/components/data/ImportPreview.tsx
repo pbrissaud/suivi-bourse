@@ -270,10 +270,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             <Button
               type="button"
               disabled={
-                !ready ||
-                forecast.writing === undefined ||
-                missing.length > 0 ||
-                upload.pending
+                !ready || forecast.writing === undefined || missing.length > 0 || upload.pending
               }
               onClick={() => upload.commit({ declineCurrency: !adoptCurrency })}
             >
@@ -322,10 +319,7 @@ function AccountsBlock({
 
   return (
     <section aria-labelledby="import-accounts" className="space-y-3 rounded-lg border p-4">
-      <h3
-        id="import-accounts"
-        className="label"
-      >
+      <h3 id="import-accounts" className="label">
         {t('data.import.accounts.title')}
       </h3>
 
@@ -365,11 +359,7 @@ function AccountRow({
   const { t } = useI18n()
   const name = line.name === '' ? t('data.import.accounts.blank') : line.name
   const value =
-    line.target.kind === 'account'
-      ? line.target.id
-      : line.target.kind === 'declare'
-        ? DECLARE
-        : ''
+    line.target.kind === 'account' ? line.target.id : line.target.kind === 'declare' ? DECLARE : ''
 
   return (
     <li className="grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
@@ -495,10 +485,7 @@ function DuplicatesBlock({
 
   return (
     <section aria-labelledby="import-duplicates" className="space-y-3 rounded-lg border p-4">
-      <h3
-        id="import-duplicates"
-        className="label"
-      >
+      <h3 id="import-duplicates" className="label">
         {t('data.import.duplicates.title')}
       </h3>
       <p className="text-sm">{t(said.message, said.values)}</p>
@@ -593,10 +580,7 @@ function CurrencyBlock({
 
   return (
     <section aria-labelledby="import-currency" className="space-y-3 rounded-lg border p-4">
-      <h3
-        id="import-currency"
-        className="label"
-      >
+      <h3 id="import-currency" className="label">
         {t('data.import.currency.title')}
       </h3>
       <p className="text-sm">{t('data.import.currency.offer', { currency })}</p>

@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "tsc -b --noEmit",
+    "lint": "tsc -b --noEmit && biome check src",
     "test": "vitest run"
   },
   "dependencies": {
@@ -29,6 +29,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",

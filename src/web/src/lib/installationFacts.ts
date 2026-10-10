@@ -154,9 +154,7 @@ const SENTENCES: Record<string, Sentence> = {
     unobserved: 'installation.fact.unread_environment.unobserved',
     values: (detail, list) => {
       const variables = items(detail, 'variables')
-      return variables === null
-        ? null
-        : { count: variables.length, variables: list(variables) }
+      return variables === null ? null : { count: variables.length, variables: list(variables) }
     },
   },
   reconstruction_running: {

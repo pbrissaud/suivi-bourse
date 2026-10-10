@@ -158,9 +158,7 @@ export default function SharesPage() {
 
   const rows = useMemo(() => buildShareRows(reduced, failures), [reduced, failures])
 
-  const failure = oneFailure(
-    readConditions({ errors: [positions.error] }),
-  )
+  const failure = oneFailure(readConditions({ errors: [positions.error] }))
 
   const held = heldRows(rows, sort)
   const closed = closedRows(rows)

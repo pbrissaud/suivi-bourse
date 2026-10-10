@@ -62,9 +62,11 @@ export function CurrencyField({ id, value, onChange, fixed, suggested }: Currenc
             cannot be taken back is not something a chip can say. */}
         <p className="flex items-center gap-2.5">
           <span className="tabular text-lg font-semibold">
-            {value === '' ? t('currency.unanswered')
-              : isSupported(value) ? value
-              : t('currency.offList', { code: value })}
+            {value === ''
+              ? t('currency.unanswered')
+              : isSupported(value)
+                ? value
+                : t('currency.offList', { code: value })}
           </span>
           <span className="label rounded-md bg-accent px-1.5 py-0.5">
             {t('currency.fixed.mark')}
@@ -92,7 +94,9 @@ export function CurrencyField({ id, value, onChange, fixed, suggested }: Currenc
           </option>
         ))}
       </select>
-      {suggested ? <p className="text-xs text-muted-foreground">{t('currency.suggested')}</p> : null}
+      {suggested ? (
+        <p className="text-xs text-muted-foreground">{t('currency.suggested')}</p>
+      ) : null}
       {fixed === undefined ? null : (
         <p className="text-xs text-muted-foreground">{t('currency.untilAnswered')}</p>
       )}

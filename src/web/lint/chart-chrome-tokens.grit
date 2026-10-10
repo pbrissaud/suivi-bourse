@@ -1,0 +1,25 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// Recharts paints an unset grid, axis or cursor in greys of its own (#841).
+or { JsxOpeningElement(name = $name, attributes = $attrs), JsxSelfClosingElement(name = $name, attributes = $attrs) } as $tag where {
+  or {
+    and {
+      $name <: r"CartesianGrid",
+      not $attrs <: some JsxAttribute(name = r"stroke", initializer = r"[\s\S]*var\(--[\w-]+\)[\s\S]*")
+    },
+    and {
+      $name <: r"(?:XAxis|YAxis)",
+      not $attrs <: some JsxAttribute(name = r"hide"),
+      or {
+        not $attrs <: some JsxAttribute(name = r"stroke", initializer = r"[\s\S]*var\(--[\w-]+\)[\s\S]*"),
+        not $attrs <: some JsxAttribute(name = r"tick", initializer = or { r"=\s*\{\s*false\s*\}", r"[\s\S]*var\(--[\w-]+\)[\s\S]*" })
+      }
+    },
+    and {
+      $name <: r"Tooltip",
+      not $attrs <: some JsxAttribute(name = r"cursor", initializer = r"[\s\S]*var\(--[\w-]+\)[\s\S]*")
+    }
+  },
+  register_diagnostic(span = $tag, message = "[chart-chrome-tokens] Give the grid, axis or cursor a var(--token), or hide it (#841)")
+}

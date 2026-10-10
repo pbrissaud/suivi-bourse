@@ -49,7 +49,7 @@
  * only the control.
  *
  * **The wait is dressed, and that is not the spinner rule's business.**
- * `noSpinner.test.ts` is about a **read**: nothing may be claimed about a
+ * `lint/no-wait-dressing.grit` is about a **read**: nothing may be claimed about a
  * subject nobody has heard from, so a block waiting on one renders nothing at
  * all. This is the reader's own act, it claims nothing about their data, and
  * the app owes them its end — the same argument #796 made for the export.
@@ -254,7 +254,8 @@ export function useEventUpload(): EventUpload {
     // that would write.
     onError: (refused) =>
       setStanding((previous) =>
-        previous === undefined ? previous : { ...previous, writing: undefined, refused }),
+        previous === undefined ? previous : { ...previous, writing: undefined, refused },
+      ),
   })
   const write = useMutation({
     mutationFn: ({ file, answer: given, declineCurrency }: Written) =>
@@ -331,8 +332,7 @@ export function useEventUpload(): EventUpload {
     // The refusal the standing answer meets is an error like the other two: it
     // is what the window renders and what keeps the button disabled — a refusal
     // the reader reads **before** pressing it rather than after (#835).
-    error:
-      pending || write.data ? undefined : (write.error ?? preview.error ?? standing?.refused),
+    error: pending || write.data ? undefined : (write.error ?? preview.error ?? standing?.refused),
   }
 }
 
@@ -501,7 +501,6 @@ export function UploadReceipt({ upload }: { upload: EventUpload }) {
     </div>
   )
 }
-
 
 /** One sentence under the zone — the only shape this region ever takes. */
 function Said({ children, attention }: { children: string; attention?: boolean }) {

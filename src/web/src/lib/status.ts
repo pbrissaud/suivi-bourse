@@ -109,10 +109,7 @@ function isRebuilding(health: HealthState): boolean {
  * it runs: a reconstruction is not something to look at, and the fold is right
  * to say so.
  */
-export function installationState(input: {
-  health?: unknown
-  error?: unknown
-}): InstallationState {
+export function installationState(input: { health?: unknown; error?: unknown }): InstallationState {
   // The `503` of a store that will not open, and every other failed read.
   if (input.error) return 'unreachable'
   if (input.health === undefined) return 'unknown'
@@ -246,7 +243,6 @@ export function readConditions(input: {
     .filter((error) => Boolean(error))
     .map((error) => ({ message: problemMessageKey(error) }))
 }
-
 
 /**
  * **The last perf pass failed, so the figures on screen are the pass before

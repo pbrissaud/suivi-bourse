@@ -34,11 +34,7 @@ export function ReferenceRebuild({ rebuild }: { rebuild: BenchmarkRebuild }) {
   // off-list target was: the owner stops waiting and the figure never comes.
   // Only a ratio that has actually reached 1 shows 100.
   const percent =
-    rebuild.ratio === null
-      ? null
-      : rebuild.ratio >= 1
-        ? 100
-        : Math.floor(rebuild.ratio * 100)
+    rebuild.ratio === null ? null : rebuild.ratio >= 1 ? 100 : Math.floor(rebuild.ratio * 100)
 
   return (
     <Card>
@@ -58,7 +54,7 @@ export function ReferenceRebuild({ rebuild }: { rebuild: BenchmarkRebuild }) {
           // A native `<progress>`, the same one `RebuildBlock` draws: the bar
           // is the rendering and the percentage is the fact, **announced**
           // rather than drawn. The hand-rolled ARIA equivalent is refused
-          // across this front (`noSpinner.test.ts`) — a shape that dresses a
+          // across this front (`lint/no-wait-dressing.grit`) — a shape that dresses a
           // wait says nothing, and what is said here is a measurement.
           <progress
             className="h-1.5 w-full"
