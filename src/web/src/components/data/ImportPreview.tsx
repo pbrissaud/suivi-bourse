@@ -494,6 +494,7 @@ function DuplicatesBlock({
         <ul className="divide-y">
           {forecast.duplicate_rows.map((row, index) => (
             <li
+              // biome-ignore lint/suspicious/noArrayIndexKey: two duplicate rows can share date and symbol, the rank is what tells them apart
               key={`${row.date}-${row.symbol ?? ''}-${index}`}
               className="flex items-baseline justify-between gap-3 py-2 text-sm"
             >

@@ -135,7 +135,7 @@ export function Combobox({
    */
   const [activeValue, setActiveValue] = useState<string | null>(null)
   const field = useRef<HTMLInputElement>(null)
-  const options = useRef<(HTMLLIElement | null)[]>([])
+  const options = useRef<(HTMLDivElement | null)[]>([])
   const listId = useId()
   const optionId = (index: number) => `${listId}-option-${index}`
   /** Where the active value sits **today**. `-1` — nothing is active. */
@@ -273,9 +273,11 @@ export function Combobox({
           if (field.current?.contains(event.target as Node)) event.preventDefault()
         }}
       >
-        <ul id={listId} role="listbox" aria-label={listLabel}>
+        <div id={listId} role="listbox" aria-label={listLabel}>
           {items.map((item, index) => (
-            <li
+            // biome-ignore lint/a11y/useFocusableInteractive: the focus stays in the field, which names the active option through `aria-activedescendant`
+            // biome-ignore lint/a11y/useKeyWithClickEvents: the keys are read by the field (arrows, Enter), the option only takes the pointer
+            <div
               key={item.value}
               ref={(node) => {
                 options.current[index] = node
@@ -324,9 +326,9 @@ export function Combobox({
                   {item.hint}
                 </bdi>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       </PopoverContent>
     </Popover>
   )

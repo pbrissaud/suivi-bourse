@@ -30,7 +30,7 @@ function linearSrgb(lightness: number, chroma: number, hue: number): [number, nu
 }
 
 const encode = (channel: number): number =>
-  channel <= 0.0031308 ? 12.92 * channel : 1.055 * Math.pow(Math.max(channel, 0), 1 / 2.4) - 0.055
+  channel <= 0.0031308 ? 12.92 * channel : 1.055 * Math.max(channel, 0) ** (1 / 2.4) - 0.055
 
 /**
  * Whether every channel lands inside sRGB — with a hair of tolerance, because

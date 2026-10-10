@@ -107,6 +107,7 @@ export default function AccountsPage() {
   // account's own opening and only the series says when that was.
   const history = useQuery({
     queryKey: ['account-history', opened?.id],
+    // biome-ignore lint/style/noNonNullAssertion: `enabled` keeps the query from running while `opened` is null
     queryFn: () => api.accountHistory(opened!.id),
     enabled: opened !== null,
   })

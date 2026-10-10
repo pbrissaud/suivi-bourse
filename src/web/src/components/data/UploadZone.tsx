@@ -412,6 +412,7 @@ export function UploadZone({ upload, compact = false, trailing = null }: UploadZ
     // export menu handed in as `trailing`. It was a 120 px dashed box with a
     // paragraph in it, which is the shape of an empty state and not of a bar.
     // The dashed edge stays: it is what says *you may drop something here*.
+    // biome-ignore lint/a11y/noStaticElementInteractions: dropping is a shortcut, the file picker inside is the accessible way in
     <div
       // The drop half. It is an alternative to the control below and never the
       // only way in — which is why it carries no role of its own.

@@ -15,8 +15,35 @@
   "assist": { "enabled": false },
   "css": { "parser": { "tailwindDirectives": true }, "formatter": { "enabled": true } },
   "json": { "formatter": { "enabled": true } },
-  "linter": { "enabled": true, "rules": { "recommended": false } },
-  "overrides": [{ "includes": ["lint/fixtures/**"], "formatter": { "enabled": false } }],
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        // It asks a <fieldset> for every role="group": ours group figures, not form controls, and a <fieldset> is invalid inside a <p>.
+        "useSemanticElements": "off"
+      }
+    }
+  },
+  "overrides": [
+    { "includes": ["lint/fixtures/**"], "formatter": { "enabled": false } },
+    {
+      "includes": ["src/**/*.test.{ts,tsx}"],
+      // In a test, a missing value throwing on `!` is the failure we want.
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    },
+    {
+      // shadcn regenerates these on every `shadcn add`, so a fix here would be lost; combobox.tsx is ours.
+      "includes": ["src/components/ui/**", "!src/components/ui/combobox.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": { "useExhaustiveDependencies": "off" },
+          "style": { "useImportType": "off" },
+          "suspicious": { "noDocumentCookie": "off" }
+        }
+      }
+    }
+  ],
   "plugins": [
     {
       "path": "./lint/no-wait-dressing.grit",

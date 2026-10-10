@@ -49,7 +49,7 @@ import {
 } from '@/lib/absence'
 import { ALLOCATION_SLICES } from '@/lib/alloc'
 import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
-import { type Sum } from '@/lib/gain'
+import type { Sum } from '@/lib/gain'
 import { byDateDescending } from '@/lib/ledger'
 
 /** One line of the page — one symbol, whatever the number of accounts on it. */

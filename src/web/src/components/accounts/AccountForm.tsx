@@ -194,7 +194,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
             label: declaredLabel(account) ?? '',
           },
     )
-  }, [open, account])
+  }, [open, account, write.reset, remove.reset])
 
   function set(field: FieldName, value: string) {
     setDraft((previous) => ({ ...previous, [field]: value }))
