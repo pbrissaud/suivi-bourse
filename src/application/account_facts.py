@@ -15,7 +15,7 @@ store is a failure to read and not an empty portfolio. Neither sentence belongs
 here.
 """
 from datetime import date, datetime
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 from logfmt_logger import getLogger
 
@@ -91,10 +91,16 @@ def _declaration(store, snapshot) -> list:
     return [accounts_module.as_declared(row) for row in declaration]
 
 
-def simulation_accounts(store, snapshot, now: datetime,
-                        ids: Sequence[str]) -> Dict[str, simulation.Account]:
+def simulation_accounts(store, snapshot, now: datetime, ids: Sequence[str],
+                        selling: str) -> Dict[str, simulation.Account]:
     """The :class:`simulation.Account` of each id asked for (#1109), every
     read made **once** whatever the number of ids.
+
+    **The symbol being sold is priced at the market, every other line at its
+    carried value** — the one ``list_accounts`` projects on, so a delisted line
+    valued at its cost there does not leave the plan unmeasurable here. A sale
+    is never made at a carried price: an unpriced ``selling`` stays unpriced,
+    and is refused as such.
 
     Refuses an id nobody declared, and one carrying a model this version
     refuses: that account *has* a model, and simulating it as ``no_model``
@@ -138,11 +144,20 @@ def simulation_accounts(store, snapshot, now: datetime,
             lines=[simulation.Line(symbol=share.symbol,
                                    quantity=holding.quantity or 0,
                                    cost_basis=holding.cost_basis or 0,
-                                   price=share.price)
+                                   price=_line_price(share, holding, selling))
                    for share in shares for holding in share.accounts
                    if holding.account == account_id],
             net_contributed=contributed.get(account_id))
     return built
+
+
+def _line_price(share, holding, selling: str) -> Optional[float]:
+    """The base-currency price a line enters the simulation at."""
+    if share.symbol == selling or not holding.quantity:
+        return share.price
+    if holding.market_value is None:
+        return None
+    return holding.market_value / holding.quantity
 
 
 def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:

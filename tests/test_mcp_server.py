@@ -1363,6 +1363,74 @@ def test_a_sale_is_priced_at_the_price_list_positions_serves(tmp_path):
     assert sale['price'] == row['converted']['value']
 
 
+def test_a_sale_on_an_account_with_no_model_has_no_tax_figure(tmp_path):
+    """``no_model``, and a null that is no figure — never a tax of zero."""
+    body = payload(call(rich_runtime(tmp_path), 'simulate_sale',
+                        {'account': 'other', 'symbol': 'AAPL', 'quantity': 2}))
+
+    assert body['reason'] == 'no_model'
+    assert body['tax_now'] is None
+    assert body['net_proceeds'] is None
+
+
+def test_a_delisted_line_enters_the_plan_at_its_carried_value(tmp_path,
+                                                              monkeypatch):
+    """As ``list_accounts`` values it — and is never sold at that price."""
+    from application import account_facts
+
+    runtime = rich_runtime(tmp_path)
+    monkeypatch.setattr(account_facts.quotes, 'terminal_symbols',
+                        lambda *args: {'XYZ'})
+
+    def price(selling):
+        """XYZ's price on ``other``, with ``selling`` the symbol sold."""
+        built = account_facts.simulation_accounts(
+            runtime.store.reader(), runtime.config_manager.current(),
+            datetime.now(timezone.utc), ['other'], selling)
+        return next(line.price for line in built['other'].lines
+                    if line.symbol == 'XYZ')
+
+    assert price('AAPL') == pytest.approx(10.0)
+    assert price('XYZ') is None
+
+
+def test_an_unpriced_line_not_sold_enters_the_plan_unpriced(tmp_path):
+    """No quote and not delisted: no carried value, so no price is made up."""
+    from application import account_facts
+
+    runtime = rich_runtime(tmp_path)
+    built = account_facts.simulation_accounts(
+        runtime.store.reader(), runtime.config_manager.current(),
+        datetime.now(timezone.utc), ['other'], 'AAPL')
+
+    assert next(line.price for line in built['other'].lines
+                if line.symbol == 'XYZ') is None
+
+
+def test_a_line_with_no_quantity_is_never_divided_into():
+    from types import SimpleNamespace
+    from application import account_facts
+
+    share = SimpleNamespace(symbol='MSFT', price=300.0)
+    for quantity in (0, None):
+        holding = SimpleNamespace(quantity=quantity, market_value=None)
+        assert account_facts._line_price(share, holding, 'AAPL') == 300.0
+
+
+def test_an_arbitrage_out_of_a_pea_pays_the_net_less_the_withdrawal(tmp_path):
+    """The money leaves the wrapper, so its exit tax comes off the payment."""
+    body = payload(call(rich_runtime(tmp_path), 'simulate_arbitrage',
+                        {'from_account': 'pea', 'symbol': 'AAPL',
+                         'quantity': 2, 'to_account': 'cto'}))
+
+    sale = body['sale']
+    assert sale['if_withdrawn'] > 0
+    assert body['payment'] == pytest.approx(
+        sale['net_proceeds'] - sale['if_withdrawn'])
+    assert [warning['code'] for warning in body['warnings']] == [
+        'pea_withdrawal_before_threshold']
+
+
 def _refuse_cto_model(runtime):
     """Leave ``cto`` a model this version refuses, as a past one could."""
     runtime.store.execute('DELETE FROM account_fact WHERE account = ?', ['cto'])
@@ -1381,11 +1449,19 @@ def _refuse_cto_model(runtime):
     ('simulate_sale', {'account': 'other', 'symbol': 'XYZ', 'quantity': 1},
      'XYZ has no price in other', None),
     ('simulate_arbitrage', {'from_account': 'cto', 'symbol': 'MC.PA',
+                            'quantity': 1, 'to_account': 'nope'},
+     'the declared accounts are: cto, other, pea', None),
+    ('simulate_arbitrage', {'from_account': 'cto', 'symbol': 'MC.PA',
                             'quantity': 1, 'to_account': 'cto'},
      'source and target are the same account', None),
     ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 1},
      'carries a taxation model this version refuses', _refuse_cto_model),
+    ('simulate_arbitrage', {'from_account': 'pea', 'symbol': 'AAPL',
+                            'quantity': 1, 'to_account': 'cto'},
+     'carries a taxation model this version refuses', _refuse_cto_model),
     ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': True},
+     'quantity', None),
+    ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': '5'},
      'quantity', None),
 ])
 def test_a_refused_simulation_arrives_in_words(tmp_path, tool, arguments,

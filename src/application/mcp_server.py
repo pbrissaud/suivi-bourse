@@ -346,29 +346,39 @@ _SIMULATION = (
     "present the figures and the trade-offs, and never recommend doing it."
 )
 
-_SALE_READING = """\
-`tax_now` IS A PROJECTION, ON THIS LOT ONLY. It applies the model THE OWNER
-DECLARED for the account — the one `list_accounts.taxation_kind` names, read the
-way that tool's description says — to the gain of the units sold here, and to
-nothing else: not the account's other lines, not an annual allowance, not any
-tax code. Quote it as the app computed it; never recompute it from a rate.
 
-`reason` says why a figure is missing, and is null when there is none to give:
-"no_model" means the account carries no taxation model, so there is no tax
-figure; "no_tax_model" means the owner declared the account untaxed, so 0 is
-their declaration; "not_projectable" means the model taxes income and not a
+def _sale_reading(sale: str) -> str:
+    """How to read a sale's figures, its members cited under ``sale`` — ``''``
+    on ``simulate_sale``, ``'sale.'`` on the arbitrage that nests one."""
+    return f"""\
+`{sale}tax_now` IS A PROJECTION, ON THIS LOT ONLY. It applies the model THE
+OWNER DECLARED for the account — the one `list_accounts.taxation_kind` names,
+read the way that tool's description says — to the gain of the units sold here,
+and to nothing else: not the account's other lines, not an annual allowance,
+not any tax code. Quote it as the app computed it; never recompute it from a
+rate.
+
+`{sale}reason` says why a figure is missing, and is null when there is none to
+give: "no_model" means the account carries no taxation model, so there is no
+tax figure; "no_tax_model" means the owner declared the account untaxed, so 0
+is their declaration; "not_projectable" means the model taxes income and not a
 sale; "unreadable_model" means the model could not project this lot. A null
-`tax_now` or `net_proceeds` is NO FIGURE, never a tax or a net of zero.
+`{sale}tax_now` or `{sale}net_proceeds` is NO FIGURE, never a tax or a net of
+zero.
 
-`if_withdrawn` is served only on an aged wrapper (a PEA, an assurance-vie): the
-sale itself owes nothing there (`tax_now` 0), and this is what taking the
-proceeds out of the wrapper would owe. It is prorated on the latent gain of the
-WHOLE plan, so the other lines' losses lower it, and it can be below the tax on
-this lot's own gain. It is null everywhere else.
+`{sale}if_withdrawn` is only ever a figure on an aged wrapper (a PEA, an
+assurance-vie): the sale itself owes nothing there (`{sale}tax_now` 0), and this
+is what taking the proceeds out of the wrapper would owe. It is prorated on the
+latent gain of the WHOLE plan, so the other lines' losses lower it, and it can
+be below the tax on this lot's own gain. It is null off an aged wrapper, and
+null ON one when the plan cannot be measured — a line with no price, or no day
+to age the plan from. On an aged wrapper a null is NO FIGURE for the exit, not
+an exit that owes nothing, even with `{sale}reason` null.
 
-`fees` is 0 because fees are NOT MODELLED, not because there are none.
-`not_modelled` lists what every figure here leaves out — say so in the answer,
-every time you quote one."""
+`{sale}fees` is 0 because fees are NOT MODELLED, not because there are none.
+`{sale}not_modelled` lists what every figure of the sale leaves out — say so in
+the answer, every time you quote one."""
+
 
 SIMULATE_SALE_DESCRIPTION = f"""\
 What selling part or all of one holding would raise, net of the tax the owner's
@@ -376,9 +386,10 @@ declared model projects on it.
 
 Pass `account`, a `list_accounts.id`; `symbol`, a `list_positions.symbol` held in
 that account; and `quantity`, the NUMBER OF UNITS to sell — not an amount of
-money. A refusal names its cause: an account nobody declared, a symbol the
-account does not hold, a quantity above the holding or not above zero, a line
-with no price.
+money. A refusal names its cause: an account nobody declared, an account whose
+taxation model this version refuses (repaired in the app), a symbol the account
+does not hold, a quantity above the holding or not above zero, a line with no
+price.
 
 {_SIMULATION}
 
@@ -391,7 +402,7 @@ average cost of the units sold, `tax_now`, `if_withdrawn` and `net_proceeds`
 `list_positions`) and its `position_after.unit_cost`, null once nothing is
 left.
 
-{_SALE_READING}
+{_sale_reading('')}
 
 {_CURRENCY}
 
@@ -405,7 +416,8 @@ raise, cost and meet — the CTO-to-PEA arbitrage, or any pair of accounts.
 Pass `from_account` and `to_account`, two different `list_accounts.id` values;
 `symbol`, a `list_positions.symbol` held in `from_account`; and `quantity`, the
 NUMBER OF UNITS to sell — not an amount of money. A refusal names its cause, as
-on `simulate_sale`, and the same account on both sides is one.
+on `simulate_sale` — a refused taxation model on EITHER side is one — and the
+same account on both sides is another.
 
 {_SIMULATION}
 
@@ -414,11 +426,9 @@ on `simulate_sale`, and the same account on both sides is one.
 `sale.tax_now`, `sale.if_withdrawn`, `sale.net_proceeds`, `sale.reason`,
 `sale.fees`, `sale.not_modelled`, and `sale.position_after` with its
 `sale.position_after.quantity`, `sale.position_after.cost_basis` and
-`sale.position_after.unit_cost`. Read each member as that tool's description
-says; what follows applies to `tax_now`, `if_withdrawn` and `reason` here as
-`sale.tax_now`, `sale.if_withdrawn` and `sale.reason`.
+`sale.position_after.unit_cost`, each read as that tool's description says.
 
-{_SALE_READING}
+{_sale_reading('sale.')}
 
 `payment` is what reaches `to_account`: `sale.net_proceeds`, less
 `sale.if_withdrawn` when the source is an aged wrapper the money leaves. Null
@@ -429,7 +439,9 @@ carries a `warnings.message` in words and the figures behind it, and only the
 ones its code needs: "pea_ceiling_exceeded" carries `warnings.figures.net_contributed`
 (what the target PEA holds of contributions today), `warnings.figures.payment`,
 `warnings.figures.ceiling` and `warnings.figures.excess`, the amount over it;
-"pea_ceiling_unknown" means the headroom cannot be told; and
+"pea_ceiling_unknown" means the headroom cannot be told, and carries the same
+`warnings.figures.payment` — null when the payment is no figure, never a zero —
+and `warnings.figures.ceiling`; and
 "pea_withdrawal_before_threshold" means taking money out of a source PEA before
 `warnings.figures.threshold_day` (an ISO calendar day,
 `warnings.figures.days_left` days away) may close it. "pea_eligibility_unknown"
@@ -704,9 +716,9 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     def _store():
         """The runtime's read view on the store, raising when there is none.
 
-        This server writes nothing — every tool below reads, the simulators too — so it reads
-        through the same connection of its own the ``/api`` blueprint uses
-        (#967), rather than waiting behind a background pass.
+        This server writes nothing — every tool below reads, the simulators
+        too — so it reads through the same connection of its own the ``/api``
+        blueprint uses (#967), rather than waiting behind a background pass.
         """
         if runtime.store is None:
             raise ToolError(
@@ -862,7 +874,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             """The read and the arithmetic, so a refusal arrives in words."""
             now = datetime.now(timezone.utc)
             accounts = account_facts.simulation_accounts(
-                _store(), _snapshot(), now, [account])
+                _store(), _snapshot(), now, [account], symbol)
             return {'base_currency': _base_currency(),
                     **simulation.simulate_sale(accounts[account], symbol,
                                                quantity, now=now.date())}
@@ -877,7 +889,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             """The read and the arithmetic, so a refusal arrives in words."""
             now = datetime.now(timezone.utc)
             accounts = account_facts.simulation_accounts(
-                _store(), _snapshot(), now, [from_account, to_account])
+                _store(), _snapshot(), now, [from_account, to_account],
+                symbol)
             return {'base_currency': _base_currency(),
                     **simulation.simulate_arbitrage(
                         accounts[from_account], symbol, quantity,
