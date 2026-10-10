@@ -1,5 +1,33 @@
 # Changelog
 
+## [5.3.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.2.0...v5.3.0) (2026-10-10)
+
+
+### Features
+
+* **mcp:** serve the sale and arbitrage simulators as MCP tools ([#1127](https://github.com/pbrissaud/suivi-bourse/issues/1127)) ([8dc1203](https://github.com/pbrissaud/suivi-bourse/commit/8dc1203c9f10fd8e058f48be50c04fae99983ed8))
+* **simulation:** simulate a sale and a CTO-to-PEA arbitrage, net of tax ([#1123](https://github.com/pbrissaud/suivi-bourse/issues/1123)) ([394583f](https://github.com/pbrissaud/suivi-bourse/commit/394583ffc3e394514bb9b9386b14d441d7701ebd))
+* **web:** lay the DESIGN.md foundations: warm tokens, the section plane, the card rule ([#1128](https://github.com/pbrissaud/suivi-bourse/issues/1128)) ([b2aae74](https://github.com/pbrissaud/suivi-bourse/commit/b2aae74149d87f2b04d7a9b6509a9a748ee10976)), closes [#1111](https://github.com/pbrissaud/suivi-bourse/issues/1111)
+* **web:** put the portfolio value first on the dashboard ([#1099](https://github.com/pbrissaud/suivi-bourse/issues/1099)) ([91a58aa](https://github.com/pbrissaud/suivi-bourse/commit/91a58aa732fe12b41d396064c4e15c659e5b9c80))
+
+
+### Bug Fixes
+
+* **ci:** pin Python to 3.14, the version the image runs ([#1124](https://github.com/pbrissaud/suivi-bourse/issues/1124)) ([747d5dc](https://github.com/pbrissaud/suivi-bourse/commit/747d5dc8bde9484da0427708f659a3c7c01c4e54))
+* **import:** read semicolon-separated CSV files ([#1097](https://github.com/pbrissaud/suivi-bourse/issues/1097)) ([10cdba5](https://github.com/pbrissaud/suivi-bourse/commit/10cdba5f4b93ba0bca5353fc8032ffeaffec6318))
+* **web:** delete ledger events by checkbox selection, not by "the reduction" ([#1125](https://github.com/pbrissaud/suivi-bourse/issues/1125)) ([4207da9](https://github.com/pbrissaud/suivi-bourse/commit/4207da9b37f1b702deafd41659efbfb22c3103c3))
+* **web:** show one performance figure per screen, and the net-of-tax line under the value ([#1133](https://github.com/pbrissaud/suivi-bourse/issues/1133)) ([38de3b0](https://github.com/pbrissaud/suivi-bourse/commit/38de3b01acf234dcd54584cb54954aece3712fcc))
+
+
+### Dependencies
+
+* **website:** update pnpm to v12.10.0 ([#1104](https://github.com/pbrissaud/suivi-bourse/issues/1104)) ([19ac324](https://github.com/pbrissaud/suivi-bourse/commit/19ac3248ac9f0b2b0fae0130dc5d2fe20cafee10))
+* **website:** update pnpm to v12.10.1 ([#1105](https://github.com/pbrissaud/suivi-bourse/issues/1105)) ([8928006](https://github.com/pbrissaud/suivi-bourse/commit/8928006a84888d2ad559c1f91b09eb08fddf961a))
+* **web:** update dependency @vitejs/plugin-react to v6.1.2 ([#1100](https://github.com/pbrissaud/suivi-bourse/issues/1100)) ([6255321](https://github.com/pbrissaud/suivi-bourse/commit/6255321abae4283a81e3b407e5615e8243141be2))
+* **web:** update dependency intl-messageformat to v12.1.3 ([#1101](https://github.com/pbrissaud/suivi-bourse/issues/1101)) ([eb66f66](https://github.com/pbrissaud/suivi-bourse/commit/eb66f667b68945cd2cac6a45cdd5fca3887f527f))
+* **web:** update dependency radix-ui to v1.7.0 ([#1102](https://github.com/pbrissaud/suivi-bourse/issues/1102)) ([0f0e42b](https://github.com/pbrissaud/suivi-bourse/commit/0f0e42b33cc30193783aa1182567217349d678dd))
+* **web:** update dependency vite to v8.3.3 ([#1103](https://github.com/pbrissaud/suivi-bourse/issues/1103)) ([7934ec9](https://github.com/pbrissaud/suivi-bourse/commit/7934ec9154bbf740e3d60f3bf0f948ff9c773586))
+
 ## [5.2.0](https://github.com/pbrissaud/suivi-bourse/compare/v5.1.2...v5.2.0) (2026-10-07)
 
 
