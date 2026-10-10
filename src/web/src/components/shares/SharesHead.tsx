@@ -68,7 +68,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
   const valuation = valuationTotal(rows)
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b px-4 py-3.5">
-      <h2 className="eyebrow">
+      <h2 className="label">
         {t('shares.head.title')}
       </h2>
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">

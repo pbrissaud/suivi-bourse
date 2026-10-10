@@ -72,16 +72,12 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        // The drawing's own header: 42 px tall, the label set as the eyebrow
-        // every card heading is set in, and the strip a shade under the card it
-        // sits on. The density does not touch it — it is the **rows** a reader
-        // tightens, and a header that moved with them would take the column
-        // names off the same line as the figures they name.
-        // `[&_button]:uppercase` is not belt and braces: the reset the framework
-        // ships puts `text-transform: none` on every `button`, so a sortable
-        // column — where the control *is* the label (#791) — came out in
-        // sentence case beside its unsortable neighbours in small caps.
-        "h-10.5 bg-background px-1.5 text-left align-middle text-2xs font-semibold tracking-wide text-muted-foreground uppercase whitespace-nowrap xl:px-4 xl:tracking-widest [&_button]:uppercase",
+        // 42 px tall, the column names set in DESIGN.md's Label (never
+        // uppercase, never letter-spaced), and the strip a shade under the
+        // card it sits on. The density does not touch it — it is the **rows**
+        // a reader tightens, and a header that moved with them would take the
+        // column names off the same line as the figures they name.
+        "label h-10.5 bg-background px-1.5 text-left align-middle whitespace-nowrap xl:px-4",
         className,
       )}
       {...props}

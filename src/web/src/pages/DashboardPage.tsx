@@ -205,7 +205,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-5">
       {/* **Every figure on this page comes out of the perf cache**, so the
           sentence stands over the page rather than in one block: the head,
           the breakdown and the curve are all written by the same pass, and
@@ -234,34 +234,28 @@ export default function DashboardPage() {
 
       {state !== 'portfolio' ? null : (
         <>
-          {/* The two blocks that are **read down** rather than drawn, side by
-              side from `md` and stacked under it. Stacked, the day's movements
-              come first and the breakdown goes under the fold: on a phone the
-              page is read for *today*, and the gain's decomposition is the
-              question one asks second. From `md` the breakdown takes the left. */}
-          <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
-            <Movers
-              // `?? null` and never `?? []`: this read is armed only once the
-              // page reaches `portfolio`, so there is a real window in which an
-              // empty array would state *« Rien à comparer »* about movements
-              // nobody has answered for.
-              movers={movers.data?.movers ?? null}
-              reference={movers.data?.reference ?? null}
-              rows={rows}
-              currency={positions.data?.base_currency ?? null}
-              failure={moversFailure}
-            />
-            <div className="md:order-first">
-              <GainBreakdown positions={positions.data ?? null} totals={totals.data ?? null} />
-            </div>
-          </div>
+          {/* **A sequence of sections, not a grid of tiles** (DESIGN.md), 20 px
+              apart: the gain's decomposition first, then the day's movements,
+              then the rhythm. */}
+          <GainBreakdown positions={positions.data ?? null} totals={totals.data ?? null} />
+          <Movers
+            // `?? null` and never `?? []`: this read is armed only once the
+            // page reaches `portfolio`, so there is a real window in which an
+            // empty array would state *« Rien à comparer »* about movements
+            // nobody has answered for.
+            movers={movers.data?.movers ?? null}
+            reference={movers.data?.reference ?? null}
+            rows={rows}
+            currency={positions.data?.base_currency ?? null}
+            failure={moversFailure}
+          />
 
           {/* **A block and not a page**. The sidebar's five entries
               are argued as three and two, and a sixth would open a page holding
               one block; the eventual home is a `Projections` page, created the
-              day #757 or #758 gives it a second occupant. Full width under the
-              two lists: what it holds is a figure and twelve months drawn, and
-              the months are what the width is for.
+              day #757 or #758 gives it a second occupant. What it holds is a
+              figure and twelve months drawn, and the months are what the width
+              is for.
 
               `?? null` and never a shape assembled here: a read that has not
               answered renders nothing at all, title included. */}

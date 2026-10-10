@@ -99,7 +99,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
       className="flex flex-col gap-4 rounded-lg border p-4 lg:sticky lg:top-4"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        <h2 className="label">
           {t('data.facets.title')}
         </h2>
         {/* The way out of **everything at once**, offered only while there is
@@ -180,7 +180,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
             is where a month lets go to. */}
         {year === null ? null : (
           <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+            <h3 className="label">
               {t('data.filter.months')}
             </h3>
             <div role="group" aria-label={t('data.filter.months')} className="grid grid-cols-3 gap-1.5">
@@ -224,7 +224,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
             string for a day it refuses, and that reads as *left blank* one line
             later. */}
         <div className="flex flex-col gap-2">
-          <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          <h3 className="label">
             {t('data.filter.exact')}
           </h3>
           <label htmlFor="ledger-since" className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -257,7 +257,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
 function Axis({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+      <h3 className="label">
         {label}
       </h3>
       <div role="group" aria-label={label} className="flex flex-col gap-0.5">

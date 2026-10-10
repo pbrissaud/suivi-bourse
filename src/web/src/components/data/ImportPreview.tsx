@@ -324,7 +324,7 @@ function AccountsBlock({
     <section aria-labelledby="import-accounts" className="space-y-3 rounded-lg border p-4">
       <h3
         id="import-accounts"
-        className="text-xs font-semibold tracking-widest text-muted-foreground uppercase"
+        className="label"
       >
         {t('data.import.accounts.title')}
       </h3>
@@ -497,7 +497,7 @@ function DuplicatesBlock({
     <section aria-labelledby="import-duplicates" className="space-y-3 rounded-lg border p-4">
       <h3
         id="import-duplicates"
-        className="text-xs font-semibold tracking-widest text-muted-foreground uppercase"
+        className="label"
       >
         {t('data.import.duplicates.title')}
       </h3>
@@ -595,7 +595,7 @@ function CurrencyBlock({
     <section aria-labelledby="import-currency" className="space-y-3 rounded-lg border p-4">
       <h3
         id="import-currency"
-        className="text-xs font-semibold tracking-widest text-muted-foreground uppercase"
+        className="label"
       >
         {t('data.import.currency.title')}
       </h3>

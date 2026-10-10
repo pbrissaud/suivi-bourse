@@ -34,7 +34,7 @@
 import { EmptyState } from '@/components/EmptyState'
 import { Stat } from '@/components/Stat'
 import { Unreadable } from '@/components/Unreadable'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import type { InvestmentRhythmResponse, RhythmMonth } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -52,12 +52,7 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
   if (rhythm === null) return failure === null ? null : <Unreadable failure={failure} />
 
   return (
-    <Card>
-      <CardHeader>
-        <h2 className="eyebrow">{t('dashboard.rhythm.title')}</h2>
-      </CardHeader>
-      <CardContent>{body()}</CardContent>
-    </Card>
+    <Section title={t('dashboard.rhythm.title')}>{body()}</Section>
   )
 
   function body() {

@@ -75,7 +75,7 @@ export function RebuildBlock({ runtime, firstEvent, accounts }: RebuildBlockProp
   return (
     <Card role="region" aria-labelledby={REBUILD_HEADING}>
       <CardHeader>
-        <h2 id={REBUILD_HEADING} className="eyebrow">
+        <h2 id={REBUILD_HEADING} className="label">
           {t('installation.rebuild.title')}
         </h2>
       </CardHeader>

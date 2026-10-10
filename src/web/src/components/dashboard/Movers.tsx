@@ -28,7 +28,7 @@
  */
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import type { Mover } from '@/lib/api'
 import { moversList } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
@@ -51,22 +51,18 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
   const { rows: moved, others, unchanged } = moversList(movers, rows)
   return (
-    <Card>
-      <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="eyebrow">
-          {t('dashboard.movers.title')}
-        </h2>
-        {/* The instant the comparison is against, and it is this block's own
-            subject rather than the page's period: a movement is read against a
-            close, and the close is a fact about the quotes rather than about
-            the window the reader chose. */}
-        {reference === null ? null : (
-          <p className="text-2xs text-muted-foreground">
-            {t('dashboard.movers.since', { date: f.dateTime(reference) })}
-          </p>
-        )}
-      </CardHeader>
-      <CardContent>
+    <Section
+      title={t('dashboard.movers.title')}
+      // The instant the comparison is against, and it is this block's own
+      // subject rather than the page's period: a movement is read against a
+      // close, and the close is a fact about the quotes rather than about the
+      // window the reader chose.
+      aside={
+        reference === null ? null : (
+          <p className="label">{t('dashboard.movers.since', { date: f.dateTime(reference) })}</p>
+        )
+      }
+    >
         {moved.length === 0 ? (
           <EmptyState
             title={t('dashboard.movers.empty')}
@@ -77,7 +73,7 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
             {moved.map((mover) => (
               <li
                 key={mover.symbol}
-                className="flex items-center gap-3 border-b py-2.25"
+                className="flex items-center gap-3 border-b py-2.25 last:border-b-0"
               >
                 {/* The identity, set as a mark rather than as a word: a ticker
                     is read as a badge and it is what pairs a line here to the
@@ -114,7 +110,6 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
             {t('dashboard.movers.others', { count: others, unchanged })}
           </p>
         )}
-      </CardContent>
-    </Card>
+    </Section>
   )
 }

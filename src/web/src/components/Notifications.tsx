@@ -251,7 +251,7 @@ export function Notifications() {
                     <p className="flex items-center gap-2">
                       <span
                         className={cn(
-                          'rounded-lg px-2 py-0.5 text-2xs font-semibold tracking-wider uppercase',
+                          'rounded-lg px-2 py-0.5 text-xs font-medium',
                           SUBJECT_TONE[group.subject],
                         )}
                       >

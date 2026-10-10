@@ -2,12 +2,19 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * **A card is for something the user decides or selects** (DESIGN.md): an
+ * analyst proposal, a profile fact to confirm, a first-run step, a destructive
+ * confirmation, an account tile. Never decoration, never a card inside a card;
+ * a block of the page is a `Section`. Flat: the step from the ground is the
+ * depth, so there is no shadow.
+ */
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card"
       className={cn(
-        "flex flex-col gap-4 rounded-xl border bg-card py-5.5 text-card-foreground shadow-sm",
+        "flex flex-col gap-4 rounded-card border bg-card py-5.5 text-card-foreground",
         className
       )}
       {...props}

@@ -240,7 +240,7 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
       <th
         scope="rowgroup"
         colSpan={9}
-        className="px-1.5 py-2 text-left text-2xs font-semibold tracking-widest text-primary uppercase xl:px-4"
+        className="px-1.5 py-2 text-left label text-primary xl:px-4"
       >
         {group.account}
         {' · '}

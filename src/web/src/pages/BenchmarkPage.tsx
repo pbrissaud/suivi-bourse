@@ -244,7 +244,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
 
   return (
     // **`aria-live="polite"`**, because this is the result of a gesture and not
-    // an ambient state: switching from `CW8` to `C40` reads the eyebrow, the
+    // an ambient state: switching from `CW8` to `C40` reads the label, the
     // figure and the verdict back. Polite and never assertive — the reader is
     // already looking at the control they pressed, which is `Refusal`'s own
     // reasoning for keeping `role="status"`.
@@ -255,7 +255,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
             size="head"
             // The ticker without its venue suffix, as the selector renders it:
             // `CW8` and not `CW8.PA`. The exchange is an addressing detail of
-            // the fetch, and the eyebrow is the one place the reader meets the
+            // the fetch, and the label is the one place the reader meets the
             // fund.
             label={t('benchmark.head.label', {
               index,

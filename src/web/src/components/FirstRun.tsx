@@ -24,8 +24,8 @@
  *    is and where they are in it. Numbered markers are the one structural
  *    device that has to earn itself, and here they do: the passages **are** a
  *    sequence, walked in order, and the order is what the reader needs. The
- *    sentence stays underneath as the eyebrow, because a shape is not something
- *    a screen reader can be given (`aria-current` says *which*, the eyebrow
+ *    sentence stays underneath as the label, because a shape is not something
+ *    a screen reader can be given (`aria-current` says *which*, the label
  *    says *how far*);
  *  - **the way out is spelt** — `Échap pour fermer`, beside the control that
  *    walks on, and on the first passage alone. The three ways out were always
@@ -260,7 +260,7 @@ export function FirstRun() {
             below, and both of them moved under the cursor when the body was as
             tall as whichever passage happened to be showing. */}
         <div className="min-h-56 space-y-3">
-          <p className="eyebrow font-mono">
+          <p className="label font-mono">
             {t('firstRun.step', { step: passageNumber(passage), total: PASSAGES.length })}
           </p>
 
@@ -464,7 +464,7 @@ export function FirstRun() {
  * **It is not the accessible statement of the same thing, and does not try to
  * be.** A rule filling with colour is not something a screen reader can be
  * handed: `aria-current="step"` says which passage is standing, the tick's own
- * word says which are behind, and the eyebrow under the rail — `Passage 2 sur
+ * word says which are behind, and the label under the rail — `Passage 2 sur
  * 3` — says the whole of it in one sentence. The segments are hidden outright.
  *
  * It lives here rather than in `components/` because nothing else mounts it:

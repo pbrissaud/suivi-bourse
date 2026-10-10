@@ -122,7 +122,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
     return (
       <Card role="region" aria-labelledby={JOBS_HEADING}>
         <CardHeader>
-          <h2 id={JOBS_HEADING} className="eyebrow">
+          <h2 id={JOBS_HEADING} className="label">
             {t('settings.jobs')}
           </h2>
         </CardHeader>
@@ -150,7 +150,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
             product: it says which of the three words below applies before the
             word is read, and it is the bell's own colour on the surface the
             bell links to. */}
-        <h2 id={JOBS_HEADING} className="eyebrow flex items-center gap-2.5">
+        <h2 id={JOBS_HEADING} className="label flex items-center gap-2.5">
           <span
             aria-hidden
             className={cn('inline-block size-2 rounded-full', JOB_DOT[health.status])}
@@ -179,9 +179,9 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
               aria-hidden
               className="hidden gap-4 border-b pb-2 sm:grid sm:grid-cols-[minmax(0,1fr)_10.5rem_minmax(0,14rem)]"
             >
-              <span className="eyebrow">{t('settings.jobs.column.name')}</span>
-              <span className="eyebrow">{t('settings.jobs.column.at')}</span>
-              <span className="eyebrow">{t('settings.jobs.column.verdict')}</span>
+              <span className="label">{t('settings.jobs.column.name')}</span>
+              <span className="label">{t('settings.jobs.column.at')}</span>
+              <span className="label">{t('settings.jobs.column.verdict')}</span>
             </div>
             {JOB_KEYS.map((key) => (
               <div
