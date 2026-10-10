@@ -64,11 +64,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  api,
-  type BenchmarkExclusion,
-  type BenchmarkResponse,
-} from '@/lib/api'
+import { api, type BenchmarkExclusion, type BenchmarkResponse } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -125,12 +121,7 @@ export default function BenchmarkPage() {
         // The one way out **is** the selector: this empty state's action is the
         // control itself, not a link to somewhere the control lives.
         action={
-          <ReferenceSelect
-            hint
-            value={null}
-            offered={data.offered}
-            downloaded={data.consulted}
-          />
+          <ReferenceSelect hint value={null} offered={data.offered} downloaded={data.consulted} />
         }
       />
     )
@@ -300,7 +291,9 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
               scale={scale}
               // The sign's colour, as on the per-account bars: a loss drawn in
               // the gain's green read as a gain (#1112).
-              fill={signOf(data.portfolio_return ?? null) === 'loss' ? 'var(--loss)' : 'var(--gain)'}
+              fill={
+                signOf(data.portfolio_return ?? null) === 'loss' ? 'var(--loss)' : 'var(--gain)'
+              }
               size="block"
               className="mt-1.5"
             />
@@ -382,7 +375,9 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
           <TableRow>
             {hasShared ? (
               <TableHead colSpan={2} className="xl:px-5">
-                {t('benchmark.accounts.group.shared', { from: f.date(data.covered_from as string) })}
+                {t('benchmark.accounts.group.shared', {
+                  from: f.date(data.covered_from as string),
+                })}
               </TableHead>
             ) : null}
             <TableHead colSpan={hasShared ? 3 : 4} className={hasShared ? 'border-l' : 'xl:px-5'}>
@@ -465,7 +460,9 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
           {hasShared ? (
             <TableRow className="border-t-2 bg-muted/40 font-semibold max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:p-4">
               <TableCell className={`xl:px-5 ${stack}`}>{t('benchmark.accounts.total')}</TableCell>
-              <TableCell className={`tabular text-right ${signClass(data.gap_gross ?? null)} ${stack}`}>
+              <TableCell
+                className={`tabular text-right ${signClass(data.gap_gross ?? null)} ${stack}`}
+              >
                 {data.gap_gross === null || data.gap_gross === undefined
                   ? '—'
                   : f.signedCurrency(data.gap_gross, currency)}

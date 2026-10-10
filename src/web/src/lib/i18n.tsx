@@ -65,10 +65,7 @@ export function readLanguageChoice(
  * language. `auto` takes the first *supported* preference — a browser asking for
  * `de` gets English, the source, rather than a half-translated screen.
  */
-export function resolveLanguage(
-  choice: LanguageChoice,
-  preferences: readonly string[],
-): Language {
+export function resolveLanguage(choice: LanguageChoice, preferences: readonly string[]): Language {
   if (choice !== 'auto') return choice
   for (const preference of preferences) {
     const base = preference.toLowerCase().split('-')[0]
@@ -83,11 +80,7 @@ export type MessageValues = Record<string, string | number | Date>
  * Format one message. Exported unbound so a pure test — and a module with no
  * React around it — can format without mounting anything.
  */
-export function formatMessage(
-  language: Language,
-  key: MessageKey,
-  values?: MessageValues,
-): string {
+export function formatMessage(language: Language, key: MessageKey, values?: MessageValues): string {
   const message = CATALOGUES[language][key]
   // Most messages are literal, and running the ICU parser over them would cost
   // a parse per render for nothing. Keyed on the *message* rather than on the

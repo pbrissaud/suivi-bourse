@@ -41,7 +41,9 @@ function renderAccounts(
 ) {
   server.use(
     http.get(ROUTES.accounts, () =>
-      HttpResponse.json(anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', ...account })])),
+      HttpResponse.json(
+        anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', ...account })]),
+      ),
     ),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
   )
@@ -85,7 +87,7 @@ describe('the card is present wherever a model is', () => {
   })
 
   it('shows nothing at all for an account carrying no model', async () => {
-    renderAccounts({ projected_tax: 96 })  // no `taxation_kind`: no model
+    renderAccounts({ projected_tax: 96 }) // no `taxation_kind`: no model
 
     await screen.findByRole('region', { name: 'Alpha' })
     await waitFor(() =>
@@ -113,9 +115,7 @@ describe('the card is present wherever a model is', () => {
 
     const detail = await screen.findByRole('region', { name: 'Alpha' })
     expect(await screen.findByText(/Prélevé sur ce que vous recevez/)).toBeInTheDocument()
-    expect(
-      within(detail).queryByRole('group', { name: 'Impôt projeté' }),
-    ).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Impôt projeté' })).not.toBeInTheDocument()
   })
 
   it('states a computed zero as a figure, never as the em dash of an unknown', async () => {
@@ -285,7 +285,11 @@ describe('the footing names the rate that produced the figure', () => {
   })
 
   it('names every rung of a ladder, there being no single rate to name', async () => {
-    renderAccounts({ taxation_kind: 'bracketed_realised', projected_tax: 400, projected_rates: [0.1, 0.3, 0.42] })
+    renderAccounts({
+      taxation_kind: 'bracketed_realised',
+      projected_tax: 400,
+      projected_rates: [0.1, 0.3, 0.42],
+    })
 
     const footing = await screen.findByRole('group', { name: 'Taux appliqués' })
 

@@ -237,7 +237,6 @@ describe('the reveal, which is a rendering budget and not a fetch', () => {
   })
 })
 
-
 describe('the reduction as the export takes it', () => {
   it('sends nothing at all when nothing is held back', () => {
     // Which is what tells the server it is serving a **backup** rather than a
@@ -531,11 +530,7 @@ describe('the order the suggestions arrive in', () => {
   it('hands back everything alphabetically on an empty query, and caps nothing', () => {
     // The palette caps at five because a way through is not a field. Nineteen
     // titles are nineteen lines here.
-    expect(titlesFor(titles, '').map((title) => title.symbol)).toEqual([
-      'AI.PA',
-      'CAP.PA',
-      'MC.PA',
-    ])
+    expect(titlesFor(titles, '').map((title) => title.symbol)).toEqual(['AI.PA', 'CAP.PA', 'MC.PA'])
     expect(titlesFor(titles, '   ')).toHaveLength(3)
   })
 

@@ -58,7 +58,8 @@ there is no longer a container to build in order to see it work.
 
 ```bash
 cd src/web && pnpm install
-pnpm lint    # tsc -b --noEmit
+pnpm lint    # tsc -b --noEmit, then biome check: lint rules and format
+pnpm exec biome check --write src   # applies the format lint refuses
 pnpm test    # vitest — no network, no configuration
 pnpm build   # → src/static/, which Flask serves; git-ignored
 pnpm dev     # Vite on :5173, proxying /api and /health to localhost:8080

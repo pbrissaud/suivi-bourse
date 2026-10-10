@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "tsc -b --noEmit && biome lint --error-on-warnings src",
+    "lint": "tsc -b --noEmit && biome check --error-on-warnings src",
     "test": "vitest run"
   },
   "dependencies": {

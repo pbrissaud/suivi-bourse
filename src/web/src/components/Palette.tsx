@@ -149,8 +149,8 @@ export function Palette() {
       // **The reduction, and it is an address** — so the ledger it lands on can
       // name what it retains and offer the way out of it (`lib/palette.ts`).
       run: () =>
-        leave(() =>
-          void navigate({ to: '/ledger', search: ledgerSearchOf(eventReduction(event)) }),
+        leave(
+          () => void navigate({ to: '/ledger', search: ledgerSearchOf(eventReduction(event)) }),
         ),
     }
   })
@@ -325,9 +325,7 @@ function Section({ title, entries }: { title: string; entries: readonly Entry[] 
   if (entries.length === 0) return null
   return (
     <div className="py-1">
-      <p className="px-3 py-1 label">
-        {title}
-      </p>
+      <p className="px-3 py-1 label">{title}</p>
       <ul aria-label={title}>
         {entries.map((entry) => (
           <li key={entry.key}>

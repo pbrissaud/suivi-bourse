@@ -55,10 +55,11 @@ function detail(name: string) {
  * a button reads as a link to somewhere else.
  */
 async function openPanel(user: ReturnType<typeof renderApp>['user'], name: string) {
-  await user.click(within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole(
-    'link',
-    { name: new RegExp(name) },
-  ))
+  await user.click(
+    within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole('link', {
+      name: new RegExp(name),
+    }),
+  )
   const opened = await detail(name)
   await user.click(within(opened).getByRole('button', { name: 'Modifier le compte' }))
   return screen.findByRole('dialog')
@@ -272,7 +273,9 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
   })
 
   it('can be renamed here, which is the only place it can', async () => {
-    const { user } = renderAccounts(noAccountsDeclared(), [anEvent({ account: DEFAULT_ACCOUNT_ID })])
+    const { user } = renderAccounts(noAccountsDeclared(), [
+      anEvent({ account: DEFAULT_ACCOUNT_ID }),
+    ])
 
     let patched: unknown = null
     const panel = await openPanel(user, 'Non affecté')
@@ -290,9 +293,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
         patched = await request.json()
         return HttpResponse.json(theSeededAccount({ label: 'Mon PEA' }))
       }),
-      http.get(ROUTES.accounts, () =>
-        HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA' })),
-      ),
+      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA' }))),
     )
 
     await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
@@ -467,8 +468,6 @@ describe('the create form on an install that has declared nothing', () => {
     await user.click(screen.getByRole('button', { name: 'Saisir un événement' }))
     const panel = await screen.findByRole('dialog')
     await user.click(within(panel).getByRole('radio', { name: 'Achat' }))
-    expect(
-      within(panel).getByText(/Vos comptes n’ont pas pu être lus/),
-    ).toBeInTheDocument()
+    expect(within(panel).getByText(/Vos comptes n’ont pas pu être lus/)).toBeInTheDocument()
   })
 })

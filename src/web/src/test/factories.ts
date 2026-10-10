@@ -864,9 +864,7 @@ export function anEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
  * offered on a row it could not address. What it is *not* any more is *a row a
  * file laid down*: there is one population.
  */
-export function anUnaddressableEvent(
-  overrides: Partial<LedgerEvent> = {},
-): LedgerEvent {
+export function anUnaddressableEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
   return anEvent({ id: null, ...overrides })
 }
 
@@ -1208,9 +1206,29 @@ export function defaultSettings(): SettingDescription[] {
   return [
     aSetting(),
     aSetting({ key: 'backfill_interval', value: 60, default: 60, effect: 'rearm_backfill_job' }),
-    aSetting({ key: 'backfill_delay', value: 10, default: 10, minimum: 0, maximum: 3600, effect: 'next_cycle' }),
-    aSetting({ key: 'backfill_chunk_days', value: 365, default: 365, minimum: 1, maximum: 3650, effect: 'next_cycle' }),
-    aSetting({ key: 'staleness_horizon', value: 900, default: 900, minimum: 0, effect: 'next_cycle' }),
+    aSetting({
+      key: 'backfill_delay',
+      value: 10,
+      default: 10,
+      minimum: 0,
+      maximum: 3600,
+      effect: 'next_cycle',
+    }),
+    aSetting({
+      key: 'backfill_chunk_days',
+      value: 365,
+      default: 365,
+      minimum: 1,
+      maximum: 3650,
+      effect: 'next_cycle',
+    }),
+    aSetting({
+      key: 'staleness_horizon',
+      value: 900,
+      default: 900,
+      minimum: 0,
+      effect: 'next_cycle',
+    }),
     aSetting({
       key: 'base_currency',
       value: BASE_CURRENCY,
@@ -1321,10 +1339,38 @@ export function anInstallationFact(overrides: Partial<InstallationFact> = {}): I
       base_currency: BASE_CURRENCY,
       symbols: ['ZZA', 'ZZB', 'ZZC'],
       events: [
-        { id: 1, date: '2026-02-10', event_type: 'BUY', symbol: 'ZZA', account: 'alpha', quote_currency: 'USD' },
-        { id: 2, date: '2026-01-12', event_type: 'BUY', symbol: 'ZZA', account: 'alpha', quote_currency: 'USD' },
-        { id: 3, date: '2025-12-24', event_type: 'GRANT', symbol: 'ZZC', account: 'alpha', quote_currency: 'GBP' },
-        { id: 4, date: '2025-11-04', event_type: 'SELL', symbol: 'ZZB', account: 'beta', quote_currency: 'USD' },
+        {
+          id: 1,
+          date: '2026-02-10',
+          event_type: 'BUY',
+          symbol: 'ZZA',
+          account: 'alpha',
+          quote_currency: 'USD',
+        },
+        {
+          id: 2,
+          date: '2026-01-12',
+          event_type: 'BUY',
+          symbol: 'ZZA',
+          account: 'alpha',
+          quote_currency: 'USD',
+        },
+        {
+          id: 3,
+          date: '2025-12-24',
+          event_type: 'GRANT',
+          symbol: 'ZZC',
+          account: 'alpha',
+          quote_currency: 'GBP',
+        },
+        {
+          id: 4,
+          date: '2025-11-04',
+          event_type: 'SELL',
+          symbol: 'ZZB',
+          account: 'beta',
+          quote_currency: 'USD',
+        },
       ],
       currencies: ['GBP', 'USD'],
     },

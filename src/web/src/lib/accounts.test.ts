@@ -180,7 +180,10 @@ describe('the rows, and the weights the rail draws off them', () => {
     const weights = accountWeights(rows)
     expect(weights.get('alpha')).toBeCloseTo(1800 / 3300, 6)
     expect(weights.get('gamma')).toBeCloseTo(600 / 3300, 6)
-    expect([...weights.values()].reduce<number>((sum, share) => sum + (share ?? 0), 0)).toBeCloseTo(1, 6)
+    expect([...weights.values()].reduce<number>((sum, share) => sum + (share ?? 0), 0)).toBeCloseTo(
+      1,
+      6,
+    )
   })
 
   it('has no share to state for an account nothing has been written about', () => {
@@ -216,14 +219,8 @@ describe('what a figure is worth against the contribution (#833)', () => {
     // 322,00 of 1 478,00. It is a **cumulative ratio** and not a rate: no
     // window, no annualisation, and the same arithmetic the detail applies to
     // the dividends one card lower.
-    expect(onContributed(rows[0].gain_absolu, rows[0].net_contributed)).toBeCloseTo(
-      322 / 1478,
-      6,
-    )
-    expect(onContributed(rows[1].gain_absolu, rows[1].net_contributed)).toBeCloseTo(
-      48 / 852,
-      6,
-    )
+    expect(onContributed(rows[0].gain_absolu, rows[0].net_contributed)).toBeCloseTo(322 / 1478, 6)
+    expect(onContributed(rows[1].gain_absolu, rows[1].net_contributed)).toBeCloseTo(48 / 852, 6)
   })
 
   it('states no ratio at all on any of the three ways there is none', () => {
@@ -412,7 +409,9 @@ describe('the name one account wears, on both pages', () => {
   })
 
   it('never sends any other account to the catalogue, and falls back to the id', () => {
-    expect(declaredLabel(anAccount({ id: 'pea', label: 'Default account' }))).toBe('Default account')
+    expect(declaredLabel(anAccount({ id: 'pea', label: 'Default account' }))).toBe(
+      'Default account',
+    )
     expect(declaredLabel(anAccount({ id: 'pea', label: null }))).toBe('pea')
   })
 })

@@ -105,12 +105,14 @@ describe('the events the palette offers', () => {
 
 describe('the reduction an event leads to', () => {
   it('is the event’s three coordinates, and never a fourth', () => {
-    expect(eventReduction(anEvent({ symbol: 'ZZA', event_type: 'BUY', account: 'alpha' }))).toEqual({
-      ...NO_FILTERS,
-      query: 'ZZA',
-      type: 'BUY',
-      account: 'alpha',
-    })
+    expect(eventReduction(anEvent({ symbol: 'ZZA', event_type: 'BUY', account: 'alpha' }))).toEqual(
+      {
+        ...NO_FILTERS,
+        query: 'ZZA',
+        type: 'BUY',
+        account: 'alpha',
+      },
+    )
   })
 
   it('takes the label where the event names no security', () => {

@@ -117,9 +117,7 @@ export function Notifications() {
   // *it has not answered and it has not failed*, which is the one state in
   // which this panel says nothing at all — headings, cards and the empty
   // sentence alike.
-  const pending = [health, facts, advisories, config].some(
-    (read) => read.status === 'pending',
-  )
+  const pending = [health, facts, advisories, config].some((read) => read.status === 'pending')
 
   const entries = notifications({
     health: health.status === 'pending' ? null : state,
@@ -369,4 +367,3 @@ function CardLink({
     </Link>
   )
 }
-

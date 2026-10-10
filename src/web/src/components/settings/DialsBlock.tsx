@@ -182,50 +182,52 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
         </p>
       </CardHeader>
       <CardContent>
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          save.mutate()
-        }}
-      >
-        <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
-          {config.settings
-            .filter((setting) => !NOT_A_DIAL.has(setting.key))
-            .map((setting) => (
-              <Dial
-                key={setting.key}
-                setting={setting}
-                value={draft[setting.key] ?? ''}
-                reach={reach}
-                fixed={fixed}
-                onChange={(value) => setDraft((current) => ({ ...current, [setting.key]: value }))}
-              />
-            ))}
-        </div>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            save.mutate()
+          }}
+        >
+          <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+            {config.settings
+              .filter((setting) => !NOT_A_DIAL.has(setting.key))
+              .map((setting) => (
+                <Dial
+                  key={setting.key}
+                  setting={setting}
+                  value={draft[setting.key] ?? ''}
+                  reach={reach}
+                  fixed={fixed}
+                  onChange={(value) =>
+                    setDraft((current) => ({ ...current, [setting.key]: value }))
+                  }
+                />
+              ))}
+          </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={pending === 0 || save.isPending}>
-            {t('installation.settings.save')}
-          </Button>
-          {save.isError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {t('installation.settings.refused')}
-            </p>
-          ) : null}
-          {receipt && !save.isError ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              {receipt.changed.length === 0
-                ? t('installation.settings.unchanged')
-                : t('installation.settings.saved', {
-                    count: receipt.changed.length,
-                    now: Number(receipt.effect?.symbols_rescheduled ?? 0),
-                    later: Number(receipt.effect?.symbols_at_market_open ?? 0),
-                  })}
-            </p>
-          ) : null}
-        </div>
-      </form>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={pending === 0 || save.isPending}>
+              {t('installation.settings.save')}
+            </Button>
+            {save.isError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {t('installation.settings.refused')}
+              </p>
+            ) : null}
+            {receipt && !save.isError ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                {receipt.changed.length === 0
+                  ? t('installation.settings.unchanged')
+                  : t('installation.settings.saved', {
+                      count: receipt.changed.length,
+                      now: Number(receipt.effect?.symbols_rescheduled ?? 0),
+                      later: Number(receipt.effect?.symbols_at_market_open ?? 0),
+                    })}
+              </p>
+            ) : null}
+          </div>
+        </form>
       </CardContent>
     </Card>
   )
@@ -311,4 +313,3 @@ function Dial({
     </div>
   )
 }
-

@@ -124,9 +124,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
       <DropdownMenuContent align="end" className="w-72">
         {/* The menu says what the four entries answer, once, rather than four
             times over: *what you are exporting*. */}
-        <DropdownMenuLabel className="label">
-          {t('data.export.heading')}
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="label">{t('data.export.heading')}</DropdownMenuLabel>
         {files.events ? (
           <>
             <Entry

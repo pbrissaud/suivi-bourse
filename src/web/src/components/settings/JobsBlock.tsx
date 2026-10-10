@@ -139,9 +139,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
   // on its first row. A fold that came back short is the same news as a fold
   // that failed, and it is said with the same sentence rather than a second one.
   const rows =
-    health.jobs !== null && JOB_KEYS.every((key) => health.jobs?.[key] != null)
-      ? health.jobs
-      : null
+    health.jobs !== null && JOB_KEYS.every((key) => health.jobs?.[key] != null) ? health.jobs : null
 
   return (
     <Card role="region" aria-labelledby={JOBS_HEADING}>
@@ -192,9 +190,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
                 <dd className="tabular font-mono text-xs text-muted-foreground">
                   {/* The instant alone: the column over it is what names it,
                       so *Dernier passage 26 août* would say it twice (#838). */}
-                  {rows[key].at === null
-                    ? t('settings.jobs.never')
-                    : format.dateTime(rows[key].at)}
+                  {rows[key].at === null ? t('settings.jobs.never') : format.dateTime(rows[key].at)}
                 </dd>
                 <dd className={cn('text-sm', JOB_TONE[rows[key].status])}>
                   {t(...verdictOf(key, rows))}
@@ -227,7 +223,12 @@ function verdictOf(key: JobKey, jobs: HealthJobs): [MessageKey, MessageValues] {
       'settings.jobs.scrape.verdict',
       // The securities that ask to be looked at, **named** — a count alone
       // leaves the one thing the reader cannot look up: which line to read.
-      { verdict: job.verdict, held: job.held, count: job.attention.length, symbols: job.attention.join(', ') },
+      {
+        verdict: job.verdict,
+        held: job.held,
+        count: job.attention.length,
+        symbols: job.attention.join(', '),
+      },
     ]
   }
   if (key === 'backfill') {

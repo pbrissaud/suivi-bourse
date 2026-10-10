@@ -328,9 +328,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                 events={events}
                 currency={currency}
                 selectedDay={selectedDay}
-                onSelectDay={(day) =>
-                  setSelectedDay((previous) => (previous === day ? null : day))
-                }
+                onSelectDay={(day) => setSelectedDay((previous) => (previous === day ? null : day))}
                 scrollRequest={scrollRequest}
               />
             )}
@@ -375,9 +373,10 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                           )}
                         </TableCell>
                         <TableCell
-                          className={`text-right tabular ${
-                            toneOf(lineRenderings.unrealised, lineGain)
-                          }`}
+                          className={`text-right tabular ${toneOf(
+                            lineRenderings.unrealised,
+                            lineGain,
+                          )}`}
                         >
                           {renderFigure(
                             lineRenderings.unrealised,
@@ -416,31 +415,29 @@ function Fundamentals({ row }: { row: ShareRow }) {
   const attributes = row.fundamentals
   if (attributes === null) return null
 
-  const lines = ([
-    { label: 'shares.fundamentals.exchange', value: attributes.exchange },
-    { label: 'shares.fundamentals.quoteType', value: attributes.quote_type },
-    { label: 'shares.fundamentals.currency', value: attributes.currency },
-    {
-      label: 'shares.fundamentals.dividendYield',
-      value:
-        attributes.dividend_yield === null
-          ? null
-          : f.percentPoints(attributes.dividend_yield),
-    },
-    {
-      label: 'shares.fundamentals.peRatio',
-      value: attributes.pe_ratio === null ? null : f.number(attributes.pe_ratio),
-    },
-    {
-      label: 'shares.fundamentals.marketCap',
-      value:
-        attributes.market_cap === null
-          ? null
-          : f.compact(attributes.market_cap, attributes.currency),
-    },
-  ] satisfies { label: MessageKey; value: string | null }[]).filter(
-    (line) => line.value !== null,
-  )
+  const lines = (
+    [
+      { label: 'shares.fundamentals.exchange', value: attributes.exchange },
+      { label: 'shares.fundamentals.quoteType', value: attributes.quote_type },
+      { label: 'shares.fundamentals.currency', value: attributes.currency },
+      {
+        label: 'shares.fundamentals.dividendYield',
+        value:
+          attributes.dividend_yield === null ? null : f.percentPoints(attributes.dividend_yield),
+      },
+      {
+        label: 'shares.fundamentals.peRatio',
+        value: attributes.pe_ratio === null ? null : f.number(attributes.pe_ratio),
+      },
+      {
+        label: 'shares.fundamentals.marketCap',
+        value:
+          attributes.market_cap === null
+            ? null
+            : f.compact(attributes.market_cap, attributes.currency),
+      },
+    ] satisfies { label: MessageKey; value: string | null }[]
+  ).filter((line) => line.value !== null)
 
   if (lines.length === 0) return null
 

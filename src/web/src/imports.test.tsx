@@ -78,7 +78,9 @@ function renderImports({
 } = {}) {
   server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(events))))
   if (accounts) {
-    server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts, declared))))
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts, declared))),
+    )
   }
   return renderApp({ url: '/ledger' })
 }
@@ -175,7 +177,9 @@ describe('the export', () => {
     // *looks* like half a round trip. What the menu offers instead is a
     // **report**, named after what is in it, and the import refuses it by name.
     const declared = await openExport(renderImports({ accounts: [anAccount({ id: 'zeta' })] }).user)
-    expect(within(declared).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(
+      within(declared).queryByRole('menuitem', { name: 'Vos comptes' }),
+    ).not.toBeInTheDocument()
     expect(
       within(declared).getByRole('menuitem', { name: /Comptes et positions/ }),
     ).toHaveTextContent('Soldes, PRU et valorisations')
@@ -222,7 +226,11 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.click(within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*grand livre/ }))
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', {
+        name: /Tous vos événements.*grand livre/,
+      }),
+    )
 
     await waitFor(() => expect(asked).toHaveLength(1))
     // No parameter at all: this entry is the backup, and the backup is whole.
@@ -288,7 +296,9 @@ describe('the export', () => {
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await user.click(
-      within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*Classeur/ }),
+      within(await openExport(user)).getByRole('menuitem', {
+        name: /Tous vos événements.*Classeur/,
+      }),
     )
 
     await waitFor(() => expect(saved).toEqual(['suivi-bourse-events.xlsx']))
@@ -310,7 +320,11 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.click(within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*grand livre/ }))
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', {
+        name: /Tous vos événements.*grand livre/,
+      }),
+    )
 
     // It says what is being made, and it is still saying it a while later: the
     // sentence is not on a clock of its own.
@@ -337,7 +351,11 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.click(within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*grand livre/ }))
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', {
+        name: /Tous vos événements.*grand livre/,
+      }),
+    )
 
     // Read by `problem.type` like every other refusal, never by the sentence
     // the server wrote for a log.
@@ -969,7 +987,9 @@ describe('what this import would do', () => {
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
     expect(screen.getByText('2 doublons sautés')).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'))
+    await user.click(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
+    )
 
     expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
     expect(screen.getByText('aucun doublon sauté')).toBeInTheDocument()
@@ -1036,7 +1056,9 @@ describe('what this import would do', () => {
     expect(seen.every((url) => url.searchParams.has('dry_run'))).toBe(true)
     // And the window is not a dead end: the census stands beside the refusal, so
     // the box that caused it is still there to untick.
-    await user.click(screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'))
+    await user.click(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
+    )
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
     expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
@@ -1053,13 +1075,15 @@ describe('what this import would do', () => {
     await hand(user)
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'))
+    await user.click(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
+    )
 
     expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
     await waitFor(() =>
-      expect(
-        seen.filter((url) => url.searchParams.has('write_duplicates')).length,
-      ).toBeGreaterThan(0),
+      expect(seen.filter((url) => url.searchParams.has('write_duplicates')).length).toBeGreaterThan(
+        0,
+      ),
     )
   })
 
@@ -1153,9 +1177,7 @@ describe('what this import would do', () => {
 
     // The refusal is read before the button, and the button cannot be pressed.
     expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled())
     // The window is not a dead end: the select the reader has just used is the
     // same node, still there to answer differently.
     expect(screen.getByLabelText('Cible pour TR')).toBe(select)

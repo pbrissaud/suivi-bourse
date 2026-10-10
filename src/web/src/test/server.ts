@@ -184,7 +184,6 @@ export function defaultHandlers() {
       return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
     }),
 
-
     // The way back out (#710, #796). It is fetched by the client since the
     // receipt has to last as long as the operation, so it is a faked edge like
     // any other now — bytes, and the **name** the server states, which is what

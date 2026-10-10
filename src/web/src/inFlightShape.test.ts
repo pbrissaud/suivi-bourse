@@ -178,7 +178,12 @@ describe('a read in flight is not an absence, held on the source', () => {
       }
       // A declared local: where the flattening is upstream, so is the honesty.
       if (ts.isVariableDeclaration(node) && node.type && node.initializer) {
-        judge(node.initializer, checker.getTypeFromTypeNode(node.type), node.name.getText(), 'local')
+        judge(
+          node.initializer,
+          checker.getTypeFromTypeNode(node.type),
+          node.name.getText(),
+          'local',
+        )
       }
       // An argument, for the same reason one level along: `settledSeries` takes
       // the N reads as `readonly (readonly PerfPoint[] | null)[]`, so the page
@@ -215,8 +220,9 @@ describe('a read in flight is not an absence, held on the source', () => {
     // would kill the upstream door in silence while both assertions stayed
     // green. That is the very failure this half exists against.
     const doors = [...new Set(guarded.map((one) => one.door))].sort()
-    expect(doors, `the walk read nothing at some door: ${JSON.stringify(guarded, null, 2)}`).toEqual(
-      ['argument', 'local', 'prop'],
-    )
+    expect(
+      doors,
+      `the walk read nothing at some door: ${JSON.stringify(guarded, null, 2)}`,
+    ).toEqual(['argument', 'local', 'prop'])
   })
 })

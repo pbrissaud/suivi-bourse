@@ -140,9 +140,7 @@ export function currencyUnanswered(
  * answered — and every caller renders nothing for it rather than guessing a
  * unit, which is the same caution the two predicates above keep.
  */
-export function baseCurrency(
-  settings: readonly SettingDescription[] | undefined,
-): string | null {
+export function baseCurrency(settings: readonly SettingDescription[] | undefined): string | null {
   const dial = settings?.find((setting) => setting.key === CURRENCY_KEY)
   return typeof dial?.value === 'string' ? dial.value : null
 }

@@ -63,53 +63,53 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
         )
       }
     >
-        {moved.length === 0 ? (
-          <EmptyState
-            title={t('dashboard.movers.empty')}
-            description={t('dashboard.movers.empty.body')}
-          />
-        ) : (
-          <ul aria-label={t('dashboard.movers.title')}>
-            {moved.map((mover) => (
-              <li
-                key={mover.symbol}
-                className="flex items-center gap-3 border-b py-2.25 last:border-b-0"
-              >
-                {/* The identity, set as a mark rather than as a word: a ticker
+      {moved.length === 0 ? (
+        <EmptyState
+          title={t('dashboard.movers.empty')}
+          description={t('dashboard.movers.empty.body')}
+        />
+      ) : (
+        <ul aria-label={t('dashboard.movers.title')}>
+          {moved.map((mover) => (
+            <li
+              key={mover.symbol}
+              className="flex items-center gap-3 border-b py-2.25 last:border-b-0"
+            >
+              {/* The identity, set as a mark rather than as a word: a ticker
                     is read as a badge and it is what pairs a line here to the
                     same line in the table one page over. */}
-                <span
-                  aria-hidden
-                  className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-accent font-mono text-2xs font-semibold text-muted-foreground"
-                >
-                  {mover.symbol.slice(0, 4)}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {mover.name ?? mover.symbol}
-                  {/* The symbol still names the line for a screen reader,
+              <span
+                aria-hidden
+                className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-accent font-mono text-2xs font-semibold text-muted-foreground"
+              >
+                {mover.symbol.slice(0, 4)}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {mover.name ?? mover.symbol}
+                {/* The symbol still names the line for a screen reader,
                       where the badge above is decoration. */}
-                  {mover.name === null ? null : <span className="sr-only"> ({mover.symbol})</span>}
-                </span>
-                {/* The percentage over what it did in money: a 12 % jump on a
+                {mover.name === null ? null : <span className="sr-only"> ({mover.symbol})</span>}
+              </span>
+              {/* The percentage over what it did in money: a 12 % jump on a
                     token holding and a 0,4 % drift on the biggest line are not
                     the same news, and a percentage alone cannot say which. */}
-                <span className="flex shrink-0 flex-col items-end">
-                  <span className={`tabular text-sm font-semibold ${signClass(mover.change_pct)}`}>
-                    {f.percent(mover.change_pct)}
-                  </span>
-                  <span className="tabular text-2xs text-muted-foreground">
-                    {f.signedCurrency(mover.contribution, currency)}
-                  </span>
+              <span className="flex shrink-0 flex-col items-end">
+                <span className={`tabular text-sm font-semibold ${signClass(mover.change_pct)}`}>
+                  {f.percent(mover.change_pct)}
                 </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {others === 0 ? null : (
-          <p className="mt-3 text-xs text-muted-foreground">
-            {t('dashboard.movers.others', { count: others, unchanged })}
-          </p>
-        )}
+                <span className="tabular text-2xs text-muted-foreground">
+                  {f.signedCurrency(mover.contribution, currency)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {others === 0 ? null : (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t('dashboard.movers.others', { count: others, unchanged })}
+        </p>
+      )}
     </Section>
   )
 }

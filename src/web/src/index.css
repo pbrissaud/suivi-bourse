@@ -47,40 +47,40 @@
 :root {
   --radius: 0.625rem;
   --background: oklch(0.9741 0.0074 80.7212);
-  --foreground: oklch(0.2193 0.0208 56.3760);
+  --foreground: oklch(0.2193 0.0208 56.376);
   --card: oklch(0.9947 0.0045 78.2986);
-  --card-foreground: oklch(0.2193 0.0208 56.3760);
+  --card-foreground: oklch(0.2193 0.0208 56.376);
   --popover: oklch(0.9947 0.0045 78.2986);
-  --popover-foreground: oklch(0.2193 0.0208 56.3760);
+  --popover-foreground: oklch(0.2193 0.0208 56.376);
   --primary: oklch(0.4825 0.1032 163.7504);
   --primary-foreground: oklch(0.9947 0.0045 78.2986);
   --secondary: oklch(0.9445 0.0132 82.4018);
-  --secondary-foreground: oklch(0.2193 0.0208 56.3760);
+  --secondary-foreground: oklch(0.2193 0.0208 56.376);
   --muted: oklch(0.9445 0.0132 82.4018);
   --muted-foreground: oklch(0.5003 0.0199 61.6482);
-  --accent: oklch(0.9200 0.0145 84.5845);
-  --accent-foreground: oklch(0.2193 0.0208 56.3760);
+  --accent: oklch(0.92 0.0145 84.5845);
+  --accent-foreground: oklch(0.2193 0.0208 56.376);
   --destructive: oklch(0.5498 0.2096 25.1372);
   --border: oklch(0.9012 0.0129 86.8337);
-  --input: oklch(0.8207 0.0145 88.7000);
+  --input: oklch(0.8207 0.0145 88.7);
   --ring: oklch(0.4825 0.1032 163.7504);
   --chart-1: oklch(0.4991 0.1609 284.9747);
   --chart-2: oklch(0.5001 0.0851 210.0599);
-  --chart-3: oklch(0.5993 0.0096 67.6420);
+  --chart-3: oklch(0.5993 0.0096 67.642);
   --chart-4: oklch(0.4805 0.0094 73.6557);
   --chart-5: oklch(0.3603 0.0131 67.3915);
   --sidebar: oklch(0.9741 0.0074 80.7212);
-  --sidebar-foreground: oklch(0.2193 0.0208 56.3760);
+  --sidebar-foreground: oklch(0.2193 0.0208 56.376);
   --sidebar-primary: oklch(0.4825 0.1032 163.7504);
   --sidebar-primary-foreground: oklch(0.9947 0.0045 78.2986);
-  --sidebar-accent: oklch(0.9200 0.0145 84.5845);
-  --sidebar-accent-foreground: oklch(0.2193 0.0208 56.3760);
+  --sidebar-accent: oklch(0.92 0.0145 84.5845);
+  --sidebar-accent-foreground: oklch(0.2193 0.0208 56.376);
   --sidebar-border: oklch(0.9012 0.0129 86.8337);
   --sidebar-ring: oklch(0.4825 0.1032 163.7504);
   --destructive-foreground: oklch(0.9947 0.0045 78.2986);
-  --font-sans: 'Geist Variable', Geist, sans-serif;
+  --font-sans: "Geist Variable", Geist, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
   --shadow-color: #000000;
   --shadow-opacity: 0.18;
   --shadow-blur: 2px;
@@ -102,41 +102,41 @@
 
 .dark {
   --background: oklch(0.1687 0.0117 60.5255);
-  --foreground: oklch(0.9500 0.0074 80.7208);
+  --foreground: oklch(0.95 0.0074 80.7208);
   --card: oklch(0.2047 0.0112 60.7853);
-  --card-foreground: oklch(0.9500 0.0074 80.7208);
+  --card-foreground: oklch(0.95 0.0074 80.7208);
   --popover: oklch(0.2047 0.0112 60.7853);
-  --popover-foreground: oklch(0.9500 0.0074 80.7208);
+  --popover-foreground: oklch(0.95 0.0074 80.7208);
   --primary: oklch(0.8001 0.1297 165.0822);
   --primary-foreground: oklch(0.1687 0.0117 60.5255);
   --secondary: oklch(0.2287 0.0145 57.4561);
-  --secondary-foreground: oklch(0.9500 0.0074 80.7208);
+  --secondary-foreground: oklch(0.95 0.0074 80.7208);
   --muted: oklch(0.2287 0.0145 57.4561);
-  --muted-foreground: oklch(0.6800 0.0142 71.2595);
-  --accent: oklch(0.2650 0.0141 67.1532);
-  --accent-foreground: oklch(0.9500 0.0074 80.7208);
+  --muted-foreground: oklch(0.68 0.0142 71.2595);
+  --accent: oklch(0.265 0.0141 67.1532);
+  --accent-foreground: oklch(0.95 0.0074 80.7208);
   --destructive: oklch(0.7008 0.1902 25.1101);
   --border: oklch(0.2982 0.0113 55.9114);
   --input: oklch(0.3614 0.0141 62.9858);
   --ring: oklch(0.8001 0.1297 165.0822);
   --chart-1: oklch(0.7197 0.1209 285.1072);
-  --chart-2: oklch(0.7200 0.1100 200.3052);
+  --chart-2: oklch(0.72 0.11 200.3052);
   --chart-3: oklch(0.5614 0.0207 70.0393);
   --chart-4: oklch(0.7005 0.0148 67.5823);
-  --chart-5: oklch(0.8413 0.0100 72.6466);
+  --chart-5: oklch(0.8413 0.01 72.6466);
   --sidebar: oklch(0.1687 0.0117 60.5255);
-  --sidebar-foreground: oklch(0.9500 0.0074 80.7208);
+  --sidebar-foreground: oklch(0.95 0.0074 80.7208);
   --sidebar-primary: oklch(0.8001 0.1297 165.0822);
   --sidebar-primary-foreground: oklch(0.1687 0.0117 60.5255);
-  --sidebar-accent: oklch(0.2650 0.0141 67.1532);
-  --sidebar-accent-foreground: oklch(0.9500 0.0074 80.7208);
+  --sidebar-accent: oklch(0.265 0.0141 67.1532);
+  --sidebar-accent-foreground: oklch(0.95 0.0074 80.7208);
   --sidebar-border: oklch(0.2982 0.0113 55.9114);
   --sidebar-ring: oklch(0.8001 0.1297 165.0822);
   --destructive-foreground: oklch(0.1687 0.0117 60.5255);
   --radius: 0.625rem;
-  --font-sans: 'Geist Variable', Geist, sans-serif;
+  --font-sans: "Geist Variable", Geist, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
   --shadow-color: #000000;
   --shadow-opacity: 0.18;
   --shadow-blur: 2px;
@@ -183,8 +183,8 @@
      and an unrealised loss is not an error. A portfolio is made of small moves,
      and a screen of vivid red reads as an alarm rather than as −0,4 %.
      `themeCut.test.ts` holds the inequality, on both grounds. */
-  --gain: oklch(0.4700 0.1100 160);
-  --loss: oklch(0.5200 0.1500 30);
+  --gain: oklch(0.47 0.11 160);
+  --loss: oklch(0.52 0.15 30);
 
   /* The chart's marks, all three taken from the preset **verbatim**. The curve
      is the mint because that is what the redesign draws it in; the attribution
@@ -208,19 +208,19 @@
      before adding this one. Kept off `--grant`'s hue, and dark enough on white
      to clear 4,5:1 — it is read as **text**, in a form's error line and in two
      table labels, not only as a dot. */
-  --attention: oklch(0.5400 0.1300 55);
+  --attention: oklch(0.54 0.13 55);
 }
 
 .dark {
   /* Lifted in lightness for the darker ground, which is the legibility
      correction the redesign makes — and **not** in chroma towards the theme's
      red, which is the correction this palette refuses. */
-  --gain: oklch(0.8400 0.1300 163);
-  --loss: oklch(0.7200 0.1500 30);
+  --gain: oklch(0.84 0.13 163);
+  --loss: oklch(0.72 0.15 30);
   --price: var(--primary);
   --grant: var(--chart-1);
   --dividend: var(--chart-2);
-  --attention: oklch(0.7500 0.1500 55);
+  --attention: oklch(0.75 0.15 55);
 }
 
 /* ==========================================================================
@@ -297,8 +297,8 @@
      `@fontsource-variable/geist` actually registers. The preset's intention
      only loads if both are named, and naming them is the bridge's job — the
      primitives block above stays exactly as the registry writes it. */
-  --font-sans: 'Geist Variable', Geist, sans-serif;
-  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --font-sans: "Geist Variable", Geist, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
   --font-serif: Georgia, serif;
   --font-heading: var(--font-sans);
 
@@ -429,7 +429,8 @@
      is one rule scoped to the cell rather than a second class every numeric
      cell in five tables has to remember, which is what `.tabular` itself is
      for. */
-  :is(td, th) :is(.tabular), :is(td, th).tabular {
+  :is(td, th) :is(.tabular),
+  :is(td, th).tabular {
     font-family: var(--font-mono);
   }
   html {
