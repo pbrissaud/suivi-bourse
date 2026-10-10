@@ -1,0 +1,8 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// DESIGN.md refuses an uppercase letter-spaced overline or a kicker (#1111).
+or { JsStringLiteralExpression(), JsxString(), JsTemplateChunkElement(), JsLiteralMemberName() } as $s where {
+  $s <: r"[\s\S]*(?:^|[\s'\"`:])(?:uppercase|tracking-caps|tracking-wide|tracking-wider|tracking-widest|eyebrow)(?:[\s'\"`]|$)[\s\S]*",
+  register_diagnostic(span = $s, message = "[no-overline] DESIGN.md refuses an uppercase letter-spaced overline")
+}

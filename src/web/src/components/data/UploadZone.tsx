@@ -49,7 +49,7 @@
  * only the control.
  *
  * **The wait is dressed, and that is not the spinner rule's business.**
- * `noSpinner.test.ts` is about a **read**: nothing may be claimed about a
+ * `lint/no-wait-dressing.grit` is about a **read**: nothing may be claimed about a
  * subject nobody has heard from, so a block waiting on one renders nothing at
  * all. This is the reader's own act, it claims nothing about their data, and
  * the app owes them its end — the same argument #796 made for the export.

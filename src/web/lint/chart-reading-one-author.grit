@@ -1,0 +1,8 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// The chart's sentence is composed in ChartReading and nowhere else (#1003).
+JsStringLiteralExpression() as $s where {
+  $s <: r"['\"]chart\.reading\.[\s\S]*",
+  register_diagnostic(span = $s, message = "[chart-reading-one-author] Mount ChartReading instead of writing its sentence (#1003)")
+}

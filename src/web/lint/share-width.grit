@@ -1,0 +1,9 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// One component draws a share: ShareBar (#800).
+JsPropertyObjectMember(name = r"width", value = $value) as $hit where {
+  $value <: JsTemplateExpression(),
+  $value <: r"`[\s\S]*\$\{[\s\S]*\}\s*%`",
+  register_diagnostic(span = $hit, message = "[share-width] A percentage width is a hand-written share bar: mount ShareBar (#800)")
+}

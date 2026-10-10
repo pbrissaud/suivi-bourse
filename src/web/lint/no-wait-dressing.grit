@@ -1,0 +1,13 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// #795: a block waiting on a read renders nothing, so a wait is never dressed.
+or {
+  or { JsStringLiteralExpression(), JsxString(), JsTemplateChunkElement(), JsLiteralMemberName() } as $hit where { $hit <: r"[\s\S]*(?:^|[\s'\"`:])animate-(?:spin|pulse)(?:[\s'\"`]|$)[\s\S]*" },
+  or { JsxOpeningElement(name = $name), JsxSelfClosingElement(name = $name) } as $hit where { $name <: r"Skeleton" },
+  JsModuleSource() as $hit where { $hit <: r"['\"][\s\S]*/skeleton['\"]" },
+  JsxAttribute(name = r"role", initializer = r"=\s*[\"']progressbar[\"']") as $hit,
+  JsxAttribute(name = r"aria-busy") as $hit
+} where {
+  register_diagnostic(span = $hit, message = "[no-wait-dressing] No spinner, skeleton or progress bar: a block waiting on a read renders nothing (#795)")
+}

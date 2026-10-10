@@ -1,0 +1,8 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// A value belongs to index.css: a component names a token, never a colour (#841).
+or { JsStringLiteralExpression(), JsxString(), JsTemplateChunkElement() } as $s where {
+  $s <: r"[\s\S]*(?:#[0-9a-fA-F]{3,8}\b|\b(?:oklch|hsla?|rgba?)\()[\s\S]*",
+  register_diagnostic(span = $s, message = "[no-colour-literal] Name a token from index.css, not a colour (#841)")
+}
