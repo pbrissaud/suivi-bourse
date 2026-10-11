@@ -120,7 +120,11 @@ function ColumnHead({ label, column, sort, onSort, numeric, className }: ColumnH
       aria-sort={inForce ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
       className={cn(numeric && 'text-right', className)}
     >
-      <span className={`inline-flex items-center gap-1.5 ${numeric ? 'justify-end' : ''}`}>
+      {/* On touch the ⓘ's hit area reaches 14 px past its icon: the gap keeps
+          it off the sort button's label. */}
+      <span
+        className={`inline-flex items-center gap-1.5 pointer-coarse:gap-3.5 ${numeric ? 'justify-end' : ''}`}
+      >
         {/* The control is the label itself: a table whose every column sorts has
             nine of these, and nine *Trier par …* would be nine sentences saying
             what the cell they sit in already says. */}

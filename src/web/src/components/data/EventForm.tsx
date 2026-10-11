@@ -741,7 +741,9 @@ function Field({
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-1.5">
+      {/* On touch the ⓘ's hit area reaches 14 px past its icon: the gap keeps
+          it off the label. */}
+      <div className="flex items-center gap-1.5 pointer-coarse:gap-3.5">
         <label htmlFor={id} className="text-sm font-medium">
           {t(label)}
         </label>
