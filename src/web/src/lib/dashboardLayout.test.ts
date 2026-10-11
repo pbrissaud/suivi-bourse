@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { BLOCK_IDS, DASHBOARD_BLOCKS, type BlockSpec } from '@/lib/dashboardBlocks'
 import {
   defaultLayout,
+  dropBlock,
   moveBlock,
   mustWrite,
   newBlocks,
@@ -232,6 +233,54 @@ describe('moveBlock', () => {
   it('leaves the input untouched', () => {
     const before = JSON.stringify(layout)
     moveBlock(layout, 'm', -1)
+    expect(JSON.stringify(layout)).toBe(before)
+  })
+})
+
+describe('dropBlock', () => {
+  const layout = [p('a', 'half'), p('b', 'half'), p('m', 'full'), p('n', 'half', true)]
+
+  it('puts a full card between two rows, never into the middle of a pair', () => {
+    expect(ids(dropBlock(layout, 'm', 'a', 'before'))).toBe('m,a,b,n')
+    expect(ids(dropBlock(layout, 'm', 'b', 'before'))).toBe('m,a,b,n')
+    const pairLast = [p('m', 'full'), p('a', 'half'), p('b', 'half')]
+    expect(ids(dropBlock(pairLast, 'm', 'a', 'after'))).toBe('a,b,m')
+  })
+
+  it('lets a half take the place of the half it is dropped on', () => {
+    expect(ids(dropBlock(layout, 'a', 'b', 'after'))).toBe('b,a,m,n')
+    const spread = [p('a', 'half'), p('m', 'full'), p('b', 'half')]
+    expect(ids(dropBlock(spread, 'b', 'a', 'before'))).toBe('b,m,a')
+  })
+
+  it('sends a half dropped on a full card to the nearest half on that side', () => {
+    const around = [p('a', 'half'), p('m', 'full'), p('b', 'half'), p('n', 'half')]
+    expect(ids(dropBlock(around, 'a', 'm', 'after'))).toBe('b,m,a,n')
+    expect(ids(dropBlock(around, 'n', 'm', 'before'))).toBe('n,m,b,a')
+    expect(ids(dropBlock(layout, 'a', 'm', 'before'))).toBe('b,a,m,n')
+  })
+
+  it('agrees with the menu: one row up is « Monter »', () => {
+    expect(dropBlock(layout, 'm', 'a', 'before')).toEqual(moveBlock(layout, 'm', -1))
+    expect(dropBlock(layout, 'a', 'b', 'after')).toEqual(moveBlock(layout, 'a', 1))
+  })
+
+  it('has nothing to do at the edges, on itself, or on a hidden card', () => {
+    expect(dropBlock(layout, 'm', 'b', 'after')).toBeNull()
+    expect(dropBlock(layout, 'b', 'm', 'after')).toBeNull()
+    expect(dropBlock(layout, 'a', 'a', 'after')).toBeNull()
+    expect(dropBlock(layout, 'a', 'n', 'after')).toBeNull()
+    expect(dropBlock(layout, 'n', 'a', 'after')).toBeNull()
+  })
+
+  it('keeps a hidden card in its slot', () => {
+    const withHiddenFirst = [p('n', 'half', true), p('a', 'half'), p('m', 'full')]
+    expect(ids(dropBlock(withHiddenFirst, 'm', 'a', 'before'))).toBe('n,m,a')
+  })
+
+  it('leaves the input untouched', () => {
+    const before = JSON.stringify(layout)
+    dropBlock(layout, 'm', 'a', 'before')
     expect(JSON.stringify(layout)).toBe(before)
   })
 })

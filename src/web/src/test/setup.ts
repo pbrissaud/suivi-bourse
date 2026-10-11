@@ -50,6 +50,13 @@ if (!Element.prototype.hasPointerCapture) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
+// dnd-kit slides the cards through the Web Animations API, which jsdom does
+// not have: here every animation has already finished.
+if (!document.getAnimations) {
+  document.getAnimations = () => []
+  Element.prototype.getAnimations = () => []
+  Element.prototype.animate = () => ({ finished: Promise.resolve() }) as unknown as Animation
+}
 // The router restores scroll on every navigation, and jsdom answers that one
 // with a "Not implemented" line per route change.
 window.scrollTo = () => {}
@@ -58,6 +65,21 @@ if (!globalThis.ResizeObserver) {
     observe() {}
     unobserve() {}
     disconnect() {}
+  }
+}
+// dnd-kit watches the dragged card's position with one; jsdom never scrolls.
+if (!globalThis.IntersectionObserver) {
+  globalThis.IntersectionObserver = class {
+    readonly root = null
+    readonly rootMargin = ''
+    readonly scrollMargin = ''
+    readonly thresholds = []
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return []
+    }
   }
 }
 

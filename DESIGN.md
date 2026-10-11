@@ -212,7 +212,10 @@ the link's line becomes a bar, the title "Modifier le tableau de bord" in Sectio
 on the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on
 the right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the
 end of its own title row, a 28 px ghost button (44 px on touch), `text-muted` turning
-`foreground` on hover and focus. The sections' content is inert; the hero is neither
+`foreground` on hover and focus. On a desktop with a fine pointer, a ⠿ drag handle
+with the same look (and `cursor: grab`) sits before the title; dragging follows the
+menu's rule (a full section lands between two rows, a half takes another half's place)
+and keeps every section's width until the drop. Phones have the menu only. The sections' content is inert; the hero is neither
 dimmed nor movable. Hidden sections are listed in a "Cartes masquées" section under
 the grid, a chip "Nouveau" on the ones a release added. The empty half beside a
 half-only section shows "Place libre" in Label on a 1 px dashed `rule` outline, in edit
@@ -303,6 +306,8 @@ page. No zero-offset glow, in either theme.
 - **The one authored moment:** after a proposal is merged, the net figure under the
   hero recomposes from the old value to the new one (250 ms, ease-out). Nothing else
   animates on entry. `prefers-reduced-motion` turns it into an instant change.
+- **Dragging a dashboard section:** only the gesture moves; the other sections slide to
+  their new place (short, ease-in-out), and not at all under `prefers-reduced-motion`.
 
 ## Decisions Log
 
