@@ -465,26 +465,11 @@ class Mover:
         }
 
 
-def session_baseline_instant(newest: datetime) -> datetime:
-    """Midnight UTC of the day the newest observation falls in."""
-    utc = newest.astimezone(timezone.utc) if newest.tzinfo else newest
-    return datetime(utc.year, utc.month, utc.day, tzinfo=timezone.utc)
-
-
-def baseline_reference(
-    baseline_rows: Sequence[Dict[str, Any]],
-) -> Optional[datetime]:
-    """The newest observation the baseline is actually built from."""
-    times = [row.get('t') for row in baseline_rows
-             if isinstance(row.get('t'), datetime)]
-    return max(times) if times else None
-
-
 def build_movers(
     shares: Sequence[SharePosition],
     baseline_rows: Sequence[Dict[str, Any]],
 ) -> List[Mover]:
-    """Rank the portfolio by its move since :func:`session_baseline_instant`."""
+    """Rank the portfolio by each line's move since its own previous close."""
     baseline = {
         row.get('symbol'): row.get('price') for row in baseline_rows
         if row.get('symbol') and row.get('price') is not None
@@ -585,6 +570,5 @@ __all__ = [
     'build_shares', 'build_accounts', 'latent_gains_by_account', 'unit_cost',
     'build_positions', 'build_portfolio_totals', 'ytd_base_day',
     'build_price_series',
-    'valuation_series', 'session_baseline_instant', 'baseline_reference',
-    'build_movers',
+    'valuation_series', 'build_movers',
 ]

@@ -110,6 +110,25 @@ class PortfolioReader:
             ') WHERE rn = 1 ORDER BY symbol',
             [moment], ('symbol', 'price', 't'))
 
+    def previous_closes(self) -> List[Dict[str, Any]]:
+        """Each symbol's last price **before the UTC day of its own latest quote**.
+
+        Per symbol, not one cut for the portfolio (#1142): a 24/7 line quoted
+        on Sunday would otherwise move every equity's cut to Sunday midnight,
+        where their price *is* their latest one and every move reads zero.
+        """
+        return self._series(
+            'SELECT symbol, price_converted, ts FROM ('
+            '  SELECT p.symbol, p.price_converted, p.ts,'
+            '         ROW_NUMBER() OVER ('
+            '             PARTITION BY p.symbol ORDER BY p.ts DESC) AS rn'
+            '    FROM price_point p'
+            '    JOIN symbol_quote q ON q.symbol = p.symbol'
+            '   WHERE p.price_converted IS NOT NULL'
+            "     AND p.ts < date_trunc('day', q.last_price_ts)"
+            ') WHERE rn = 1 ORDER BY symbol',
+            None, ('symbol', 'price', 't'))
+
     def daily_closes(self, start: Optional[datetime] = None,
                      stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """``{day, symbol, price}`` — every symbol's closing price, per day."""

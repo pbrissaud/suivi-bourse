@@ -19,12 +19,10 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from application.portfolio_view import (
-    baseline_reference,
     build_accounts,
     build_movers,
     build_shares,
     latent_gains_by_account,
-    session_baseline_instant,
     unit_cost,
     valuation_series,
 )
@@ -355,40 +353,6 @@ def test_an_empty_window_is_an_empty_series():
 # --------------------------------------------------------------------- #
 # Movers
 # --------------------------------------------------------------------- #
-
-def test_the_session_baseline_is_midnight_of_the_newest_observations_day():
-    """#652 déc. 8's trap. Read this as: on a Sunday the block still shows
-    Friday's session, because the anchor is the newest *observation* and not the
-    clock. Anchoring on midnight-today would make every weekend read zero.
-    """
-    friday_close = datetime(2026, 7, 31, 21, 0, tzinfo=timezone.utc)
-
-    assert session_baseline_instant(friday_close) == datetime(
-        2026, 7, 31, tzinfo=timezone.utc)
-
-
-def test_the_reference_close_is_an_observed_price_not_the_midnight_cut():
-    """Found by looking at the page.
-
-    Labelling the block with `session_baseline_instant` read « depuis la clôture
-    du 5 août 2026 » on the *afternoon* of 5 August — announcing a close that
-    had not happened. The cut is the rule; the newest row at or before it is the
-    session the comparison actually rests on, and it is already in the payload.
-    """
-    rows = [
-        {'symbol': 'AAPL', 'price': 100.0,
-         't': datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc)},
-        {'symbol': 'AIR.PA', 'price': 200.0,
-         't': datetime(2026, 8, 4, 15, 30, tzinfo=timezone.utc)},
-    ]
-    assert baseline_reference(rows) == datetime(
-        2026, 8, 4, 20, 0, tzinfo=timezone.utc)
-
-
-def test_the_reference_close_is_absent_when_nothing_precedes_the_cut():
-    assert baseline_reference([]) is None
-    assert baseline_reference([{'symbol': 'AAPL', 'price': 1.0}]) is None
-
 
 def test_movers_rank_by_percentage_and_report_what_the_move_was_worth():
     shares = build_shares([

@@ -329,8 +329,8 @@ ACCOUNTS_EVENTS = (
 
 def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path):
     """#652 déc. 8's trap. The newest stored point is a Friday close; the
-    baseline is midnight of *that* day, so a weekend still shows Friday's
-    session instead of a column of zeros."""
+    baseline is the last price before *that* day, so a weekend still shows
+    Friday's session instead of a column of zeros."""
     def seed(opened):
         seed_position(opened, quantity=10.0, cost_basis=1000.0)
         seed_quote(opened, price=100.0,
@@ -341,13 +341,35 @@ def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path)
     client = build_client(tmp_path, seed=seed)
     payload = client.get('/api/portfolio/movers').get_json()
 
-    assert payload['since'] == '2026-07-31T00:00:00+00:00'
-    # The cut and the session are two different instants, and only the second is
-    # safe to put in front of a reader: naming the cut announced a close that
-    # had not happened yet.
-    assert payload['reference'] == '2026-07-30T20:00:00+00:00'
     assert payload['movers'][0]['change_pct'] == pytest.approx(0.1)
     assert payload['movers'][0]['contribution'] == pytest.approx(100.0)
+
+
+def test_movers_compare_each_line_against_its_own_previous_close(tmp_path):
+    """#1142. A 24/7 line quoted on Sunday must not drag every other line's
+    baseline to Sunday midnight: the equity's price there *is* its Friday
+    close, so it read as unchanged and left the block."""
+    def seed(opened):
+        seed_position(opened, quantity=10.0, cost_basis=1000.0)
+        seed_quote(opened, price=100.0,
+                   at=datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc))
+        seed_quote(opened, price=110.0,
+                   at=datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc))
+        seed_position(opened, symbol='BTC-EUR', name='Bitcoin',
+                      quantity=1.0, cost_basis=50000.0)
+        seed_quote(opened, symbol='BTC-EUR', price=60000.0,
+                   at=datetime(2026, 10, 10, 23, 59, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='BTC-EUR', price=57000.0,
+                   at=datetime(2026, 10, 11, 16, 41, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, seed=seed)
+    payload = client.get('/api/portfolio/movers').get_json()
+
+    moves = {m['symbol']: m for m in payload['movers']}
+    assert moves['AAPL']['previous_price'] == pytest.approx(100.0)
+    assert moves['AAPL']['change_pct'] == pytest.approx(0.1)
+    assert moves['BTC-EUR']['previous_price'] == pytest.approx(60000.0)
+    assert moves['BTC-EUR']['change_pct'] == pytest.approx(-0.05)
 
 
 def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
@@ -355,7 +377,7 @@ def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
     client = build_client(tmp_path)
     payload = client.get('/api/portfolio/movers').get_json()
 
-    assert payload == {'since': None, 'reference': None, 'movers': []}
+    assert payload == {'movers': []}
 
 
 # --------------------------------------------------------------------- #
