@@ -178,8 +178,23 @@ describe('the movers’ sentence', () => {
     expect(formatMessage('fr', 'dashboard.movers.others', { count: 2, unchanged: 1 })).toBe(
       '2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé.',
     )
-    expect(formatMessage('en', 'dashboard.movers.others', { count: 1, unchanged: 1 })).toBe(
-      '1 other holding is not shown here, 1 of which did not move.',
+    expect(formatMessage('en', 'dashboard.movers.others', { count: 3, unchanged: 1 })).toBe(
+      '3 other holdings are not shown here, 1 of which did not move.',
+    )
+  })
+
+  it('says it once when every hidden line is unchanged (#1146)', () => {
+    expect(formatMessage('fr', 'dashboard.movers.othersAllUnchanged', { count: 11 })).toBe(
+      'Les 11 autres lignes n’ont pas bougé.',
+    )
+    expect(formatMessage('fr', 'dashboard.movers.othersAllUnchanged', { count: 1 })).toBe(
+      'L’autre ligne n’a pas bougé.',
+    )
+    expect(formatMessage('en', 'dashboard.movers.othersAllUnchanged', { count: 11 })).toBe(
+      'The 11 other holdings did not move.',
+    )
+    expect(formatMessage('en', 'dashboard.movers.othersAllUnchanged', { count: 1 })).toBe(
+      'The other holding did not move.',
     )
   })
 })

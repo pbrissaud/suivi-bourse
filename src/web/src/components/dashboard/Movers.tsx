@@ -148,7 +148,10 @@ export function Movers({
       )}
       {others === 0 ? null : (
         <p className="mt-3 text-xs text-muted-foreground">
-          {t('dashboard.movers.others', { count: others, unchanged })}
+          {/* Every hidden line unchanged is said once, not as « dont 11 » of 11 (#1146). */}
+          {unchanged === others
+            ? t('dashboard.movers.othersAllUnchanged', { count: others })
+            : t('dashboard.movers.others', { count: others, unchanged })}
         </p>
       )}
     </Section>

@@ -1314,6 +1314,50 @@ describe('the movers', () => {
     expect(screen.queryByText('Zeta Delta')).not.toBeInTheDocument()
   })
 
+  describe('says *dont 11* out of 11 once (#1146)', () => {
+    // One line moved, `others` held lines behind it, `unchanged` of them at 0,00 %
+    // and the rest never quoted.
+    const hidden = (others: number, unchanged: number) => {
+      const symbols = Array.from({ length: others }, (_, i) => `ZH${i}`)
+      server.use(
+        http.get(ROUTES.positions, () =>
+          HttpResponse.json(
+            aPositionsPayload([
+              aPosition(),
+              ...symbols.map((symbol) => aPosition({ symbol, name: `Hidden ${symbol}` })),
+            ]),
+          ),
+        ),
+        http.get(ROUTES.movers, () =>
+          HttpResponse.json(
+            aMoversPayload([
+              aMover(),
+              ...symbols.slice(0, unchanged).map((symbol) =>
+                aMover({
+                  symbol,
+                  name: `Hidden ${symbol}`,
+                  change: 0,
+                  change_pct: 0,
+                  contribution: 0,
+                }),
+              ),
+            ]),
+          ),
+        ),
+      )
+      renderApp()
+    }
+
+    it.each([
+      [11, 11, 'Les 11 autres lignes n’ont pas bougé.'],
+      [11, 3, '11 autres lignes n’apparaissent pas ici, dont 3 n’ont pas bougé.'],
+      [1, 1, 'L’autre ligne n’a pas bougé.'],
+    ])('%i hidden, %i unchanged', async (others, unchanged, sentence) => {
+      hidden(others, unchanged)
+      expect(await screen.findByText(sentence)).toBeInTheDocument()
+    })
+  })
+
   it('names the close it compares against, and names it once', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
