@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { createContext, useContext, useId, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -8,10 +8,33 @@ import { cn } from '@/lib/utils'
  * interactive. Its first row reads like a line of a statement, the title on
  * the left and the section's own subtotal (or a meta line) on the right.
  *
- * A section never contains another one: a long page is a sequence of
- * sections, not a grid of tiles. Rows inside keep their own separators, which
- * the base rule already paints in the `rule` colour.
+ * A section never contains another one. Rows inside keep their own
+ * separators, which the base rule already paints in the `rule` colour.
+ *
+ * **The section itself is never interactive.** The dashboard's edit mode puts
+ * its card menu (⋯) at the end of the title row through
+ * {@link SectionControlsContext}: the frame the page lays around a card
+ * provides it, so the blocks that render their own section change nothing,
+ * and outside edit mode the context is empty and the row is what it was.
  */
+export interface SectionFrame {
+  /** The card menu, at the end of the title row. */
+  controls: ReactNode
+  /**
+   * The section fills its grid cell (a row's two cards end on the same line),
+   * and its body is a column a block can push its last line to the bottom of.
+   */
+  fill: boolean
+  /**
+   * The body is frozen (`inert`) while the dashboard is being arranged: no
+   * click in a card can leave the page and drop the draft (design review 8A).
+   * The title row, and the menu in it, stay live.
+   */
+  inert: boolean
+}
+
+export const SectionControlsContext = createContext<SectionFrame | null>(null)
+
 export function Section({
   title,
   aside,
@@ -26,19 +49,36 @@ export function Section({
   className?: string
 }) {
   const id = useId()
+  const frame = useContext(SectionControlsContext)
   return (
     <section
       data-slot="section"
       aria-labelledby={id}
-      className={cn('rounded-section bg-muted px-6 py-5', className)}
+      className={cn(
+        'rounded-section bg-muted px-6 py-5',
+        frame?.fill && 'flex h-full flex-col',
+        className,
+      )}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id={id} className="text-2xl font-semibold">
           {title}
         </h2>
-        {aside}
+        {frame?.controls ? (
+          <div className="flex items-center gap-2 self-center">
+            {aside}
+            {frame.controls}
+          </div>
+        ) : (
+          aside
+        )}
       </div>
-      <div className="mt-3">{children}</div>
+      <div
+        className={cn('mt-3', frame?.fill && 'flex flex-1 flex-col')}
+        inert={frame?.inert || undefined}
+      >
+        {children}
+      </div>
     </section>
   )
 }

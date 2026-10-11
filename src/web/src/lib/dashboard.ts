@@ -256,14 +256,28 @@ export function amountsValues(rows: readonly AmountsRow[]): (number | null)[] {
 // The movers
 // ------------------------------------------------------------------------- //
 
-/** Five lines. Ten is a block; twenty is the table one page down. */
-const MOVERS_ROWS = 5
+/**
+ * Five lines on half the width, ten across the full width (Paul, 11/10/2026):
+ * a card takes the full width only if it shows more there, and the movers'
+ * more is the next five. Twenty would be the table one page down.
+ */
+export const MOVERS_ROWS = { half: 5, full: 10 } as const
+
+/**
+ * The ticker as a badge: what comes before the first `.` or `-`, four
+ * characters at most — `MC.PA` is `MC`, `BTC-EUR` is `BTC`. The place suffix
+ * and the quote currency are noise at this size; the name beside it says the rest.
+ */
+export function tickerBadge(symbol: string): string {
+  return (symbol.split(/[.-]/)[0] || symbol).slice(0, 4)
+}
 
 /**
  * **One list, ordered by what moved most** (#838).
  *
  * The block was two columns — *Hausses* over *Baisses* — and the drawing has
- * one: the five lines that moved most, either way, the day's best at the top
+ * one: the `limit` lines that moved most (five, or ten across the full
+ * width), either way, the day's best at the top
  * and its worst at the bottom, which
  * is the order the eye reads a movement in and the one that puts the two ends
  * of the day on one screen. The split cost a heading and a *nothing went down*
@@ -280,7 +294,11 @@ interface MoversReading {
   unchanged: number
 }
 
-export function moversList(movers: readonly Mover[], rows: readonly ShareRow[]): MoversReading {
+export function moversList(
+  movers: readonly Mover[],
+  rows: readonly ShareRow[],
+  limit: number = MOVERS_ROWS.half,
+): MoversReading {
   const held = rows.filter((row) => !isClosed(row))
   const holds = new Set(held.map((row) => row.symbol))
   const shown = movers.filter((mover) => holds.has(mover.symbol))
@@ -292,7 +310,7 @@ export function moversList(movers: readonly Mover[], rows: readonly ShareRow[]):
   const moved = shown
     .filter((mover) => mover.change_pct !== null && mover.change_pct !== 0)
     .sort((left, right) => Math.abs(right.change_pct ?? 0) - Math.abs(left.change_pct ?? 0))
-    .slice(0, MOVERS_ROWS)
+    .slice(0, limit)
     .sort((left, right) => (right.change_pct ?? 0) - (left.change_pct ?? 0))
   return {
     rows: moved,

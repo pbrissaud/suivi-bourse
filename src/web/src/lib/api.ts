@@ -165,6 +165,11 @@ export const ROUTES = {
    */
   investmentRhythm: '/api/investment-rhythm',
   /**
+   * The dashboard's saved layout — one row of the store, its shape checked and
+   * its cards not: the registry of cards is the front's (`lib/dashboardBlocks`).
+   */
+  dashboardLayout: '/api/dashboard/layout',
+  /**
    * The comparison of #760 — the gap, the period it covers, and the right to
    * display either.
    *
@@ -397,11 +402,34 @@ function filenameOf(response: Response, path: string): string {
  * `POST` to a verb-shaped path because what the one caller does to the orphan
  * collection is remove it whole (#724).
  */
+/** A `DELETE` whose success is a `204` — no body to parse. */
+async function forget(path: string): Promise<void> {
+  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
+  if (!response.ok) throw await refusal(response, path)
+}
+
 async function remove<T>(path: string): Promise<T> {
   return unwrap<T>(
     await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }),
     path,
   )
+}
+
+// ------------------------------------------------------------------------- //
+// The dashboard's layout
+// ------------------------------------------------------------------------- //
+
+/** Where a card sits: its order is its index in `blocks`. */
+export interface DashboardPlacement {
+  id: string
+  width: 'half' | 'full'
+  hidden: boolean
+}
+
+/** What the store keeps. Read back as `unknown`: `normalizeLayout` vets it. */
+export interface DashboardLayout {
+  version: 1
+  blocks: DashboardPlacement[]
 }
 
 // ------------------------------------------------------------------------- //
@@ -1910,6 +1938,10 @@ export const api = {
   positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
   movers: () => get<MoversResponse>(ROUTES.movers),
   investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
+  dashboardLayout: () => get<unknown>(ROUTES.dashboardLayout),
+  saveDashboardLayout: (layout: DashboardLayout) =>
+    send<DashboardLayout>(ROUTES.dashboardLayout, 'PUT', layout),
+  forgetDashboardLayout: () => forget(ROUTES.dashboardLayout),
   benchmark: () => get<BenchmarkResponse>(ROUTES.benchmark),
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),

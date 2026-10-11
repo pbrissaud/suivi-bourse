@@ -122,6 +122,11 @@ export function defaultHandlers() {
     // fixture's own pair — six covered months of twelve — and a test about
     // another rhythm overrides it.
     http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm())),
+    http.get(ROUTES.dashboardLayout, () => HttpResponse.json(null)),
+    http.put(ROUTES.dashboardLayout, async ({ request }) =>
+      HttpResponse.json(await request.json()),
+    ),
+    http.delete(ROUTES.dashboardLayout, () => new HttpResponse(null, { status: 204 })),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window: a
     // handler serving one frozen payload would make the presets look like four

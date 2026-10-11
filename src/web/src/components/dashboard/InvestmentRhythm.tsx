@@ -36,6 +36,7 @@ import { Stat } from '@/components/Stat'
 import { Unreadable } from '@/components/Unreadable'
 import { Section } from '@/components/ui/section'
 import type { InvestmentRhythmResponse, RhythmMonth } from '@/lib/api'
+import type { RenderState } from '@/lib/dashboardLayout'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
@@ -43,6 +44,14 @@ import type { ReadFailure } from '@/lib/status'
 interface InvestmentRhythmProps {
   rhythm: InvestmentRhythmResponse | null
   failure?: ReadFailure | null
+}
+
+/** What this block renders: the block's own `null` and the grid's, one rule. */
+export function investmentRhythmRenderState({
+  rhythm,
+  failure = null,
+}: InvestmentRhythmProps): RenderState {
+  return rhythm === null && failure === null ? 'pending' : 'renders'
 }
 
 export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmProps) {
@@ -75,11 +84,13 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
     }
 
     return (
-      // The figure on the left at a fixed width and the twelve months filling
-      // the rest (direction 1a): the amount is read first, the months are
-      // what the width is for. Stacked under `sm`.
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-8">
-        <div className="shrink-0 sm:w-40">
+      // The figure above the twelve months, at every width: the card is
+      // half-width only (dashboard grid, 11/10/2026 — across the full width
+      // the twelve columns spread too far apart to read), and on half a width
+      // a figure beside them would take a third of the room they need. The
+      // amount is still read first.
+      <div className="flex flex-1 flex-col gap-5">
+        <div className="shrink-0">
           {/* The pair, and it is **one** group: the coverage is a child of the
             amount, so no reading of this markup detaches them. */}
           <Stat
@@ -125,7 +136,7 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
   }
 
   return (
-    <div className="min-w-0 flex-1">
+    <div className="mt-auto min-w-0">
       <ol aria-label={t('dashboard.rhythm.months')} className="grid grid-cols-12 items-end gap-1.5">
         {months.map((one, index) => {
           const said =
@@ -135,9 +146,12 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
                   month: label(one.month),
                   amount: f.currency(one.amount, currency),
                 })
-          // The year is written on the first column and on every January, so
-          // a row of twelve short names still says which year each is in.
-          const january = one.month.endsWith('-01')
+          // **One month in three is named** (design review 16B): at half a
+          // width a column is some forty pixels, and twelve names would
+          // collide. Counted on the twelve slots, so the named months do not
+          // shift as a young ledger fills; the full name is in each column's
+          // title and its screen-reader text.
+          const slot = index + 12 - months.length
           return (
             <li
               key={one.month}
@@ -162,23 +176,13 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
                   }
                 />
               </span>
-              <span aria-hidden className="hidden truncate text-2xs text-muted-foreground md:block">
-                {label(one.month, index === 0 || january)}
+              <span aria-hidden className="h-4 whitespace-nowrap text-2xs text-muted-foreground">
+                {slot % 3 === 0 ? label(one.month, false) : null}
               </span>
             </li>
           )
         })}
       </ol>
-      {/* Under `md` the twelve names do not fit, and the two ends say the extent. */}
-      {months.length < 2 ? null : (
-        <p
-          aria-hidden
-          className="mt-1.5 flex justify-between text-2xs text-muted-foreground md:hidden"
-        >
-          <span>{label(months[0].month)}</span>
-          <span>{label(months.at(-1)!.month)}</span>
-        </p>
-      )}
     </div>
   )
 }

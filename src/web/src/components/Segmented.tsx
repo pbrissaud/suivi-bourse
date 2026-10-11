@@ -45,7 +45,7 @@ interface SegmentedProps<T extends string> {
   /** The track's own edge, for where it sits on the page rather than on a card. */
   bordered?: boolean
   /**
-   * `compact` is the hero's: the range control under a 64 px sparkline, where
+   * `compact` is the hero's: the range control above the hero's chart, where
    * the full-size segments would outweigh the curve they set.
    */
   size?: 'default' | 'compact'

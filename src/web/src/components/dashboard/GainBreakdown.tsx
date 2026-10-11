@@ -22,6 +22,7 @@
 import { Explain } from '@/components/Explain'
 import { Section } from '@/components/ui/section'
 import type { PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
+import type { RenderState } from '@/lib/dashboardLayout'
 import { renderFigure } from '@/lib/absence'
 import { useFormatters } from '@/lib/format'
 import {
@@ -65,16 +66,29 @@ interface GainBreakdownProps {
   totals: PortfolioTotalsResponse | null
 }
 
+/**
+ * What this block renders, and the **one** place it is decided: the block
+ * calls it for its own `null`, and the dashboard's grid calls it to know
+ * whether the card holds a place (`lib/dashboardLayout`). Two copies of the
+ * rule would leave a half-row empty the day they disagree.
+ *
+ * *No events at all* is the head's sentence and link; there is no gain to
+ * decompose under it.
+ */
+export function gainBreakdownRenderState({ positions, totals }: GainBreakdownProps): RenderState {
+  if (!positions || !totals) return 'pending'
+  return positions.positions.length === 0 && totals.totals === null ? 'nothing' : 'renders'
+}
+
 export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
-  if (!positions || !totals) return null
+  if (gainBreakdownRenderState({ positions, totals }) !== 'renders' || !positions || !totals) {
+    return null
+  }
   const rows = positions.positions
   const totalsRow = totals.totals
-  // *No events at all* is the head's sentence and link; there is no gain to
-  // decompose under it.
-  if (rows.length === 0 && totalsRow === null) return null
 
   const currency = positions.base_currency ?? totals.base_currency ?? null
   const terms = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
@@ -96,7 +110,10 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
 
   return (
     <Section title={t('dashboard.breakdown.title')}>
-      <div className="space-y-4">
+      {/* A column whose last line is pushed down: beside a taller card on the
+          same row, the gap falls between the terms and their total, and both
+          cards end on one line. */}
+      <div className="flex flex-1 flex-col gap-4">
         {whole === 0 ? null : (
           <div
             aria-hidden
@@ -142,7 +159,7 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
         <div
           role="group"
           aria-label={t('dashboard.gainTotal')}
-          className="flex items-center justify-between gap-4 border-t pt-3 text-sm"
+          className="mt-auto flex items-center justify-between gap-4 border-t pt-3 text-sm"
         >
           <span className="flex items-center gap-1.5 font-medium">
             {t('dashboard.gainTotal')}
