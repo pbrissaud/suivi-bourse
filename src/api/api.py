@@ -14,6 +14,7 @@ from logfmt_logger import getLogger
 from application import account_facts
 from application import accounts as accounts_module
 from application import benchmark_view
+from application import dashboard_layout
 from application import advisories
 from application import entries
 from application import installation_facts
@@ -1349,6 +1350,35 @@ def put_settings():
         'changed': [change.key for change in changes],
         'effect': effect,
     })
+
+
+@api_bp.get('/dashboard/layout')
+def get_dashboard_layout():
+    """The dashboard's saved layout, or ``null`` when none was ever saved."""
+    return jsonify(dashboard_layout.read(_store()))
+
+
+@api_bp.put('/dashboard/layout')
+def put_dashboard_layout():
+    """Keep the dashboard's layout. The shape is checked, the cards are not."""
+    try:
+        layout = dashboard_layout.validate(request.get_json(silent=True))
+    except dashboard_layout.InvalidLayout as exc:
+        return unprocessable_request(str(exc))
+
+    runtime = current_runtime()
+    with runtime.config_manager.writing() as opened:
+        dashboard_layout.write(opened, layout)
+    return jsonify(layout)
+
+
+@api_bp.delete('/dashboard/layout')
+def delete_dashboard_layout():
+    """Forget the layout: the dashboard goes back to its default."""
+    runtime = current_runtime()
+    with runtime.config_manager.writing() as opened:
+        dashboard_layout.delete(opened)
+    return Response(status=204)
 
 
 @api_bp.put('/config/log-level')
