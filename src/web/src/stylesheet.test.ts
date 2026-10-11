@@ -114,6 +114,8 @@ describe('what the theme must not bring with it', () => {
     // stylesheet already carries.
     const entry = fs.readFileSync(path.join(WEB_ROOT, 'index.html'), 'utf8')
     expect(entry).not.toMatch(/tweakcn/i)
+    // The theme `SB_TWEAKCN_THEME` names comes in same-origin, served by the app.
+    expect(entry).toMatch(/<link rel="stylesheet" href="\/api\/theme\.css"/)
     for (const source of entry.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)) {
       expect(source[1], 'the entry loads only its own module').toMatch(/^\//)
     }

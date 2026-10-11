@@ -53,6 +53,14 @@ def test_a_named_theme_is_served_and_fetched_once(client):
     assert calls == ['https://tweakcn.com/r/themes/claude']
 
 
+def test_font_imports_lead_the_stylesheet(client):
+    entry = json.dumps({'cssVars': {'light': {'font-sans': 'Outfit, sans-serif'},
+                                    'dark': {'font-sans': 'Outfit, sans-serif'}}}).encode()
+    body = client('outfit', lambda url: entry).get('/api/theme.css').get_data(as_text=True)
+    assert body.startswith('@import url("https://fonts.googleapis.com/css2?family=Outfit')
+    assert body.index('@import') < body.index('html:root{')
+
+
 @pytest.mark.parametrize('cached', [True, False])
 def test_a_failed_fetch_serves_the_cache_or_the_default_and_warns_once(
         client, tmp_path, caplog, cached):

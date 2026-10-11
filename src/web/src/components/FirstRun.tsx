@@ -701,7 +701,7 @@ function Field({
       </div>
       {children(id, error ? errorId : hint ? hintId : undefined)}
       {error ? (
-        <p id={errorId} className="text-xs text-attention">
+        <p id={errorId} className="text-xs text-destructive">
           {t(error)}
         </p>
       ) : hint ? (

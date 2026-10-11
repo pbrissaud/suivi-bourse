@@ -8,7 +8,7 @@
  *
  * What this seam cannot see is written down rather than pretended away: jsdom
  * has no layout, so the drawer under 768 px, the lost route at 390 px and the
- * legibility of the twelve stops stay acceptance criteria checked by eye.
+ * legibility of the eight allocation stops stay acceptance criteria checked by eye.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'

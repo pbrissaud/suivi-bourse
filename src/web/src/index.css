@@ -271,17 +271,19 @@
 
   /* DESIGN.md's two planes: a section (`rounded-section`, 18 px) and the card
      that sits on it (`rounded-card`, 14 px), 18 − 4 so the curves stay
-     concentric. */
-  --radius-section: 1.125rem;
-  --radius-card: 0.875rem;
+     concentric. Both follow the theme's `--radius`, which Atelier sets so they
+     land on those two values (#1130). */
+  --radius-section: calc(var(--radius) + 0.5rem);
+  --radius-card: calc(var(--radius) + 0.25rem);
 
-  /* `Geist` is what the preset names; `Geist Variable` is what
-     `@fontsource-variable/geist` actually registers. The preset's intention
-     only loads if both are named, and naming them is the bridge's job — the
-     primitives block above stays exactly as the registry writes it. */
-  --font-sans: "Geist Variable", Geist, sans-serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
-  --font-serif: Georgia, serif;
+  /* The faces are the theme's, read at runtime like its colours: a literal
+     here would be inlined into `font-sans` and no theme served by
+     `/api/theme.css` could reach it (#1130). Atelier's preset names both
+     `Geist Variable`, which `@fontsource-variable/geist` registers, and
+     `Geist`. */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
   --font-heading: var(--font-sans);
 
   /* **The type scale is DESIGN.md's, and it is stated once.** Redeclaring the
@@ -364,7 +366,7 @@
   --shadow-spread: var(--shadow-spread);
   --shadow-blur: var(--shadow-blur);
   --shadow-opacity: var(--shadow-opacity);
-  --radius: 0.625rem;
+  --radius: var(--radius);
 }
 
 /**

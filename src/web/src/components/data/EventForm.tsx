@@ -752,7 +752,7 @@ function Field({
       </div>
       {children(id, error ? errorId : undefined)}
       {error ? (
-        <p id={errorId} className="text-sm text-attention">
+        <p id={errorId} className="text-sm text-destructive">
           {t(error)}
         </p>
       ) : null}

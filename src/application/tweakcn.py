@@ -10,6 +10,7 @@ Pure but for the cache file: the fetcher is injected, ``http_fetch`` is the one
 the app passes.
 """
 import json
+import math
 import re
 import urllib.request
 from pathlib import Path
@@ -40,7 +41,11 @@ ALLOWED = frozenset(STANDARD) - {'spacing'}
 
 _ID = re.compile(r'^[a-z0-9-]{1,64}$')
 _FAMILY = re.compile(r'^[A-Za-z0-9 ]{1,64}$')
-_FORBIDDEN = (';', '{', '}', '<', '>', '\\', 'url(')
+#: Compared in lowercase: CSS function names are case-insensitive.
+_FORBIDDEN = (';', '{', '}', '<', '>', '\\', '/*', '*/', '\n', '\r',
+              'url(', 'image(', 'image-set(', 'src(')
+#: A registry entry is a few kilobytes; anything far larger is not one.
+MAX_BYTES = 256 * 1024
 _GENERIC = {'sans-serif', 'serif', 'monospace', 'system-ui'}
 _BUNDLED = {'Geist', 'Geist Variable', 'Geist Mono', 'Geist Mono Variable'}
 _FONT_KEYS = ('font-sans', 'font-serif', 'font-mono')
@@ -53,10 +58,11 @@ def sanitize(value: object) -> Optional[str]:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return str(value)
+        return str(value) if math.isfinite(value) else None
     if not isinstance(value, str) or len(value) > 300:
         return None
-    if any(bad in value for bad in _FORBIDDEN):
+    lowered = value.lower()
+    if any(bad in lowered for bad in _FORBIDDEN):
         return None
     return value
 
@@ -70,21 +76,26 @@ def _ground(entry: dict, name: str) -> Dict[str, object]:
     return merged
 
 
-def _rule(selector: str, values: Dict[str, object]) -> str:
-    lines = []
-    for key in sorted(values):
-        if key not in ALLOWED:
-            continue
-        value = sanitize(values[key])
-        if value is not None:
-            lines.append(f'  --{key}: {value};')
+def _declarations(values: Dict[str, object]) -> Dict[str, str]:
+    kept = {key: sanitize(value) for key, value in values.items() if key in ALLOWED}
+    return {key: value for key, value in kept.items() if value is not None}
+
+
+def _rule(selector: str, values: Dict[str, str], keys) -> str:
+    lines = [f'  --{key}: {values[key]};' for key in sorted(keys)]
     return selector + '{\n' + '\n'.join(lines) + '\n}\n'
 
 
 def render_css(entry: dict) -> str:
-    """Both grounds, at a specificity the bundle's ``:root``/``.dark`` cannot beat."""
-    light = _rule('html:root', _ground(entry, 'light'))
-    return light + _rule('html:root.dark', _ground(entry, 'dark'))
+    """Both grounds, at a specificity the bundle's ``:root``/``.dark`` cannot beat.
+
+    A key is emitted only when **both** grounds say it: ``html:root`` outranks
+    the bundle's ``.dark``, so a light-only value would paint the dark ground.
+    """
+    light = _declarations(_ground(entry, 'light'))
+    dark = _declarations(_ground(entry, 'dark'))
+    keys = light.keys() & dark.keys()
+    return _rule('html:root', light, keys) + _rule('html:root.dark', dark, keys)
 
 
 def font_imports(entry: dict) -> List[str]:
@@ -155,7 +166,10 @@ def http_fetch(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=5) as response:
         if response.status != 200:
             raise OSError(f'HTTP {response.status}')
-        return response.read()
+        raw = response.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise OSError('theme larger than MAX_BYTES')
+    return raw
 
 
 __all__ = ['STANDARD', 'ALLOWED', 'sanitize', 'render_css', 'font_imports', 'load', 'http_fetch']
