@@ -1447,6 +1447,32 @@ describe('the movers', () => {
     })
   })
 
+  it('draws a rank only when there is something to rank against (#1147)', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    // The default payload moves one line: a « 1 » beside it is noise.
+    const one = within(await screen.findByRole('list', { name: 'Mouvements' }))
+    expect(one.queryByText('1')).not.toBeInTheDocument()
+  })
+
+  it('ranks two lines « 1 » and « 2 »', async () => {
+    server.use(
+      http.get(ROUTES.movers, () =>
+        HttpResponse.json(
+          aMoversPayload([
+            aMover(),
+            aMover({ symbol: 'ZZB', name: 'Zeta Beta', change_pct: -0.01, contribution: -4 }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    const two = within(await screen.findByRole('list', { name: 'Mouvements' }))
+    expect(two.getByText('1')).toBeInTheDocument()
+    expect(two.getByText('2')).toBeInTheDocument()
+  })
+
   it('names the close it compares against, and names it once', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })

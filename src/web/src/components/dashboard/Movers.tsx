@@ -115,10 +115,13 @@ export function Movers({
               )}
             >
               {/* The rank is the list's own position, which `<ol>` already
-                  says to a screen reader: drawn, not read twice. */}
-              <span aria-hidden className="w-4 shrink-0 text-right text-xs text-muted-foreground">
-                {index + 1}
-              </span>
+                  says to a screen reader: drawn, not read twice. One line has
+                  nothing to be ranked against, so it draws none (#1147). */}
+              {moved.length === 1 ? null : (
+                <span aria-hidden className="w-4 shrink-0 text-right text-xs text-muted-foreground">
+                  {index + 1}
+                </span>
+              )}
               {/* The identity, set as a mark rather than as a word: a ticker
                     is read as a badge and it is what pairs a line here to the
                     same line in the table one page over. */}
