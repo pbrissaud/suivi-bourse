@@ -70,7 +70,9 @@ export function Explain({ figure, body, values, anchor }: ExplainProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        // The hit area grows (24 px, 44 px on touch), not the drawing: the negative
+        // margin gives the extra back so the head keeps its 16 px line.
+        className="-m-1 inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-full pointer-coarse:-m-3.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         aria-label={t('explain.open', { figure })}
       >
         <Info className="size-3.5" aria-hidden />

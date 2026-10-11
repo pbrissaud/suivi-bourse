@@ -59,6 +59,23 @@ async function openMenu(user: ReturnType<typeof renderApp>['user'], card: string
 afterEach(() => setViewportWidth(1024))
 
 describe('reading mode', () => {
+  it('gives the edit entry and the ⓘ a 24 px hit area, 44 px on touch', async () => {
+    renderApp()
+    const targets = [
+      await landed(),
+      await screen.findByRole('button', { name: 'Ce que veut dire TRI' }),
+    ]
+
+    for (const target of targets) {
+      expect(target).toHaveClass(
+        'min-h-6',
+        'min-w-6',
+        'pointer-coarse:min-h-11',
+        'pointer-coarse:min-w-11',
+      )
+    }
+  })
+
   it('draws the default layout: the gain and the rhythm, then the movers', async () => {
     const { container } = renderApp()
     await landed()
