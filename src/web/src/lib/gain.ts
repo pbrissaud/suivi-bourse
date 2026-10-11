@@ -274,3 +274,65 @@ export function termAmount(terms: GainTerms, term: GainTermName): number | null 
 export function termTone(terms: GainTerms, term: GainTermName): string {
   return toneOf(termRendering(terms, term), termCarriesSign(term) ? termAmount(terms, term) : 0)
 }
+
+export interface CascadeStep {
+  term: GainTermName | 'total'
+  /** Fractions of the track, 0..1: left edge and width. */
+  left: number
+  width: number
+}
+
+export interface Cascade {
+  /** The drawn terms in `GAIN_TERMS` order, then `total`. */
+  steps: CascadeStep[]
+  /** 0..1, the x of the zero mark — the same on every track. */
+  zero: number
+}
+
+/**
+ * The breakdown drawn as a cascade (#1143): each term runs from the running
+ * sum before it to the running sum after it, on one scale shared with the
+ * total, so the last term ends **exactly** where the total does. A stacked bar
+ * of absolute values drew the realised loss and the fees as positive shares of
+ * a whole, and so drew more gain than there was.
+ *
+ * `null` when there is nothing to draw: a total with no figure (a whole with a
+ * term missing is not that whole), or every term at zero. The latent term of a
+ * portfolio that holds nothing reads as a dash (#727) and counts for its `0`,
+ * so it gets no step; neither does a term worth zero, nor one that is not
+ * rendered at all. A total that prints as zero (under half a cent) gets no
+ * step either — the zero mark says it.
+ */
+export function gainCascade(terms: GainTerms): Cascade | null {
+  // Below half a cent an amount prints `0,00 €`, and float noise must not draw
+  // it as a 2 px step.
+  const isZero = (amount: number) => Math.abs(amount) < 0.005
+
+  const total = gainTotal(terms)
+  if (!total.known) return null
+
+  const drawn: { term: GainTermName; from: number; to: number }[] = []
+  let running = 0
+  for (const term of GAIN_TERMS) {
+    const amount = termAmount(terms, term) ?? 0
+    if (isZero(amount) || !termIsRendered(term, amount)) continue
+    if (termRendering(terms, term).kind !== 'figure') continue
+    drawn.push({ term, from: running, to: running + amount })
+    running += amount
+  }
+
+  const ends = [0, ...drawn.map((step) => step.to), total.value]
+  const lo = Math.min(...ends)
+  const hi = Math.max(...ends)
+  if (isZero(hi - lo)) return null
+  const at = (x: number) => (x - lo) / (hi - lo)
+  const step = (term: CascadeStep['term'], a: number, b: number): CascadeStep => ({
+    term,
+    left: at(Math.min(a, b)),
+    width: Math.abs(b - a) / (hi - lo),
+  })
+
+  const steps = drawn.map(({ term, from, to }) => step(term, from, to))
+  if (!isZero(total.value)) steps.push(step('total', 0, total.value))
+  return { steps, zero: at(0) }
+}

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { AWAITING_RATE, DASH, FIGURE, REBUILDING } from '@/lib/absence'
 import {
+  gainCascade,
   gainTotal,
   portfolioTerms,
   positionTerms,
@@ -261,5 +262,146 @@ describe('what the terms are allowed to do on screen', () => {
     // a figure, above rows painting theirs in the grey of absence.
     expect(termAmount(sold, 'unrealised')).toBe(0)
     expect(termTone(sold, 'unrealised')).toBe(signClass(null))
+  })
+})
+
+describe('the cascade adds up to the total (#1143)', () => {
+  const staging = {
+    unrealised: known(1804.66),
+    realised: -596.82,
+    dividends: 63,
+    transferFees: -13.95,
+    holdsPosition: true,
+  }
+
+  /** The cascade, refusing `null` so each case reads as its arithmetic. */
+  function drawn(terms: Parameters<typeof gainCascade>[0]) {
+    const cascade = gainCascade(terms)
+    if (cascade === null) throw new Error('nothing drawn')
+    const total = cascade.steps.find((step) => step.term === 'total')
+    const termSteps = cascade.steps.filter((step) => step.term !== 'total')
+    return { cascade, total, termSteps }
+  }
+
+  /** Criterion 2: the signed term widths sum to the total's signed width. */
+  function expectAddsUp(terms: Parameters<typeof gainCascade>[0]) {
+    const { termSteps, total } = drawn(terms)
+    const sum = gainTotal(terms) as { value: number }
+    const signed = termSteps.reduce((acc, step) => {
+      const amount = termAmount(terms, step.term as Exclude<typeof step.term, 'total'>) ?? 0
+      return acc + Math.sign(amount) * step.width
+    }, 0)
+    expect(signed).toBeCloseTo(Math.sign(sum.value) * (total?.width ?? 0), 9)
+  }
+
+  /** Criterion 3: a positive term runs right of where it starts, a negative one left. */
+  function expectDirections(terms: Parameters<typeof gainCascade>[0]) {
+    const { cascade, termSteps } = drawn(terms)
+    let start = cascade.zero
+    for (const step of termSteps) {
+      const amount = termAmount(terms, step.term as Exclude<typeof step.term, 'total'>) ?? 0
+      if (amount > 0) {
+        expect(step.left).toBeCloseTo(start, 9)
+        start = step.left + step.width
+      } else {
+        expect(step.left + step.width).toBeCloseTo(start, 9)
+        start = step.left
+      }
+    }
+  }
+
+  it('ends the last term where the total ends, on the staging numbers', () => {
+    const { cascade, total, termSteps } = drawn(staging)
+    expect(cascade.steps.map((step) => step.term)).toEqual([
+      'unrealised',
+      'realised',
+      'dividends',
+      'transferFees',
+      'total',
+    ])
+    const last = termSteps[termSteps.length - 1]
+    // The fees take money away: the step ends on its left edge.
+    expect(last.left).toBeCloseTo((total?.left ?? 0) + (total?.width ?? 0), 9)
+    expect(cascade.zero).toBe(0)
+    expectAddsUp(staging)
+    expectDirections(staging)
+  })
+
+  it('draws every positive term rightwards from zero', () => {
+    const terms = { ...staging, realised: 120, transferFees: 0 }
+    const { cascade, total, termSteps } = drawn(terms)
+    expect(termSteps.map((step) => step.term)).toEqual(['unrealised', 'realised', 'dividends'])
+    expect(total).toEqual({ term: 'total', left: 0, width: 1 })
+    expect(cascade.zero).toBe(0)
+    expectAddsUp(terms)
+    expectDirections(terms)
+  })
+
+  it('puts zero inside the track when a negative latent term crosses it', () => {
+    const terms = { ...staging, unrealised: known(-800), realised: 1000 }
+    const { cascade } = drawn(terms)
+    expect(cascade.zero).toBeGreaterThan(0)
+    expect(cascade.zero).toBeLessThan(1)
+    expectAddsUp(terms)
+    expectDirections(terms)
+  })
+
+  it('draws the terms and no total segment for a total of exactly zero', () => {
+    const terms = {
+      unrealised: known(100),
+      realised: -50,
+      dividends: 0,
+      transferFees: -50,
+      holdsPosition: true,
+    }
+    const { total, termSteps } = drawn(terms)
+    expect(termSteps.map((step) => step.term)).toEqual(['unrealised', 'realised', 'transferFees'])
+    expect(total).toBeUndefined()
+    expectAddsUp(terms)
+    expectDirections(terms)
+  })
+
+  it('reads a total of float noise as zero, which prints 0,00 €', () => {
+    const terms = {
+      unrealised: known(100.1),
+      realised: -50.05,
+      dividends: 0,
+      transferFees: -50.05,
+      holdsPosition: true,
+    }
+    expect(drawn(terms).total).toBeUndefined()
+    expectAddsUp(terms)
+  })
+
+  it('gives the latent term no step when nothing is held (#727)', () => {
+    const terms = { ...staging, unrealised: known(0), holdsPosition: false }
+    const { termSteps, total } = drawn(terms)
+    expect(termSteps.map((step) => step.term)).toEqual(['realised', 'dividends', 'transferFees'])
+    expect(total).toBeDefined()
+    expectAddsUp(terms)
+  })
+
+  it('draws nothing for a total with no figure', () => {
+    for (const because of ['awaitingRate', 'rebuilding'] as const) {
+      expect(gainCascade({ ...staging, unrealised: { known: false, because } })).toBeNull()
+    }
+    expect(gainCascade({ ...staging, transferFees: null })).toBeNull()
+  })
+
+  it('draws nothing when every term is zero', () => {
+    const terms = {
+      unrealised: known(0),
+      realised: 0,
+      dividends: 0,
+      transferFees: 0,
+      holdsPosition: true,
+    }
+    expect(gainCascade(terms)).toBeNull()
+  })
+
+  it('drops the fees when the transfers were free', () => {
+    const terms = { ...staging, transferFees: 0 }
+    expect(drawn(terms).termSteps.map((step) => step.term)).not.toContain('transferFees')
+    expectAddsUp(terms)
   })
 })
