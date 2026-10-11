@@ -307,6 +307,10 @@ export interface Cascade {
  * says it.
  */
 export function gainCascade(terms: GainTerms): Cascade | null {
+  // Below half a cent an amount prints `0,00 €`, and float noise must not draw
+  // it as a 2 px step.
+  const isZero = (amount: number) => Math.abs(amount) < 0.005
+
   const total = gainTotal(terms)
   if (!total.known) return null
 
@@ -314,7 +318,7 @@ export function gainCascade(terms: GainTerms): Cascade | null {
   let running = 0
   for (const term of GAIN_TERMS) {
     const amount = termAmount(terms, term) ?? 0
-    if (amount === 0 || !termIsRendered(term, amount)) continue
+    if (isZero(amount) || !termIsRendered(term, amount)) continue
     if (termRendering(terms, term).kind !== 'figure') continue
     drawn.push({ term, from: running, to: running + amount })
     running += amount
@@ -323,7 +327,7 @@ export function gainCascade(terms: GainTerms): Cascade | null {
   const ends = [0, ...drawn.map((step) => step.to), total.value]
   const lo = Math.min(...ends)
   const hi = Math.max(...ends)
-  if (hi === lo) return null
+  if (isZero(hi - lo)) return null
   const at = (x: number) => (x - lo) / (hi - lo)
   const step = (term: CascadeStep['term'], a: number, b: number): CascadeStep => ({
     term,
@@ -332,6 +336,6 @@ export function gainCascade(terms: GainTerms): Cascade | null {
   })
 
   const steps = drawn.map(({ term, from, to }) => step(term, from, to))
-  if (total.value !== 0) steps.push(step('total', 0, total.value))
+  if (!isZero(total.value)) steps.push(step('total', 0, total.value))
   return { steps, zero: at(0) }
 }

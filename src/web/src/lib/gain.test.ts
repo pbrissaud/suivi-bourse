@@ -360,6 +360,17 @@ describe('the cascade adds up to the total (#1143)', () => {
     expectDirections(terms)
   })
 
+  it('reads a total of float noise as zero, which prints 0,00 €', () => {
+    const terms = {
+      unrealised: known(100.1),
+      realised: -50.05,
+      dividends: 0,
+      transferFees: -50.05,
+      holdsPosition: true,
+    }
+    expect(drawn(terms).total).toBeUndefined()
+  })
+
   it('gives the latent term no step when nothing is held (#727)', () => {
     const terms = { ...staging, unrealised: known(0), holdsPosition: false }
     const { termSteps, total } = drawn(terms)

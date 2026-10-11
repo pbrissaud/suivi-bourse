@@ -66,6 +66,10 @@ function segmentClass(term: CascadeStep['term'], amount: number): string {
 /**
  * One row's track: its segment, if it has a step, and the zero mark. On its own
  * line under the label and the figure, which at 390 px it would crush.
+ *
+ * Nothing is clipped: the zero mark sits on the track's very edge whenever every
+ * running sum is on one side of zero, and a segment's 2 px floor grows rightward
+ * past the edge when its step ends there — `overflow-hidden` hid both.
  */
 function Track({
   cascade,
@@ -81,16 +85,19 @@ function Track({
     <span
       aria-hidden
       data-cascade-step={term}
-      className="relative block h-1.5 w-full overflow-hidden rounded-full bg-background"
+      className="relative block h-1.5 w-full rounded-full bg-background"
     >
       {step ? (
         <span
-          className={cn('absolute inset-y-0 block min-w-0.5', segmentClass(term, amount))}
+          className={cn(
+            'absolute inset-y-0 block min-w-0.5 rounded-full',
+            segmentClass(term, amount),
+          )}
           style={{ left: `${step.left * 100}%`, width: `${step.width * 100}%` }}
         />
       ) : null}
       <span
-        className="absolute inset-y-0 block w-px bg-foreground"
+        className="absolute -inset-y-0.5 block w-px -translate-x-1/2 bg-foreground"
         style={{ left: `${cascade.zero * 100}%` }}
       />
     </span>
