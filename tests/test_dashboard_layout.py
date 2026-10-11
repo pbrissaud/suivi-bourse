@@ -88,12 +88,22 @@ def _block(**overrides):
     return {'id': 'rhythm', 'width': 'half', 'hidden': False, **overrides}
 
 
+@pytest.mark.parametrize('body', [None, [], 'layout'], ids=['no-body', 'a-list', 'a-string'])
+def test_a_body_that_is_not_an_object_is_a_bad_request(tmp_path, body):
+    client, _ = build_client_and_store(tmp_path)
+
+    answer = client.put('/api/dashboard/layout', json=body)
+
+    assert answer.status_code == 400
+    assert client.get('/api/dashboard/layout').get_json() is None
+
+
 @pytest.mark.parametrize('body', [
-    None,
-    [],
     {'blocks': []},
     {'version': 2, 'blocks': []},
     {'version': '1', 'blocks': []},
+    {'version': True, 'blocks': []},
+    {'version': 1.0, 'blocks': []},
     {'version': 1},
     {'version': 1, 'blocks': {}},
     {'version': 1, 'blocks': ['rhythm']},
@@ -106,7 +116,8 @@ def _block(**overrides):
     {'version': 1, 'blocks': [_block(), _block()]},
     {'version': 1, 'blocks': [_block(id=f'card-{n}') for n in range(51)]},
 ], ids=[
-    'no-body', 'a-list', 'no-version', 'version-2', 'version-as-text',
+    'no-version', 'version-2', 'version-as-text', 'version-as-true',
+    'version-as-float',
     'no-blocks', 'blocks-as-object', 'block-as-text', 'empty-id', 'long-id',
     'numeric-id', 'unknown-width', 'hidden-as-text', 'hidden-as-zero',
     'duplicate-id', 'fifty-one-cards',
@@ -141,14 +152,17 @@ def test_a_stored_value_that_is_not_json_reads_as_null(tmp_path):
     assert client.get('/api/dashboard/layout').get_json() is None
 
 
-def test_a_write_from_a_foreign_origin_is_refused(tmp_path):
+@pytest.mark.parametrize('method', ['put', 'delete'])
+def test_a_write_from_a_foreign_origin_is_refused(tmp_path, method):
     client, _ = build_client_and_store(tmp_path)
+    client.put('/api/dashboard/layout', json=LAYOUT)
 
-    answer = client.put('/api/dashboard/layout', json=LAYOUT,
-                        headers={'Origin': 'https://elsewhere.example'})
+    answer = getattr(client, method)(
+        '/api/dashboard/layout', json={'version': 1, 'blocks': []},
+        headers={'Origin': 'https://elsewhere.example'})
 
     assert answer.status_code == 403
-    assert client.get('/api/dashboard/layout').get_json() is None
+    assert client.get('/api/dashboard/layout').get_json() == LAYOUT
 
 
 def test_the_layout_is_not_a_dial_on_the_settings_page(tmp_path):

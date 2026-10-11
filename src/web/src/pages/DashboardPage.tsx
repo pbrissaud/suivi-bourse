@@ -165,6 +165,13 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
+  // The grid's own read, started here with the page's others so it does not
+  // wait for the page to reach `portfolio` before leaving: same key as
+  // `DashboardGrid`'s, so it is one request.
+  useQuery({ queryKey: ['dashboard-layout'], queryFn: api.dashboardLayout })
+  // While the grid is being arranged, the hero is frozen too (12B).
+  const [arranging, setArranging] = useState(false)
+
   // **The two reads the page is made of**, and what they say when they fail:
   // the page is empty, and this is why. `oneFailure` keeps the first — an
   // unreadable store fails both at once, and one screen owes one sentence.
@@ -198,19 +205,6 @@ export default function DashboardPage() {
       : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
-  // **The band's sentence, one floor down** (#829). With no reporting currency
-  // nothing is converted and the perf job writes nothing at all, so this page
-  // would be a column of em dashes with no reason given anywhere. It says why
-  // instead, and the ledger — where the events are *declared* — stays readable
-  // throughout.
-  if (currencyUnanswered(config.data?.settings) === true) {
-    return <NoBaseCurrency />
-  }
-
-  // **The page is what did not answer, and it says so where it is empty**
-  // (#829). `state` is `failed` on exactly this, and the head renders
-  // nothing without its two reads — so without this the screen would be blank
-  // and *the store is unreadable* would read as *you own nothing yet*.
   // **The three cards, each with the rule for what it renders.** `?? null` and
   // never `?? []`: these reads are armed only once the page reaches
   // `portfolio`, so there is a real window in which an empty array would state
@@ -246,6 +240,19 @@ export default function DashboardPage() {
     }
   }
 
+  // **The band's sentence, one floor down** (#829). With no reporting currency
+  // nothing is converted and the perf job writes nothing at all, so this page
+  // would be a column of em dashes with no reason given anywhere. It says why
+  // instead, and the ledger — where the events are *declared* — stays readable
+  // throughout.
+  if (currencyUnanswered(config.data?.settings) === true) {
+    return <NoBaseCurrency />
+  }
+
+  // **The page is what did not answer, and it says so where it is empty**
+  // (#829). `state` is `failed` on exactly this, and the head renders
+  // nothing without its two reads — so without this the screen would be blank
+  // and *the store is unreadable* would read as *you own nothing yet*.
   if (state === 'failed' && pageFailure !== null) {
     return <Unreadable failure={pageFailure} />
   }
@@ -258,28 +265,32 @@ export default function DashboardPage() {
           three copies of one claim is three chances to disagree. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
-      <DashboardHead
-        positions={positions.data ?? null}
-        totals={totals.data ?? null}
-        rebuilding={runtime.data?.rebuilding ?? null}
-        history={perf.data?.points ?? null}
-        accounts={accountRows}
-        chart={
-          state !== 'portfolio' ? null : (
-            <HeroChart
-              ledger={ledger}
-              range={range}
-              onRangeChange={setRange}
-              currency={totals.data?.base_currency ?? null}
-              performance={perf.data?.points ?? null}
-              valuation={valuation.data?.points ?? null}
-              failure={chartFailure}
-            />
-          )
-        }
-      />
+      <div inert={arranging || undefined}>
+        <DashboardHead
+          positions={positions.data ?? null}
+          totals={totals.data ?? null}
+          rebuilding={runtime.data?.rebuilding ?? null}
+          history={perf.data?.points ?? null}
+          accounts={accountRows}
+          chart={
+            state !== 'portfolio' ? null : (
+              <HeroChart
+                ledger={ledger}
+                range={range}
+                onRangeChange={setRange}
+                currency={totals.data?.base_currency ?? null}
+                performance={perf.data?.points ?? null}
+                valuation={valuation.data?.points ?? null}
+                failure={chartFailure}
+              />
+            )
+          }
+        />
+      </div>
 
-      {state !== 'portfolio' ? null : <DashboardGrid blocks={gridBlocks()} />}
+      {state !== 'portfolio' ? null : (
+        <DashboardGrid blocks={gridBlocks()} onEditingChange={setArranging} />
+      )}
     </div>
   )
 }

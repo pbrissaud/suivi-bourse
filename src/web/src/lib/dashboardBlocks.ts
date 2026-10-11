@@ -64,7 +64,3 @@ export const BLOCK_IDS = Object.keys(DASHBOARD_BLOCKS) as BlockId[]
 export function blockSpec(id: BlockId): BlockSpec {
   return DASHBOARD_BLOCKS[id]
 }
-
-export function isBlockId(value: unknown): value is BlockId {
-  return typeof value === 'string' && Object.hasOwn(DASHBOARD_BLOCKS, value)
-}

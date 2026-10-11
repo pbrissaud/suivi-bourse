@@ -402,17 +402,17 @@ function filenameOf(response: Response, path: string): string {
  * `POST` to a verb-shaped path because what the one caller does to the orphan
  * collection is remove it whole (#724).
  */
-/** A `DELETE` whose success is a `204` — no body to parse. */
-async function forget(path: string): Promise<void> {
-  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
-  if (!response.ok) throw await refusal(response, path)
-}
-
 async function remove<T>(path: string): Promise<T> {
   return unwrap<T>(
     await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }),
     path,
   )
+}
+
+/** A `DELETE` whose success is a `204` — no body to parse. */
+async function forget(path: string): Promise<void> {
+  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
+  if (!response.ok) throw await refusal(response, path)
 }
 
 // ------------------------------------------------------------------------- //
@@ -422,6 +422,7 @@ async function remove<T>(path: string): Promise<T> {
 /** Where a card sits: its order is its index in `blocks`. */
 export interface DashboardPlacement {
   id: string
+  /** `Width` in `lib/dashboardBlocks`; spelled here so this module imports nothing. */
   width: 'half' | 'full'
   hidden: boolean
 }

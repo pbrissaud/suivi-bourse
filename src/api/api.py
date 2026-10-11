@@ -1361,8 +1361,11 @@ def get_dashboard_layout():
 @api_bp.put('/dashboard/layout')
 def put_dashboard_layout():
     """Keep the dashboard's layout. The shape is checked, the cards are not."""
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
     try:
-        layout = dashboard_layout.validate(request.get_json(silent=True))
+        layout = dashboard_layout.validate(body)
     except dashboard_layout.InvalidLayout as exc:
         return unprocessable_request(str(exc))
 

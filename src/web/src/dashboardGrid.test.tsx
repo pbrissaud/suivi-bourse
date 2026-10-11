@@ -39,7 +39,7 @@ function recordWrites() {
 }
 
 /** The store refusing, as `problem+json` with a 503. */
-function unavailable(method: 'get' | 'put') {
+function unavailable(method: 'get' | 'put' | 'delete') {
   return http[method](ROUTES.dashboardLayout, () =>
     HttpResponse.json(
       { status: 503, title: 'Storage unavailable' },
@@ -306,5 +306,69 @@ describe('edit mode', () => {
 
     expect(screen.getByRole('menuitem', { name: 'Monter' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument()
+  })
+
+  it('keeps a failed card arrangeable, with its name on a reduced row', async () => {
+    server.use(
+      http.get(ROUTES.movers, () =>
+        HttpResponse.json(
+          { status: 503, title: 'Storage unavailable' },
+          { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await openMenu(user, 'Mouvements')
+    await user.click(screen.getByRole('menuitem', { name: 'Monter' }))
+
+    expect(await screen.findByText('Mouvements déplacée, position 1 sur 3')).toBeInTheDocument()
+    expect(order(container)).toEqual(['D’où vient le gain', 'Rythme d’investissement'])
+  })
+
+  it('offers to retry a reset whose delete failed, and leaves once it goes through', async () => {
+    server.use(
+      layoutOf([
+        { id: 'movers', width: 'full', hidden: false },
+        { id: 'gain-breakdown', width: 'half', hidden: false },
+        { id: 'rhythm', width: 'half', hidden: false },
+      ]),
+      unavailable('delete'),
+    )
+    const { user } = renderApp()
+    await user.click(await landed())
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser' }))
+    await user.click(await screen.findByRole('button', { name: 'Revenir au défaut' }))
+    await user.click(screen.getByRole('button', { name: 'Terminé' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    server.use(http.delete(ROUTES.dashboardLayout, () => new HttpResponse(null, { status: 204 })))
+    await user.click(screen.getByRole('button', { name: 'Réessayer' }))
+    await landed()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('leaves no save alert behind after « Annuler »', async () => {
+    server.use(unavailable('put'))
+    const { user } = renderApp()
+    await user.click(await landed())
+    await openMenu(user, 'Mouvements')
+    await user.click(screen.getByRole('menuitem', { name: 'Monter' }))
+    await user.click(screen.getByRole('button', { name: 'Terminé' }))
+    await screen.findByRole('alert')
+
+    await user.click(screen.getByRole('button', { name: 'Annuler' }))
+    await landed()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('freezes the hero while the grid is arranged', async () => {
+    const { user } = renderApp()
+    const entry = await landed()
+    const hero = screen.getByRole('group', { name: 'Valeur du portefeuille' })
+    expect(hero.closest('[inert]')).toBeNull()
+
+    await user.click(entry)
+    await waitFor(() => expect(hero.closest('[inert]')).not.toBeNull())
   })
 })

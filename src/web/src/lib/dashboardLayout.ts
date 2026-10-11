@@ -140,6 +140,21 @@ export function sameLayout(
 }
 
 /**
+ * Whether « Terminé » has something to write: the draft differs from what was
+ * read (4A), or a card is still *Nouveau* — writing it in, visible or hidden,
+ * is what ends that (18A).
+ */
+export function mustWrite<Id extends string = BlockId>(
+  draft: readonly Placement<Id>[],
+  saved: unknown,
+  registry: Registry<Id> = DASHBOARD_BLOCKS as unknown as Registry<Id>,
+): boolean {
+  return (
+    !sameLayout(draft, normalizeLayout(saved, registry)) || newBlocks(saved, registry).length > 0
+  )
+}
+
+/**
  * The grid, cell by cell, in reading order — which is also the DOM and focus
  * order: no `grid-auto-flow: dense` (WCAG 2.4.3).
  *
@@ -161,36 +176,30 @@ export function resolveLayout<Id extends string = BlockId>(
   const shown = placements.filter(
     (one) => !one.hidden && (mode === 'edit' || states[one.id] !== 'nothing'),
   )
-  const cells: Cell<Id>[] = []
-  for (let index = 0; index < shown.length; index++) {
-    const one = shown[index]
-    if (columns === 1) {
-      cells.push({ kind: 'block', id: one.id, span: 2, width: 'half', orphan: false })
-      continue
+  if (columns === 1) {
+    return shown.map((one) => ({
+      kind: 'block',
+      id: one.id,
+      span: 2,
+      width: 'half',
+      orphan: false,
+    }))
+  }
+  return rowsOf(shown).flatMap((row): Cell<Id>[] => {
+    const [one, two] = row
+    if (two !== undefined) {
+      return [
+        { kind: 'block', id: one.id, span: 1, width: 'half', orphan: false },
+        { kind: 'block', id: two.id, span: 1, width: 'half', orphan: false },
+      ]
     }
     if (one.width === 'full') {
-      cells.push({ kind: 'block', id: one.id, span: 2, width: 'full', orphan: false })
-      continue
+      return [{ kind: 'block', id: one.id, span: 2, width: 'full', orphan: false }]
     }
-    const next = shown[index + 1]
-    if (next !== undefined && next.width === 'half') {
-      cells.push(
-        { kind: 'block', id: one.id, span: 1, width: 'half', orphan: false },
-        { kind: 'block', id: next.id, span: 1, width: 'half', orphan: false },
-      )
-      index += 1
-      continue
-    }
-    if (registry[one.id].widths.includes('full')) {
-      cells.push({ kind: 'block', id: one.id, span: 2, width: 'full', orphan: true })
-    } else {
-      cells.push(
-        { kind: 'block', id: one.id, span: 1, width: 'half', orphan: false },
-        { kind: 'free' },
-      )
-    }
-  }
-  return cells
+    return registry[one.id].widths.includes('full')
+      ? [{ kind: 'block', id: one.id, span: 2, width: 'full', orphan: true }]
+      : [{ kind: 'block', id: one.id, span: 1, width: 'half', orphan: false }, { kind: 'free' }]
+  })
 }
 
 /**

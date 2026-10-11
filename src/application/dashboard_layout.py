@@ -33,7 +33,10 @@ def validate(body: Any) -> dict:
     """The layout to store, or :class:`InvalidLayout` naming what is wrong."""
     if not isinstance(body, dict):
         raise InvalidLayout('a layout is a JSON object')
-    if body.get('version') != VERSION:
+    version = body.get('version')
+    # `type(...) is int`: in Python `True == 1` and `1.0 == 1`, and neither is
+    # a version.
+    if type(version) is not int or version != VERSION:
         raise InvalidLayout(f'a layout has version {VERSION}')
     blocks = body.get('blocks')
     if not isinstance(blocks, list):
@@ -55,7 +58,8 @@ def validate(body: Any) -> dict:
         seen.add(block_id)
         if block.get('width') not in WIDTHS:
             raise InvalidLayout(
-                f"the card {block_id!r} has a width of 'half' or 'full'")
+                f"the card {block_id!r} has a width of "
+                f"{' or '.join(repr(width) for width in WIDTHS)}")
         if not isinstance(block.get('hidden'), bool):
             raise InvalidLayout(
                 f"the card {block_id!r} says whether it is hidden, true or false")

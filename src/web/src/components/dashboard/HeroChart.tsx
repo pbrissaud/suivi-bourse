@@ -19,6 +19,7 @@
  */
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { Segmented } from '@/components/Segmented'
+import { Unreadable } from '@/components/Unreadable'
 import type { PerfPoint, ValuationPoint } from '@/lib/api'
 import { DASHBOARD_RANGES, type DashboardRange } from '@/lib/dashboard'
 import { useI18n } from '@/lib/i18n'
@@ -45,6 +46,13 @@ export function HeroChart({
   failure = null,
 }: HeroChartProps) {
   const { t } = useI18n()
+
+  // The chart's own two states, before any control: nothing while the series
+  // is in flight, and only the failure when it did not answer — a range
+  // control over an empty slot sets nothing.
+  if ((ledger ? performance : valuation) === null) {
+    return failure === null ? null : <Unreadable failure={failure} />
+  }
 
   return (
     <div data-hero-chart className="flex flex-col gap-3">

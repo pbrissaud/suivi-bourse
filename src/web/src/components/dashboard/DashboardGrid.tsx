@@ -47,6 +47,7 @@ import { blockSpec, type BlockId, type Width } from '@/lib/dashboardBlocks'
 import {
   defaultLayout,
   moveBlock,
+  mustWrite,
   newBlocks,
   normalizeLayout,
   positionOf,
@@ -79,8 +80,29 @@ type FocusTarget =
   | { kind: 'hidden' }
   | { kind: 'title' }
   | { kind: 'entry' }
+  | { kind: 'confirm' }
+  | { kind: 'reset' }
 
-export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }) {
+const FOCUS_SELECTORS: Record<Exclude<FocusTarget['kind'], 'menu'>, string> = {
+  hidden: '[data-hidden-cards]',
+  title: '[data-edit-title]',
+  entry: '[data-edit-entry]',
+  confirm: '[data-confirm-reset]',
+  reset: '[data-reset]',
+}
+
+/** The keyboard focus ring DESIGN.md asks of every control: 2 px `primary`, 2 px off. */
+const FOCUS_RING =
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+
+export function DashboardGrid({
+  blocks,
+  onEditingChange,
+}: {
+  blocks: Record<BlockId, GridBlock>
+  /** Edit mode began or ended — the page freezes the hero while it lasts (12B). */
+  onEditingChange?: (editing: boolean) => void
+}) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const columns = useIsMobile() ? 1 : 2
@@ -94,18 +116,24 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
   const [focus, setFocus] = useState<FocusTarget | null>(null)
 
   const editing = draft !== null
-  const saved = layout.isError ? null : layout.data
+  // **Unread is only « never read »** (D6): a background refetch that fails
+  // keeps the layout already read — react-query holds `data` through it — so
+  // the owner's arrangement never falls back to the default behind their back.
+  const unread = layout.data === undefined
+  const saved = layout.data ?? null
   const placements = draft ?? normalizeLayout(saved)
-  const fresh = layout.isError ? [] : newBlocks(saved)
+  const fresh = unread ? [] : newBlocks(saved)
 
   const write = useMutation({
     mutationFn: async (next: Placement[] | 'default') => {
       if (next === 'default') await api.forgetDashboardLayout()
       else await api.saveDashboardLayout(toStored(next))
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: LAYOUT_KEY })
-      leave()
+    // What was written is what the server now holds: put it in the cache
+    // rather than wait on a refetch (and its retries) to leave edit mode.
+    onSuccess: (_, next) => {
+      queryClient.setQueryData(LAYOUT_KEY, next === 'default' ? null : toStored(next))
+      leave(t('dashboard.edit.saved'))
     },
   })
 
@@ -115,13 +143,7 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
   useLayoutEffect(() => {
     if (focus === null || root.current === null) return
     const selector =
-      focus.kind === 'menu'
-        ? `[data-card-menu="${focus.id}"]`
-        : focus.kind === 'hidden'
-          ? '[data-hidden-cards]'
-          : focus.kind === 'title'
-            ? '[data-edit-title]'
-            : '[data-edit-entry]'
+      focus.kind === 'menu' ? `[data-card-menu="${focus.id}"]` : FOCUS_SELECTORS[focus.kind]
     // After the menu has closed: Radix hands the focus back on its own way
     // out, and this has to land after it.
     const scope = root.current
@@ -131,6 +153,13 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
     }, 0)
     return () => window.clearTimeout(timer)
   }, [focus])
+
+  useLayoutEffect(() => {
+    onEditingChange?.(editing)
+    // The grid can leave the page mid-edit (the page leaves `portfolio`):
+    // the hero must not stay frozen behind it.
+    return () => onEditingChange?.(false)
+  }, [editing, onEditingChange])
 
   // The grid waits for the layout it is drawn from (D6); the head above has
   // not waited for anything.
@@ -145,11 +174,15 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
     setFocus({ kind: 'title' })
   }
 
-  function leave() {
+  function leave(outcome: string) {
     setDraft(null)
     setConfirming(false)
     setToDelete(false)
+    // A failed save abandoned with « Annuler » leaves no alert, nor a
+    // « Réessayer » with nothing left to retry, in reading mode.
+    write.reset()
     setFocus({ kind: 'entry' })
+    announce(outcome)
   }
 
   function edit(next: Placement[], focusTo: FocusTarget, text: string) {
@@ -167,8 +200,8 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
     }
     // A save with nothing changed writes nothing (4A) — unless a card is still
     // *Nouveau*: writing it in, visible or hidden, is what ends that (18A).
-    if (sameLayout(draft, normalizeLayout(saved)) && fresh.length === 0) {
-      leave()
+    if (!mustWrite(draft, saved)) {
+      leave(t('dashboard.edit.unchanged'))
       return
     }
     write.mutate(draft)
@@ -187,6 +220,11 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
 
   return (
     <div ref={root} className="flex flex-col gap-3">
+      {/* One live region for the whole session, mounted outside the edit bar
+          so the session's end is said too (13A). */}
+      <p className="sr-only" aria-live="polite">
+        {said}
+      </p>
       {editing ? (
         <div
           className={cn(
@@ -201,48 +239,54 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             {atDefault ? (
-              <span id="dashboard-at-default" className="text-xs text-muted-foreground">
+              <span id="dashboard-at-default" className="label font-normal">
                 {t('dashboard.edit.atDefault')}
               </span>
             ) : null}
             <Button
               variant="ghost"
+              data-reset
               disabled={atDefault || write.isPending}
               aria-describedby={atDefault ? 'dashboard-at-default' : undefined}
-              onClick={() => setConfirming(true)}
+              onClick={() => {
+                setConfirming(true)
+                setFocus({ kind: 'confirm' })
+              }}
             >
               {t('dashboard.edit.reset')}
             </Button>
-            <Button variant="outline" disabled={write.isPending} onClick={leave}>
+            <Button
+              variant="outline"
+              disabled={write.isPending}
+              onClick={() => leave(t('dashboard.edit.cancelled'))}
+            >
               {t('dashboard.edit.cancel')}
             </Button>
             <Button disabled={write.isPending} onClick={done}>
               {write.isPending ? t('dashboard.edit.saving') : t('dashboard.edit.done')}
             </Button>
           </div>
-          <p className="sr-only" aria-live="polite">
-            {said}
-          </p>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {fresh.length > 0 ? (
-            <span className="text-xs font-medium text-primary">
-              {t('dashboard.edit.newCards', { count: fresh.length })}
-            </span>
+            <span className="label">{t('dashboard.edit.newCards', { count: fresh.length })}</span>
           ) : null}
           <button
             type="button"
             data-edit-entry
-            disabled={layout.isError}
-            aria-describedby={layout.isError ? 'dashboard-layout-unread' : undefined}
+            disabled={unread}
+            aria-describedby={unread ? 'dashboard-layout-unread' : undefined}
             onClick={enter}
-            className="text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            className={cn(
+              'label rounded-sm underline underline-offset-4 hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+              FOCUS_RING,
+            )}
           >
             {t('dashboard.edit.open')}
           </button>
-          {layout.isError ? (
-            <span id="dashboard-layout-unread" className="text-xs text-muted-foreground">
+          {unread ? (
+            <span id="dashboard-layout-unread" className="label font-normal">
               {t('dashboard.edit.layoutUnreadable')}
             </span>
           ) : null}
@@ -257,16 +301,24 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
           <p className="min-w-0 flex-1 text-sm">{t('dashboard.edit.confirm')}</p>
           <Button
             variant="outline"
+            data-confirm-reset
             onClick={() => {
               setDraft(defaultLayout())
               setToDelete(true)
               setConfirming(false)
+              setFocus({ kind: 'title' })
               announce(t('dashboard.edit.resetDone'))
             }}
           >
             {t('dashboard.edit.confirmYes')}
           </Button>
-          <Button variant="ghost" onClick={() => setConfirming(false)}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setConfirming(false)
+              setFocus({ kind: 'reset' })
+            }}
+          >
             {t('dashboard.edit.confirmNo')}
           </Button>
         </div>
@@ -290,9 +342,7 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
                 aria-hidden
                 className="grid min-h-48 place-items-center rounded-section border border-dashed"
               >
-                <span className="text-xs font-medium text-muted-foreground">
-                  {t('dashboard.edit.free')}
-                </span>
+                <span className="label">{t('dashboard.edit.free')}</span>
               </div>
             ) : (
               <div key={`free-${index}`} aria-hidden />
@@ -376,7 +426,7 @@ export function DashboardGrid({ blocks }: { blocks: Record<BlockId, GridBlock> }
                 <li key={one.id} className="flex items-center gap-3 border-t py-2 first:border-t-0">
                   <span className="text-sm">{name(one.id)}</span>
                   {fresh.includes(one.id) ? (
-                    <span className="rounded-full border border-primary px-2 text-xs font-medium text-primary">
+                    <span className="label rounded-full border px-2 text-foreground">
                       {t('dashboard.edit.new')}
                     </span>
                   ) : null}
@@ -434,7 +484,7 @@ function Cell({
 }) {
   const bareRow = editing ? (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium text-muted-foreground">{name}</span>
+      <span className="label">{name}</span>
       {menu}
     </div>
   ) : null
@@ -512,7 +562,10 @@ function CardMenu({
           type="button"
           data-card-menu={id}
           aria-label={t('dashboard.edit.options', { card: name })}
-          className="inline-grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:text-foreground pointer-coarse:size-11"
+          className={cn(
+            'inline-grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:text-foreground pointer-coarse:size-11',
+            FOCUS_RING,
+          )}
         >
           <MoreHorizontal className="size-4" aria-hidden />
         </button>
@@ -542,6 +595,7 @@ function CardMenu({
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup
               value={savedWidth}
+              aria-describedby={orphan ? `orphan-${id}` : undefined}
               onValueChange={(value) => {
                 acted.current = true
                 onWidth(value as Width)
@@ -551,7 +605,7 @@ function CardMenu({
               <DropdownMenuRadioItem value="full">{t('dashboard.edit.full')}</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             {orphan ? (
-              <p className="px-2 pb-1.5 pl-8 text-xs text-muted-foreground">
+              <p id={`orphan-${id}`} className="label px-2 pb-1.5 pl-8 font-normal">
                 {t('dashboard.edit.orphan')}
               </p>
             ) : null}

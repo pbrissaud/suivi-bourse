@@ -4,6 +4,7 @@ import { BLOCK_IDS, DASHBOARD_BLOCKS, type BlockSpec } from '@/lib/dashboardBloc
 import {
   defaultLayout,
   moveBlock,
+  mustWrite,
   newBlocks,
   normalizeLayout,
   positionOf,
@@ -255,5 +256,28 @@ describe('the small edits', () => {
     expect(sameLayout(layout, [p('a', 'half'), p('m', 'full')])).toBe(true)
     expect(sameLayout(layout, [p('m', 'full'), p('a', 'half')])).toBe(false)
     expect(sameLayout(layout, withHidden(layout, 'a', true))).toBe(false)
+  })
+})
+
+describe('mustWrite', () => {
+  const read = toStored([
+    p('a', 'half'),
+    p('b', 'half'),
+    p('m', 'full'),
+    p('n', 'half', true),
+  ] as never)
+
+  it('writes nothing when the draft is what was read and nothing is new', () => {
+    expect(mustWrite(normalizeLayout(read, REGISTRY), read, REGISTRY)).toBe(false)
+  })
+
+  it('writes a changed draft', () => {
+    const draft = withHidden(normalizeLayout(read, REGISTRY), 'a', true)
+    expect(mustWrite(draft, read, REGISTRY)).toBe(true)
+  })
+
+  it('writes an unchanged draft while a card is still new, to end its « Nouveau » (18A)', () => {
+    const before = toStored([p('a', 'half'), p('b', 'half'), p('m', 'full')] as never)
+    expect(mustWrite(normalizeLayout(before, REGISTRY), before, REGISTRY)).toBe(true)
   })
 })
