@@ -392,11 +392,23 @@ def test_movers_leave_out_a_line_whose_quotes_stopped(tmp_path):
         seed_position(opened, symbol='NEW.PA', name='New', quantity=5.0)
         seed_quote(opened, symbol='NEW.PA', price=20.0,
                    at=datetime(2026, 10, 9, 15, 30, tzinfo=timezone.utc))
+        # The bound's two sides. Easter's gap, Thursday's close to Monday's,
+        # is 4 days and some hours: kept. Six days behind: left out.
+        seed_position(opened, symbol='EASTER.PA', name='Easter', quantity=5.0)
+        seed_quote(opened, symbol='EASTER.PA', price=40.0,
+                   at=datetime(2026, 10, 4, 15, 30, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='EASTER.PA', price=42.0,
+                   at=datetime(2026, 10, 5, 15, 30, tzinfo=timezone.utc))
+        seed_position(opened, symbol='LATE.PA', name='Late', quantity=5.0)
+        seed_quote(opened, symbol='LATE.PA', price=40.0,
+                   at=datetime(2026, 10, 2, 15, 30, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='LATE.PA', price=44.0,
+                   at=datetime(2026, 10, 3, 15, 30, tzinfo=timezone.utc))
 
     client = build_client(tmp_path, seed=seed)
     payload = client.get('/api/portfolio/movers').get_json()
 
-    assert [m['symbol'] for m in payload['movers']] == ['AAPL']
+    assert [m['symbol'] for m in payload['movers']] == ['AAPL', 'EASTER.PA']
 
 
 def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
