@@ -10,7 +10,7 @@ import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ROUTES, type DashboardLayout } from '@/lib/api'
-import { aMover, aMoversPayload } from '@/test/factories'
+import { aMover, aMoversPayload, aPosition, aPositionsPayload } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -125,6 +125,35 @@ describe('the movers by width', () => {
     )
     await user.click(screen.getByRole('menuitemradio', { name: 'Demi-largeur' }))
     expect(await screen.findByText('Mouvements en demi-largeur')).toBeInTheDocument()
+  })
+
+  // Two columns only when one column at half the width would not hold the list
+  // (#1145): a short list split in two left its figures half-way across.
+  it.each([
+    [1, false],
+    [5, false],
+    [6, true],
+    [7, true],
+  ])('at the full width, flows %i lines into two columns: %s', async (count, split) => {
+    const movers = ten.slice(0, count)
+    server.use(
+      http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload(movers))),
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(movers.map(({ symbol, name }) => aPosition({ symbol, name }))),
+        ),
+      ),
+    )
+    renderApp()
+    const list = await screen.findByRole('list', { name: 'Mouvements' })
+    const items = within(list).getAllByRole('listitem')
+    expect(items).toHaveLength(count)
+    expect(list.classList.contains('columns-2')).toBe(split)
+    // The first line of each column carries no rule above it, and only those.
+    const unruled = items.flatMap((item, index) =>
+      item.classList.contains('border-t-0') ? [index] : [],
+    )
+    expect(unruled).toEqual(split ? [0, Math.ceil(count / 2)] : [0])
   })
 })
 

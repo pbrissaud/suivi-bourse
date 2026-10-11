@@ -77,9 +77,12 @@ export function Movers({
   const f = useFormatters()
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
   const { rows: moved, others, unchanged } = moversList(movers, rows, MOVERS_ROWS[width])
-  // Ten lines flow into two columns; the first line of each column carries no
-  // rule above it. The columns balance, so the right one starts half-way.
-  const split = width === 'full' ? Math.ceil(moved.length / 2) : moved.length
+  // More lines than half the width holds flow into two columns; the first line
+  // of each column carries no rule above it. The columns balance, so the right
+  // one starts half-way. Fewer stay one column across the width (#1145): a
+  // short list split in two left its figures half-way across the section.
+  const twoColumns = width === 'full' && moved.length > MOVERS_ROWS.half
+  const split = twoColumns ? Math.ceil(moved.length / 2) : moved.length
   return (
     <Section
       title={t('dashboard.movers.title')}
@@ -101,7 +104,7 @@ export function Movers({
       ) : (
         <ol
           aria-label={t('dashboard.movers.title')}
-          className={cn(width === 'full' && 'columns-2 gap-x-7')}
+          className={cn(twoColumns && 'columns-2 gap-x-7')}
         >
           {moved.map((mover, index) => (
             <li
