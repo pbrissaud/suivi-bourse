@@ -6,18 +6,24 @@
  * used to sit beside the gain at the top of the page, two by two; with the
  * portfolio's value in that place the gain is a pill under it, and its
  * decomposition comes down here, where it can be read as a decomposition: a
- * bar that closes a whole, and the list it is the drawing of.
+ * list whose rows draw the cascade of the terms onto their total.
  *
  * **Nothing is computed here.** The terms, their rendering, their tone and the
  * total are `lib/gain.ts`'s, exactly as the head used to call them — the four
  * surfaces that show a gain still share one arithmetic and one rule of colour
  * (#860).
  *
- * **The stacked bar is hand-written, and it is the second one** after the
- * accounts rail's (`shareBar.test.ts` names both). Its segments are adjacent
- * parts of one total, which no per-line `ShareBar` can say. It is drawn only
- * when every term is a figure: a whole with a term missing is not that whole,
- * and the list under it names the missing one.
+ * **The cascade is hand-written** (`shareBar.test.ts` names it beside the
+ * accounts rail). Each row carries a track on one scale shared by every row: a
+ * term runs from the running sum before it to the one after it — right when it
+ * adds, left when it takes away — and the total runs from zero, so the last
+ * term ends where the total ends (#1143). It replaces a stacked bar of absolute
+ * values, which drew a loss as a positive share and a gain twice its size. The
+ * geometry is `gainCascade`'s; no track is drawn when the total has no figure,
+ * and the list names the missing term.
+ *
+ * A segment wears its figure's colour (`termCarriesSign`), at full strength:
+ * direction says the sign, so colour is never the only cue.
  */
 import { Explain } from '@/components/Explain'
 import { Section } from '@/components/ui/section'
@@ -27,13 +33,17 @@ import { renderFigure } from '@/lib/absence'
 import { useFormatters } from '@/lib/format'
 import {
   GAIN_TERMS,
+  gainCascade,
   gainTotal,
   portfolioTerms,
   sumRendering,
   termAmount,
+  termCarriesSign,
   termIsRendered,
   termRendering,
   termTone,
+  type Cascade,
+  type CascadeStep,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
@@ -47,18 +57,45 @@ export const TERM_LABELS: Record<GainTermName, MessageKey> = {
   transferFees: 'gain.term.transferFees',
 }
 
-/**
- * One shade of the gain per term, from the strongest to the faintest, and the
- * loss for whatever took money out. The shade is the term's identity in the
- * bar; the sign is said by the hue, and again by the figure in the list.
- */
-const GAIN_SHADES: Record<GainTermName, string> = {
-  unrealised: 'bg-gain',
-  realised: 'bg-gain/60',
-  dividends: 'bg-gain/30',
-  transferFees: 'bg-gain/20',
+/** The sign's hue for a signed amount, the neutral ink for the two that are not. */
+function segmentClass(term: CascadeStep['term'], amount: number): string {
+  if (term !== 'total' && !termCarriesSign(term)) return 'bg-muted-foreground'
+  return amount < 0 ? 'bg-loss' : 'bg-gain'
 }
-const LOSS_SHADE = 'bg-loss/60'
+
+/**
+ * One row's track: its segment, if it has a step, and the zero mark. On its own
+ * line under the label and the figure, which at 390 px it would crush.
+ */
+function Track({
+  cascade,
+  term,
+  amount,
+}: {
+  cascade: Cascade
+  term: CascadeStep['term']
+  amount: number
+}) {
+  const step = cascade.steps.find((one) => one.term === term)
+  return (
+    <span
+      aria-hidden
+      data-cascade-step={term}
+      className="relative block h-1.5 w-full overflow-hidden rounded-full bg-background"
+    >
+      {step ? (
+        <span
+          className={cn('absolute inset-y-0 block min-w-0.5', segmentClass(term, amount))}
+          style={{ left: `${step.left * 100}%`, width: `${step.width * 100}%` }}
+        />
+      ) : null}
+      <span
+        className="absolute inset-y-0 block w-px bg-foreground"
+        style={{ left: `${cascade.zero * 100}%` }}
+      />
+    </span>
+  )
+}
 
 interface GainBreakdownProps {
   /** The head's two reads, `null` while either is in flight. */
@@ -94,19 +131,7 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
   const terms = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
   const total = gainTotal(terms)
   const shown = GAIN_TERMS.filter((term) => termIsRendered(term, termAmount(terms, term)))
-  const shadeOf = (term: GainTermName) => {
-    const amount = termAmount(terms, term)
-    return amount !== null && amount < 0 ? LOSS_SHADE : GAIN_SHADES[term]
-  }
-
-  // The bar closes a whole only when every term it would draw is a figure.
-  const segments = shown.map((term) => ({
-    term,
-    amount: termRendering(terms, term).kind === 'figure' ? termAmount(terms, term) : null,
-  }))
-  const whole = segments.every((one) => one.amount !== null)
-    ? segments.reduce((sum, one) => sum + Math.abs(one.amount ?? 0), 0)
-    : 0
+  const cascade = gainCascade(terms)
 
   return (
     <Section title={t('dashboard.breakdown.title')}>
@@ -114,42 +139,27 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
           same row, the gap falls between the terms and their total, and both
           cards end on one line. */}
       <div className="flex flex-1 flex-col gap-4">
-        {whole === 0 ? null : (
-          <div
-            aria-hidden
-            className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-muted"
-          >
-            {segments.map(({ term, amount }) =>
-              amount === 0 ? null : (
-                <span
-                  key={term}
-                  className={cn('block h-full', shadeOf(term))}
-                  style={{ width: `${(Math.abs(amount ?? 0) / whole) * 100}%` }}
-                />
-              ),
-            )}
-          </div>
-        )}
-
-        <ul className="flex flex-col gap-1.5 text-sm">
+        <ul className="flex flex-col gap-2.5 text-sm">
           {shown.map((term) => (
             <li
               key={term}
               role="group"
               aria-label={t(TERM_LABELS[term])}
-              className="flex items-center justify-between gap-4"
+              className="flex flex-col gap-1"
             >
-              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-                <span aria-hidden className={cn('size-2 shrink-0 rounded-full', shadeOf(term))} />
-                <span className="truncate">{t(TERM_LABELS[term])}</span>
+              <span className="flex items-center justify-between gap-4">
+                <span className="truncate text-muted-foreground">{t(TERM_LABELS[term])}</span>
+                <span className={cn('tabular font-medium', termTone(terms, term))}>
+                  {renderFigure(
+                    termRendering(terms, term),
+                    () => f.currency(termAmount(terms, term), currency),
+                    t,
+                  )}
+                </span>
               </span>
-              <span className={cn('tabular font-medium', termTone(terms, term))}>
-                {renderFigure(
-                  termRendering(terms, term),
-                  () => f.currency(termAmount(terms, term), currency),
-                  t,
-                )}
-              </span>
+              {cascade ? (
+                <Track cascade={cascade} term={term} amount={termAmount(terms, term) ?? 0} />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -159,25 +169,30 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
         <div
           role="group"
           aria-label={t('dashboard.gainTotal')}
-          className="mt-auto flex items-center justify-between gap-4 border-t pt-3 text-sm"
+          className="mt-auto flex flex-col gap-1 border-t pt-3 text-sm"
         >
-          <span className="flex items-center gap-1.5 font-medium">
-            {t('dashboard.gainTotal')}
-            <Explain
-              figure={t('dashboard.gainTotal')}
-              body="dashboard.gainTotal.explain"
-              anchor="total-gain"
-            />
+          <span className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5 font-medium">
+              {t('dashboard.gainTotal')}
+              <Explain
+                figure={t('dashboard.gainTotal')}
+                body="dashboard.gainTotal.explain"
+                anchor="total-gain"
+              />
+            </span>
+            <span
+              className={cn('tabular font-semibold', signClass(total.known ? total.value : null))}
+            >
+              {renderFigure(
+                sumRendering(total),
+                () => f.currency(total.known ? total.value : null, currency),
+                t,
+              )}
+            </span>
           </span>
-          <span
-            className={cn('tabular font-semibold', signClass(total.known ? total.value : null))}
-          >
-            {renderFigure(
-              sumRendering(total),
-              () => f.currency(total.known ? total.value : null, currency),
-              t,
-            )}
-          </span>
+          {cascade && total.known ? (
+            <Track cascade={cascade} term="total" amount={total.value} />
+          ) : null}
         </div>
       </div>
     </Section>
