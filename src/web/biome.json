@@ -29,7 +29,7 @@
     },
     { "path": "./lint/no-overline.grit", "includes": ["**/src/**/*.tsx", "!**/*.test.tsx"] },
     { "path": "./lint/no-overline-css.grit", "includes": ["**/src/index.css"] },
-    { "path": "./lint/flat-card.grit", "includes": ["**/components/ui/card.tsx"] },
+    { "path": "./lint/semantic-token-alias.grit", "includes": ["**/src/index.css"] },
     {
       "path": "./lint/grid-base-columns.grit",
       "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]

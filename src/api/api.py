@@ -1,12 +1,13 @@
 """The ``/api`` blueprint — the disposable half (issue #659, design #655)."""
 import re
+import threading
 from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 import duckdb
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from werkzeug.exceptions import HTTPException
 from logfmt_logger import getLogger
 
@@ -21,6 +22,7 @@ from application import ledger
 from application import main
 from application import portfolio_facts
 from application import portfolio_view
+from application import tweakcn
 from application import positions as positions_module
 from application import quotes
 from application import reassignment
@@ -1281,6 +1283,41 @@ def get_config():
         'unread_environment': installation_facts.unread_environment(),
         'shares': _snapshot().shares,
     })
+
+
+#: The theme stylesheet, computed on the first request. Per process, not per
+#: theme id: ``SB_TWEAKCN_THEME`` cannot change without a restart, so a process
+#: fetches at most once.
+_served: Optional[str] = None
+_serving = threading.Lock()
+
+
+@api_bp.get('/theme.css')
+def get_theme_css():
+    """The tweakcn theme ``SB_TWEAKCN_THEME`` names, over the bundled Atelier (#1130)."""
+    global _served
+    # ponytail: the first request waits on tweakcn (5 s per socket operation);
+    # a background warm-up at boot if a slow first paint ever shows.
+    with _serving:
+        if _served is None:
+            _served = _theme_css()
+    response = Response(_served, mimetype='text/css')
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+def _theme_css() -> str:
+    """The stylesheet body, logging once why the theme fell back."""
+    theme_id = current_app.config.get('TWEAKCN_THEME')
+    if not theme_id:
+        return '/* default theme */'
+    entry, reason = tweakcn.load(theme_id, current_app.config['TWEAKCN_CACHE_DIR'],
+                                 current_app.config['TWEAKCN_FETCH'])
+    if reason:
+        logger.warning("tweakcn theme %s: %s", theme_id, reason)
+    if entry is None:
+        return '/* default theme */'
+    return '\n'.join(tweakcn.font_imports(entry) + [tweakcn.render_css(entry)])
 
 
 @api_bp.get('/settings')

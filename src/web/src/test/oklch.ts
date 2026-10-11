@@ -1,13 +1,6 @@
 /**
  * OKLCH → sRGB, for the one question the app never has to ask and its tests do:
- * **is this colour a colour the screen can show?**
- *
- * A browser given `oklch(0.85 0.16 262)` does not refuse it — it clamps it into
- * sRGB and paints something else. Two stops of a ramp can therefore be written
- * as distinct and rendered as the same, which is silent: nothing errors, no
- * assertion about a declared value notices, and the ramp goes on claiming to
- * encode a rank it no longer encodes. Blue is where this bites, because sRGB
- * has almost no chroma left at high lightness on that hue.
+ * **how much light does this colour put on the screen?**
  *
  * The transform is Björn Ottosson's, and the constants are his. It is here
  * rather than in `lib/` on purpose: the product never converts a colour, and a
@@ -29,28 +22,12 @@ function linearSrgb(lightness: number, chroma: number, hue: number): [number, nu
   ]
 }
 
-const encode = (channel: number): number =>
-  channel <= 0.0031308 ? 12.92 * channel : 1.055 * Math.pow(Math.max(channel, 0), 1 / 2.4) - 0.055
-
-/**
- * Whether every channel lands inside sRGB — with a hair of tolerance, because
- * the endpoints of a hand-tuned ramp sit deliberately close to the boundary and
- * a rounding at the fourth decimal is not a defect.
- */
-export function inSrgb(lightness: number, chroma: number, hue: number): boolean {
-  return linearSrgb(lightness, chroma, hue)
-    .map(encode)
-    .every((channel) => channel >= -0.001 && channel <= 1.001)
-}
-
 /**
  * The colour **with its hue taken away**: WCAG relative luminance, which is the
  * one reading of a colour that survives every form of colour blindness.
  *
- * `alloc.ts` states a ramp in OKLCH lightness, and OKLCH lightness is not what
- * a screen emits: chroma falls with rank on both grounds, and chroma carries
- * light of its own, so the *rendered* order of the twelve is a different claim
- * from the declared one.
+ * OKLCH lightness is not what a screen emits: chroma carries light of its own,
+ * so a contrast has to be read off the rendered colour, not the declared one.
  */
 export function luminance(lightness: number, chroma: number, hue: number): number {
   const [red, green, blue] = linearSrgb(lightness, chroma, hue).map((channel) =>
@@ -63,16 +40,4 @@ export function luminance(lightness: number, chroma: number, hue: number): numbe
 export function contrast(one: number, other: number): number {
   const [lighter, darker] = one >= other ? [one, other] : [other, one]
   return (lighter + 0.05) / (darker + 0.05)
-}
-
-/** The most chroma this lightness and hue can hold — what a failure should say. */
-export function maxChroma(lightness: number, hue: number): number {
-  let inside = 0
-  let outside = 0.45
-  for (let step = 0; step < 40; step += 1) {
-    const middle = (inside + outside) / 2
-    if (inSrgb(lightness, middle, hue)) inside = middle
-    else outside = middle
-  }
-  return inside
 }

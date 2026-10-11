@@ -73,7 +73,7 @@ has the rest of the back-off.
 
 ## What the container imposes
 
-Three names. This is the complete list of what the app reads from its
+Four names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
 | Variable | Default | What it decides |
@@ -81,6 +81,7 @@ environment; nothing else in it is consulted.
 | `SB_STORE_DIR` | `/data` | the directory the store lives in |
 | `SB_WEB_PORT` | `8080` | the socket the app is bound to |
 | `LOG_LEVEL` | `INFO` | how loudly the app logs |
+| `SB_TWEAKCN_THEME` | unset | a [tweakcn](https://tweakcn.com) theme id whose colours, fonts, radius and shadows replace the bundled theme; read once at start-up |
 
 - **The path is a directory, never a file.** The app names its own store file
   inside it. That removes the entire class of mistake where you point at a file

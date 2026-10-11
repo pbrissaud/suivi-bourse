@@ -12,10 +12,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { allocationRamp, allocationTokenNames, type Ground } from '@/lib/alloc'
 import { browserStorage, rememberPreference } from '@/lib/storage'
 
 export type ThemeChoice = 'light' | 'dark' | 'auto'
+
+export type Ground = 'light' | 'dark'
 
 /** Same shape as the language key, deliberately. */
 export const THEME_STORAGE_KEY = 'sb.theme'
@@ -76,18 +77,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Put the ground on the element: the class the stylesheet keys on, the
- * `color-scheme` native widgets read, and the twelve allocation stops — which
- * are generated rather than declared precisely because their *direction*
- * depends on the ground.
+ * Put the ground on the element: the class the stylesheet keys on and the
+ * `color-scheme` native widgets read.
  */
 function applyGround(element: HTMLElement, ground: Ground) {
   element.classList.toggle('dark', ground === 'dark')
   element.style.colorScheme = ground
-  const ramp = allocationRamp(ground)
-  allocationTokenNames().forEach((name, index) => {
-    element.style.setProperty(name, ramp[index])
-  })
 }
 
 export function useTheme(): ThemeContextValue {

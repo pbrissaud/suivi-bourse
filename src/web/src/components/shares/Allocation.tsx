@@ -80,7 +80,7 @@ interface AllocationProps {
   currency: string | null
 }
 
-/** The rank's own token, written onto the root element by `ThemeProvider`. */
+/** The rank's own token, the primary mixed into the ground in `index.css`. */
 function stop(rank: number): string {
   return `var(--alloc-${rank + 1})`
 }

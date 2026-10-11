@@ -855,7 +855,7 @@ export function submittedAccount(choice: AccountChoice, typed: string): Submitte
  *
  * It was `AccountsRail`'s and it is now shared, because the dashboard's
  * comparison draws the same accounts as the rail and two wheels would put one
- * account in two colours on two surfaces. The twelve allocation stops are
+ * account in two colours on two surfaces. The eight allocation stops are
  * deliberately not reused: those encode **rank** on a sorted, legended figure,
  * where this says *which account* — which is what a hue does and a lightness
  * does not.

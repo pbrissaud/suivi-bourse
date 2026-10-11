@@ -63,6 +63,8 @@ import { cn } from '@/lib/utils'
  * `rebuilding` shares `attention`'s tone and not its word: both say *not
  * everything on screen is what it will be*, which is what a colour can carry,
  * and only a sentence can say that one needs a hand and the other only time.
+ * Since #1130 `--attention` is the foreground, so those two carry no hue: the
+ * icon says it.
  */
 export const STATE_TONE: Record<InstallationState, string> = {
   unknown: 'text-muted-foreground',

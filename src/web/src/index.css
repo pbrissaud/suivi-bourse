@@ -11,7 +11,7 @@
  * Regenerate with, and only with:
  *
  *     pnpm dlx shadcn@latest add
- *     https://tweakcn.com/r/themes/cmv2fhyrl000004js7w2w9bj4
+ *     https://tweakcn.com/r/themes/cmv2mytu0000004l29dhzfvtc
  *
  * The cut between this block and the next *is* the decision: the preset owns
  * the chrome and regenerates; the domain layer owns the meaning and does not.
@@ -82,21 +82,21 @@
   --font-serif: Georgia, serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
   --shadow-color: #000000;
-  --shadow-opacity: 0.18;
+  --shadow-opacity: 0;
   --shadow-blur: 2px;
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
   --shadow-offset-y: 1px;
   --letter-spacing: 0em;
   --spacing: 0.25rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 2px 4px -1px hsl(0 0% 0% / 0);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 4px 6px -1px hsl(0 0% 0% / 0);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 8px 10px -1px hsl(0 0% 0% / 0);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0);
   --tracking-normal: 0em;
 }
 
@@ -138,89 +138,71 @@
   --font-serif: Georgia, serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
   --shadow-color: #000000;
-  --shadow-opacity: 0.18;
+  --shadow-opacity: 0;
   --shadow-blur: 2px;
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
   --shadow-offset-y: 1px;
   --letter-spacing: 0em;
   --spacing: 0.25rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 2px 4px -1px hsl(0 0% 0% / 0);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 4px 6px -1px hsl(0 0% 0% / 0);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 8px 10px -1px hsl(0 0% 0% / 0);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0);
 }
 
 /* ==========================================================================
- * 2. The domain — what the preset cannot say, and nothing else.
+ * 2. The domain — meanings, each one pointing at a standard token.
  *
- * The sizing rule is the block's whole defence: a token enters only when no
- * preset token already says it. `--price` takes `--primary` because the
- * redesign draws every curve in the mint, `--grant` takes `--chart-1` and
- * `--dividend` takes `--chart-2`, and the hand-picked teal that used to sit
- * here is gone. Without that rule the layer grows with every page and becomes
- * the hand-written half we just deleted.
+ * **A semantic token names a meaning and points at a standard token; it never
+ * holds a value.** That is shadcn's "Adding New Tokens" pattern held strictly,
+ * and it is what lets any tweakcn theme repaint the whole app: a theme reaches
+ * the standard tokens of block 1, and every meaning below follows. The rule is
+ * `lint/semantic-token-alias.grit` (#1130).
  *
- * What remains is what a preset genuinely cannot say: whether a figure is money
- * gained or money lost, and whether something is worth a look. Three tokens.
- *
- * The eight `--alloc-*` are **absent on purpose**: they are the one ramp whose
- * *direction* depends on the ground rather than merely adapting to it, so they
- * are generated in `lib/alloc.ts` and written onto the root element by
- * `ThemeProvider` when it resolves the ground. One source, eight stops, no
- * palette to maintain — and `@theme inline` below still exposes them as
- * `bg-alloc-3`, so a call site cannot tell where they came from.
+ * Gain is the theme's primary and loss its destructive. Attention takes the
+ * foreground: the icon carries the meaning, not a hue. The eight `--alloc-*`
+ * are the primary mixed into the ground, rank 1 the most contrasted on either
+ * ground, so the allocation reads as the application on whatever theme is
+ * loaded.
  * ========================================================================== */
 
 :root {
-  /* The two colours this app reasons in. `--loss` is deliberately **not**
-     `--destructive`, and sits five degrees of hue from it — so the distinction
-     rests on chroma, which is the point: the theme's red says *this failed*,
-     and an unrealised loss is not an error. A portfolio is made of small moves,
-     and a screen of vivid red reads as an alarm rather than as −0,4 %.
-     `themeCut.test.ts` holds the inequality, on both grounds. */
-  --gain: oklch(0.47 0.11 160);
-  --loss: oklch(0.52 0.15 30);
-
-  /* The chart's marks, all three taken from the preset **verbatim**. The curve
-     is the mint because that is what the redesign draws it in; the attribution
-     and the dividend are the two chart slots the preset gives a hue to, and the
-     three that stay grey stay unclaimed. Nothing is picked here any more.
-
-     `--price` and `--gain` therefore sit a few degrees of hue apart, and that is
-     the one place this file lets a **mark** and a **state** share a colour. It
-     holds because `--price` only ever strokes an *unsigned* curve — a value, a
-     quotation — while `--gain` only ever colours a figure through
-     `lib/sign.ts`. The moment a curve carries a sign the rule bites: the
-     dashboard's performance reading crosses zero, so it is drawn in
-     `--foreground` and not in the mint. */
+  --gain: var(--primary);
+  --loss: var(--destructive);
   --price: var(--primary);
   --grant: var(--chart-1);
   --dividend: var(--chart-2);
-
-  /* The bell's icon and the ephemeral-store notice have no colour in the preset:
-     `--gain` / `--loss` are semantic for *money*, `--destructive` says *error*,
-     and neither says *worth a look*. Checked token by token against the preset
-     before adding this one. Kept off `--grant`'s hue, and dark enough on white
-     to clear 4,5:1 — it is read as **text**, in a form's error line and in two
-     table labels, not only as a dot. */
-  --attention: oklch(0.54 0.13 55);
+  --attention: var(--foreground);
+  --alloc-1: color-mix(in oklch, var(--primary) 100%, var(--background));
+  --alloc-2: color-mix(in oklch, var(--primary) 88%, var(--background));
+  --alloc-3: color-mix(in oklch, var(--primary) 76%, var(--background));
+  --alloc-4: color-mix(in oklch, var(--primary) 64%, var(--background));
+  --alloc-5: color-mix(in oklch, var(--primary) 52%, var(--background));
+  --alloc-6: color-mix(in oklch, var(--primary) 40%, var(--background));
+  --alloc-7: color-mix(in oklch, var(--primary) 30%, var(--background));
+  --alloc-8: color-mix(in oklch, var(--primary) 20%, var(--background));
 }
 
 .dark {
-  /* Lifted in lightness for the darker ground, which is the legibility
-     correction the redesign makes — and **not** in chroma towards the theme's
-     red, which is the correction this palette refuses. */
-  --gain: oklch(0.84 0.13 163);
-  --loss: oklch(0.72 0.15 30);
+  --gain: var(--primary);
+  --loss: var(--destructive);
   --price: var(--primary);
   --grant: var(--chart-1);
   --dividend: var(--chart-2);
-  --attention: oklch(0.75 0.15 55);
+  --attention: var(--foreground);
+  --alloc-1: color-mix(in oklch, var(--primary) 100%, var(--background));
+  --alloc-2: color-mix(in oklch, var(--primary) 88%, var(--background));
+  --alloc-3: color-mix(in oklch, var(--primary) 76%, var(--background));
+  --alloc-4: color-mix(in oklch, var(--primary) 64%, var(--background));
+  --alloc-5: color-mix(in oklch, var(--primary) 52%, var(--background));
+  --alloc-6: color-mix(in oklch, var(--primary) 40%, var(--background));
+  --alloc-7: color-mix(in oklch, var(--primary) 30%, var(--background));
+  --alloc-8: color-mix(in oklch, var(--primary) 20%, var(--background));
 }
 
 /* ==========================================================================
@@ -289,17 +271,19 @@
 
   /* DESIGN.md's two planes: a section (`rounded-section`, 18 px) and the card
      that sits on it (`rounded-card`, 14 px), 18 − 4 so the curves stay
-     concentric. */
-  --radius-section: 1.125rem;
-  --radius-card: 0.875rem;
+     concentric. Both follow the theme's `--radius`, which Atelier sets so they
+     land on those two values (#1130). */
+  --radius-section: calc(var(--radius) + 0.5rem);
+  --radius-card: calc(var(--radius) + 0.25rem);
 
-  /* `Geist` is what the preset names; `Geist Variable` is what
-     `@fontsource-variable/geist` actually registers. The preset's intention
-     only loads if both are named, and naming them is the bridge's job — the
-     primitives block above stays exactly as the registry writes it. */
-  --font-sans: "Geist Variable", Geist, sans-serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
-  --font-serif: Georgia, serif;
+  /* The faces are the theme's, read at runtime like its colours: a literal
+     here would be inlined into `font-sans` and no theme served by
+     `/api/theme.css` could reach it (#1130). Atelier's preset names both
+     `Geist Variable`, which `@fontsource-variable/geist` registers, and
+     `Geist`. */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
   --font-heading: var(--font-sans);
 
   /* **The type scale is DESIGN.md's, and it is stated once.** Redeclaring the
@@ -382,7 +366,7 @@
   --shadow-spread: var(--shadow-spread);
   --shadow-blur: var(--shadow-blur);
   --shadow-opacity: var(--shadow-opacity);
-  --radius: 0.625rem;
+  --radius: var(--radius);
 }
 
 /**
@@ -463,9 +447,8 @@
      nobody can see is not a repair — it leaves a mint stroke floating with no
      extent to read the fraction against, and the proportion survives in the
      `aria-label` alone. `--input` is the preset's *empty half of a control*,
-     and it is the neutral that separates most from the card on both grounds;
-     `themeCut.test.ts` holds that separation rather than the two names. The
-     element stays native: the figure is *announced*, and this is its
+     and it is the neutral that separates most from the card on both grounds
+     in Atelier. The element stays native: the figure is *announced*, and this is its
      rendering. */
   progress {
     appearance: none;

@@ -1,4 +1,4 @@
-"""The three things the environment still says, and the names it no longer says."""
+"""The four things the environment still says (store, port, log level, theme), and the names it no longer says."""
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
@@ -10,6 +10,9 @@ WEB_PORT = 'SB_WEB_PORT'
 
 LOG_LEVEL = 'LOG_LEVEL'
 
+#: A tweakcn theme id laid over the bundled Atelier (#1130). Unset by default.
+THEME = 'SB_TWEAKCN_THEME'
+
 DEFAULT_STORE_DIR = '/data'
 DEFAULT_WEB_PORT = 8080
 DEFAULT_LOG_LEVEL = 'INFO'
@@ -18,6 +21,7 @@ INVENTORY: Tuple[Tuple[str, str], ...] = (
     (LOG_LEVEL, DEFAULT_LOG_LEVEL),
     (STORE_DIR, DEFAULT_STORE_DIR),
     (WEB_PORT, str(DEFAULT_WEB_PORT)),
+    (THEME, ''),
 )
 
 READ: frozenset = frozenset(name for name, _ in INVENTORY)
@@ -112,7 +116,7 @@ def effective(env: Mapping[str, str],
 
 
 __all__ = [
-    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL',
+    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'THEME',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',
     'BootEnvironment', 'read', 'unread', 'notice', 'effective',

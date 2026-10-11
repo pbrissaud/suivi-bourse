@@ -107,8 +107,8 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
  * badges as coloured *text* on a wash of its own hue, and that pairing cannot
  * clear 4,5:1 at 12 px on the light ground whatever the wash is set to — the
  * text and the wash share a hue, so raising the wash lowers the contrast and
- * lowering it converges on the token alone, which is 4,77:1 for `--primary` and
- * 4,85:1 for `--attention`. Measured on the light ground, a hovered row
+ * lowering it converges on the token alone, which was 4,77:1 for `--primary`
+ * on Atelier. Measured on the light ground, a hovered row
  * included: 4,06 for the purchase and 4,30 for the dividend. Put the hue under
  * the foreground instead and the same six pills read at **12:1 or better on
  * both grounds**, the wash carrying the whole of the colour — which is also the

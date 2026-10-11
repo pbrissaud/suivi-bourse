@@ -1,4 +1,4 @@
-"""The three boot variables, and the names that went quiet (#740).
+"""The four boot variables, and the names that went quiet (#740).
 
 Every test here reads a **dict**. That is the point of the module being pure:
 "nothing is set", "a blank value" and "a v4 ``.env`` in full" are three ordinary
@@ -13,7 +13,7 @@ from application import boot_env
 
 
 # --------------------------------------------------------------------- #
-# The three values
+# The three boot values (the theme is read by the web app, #1130)
 # --------------------------------------------------------------------- #
 
 def test_nothing_set_gives_the_three_container_defaults():
@@ -45,9 +45,9 @@ def test_the_one_path_is_a_directory_and_never_a_file():
 
 
 @pytest.mark.parametrize('name', [
-    'SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL',
+    'SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL', 'SB_TWEAKCN_THEME',
 ])
-def test_a_blank_value_counts_as_unset_for_every_one_of_the_three(name):
+def test_a_blank_value_counts_as_unset_for_every_one_of_the_four(name):
     """Compose renders an undefined substitution as the **empty string** rather
     than omitting the variable, so ``SB_FOO=${FOO}`` with no ``FOO`` hands the
     container ``SB_FOO=""``. Read literally, every ``int()`` downstream blows up
@@ -163,7 +163,7 @@ def test_the_read_set_is_exactly_the_inventory():
     """A name absent from the inventory but read somewhere would be reported as
     ignored while being obeyed, which is the one thing worse than silence."""
     assert boot_env.READ == {name for name, _ in boot_env.INVENTORY}
-    assert len(boot_env.INVENTORY) == 3
+    assert len(boot_env.INVENTORY) == 4
 
 
 # --------------------------------------------------------------------- #

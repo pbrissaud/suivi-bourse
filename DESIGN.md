@@ -11,8 +11,6 @@ colors:
   rule: "oklch(0.9 0.012 85)"
   primary: "oklch(0.48 0.11 165)"
   on-primary: "oklch(0.995 0.004 85)"
-  gain: "oklch(0.47 0.11 160)"
-  loss: "oklch(0.52 0.15 30)"
   dark-background: "oklch(0.17 0.012 60)"
   dark-surface: "oklch(0.205 0.012 60)"
   dark-tint: "oklch(0.23 0.014 60)"
@@ -21,8 +19,6 @@ colors:
   dark-rule: "oklch(0.3 0.012 60)"
   dark-primary: "oklch(0.8 0.13 165)"
   dark-on-primary: "oklch(0.17 0.012 60)"
-  dark-gain: "oklch(0.84 0.13 163)"
-  dark-loss: "oklch(0.72 0.15 30)"
 typography:
   hero:
     fontFamily: Geist
@@ -126,7 +122,7 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
 
 **Key characteristics:**
 - The value is the hero, and the net-of-tax line sits right under it.
-- Sections are warm tinted planes, never boxes with shadows.
+- Sections are warm tinted planes, never boxes; Atelier carries no shadow.
 - Cards exist only where you decide something.
 - Colour means something: accent for action, gain and loss for the sign of a figure.
 
@@ -149,8 +145,12 @@ contrast.
 - `rule` separates rows inside a section and nothing else.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
   warm hue, never a neutral gray.
-- The cool neutrals in `src/web/src/index.css` move to these warm values in the
-  redesign; the `--gain`, `--loss` and `--price` variable names stay.
+- Gain is `primary` and loss is `destructive`: `--gain` and `--loss` point at them.
+- A semantic token (`--gain`, `--loss`, `--price`, `--attention`, `--alloc-*`…) is
+  always an alias of a standard shadcn token, never a value of its own
+  (`lint/semantic-token-alias.grit`, #1130).
+- The theme is replaceable: `SB_TWEAKCN_THEME` names a tweakcn theme whose colours,
+  fonts, radius and shadows the server lays over Atelier. Unset, Atelier is served.
 
 ## Typography
 
@@ -186,7 +186,7 @@ shipped face would cost every screen for no reader benefit.
 ### The section (replaces "everything is a card")
 
 A section is a tinted plane: `tint` background, `rounded.lg`, padding 20 px 24 px, no
-border, no shadow. Its first row holds the title on the left and the section's own
+border, no shadow of its own. Its first row holds the title on the left and the section's own
 subtotal on the right, like a line of a statement. Rows inside are separated by `rule`.
 
 A section never contains another section. A long page is a sequence of sections, not
@@ -211,8 +211,10 @@ that explains why it differs from the IRR. One performance figure per screen.
 
 ## Elevation & Depth
 
-Flat. Depth comes from the step between `background`, `tint` and `surface`, not from
-shadows. The only shadow in the app is the right `sheet` of the analyst panel below
+Flat. Atelier's shadow opacity is 0, so depth comes from the step between
+`background`, `tint` and `surface`, not from shadows. Components still carry shadcn's
+`shadow-*` utilities (a card `shadow-sm`, a menu `shadow-md`), so a replacement theme's
+shadows show. The only shadow Atelier draws is the right `sheet` of the analyst panel below
 1440 px: 8 px horizontal offset, 24 px blur, 8 % black, so it reads as lying over the
 page. No zero-offset glow, in either theme.
 
@@ -260,7 +262,7 @@ page. No zero-offset glow, in either theme.
 - Don't colour a row, a pill or a tile with `gain` or `loss`; colour the figure.
 - Don't use uppercase letter-spaced overlines or a kicker above a heading.
 - Don't go back to cream with a serif display (the category's generic look), and don't
-  use shadows for depth.
+  give Atelier's tokens shadows for depth (component `shadow-*` classes are fine).
 
 ## Motion
 
@@ -280,3 +282,4 @@ page. No zero-offset glow, in either theme.
 | 2026-10-10 | Warm neutrals replace the cool ones | Serves "Enfin mes vrais chiffres" with a calmer, less clinical surface. |
 | 2026-10-10 | Sections are tinted planes; cards only for decisions and selections | Resolves point 8C of the 5.3 design review (no stacked cards). |
 | 2026-10-10 | Net-of-tax line under the hero, value stays the hero | Keeps decision 1A and #1099 while showing the product's argument first. |
+| 2026-10-10 | Semantic tokens are aliases; the theme is replaceable (#1130) | Gain becomes `primary` and loss `destructive` so any tweakcn theme repaints the app; attention loses its hue and the icon carries the meaning. |

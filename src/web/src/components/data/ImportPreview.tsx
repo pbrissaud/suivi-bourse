@@ -199,7 +199,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             standing beside it, because there is no forecast to stand beside —
             a file the server turned back has no receipt at all. */}
         {upload.error ? (
-          <p role="alert" className="text-sm text-attention">
+          <p role="alert" className="text-sm text-destructive">
             {problemSentence(t, upload.error)}
           </p>
         ) : null}
