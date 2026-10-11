@@ -43,8 +43,6 @@ const SOURCE = path.join(path.resolve(import.meta.dirname), '.')
 const HIDDEN_ON_PURPOSE: Record<string, string> = {
   'components/shares/Allocation.tsx':
     'no tooltip is mounted, so nothing navigates, and the legend is already the whole reading',
-  'components/dashboard/HeroChart.tsx':
-    'the hero’s sparkline, and the value it draws is written beside it in text — the full chart, reading included, is behind the link under it',
 }
 
 /** Every `.tsx` the product writes by hand — `ui/` is the registry's, not ours. */
@@ -178,7 +176,8 @@ describe('every plot the product mounts', () => {
     expect(CHARTS.map((one) => one.rel).sort()).toEqual([
       'components/accounts/AccountCurve.tsx',
       'components/benchmark/BenchmarkChart.tsx',
-      'components/dashboard/HeroChart.tsx',
+      // `HeroChart` drew a sparkline until the dashboard grid (D25) put the
+      // real chart, `PortfolioChart`, under the hero in its place.
       'components/dashboard/PortfolioChart.tsx',
       'components/shares/Allocation.tsx',
       'components/shares/PriceChart.tsx',

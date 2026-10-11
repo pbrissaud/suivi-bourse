@@ -2,10 +2,16 @@
  * What moved since the last session close (#727), **as one list** (#838).
  *
  * The block was two columns of five — *Hausses* over *Baisses* — and the
- * drawing has one list of five, ordered from the day's best to its worst. The
- * order is the reading: the two ends of the day sit at the two ends of a short
- * list, and the two headings and their two *nothing went down* lines paid for
+ * drawing has one list, ordered from the day's best to its worst. The order is
+ * the reading: the two ends of the day sit at the two ends of a short list,
+ * and the two headings and their two *nothing went down* lines paid for
  * nothing the shortness does not say.
+ *
+ * **Five lines on half the width, ten across the full width** (dashboard grid,
+ * 11/10/2026). The ten are still that **one** list, numbered, flowing down the
+ * left column and then the right: one `<ol>`, laid out by CSS columns, so the
+ * reading order and a screen reader's are the ranking. It is not the old split
+ * back: the two columns are ranks 1–5 and 6–10, not gains and losses.
  *
  * **A sentence for the rest**, and that sentence is the ticket it was written
  * for: measured on the real portfolio, `500.PA` — the second line of it, at
@@ -20,7 +26,8 @@
  * payload is reduced to those same held lines before anything is counted off it
  * (`moversList`), so the two halves of the sentence describe one set.
  *
- * **The ticker is a badge on every line** (#838): the drawing sets the identity
+ * **The ticker is a badge on every line** (#838), cut to what comes before its
+ * first `.` or `-` (`tickerBadge`: `MC.PA` is `MC`): the drawing sets the identity
  * as a mark rather than as a word, and it is what pairs a line here to the same
  * line in the table one page over — the name alone is a rail nothing else on
  * the page can be matched against. It is `aria-hidden`, the symbol being said
@@ -30,12 +37,15 @@ import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
 import { Section } from '@/components/ui/section'
 import type { Mover } from '@/lib/api'
-import { moversList } from '@/lib/dashboard'
+import { MOVERS_ROWS, moversList, tickerBadge } from '@/lib/dashboard'
+import type { Width } from '@/lib/dashboardBlocks'
+import type { RenderState } from '@/lib/dashboardLayout'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
+import { cn } from '@/lib/utils'
 
 interface MoversProps {
   movers: readonly Mover[] | null
@@ -43,13 +53,33 @@ interface MoversProps {
   rows: readonly ShareRow[]
   currency: string | null
   failure?: ReadFailure | null
+  /** The width the grid draws the card at — not the saved one (`lib/dashboardLayout`). */
+  width?: Width
 }
 
-export function Movers({ movers, reference, rows, currency, failure = null }: MoversProps) {
+/** What this block renders: the block's own `null` and the grid's, one rule. */
+export function moversRenderState({
+  movers,
+  failure = null,
+}: Pick<MoversProps, 'movers' | 'failure'>): RenderState {
+  return movers === null && failure === null ? 'pending' : 'renders'
+}
+
+export function Movers({
+  movers,
+  reference,
+  rows,
+  currency,
+  failure = null,
+  width = 'half',
+}: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
-  const { rows: moved, others, unchanged } = moversList(movers, rows)
+  const { rows: moved, others, unchanged } = moversList(movers, rows, MOVERS_ROWS[width])
+  // Ten lines flow into two columns; the first line of each column carries no
+  // rule above it. The columns balance, so the right one starts half-way.
+  const split = width === 'full' ? Math.ceil(moved.length / 2) : moved.length
   return (
     <Section
       title={t('dashboard.movers.title')}
@@ -69,12 +99,23 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
           description={t('dashboard.movers.empty.body')}
         />
       ) : (
-        <ul aria-label={t('dashboard.movers.title')}>
-          {moved.map((mover) => (
+        <ol
+          aria-label={t('dashboard.movers.title')}
+          className={cn(width === 'full' && 'columns-2 gap-x-7')}
+        >
+          {moved.map((mover, index) => (
             <li
               key={mover.symbol}
-              className="flex items-center gap-3 border-b py-2.25 last:border-b-0"
+              className={cn(
+                'flex break-inside-avoid items-center gap-3 border-t py-2.25',
+                (index === 0 || index === split) && 'border-t-0',
+              )}
             >
+              {/* The rank is the list's own position, which `<ol>` already
+                  says to a screen reader: drawn, not read twice. */}
+              <span aria-hidden className="w-4 shrink-0 text-right text-xs text-muted-foreground">
+                {index + 1}
+              </span>
               {/* The identity, set as a mark rather than as a word: a ticker
                     is read as a badge and it is what pairs a line here to the
                     same line in the table one page over. */}
@@ -82,7 +123,7 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
                 aria-hidden
                 className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-accent font-mono text-2xs font-semibold text-muted-foreground"
               >
-                {mover.symbol.slice(0, 4)}
+                {tickerBadge(mover.symbol)}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">
                 {mover.name ?? mover.symbol}
@@ -103,7 +144,7 @@ export function Movers({ movers, reference, rows, currency, failure = null }: Mo
               </span>
             </li>
           ))}
-        </ul>
+        </ol>
       )}
       {others === 0 ? null : (
         <p className="mt-3 text-xs text-muted-foreground">

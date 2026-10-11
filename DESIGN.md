@@ -189,8 +189,34 @@ A section is a tinted plane: `tint` background, `rounded.lg`, padding 20 px 24 p
 border, no shadow of its own. Its first row holds the title on the left and the section's own
 subtotal on the right, like a line of a statement. Rows inside are separated by `rule`.
 
-A section never contains another section. A long page is a sequence of sections, not
-a grid of tiles.
+A section never contains another section. A long page is a sequence of sections; the
+dashboard alone lays its sections out on a grid the owner arranges (below).
+
+### The dashboard grid
+
+Under the hero, the dashboard's sections sit on a grid of **two widths**: half or full,
+20 px apart, one column under 768 px. It is an ordered list of sections, each with a
+width, never a free two-dimensional placement, so the reading order is the focus order.
+
+- A section takes the full width only if it **shows more** there (the movers: five
+  lines on half, ten across the full width). A section that would only stretch is
+  half-only: the gain breakdown and the investment rhythm.
+- Two halves share a row and end on one line: the shorter one's last line (a total)
+  is pushed to the bottom. A half that accepts the full width and is alone on its
+  row is drawn full; a half-only section alone leaves the other half empty.
+- A section whose read is in flight holds its place as an empty plane, with nothing
+  in it (#795).
+
+**Edit mode** ("Modifier le tableau de bord", a Label link on the grid's top edge):
+the link's line becomes a bar, the title "Modifier le tableau de bord" in Section title
+on the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on
+the right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the
+end of its own title row, a 28 px ghost button (44 px on touch), `text-muted` turning
+`foreground` on hover and focus. The sections' content is inert; the hero is neither
+dimmed nor movable. Hidden sections are listed in a "Cartes masquées" section under
+the grid, a chip "Nouveau" on the ones a release added. The empty half beside a
+half-only section shows "Place libre" in Label on a 1 px dashed `rule` outline, in edit
+mode only. Resetting is confirmed in a card (a destructive confirmation).
 
 An account section reads like a statement and ends with the net:
 
@@ -208,6 +234,10 @@ Ce qu'il vous resterait                            18 169,08 €
 The portfolio value (decision 1A, #1099), then one line "Il vous resterait X € net
 d'impôt", then the pills: total gain, today, IRR per year. The TWR lives behind an `ⓘ`
 that explains why it differs from the IRR. One performance figure per screen.
+
+Under them, the portfolio's chart across the hero's full width, with its readings and
+the page's one range control: the real chart, never a decorative sparkline beside a
+dialog holding the real one.
 
 ## Elevation & Depth
 
@@ -228,7 +258,8 @@ page. No zero-offset glow, in either theme.
 
 ## Components
 
-- **Section:** see Layout. No hover state; it is not interactive.
+- **Section:** see Layout. No hover state; the section itself is not interactive. In
+  the dashboard's edit mode its title row carries the ⋯ menu (see The dashboard grid).
 - **Card:** `surface`, `rounded.md`, 14 px padding. Allowed only for something the
   user decides (an analyst proposal, a profile fact to confirm, a first-run step, a
   destructive confirmation) or selects (an account tile). Never a card inside a card.
@@ -283,3 +314,5 @@ page. No zero-offset glow, in either theme.
 | 2026-10-10 | Sections are tinted planes; cards only for decisions and selections | Resolves point 8C of the 5.3 design review (no stacked cards). |
 | 2026-10-10 | Net-of-tax line under the hero, value stays the hero | Keeps decision 1A and #1099 while showing the product's argument first. |
 | 2026-10-10 | Semantic tokens are aliases; the theme is replaceable (#1130) | Gain becomes `primary` and loss `destructive` so any tweakcn theme repaints the app; attention loses its hue and the icon carries the meaning. |
+| 2026-10-11 | The dashboard is a grid of sections the owner arranges | Two widths, an ordered list rather than a 2D grid; full width only where a section shows more; the menu in the title row; designed through office hours, eng and design reviews on 11/10/2026. |
+| 2026-10-11 | The hero draws the real chart, full width | Reverses the sparkline-and-dialog of #1099 (direction 1a): one chart, readable by everyone, instead of a large mute picture plus a dialog. |

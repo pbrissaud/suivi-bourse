@@ -32,8 +32,8 @@
  *    column is gone and is not replaced, so *this did not answer* is said by
  *    the surface that is empty because of it — the page when the two reads it
  *    is *made of* fail, the block when its own read does. That is the same
- *    repair #799 made, kept: a failed sparkline still costs the reader nothing
- *    but the sparkline, and the total gain and its four terms stay on screen.
+ *    repair #799 made, kept: a failed chart still costs the reader nothing
+ *    but the chart, and the total gain and its four terms stay on screen.
  *    What it drops is the announcer at the top, which put the emptiness at one
  *    end of the screen and its reason at the other.
  *  - **What empties the page and what empties a block are two lists.**
@@ -41,30 +41,38 @@
  *    own read is handed to that block. Folded into one, a failed accounts read
  *    would put the page in `failed` and empty it — the very disappearance being
  *    repaired, one level up.
- *  - **The value first, the chart reduced** (dashboard redesign, direction
- *    1a). The page answers *how much is my portfolio worth* before anything
- *    else: the head's hero is the value, with the gain, the day and the year
- *    as pills under it and a sparkline beside it. The full-width chart is one
- *    click away in a dialog, and the accounts comparison left this page for
- *    the accounts page, where it is the subject. Under the head: where the
- *    gain comes from beside the day's movements, half the width each from
- *    `md`, then the rhythm across the full width.
- *  - **One range control, and it is the page's** (#838). It sits under the
- *    sparkline it sets, and the dialog's chart reads the same state.
+ *  - **The value first, the chart under it** (dashboard redesign, direction
+ *    1a, then the dashboard grid's 17A / D25). The page answers *how much is
+ *    my portfolio worth* before anything else: the head's hero is the value,
+ *    with the gain, the day and the year as pills under it, and the real
+ *    chart across the head's full width below them. The accounts comparison
+ *    left this page for the accounts page, where it is the subject.
+ *  - **Under the head, a grid the owner arranges** (`DashboardGrid`): the
+ *    cards, their order and their widths come from the saved layout; each card
+ *    says what it renders through its `xxxRenderState`, the same function it
+ *    calls for its own `null`, so the grid never holds a place for a card
+ *    that draws nothing.
+ *  - **One range control, and it is the page's** (#838). It sits above the
+ *    chart it sets.
  */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
-import { GainBreakdown } from '@/components/dashboard/GainBreakdown'
+import { DashboardGrid, type GridBlock } from '@/components/dashboard/DashboardGrid'
+import { GainBreakdown, gainBreakdownRenderState } from '@/components/dashboard/GainBreakdown'
 import { DashboardHead } from '@/components/dashboard/Head'
 import { HeroChart } from '@/components/dashboard/HeroChart'
-import { InvestmentRhythm } from '@/components/dashboard/InvestmentRhythm'
-import { Movers } from '@/components/dashboard/Movers'
+import {
+  InvestmentRhythm,
+  investmentRhythmRenderState,
+} from '@/components/dashboard/InvestmentRhythm'
+import { Movers, moversRenderState } from '@/components/dashboard/Movers'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { api } from '@/lib/api'
 import { buildAccountRows } from '@/lib/accounts'
+import type { BlockId } from '@/lib/dashboardBlocks'
 import {
   DEFAULT_DASHBOARD_RANGE,
   dashboardState,
@@ -157,6 +165,13 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
+  // The grid's own read, started here with the page's others so it does not
+  // wait for the page to reach `portfolio` before leaving: same key as
+  // `DashboardGrid`'s, so it is one request.
+  useQuery({ queryKey: ['dashboard-layout'], queryFn: api.dashboardLayout })
+  // While the grid is being arranged, the hero is frozen too (12B).
+  const [arranging, setArranging] = useState(false)
+
   // **The two reads the page is made of**, and what they say when they fail:
   // the page is empty, and this is why. `oneFailure` keeps the first — an
   // unreadable store fails both at once, and one screen owes one sentence.
@@ -164,7 +179,7 @@ export default function DashboardPage() {
 
   // **One failure per block, handed to the block.** Each is the read that block
   // is made of, so what the reader loses is that block and what they are told
-  // is why — in the space the sparkline, the list or the months would have
+  // is why — in the space the chart, the list or the months would have
   // filled.
   const chartFailure = oneFailure(readConditions({ errors: [perf.error, valuation.error] }))
   const moversFailure = oneFailure(readConditions({ errors: [movers.error] }))
@@ -189,6 +204,41 @@ export default function DashboardPage() {
       ? null
       : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
   )
+
+  // **The three cards, each with the rule for what it renders.** `?? null` and
+  // never `?? []`: these reads are armed only once the page reaches
+  // `portfolio`, so there is a real window in which an empty array would state
+  // *« Rien à comparer »* about movements nobody has answered for.
+  function gridBlocks(): Record<BlockId, GridBlock> {
+    const breakdown = { positions: positions.data ?? null, totals: totals.data ?? null }
+    const moversRead = { movers: movers.data?.movers ?? null, failure: moversFailure }
+    const rhythmRead = { rhythm: rhythm.data ?? null, failure: rhythmFailure }
+    return {
+      'gain-breakdown': {
+        state: gainBreakdownRenderState(breakdown),
+        bare: false,
+        render: () => <GainBreakdown {...breakdown} />,
+      },
+      rhythm: {
+        state: investmentRhythmRenderState(rhythmRead),
+        bare: rhythmRead.rhythm === null,
+        render: () => <InvestmentRhythm {...rhythmRead} />,
+      },
+      movers: {
+        state: moversRenderState(moversRead),
+        bare: moversRead.movers === null,
+        render: (width) => (
+          <Movers
+            {...moversRead}
+            width={width}
+            reference={movers.data?.reference ?? null}
+            rows={rows}
+            currency={positions.data?.base_currency ?? null}
+          />
+        ),
+      },
+    }
+  }
 
   // **The band's sentence, one floor down** (#829). With no reporting currency
   // nothing is converted and the perf job writes nothing at all, so this page
@@ -215,56 +265,31 @@ export default function DashboardPage() {
           three copies of one claim is three chances to disagree. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
-      <DashboardHead
-        positions={positions.data ?? null}
-        totals={totals.data ?? null}
-        rebuilding={runtime.data?.rebuilding ?? null}
-        history={perf.data?.points ?? null}
-        accounts={accountRows}
-        aside={
-          state !== 'portfolio' ? null : (
-            <HeroChart
-              ledger={ledger}
-              range={range}
-              onRangeChange={setRange}
-              currency={totals.data?.base_currency ?? null}
-              performance={perf.data?.points ?? null}
-              valuation={valuation.data?.points ?? null}
-              failure={chartFailure}
-            />
-          )
-        }
-      />
+      <div inert={arranging || undefined}>
+        <DashboardHead
+          positions={positions.data ?? null}
+          totals={totals.data ?? null}
+          rebuilding={runtime.data?.rebuilding ?? null}
+          history={perf.data?.points ?? null}
+          accounts={accountRows}
+          chart={
+            state !== 'portfolio' ? null : (
+              <HeroChart
+                ledger={ledger}
+                range={range}
+                onRangeChange={setRange}
+                currency={totals.data?.base_currency ?? null}
+                performance={perf.data?.points ?? null}
+                valuation={valuation.data?.points ?? null}
+                failure={chartFailure}
+              />
+            )
+          }
+        />
+      </div>
 
       {state !== 'portfolio' ? null : (
-        <>
-          {/* **A sequence of sections, not a grid of tiles** (DESIGN.md), 20 px
-              apart: the gain's decomposition first, then the day's movements,
-              then the rhythm. */}
-          <GainBreakdown positions={positions.data ?? null} totals={totals.data ?? null} />
-          <Movers
-            // `?? null` and never `?? []`: this read is armed only once the
-            // page reaches `portfolio`, so there is a real window in which an
-            // empty array would state *« Rien à comparer »* about movements
-            // nobody has answered for.
-            movers={movers.data?.movers ?? null}
-            reference={movers.data?.reference ?? null}
-            rows={rows}
-            currency={positions.data?.base_currency ?? null}
-            failure={moversFailure}
-          />
-
-          {/* **A block and not a page**. The sidebar's five entries
-              are argued as three and two, and a sixth would open a page holding
-              one block; the eventual home is a `Projections` page, created the
-              day #757 or #758 gives it a second occupant. What it holds is a
-              figure and twelve months drawn, and the months are what the width
-              is for.
-
-              `?? null` and never a shape assembled here: a read that has not
-              answered renders nothing at all, title included. */}
-          <InvestmentRhythm rhythm={rhythm.data ?? null} failure={rhythmFailure} />
-        </>
+        <DashboardGrid blocks={gridBlocks()} onEditingChange={setArranging} />
       )}
     </div>
   )

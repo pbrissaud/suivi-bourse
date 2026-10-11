@@ -67,14 +67,10 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
  * card** it is about.
  */
 async function chartCard(): Promise<HTMLElement> {
-  // The full chart is behind the hero's link since the redesign (direction
-  // 1a): the page draws a sparkline, and the chart with its readings, its
-  // legend and its sentence opens in a dialog. The frame is that dialog, found
-  // from the **reading** selector — the group where there are two readings,
-  // the heading where there is only one. The chart has no card of its own.
-  if (screen.queryByRole('dialog') === null) {
-    fireEvent.click(await screen.findByRole('button', { name: 'Voir la courbe' }))
-  }
+  // The chart is under the hero since the dashboard grid (17A / D25): the
+  // frame is the hero's chart slot, found from the **reading** selector — the
+  // group where there are two readings, the heading where there is only one.
+  // The chart has no card of its own.
   const anchor = await waitFor(() => {
     const found =
       screen.queryByRole('group', { name: 'Lecture' }) ??
@@ -82,7 +78,7 @@ async function chartCard(): Promise<HTMLElement> {
     if (found === null) throw new Error('the chart slot has not landed')
     return found
   })
-  return anchor.closest('[role="dialog"]') as HTMLElement
+  return anchor.closest('[data-hero-chart]') as HTMLElement
 }
 
 describe('the value is the hero (direction 1a)', () => {
@@ -106,27 +102,24 @@ describe('the value is the hero (direction 1a)', () => {
     expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
   })
 
-  it('draws a sparkline and keeps the full chart one click away', async () => {
+  // Replaces « draws a sparkline and keeps the full chart one click away »
+  // (#1099, direction 1a): the dashboard grid's 17A / D25 put the real chart
+  // back on the page, under the value, and the dialog went with the sparkline.
+  it('draws the real chart under the value, with its readings and one range control', async () => {
     renderApp()
     await hero()
 
-    // The chart is not on the page: its reading selector is not drawn until
-    // the dialog opens, and the range control sits under the sparkline.
-    const open = await screen.findByRole('button', { name: 'Voir la courbe' })
-    expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
-
-    fireEvent.click(open)
-    const dialog = within(await screen.findByRole('dialog', { name: 'Courbe du portefeuille' }))
-    expect(dialog.getByRole('group', { name: 'Lecture' })).toBeInTheDocument()
-    expect(dialog.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: 'Lecture' })).toBeInTheDocument()
+    expect(screen.getAllByRole('radiogroup', { name: 'Plage' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Voir la courbe' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('puts the four terms in a section of their own, under the total they add up to', async () => {
     renderApp()
     await hero()
 
-    const card = within(screen.getByRole('region', { name: 'D’où vient le gain' }))
+    const card = within(await screen.findByRole('region', { name: 'D’où vient le gain' }))
     expect(card.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/300,00/)
     expect(card.getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(/50,00/)
     expect(card.getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/25,00/)
@@ -187,7 +180,9 @@ describe('the gain is computed, never read', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /300,00/,
+    )
     expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
     expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
     expect(figure('Frais de versement')).toHaveTextContent(/5,00/)
@@ -480,7 +475,9 @@ describe('during the reconstruction', () => {
     const head = await hero()
     expect(head).toHaveTextContent(/370,00/)
     expect(figure('TRI')).toHaveTextContent(/\+3,22/)
-    expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /300,00/,
+    )
 
     // Everything else is untouched — the degradation is the year-to-date and
     // nothing but it.
@@ -584,7 +581,7 @@ describe('a perf pass that raised', () => {
     // **And the figures stay.** The sentence qualifies them; it does not
     // replace them, which is the whole objection `absence.ts` raised against
     // letting an optional read decide what exists.
-    expect(figure('Gain total')).toHaveTextContent(/370,00/)
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
   })
 
   it('says nothing when the runtime read itself refuses', async () => {
@@ -602,7 +599,7 @@ describe('a perf pass that raised', () => {
 
     await screen.findByRole('group', { name: 'Gain total' })
     expect(screen.queryByText(/Le dernier recalcul a échoué/)).not.toBeInTheDocument()
-    expect(figure('Gain total')).toHaveTextContent(/370,00/)
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
   })
 })
 
@@ -702,7 +699,9 @@ describe('a secondary read that fails is named, and the head keeps its figures',
   async function theHeadStandsWhole() {
     const head = await screen.findByRole('group', { name: 'Gain total' })
     expect(head).toHaveTextContent(/370,00/)
-    expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /300,00/,
+    )
     expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
     expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
     expect(figure('Frais de versement')).toHaveTextContent(/5,00/)
@@ -794,7 +793,9 @@ describe('the statistics shrink instead of filling with dashes', () => {
     const head = await hero()
     expect(head).toHaveTextContent('—')
     expect(head).not.toHaveTextContent(/375,00/)
-    expect(screen.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/300,00/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /300,00/,
+    )
 
     for (const absent of ['Valeur totale', 'Versé net', 'TRI', 'TWR']) {
       expect(screen.queryByRole('group', { name: absent })).not.toBeInTheDocument()
@@ -918,7 +919,9 @@ describe('what is merely missing is named, never dashed', () => {
     const head = await hero()
     expect(head).toHaveTextContent(/en attente du taux/)
     expect(head).not.toHaveTextContent(/^Gain total\s*—/)
-    expect(figure('Plus-value latente')).toHaveTextContent(/en attente du taux/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /en attente du taux/,
+    )
   })
 
   it('names the rebuild on a fresh install, and never the exchange rate', async () => {
@@ -950,7 +953,9 @@ describe('what is merely missing is named, never dashed', () => {
     //and a total refused in silence is a figure gone out with no
     // explanation under it.
     expect(head).not.toHaveTextContent(/^Gain total\s*—/)
-    expect(figure('Plus-value latente')).toHaveTextContent(/historique en cours de reconstitution/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /historique en cours de reconstitution/,
+    )
   })
 
   it('does not let a **sold** line with no rate blank the whole headline', async () => {
@@ -984,7 +989,9 @@ describe('what is merely missing is named, never dashed', () => {
     const head = await hero()
     expect(head).toHaveTextContent(/490,00/)
     expect(head).not.toHaveTextContent(/en attente du taux/)
-    expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+      /300,00/,
+    )
   })
 })
 
@@ -1317,7 +1324,7 @@ describe('the movers', () => {
   })
 })
 
-describe('the page is a sequence of sections, not a grid of cards (DESIGN.md)', () => {
+describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
   it('draws its three blocks as sections and no card at all', async () => {
     const { container } = renderApp()
     await screen.findByRole('list', { name: 'Mouvements' })
@@ -1326,10 +1333,12 @@ describe('the page is a sequence of sections, not a grid of cards (DESIGN.md)', 
     // A card is for something the user decides; nothing on this page is.
     expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(0)
     const sections = container.querySelectorAll('[data-slot="section"]')
+    // The default layout of the dashboard grid: the gain and the rhythm side by
+    // side, then the movers across the full width (an intended change, D5).
     expect([...sections].map((one) => one.querySelector('h2')?.textContent)).toEqual([
       'D’où vient le gain',
-      'Mouvements',
       'Rythme d’investissement',
+      'Mouvements',
     ])
     // And never one inside another.
     expect(container.querySelectorAll('[data-slot="section"] [data-slot="section"]')).toHaveLength(
@@ -1521,7 +1530,7 @@ describe('the four states of the page', () => {
     //   realised +120,00 − 45,00 · dividends +10,00 · fees −5,00 = +80,00
     const head = await hero()
     expect(head).toHaveTextContent(/80,00/)
-    expect(figure('Plus-value latente')).toHaveTextContent('—')
+    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent('—')
     expect(figure('Plus-value réalisée')).toHaveTextContent(/75,00/)
     expect(figure('Titres')).toHaveTextContent(/0,00/)
 

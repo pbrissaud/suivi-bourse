@@ -34,8 +34,11 @@
  * they are subordinated by distance now, which a reader cannot sum by accident
  * either.
  *
- * **The chart is the hero's right-hand side** (`HeroChart.tsx`), handed in by
- * the page as `aside`: the block still reads nothing of its own.
+ * **The chart is under the hero, across its full width** (`HeroChart.tsx`,
+ * dashboard grid 17A / D25, 11/10/2026), handed in by the page as `chart`: the
+ * block still reads nothing of its own. It was a 64 px sparkline on the
+ * right with the real chart in a dialog (#1099, direction 1a); the real chart
+ * is now on the page, and the dialog is gone.
  *
  * **The year-to-date is two figures that do not touch**: the euro on a pill
  * beside the head figure, the percentage inside the IRR's bubble, with the TWR
@@ -103,10 +106,11 @@ interface DashboardHeadProps {
    */
   accounts?: readonly AccountRow[] | null
   /**
-   * What the hero carries on its right — the sparkline and the range control,
-   * composed by the page, which owns the range. `null` draws the value alone.
+   * The portfolio's chart and its range control, under the value and its
+   * pills — composed by the page, which owns the range. `null` draws the value
+   * alone.
    */
-  aside?: ReactNode
+  chart?: ReactNode
 }
 
 export function DashboardHead({
@@ -115,7 +119,7 @@ export function DashboardHead({
   rebuilding,
   history,
   accounts = null,
-  aside = null,
+  chart = null,
 }: DashboardHeadProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -262,9 +266,6 @@ export function DashboardHead({
     // off the first section, the one large gap the layout allows there.
     <div className="mb-5">
       <div>
-        {/* **A row that wraps, and not a grid of two fixed tracks** (#838):
-            the value on the left, the curve on the right, and under `sm` the
-            curve goes under the pills at the full width of the content. */}
         <div className="flex flex-wrap items-end justify-between gap-6">
           <Stat
             size="head"
@@ -318,9 +319,9 @@ export function DashboardHead({
               )}
             </div>
           </Stat>
-
-          {aside}
         </div>
+
+        {chart === null ? null : <div className="mt-6">{chart}</div>}
 
         {/* The statistics, on a row of their own — and only the ones that exist.
         They are **not** terms of the gain: `Versé net` and `Titres` are what

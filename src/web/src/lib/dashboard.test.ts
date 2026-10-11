@@ -17,7 +17,9 @@ import {
   dashboardState,
   dayMove,
   hasCashLedger,
+  MOVERS_ROWS,
   moversList,
+  tickerBadge,
   performanceRows,
   windowFloor,
   yFloor,
@@ -191,6 +193,33 @@ describe('the movers', () => {
     return rowsOf(symbols.map((symbol) => aPosition({ symbol })))
   }
 
+  it('cuts at five on half the width and at ten across the full width, by size then sign', () => {
+    const symbols = Array.from({ length: 12 }, (_, index) => `S${index}`)
+    const movers = symbols.map((symbol, index) =>
+      aMover({ symbol, change_pct: ((index % 2 === 0 ? 1 : -1) * (index + 1)) / 100 }),
+    )
+
+    const half = moversList(movers, heldLines(symbols), MOVERS_ROWS.half)
+    const full = moversList(movers, heldLines(symbols), MOVERS_ROWS.full)
+
+    expect(half.rows).toHaveLength(5)
+    expect(full.rows).toHaveLength(10)
+    // The ten that moved most, either way, laid out from the best to the worst.
+    expect(full.rows.map((one) => one.symbol)).toEqual([
+      'S10',
+      'S8',
+      'S6',
+      'S4',
+      'S2',
+      'S3',
+      'S5',
+      'S7',
+      'S9',
+      'S11',
+    ])
+    expect(full.others).toBe(2)
+  })
+
   it('counts what it does not show, and a line that moved by nothing with it', () => {
     // Measured: the portfolio's second line, at 16,6 % of it, moved 0,00 % — so
     // it entered no column and vanished from the list.
@@ -337,5 +366,19 @@ describe('the four states of the page', () => {
     expect(
       dashboardState({ failed: true, positions: aPositionsPayload(), totals: aTotalsPayload() }),
     ).toBe('failed')
+  })
+})
+
+describe('tickerBadge', () => {
+  it.each([
+    ['MC.PA', 'MC'],
+    ['BTC-EUR', 'BTC'],
+    ['ASML.AS', 'ASML'],
+    ['NVDA', 'NVDA'],
+    ['BRK-B', 'BRK'],
+    ['GOOGL', 'GOOG'],
+    ['.HIDDEN', '.HID'],
+  ])('reads %s as %s', (symbol, badge) => {
+    expect(tickerBadge(symbol)).toBe(badge)
   })
 })
