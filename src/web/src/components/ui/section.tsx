@@ -53,6 +53,11 @@ export function Section({
 }) {
   const id = useId()
   const frame = useContext(SectionControlsContext)
+  const heading = (
+    <h2 id={id} className="text-2xl font-semibold">
+      {title}
+    </h2>
+  )
   return (
     <section
       data-slot="section"
@@ -65,16 +70,12 @@ export function Section({
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         {frame?.leading ? (
-          <div className="-ml-2 flex items-center gap-1">
+          <div className="-ml-2 flex items-center gap-2">
             {frame.leading}
-            <h2 id={id} className="text-2xl font-semibold">
-              {title}
-            </h2>
+            {heading}
           </div>
         ) : (
-          <h2 id={id} className="text-2xl font-semibold">
-            {title}
-          </h2>
+          heading
         )}
         {frame?.controls ? (
           <div className="flex items-center gap-2 self-center">

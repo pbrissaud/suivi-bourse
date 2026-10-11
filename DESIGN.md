@@ -207,19 +207,20 @@ width, never a free two-dimensional placement, so the reading order is the focus
 - A section whose read is in flight holds its place as an empty plane, with nothing
   in it (#795).
 
-**Edit mode** ("Modifier le tableau de bord", a Label link on the grid's top edge):
-the link's line becomes a bar, the title "Modifier le tableau de bord" in Section title
-on the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on
-the right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the
-end of its own title row, a 28 px ghost button (44 px on touch), `text-muted` turning
-`foreground` on hover and focus. On a desktop with a fine pointer, a ⠿ drag handle
-with the same look (and `cursor: grab`) sits before the title; dragging follows the
-menu's rule (a full section lands between two rows, a half takes another half's place)
-and keeps every section's width until the drop. Phones have the menu only. The sections' content is inert; the hero is neither
-dimmed nor movable. Hidden sections are listed in a "Cartes masquées" section under
-the grid, a chip "Nouveau" on the ones a release added. The empty half beside a
-half-only section shows "Place libre" in Label on a 1 px dashed `rule` outline, in edit
-mode only. Resetting is confirmed in a card (a destructive confirmation).
+**Edit mode** ("Modifier le tableau de bord", a Label link on the grid's top edge): the
+link's line becomes a bar, the title "Modifier le tableau de bord" in Section title on
+the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on the
+right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the end of
+its own title row, a 28 px ghost button (44 px on touch), `text-muted` turning
+`foreground` on hover and focus. On a desktop with a fine pointer, a ⠿ drag handle with
+the same look (and `cursor: grab`) sits before the title; dragging follows the menu's
+rule (a full section lands between two rows, a half takes another half's place) and
+keeps every section's width until the drop. Phones have the menu only. The sections'
+content is inert; the hero is neither dimmed nor movable. Hidden sections are listed in
+a "Cartes masquées" section under the grid, a chip "Nouveau" on the ones a release
+added. The empty half beside a half-only section shows "Place libre" in Label on a 1 px
+dashed `rule` outline, in edit mode only. Resetting is confirmed in a card (a
+destructive confirmation).
 
 An account section reads like a statement and ends with the net:
 

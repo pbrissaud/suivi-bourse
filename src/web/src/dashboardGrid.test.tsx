@@ -417,6 +417,32 @@ describe('dragging a card', () => {
     )
   })
 
+  it('lets a half swap with another, and come back home in the same drag', async () => {
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Rythme d’investissement', ' {ArrowUp}')
+    expect(await screen.findByText('Rythme d’investissement, position 1 sur 3')).toBeInTheDocument()
+
+    await user.keyboard('{ArrowDown} ')
+    expect(
+      await screen.findByText('Rythme d’investissement déposée, position 2 sur 3'),
+    ).toBeInTheDocument()
+    expect(order(container)).toEqual(TITLES)
+  })
+
+  it('says a drop in place, and leaves nothing to write', async () => {
+    const writes = recordWrites()
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Mouvements', '  ')
+
+    expect(await screen.findByText('Mouvements déposée, position 3 sur 3')).toBeInTheDocument()
+    expect(order(container)).toEqual(TITLES)
+    await user.click(screen.getByRole('button', { name: 'Terminé' }))
+    await landed()
+    expect(writes).toEqual([])
+  })
+
   it('puts everything back on Escape', async () => {
     const { user, container } = renderApp()
     await user.click(await landed())

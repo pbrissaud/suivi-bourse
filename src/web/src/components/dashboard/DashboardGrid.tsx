@@ -164,7 +164,9 @@ export function DashboardGrid({
   // The announcement and the grid read one result per `dragover`, whichever
   // of the two dnd-kit calls first.
   const outcomes = useRef(new WeakMap<DragOverEvent, Placement[]>())
-  const current = useRef<Placement[]>([])
+  // The order on screen, for the `dragstart` announcement: dnd-kit builds
+  // its announcer once, and reads it through this.
+  const latest = useRef<Placement[]>([])
 
   const editing = draft !== null
   // **Unread is only « never read »** (D6): a background refetch that fails
@@ -207,9 +209,13 @@ export function DashboardGrid({
       // A card dropped with the mouse is still flying to its cell, lifted out
       // of the page, where it would lose the focus on landing: it takes it then.
       const landing = target?.closest('[data-dashboard-grid] > *')?.getAnimations() ?? []
-      void Promise.all(landing.map((one) => one.finished.catch(() => undefined))).then(() =>
-        target?.focus(),
-      )
+      const before = document.activeElement
+      void Promise.all(landing.map((one) => one.finished.catch(() => undefined))).then(() => {
+        // Unless the owner has gone elsewhere in the meantime.
+        if (document.activeElement === before || document.activeElement === document.body) {
+          target?.focus()
+        }
+      })
       setFocus(null)
     }, 0)
     return () => window.clearTimeout(timer)
@@ -223,12 +229,13 @@ export function DashboardGrid({
   }, [editing, onEditingChange])
 
   useLayoutEffect(() => {
-    current.current = placements
+    latest.current = placements
   })
 
   // Under 768 px the menu is the way to move a card (15A); a coarse pointer
-  // hides the handle in CSS.
-  const draggable = editing && columns === 2
+  // hides the handle in CSS. A save in flight ends the session: nothing more
+  // can land in the draft it is writing.
+  const draggable = editing && columns === 2 && !write.isPending
 
   // dnd-kit's live region is mounted only while a card can be dragged: the
   // page keeps its two permanent announcers, and no more.
@@ -238,13 +245,15 @@ export function DashboardGrid({
     return [
       ...defaultPreset.plugins,
       Accessibility.configure({
+        // Said at once: a position announced late would land after the drop's.
+        debounce: 0,
         screenReaderInstructions: { draggable: t('dashboard.edit.dragInstructions') },
         announcements: {
           dragstart: ({ operation: { source } }: DragStartEvent) =>
             source
               ? t('dashboard.edit.picked', {
                   card: cardName(source.id),
-                  ...positionOf(current.current, source.id as BlockId),
+                  ...positionOf(latest.current, source.id as BlockId),
                 })
               : undefined,
           dragover: (event: DragOverEvent) => {
@@ -274,11 +283,16 @@ export function DashboardGrid({
     if (now === null || !source || !target || source.id === target.id) return null
     let next = outcomes.current.get(event)
     if (next === undefined) {
-      const order = now.shown.filter((one) => !one.hidden).map((one) => one.id)
+      const ids = (placements: Placement[]) =>
+        placements.filter((one) => !one.hidden).map((one) => one.id)
+      const order = ids(now.shown)
       const active = source.id as BlockId
       const over = target.id as BlockId
+      // The card now standing where the dragged one began is the way back:
+      // without this, a half swapped away could not be brought home.
+      const home = order.indexOf(over) === ids(now.start).indexOf(active)
       const side = order.indexOf(over) < order.indexOf(active) ? 'before' : 'after'
-      next = dropBlock(now.start, active, over, side) ?? now.start
+      next = home ? now.start : (dropBlock(now.start, active, over, side) ?? now.start)
       outcomes.current.set(event, next)
     }
     return next
@@ -369,7 +383,8 @@ export function DashboardGrid({
     const now = drag.current
     track(null)
     const id = operation.source?.id as BlockId | undefined
-    if (now === null || id === undefined) return
+    // The grid went under 768 px, or the session ended, under the pointer.
+    if (now === null || id === undefined || !draggable) return
     const handle: FocusTarget = { kind: 'handle', id }
     if (canceled) {
       setFocus(handle)

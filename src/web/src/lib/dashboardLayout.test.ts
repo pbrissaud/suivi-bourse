@@ -278,6 +278,11 @@ describe('dropBlock', () => {
     expect(ids(dropBlock(withHiddenFirst, 'm', 'a', 'before'))).toBe('n,m,a')
   })
 
+  it('moves a full card past another full card, and a lone half nowhere past it', () => {
+    expect(ids(dropBlock([p('m', 'full'), p('n', 'full')], 'n', 'm', 'before'))).toBe('n,m')
+    expect(dropBlock([p('a', 'half'), p('m', 'full')], 'a', 'm', 'before')).toBeNull()
+  })
+
   it('leaves the input untouched', () => {
     const before = JSON.stringify(layout)
     dropBlock(layout, 'm', 'a', 'before')

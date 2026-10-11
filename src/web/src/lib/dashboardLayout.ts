@@ -255,8 +255,7 @@ export function moveBlock<Id extends string>(
     ;[order[a], order[b]] = [order[b], order[a]]
   }
 
-  let next = 0
-  return placements.map((one) => (one.hidden ? one : order[next++]))
+  return inSlots(placements, order)
 }
 
 /**
@@ -306,6 +305,14 @@ export function dropBlock<Id extends string>(
   }
 
   if (order.every((one, index) => one === visible[index])) return null
+  return inSlots(placements, order)
+}
+
+/** The visible cards in their new `order`, the hidden ones kept in their slots. */
+function inSlots<Id extends string>(
+  placements: readonly Placement<Id>[],
+  order: readonly Placement<Id>[],
+): Placement<Id>[] {
   let next = 0
   return placements.map((one) => (one.hidden ? one : order[next++]))
 }
