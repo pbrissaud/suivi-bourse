@@ -470,7 +470,7 @@ export function DashboardGrid({
             aria-describedby={unread ? 'dashboard-layout-unread' : undefined}
             onClick={enter}
             className={cn(
-              'label rounded-sm underline underline-offset-4 hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+              'label -my-1 inline-flex min-h-6 min-w-6 items-center justify-center rounded-sm underline underline-offset-4 hover:text-foreground pointer-coarse:-my-3.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:pointer-events-none disabled:opacity-50',
               FOCUS_RING,
             )}
           >

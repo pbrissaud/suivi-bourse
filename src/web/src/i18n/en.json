@@ -192,6 +192,7 @@
   "dashboard.edit.dragCancelled": "Move cancelled",
   "dashboard.movers.since": "Since the previous close",
   "dashboard.movers.others": "{count, plural, one {# other holding is} other {# other holdings are}} not shown here{unchanged, plural, =0 {} one {, # of which did not move} other {, # of which did not move}}.",
+  "dashboard.movers.othersAllUnchanged": "{count, plural, one {The other holding did not move} other {The # other holdings did not move}}.",
   "dashboard.movers.empty": "Nothing to compare",
   "dashboard.movers.empty.body": "A holding appears here once it has a price on two sessions.",
   "dashboard.rhythm.title": "Investment rhythm",

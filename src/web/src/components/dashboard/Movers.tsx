@@ -69,9 +69,12 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
   const f = useFormatters()
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
   const { rows: moved, others, unchanged } = moversList(movers, rows, MOVERS_ROWS[width])
-  // Ten lines flow into two columns; the first line of each column carries no
-  // rule above it. The columns balance, so the right one starts half-way.
-  const split = width === 'full' ? Math.ceil(moved.length / 2) : moved.length
+  // More lines than half the width holds flow into two columns; the first line
+  // of each column carries no rule above it. The columns balance, so the right
+  // one starts half-way. Fewer stay one column across the width (#1145): a
+  // short list split in two left its figures half-way across the section.
+  const twoColumns = width === 'full' && moved.length > MOVERS_ROWS.half
+  const split = twoColumns ? Math.ceil(moved.length / 2) : moved.length
   return (
     <Section
       title={t('dashboard.movers.title')}
@@ -88,7 +91,7 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
       ) : (
         <ol
           aria-label={t('dashboard.movers.title')}
-          className={cn(width === 'full' && 'columns-2 gap-x-7')}
+          className={cn(twoColumns && 'columns-2 gap-x-7')}
         >
           {moved.map((mover, index) => (
             <li
@@ -99,10 +102,13 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
               )}
             >
               {/* The rank is the list's own position, which `<ol>` already
-                  says to a screen reader: drawn, not read twice. */}
-              <span aria-hidden className="w-4 shrink-0 text-right text-xs text-muted-foreground">
-                {index + 1}
-              </span>
+                  says to a screen reader: drawn, not read twice. One line has
+                  nothing to be ranked against, so it draws none (#1147). */}
+              {moved.length === 1 ? null : (
+                <span aria-hidden className="w-4 shrink-0 text-right text-xs text-muted-foreground">
+                  {index + 1}
+                </span>
+              )}
               {/* The identity, set as a mark rather than as a word: a ticker
                     is read as a badge and it is what pairs a line here to the
                     same line in the table one page over. */}
@@ -135,7 +141,10 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
       )}
       {others === 0 ? null : (
         <p className="mt-3 text-xs text-muted-foreground">
-          {t('dashboard.movers.others', { count: others, unchanged })}
+          {/* Every hidden line unchanged is said once, not as « dont 11 » of 11 (#1146). */}
+          {unchanged === others
+            ? t('dashboard.movers.othersAllUnchanged', { count: others })
+            : t('dashboard.movers.others', { count: others, unchanged })}
         </p>
       )}
     </Section>

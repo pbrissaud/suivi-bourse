@@ -17,6 +17,7 @@ import { HttpResponse, delay, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
+import { gainCascade, portfolioTerms } from '@/lib/gain'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aClosedPosition,
@@ -223,6 +224,94 @@ describe('the gain is computed, never read', () => {
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/375,00/)
     expect(screen.queryByRole('group', { name: 'Frais de versement' })).not.toBeInTheDocument()
     expect(screen.queryByText('Frais de versement')).not.toBeInTheDocument()
+  })
+})
+
+describe('the breakdown draws a cascade onto its total (#1143)', () => {
+  it('gives every row a track whose segment sits where the helper puts it', async () => {
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    await within(card).findByRole('group', { name: 'Gain total' })
+
+    // +300,00 · +50,00 · +25,00 · −5,00 = 370,00, the defaults the head reads.
+    const expected = gainCascade(portfolioTerms(defaultPositions(), -5))
+    expect(expected?.steps).toHaveLength(5)
+    const tracks = card.querySelectorAll<HTMLElement>('[data-cascade-step]')
+    expect([...tracks].map((track) => track.dataset.cascadeStep)).toEqual([
+      'unrealised',
+      'realised',
+      'dividends',
+      'transferFees',
+      'total',
+    ])
+    for (const step of expected?.steps ?? []) {
+      const track = card.querySelector(`[data-cascade-step="${step.term}"]`)
+      const segment = track?.querySelector<HTMLElement>('[style*="width"]')
+      expect(parseFloat(segment?.style.left ?? '')).toBeCloseTo(step.left * 100, 6)
+      expect(parseFloat(segment?.style.width ?? '')).toBeCloseTo(step.width * 100, 6)
+    }
+  })
+
+  it('colours a segment as its figure, at full strength (#1153)', async () => {
+    // A realised loss: the signed terms take the sign's hue, the two that never
+    // change sign take the neutral ink — never an opacity shade of the gain.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(
+            defaultPositions().map((position) =>
+              position.realised === 0 ? position : { ...position, realised: -200 },
+            ),
+          ),
+        ),
+      ),
+    )
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    await within(card).findByRole('group', { name: 'Gain total' })
+
+    const segment = (term: string) =>
+      card.querySelector(`[data-cascade-step="${term}"] [style*="width"]`)
+    expect(segment('unrealised')).toHaveClass('bg-gain')
+    expect(segment('realised')).toHaveClass('bg-loss')
+    expect(segment('dividends')).toHaveClass('bg-muted-foreground')
+    expect(segment('transferFees')).toHaveClass('bg-muted-foreground')
+    expect(segment('total')).toHaveClass('bg-gain')
+    expect(card.innerHTML).not.toMatch(/bg-(gain|loss)\/\d+/)
+  })
+
+  it('leaves the latent row its zero mark alone when nothing is held (#727)', async () => {
+    const closed = [
+      aClosedPosition({ symbol: 'ZZD', realised: 120, dividends: 30, closed_at: '2025-11-04' }),
+    ]
+    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(closed))))
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    await within(card).findByRole('group', { name: 'Gain total' })
+
+    const expected = gainCascade(portfolioTerms(closed, -5))
+    const latent = card.querySelector('[data-cascade-step="unrealised"]')
+    expect(latent).not.toBeNull()
+    expect(latent?.querySelector('[style*="width"]')).toBeNull()
+    const zero = latent?.querySelector<HTMLElement>('[style]')
+    expect(parseFloat(zero?.style.left ?? '')).toBeCloseTo((expected?.zero ?? NaN) * 100, 6)
+    expect(card.querySelector('[data-cascade-step="total"] [style*="width"]')).not.toBeNull()
+  })
+
+  it('draws no track at all while the total waits for a rate', async () => {
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([aPosition({ price: 125, currency: 'USD', rate: null })]),
+        ),
+      ),
+    )
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    expect(await within(card).findByRole('group', { name: 'Gain total' })).toHaveTextContent(
+      /en attente du taux/,
+    )
+    expect(card.querySelector('[data-cascade-step]')).toBeNull()
   })
 })
 
@@ -1312,6 +1401,76 @@ describe('the movers', () => {
       await screen.findByText(/2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé/),
     ).toBeInTheDocument()
     expect(screen.queryByText('Zeta Delta')).not.toBeInTheDocument()
+  })
+
+  describe('says *dont 11* out of 11 once (#1146)', () => {
+    // One line moved, `others` held lines behind it, `unchanged` of them at 0,00 %
+    // and the rest never quoted.
+    const hidden = (others: number, unchanged: number) => {
+      const symbols = Array.from({ length: others }, (_, i) => `ZH${i}`)
+      server.use(
+        http.get(ROUTES.positions, () =>
+          HttpResponse.json(
+            aPositionsPayload([
+              aPosition(),
+              ...symbols.map((symbol) => aPosition({ symbol, name: `Hidden ${symbol}` })),
+            ]),
+          ),
+        ),
+        http.get(ROUTES.movers, () =>
+          HttpResponse.json(
+            aMoversPayload([
+              aMover(),
+              ...symbols.slice(0, unchanged).map((symbol) =>
+                aMover({
+                  symbol,
+                  name: `Hidden ${symbol}`,
+                  change: 0,
+                  change_pct: 0,
+                  contribution: 0,
+                }),
+              ),
+            ]),
+          ),
+        ),
+      )
+      renderApp()
+    }
+
+    it.each([
+      [11, 11, 'Les 11 autres lignes n’ont pas bougé.'],
+      [11, 3, '11 autres lignes n’apparaissent pas ici, dont 3 n’ont pas bougé.'],
+      [1, 1, 'L’autre ligne n’a pas bougé.'],
+    ])('%i hidden, %i unchanged', async (others, unchanged, sentence) => {
+      hidden(others, unchanged)
+      expect(await screen.findByText(sentence)).toBeInTheDocument()
+    })
+  })
+
+  it('draws a rank only when there is something to rank against (#1147)', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    // The default payload moves one line: a « 1 » beside it is noise.
+    const one = within(await screen.findByRole('list', { name: 'Mouvements' }))
+    expect(one.queryByText('1')).not.toBeInTheDocument()
+  })
+
+  it('ranks two lines « 1 » and « 2 »', async () => {
+    server.use(
+      http.get(ROUTES.movers, () =>
+        HttpResponse.json(
+          aMoversPayload([
+            aMover(),
+            aMover({ symbol: 'ZZB', name: 'Zeta Beta', change_pct: -0.01, contribution: -4 }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    const two = within(await screen.findByRole('list', { name: 'Mouvements' }))
+    expect(two.getByText('1')).toBeInTheDocument()
+    expect(two.getByText('2')).toBeInTheDocument()
   })
 
   it('says what it compares against, once, and dates nothing', async () => {
