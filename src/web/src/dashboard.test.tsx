@@ -1538,6 +1538,8 @@ describe('the four states of the page', () => {
     // one of them here since #831: the allocation, which said the same thing
     // about the same portfolio, is on the shares page and says it there.
     expect(await screen.findByText('Rien à comparer')).toBeInTheDocument()
+    // Nothing is compared, so the block names no close it compares against.
+    expect(screen.queryByText('Depuis la clôture précédente')).not.toBeInTheDocument()
   })
 })
 

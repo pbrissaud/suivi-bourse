@@ -372,6 +372,33 @@ def test_movers_compare_each_line_against_its_own_previous_close(tmp_path):
     assert moves['BTC-EUR']['change_pct'] == pytest.approx(-0.05)
 
 
+def test_movers_leave_out_a_line_whose_quotes_stopped(tmp_path):
+    """#1142's own regression. A line no longer quoted (delisted, halted, a
+    scrape that fails) would show its move from weeks ago as *since the
+    previous close*; trailing the newest quote by more than five days, it has
+    no previous close worth naming. A line quoted on one day only has none
+    either."""
+    def seed(opened):
+        seed_position(opened, quantity=10.0, cost_basis=1000.0)
+        seed_quote(opened, price=100.0,
+                   at=datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc))
+        seed_quote(opened, price=110.0,
+                   at=datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc))
+        seed_position(opened, symbol='GONE.PA', name='Gone', quantity=5.0)
+        seed_quote(opened, symbol='GONE.PA', price=50.0,
+                   at=datetime(2026, 9, 16, 15, 30, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='GONE.PA', price=30.0,
+                   at=datetime(2026, 9, 17, 15, 30, tzinfo=timezone.utc))
+        seed_position(opened, symbol='NEW.PA', name='New', quantity=5.0)
+        seed_quote(opened, symbol='NEW.PA', price=20.0,
+                   at=datetime(2026, 10, 9, 15, 30, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, seed=seed)
+    payload = client.get('/api/portfolio/movers').get_json()
+
+    assert [m['symbol'] for m in payload['movers']] == ['AAPL']
+
+
 def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
     """No observation means no session to anchor on, and nothing to compare."""
     client = build_client(tmp_path)

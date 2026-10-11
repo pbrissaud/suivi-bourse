@@ -78,7 +78,7 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
       // Undated (#1142): each line is read against its own previous close, and
       // a weekend puts a stock's on Thursday and a 24/7 line's on Saturday, so
       // no one date is true of the whole list.
-      aside={movers.length === 0 ? null : <p className="label">{t('dashboard.movers.since')}</p>}
+      aside={moved.length === 0 ? null : <p className="label">{t('dashboard.movers.since')}</p>}
     >
       {moved.length === 0 ? (
         <EmptyState

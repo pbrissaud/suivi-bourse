@@ -3,10 +3,11 @@
  *
  * Four page-level decisions live here rather than in a block:
  *
- *  - **Two permanent time announcers at most**, and they are the mention under
- *    the title (*as of 7 August 2026, 17:42* — the freshest quote the page
- *    holds) and the movers' **reference close**, which is a different instant
- *    and is the subject of that block. The two transitory ones are elsewhere by
+ *  - **One permanent time announcer**, the mention under the title (*as of
+ *    7 August 2026, 17:42* — the freshest quote the page holds). The movers'
+ *    *since the previous close* names no date since #1142: each line has its
+ *    own, and a weekend puts a stock's and a 24/7 line's on different days.
+ *    The two transitory ones are elsewhere by
  *    construction: the time-weighted return's base date, on the head and only
  *    while it moves, and the reconstruction's progress, which is a card of the
  *    notifications panel since #829 and only there.
