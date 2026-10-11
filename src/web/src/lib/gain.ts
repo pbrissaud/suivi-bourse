@@ -177,10 +177,7 @@ export function positionTerms(positions: readonly Position[]): Omit<GainTerms, '
     if (which !== 'quoted') continue
 
     const marketValue = (position.converted?.value ?? 0) * position.quantity
-    unrealised = {
-      known: true,
-      value: unrealised.value + marketValue - position.cost_basis,
-    }
+    unrealised = { known: true, value: unrealised.value + marketValue - position.cost_basis }
   }
 
   return { unrealised, realised, dividends, holdsPosition }
@@ -297,14 +294,14 @@ export interface Cascade {
  * sum before it to the running sum after it, on one scale shared with the
  * total, so the last term ends **exactly** where the total does. A stacked bar
  * of absolute values drew the realised loss and the fees as positive shares of
- * a whole, and overstated the staging gain by 97%.
+ * a whole, and so drew more gain than there was.
  *
  * `null` when there is nothing to draw: a total with no figure (a whole with a
  * term missing is not that whole), or every term at zero. The latent term of a
  * portfolio that holds nothing reads as a dash (#727) and counts for its `0`,
  * so it gets no step; neither does a term worth zero, nor one that is not
- * rendered at all. A total of exactly `0` gets no step either — the zero mark
- * says it.
+ * rendered at all. A total that prints as zero (under half a cent) gets no
+ * step either — the zero mark says it.
  */
 export function gainCascade(terms: GainTerms): Cascade | null {
   // Below half a cent an amount prints `0,00 €`, and float noise must not draw

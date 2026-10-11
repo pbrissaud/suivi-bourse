@@ -252,6 +252,52 @@ describe('the breakdown draws a cascade onto its total (#1143)', () => {
     }
   })
 
+  it('colours a segment as its figure, at full strength (#1153)', async () => {
+    // A realised loss: the signed terms take the sign's hue, the two that never
+    // change sign take the neutral ink — never an opacity shade of the gain.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(
+            defaultPositions().map((position) =>
+              position.realised === 0 ? position : { ...position, realised: -200 },
+            ),
+          ),
+        ),
+      ),
+    )
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    await within(card).findByRole('group', { name: 'Gain total' })
+
+    const segment = (term: string) =>
+      card.querySelector(`[data-cascade-step="${term}"] [style*="width"]`)
+    expect(segment('unrealised')).toHaveClass('bg-gain')
+    expect(segment('realised')).toHaveClass('bg-loss')
+    expect(segment('dividends')).toHaveClass('bg-muted-foreground')
+    expect(segment('transferFees')).toHaveClass('bg-muted-foreground')
+    expect(segment('total')).toHaveClass('bg-gain')
+    expect(card.innerHTML).not.toMatch(/bg-(gain|loss)\/\d+/)
+  })
+
+  it('leaves the latent row its zero mark alone when nothing is held (#727)', async () => {
+    const closed = [
+      aClosedPosition({ symbol: 'ZZD', realised: 120, dividends: 30, closed_at: '2025-11-04' }),
+    ]
+    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(closed))))
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    await within(card).findByRole('group', { name: 'Gain total' })
+
+    const expected = gainCascade(portfolioTerms(closed, -5))
+    const latent = card.querySelector('[data-cascade-step="unrealised"]')
+    expect(latent).not.toBeNull()
+    expect(latent?.querySelector('[style*="width"]')).toBeNull()
+    const zero = latent?.querySelector<HTMLElement>('[style]')
+    expect(parseFloat(zero?.style.left ?? '')).toBeCloseTo((expected?.zero ?? NaN) * 100, 6)
+    expect(card.querySelector('[data-cascade-step="total"] [style*="width"]')).not.toBeNull()
+  })
+
   it('draws no track at all while the total waits for a rate', async () => {
     server.use(
       http.get(ROUTES.positions, () =>

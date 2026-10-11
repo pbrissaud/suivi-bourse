@@ -357,6 +357,7 @@ describe('the cascade adds up to the total (#1143)', () => {
     const { total, termSteps } = drawn(terms)
     expect(termSteps.map((step) => step.term)).toEqual(['unrealised', 'realised', 'transferFees'])
     expect(total).toBeUndefined()
+    expectAddsUp(terms)
     expectDirections(terms)
   })
 
@@ -369,6 +370,7 @@ describe('the cascade adds up to the total (#1143)', () => {
       holdsPosition: true,
     }
     expect(drawn(terms).total).toBeUndefined()
+    expectAddsUp(terms)
   })
 
   it('gives the latent term no step when nothing is held (#727)', () => {

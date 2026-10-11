@@ -16,7 +16,7 @@
  * *source*: a percentage width, computed and written into a `style`, is what a
  * hand-written share bar is made of, and there is one place it belongs.
  *
- * **The stacked bars are the exemption, and it has a floor.** The rail draws
+ * **The hand-written bars are the exemption, and it has a floor.** The rail draws
  * the accounts as adjacent segments closing a whole, which is a claim about the
  * total that no per-line bar makes (`AccountsRail.tsx` carries the argument for
  * keeping both). Its segments are therefore not `ShareBar`s and cannot be, and
