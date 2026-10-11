@@ -29,4 +29,6 @@
 .dark {
   --gain: oklch(0.5 0.1 160); /* expect: semantic-token-alias */
   --bad: var(--gain); /* expect: semantic-token-alias */
+  --bad-mix: oklch() in , 50%; /* expect: semantic-token-alias */
+  --bad-tail: var(--primary) var(--card); /* expect: semantic-token-alias */
 }

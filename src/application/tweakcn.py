@@ -99,11 +99,13 @@ def render_css(entry: dict) -> str:
 
 
 def font_imports(entry: dict) -> List[str]:
-    """One Google Fonts ``@import`` per family the theme names first and the bundle lacks."""
-    light = _ground(entry, 'light')
+    """One Google Fonts ``@import`` per family the theme names first and the bundle lacks.
+
+    Both grounds are read: ``render_css`` lets the dark one name its own face.
+    """
+    grounds = (_ground(entry, 'light'), _ground(entry, 'dark'))
     families: List[str] = []
-    for key in _FONT_KEYS:
-        value = light.get(key)
+    for value in (ground.get(key) for ground in grounds for key in _FONT_KEYS):
         if not isinstance(value, str):
             continue
         name = value.split(',')[0].strip().strip('\'"').strip()

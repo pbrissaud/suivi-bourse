@@ -22,8 +22,8 @@ def test_the_grit_rule_and_the_server_agree_on_the_standard_names():
     block = re.search(r'not or \{([^}]*)\}', text).group(1)
     assert re.findall(r'"--([a-z0-9-]+)"', block) == list(tweakcn.STANDARD)
     # The value regex names them a second time, as the alias targets it admits.
-    targets = re.search(r'var\\\(--\(\?:([a-z0-9|-]+)\)', text).group(1)
-    assert targets.split('|') == list(tweakcn.STANDARD)
+    targets = re.findall(r'var\\\(--\(\?:([a-z0-9|-]+)\)', text)
+    assert targets and all(t.split('|') == list(tweakcn.STANDARD) for t in targets)
     assert len(tweakcn.STANDARD) == 53
 
 
@@ -80,6 +80,8 @@ def test_font_imports_names_only_a_family_the_bundle_lacks():
     def imports(sans):
         return tweakcn.font_imports({'cssVars': {'light': {'font-sans': sans}, 'dark': {}}})
 
+    assert tweakcn.font_imports({'cssVars': {'light': {'font-sans': 'Geist, sans-serif'},
+                                             'dark': {'font-sans': 'Lora, serif'}}}) == imports('Lora')
     assert imports('Outfit, sans-serif') == [
         '@import url("https://fonts.googleapis.com/css2?family=Outfit'
         ':wght@400;500;600;700&display=swap");']
