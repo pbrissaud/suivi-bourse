@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils'
  * separators, which the base rule already paints in the `rule` colour.
  *
  * **The section itself is never interactive.** The dashboard's edit mode puts
- * its card menu (⋯) at the end of the title row through
+ * its drag handle (⠿) before the title and its card menu (⋯) at the end of
+ * the title row through
  * {@link SectionControlsContext}: the frame the page lays around a card
  * provides it, so the blocks that render their own section change nothing,
  * and outside edit mode the context is empty and the row is what it was.
@@ -20,6 +21,8 @@ import { cn } from '@/lib/utils'
 export interface SectionFrame {
   /** The card menu, at the end of the title row. */
   controls: ReactNode
+  /** The drag handle, before the title (desktop only). */
+  leading?: ReactNode
   /**
    * The section fills its grid cell (a row's two cards end on the same line),
    * and its body is a column a block can push its last line to the bottom of.
@@ -50,6 +53,11 @@ export function Section({
 }) {
   const id = useId()
   const frame = useContext(SectionControlsContext)
+  const heading = (
+    <h2 id={id} className="text-2xl font-semibold">
+      {title}
+    </h2>
+  )
   return (
     <section
       data-slot="section"
@@ -61,9 +69,14 @@ export function Section({
       )}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id={id} className="text-2xl font-semibold">
-          {title}
-        </h2>
+        {frame?.leading ? (
+          <div className="-ml-2 flex items-center gap-2">
+            {frame.leading}
+            {heading}
+          </div>
+        ) : (
+          heading
+        )}
         {frame?.controls ? (
           <div className="flex items-center gap-2 self-center">
             {aside}

@@ -5,9 +5,9 @@
  * Driven through the real app with the one faked edge, HTTP: the layout the
  * server answers, and the writes it receives, are what each case states.
  */
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ROUTES, type DashboardLayout } from '@/lib/api'
 import { aMover, aMoversPayload } from '@/test/factories'
@@ -370,5 +370,136 @@ describe('edit mode', () => {
 
     await user.click(entry)
     await waitFor(() => expect(hero.closest('[inert]')).not.toBeNull())
+  })
+})
+
+describe('dragging a card', () => {
+  // jsdom lays nothing out, and dnd-kit's arrows go from card to card by
+  // their boxes, clipped by their ancestors': the grid's cells are stacked
+  // here, one 280 px row each, inside a page large enough to hold them.
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      const grid = this.parentElement
+      if (grid?.hasAttribute('data-dashboard-grid') !== true) return new DOMRect(0, 0, 1024, 4000)
+      return new DOMRect(0, [...grid.children].indexOf(this) * 300, 1000, 280)
+    })
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  async function dragWithKeys(
+    user: ReturnType<typeof renderApp>['user'],
+    card: string,
+    keys: string,
+  ) {
+    const handle = await screen.findByRole('button', { name: `Déplacer : ${card}` })
+    handle.focus()
+    await user.keyboard(keys)
+    return handle
+  }
+
+  it('moves a card with the keyboard as « Monter » does, and says where it landed', async () => {
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Mouvements', ' {ArrowUp} ')
+
+    await waitFor(() =>
+      expect(order(container)).toEqual([
+        'Mouvements',
+        'D’où vient le gain',
+        'Rythme d’investissement',
+      ]),
+    )
+    expect(await screen.findByText('Mouvements déposée, position 1 sur 3')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Déplacer : Mouvements' })).toHaveFocus(),
+    )
+  })
+
+  it('lets a half swap with another, and come back home in the same drag', async () => {
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Rythme d’investissement', ' {ArrowUp}')
+    expect(await screen.findByText('Rythme d’investissement, position 1 sur 3')).toBeInTheDocument()
+
+    await user.keyboard('{ArrowDown} ')
+    expect(
+      await screen.findByText('Rythme d’investissement déposée, position 2 sur 3'),
+    ).toBeInTheDocument()
+    expect(order(container)).toEqual(TITLES)
+  })
+
+  it('says a drop in place, and leaves nothing to write', async () => {
+    const writes = recordWrites()
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Mouvements', '  ')
+
+    expect(await screen.findByText('Mouvements déposée, position 3 sur 3')).toBeInTheDocument()
+    expect(order(container)).toEqual(TITLES)
+    await user.click(screen.getByRole('button', { name: 'Terminé' }))
+    await landed()
+    expect(writes).toEqual([])
+  })
+
+  it('puts everything back on Escape', async () => {
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Mouvements', ' {ArrowUp}{Escape}')
+
+    expect(await screen.findByText('Déplacement annulé')).toBeInTheDocument()
+    expect(order(container)).toEqual(TITLES)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Déplacer : Mouvements' })).toHaveFocus(),
+    )
+  })
+
+  it('writes the drop on « Terminé », and not before', async () => {
+    const writes = recordWrites()
+    const { user } = renderApp()
+    await user.click(await landed())
+    await dragWithKeys(user, 'Mouvements', ' {ArrowUp} ')
+    await screen.findByText('Mouvements déposée, position 1 sur 3')
+    expect(writes).toEqual([])
+
+    await user.click(screen.getByRole('button', { name: 'Terminé' }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].body).toEqual({
+      version: 1,
+      blocks: [
+        { id: 'movers', width: 'full', hidden: false },
+        { id: 'gain-breakdown', width: 'half', hidden: false },
+        { id: 'rhythm', width: 'half', hidden: false },
+      ],
+    })
+  })
+
+  it('puts a handle on a failed card’s reduced row too', async () => {
+    server.use(
+      http.get(ROUTES.movers, () =>
+        HttpResponse.json(
+          { status: 503, title: 'Storage unavailable' },
+          { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderApp()
+    await user.click(await landed())
+
+    expect(await screen.findByRole('button', { name: 'Déplacer : Mouvements' })).toBeInTheDocument()
+  })
+
+  it('offers no handle outside edit mode, nor on a phone', async () => {
+    renderApp()
+    await landed()
+    expect(screen.queryByRole('button', { name: /^Déplacer :/ })).not.toBeInTheDocument()
+    cleanup()
+
+    setViewportWidth(390)
+    const { user } = renderApp()
+    await user.click(await landed())
+    expect(screen.getByRole('button', { name: 'Options : Mouvements' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Déplacer :/ })).not.toBeInTheDocument()
   })
 })

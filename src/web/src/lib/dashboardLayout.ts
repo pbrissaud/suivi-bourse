@@ -255,6 +255,64 @@ export function moveBlock<Id extends string>(
     ;[order[a], order[b]] = [order[b], order[a]]
   }
 
+  return inSlots(placements, order)
+}
+
+/**
+ * A card dragged onto another one, by the menu's rule (Paul, 11/10/2026): the
+ * gesture has no rule of its own.
+ *
+ * - A full card goes between two rows, `side` of the row holding `overId`;
+ *   never into the middle of a pair.
+ * - A half takes the place of the half it is dropped on. Dropped on a full
+ *   card, it takes the place of the nearest half on that `side` of it, as
+ *   *Monter* / *Descendre* would skip the full card.
+ *
+ * Hidden cards keep their slots. `null` when nothing would change.
+ */
+export function dropBlock<Id extends string>(
+  placements: readonly Placement<Id>[],
+  activeId: Id,
+  overId: Id,
+  side: 'before' | 'after',
+): Placement<Id>[] | null {
+  const visible = placements.filter((one) => !one.hidden)
+  const moving = visible.find((one) => one.id === activeId)
+  const over = visible.find((one) => one.id === overId)
+  if (moving === undefined || over === undefined || moving === over) return null
+
+  let order: Placement<Id>[]
+  if (moving.width === 'full') {
+    const rows = rowsOf(visible.filter((one) => one !== moving))
+    const at = rows.findIndex((row) => row.includes(over))
+    rows.splice(side === 'before' ? at : at + 1, 0, [moving])
+    order = rows.flat()
+  } else {
+    const target =
+      over.width === 'half'
+        ? over
+        : side === 'before'
+          ? visible
+              .slice(0, visible.indexOf(over))
+              .filter((one) => one.width === 'half')
+              .at(-1)
+          : visible.slice(visible.indexOf(over) + 1).find((one) => one.width === 'half')
+    if (target === undefined || target === moving) return null
+    order = visible.slice()
+    const a = order.indexOf(moving)
+    const b = order.indexOf(target)
+    ;[order[a], order[b]] = [order[b], order[a]]
+  }
+
+  if (order.every((one, index) => one === visible[index])) return null
+  return inSlots(placements, order)
+}
+
+/** The visible cards in their new `order`, the hidden ones kept in their slots. */
+function inSlots<Id extends string>(
+  placements: readonly Placement<Id>[],
+  order: readonly Placement<Id>[],
+): Placement<Id>[] {
   let next = 0
   return placements.map((one) => (one.hidden ? one : order[next++]))
 }
