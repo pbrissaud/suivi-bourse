@@ -190,7 +190,7 @@
   "dashboard.edit.over": "{card}, position {position} of {total}",
   "dashboard.edit.dropped": "{card} dropped, position {position} of {total}",
   "dashboard.edit.dragCancelled": "Move cancelled",
-  "dashboard.movers.since": "Since the close of {date}",
+  "dashboard.movers.since": "Since the previous close",
   "dashboard.movers.others": "{count, plural, one {# other holding is} other {# other holdings are}} not shown here{unchanged, plural, =0 {} one {, # of which did not move} other {, # of which did not move}}.",
   "dashboard.movers.empty": "Nothing to compare",
   "dashboard.movers.empty.body": "A holding appears here once it has a price on two sessions.",

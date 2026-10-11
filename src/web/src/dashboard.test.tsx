@@ -1314,13 +1314,13 @@ describe('the movers', () => {
     expect(screen.queryByText('Zeta Delta')).not.toBeInTheDocument()
   })
 
-  it('names the close it compares against, and names it once', async () => {
+  it('says what it compares against, once, and dates nothing', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // The **reference**, never the cut: naming the cut announced a session that
-    // had not happened yet.
-    expect(await screen.findAllByText(/Depuis la clôture du 1ᵉʳ mars 2026/)).toHaveLength(1)
+    // Undated (#1142): each line has its own previous close, and on a weekend a
+    // stock's and a 24/7 line's are not on the same day.
+    expect(await screen.findAllByText('Depuis la clôture précédente')).toHaveLength(1)
   })
 })
 
@@ -1350,7 +1350,7 @@ describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
     renderApp()
     const movers = await screen.findByRole('region', { name: 'Mouvements' })
     const titleRow = within(movers).getByRole('heading', { name: 'Mouvements' }).parentElement!
-    expect(titleRow).toHaveTextContent(/Depuis la clôture du 1ᵉʳ mars 2026/)
+    expect(titleRow).toHaveTextContent(/Depuis la clôture précédente/)
   })
 })
 

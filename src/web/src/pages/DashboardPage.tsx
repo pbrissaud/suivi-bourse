@@ -231,7 +231,6 @@ export default function DashboardPage() {
           <Movers
             {...moversRead}
             width={width}
-            reference={movers.data?.reference ?? null}
             rows={rows}
             currency={positions.data?.base_currency ?? null}
           />
