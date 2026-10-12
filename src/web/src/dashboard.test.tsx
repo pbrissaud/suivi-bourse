@@ -62,7 +62,7 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
 
 /**
  * The chart's own card, taken by the one control that is only ever on it — the
- * page's range radios. The legend names `Valeur totale` and `Versé net`, and so
+ * chart's range radios. The legend names `Valeur totale` and `Versé net`, and so
  * do two of the head's statistics: one portfolio said twice, which is the
  * arrangement rather than a collision, so a legend assertion has to say **which
  * card** it is about.
@@ -345,7 +345,7 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
 
-    // **One on the page**, and it is the page's (#838).
+    // **One on the page**, and it is the chart's own (#838, then #1155 closed).
     await waitFor(() =>
       expect(
         screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
@@ -858,8 +858,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     await theHeadStandsWhole()
     // The chart itself is gone rather than empty: its **reading** selector is
     // the surest proof, and the frame that would carry it is not drawn. The
-    // range control is no longer that proof — it is the page's since #838, and
-    // it still governs the movements and the comparison beside it.
+    // range control sits on the same bar since #1150, so it is gone with it.
     expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
   })
 
@@ -900,7 +899,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
     expect(document.querySelector('[data-empty]')).toBeNull()
     // The chart's frame is not drawn: its reading selector is what would carry
-    // it, the range control being the page's since #838.
+    // it, along with the range beside it (#1150).
     expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
   })
 
@@ -1202,6 +1201,71 @@ describe('one chart slot, two readings', () => {
     expect(screen.queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
   })
 
+  // One control bar (#1150): the reading on the left, the range on the right,
+  // one track look — and the range wraps under the reading on a narrow screen.
+  it('puts the reading and the range on one bar, reading first', async () => {
+    renderApp()
+    const readings = await screen.findByRole('group', { name: 'Lecture' })
+    const range = screen.getByRole('radiogroup', { name: 'Plage' })
+
+    expect(readings.parentElement).toBe(range.parentElement)
+    expect(readings.parentElement?.closest('[data-hero-chart]')).not.toBeNull()
+    expect(readings.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('puts the `Montants` heading and the range on one bar where there is no ledger', async () => {
+    server.use(
+      totalsOf({
+        total_value: null,
+        cash_balance: null,
+        net_contributed: null,
+        twr_index: null,
+        ytd: null,
+      }),
+    )
+    renderApp()
+    const heading = await screen.findByRole('heading', { name: 'Montants' })
+    const range = screen.getByRole('radiogroup', { name: 'Plage' })
+
+    expect(heading.parentElement).toBe(range.parentElement)
+    expect(heading.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps the bar above an empty window, so the reader can widen the range', async () => {
+    // A series that stops well before the last month: `1M` draws nothing.
+    server.use(
+      http.get(ROUTES.portfolioTotalsHistory, () =>
+        HttpResponse.json(
+          aPortfolioHistory([aPerfPoint('2020-01-01', 100), aPerfPoint('2020-01-02', 101)]),
+        ),
+      ),
+    )
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('radio', { name: '1M' }))
+
+    expect(
+      await screen.findByText('Rien à tracer sur cette plage pour l’instant.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Lecture' })).toBeInTheDocument()
+  })
+
+  it('draws both controls bordered and compact', async () => {
+    renderApp()
+    const readings = await screen.findByRole('group', { name: 'Lecture' })
+    const range = screen.getByRole('radiogroup', { name: 'Plage' })
+
+    for (const control of [readings, range]) {
+      expect(control).toHaveClass('border')
+      for (const option of [
+        ...within(control).queryAllByRole('button'),
+        ...within(control).queryAllByRole('radio'),
+      ]) {
+        expect(option).toHaveClass('px-2.5', 'py-1', 'text-xs')
+      }
+    }
+  })
+
   it('says the shape of the window to a reader who cannot see the plot', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
@@ -1281,9 +1345,9 @@ describe('one chart slot, two readings', () => {
     expect(screen.getByText('Prix de revient')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Performance' })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
-    // The range control survives the fallback: it is the page's, not a
-    // property of the series it happens to be drawing — and the dialog carries
-    // it beside the chart it sets.
+    // The range control survives the fallback: it sets the chart's window, not
+    // a property of the series it happens to be drawing, and it sits beside
+    // the `Montants` heading (#1150).
     expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
   })
 

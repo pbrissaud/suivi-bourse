@@ -5,7 +5,7 @@
  * The maquette gives a fixed, short list of mutually exclusive choices one
  * shape and one shape only: a track on the ground under the card, the options
  * laid inside it with a hair of padding, and the one in force raised out of the
- * track. It is the dashboard's period, the chart's two readings, the share
+ * track. It is the dashboard chart's range, its two readings, the share
  * sheet's window — the same drawing three times — and written three times it
  * would drift three ways, which is the mistake `Stat` was written to stop
  * repeating.
@@ -45,8 +45,8 @@ interface SegmentedProps<T extends string> {
   /** The track's own edge, for where it sits on the page rather than on a card. */
   bordered?: boolean
   /**
-   * `compact` is the hero's: the range control above the hero's chart, where
-   * the full-size segments would outweigh the curve they set.
+   * `compact` is the hero's: the two controls of the hero's chart, where the
+   * full-size segments would outweigh the curve they set.
    */
   size?: 'default' | 'compact'
   className?: string

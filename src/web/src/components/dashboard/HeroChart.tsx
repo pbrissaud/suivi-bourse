@@ -1,6 +1,6 @@
 /**
  * The hero's chart: the portfolio's curve across the full width of the head,
- * under the value and its pills, with the page's range control above it
+ * under the value and its pills, its range control beside its readings
  * (dashboard grid, decisions 17A and D25, 11/10/2026).
  *
  * **It is the real chart, not a picture of it.** The head used to draw a 64 px
@@ -11,18 +11,17 @@
  * same thing twice and leave the large one mute. So `PortfolioChart` is drawn
  * here, with its non-visual reading (#1067), and the dialog is gone.
  *
- * **One range control, and it is still the page's** (#838), above the curve
- * it sets.
+ * **One range control, and it is the chart's own** (#838, then #1155 closed):
+ * it sits on the chart's control bar, beside the readings (#1150). The state
+ * stays on the page, which passes it through.
  *
  * **The series is the chart's own read**, and its failure is named by the
  * chart, in its own slot (#829): the value above it stays.
  */
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
-import { Segmented } from '@/components/Segmented'
 import { Unreadable } from '@/components/Unreadable'
 import type { PerfPoint, ValuationPoint } from '@/lib/api'
-import { DASHBOARD_RANGES, type DashboardRange } from '@/lib/dashboard'
-import { useI18n } from '@/lib/i18n'
+import type { DashboardRange } from '@/lib/dashboard'
 import type { ReadFailure } from '@/lib/status'
 
 interface HeroChartProps {
@@ -45,8 +44,6 @@ export function HeroChart({
   valuation,
   failure = null,
 }: HeroChartProps) {
-  const { t } = useI18n()
-
   // The chart's own two states, before any control: nothing while the series
   // is in flight, and only the failure when it did not answer — a range
   // control over an empty slot sets nothing.
@@ -55,24 +52,11 @@ export function HeroChart({
   }
 
   return (
-    <div data-hero-chart className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Segmented
-          bordered
-          mode="radio"
-          size="compact"
-          label={t('dashboard.chart.range')}
-          value={range}
-          onChange={onRangeChange}
-          options={DASHBOARD_RANGES.map((candidate) => ({
-            value: candidate,
-            label: t('dashboard.chart.rangeName', { range: candidate }),
-          }))}
-        />
-      </div>
+    <div data-hero-chart>
       <PortfolioChart
         ledger={ledger}
         range={range}
+        onRangeChange={onRangeChange}
         currency={currency}
         performance={performance}
         valuation={valuation}
