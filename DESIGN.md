@@ -141,6 +141,11 @@ contrast.
   focus rings, weight bars.
 - `gain` and `loss` colour the sign and the digits of a figure, never a row background,
   a pill fill or a whole card.
+- Only a figure that can change sign takes `gain` or `loss`. A term whose sign is fixed by
+  its nature (dividends received, always positive; transfer fees, always negative) stays
+  neutral, `foreground` in its figure and `muted-foreground` in its bar segment: colouring
+  a sign known in advance tells nothing and dilutes the red of a real loss. The predicate
+  is `termCarriesSign` in `src/web/src/lib/gain.ts`.
 - `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
 - `rule` separates rows inside a section and nothing else.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
@@ -322,3 +327,4 @@ page. No zero-offset glow, in either theme.
 | 2026-10-10 | Semantic tokens are aliases; the theme is replaceable (#1130) | Gain becomes `primary` and loss `destructive` so any tweakcn theme repaints the app; attention loses its hue and the icon carries the meaning. |
 | 2026-10-11 | The dashboard is a grid of sections the owner arranges | Two widths, an ordered list rather than a 2D grid; full width only where a section shows more; the menu in the title row; designed through office hours, eng and design reviews on 11/10/2026. |
 | 2026-10-11 | The hero draws the real chart, full width | Reverses the sparkline-and-dialog of #1099 (direction 1a): one chart, readable by everyone, instead of a large mute picture plus a dialog. |
+| 2026-10-12 | Colour only the terms that can change sign | Dividends and transfer fees have a fixed sign, so colouring it carries no information and steals the signal from a realised loss; the bar follows the same rule (#1144). |

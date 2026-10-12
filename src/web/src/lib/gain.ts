@@ -96,6 +96,7 @@ interface GainTerms {
  * Colour goes only to the terms that can **change sign**. A dividend
  * received is never negative and a transfer fee never positive, so colouring
  * them is decoration that steals the signal from the red of a realised loss.
+ * The rule is written for design in DESIGN.md, `## Colors`.
  */
 export function termCarriesSign(term: GainTermName): boolean {
   return term === 'unrealised' || term === 'realised'

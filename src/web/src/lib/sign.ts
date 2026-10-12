@@ -17,7 +17,7 @@
  * terms that can change sign take it (`gain.ts`'s `termCarriesSign`). A
  * dividend received is never negative and a transfer fee never positive, so
  * colouring them is decoration that steals the signal from the two terms that
- * do carry it.
+ * do carry it. DESIGN.md, `## Colors`, is where the rule is written for design.
  */
 import type { Rendering } from '@/lib/absence'
 
