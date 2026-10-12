@@ -102,12 +102,12 @@ def test_before_the_threshold_the_levy_is_the_same_levy():
 # The day the threshold is counted from — the amendment to D2
 # --------------------------------------------------------------------------- #
 
-def test_a_pea_declared_through_the_shipped_template_still_projects():
+def test_a_pea_counted_from_its_first_payment_still_projects():
     """The reversal, stated as a test.
 
-    ``fr_pea`` ships ``age_basis: FIRST_PAYMENT``, and the form renders the
-    ``opened_on`` field only under ``opening`` — so a PEA declared through the
-    shortcut this app ships carries **no** declared opening date, for ever. Read
+    A PEA counts from ``age_basis: FIRST_PAYMENT``, and the form renders the
+    ``opened_on`` field only under ``opening`` — so such a PEA carries **no**
+    declared opening date, for ever. Read
     that date alone and the card never appears on the feature's flagship case.
     """
     tax = aged(PEA, 10_000.0, opened_on=None,

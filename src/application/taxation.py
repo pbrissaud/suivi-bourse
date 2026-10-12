@@ -1,20 +1,17 @@
-"""The taxation model — a closed ``kind``, its typed parameters, and the little
-structure the app is allowed to ship (#752).
+"""The taxation model — a closed ``kind`` and its typed parameters (#752).
 
 **Pure**, in the sense ``CLAUDE.md`` gives the word: no store, no yfinance, no
 clock. It says what a model *is* and refuses what is not one; writing a model
 down is :mod:`application.accounts`'s business, and projecting a figure out of
 one is #919's.
 
-Three things live here and nothing else:
+Two things live here and nothing else:
 
 - **the kinds**, a closed enumeration. A row carrying an unknown kind is a
   store written by a newer version, and it is refused rather than projected as
   zero;
 - **each kind's parameters**, declared beside its constant, so a reader of the
   enumeration knows what a row of that kind must carry.
-- **the wrapper templates**, and they carry **no money**. A template is *not
-  stored*: it fills two fields of a form and does not survive the submission.
 
 **A bracket ceiling is a bare number, and it stays one** (#953). It is the
 single parameter here that *is* money — a rate is a fraction and a threshold is
@@ -35,11 +32,6 @@ and there the reinterpretation costs a re-read of one form.
 So the answer is the third of the ticket's three, and it is said on the screen
 that asks: the ceiling field carries the reporting currency beside it, the way
 the rate beside it has always carried its `%`.
-
-It does not survive the check: the Portuguese regime has **two** thresholds,
-five years and eight, and the reduced rates are conditional on 35 % of the
-premiums having been paid in the first half of the contract. The owner reaches
-it through `bracketed_realised`, or types the shape they are in.
 """
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -99,23 +91,14 @@ PARAMETERS: Dict[str, Tuple[Tuple[str, str, bool], ...]] = {
 
 KINDS = tuple(PARAMETERS)
 
-#: The wrappers whose *structure* ships, nested under the one kind that has
-#: any. An id, and the two fields picking it fills.
-TEMPLATES: Tuple[Dict[str, Any], ...] = (
-    {'id': 'fr_pea', 'kind': AGED_FLAT_REALISED,
-     'values': {'threshold_years': 5, 'age_basis': FIRST_PAYMENT}},
-    {'id': 'fr_assurance_vie', 'kind': AGED_FLAT_REALISED,
-     'values': {'threshold_years': 8, 'age_basis': OPENING}},
-)
-
 
 def catalogue() -> Dict[str, Any]:
-    """The kinds and the templates, on the wire.
+    """The kinds and the age bases, on the wire.
 
     Served rather than duplicated in the front: the enumeration is code and has
     one home, and a second copy over there would drift the day a kind is added.
-    What the front holds is the *words* — one message key per kind and per
-    template, in both catalogues.
+    What the front holds is the *words* — one message key per kind, in both
+    catalogues.
     """
     return {
         'kinds': [
@@ -125,7 +108,6 @@ def catalogue() -> Dict[str, Any]:
             for kind, parameters in PARAMETERS.items()
         ],
         'age_bases': list(AGE_BASES),
-        'templates': [dict(template) for template in TEMPLATES],
     }
 
 
@@ -296,6 +278,6 @@ __all__ = [
     'NONE', 'FLAT_REALISED', 'AGED_FLAT_REALISED', 'BRACKETED_REALISED',
     'WITHHOLDING_INCOME',
     'OPENING', 'FIRST_PAYMENT', 'AGE_BASES', 'MAX_THRESHOLD_YEARS',
-    'KINDS', 'TEMPLATES',
+    'KINDS',
     'ModelRejected', 'catalogue', 'validate',
 ]

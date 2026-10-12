@@ -43,10 +43,9 @@ export const ROUTES = {
    * The owner's taxation models, **and the shape one may take** (#752).
    *
    * One read for the two, deliberately: the kinds are a closed enumeration in
-   * the server's code and the two wrapper templates are the only
-   * structure the app ships, so a second copy of either over here
-   * would drift the day a kind is added. What this front holds is the *words* —
-   * one message key per kind and per template, in both catalogues.
+   * the server's code, so a second copy over here would drift the day a kind is
+   * added. What this front holds is the *words* — one message key per kind, in
+   * both catalogues.
    */
   taxationModels: '/api/taxation-models',
   /** One model. A **pattern**, like {@link ROUTES.account}. */
@@ -682,23 +681,9 @@ export interface TaxationModel {
   parameters: TaxationParameters
 }
 
-/**
- * A wrapper whose **structure** ships — and no money whatsoever.
- *
- * Picking one fills two fields of the form. It is not stored, does not survive
- * the submission, and nothing reads it back: the taxation model is what is
- * written.
- */
-export interface TaxationTemplate {
-  id: string
-  kind: string
-  values: TaxationParameters
-}
-
 export interface TaxationModelsResponse {
   kinds: { kind: string; parameters: TaxationParameter[] }[]
   age_bases: string[]
-  templates: TaxationTemplate[]
   models: TaxationModel[]
 }
 

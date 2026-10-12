@@ -544,10 +544,8 @@ def list_taxation_models():
     """The models their owner wrote, and the shape a model may take.
 
     **The catalogue rides on this read** rather than living a second time in the
-    front: the kinds are a closed enumeration in code and the
-    templates are two structural values the app is allowed to ship.
-    What the front holds is the *words* — one message key per kind and per
-    template, in both catalogues.
+    front: the kinds are a closed enumeration in code. What the front holds is
+    the *words* — one message key per kind, in both catalogues.
     """
     return jsonify({
         **taxation.catalogue(),

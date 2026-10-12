@@ -114,9 +114,6 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
   const models = catalogue.data?.models ?? []
   const kinds = catalogue.data?.kinds ?? []
   const ageBases = catalogue.data?.age_bases ?? []
-  const templates = (catalogue.data?.templates ?? []).filter(
-    (template) => template.kind === editor?.kind,
-  )
   function parametersOf(kind: string): TaxationParameter[] {
     return kinds.find((entry) => entry.kind === kind)?.parameters ?? []
   }
@@ -302,40 +299,6 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
           <p className="max-w-prose text-xs text-muted-foreground">
             {t(`taxation.kind.${editor.kind}.assessed` as MessageKey)}
           </p>
-
-          {/* The shortcut, **nested** under the one kind that has structure to
-              pre-fill, and absent everywhere else. */}
-          {templates.length === 0 ? null : (
-            <Labelled id="taxation-template" label="taxation.template">
-              <select
-                id="taxation-template"
-                className={SELECT}
-                // It holds no state of its own: what it fills is the two fields
-                // below, and it does not survive the submission.
-                value=""
-                onChange={(changed) => {
-                  const picked = templates.find((entry) => entry.id === changed.target.value)
-                  if (picked === undefined) return
-                  setEditor({
-                    ...editor,
-                    fields: {
-                      ...editor.fields,
-                      ...Object.fromEntries(
-                        Object.entries(picked.values).map(([n, v]) => [n, String(v)]),
-                      ),
-                    },
-                  })
-                }}
-              >
-                <option value="">{t('taxation.template.none')}</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {t(`taxation.template.${template.id}` as MessageKey)}
-                  </option>
-                ))}
-              </select>
-            </Labelled>
-          )}
 
           {parameters.map((parameter) =>
             parameter.type === 'brackets' ? (

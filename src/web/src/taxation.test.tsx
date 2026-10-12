@@ -160,63 +160,9 @@ describe('writing a model', () => {
     )
   })
 
-  it('offers the known wrappers under the one shape that has any structure', async () => {
-    // Nested, so a reader whose regime has no age threshold never meets it: no
-    // Danish regime has one, and that owner crosses no screen saying *PEA*.
-    const { user } = renderAccounts()
-    const panel = await openPanel(user)
-
-    await user.selectOptions(await modelField(panel), [
-      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
-    ])
-    const shape = within(panel).getByLabelText('Forme')
-
-    await user.selectOptions(
-      shape,
-      within(panel).getByRole('option', { name: 'Un taux unique sur la plus-value' }),
-    )
-    expect(within(panel).queryByLabelText('Une enveloppe connue')).not.toBeInTheDocument()
-    expect(within(panel).queryByText(/PEA/)).not.toBeInTheDocument()
-
-    await user.selectOptions(
-      shape,
-      within(panel).getByRole('option', {
-        name: 'Un taux qui change avec l’âge de l’enveloppe',
-      }),
-    )
-    expect(within(panel).getByLabelText('Une enveloppe connue')).toBeInTheDocument()
-  })
-
-  it('expands the abbreviation, names the country, and names the escape hatch', async () => {
-    // WCAG 3.1.4 argues for expanding rather than for tagging, and GOV.UK's rule
-    // for a closed list is that the way out is named rather than left empty.
-    const { user } = renderAccounts()
-    const panel = await openPanel(user)
-
-    await user.selectOptions(await modelField(panel), [
-      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
-    ])
-    await user.selectOptions(
-      within(panel).getByLabelText('Forme'),
-      within(panel).getByRole('option', {
-        name: 'Un taux qui change avec l’âge de l’enveloppe',
-      }),
-    )
-
-    const wrappers = within(panel).getByLabelText('Une enveloppe connue')
-    expect(
-      within(wrappers).getByRole('option', {
-        name: 'Plan d’épargne en actions (PEA) — France · 5 ans depuis le premier versement',
-      }),
-    ).toBeInTheDocument()
-    expect(
-      within(wrappers).getByRole('option', { name: /Aucune de celles-ci/ }),
-    ).toBeInTheDocument()
-  })
-
-  it('fills the two structural fields and carries no money with them', async () => {
-    // A template is **not stored** and does not survive the submission: what is
-    // written is the taxation model, and the two fields it filled are in it.
+  it('writes an aged model with every parameter typed by hand', async () => {
+    // No wrapper is offered (#1162): the threshold and its basis are typed like
+    // the rates, and the editor stays country-neutral.
     const { user } = renderAccounts()
     const panel = await openPanel(user)
 
@@ -237,13 +183,9 @@ describe('writing a model', () => {
         name: 'Un taux qui change avec l’âge de l’enveloppe',
       }),
     )
-    await user.selectOptions(within(panel).getByLabelText('Une enveloppe connue'), 'fr_pea')
 
-    // The structure arrived; the money is still empty, which is the whole point.
-    expect(within(panel).getByLabelText(/^Seuil, en années/)).toHaveValue(5)
-    expect(within(panel).getByLabelText('Compté depuis')).toHaveValue('first_payment')
-    expect(within(panel).getByLabelText(/^Taux avant le seuil/)).toHaveValue(null)
-
+    await user.type(within(panel).getByLabelText(/^Seuil, en années/), '5')
+    await user.selectOptions(within(panel).getByLabelText('Compté depuis'), 'first_payment')
     await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon PEA')
     await user.type(within(panel).getByLabelText(/^Taux avant le seuil/), '12.8')
     await user.type(within(panel).getByLabelText(/^Taux après le seuil/), '0')

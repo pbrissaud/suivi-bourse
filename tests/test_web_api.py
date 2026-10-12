@@ -5470,7 +5470,7 @@ def _a_flat_model(client, name='Flat', rate=0.3):
 
 
 def test_the_models_read_carries_the_catalogue_and_the_owner_s_own(tmp_path):
-    """The kinds are code and the templates ship no money.
+    """The kinds are code, and no wrapper template ships (#1162).
 
     Served rather than duplicated in the front: a second copy of the enumeration
     over there would drift the day a kind is added.
@@ -5484,9 +5484,7 @@ def test_the_models_read_carries_the_catalogue_and_the_owner_s_own(tmp_path):
         'withholding_income']
     # Nothing is seeded: a shipped model is never a row.
     assert payload['models'] == []
-    for template in payload['templates']:
-        assert template['kind'] == 'aged_flat_realised'
-        assert set(template['values']) == {'threshold_years', 'age_basis'}
+    assert set(payload) == {'kinds', 'age_bases', 'models'}
 
 
 def test_a_model_is_written_corrected_and_removed_over_the_api(tmp_path):
@@ -5926,11 +5924,10 @@ def test_a_flat_account_publishes_what_it_would_owe_on_its_latent_gain(tmp_path)
     assert row['projected_base'] == pytest.approx(500.0, abs=5e-3)
 
 
-def test_a_pea_declared_through_the_shipped_template_still_gets_a_figure(
-        tmp_path):
+def test_a_pea_counted_from_its_first_payment_still_gets_a_figure(tmp_path):
     """The reversal of 9A, asserted on the route rather than on the arithmetic.
 
-    `fr_pea` ships `age_basis: first_payment`, and the form renders and sends
+    A PEA counts from `age_basis: first_payment`, and the form renders and sends
     `opened_on` only under `opening` — so this account has no declared date and
     never will have one through the interface. The age runs from the ledger's
     earliest payment, and without that fallback the flagship case of the whole

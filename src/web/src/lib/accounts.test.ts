@@ -548,7 +548,7 @@ describe('the projection rides on the row, and an absence stays one (#919)', () 
       anAccount({
         id: 'pea',
         label: 'PEA',
-        taxation_model: 'fr_pea',
+        taxation_model: 'model-pea',
         taxation_kind: 'aged_flat_realised',
         projected_tax: 86,
         projected_rates: [0.3],
@@ -556,7 +556,7 @@ describe('the projection rides on the row, and an absence stays one (#919)', () 
       }),
     ])
 
-    expect(row.taxation_model).toBe('fr_pea')
+    expect(row.taxation_model).toBe('model-pea')
     expect(row.taxation_kind).toBe('aged_flat_realised')
     expect(row.projected_tax).toBe(86)
     expect(row.projected_rates).toEqual([0.3])

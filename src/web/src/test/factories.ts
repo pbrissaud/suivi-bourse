@@ -207,18 +207,6 @@ export function aTaxationCatalogue(
       },
     ],
     age_bases: ['opening', 'first_payment'],
-    templates: [
-      {
-        id: 'fr_pea',
-        kind: 'aged_flat_realised',
-        values: { threshold_years: 5, age_basis: 'first_payment' },
-      },
-      {
-        id: 'fr_assurance_vie',
-        kind: 'aged_flat_realised',
-        values: { threshold_years: 8, age_basis: 'opening' },
-      },
-    ],
     models: [aTaxationModel()],
     ...overrides,
   }
