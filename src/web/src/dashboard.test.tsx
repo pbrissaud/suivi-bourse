@@ -47,7 +47,7 @@ function figure(name: string) {
 
 /**
  * The hero: the portfolio's value, and the three pills under it — the gain
- * total, today, and since 1 January. The gain's four terms are not in it; they
+ * total, today, and the IRR (#1149). The gain's four terms are not in it; they
  * are on the breakdown card, under the `Gain total` they add up to.
  */
 function hero() {
@@ -96,7 +96,7 @@ describe('the value is the hero (direction 1a)', () => {
     expect(value?.className).not.toMatch(/text-(gain|loss)/)
     // `Valeur totale` left the row of statistics: it is the hero now.
     expect(screen.queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
-    for (const name of ['Versé net', 'Titres', 'TRI']) {
+    for (const name of ['Versé net', 'Titres', 'TRI', 'Gain depuis le 1ᵉʳ janvier']) {
       expect(figure(name)).toBeInTheDocument()
     }
     // One performance figure per screen (#1112): the TWR is not a statistic.
@@ -316,7 +316,7 @@ describe('the breakdown draws a cascade onto its total (#1143)', () => {
 })
 
 describe('the year-to-date is two figures that do not touch', () => {
-  it('puts the euro under the head and the percentage inside the IRR’s bubble', async () => {
+  it('puts the euro in the statistics and the percentage inside the IRR’s bubble', async () => {
     const { user } = renderApp()
 
     const head = await hero()
@@ -324,8 +324,10 @@ describe('the year-to-date is two figures that do not touch', () => {
     // `+40,69 €` and `−1,25 %` are of opposite signs over the same period and
     // both correct: the portfolio grew by deposits while its holdings lost.
     // Side by side they read as a contradiction.
-    expect(head).toHaveTextContent(/40,69/)
+    expect(head).not.toHaveTextContent(/depuis le 1ᵉʳ janvier/)
     expect(head).not.toHaveTextContent(/1,25/)
+    expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(/\+40,69\D?€/)
+    expect(figure('Gain depuis le 1ᵉʳ janvier')).not.toHaveTextContent(/1,25/)
 
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
     const bubble = await screen.findByRole('dialog')
@@ -359,6 +361,48 @@ describe('the year-to-date is two figures that do not touch', () => {
   })
 })
 
+describe('the three pills: total gain, today, IRR (#1149)', () => {
+  it('puts the IRR in the hero, third, with its unit', async () => {
+    renderApp()
+    const head = await hero()
+
+    const xirr = within(head).getByRole('group', { name: 'TRI' })
+    expect(xirr).toHaveTextContent(/\+3,22\D?%/)
+    expect(xirr).toHaveTextContent('/ an')
+    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
+    const text = head.textContent ?? ''
+    const gain = text.indexOf('de gain total')
+    const today = text.indexOf('Aujourd’hui')
+    expect(gain).toBeGreaterThan(-1)
+    expect(today).toBeGreaterThan(gain)
+    expect(text.indexOf('TRI')).toBeGreaterThan(today)
+  })
+
+  it('draws the pills on a neutral ground, with the sign on the figure', async () => {
+    server.use(totalsOf({ xirr: -0.05 }))
+    renderApp()
+    const head = await hero()
+
+    await waitFor(() =>
+      expect(within(head).getByRole('group', { name: 'TRI' })).toBeInTheDocument(),
+    )
+    expect(head.querySelector('[class*="bg-gain"], [class*="bg-loss"]')).toBeNull()
+    expect(within(head).getByText(/de gain total/)).toHaveClass('text-gain')
+    expect(within(within(head).getByRole('group', { name: 'TRI' })).getByText(/5,00/)).toHaveClass(
+      'text-loss',
+    )
+  })
+
+  it('draws no IRR pill when there is no IRR', async () => {
+    server.use(totalsOf({ xirr: null }))
+    renderApp()
+    await hero()
+    await screen.findByRole('group', { name: 'Gain depuis le 1ᵉʳ janvier' })
+
+    expect(screen.queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
+  })
+})
+
 describe('the two periods of the total', () => {
   /** One day of the global series, at a stated value and contribution. */
   const perfDay = (t: string, totalValue: number, contributed: number) => ({
@@ -374,7 +418,6 @@ describe('the two periods of the total', () => {
     // A period is the same figure through another window; a term is a *part* of
     // it.
     await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
-    expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
     for (const term of [
       'Plus-value latente',
       'Plus-value réalisée',
@@ -419,7 +462,7 @@ describe('the two periods of the total', () => {
     const head = await hero()
     expect(head).toHaveTextContent(/370,00/)
     await waitFor(() => expect(screen.queryByText(/Aujourd’hui/)).not.toBeInTheDocument())
-    expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
+    expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(/40,69/)
   })
 })
 
@@ -582,9 +625,10 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    const head = await hero()
-    expect(head).toHaveTextContent(/—/)
-    expect(head).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
+    await hero()
+    const ytd = await screen.findByRole('group', { name: 'Gain depuis le 1ᵉʳ janvier' })
+    expect(ytd).toHaveTextContent(/—/)
+    expect(ytd).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
 
     expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(1)
   })
@@ -603,8 +647,12 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    const head = await hero()
-    expect(head).toHaveTextContent(/rien d’enregistré avant le 1ᵉʳ janvier/)
+    await hero()
+    await waitFor(() =>
+      expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(
+        /rien d’enregistré avant le 1ᵉʳ janvier/,
+      ),
+    )
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
   })
 
@@ -623,8 +671,8 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    const head = await hero()
-    await waitFor(() => expect(head).toHaveTextContent(/40,69/))
+    await hero()
+    await waitFor(() => expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(/40,69/))
     // Neither sentence, on either figure — both would be false here.
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
     expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
@@ -647,8 +695,12 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    const head = await hero()
-    expect(head).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
+    await hero()
+    await waitFor(() =>
+      expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(
+        /historique pas encore reconstruit jusque-là/,
+      ),
+    )
     expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
   })
 })
@@ -979,11 +1031,12 @@ describe('the convention bubble', () => {
     // A total and its subordinate terms are one figure, not five: the
     // `Gain total` bubble carries the identity **and** its four terms, and the
     // terms carry none of their own. It sits on the breakdown card since the
-    // value took the hero, so it comes after the head's three in reading order.
+    // value took the hero, so it comes after the head's in reading order — the
+    // IRR's first, on its pill beside the value (#1149).
     const bubbles = screen.getAllByRole('button', { name: /^Ce que veut dire/ })
     expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Ce que veut dire Versé net',
       'Ce que veut dire TRI',
+      'Ce que veut dire Versé net',
       'Ce que veut dire Gain total',
     ])
   })
