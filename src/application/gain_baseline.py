@@ -84,8 +84,8 @@ def measure(store, events, period: str) -> Dict[str, Any]:
 
     point = reader.totals_on_or_before(day)
     unrealised = None
-    if (point is not None and point['day'] == day
-            and point['holdings_value'] is not None):
+    at_b = point is not None and point['day'] == day
+    if at_b and point['holdings_value'] is not None:
         unrealised = point['holdings_value'] - cost_basis
 
     return _payload(period, day, day + timedelta(days=1), clamped, {
