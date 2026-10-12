@@ -1,5 +1,9 @@
 /**
  * The receipt surface (#726). `sonner`'s toaster, mounted once by the app.
+ *
+ * It carries one thing that is not a receipt: **the outage toast echoes the
+ * bell** (#1180, `Notifications.tsx`) — the bell stays the one announcer of
+ * the installation's state, and this surface only repeats its `unreachable`.
  */
 import { Toaster as Sonner } from 'sonner'
 

@@ -23,11 +23,21 @@
  * currency entry is read off. Nothing here is rendered until they land —
  * *a read in flight is not an absence* — which is what makes
  * *Nothing to report* a statement about the panel rather than about a silence.
+ *
+ * **The one announcer has an echo** (#1180). When the bell turns
+ * `unreachable`, a toast says so once — *the server is not answering, the
+ * figures are from HH:MM* — because a reader watching figures that no longer
+ * move has no reason to look at a 16 px icon. It is derived from the very
+ * state the icon wears, so the two cannot disagree; it opens on the
+ * *transition* only, stays dismissed once dismissed until the next outage, and
+ * closes silently on recovery. The bell stays red throughout: the toast echoes
+ * it, it does not replace it.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Bell } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
@@ -101,6 +111,9 @@ const SUBJECT_TONE: Record<Subject, string> = {
   accounts: 'bg-dividend/16 text-dividend',
 }
 
+/** One id, so an outage is one toast however many polls fail in a row. */
+const OUTAGE_TOAST = 'outage'
+
 export function Notifications() {
   const { t } = useI18n()
   const f = useFormatters()
@@ -115,6 +128,36 @@ export function Notifications() {
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
 
   const state = installationState({ health: health.data, error: health.error })
+
+  // **The echo of the bell** (#1180): opened on the transition into
+  // `unreachable` and on nothing else, so a dismissed toast stays dismissed
+  // while the polls keep failing. `dataUpdatedAt` is the last answer the
+  // health read got — the instant the figures on screen are from. A read
+  // that never answered goes back to `pending` on every poll, which clears
+  // its error: that is no news, and it neither opens nor closes anything.
+  const wasUnreachable = useRef(false)
+  useEffect(() => {
+    if (health.status === 'pending') return
+    const unreachable = state === 'unreachable'
+    if (unreachable === wasUnreachable.current) return
+    wasUnreachable.current = unreachable
+    if (!unreachable) {
+      toast.dismiss(OUTAGE_TOAST)
+      return
+    }
+    toast(t('outage.title'), {
+      id: OUTAGE_TOAST,
+      description:
+        health.dataUpdatedAt === 0
+          ? t('outage.bodyNoFigures')
+          : t('outage.body', { at: health.dataUpdatedAt }),
+      icon: <Bell aria-hidden className="size-4 text-destructive" />,
+      duration: Number.POSITIVE_INFINITY,
+      closeButton: true,
+      // A 44 px target around sonner's 20 px cross, without redrawing it.
+      classNames: { closeButton: "after:absolute after:-inset-3 after:content-['']" },
+    })
+  }, [state, health.status, health.dataUpdatedAt, t])
   // **Nothing is claimed on a silence.** `pending` is the read's own word for
   // *it has not answered and it has not failed*, which is the one state in
   // which this panel says nothing at all — headings, cards and the empty
