@@ -19,6 +19,7 @@ tickets that follow will build on and could silently break:
   the boot completes the table without ever overwriting an answer.
 """
 
+import logging
 import threading
 import time
 from pathlib import Path
@@ -1043,5 +1044,71 @@ def test_the_fold_leaves_a_store_already_canonical_untouched(tmp_path):
     try:
         assert opened.query('SELECT symbol FROM symbol') == [('MC.PA',)]
         assert opened.query('SELECT count(*) FROM portfolio_totals') == [(1,)]
+    finally:
+        opened.close()
+
+
+# --------------------------------------------------------------------------- #
+# A dividend's fee never exceeds its amount (#1166)
+# --------------------------------------------------------------------------- #
+
+def _before_the_cap(path, *events):
+    """Today's store, minus the cap's mark, holding ``events`` as written."""
+    created = store_module.open_store(path)
+    created.close()
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'cap_dividend_fee_at_amount'")
+    connection.execute("INSERT INTO symbol VALUES ('AAPL')")
+    for event_id, event_type, fee, amount in events:
+        connection.execute(
+            "INSERT INTO event (id, date, event_type, account, symbol, "
+            "fee, amount) VALUES (?, '2024-03-01', ?, 'default', ?, ?, ?)",
+            [event_id, event_type,
+             'AAPL' if event_type == 'DIVIDEND' else None, fee, amount])
+    connection.execute(
+        "INSERT INTO portfolio_totals (day, total_value) "
+        "VALUES (DATE '2024-06-03', 1.0)")
+    connection.execute(
+        "INSERT INTO account_metrics (account, day, total_value) "
+        "VALUES ('default', DATE '2024-06-03', 1.0)")
+    connection.close()
+
+
+def test_the_cap_brings_a_stored_dividend_fee_down_to_its_amount(
+        tmp_path, caplog):
+    """The validator now refuses it, and the boot replay validates: left as it
+    was, the stored row would stop the app from starting. A withdrawal's fee is
+    not a withholding, and stays."""
+    path = tmp_path / 'old.duckdb'
+    _before_the_cap(path, (1, 'DIVIDEND', 12.0, 10.0),
+                    (2, 'DIVIDEND', 1.0, 10.0), (3, 'DIVIDEND', None, 10.0),
+                    (4, 'WITHDRAWAL', 12.0, 10.0))
+
+    with caplog.at_level(logging.INFO, logger='store'):
+        opened = store_module.open_store(path)
+    try:
+        assert opened.query('SELECT id, fee FROM event ORDER BY id') == [
+            (1, 10.0), (2, 1.0), (3, None), (4, 12.0)]
+        assert opened.query('SELECT count(*) FROM portfolio_totals') == [(0,)]
+        assert opened.query('SELECT count(*) FROM account_metrics') == [(0,)]
+        assert opened.query('SELECT notes FROM event WHERE id = 1') == [
+            ('(fee was 12.0, capped at the amount)',)]
+        assert opened.query('SELECT notes FROM event WHERE id = 2') == [(None,)]
+        assert '#1 (fee 12.0)' in caplog.text
+    finally:
+        opened.close()
+
+
+def test_the_cap_leaves_a_store_without_such_a_dividend_untouched(tmp_path):
+    """No rebuild where no fee moves — the derived series stay."""
+    path = tmp_path / 'store.duckdb'
+    _before_the_cap(path, (1, 'DIVIDEND', 10.0, 10.0))
+
+    opened = store_module.open_store(path)
+    try:
+        assert opened.query('SELECT fee FROM event') == [(10.0,)]
+        assert opened.query('SELECT count(*) FROM portfolio_totals') == [(1,)]
+        assert opened.query('SELECT count(*) FROM account_metrics') == [(1,)]
     finally:
         opened.close()

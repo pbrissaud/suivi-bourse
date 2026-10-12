@@ -812,6 +812,35 @@ def _fold_symbol_case(connection) -> None:
     logger.info(f'Folded the symbols stored under another spelling: {folded}')
 
 
+def _cap_dividend_fee_at_amount(connection) -> None:
+    """Bring a stored dividend's fee down to its amount (#1166).
+
+    The aggregator books ``amount - fee``, so a fee past the gross booked a
+    negative dividend, and the validator now refuses one. The boot replay
+    validates the whole ledger, so a row written before that refusal would stop
+    the app from starting: it is capped here, the dividend nets to zero, the
+    least the row can say without inventing the figure that was meant.
+
+    The fee it held is appended to the row's label, so the owner can re-enter
+    the withholding that was meant: a log line alone does not outlive a
+    redeploy. A no-op on a store holding no such row, and then the derived
+    series stay.
+    """
+    over = "event_type = 'DIVIDEND' AND fee > amount"
+    capped = connection.execute(
+        f'SELECT id, fee FROM event WHERE {over}').fetchall()
+    if not capped:
+        return
+    connection.execute(
+        "UPDATE event SET notes = concat_ws(' ', notes, "
+        "         '(fee was ' || fee || ', capped at the amount)'), "
+        f"       fee = amount WHERE {over}")
+    connection.execute('DELETE FROM account_metrics')
+    connection.execute('DELETE FROM portfolio_totals')
+    said = ', '.join(f'#{event_id} (fee {was})' for event_id, was in sorted(capped))
+    logger.warning(f'Capped the fee of these dividends at their amount: {said}')
+
+
 def _buy_the_series_again(connection) -> None:
     """Forget every stored close and the two series computed from them.
 
@@ -859,6 +888,7 @@ STEPS = (
     ('drop_dividend_adjusted_prices', _drop_dividend_adjusted_prices),
     ('refetch_prices_bucketed_in_utc', _refetch_prices_bucketed_in_utc),
     ('fold_symbol_case', _fold_symbol_case),
+    ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
 )
 
 

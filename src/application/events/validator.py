@@ -206,6 +206,9 @@ class EventValidator:
 
         if event.fee is not None and event.fee < 0:
             errors.append(_issue('fee', prefix, "fee cannot be negative"))
+        elif event.fee is not None and event.amount is not None and 0 < event.amount < event.fee:
+            # The aggregator books ``amount - fee``: past the gross, a negative dividend (#1166).
+            errors.append(_issue('fee', prefix, "fee cannot exceed amount for DIVIDEND"))
 
         return errors
 
