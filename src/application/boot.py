@@ -9,6 +9,7 @@ import uvicorn
 from a2wsgi import WSGIMiddleware
 from mcp.server.transport_security import TransportSecuritySettings
 
+from application import agent_routes
 from application import boot_env
 from application import main
 from application import mcp_server
@@ -17,6 +18,8 @@ import api
 WSGI_THREADS = 4
 
 MCP_PATH = '/mcp'
+
+AGENT_PATH = '/agent'
 
 NO_HOST_ALLOWLIST = TransportSecuritySettings(
     enable_dns_rebinding_protection=False)
@@ -27,9 +30,15 @@ _UVICORN_LEVELS = ('critical', 'error', 'warning', 'info', 'debug', 'trace')
 class Serving:
     """The ASGI application uvicorn is handed: the Flask app, the agent's, and the teardown."""
 
-    def __init__(self, app, on_shutdown: Callable[[], None], mcp=None):
-        """Wrap the two applications, and build the agent's one **now**."""
+    def __init__(self, app, on_shutdown: Callable[[], None], mcp=None,
+                 agent=None):
+        """Wrap the two applications, and build the agent's one **now**.
+
+        ``agent`` is the in-app analyst's Starlette app (#1114), async beside
+        ``/mcp`` so that a turn waiting on a provider holds no WSGI worker.
+        """
         self.wsgi = WSGIMiddleware(app, workers=WSGI_THREADS)
+        self._agent = agent
         self._on_shutdown = on_shutdown
         self._mcp = mcp
         self._mcp_app = (
@@ -46,6 +55,10 @@ class Serving:
 
         if self._mcp_app is not None and _is_mcp(scope.get('path', '')):
             await self._mcp_app(scope, receive, send)
+            return
+
+        if self._agent is not None and _is_agent(scope.get('path', '')):
+            await self._agent(scope, receive, send)
             return
 
         await self.wsgi(scope, receive, send)
@@ -89,12 +102,17 @@ def _is_mcp(path: str) -> bool:
     return path == MCP_PATH or path.startswith(MCP_PATH + '/')
 
 
+def _is_agent(path: str) -> bool:
+    """Is this path the in-app analyst's? ``/agents`` is not."""
+    return path == AGENT_PATH or path.startswith(AGENT_PATH + '/')
+
+
 def serve(app, environment: boot_env.BootEnvironment,
-          on_shutdown: Callable[[], None], mcp=None) -> None:
+          on_shutdown: Callable[[], None], mcp=None, agent=None) -> None:
     """Bind the one socket and serve until a signal says otherwise."""
     level = environment.log_level.lower()
     uvicorn.run(
-        Serving(app, on_shutdown, mcp),
+        Serving(app, on_shutdown, mcp, agent),
         host='0.0.0.0',
         port=environment.web_port,
         log_level=level if level in _UVICORN_LEVELS else 'info',
@@ -110,8 +128,9 @@ def sequence(env: Mapping[str, str]) -> None:
     try:
         app = api.create_app(runtime)
         mcp = mcp_server.build_server(runtime)
+        agent = agent_routes.build_app(runtime, mcp)
         main.start_runtime(runtime)
-        serve(app, environment, teardown, mcp)
+        serve(app, environment, teardown, mcp, agent)
     finally:
         teardown()
 

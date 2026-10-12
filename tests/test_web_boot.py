@@ -34,6 +34,7 @@ from types import SimpleNamespace
 
 import anyio
 import pytest
+from starlette.applications import Starlette
 from mcp.server import MCPServer
 
 from application import boot
@@ -972,7 +973,7 @@ def test_the_boot_serves_although_the_market_edge_raises(
     monkeypatch.setattr(market.yf, "Ticker", _refuses)
     answered = {}
 
-    def _serve(app, environment, on_shutdown, mcp=None):
+    def _serve(app, environment, on_shutdown, mcp=None, agent=None):
         """Stand in for the socket: ask the built app instead of binding one."""
         answered["status"] = app.test_client().get("/health").status_code
 
@@ -996,7 +997,7 @@ def test_the_health_probe_answers_within_a_second_of_a_hung_market(
     _a_ledger_holding(tmp_path, "AAPL", "MSFT", "ALO.PA")
     answered = {}
 
-    def _serve(app, environment, on_shutdown, mcp=None):
+    def _serve(app, environment, on_shutdown, mcp=None, agent=None):
         """Stand in for the socket: ask the built app instead of binding one."""
         answered["status"] = app.test_client().get("/health").status_code
         answered["elapsed"] = time.monotonic() - started
@@ -1262,15 +1263,18 @@ def test_the_boot_hands_the_agents_interface_to_the_socket(tmp_path, monkeypatch
     _a_ledger_holding(tmp_path, "AAPL")
     handed = {}
 
-    def _serve(app, environment, on_shutdown, mcp=None):
+    def _serve(app, environment, on_shutdown, mcp=None, agent=None):
         """Keep what the boot handed over — the whole point of this test."""
         handed["mcp"] = mcp
+        handed["agent"] = agent
 
     monkeypatch.setattr(boot, "serve", _serve)
 
     boot.sequence({})
 
     assert isinstance(handed["mcp"], MCPServer)
+    # And the in-app analyst's routes beside it (#1114).
+    assert isinstance(handed["agent"], Starlette)
 
 
 def test_the_agents_path_reaches_the_agents_application():

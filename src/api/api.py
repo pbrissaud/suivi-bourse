@@ -12,6 +12,7 @@ from werkzeug.exceptions import HTTPException
 from logfmt_logger import getLogger
 
 from application import account_facts
+from application import agent as agent_module
 from application import accounts as accounts_module
 from application import benchmark_view
 from application import dashboard_layout
@@ -1367,6 +1368,51 @@ def delete_dashboard_layout():
     with runtime.config_manager.writing() as opened:
         dashboard_layout.delete(opened)
     return Response(status=204)
+
+
+@api_bp.get('/agent/config')
+def get_agent_config():
+    """The analyst's provider and model, and of its key only ``last4``."""
+    return jsonify(agent_module.describe(agent_module.read(_store())))
+
+
+@api_bp.put('/agent/config')
+def put_agent_config():
+    """Change any of ``enabled``, ``provider``, ``model``, ``base_url``."""
+    return _write_agent_config(
+        lambda config: (agent_module.change(config, _json_object()), False))
+
+
+@api_bp.put('/agent/key')
+def put_agent_key():
+    """Keep the provider's key. It is never served back, only its ``last4``."""
+    body = _json_object() or {}
+    return _write_agent_config(lambda config: (
+        agent_module.with_key(config, body.get('key'), agent_module.now()),
+        False))
+
+
+@api_bp.delete('/agent/key')
+def delete_agent_key():
+    """Forget the key; a provider that needs one is switched off with it."""
+    return _write_agent_config(agent_module.without_key)
+
+
+def _write_agent_config(changed):
+    """Read, change and write the row under the writers' mutex.
+
+    ``changed`` maps the stored configuration to the new one and whether that
+    switched the analyst off. A refusal names the field, and never the key.
+    """
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            config, disabled = changed(agent_module.read(opened))
+            agent_module.write(opened, config, agent_module.now())
+    except agent_module.InvalidAgentConfig as exc:
+        return unprocessable(str(exc), key=exc.key)
+    return jsonify(agent_module.describe(
+        config, **({'disabled': True} if disabled else {})))
 
 
 @api_bp.put('/config/log-level')
