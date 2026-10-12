@@ -243,7 +243,8 @@ Under them, the portfolio's chart across the hero's full width, with its reading
 the page's one range control: the real chart, never a decorative sparkline beside a
 dialog holding the real one.
 
-Under the chart, one row of statistics: Versé net, Titres, gain since 1 January.
+Under the chart, one row of statistics: Versé net, Titres, Liquidités, gain since 1 January.
+From `sm` up the row has one column per figure present, so it is never partly empty.
 
 ## Elevation & Depth
 
@@ -325,3 +326,4 @@ page. No zero-offset glow, in either theme.
 | 2026-10-11 | The dashboard is a grid of sections the owner arranges | Two widths, an ordered list rather than a 2D grid; full width only where a section shows more; the menu in the title row; designed through office hours, eng and design reviews on 11/10/2026. |
 | 2026-10-11 | The hero draws the real chart, full width | Reverses the sparkline-and-dialog of #1099 (direction 1a): one chart, readable by everyone, instead of a large mute picture plus a dialog. |
 | 2026-10-12 | The IRR is the third pill; the year-to-date gain moves to the statistics row (#1149) | Keeps the one performance figure next to the value on a phone; no figure leaves the page. |
+| 2026-10-12 | The statistics row names the cash, one column per figure (#1151) | `Titres` + `Liquidités` is the value to the cent, so the gap under the hero has a name; a missing figure shrinks the row instead of leaving an empty quarter. |

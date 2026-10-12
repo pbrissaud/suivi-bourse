@@ -96,9 +96,21 @@ describe('the value is the hero (direction 1a)', () => {
     expect(value?.className).not.toMatch(/text-(gain|loss)/)
     // `Valeur totale` left the row of statistics: it is the hero now.
     expect(screen.queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
-    for (const name of ['Versé net', 'Titres', 'TRI', 'Gain depuis le 1ᵉʳ janvier']) {
+    for (const name of ['Versé net', 'Titres', 'Liquidités', 'TRI', 'Gain depuis le 1ᵉʳ janvier']) {
       expect(figure(name)).toBeInTheDocument()
     }
+    expect(figure('Liquidités')).toHaveTextContent(/500,00/)
+    // The row's order: what the value is made of, then the year's window on it.
+    const row = figure('Liquidités').parentElement as HTMLElement
+    expect(
+      within(row)
+        .getAllByRole('group')
+        .map((group) => group.getAttribute('aria-label')),
+    ).toEqual(['Versé net', 'Titres', 'Liquidités', 'Gain depuis le 1ᵉʳ janvier'])
+    // One column per figure from `sm`, so the row is never partly empty (#1151).
+    expect(row.className).toMatch(/\bgrid-cols-2 /)
+    expect(row.className).toContain('sm:grid-cols-none sm:grid-flow-col sm:auto-cols-fr')
+    expect(row.className).not.toContain('sm:grid-cols-4')
     // One performance figure per screen (#1112): the TWR is not a statistic.
     expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
   })
@@ -214,6 +226,31 @@ describe('the gain is computed, never read', () => {
     expect(figure('Versé net')).toHaveTextContent(/2\D?430,00/)
     expect(figure('Valeur du portefeuille')).toHaveTextContent(/2\D?900,00/)
     expect(figure('Titres')).toHaveTextContent(/2\D?400,00/)
+    // The cash takes no drift: `Titres` + `Liquidités` is the value.
+    expect(figure('Liquidités')).toHaveTextContent(/500,00/)
+  })
+
+  it('leaves no slot for the cash where there is none, and no dash in it', async () => {
+    server.use(totalsOf({ cash_balance: null }))
+    renderApp()
+
+    const row = (await screen.findByRole('group', { name: 'Titres' })).parentElement as HTMLElement
+    expect(screen.queryByRole('group', { name: 'Liquidités' })).not.toBeInTheDocument()
+    // The row shrinks: three figures, and no dash standing in for the fourth.
+    expect(
+      within(row)
+        .getAllByRole('group')
+        .map((group) => group.getAttribute('aria-label')),
+    ).toEqual(['Versé net', 'Titres', 'Gain depuis le 1ᵉʳ janvier'])
+  })
+
+  it('says a negative cash balance with its minus sign, in the colour of text', async () => {
+    server.use(totalsOf({ cash_balance: -120 }))
+    renderApp()
+
+    const cash = await screen.findByRole('group', { name: 'Liquidités' })
+    expect(cash).toHaveTextContent(/[-−]120,00/)
+    expect(cash.innerHTML).not.toMatch(/text-(gain|loss)/)
   })
 
   it('never mentions the fourth term to an install whose transfers are free', async () => {

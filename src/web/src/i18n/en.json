@@ -125,6 +125,7 @@
   "dashboard.empty.body": "Everything here is computed from your events: purchases, sales, dividends, deposits. You have not recorded any yet.",
   "dashboard.empty.link": "Go to the ledger",
   "dashboard.holdings": "Securities",
+  "dashboard.cash": "Cash",
   "dashboard.pricedAt": "Prices as of {date}",
   "chart.reading.range": "{names}, {from} to {to}.",
   "chart.reading.opening.one": "{name} starts at {value}.",

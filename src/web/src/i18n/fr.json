@@ -125,6 +125,7 @@
   "dashboard.empty.body": "Tout ici se calcule à partir de vos événements : achats, ventes, dividendes, versements. Vous n’en avez encore enregistré aucun.",
   "dashboard.empty.link": "Aller au grand livre",
   "dashboard.holdings": "Titres",
+  "dashboard.cash": "Liquidités",
   "dashboard.pricedAt": "Cours au {date}",
   "chart.reading.range": "{names}, du {from} au {to}.",
   "chart.reading.opening.one": "{name} part de {value}.",
