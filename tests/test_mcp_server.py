@@ -122,27 +122,25 @@ LEDGER = [
 # The surface itself
 # --------------------------------------------------------------------- #
 
-def test_the_surface_is_eight_tools_and_nothing_else(tmp_path):
-    """Eight, named, and no ninth arriving by accident.
+def test_the_surface_is_seven_tools_and_nothing_else(tmp_path):
+    """Seven, named, and no eighth arriving by accident.
 
     Either should fail a test rather than a user's setup.
 
     The sixth is the investment rhythm (#751), and it arrived with a route of
     its own: this module's opening promise — *it computes nothing* — is kept at
-    the word rather than gaining a second exception. The seventh and eighth
-    are the two simulators (#1109), with flat arguments.
+    the word rather than gaining a second exception. The seventh is
+    the sale simulator (#1109), with flat arguments.
     """
     runtime, _ = build_runtime(tmp_path)
 
     names = sorted(tool.name for tool in listed(runtime))
     assert names == ['get_investment_rhythm', 'get_portfolio_history',
                      'get_portfolio_totals', 'list_accounts', 'list_events',
-                     'list_positions', 'simulate_arbitrage', 'simulate_sale']
+                     'list_positions', 'simulate_sale']
     arguments = {tool.name: list(tool.input_schema['properties'])
                  for tool in listed(runtime)}
     assert arguments['simulate_sale'] == ['account', 'symbol', 'quantity']
-    assert arguments['simulate_arbitrage'] == [
-        'from_account', 'symbol', 'quantity', 'to_account']
 
 
 def test_every_description_states_the_absence_rule(tmp_path):
@@ -879,7 +877,7 @@ def test_the_rhythm_description_carries_the_three_things_it_must(tmp_path):
     confident-and-wrong statement about the reader's own money: quoting the
     amount without its coverage (and so multiplying it by twelve), reading a
     ``null`` as a zero, and treating the figure as money that entered the
-    portfolio when an arbitrage inflates it.
+    portfolio when selling and buying back inflates it.
     """
     runtime, _ = build_runtime(tmp_path)
 
@@ -920,14 +918,6 @@ SERVED_WITH = {
         {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 4},
         {'account': 'pea', 'symbol': 'AAPL', 'quantity': 2},
         {'account': 'other', 'symbol': 'AAPL', 'quantity': 2},
-    ],
-    'simulate_arbitrage': [
-        {'from_account': 'cto', 'symbol': 'MC.PA', 'quantity': 10,
-         'to_account': 'pea'},
-        {'from_account': 'pea', 'symbol': 'AAPL', 'quantity': 2,
-         'to_account': 'cto'},
-        {'from_account': 'other', 'symbol': 'AAPL', 'quantity': 1,
-         'to_account': 'pea'},
     ],
 }
 
@@ -988,10 +978,9 @@ def rich_runtime(tmp_path):
     run on a thin ledger agrees with the schema about nothing. So: two
     declared accounts, a USD line on an EUR base with its fundamentals, a line
     sold to zero, twelve months of buys, a projecting model whose rate change
-    is still ahead, and a perf series that crosses a year end. For the
-    simulators: a flat model on ``cto`` over a priced line, a third account
-    ``other`` with no model and an unpriced line, and a PEA 1 000 under its
-    ceiling, so a CTO-to-PEA arbitrage crosses it. **Every day is
+    is still ahead, and a perf series that crosses a year end. For the sale
+    simulator: a flat model on ``cto`` over a priced line, a third account
+    ``other`` with no model and an unpriced line. **Every day is
     counted from today**, because the rhythm's window and ``ytd`` both end
     today and fixed days would rot.
     """
@@ -1050,7 +1039,7 @@ def rich_runtime(tmp_path):
     perf_series.write_account_metrics(opened, [
         AccountMetricPoint(account='pea', day=day, cash_balance=10.0,
                            holdings_value=1000.0, total_value=1010.0,
-                           net_contributed=149_000.0, xirr=0.05,
+                           net_contributed=1000.0, xirr=0.05,
                            gain_absolu=10.0, twr_index=index)
         for day, index in ((year_end, 100.0), (today, 105.0))])
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
@@ -1333,7 +1322,7 @@ def test_a_citation_that_names_several_members_names_none(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# The simulators (#1109)
+# The sale simulator (#1109)
 # --------------------------------------------------------------------- #
 
 def test_a_cto_sale_is_the_figure_worked_by_hand(tmp_path):
@@ -1384,10 +1373,10 @@ def test_a_delisted_line_enters_the_plan_at_its_carried_value(tmp_path,
 
     def price(selling):
         """XYZ's price on ``other``, with ``selling`` the symbol sold."""
-        built = account_facts.simulation_accounts(
+        built = account_facts.simulation_account(
             runtime.store.reader(), runtime.config_manager.current(),
-            datetime.now(timezone.utc), ['other'], selling)
-        return next(line.price for line in built['other'].lines
+            datetime.now(timezone.utc), 'other', selling)
+        return next(line.price for line in built.lines
                     if line.symbol == 'XYZ')
 
     assert price('AAPL') == pytest.approx(10.0)
@@ -1399,11 +1388,11 @@ def test_an_unpriced_line_not_sold_enters_the_plan_unpriced(tmp_path):
     from application import account_facts
 
     runtime = rich_runtime(tmp_path)
-    built = account_facts.simulation_accounts(
+    built = account_facts.simulation_account(
         runtime.store.reader(), runtime.config_manager.current(),
-        datetime.now(timezone.utc), ['other'], 'AAPL')
+        datetime.now(timezone.utc), 'other', 'AAPL')
 
-    assert next(line.price for line in built['other'].lines
+    assert next(line.price for line in built.lines
                 if line.symbol == 'XYZ') is None
 
 
@@ -1415,20 +1404,6 @@ def test_a_line_with_no_quantity_is_never_divided_into():
     for quantity in (0, None):
         holding = SimpleNamespace(quantity=quantity, market_value=None)
         assert account_facts._line_price(share, holding, 'AAPL') == 300.0
-
-
-def test_an_arbitrage_out_of_a_pea_pays_the_net_less_the_withdrawal(tmp_path):
-    """The money leaves the wrapper, so its exit tax comes off the payment."""
-    body = payload(call(rich_runtime(tmp_path), 'simulate_arbitrage',
-                        {'from_account': 'pea', 'symbol': 'AAPL',
-                         'quantity': 2, 'to_account': 'cto'}))
-
-    sale = body['sale']
-    assert sale['if_withdrawn'] > 0
-    assert body['payment'] == pytest.approx(
-        sale['net_proceeds'] - sale['if_withdrawn'])
-    assert [warning['code'] for warning in body['warnings']] == [
-        'pea_withdrawal_before_threshold']
 
 
 def _refuse_cto_model(runtime):
@@ -1448,16 +1423,7 @@ def _refuse_cto_model(runtime):
      'cannot sell a quantity of 0', None),
     ('simulate_sale', {'account': 'other', 'symbol': 'XYZ', 'quantity': 1},
      'XYZ has no price in other', None),
-    ('simulate_arbitrage', {'from_account': 'cto', 'symbol': 'MC.PA',
-                            'quantity': 1, 'to_account': 'nope'},
-     'the declared accounts are: cto, other, pea', None),
-    ('simulate_arbitrage', {'from_account': 'cto', 'symbol': 'MC.PA',
-                            'quantity': 1, 'to_account': 'cto'},
-     'source and target are the same account', None),
     ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 1},
-     'carries a taxation model this version refuses', _refuse_cto_model),
-    ('simulate_arbitrage', {'from_account': 'pea', 'symbol': 'AAPL',
-                            'quantity': 1, 'to_account': 'cto'},
      'carries a taxation model this version refuses', _refuse_cto_model),
     ('simulate_sale', {'account': 'cto', 'symbol': 'MC.PA', 'quantity': True},
      'quantity', None),
@@ -1476,18 +1442,3 @@ def test_a_refused_simulation_arrives_in_words(tmp_path, tool, arguments,
     assert result.is_error is True
     assert cause in _text(result)
     assert 'store could not answer' not in _text(result)
-
-
-def test_an_arbitrage_past_the_pea_ceiling_says_by_how_much(tmp_path):
-    """149 000 contributed, 1 350 paid in: 350 over the 150 000."""
-    body = payload(call(rich_runtime(tmp_path), 'simulate_arbitrage',
-                        {'from_account': 'cto', 'symbol': 'MC.PA',
-                         'quantity': 10, 'to_account': 'pea'}))
-
-    assert body['payment'] == pytest.approx(1350.0)
-    assert [warning['code'] for warning in body['warnings']] == [
-        'pea_ceiling_exceeded', 'pea_eligibility_unknown']
-    figures = body['warnings'][0]['figures']
-    assert figures['excess'] == pytest.approx(
-        figures['net_contributed'] + body['payment'] - 150_000)
-    assert figures['excess'] == pytest.approx(350.0)
