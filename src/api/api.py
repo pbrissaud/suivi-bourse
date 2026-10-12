@@ -232,7 +232,9 @@ def get_gain_baseline():
             _store(), _snapshot().events or [], period)
     except AggregationError as exc:
         return _unreplayable(exc, 'gain-baseline')
-    if _rebuilding():
+    # Only a baseline read at a day can be in a rebuild's way: an inception
+    # clamp (`day` null) is an exact zero, and the window is since inception.
+    if _rebuilding() and payload['day'] is not None:
         payload['terms']['unrealised'] = None
         payload['terms']['unrealised_unknown'] = gain_baseline.REBUILDING
     return jsonify(payload)

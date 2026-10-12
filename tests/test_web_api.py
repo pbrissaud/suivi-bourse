@@ -442,6 +442,25 @@ def test_gain_baseline_answers_the_four_terms_at_the_day_before_the_window(
     }
 
 
+def test_gain_baseline_during_a_rebuild_keeps_an_inception_clamp_exact(tmp_path):
+    """A rebuild hides the latent term read at a day; a clamp reads no day."""
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/events', json=_draft(date='2025-09-01'))
+    seed_totals(opened, day=date(2026, 8, 5))
+    api_module.current_runtime().workloads.reconstruction = (1, 2)
+
+    terms = client.get('/api/portfolio/gain-baseline?period=12m').get_json()
+
+    assert (terms['day'], terms['clamped']) == (None, True)
+    assert terms['terms']['unrealised'] == 0.0
+    assert terms['terms']['unrealised_unknown'] is None
+
+    seed_totals(opened, day=date(2025, 12, 31))
+    rebuilt = client.get('/api/portfolio/gain-baseline?period=ytd').get_json()
+    assert rebuilt['terms']['unrealised'] is None
+    assert rebuilt['terms']['unrealised_unknown'] == 'rebuilding'
+
+
 @pytest.mark.parametrize('query', ['', '?period=1m', '?period=all'])
 def test_gain_baseline_refuses_a_period_it_does_not_measure(tmp_path, query):
     client = build_client(tmp_path)
