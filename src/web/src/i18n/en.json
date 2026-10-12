@@ -104,7 +104,7 @@
   "dashboard.gain.pill": "{amount} total P&L",
   "dashboard.gain.pillAbsent": "Total P&L: {reason}",
   "dashboard.breakdown.title": "Where the P&L comes from",
-  "dashboard.ytd.gain": "{amount} since 1 January",
+  "dashboard.ytd.label": "Gain since 1 January",
   "dashboard.ytd.pending": "history not rebuilt that far back yet",
   "dashboard.ytd.noPreviousYear": "nothing recorded before 1 January",
   "dashboard.day.gain": "Today: {amount}",

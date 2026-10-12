@@ -243,6 +243,8 @@ Under them, the portfolio's chart across the hero's full width, with its reading
 the page's one range control: the real chart, never a decorative sparkline beside a
 dialog holding the real one.
 
+Under the chart, one row of statistics: Versé net, Titres, gain since 1 January.
+
 ## Elevation & Depth
 
 Flat. Atelier's shadow opacity is 0, so depth comes from the step between
@@ -322,3 +324,4 @@ page. No zero-offset glow, in either theme.
 | 2026-10-10 | Semantic tokens are aliases; the theme is replaceable (#1130) | Gain becomes `primary` and loss `destructive` so any tweakcn theme repaints the app; attention loses its hue and the icon carries the meaning. |
 | 2026-10-11 | The dashboard is a grid of sections the owner arranges | Two widths, an ordered list rather than a 2D grid; full width only where a section shows more; the menu in the title row; designed through office hours, eng and design reviews on 11/10/2026. |
 | 2026-10-11 | The hero draws the real chart, full width | Reverses the sparkline-and-dialog of #1099 (direction 1a): one chart, readable by everyone, instead of a large mute picture plus a dialog. |
+| 2026-10-12 | The IRR is the third pill; the year-to-date gain moves to the statistics row (#1149) | Keeps the one performance figure next to the value on a phone; no figure leaves the page. |
