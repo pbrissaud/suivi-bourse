@@ -168,11 +168,6 @@ class PortfolioReader:
             ' WHERE day <= CAST(? AS DATE) ORDER BY day DESC LIMIT 1', [day])
         return _stamp(dict(zip(PERF_COLUMNS, rows[0]))) if rows else None
 
-    def first_totals_day(self) -> Optional[date]:
-        """The oldest ``portfolio_totals`` day, or ``None`` with no series (#1156)."""
-        rows = self._store.query('SELECT min(day) FROM portfolio_totals')
-        return rows[0][0] if rows else None
-
     def twr_origin(self) -> Optional[date]:
         """The day the time-weighted index counts from — ``MIN(day)``."""
         rows = self._store.query(
