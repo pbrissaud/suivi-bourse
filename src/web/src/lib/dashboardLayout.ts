@@ -18,14 +18,11 @@
  */
 import type { DashboardLayout } from '@/lib/api'
 import { DASHBOARD_BLOCKS, type BlockId, type BlockSpec, type Width } from '@/lib/dashboardBlocks'
-import { GAIN_PERIODS, type GainPeriod } from '@/lib/gain'
 
 export interface Placement<Id extends string = BlockId> {
   id: Id
   width: Width
   hidden: boolean
-  /** The window the card answers over (#1156); absent reads as `all`. */
-  period?: GainPeriod
 }
 
 /**
@@ -78,7 +75,7 @@ export function normalizeLayout<Id extends string = BlockId>(
   const placements: Placement<Id>[] = []
   for (const block of blocks) {
     if (typeof block !== 'object' || block === null) continue
-    const { id, width, hidden, period } = block as Record<string, unknown>
+    const { id, width, hidden } = block as Record<string, unknown>
     if (!known(id) || seen.has(id)) continue
     seen.add(id)
     const spec = registry[id]
@@ -86,7 +83,6 @@ export function normalizeLayout<Id extends string = BlockId>(
       id,
       width: spec.widths.includes(width as Width) ? (width as Width) : spec.width,
       hidden: hidden === true,
-      ...(GAIN_PERIODS.includes(period as GainPeriod) ? { period: period as GainPeriod } : {}),
     })
   }
   for (const placement of defaultLayout(registry)) {
@@ -105,9 +101,7 @@ function storedBlocks(saved: unknown): unknown[] | null {
 export function toStored(placements: readonly Placement[]): DashboardLayout {
   return {
     version: LAYOUT_VERSION,
-    blocks: placements.map(({ id, width, hidden, period }) =>
-      period === undefined ? { id, width, hidden } : { id, width, hidden, period },
-    ),
+    blocks: placements.map(({ id, width, hidden }) => ({ id, width, hidden })),
   }
 }
 
@@ -335,14 +329,6 @@ export function withWidth<Id extends string>(
   width: Width,
 ): Placement<Id>[] {
   return placements.map((one) => (one.id === id ? { ...one, width } : one))
-}
-
-export function withPeriod<Id extends string>(
-  placements: readonly Placement<Id>[],
-  id: Id,
-  period: GainPeriod,
-): Placement<Id>[] {
-  return placements.map((one) => (one.id === id ? { ...one, period } : one))
 }
 
 /** Hidden cards keep their slot, so a card shown again comes back where it was. */

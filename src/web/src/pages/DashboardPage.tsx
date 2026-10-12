@@ -58,7 +58,7 @@
  *    lives here.
  */
 import { useMemo, useState } from 'react'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
@@ -75,7 +75,6 @@ import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { api } from '@/lib/api'
 import { buildAccountRows } from '@/lib/accounts'
 import type { BlockId } from '@/lib/dashboardBlocks'
-import { normalizeLayout, toStored, withPeriod } from '@/lib/dashboardLayout'
 import {
   DEFAULT_DASHBOARD_RANGE,
   dashboardState,
@@ -83,7 +82,6 @@ import {
   type DashboardRange,
 } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
-import type { GainPeriod } from '@/lib/gain'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { buildShareRows } from '@/lib/shares'
@@ -93,7 +91,6 @@ import { usePageHeading } from '@/lib/pageHeading'
 export default function DashboardPage() {
   const { t } = useI18n()
   const f = useFormatters()
-  const queryClient = useQueryClient()
 
   const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
 
@@ -173,47 +170,7 @@ export default function DashboardPage() {
   // The grid's own read, started here with the page's others so it does not
   // wait for the page to reach `portfolio` before leaving: same key as
   // `DashboardGrid`'s, so it is one request.
-  const layout = useQuery({ queryKey: ['dashboard-layout'], queryFn: api.dashboardLayout })
-
-  // The breakdown's window (#1156), saved with the layout. `all` until the
-  // layout answers, so no baseline is asked for on a guess.
-  const period: GainPeriod =
-    normalizeLayout(layout.data).find((one) => one.id === 'gain-breakdown')?.period ?? 'all'
-  const baseline = useQuery({
-    queryKey: ['gain-baseline', period],
-    queryFn: () => api.gainBaseline(period as Exclude<GainPeriod, 'all'>),
-    enabled: period !== 'all',
-    placeholderData: keepPreviousData,
-  })
-  // A mutation of its own, not the grid's `write`: that one leaves edit mode
-  // and announces « saved », and choosing a period is neither. One scope, so
-  // two arrow presses write in order; the read that follows settles the cache
-  // on what the server kept.
-  const savePeriod = useMutation({
-    scope: { id: 'dashboard-layout' },
-    mutationFn: (next: GainPeriod) =>
-      api.saveDashboardLayout(
-        toStored(withPeriod(normalizeLayout(layout.data), 'gain-breakdown', next)),
-      ),
-    onMutate: async (next: GainPeriod) => {
-      await queryClient.cancelQueries({ queryKey: ['dashboard-layout'] })
-      const previous = queryClient.getQueryData(['dashboard-layout'])
-      queryClient.setQueryData(
-        ['dashboard-layout'],
-        toStored(withPeriod(normalizeLayout(previous), 'gain-breakdown', next)),
-      )
-      return { previous }
-    },
-    onError: (_error, _next, context) => {
-      queryClient.setQueryData(['dashboard-layout'], context?.previous)
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['dashboard-layout'] }),
-  })
-  // An unread layout is not the default one: saving a period over it would
-  // write the default arrangement over the owner's (the grid's own rule).
-  const onPeriod = (next: GainPeriod) => {
-    if (layout.data !== undefined) savePeriod.mutate(next)
-  }
+  useQuery({ queryKey: ['dashboard-layout'], queryFn: api.dashboardLayout })
   // While the grid is being arranged, the hero is frozen too (12B).
   const [arranging, setArranging] = useState(false)
 
@@ -229,7 +186,6 @@ export default function DashboardPage() {
   const chartFailure = oneFailure(readConditions({ errors: [perf.error, valuation.error] }))
   const moversFailure = oneFailure(readConditions({ errors: [movers.error] }))
   const rhythmFailure = oneFailure(readConditions({ errors: [rhythm.error] }))
-  const baselineFailure = oneFailure(readConditions({ errors: [baseline.error] }))
 
   // The freshest quote the page holds — one instant for the whole screen, and
   // nothing at all when nothing has ever been quoted: an invented *now* is
@@ -263,16 +219,7 @@ export default function DashboardPage() {
       'gain-breakdown': {
         state: gainBreakdownRenderState(breakdown),
         bare: false,
-        render: () => (
-          <GainBreakdown
-            {...breakdown}
-            period={period}
-            onPeriod={onPeriod}
-            baseline={period === 'all' ? null : (baseline.data ?? null)}
-            busy={period !== 'all' && baseline.isPlaceholderData}
-            failure={baselineFailure}
-          />
-        ),
+        render: () => <GainBreakdown {...breakdown} />,
       },
       rhythm: {
         state: investmentRhythmRenderState(rhythmRead),

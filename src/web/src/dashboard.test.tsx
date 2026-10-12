@@ -14,10 +14,9 @@
  */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, delay, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
-import { gainCascade, portfolioTerms } from '@/lib/gain'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aClosedPosition,
@@ -264,78 +263,64 @@ describe('the gain is computed, never read', () => {
   })
 })
 
-describe('the breakdown draws a cascade onto its total (#1143)', () => {
-  it('gives every row a track whose segment sits where the helper puts it', async () => {
-    renderApp()
+describe('the breakdown is a statement, with no drawing and no window (#1175)', () => {
+  const breakdown = async () => {
     const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
     await within(card).findByRole('group', { name: 'Gain total' })
-
-    // +300,00 · +50,00 · +25,00 · −5,00 = 370,00, the defaults the head reads.
-    const expected = gainCascade(portfolioTerms(defaultPositions(), -5))
-    expect(expected?.steps).toHaveLength(5)
-    const tracks = card.querySelectorAll<HTMLElement>('[data-cascade-step]')
-    expect([...tracks].map((track) => track.dataset.cascadeStep)).toEqual([
-      'unrealised',
-      'realised',
-      'dividends',
-      'transferFees',
-      'total',
-    ])
-    for (const step of expected?.steps ?? []) {
-      const track = card.querySelector(`[data-cascade-step="${step.term}"]`)
-      const segment = track?.querySelector<HTMLElement>('[style*="width"]')
-      expect(parseFloat(segment?.style.left ?? '')).toBeCloseTo(step.left * 100, 6)
-      expect(parseFloat(segment?.style.width ?? '')).toBeCloseTo(step.width * 100, 6)
-    }
-  })
-
-  it('colours a segment as its figure, at full strength (#1153)', async () => {
-    // A realised loss: the signed terms take the sign's hue, the two that never
-    // change sign take the neutral ink — never an opacity shade of the gain.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload(
-            defaultPositions().map((position) =>
-              position.realised === 0 ? position : { ...position, realised: -200 },
-            ),
-          ),
-        ),
-      ),
+    return card
+  }
+  const TERMS = [
+    'Plus-value latente',
+    'Plus-value réalisée',
+    'Dividendes reçus',
+    'Frais de versement',
+  ]
+  /** `+1 234,56 €` → 1234.56, whatever spaces and minus sign `fr-FR` writes. */
+  const amountOf = (text: string) =>
+    Number(
+      text
+        .replace(/[^\d,−-]/g, '')
+        .replace('−', '-')
+        .replace(',', '.'),
     )
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
-    await within(card).findByRole('group', { name: 'Gain total' })
 
-    const segment = (term: string) =>
-      card.querySelector(`[data-cascade-step="${term}"] [style*="width"]`)
-    expect(segment('unrealised')).toHaveClass('bg-gain')
-    expect(segment('realised')).toHaveClass('bg-loss')
-    expect(segment('dividends')).toHaveClass('bg-muted-foreground')
-    expect(segment('transferFees')).toHaveClass('bg-muted-foreground')
-    expect(segment('total')).toHaveClass('bg-gain')
-    expect(card.innerHTML).not.toMatch(/bg-(gain|loss)\/\d+/)
+  it('writes four rows and the total as text, and draws nothing', async () => {
+    renderApp()
+    const card = await breakdown()
+
+    expect(
+      within(card)
+        .getAllByRole('group')
+        .map((group) => group.getAttribute('aria-label')),
+    ).toEqual([...TERMS, 'Gain total'])
+    // The ⓘ's icon is the one svg, inside its button.
+    expect([...card.querySelectorAll('svg')].every((svg) => svg.closest('button'))).toBe(true)
+    expect(card.querySelector('[data-cascade-step]')).toBeNull()
+    expect(card.querySelector('[style*="width"]')).toBeNull()
+    expect(within(card).queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 
-  it('leaves the latent row its zero mark alone when nothing is held (#727)', async () => {
-    const closed = [
-      aClosedPosition({ symbol: 'ZZD', realised: 120, dividends: 30, closed_at: '2025-11-04' }),
-    ]
-    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(closed))))
+  it('adds its four rows up to its total', async () => {
     renderApp()
-    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
-    await within(card).findByRole('group', { name: 'Gain total' })
+    const card = await breakdown()
 
-    const expected = gainCascade(portfolioTerms(closed, -5))
-    const latent = card.querySelector('[data-cascade-step="unrealised"]')
-    expect(latent).not.toBeNull()
-    expect(latent?.querySelector('[style*="width"]')).toBeNull()
-    const zero = latent?.querySelector<HTMLElement>('[style]')
-    expect(parseFloat(zero?.style.left ?? '')).toBeCloseTo((expected?.zero ?? NaN) * 100, 6)
-    expect(card.querySelector('[data-cascade-step="total"] [style*="width"]')).not.toBeNull()
+    const figure = (name: string) =>
+      amountOf(within(card).getByRole('group', { name }).lastElementChild?.textContent ?? '')
+    const sum = TERMS.reduce((acc, name) => acc + figure(name), 0)
+    expect(sum).toBeCloseTo(370, 2)
+    expect(figure('Gain total')).toBeCloseTo(sum, 2)
   })
 
-  it('draws no track at all while the total waits for a rate', async () => {
+  it('dashes the fee row and the total when the fees have no bound', async () => {
+    server.use(totalsOf({ transfer_fees: null }))
+    renderApp()
+    const card = await breakdown()
+
+    expect(within(card).getByRole('group', { name: 'Frais de versement' })).toHaveTextContent(/—/)
+    expect(within(card).getByRole('group', { name: 'Gain total' })).toHaveTextContent(/—/)
+  })
+
+  it('names a pending rate on the latent row and the total', async () => {
     server.use(
       http.get(ROUTES.positions, () =>
         HttpResponse.json(
@@ -344,156 +329,57 @@ describe('the breakdown draws a cascade onto its total (#1143)', () => {
       ),
     )
     renderApp()
-    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
-    expect(await within(card).findByRole('group', { name: 'Gain total' })).toHaveTextContent(
-      /en attente du taux/,
-    )
-    expect(card.querySelector('[data-cascade-step]')).toBeNull()
-  })
-})
+    const card = await breakdown()
 
-describe('the breakdown answers over a window chosen in the card (#1156)', () => {
-  const layoutWith = (period: string) =>
-    http.get(ROUTES.dashboardLayout, () =>
-      HttpResponse.json({
-        version: 1,
-        blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false, period }],
-      }),
-    )
-  // At B: +100 · +20 · +5 · −5, so the window reads +200 · +30 · +20, the fees
-  // drop out, and the total is 250 — against 370 since inception.
-  const aBaseline = (overrides: Record<string, unknown> = {}) => ({
-    period: 'ytd',
-    day: '2025-12-31',
-    since: '2026-01-01',
-    clamped: false,
-    terms: {
-      unrealised: 100,
-      unrealised_unknown: null,
-      realised: 20,
-      dividends: 5,
-      transfer_fees: -5,
-      holds_position: true,
-    },
-    ...overrides,
+    for (const name of ['Plus-value latente', 'Gain total']) {
+      expect(within(card).getByRole('group', { name })).toHaveTextContent(/en attente du taux/)
+    }
   })
-  const baselineOf = (payload: object) =>
-    http.get(ROUTES.gainBaseline, () => HttpResponse.json(payload))
-  const card = async () => {
-    const found = await screen.findByRole('region', { name: 'D’où vient le gain' })
-    await within(found).findByRole('group', { name: 'Gain total' })
-    return within(found)
-  }
 
-  it('asks nothing since inception and draws the figures it always did', async () => {
-    let asked = 0
+  it('names a rebuild on the latent row and the total', async () => {
     server.use(
-      http.get(ROUTES.gainBaseline, () => {
-        asked += 1
-        return HttpResponse.json(aBaseline())
-      }),
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(
+            defaultPositions().map((position) => ({
+              ...position,
+              terminal: false,
+              price: null,
+              converted: null,
+            })),
+          ),
+        ),
+      ),
     )
     renderApp()
-    const breakdown = await card()
+    const card = await breakdown()
 
-    expect(breakdown.getByRole('radio', { name: 'Depuis le début' })).toBeChecked()
-    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
-    expect(breakdown.queryByText(/^Depuis le \d/)).not.toBeInTheDocument()
-    expect(asked).toBe(0)
+    for (const name of ['Plus-value latente', 'Gain total']) {
+      expect(within(card).getByRole('group', { name })).toHaveTextContent(
+        /historique en cours de reconstitution/,
+      )
+    }
   })
 
-  it('draws the deltas since B and says where the window starts', async () => {
-    server.use(layoutWith('ytd'), baselineOf(aBaseline()))
-    renderApp()
-    const breakdown = await card()
-
-    expect(await breakdown.findByText('Depuis le 1ᵉʳ janv. 2026')).toBeInTheDocument()
-    expect(breakdown.getByRole('radio', { name: 'Cette année' })).toBeChecked()
-    expect(breakdown.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/200,00/)
-    expect(breakdown.getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(/30,00/)
-    expect(breakdown.getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/20,00/)
-    expect(breakdown.queryByRole('group', { name: 'Frais de versement' })).not.toBeInTheDocument()
-    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/250,00/)
-  })
-
-  it('reads a ledger younger than the window as since inception, from its first day', async () => {
-    const zero = { unrealised: 0, unrealised_unknown: null, realised: 0, dividends: 0 }
+  it('asks for no window, even when a saved layout still carries one', async () => {
+    const asked: string[] = []
+    const record = ({ request }: { request: Request }) => {
+      asked.push(new URL(request.url).pathname)
+    }
+    server.events.on('request:start', record)
+    onTestFinished(() => server.events.removeListener('request:start', record))
     server.use(
-      layoutWith('12m'),
-      baselineOf(
-        aBaseline({
-          period: '12m',
-          day: null,
-          since: '2026-03-01',
-          clamped: true,
-          terms: { ...zero, transfer_fees: 0, holds_position: false },
+      http.get(ROUTES.dashboardLayout, () =>
+        HttpResponse.json({
+          version: 1,
+          blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false, period: 'ytd' }],
         }),
       ),
     )
     renderApp()
-    const breakdown = await card()
+    await breakdown()
 
-    expect(await breakdown.findByText('Depuis le 1ᵉʳ mars 2026')).toBeInTheDocument()
-    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
-  })
-
-  it('saves the period with the layout and stays in reading mode', async () => {
-    const saved: unknown[] = []
-    server.use(
-      baselineOf(aBaseline()),
-      http.put(ROUTES.dashboardLayout, async ({ request }) => {
-        const body = await request.json()
-        saved.push(body)
-        return HttpResponse.json(body)
-      }),
-      // A store: what was written is what the next read answers.
-      http.get(ROUTES.dashboardLayout, () => HttpResponse.json(saved.at(-1) ?? null)),
-    )
-    renderApp()
-    const breakdown = await card()
-
-    fireEvent.click(breakdown.getByRole('radio', { name: 'Cette année' }))
-
-    await waitFor(() => expect(saved).toHaveLength(1))
-    expect(saved[0]).toMatchObject({
-      blocks: expect.arrayContaining([
-        expect.objectContaining({ id: 'gain-breakdown', period: 'ytd' }),
-      ]),
-    })
-    expect(await breakdown.findByText(/^Depuis le \d/)).toBeInTheDocument()
-    expect(breakdown.getByRole('radio', { name: 'Cette année' })).toBeChecked()
-    expect(screen.queryByRole('button', { name: 'Terminé' })).not.toBeInTheDocument()
-  })
-
-  it('is one tab stop whose arrows move the period', async () => {
-    server.use(baselineOf(aBaseline()))
-    renderApp()
-    const breakdown = await card()
-    const radios = breakdown.getAllByRole('radio')
-
-    expect(radios.map((radio) => radio.tabIndex)).toEqual([0, -1, -1])
-    fireEvent.keyDown(radios[0], { key: 'ArrowRight' })
-
-    await waitFor(() => expect(breakdown.getByRole('radio', { name: 'Cette année' })).toBeChecked())
-    expect(breakdown.getByRole('radio', { name: 'Cette année' })).toHaveFocus()
-  })
-
-  it('dashes every term and names the failure when the baseline does not answer', async () => {
-    server.use(
-      layoutWith('ytd'),
-      problemHandler(ROUTES.gainBaseline, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
-    renderApp()
-    const breakdown = await card()
-
-    expect(await breakdown.findByText('Lecture impossible')).toBeInTheDocument()
-    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent('—')
-    expect(breakdown.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent('—')
-    expect(breakdown.queryByText(/^Depuis le \d/)).not.toBeInTheDocument()
+    expect(asked.some((path) => path.endsWith('-baseline'))).toBe(false)
   })
 })
 
@@ -527,13 +413,11 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
 
-    // **One on the page**, and it is the chart's own (#838, then #1155 closed) —
-    // beside the breakdown's own window, which is the card's and sets nothing
-    // else (#1156).
+    // **One on the page**, and it is the chart's own (#838, then #1155 closed).
     await waitFor(() =>
       expect(
         screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
-      ).toEqual(['Plage', 'Période']),
+      ).toEqual(['Plage']),
     )
   })
 
