@@ -49,7 +49,6 @@ import { cn } from '@/lib/utils'
 
 interface MoversProps {
   movers: readonly Mover[] | null
-  reference: string | null
   rows: readonly ShareRow[]
   currency: string | null
   failure?: ReadFailure | null
@@ -65,14 +64,7 @@ export function moversRenderState({
   return movers === null && failure === null ? 'pending' : 'renders'
 }
 
-export function Movers({
-  movers,
-  reference,
-  rows,
-  currency,
-  failure = null,
-  width = 'half',
-}: MoversProps) {
+export function Movers({ movers, rows, currency, failure = null, width = 'half' }: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
@@ -86,15 +78,10 @@ export function Movers({
   return (
     <Section
       title={t('dashboard.movers.title')}
-      // The instant the comparison is against, and it is this block's own
-      // subject rather than the page's period: a movement is read against a
-      // close, and the close is a fact about the quotes rather than about the
-      // window the reader chose.
-      aside={
-        reference === null ? null : (
-          <p className="label">{t('dashboard.movers.since', { date: f.dateTime(reference) })}</p>
-        )
-      }
+      // Undated (#1142): each line is read against its own previous close, and
+      // a weekend puts a stock's on Thursday and a 24/7 line's on Saturday, so
+      // no one date is true of the whole list.
+      aside={moved.length === 0 ? null : <p className="label">{t('dashboard.movers.since')}</p>}
     >
       {moved.length === 0 ? (
         <EmptyState

@@ -211,25 +211,12 @@ def refused(exc: HTTPException):
 
 @api_bp.get('/portfolio/movers')
 def get_portfolio_movers():
-    """What moved since the last session close (#652 déc. 8)."""
+    """What moved since each line's previous close (#652 déc. 8, #1142)."""
     reader = _reader()
-    rows = reader.positions()
-
-    times = [row['price_time'] for row in rows
-             if isinstance(row.get('price_time'), datetime)]
-    if not times:
-        return jsonify({'since': None, 'reference': None, 'movers': []})
-
-    since = portfolio_view.session_baseline_instant(max(times))
-    baseline = reader.prices_at(since)
     movers = portfolio_view.build_movers(
-        portfolio_view.build_shares(rows, _carried()), baseline)
-
-    return jsonify({
-        'since': since.isoformat(),
-        'reference': instants.iso(portfolio_view.baseline_reference(baseline)),
-        'movers': [mover.to_dict() for mover in movers],
-    })
+        portfolio_view.build_shares(reader.positions(), _carried()),
+        reader.previous_closes())
+    return jsonify({'movers': [mover.to_dict() for mover in movers]})
 
 
 @api_bp.get('/positions')

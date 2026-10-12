@@ -726,10 +726,6 @@ export function aMoversPayload(
   ],
 ): MoversResponse {
   return {
-    // The cut is a rule and the reference is the close it found: naming the cut
-    // announced a session that had not happened yet.
-    since: '2026-03-02T00:00:00.000Z',
-    reference: '2026-03-01T17:30:00.000Z',
     movers,
   }
 }

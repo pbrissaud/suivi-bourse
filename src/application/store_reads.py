@@ -110,6 +110,35 @@ class PortfolioReader:
             ') WHERE rn = 1 ORDER BY symbol',
             [moment], ('symbol', 'price', 't'))
 
+    def previous_closes(self) -> List[Dict[str, Any]]:
+        """Each symbol's last price **before the UTC day of its own latest quote**.
+
+        Per symbol, not one cut for the portfolio (#1142): a 24/7 line quoted
+        on Sunday would otherwise move every equity's cut to Sunday midnight,
+        where their price *is* their latest one and every move reads zero.
+
+        A symbol whose latest quote trails the store's newest by more than
+        :data:`STALE_QUOTE` has no row: its scrape stopped, and the move before
+        its last quote is weeks old, not *since the previous close*. Measured
+        against the newest quote rather than the clock, so a weekend with no
+        24/7 line keeps Friday's moves. Five days spans Easter, Thursday's
+        close to Monday's.
+        """
+        return self._series(
+            'SELECT symbol, price_converted, ts FROM ('
+            '  SELECT p.symbol, p.price_converted, p.ts,'
+            '         ROW_NUMBER() OVER ('
+            '             PARTITION BY p.symbol ORDER BY p.ts DESC) AS rn'
+            '    FROM price_point p'
+            '    JOIN symbol_quote q ON q.symbol = p.symbol'
+            '   WHERE p.price_converted IS NOT NULL'
+            "     AND p.ts < date_trunc('day', q.last_price_ts)"
+            '     AND q.last_price_ts >= ('
+            '         SELECT max(last_price_ts) FROM symbol_quote)'
+            f"        - INTERVAL '{STALE_QUOTE}'"
+            ') WHERE rn = 1 ORDER BY symbol',
+            None, ('symbol', 'price', 't'))
+
     def daily_closes(self, start: Optional[datetime] = None,
                      stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """``{day, symbol, price}`` — every symbol's closing price, per day."""
@@ -226,6 +255,10 @@ class PortfolioReader:
                    for index in range(table.num_columns)]
         return [dict(zip(names, values)) for values in zip(*columns)]
 
+
+#: How far a symbol's latest quote may trail the store's newest before
+#: :meth:`PortfolioReader.previous_closes` stops reading it as current (#1142).
+STALE_QUOTE = '5 days'
 
 ALLOWED_INTERVALS = ('5 minutes', '30 minutes', '1 hour', '6 hours', '1 day')
 

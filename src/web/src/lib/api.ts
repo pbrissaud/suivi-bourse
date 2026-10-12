@@ -823,14 +823,7 @@ export interface Mover {
 }
 
 export interface MoversResponse {
-  /** The cut the rule defines — midnight of the newest observation's own day. */
-  since: string | null
-  /**
-   * The newest price actually found at or before the cut, and it is what the
-   * block names: the cut is a rule, and printing it announced a close that had
-   * not happened yet.
-   */
-  reference: string | null
+  /** Each against the last price before the day of its own latest quote (#1142). */
   movers: Mover[]
 }
 

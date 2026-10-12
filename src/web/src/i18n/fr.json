@@ -190,7 +190,7 @@
   "dashboard.edit.over": "{card}, position {position} sur {total}",
   "dashboard.edit.dropped": "{card} déposée, position {position} sur {total}",
   "dashboard.edit.dragCancelled": "Déplacement annulé",
-  "dashboard.movers.since": "Depuis la clôture du {date}",
+  "dashboard.movers.since": "Depuis la clôture précédente",
   "dashboard.movers.others": "{count, plural, one {# autre ligne n’apparaît pas ici} other {# autres lignes n’apparaissent pas ici}}{unchanged, plural, =0 {} one {, dont # n’a pas bougé} other {, dont # n’ont pas bougé}}.",
   "dashboard.movers.othersAllUnchanged": "{count, plural, one {L’autre ligne n’a pas bougé} other {Les # autres lignes n’ont pas bougé}}.",
   "dashboard.movers.empty": "Rien à comparer",
