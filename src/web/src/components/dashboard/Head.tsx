@@ -241,8 +241,16 @@ export function DashboardHead({
             label={t(heroIsHoldings ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
             // A value is not a direction: it is set in the colour of text, and
             // the sign lives on the pills under it. It recomposes when a poll
-            // moves it (#1180); the pills under it change instantly.
-            value={<RecomposingFigure value={heroValue} currency={currency} />}
+            // moves it (#1180); the pills under it change instantly. Keyed by
+            // what it measures: the value and the securities are two figures,
+            // and one never recomposes into the other.
+            value={
+              <RecomposingFigure
+                key={heroIsHoldings ? 'holdings' : 'portfolio'}
+                value={heroValue}
+                currency={currency}
+              />
+            }
           >
             {/* What of the value is cash (#1174), right under it. It takes no
                 drift (#1151), and it is a balance, not a direction: no sign
