@@ -1,6 +1,6 @@
 """Pure view logic for the web UI (issue #659, rewritten to v5's shape by #700)."""
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import (
     Any, Callable, Collection, Dict, Iterable, List, Mapping, Optional, Sequence,
 )
