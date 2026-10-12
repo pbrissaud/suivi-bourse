@@ -53,8 +53,9 @@
  *    says what it renders through its `xxxRenderState`, the same function it
  *    calls for its own `null`, so the grid never holds a place for a card
  *    that draws nothing.
- *  - **One range control, and it is the page's** (#838). It sits above the
- *    chart it sets.
+ *  - **One range control, and it is the chart's** (#838, then #1155 closed).
+ *    It sits on the chart's control bar, beside the readings; only its state
+ *    lives here.
  */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'

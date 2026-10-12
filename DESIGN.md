@@ -245,7 +245,7 @@ d'impôt", then the pills: total gain, today, IRR per year. The TWR lives behind
 that explains why it differs from the IRR. One performance figure per screen.
 
 Under them, the portfolio's chart across the hero's full width, with its readings and
-the page's one range control: the real chart, never a decorative sparkline beside a
+its range on one control bar: the real chart, never a decorative sparkline beside a
 dialog holding the real one.
 
 Under the chart, one row of statistics: Versé net, Titres, gain since 1 January.

@@ -20,7 +20,7 @@
  *    named, exactly the idiom the ledger's chips and the price chart's rail
  *    already use. What survives the change is the reason they are not radios:
  *    two sibling radio groups read as two settings of the same thing, and the
- *    range beside them is the page's one range control.
+ *    range beside them is the chart's one range control.
  *  - **`3M` is dead** and `1M / YTD / 1Y / MAX` is the whole list: from
  *    February to December `YTD` covers or contains `3M`, and five buttons on
  *    one control is one too many. The series is daily and dense over the
@@ -89,6 +89,7 @@ import {
   amountsFromTotals,
   amountsFromValuation,
   amountsValues,
+  DASHBOARD_RANGES,
   performanceRows,
   READINGS,
   windowFloor,
@@ -110,11 +111,13 @@ interface PortfolioChartProps {
    */
   ledger: boolean
   /**
-   * The page's period. There is **one** range control on the dashboard and it
-   * is not this chart's (#838): the drawing sets it above the chart, where it
-   * governs the movements and the comparison beside them too.
+   * The chart's window. There is **one** range control on the dashboard and it
+   * is this chart's own (#838, then #1155 closed): it sits on the chart's
+   * control bar, beside the readings, and sets this chart's window only. The
+   * state lives on the page, which passes it in.
    */
   range: DashboardRange
+  onRangeChange: (range: DashboardRange) => void
   currency: string | null
   /**
    * The two series, exactly one of which is read. `null` is *the read has not
@@ -133,6 +136,7 @@ interface PortfolioChartProps {
 export function PortfolioChart({
   ledger,
   range,
+  onRangeChange,
   currency,
   performance,
   valuation,
@@ -194,16 +198,18 @@ export function PortfolioChart({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
-              this selector segmented exactly as it draws the range one row up,
-              and nothing here is a place to go: pressing one swaps what the
-              slot below draws, which is what `aria-pressed` says and what a tab
+              this selector segmented exactly as the range beside it, and
+              nothing here is a place to go: pressing one swaps what the slot
+              below draws, which is what `aria-pressed` says and what a tab
               would misname. At one reading there is nothing to choose, so there
-              is no control at all — and the range is nowhere near this chart
-              since #838: the page has **one**, and it drives this chart, the
-              movements and the comparison alike. */}
+              is no control at all, only the heading — and the range sits beside
+              it and sets this chart's window only. One bar, one track look
+              (#1150): on a narrow screen the range wraps under the reading. */}
         {ledger ? (
           <Segmented
+            bordered
             mode="pressed"
+            size="compact"
             label={t('dashboard.chart.reading')}
             value={reading}
             onChange={setChosen}
@@ -217,6 +223,18 @@ export function PortfolioChart({
         ) : (
           <h2 className="label">{t('dashboard.chart.amounts')}</h2>
         )}
+        <Segmented
+          bordered
+          mode="radio"
+          size="compact"
+          label={t('dashboard.chart.range')}
+          value={range}
+          onChange={onRangeChange}
+          options={DASHBOARD_RANGES.map((candidate) => ({
+            value: candidate,
+            label: t('dashboard.chart.rangeName', { range: candidate }),
+          }))}
+        />
       </div>
       {/* **The live region wraps the swap, and not the plot** (#1003). A range
             press on a young ledger replaces the drawing with the empty state, so
