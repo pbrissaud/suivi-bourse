@@ -19,7 +19,7 @@ from api import create_app
 from application import agent, agent_routes, agent_threads, boot, mcp_server
 from test_mcp_server import call, payload, rich_runtime
 
-KEY = 'sk-ant-secret-0123456789wxyz'
+KEY = 'test-key-not-a-real-one-0123456789wxyz'
 
 SALE = {'account': 'cto', 'symbol': 'MC.PA', 'quantity': 4}
 

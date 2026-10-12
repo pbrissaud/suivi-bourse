@@ -9,7 +9,7 @@ from api import create_app
 from application import agent
 from test_mcp_server import build_runtime
 
-KEY = 'sk-test-0123456789abcd'
+KEY = 'test-key-0123456789abcd'
 
 
 @pytest.fixture
