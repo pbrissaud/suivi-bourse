@@ -19,6 +19,10 @@ VERSION = 1
 
 WIDTHS = ('half', 'full')
 
+#: The window a card answers over (#1156). Optional: an absent key reads as
+#: ``all``, so ``VERSION`` stays 1.
+PERIODS = ('all', 'ytd', '12m')
+
 #: Bounds on what one installation can ask the store to keep. The catalogue
 #: holds a dozen cards; fifty is room for it to grow and no room for a payload.
 MAX_BLOCKS = 50
@@ -63,8 +67,15 @@ def validate(body: Any) -> dict:
         if not isinstance(block.get('hidden'), bool):
             raise InvalidLayout(
                 f"the card {block_id!r} says whether it is hidden, true or false")
-        kept.append({'id': block_id, 'width': block['width'],
-                     'hidden': block['hidden']})
+        stored = {'id': block_id, 'width': block['width'],
+                  'hidden': block['hidden']}
+        if 'period' in block:
+            if block['period'] not in PERIODS:
+                raise InvalidLayout(
+                    f"the card {block_id!r} has a period of "
+                    f"{' or '.join(repr(period) for period in PERIODS)}")
+            stored['period'] = block['period']
+        kept.append(stored)
     return {'version': VERSION, 'blocks': kept}
 
 
