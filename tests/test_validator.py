@@ -316,11 +316,21 @@ def test_dividend_negative_amount(validator):
     assert "amount must be positive for DIVIDEND" in errors[0]
 
 
-def test_dividend_accepts_a_fee_that_is_not_negative(validator):
-    for fee in (None, 0.0, 3.0):
+def test_dividend_accepts_a_fee_up_to_its_amount(validator):
+    for fee in (None, 0.0, 1.0, 2.40):
         ev = Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple Inc",
                    amount=2.40, fee=fee)
         assert validator.validate([ev]) == (True, [])
+
+
+def test_dividend_fee_above_amount(validator):
+    """A withholding never exceeds the gross: the dividend would book negative
+    (#1166)."""
+    ev = Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple Inc",
+               amount=10.0, fee=12.0)
+    issues = validator.issues([ev])
+    assert [issue.field for issue in issues] == ['fee']
+    assert "fee cannot exceed amount for DIVIDEND" in issues[0].message
 
 
 def test_dividend_negative_fee(validator):
