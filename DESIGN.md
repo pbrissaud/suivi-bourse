@@ -312,9 +312,12 @@ page. No zero-offset glow, in either theme.
 - **Approach:** minimal-functional.
 - **Easing:** enter ease-out, exit ease-in, move ease-in-out.
 - **Duration:** micro 80 ms, short 200 ms, medium 300 ms.
-- **The one authored moment:** after a proposal is merged, the hero value
-  recomposes from the old value to the new one (250 ms, ease-out). Nothing else
-  animates on entry. `prefers-reduced-motion` turns it into an instant change.
+- **The one authored moment:** the hero value recomposes from the old value to
+  the new one (250 ms, ease-out). One movement, two triggers: a merged proposal
+  and a refreshed value (the figures poll every minute, #1180). A change under
+  0.1 % of the value is instant, so the cents do not twitch all day. Nothing
+  else animates on entry: the pills change instantly. `prefers-reduced-motion`
+  turns it into an instant change.
 - **Dragging a dashboard section:** only the gesture moves; the other sections slide to
   their new place (short, ease-in-out), and not at all under `prefers-reduced-motion`.
 
@@ -333,5 +336,6 @@ page. No zero-offset glow, in either theme.
 | 2026-10-12 | The IRR is the third pill; the year-to-date gain moves to the statistics row (#1149) | Keeps the one performance figure next to the value on a phone; no figure leaves the page. |
 | 2026-10-12 | The statistics row names the cash, one column per figure (#1151) | `Titres` + `Liquidités` is the value to the cent, so the gap under the hero has a name; a missing figure shrinks the row instead of leaving an empty quarter. |
 | 2026-10-12 | Strategy, not tax, is the subject; the hero is lightened (#1174) | Reverses the 2026-10-10 « Net-of-tax line under the hero » row, the year-to-date half of the #1149 row and the #1151 statistics row: the cash is a line under the value, the year-to-date a pill, and the stat row repeated what the chart already draws. |
+| 2026-10-12 | The hero recomposes on a refreshed value too (#1180) | The figures poll every minute; one movement with two triggers (a merged proposal, a refreshed value), at or above 0.1 % of the value, rather than a second animation. No refresh indicator: the header's quote date already moves. |
 | 2026-10-12 | Colour only the terms that can change sign | Dividends and transfer fees have a fixed sign, so colouring it carries no information and steals the signal from a realised loss; the bar follows the same rule (#1144). |
 | 2026-10-12 | Gain breakdown is a statement (#1175) | Reverses the cascade (#1143/#1161) and the in-card window (#1156/#1173): with four terms the figures are the content, the bars read as progress bars, and the year-to-date gain has its own pill. |
