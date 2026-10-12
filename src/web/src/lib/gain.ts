@@ -23,7 +23,7 @@
  * header sums its rows, can never show it. With it the sum telescopes exactly.
  */
 import { AWAITING_RATE, DASH, FIGURE, REBUILDING, absenceCase, type Rendering } from '@/lib/absence'
-import type { Position } from '@/lib/api'
+import type { DashboardPlacement, GainBaselineResponse, Position } from '@/lib/api'
 import { toneOf } from '@/lib/sign'
 
 export const GAIN_TERMS = ['unrealised', 'realised', 'dividends', 'transferFees'] as const
@@ -54,7 +54,7 @@ export type Sum =
   | { known: true; value: number }
   | { known: false; because: 'awaitingRate' | 'unboundedFees' | 'rebuilding' }
 
-interface GainTerms {
+export interface GainTerms {
   /**
    * Does the portfolio hold **anything at all**? (#727)
    *
@@ -90,6 +90,46 @@ interface GainTerms {
    * worth zero.
    */
   transferFees: number | null
+}
+
+/**
+ * The window the breakdown answers over (#1156): since inception, this
+ * calendar year, or the last twelve months.
+ */
+export type GainPeriod = 'all' | 'ytd' | '12m'
+
+export const GAIN_PERIODS: readonly GainPeriod[] = ['all', 'ytd', '12m']
+
+// `api.ts` spells the period out so it imports nothing; the two spellings must
+// stay one set, both ways.
+type StoredPeriod = NonNullable<DashboardPlacement['period']>
+export const periodsAgree: [GainPeriod, StoredPeriod] extends [StoredPeriod, GainPeriod]
+  ? true
+  : never = true
+
+/**
+ * The four terms over a window: each is `term(now) − term(B)`, with the baseline
+ * at B from `/api/portfolio/gain-baseline` (#1156). The total is their sum, so
+ * `gainTotal` and the cascade take the result unchanged.
+ *
+ * The latent term is unknown when either side is — `now`'s reason first. A
+ * portfolio sold out during the window still holds at B, so its latent term
+ * moves to zero, which is real money; one empty at both ends keeps the #727 dash.
+ */
+export function windowTerms(now: GainTerms, base: GainBaselineResponse['terms']): GainTerms {
+  let unrealised: Sum
+  if (!now.unrealised.known) unrealised = now.unrealised
+  else if (base.unrealised === null)
+    unrealised = { known: false, because: base.unrealised_unknown ?? 'rebuilding' }
+  else unrealised = { known: true, value: now.unrealised.value - base.unrealised }
+
+  return {
+    unrealised,
+    realised: now.realised - base.realised,
+    dividends: now.dividends - base.dividends,
+    transferFees: now.transferFees === null ? null : now.transferFees - base.transfer_fees,
+    holdsPosition: now.holdsPosition || base.holds_position,
+  }
 }
 
 /**

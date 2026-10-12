@@ -122,6 +122,24 @@ export function defaultHandlers() {
     // fixture's own pair — six covered months of twelve — and a test about
     // another rhythm overrides it.
     http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm())),
+    // The breakdown's window at B (#1156), only ever asked for once a period
+    // other than since-inception is saved: +100 · +20 · +5 · −5 at 31 December.
+    http.get(ROUTES.gainBaseline, ({ request }) =>
+      HttpResponse.json({
+        period: new URL(request.url).searchParams.get('period'),
+        day: '2025-12-31',
+        since: '2026-01-01',
+        clamped: false,
+        terms: {
+          unrealised: 100,
+          unrealised_unknown: null,
+          realised: 20,
+          dividends: 5,
+          transfer_fees: -5,
+          holds_position: true,
+        },
+      }),
+    ),
     http.get(ROUTES.dashboardLayout, () => HttpResponse.json(null)),
     http.put(ROUTES.dashboardLayout, async ({ request }) =>
       HttpResponse.json(await request.json()),
