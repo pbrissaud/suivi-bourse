@@ -20,10 +20,9 @@
  * the accounts as adjacent segments closing a whole, which is a claim about the
  * total that no per-line bar makes (`AccountsRail.tsx` carries the argument for
  * keeping both). Its segments are therefore not `ShareBar`s and cannot be, and
- * `lint/share-width.grit` exempts that file by name in `biome.json`. The gain's
- * breakdown on the dashboard is the second, for a neighbouring reason: a
- * cascade of four terms onto their total, each segment placed by the running
- * sum before it, which no per-line bar can say either (#1143).
+ * `lint/share-width.grit` exempts that file by name in `biome.json`, and it is
+ * the only one: the gain's breakdown drew a cascade here once (#1143) and is a
+ * statement with no drawing since #1175.
  */
 import fs from 'node:fs'
 import path from 'node:path'

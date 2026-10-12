@@ -23,7 +23,7 @@
  * header sums its rows, can never show it. With it the sum telescopes exactly.
  */
 import { AWAITING_RATE, DASH, FIGURE, REBUILDING, absenceCase, type Rendering } from '@/lib/absence'
-import type { DashboardPlacement, GainBaselineResponse, Position } from '@/lib/api'
+import type { Position } from '@/lib/api'
 import { toneOf } from '@/lib/sign'
 
 export const GAIN_TERMS = ['unrealised', 'realised', 'dividends', 'transferFees'] as const
@@ -54,7 +54,7 @@ export type Sum =
   | { known: true; value: number }
   | { known: false; because: 'awaitingRate' | 'unboundedFees' | 'rebuilding' }
 
-export interface GainTerms {
+interface GainTerms {
   /**
    * Does the portfolio hold **anything at all**? (#727)
    *
@@ -90,46 +90,6 @@ export interface GainTerms {
    * worth zero.
    */
   transferFees: number | null
-}
-
-/**
- * The window the breakdown answers over (#1156): since inception, this
- * calendar year, or the last twelve months.
- */
-export type GainPeriod = 'all' | 'ytd' | '12m'
-
-export const GAIN_PERIODS: readonly GainPeriod[] = ['all', 'ytd', '12m']
-
-// `api.ts` spells the period out so it imports nothing; the two spellings must
-// stay one set, both ways.
-type StoredPeriod = NonNullable<DashboardPlacement['period']>
-export const periodsAgree: [GainPeriod, StoredPeriod] extends [StoredPeriod, GainPeriod]
-  ? true
-  : never = true
-
-/**
- * The four terms over a window: each is `term(now) − term(B)`, with the baseline
- * at B from `/api/portfolio/gain-baseline` (#1156). The total is their sum, so
- * `gainTotal` and the cascade take the result unchanged.
- *
- * The latent term is unknown when either side is — `now`'s reason first. A
- * portfolio sold out during the window still holds at B, so its latent term
- * moves to zero, which is real money; one empty at both ends keeps the #727 dash.
- */
-export function windowTerms(now: GainTerms, base: GainBaselineResponse['terms']): GainTerms {
-  let unrealised: Sum
-  if (!now.unrealised.known) unrealised = now.unrealised
-  else if (base.unrealised === null)
-    unrealised = { known: false, because: base.unrealised_unknown ?? 'rebuilding' }
-  else unrealised = { known: true, value: now.unrealised.value - base.unrealised }
-
-  return {
-    unrealised,
-    realised: now.realised - base.realised,
-    dividends: now.dividends - base.dividends,
-    transferFees: now.transferFees === null ? null : now.transferFees - base.transfer_fees,
-    holdsPosition: now.holdsPosition || base.holds_position,
-  }
 }
 
 /**
@@ -314,66 +274,4 @@ export function termAmount(terms: GainTerms, term: GainTermName): number | null 
  */
 export function termTone(terms: GainTerms, term: GainTermName): string {
   return toneOf(termRendering(terms, term), termCarriesSign(term) ? termAmount(terms, term) : 0)
-}
-
-export interface CascadeStep {
-  term: GainTermName | 'total'
-  /** Fractions of the track, 0..1: left edge and width. */
-  left: number
-  width: number
-}
-
-export interface Cascade {
-  /** The drawn terms in `GAIN_TERMS` order, then `total`. */
-  steps: CascadeStep[]
-  /** 0..1, the x of the zero mark — the same on every track. */
-  zero: number
-}
-
-/**
- * The breakdown drawn as a cascade (#1143): each term runs from the running
- * sum before it to the running sum after it, on one scale shared with the
- * total, so the last term ends **exactly** where the total does. A stacked bar
- * of absolute values drew the realised loss and the fees as positive shares of
- * a whole, and so drew more gain than there was.
- *
- * `null` when there is nothing to draw: a total with no figure (a whole with a
- * term missing is not that whole), or every term at zero. The latent term of a
- * portfolio that holds nothing reads as a dash (#727) and counts for its `0`,
- * so it gets no step; neither does a term worth zero, nor one that is not
- * rendered at all. A total that prints as zero (under half a cent) gets no
- * step either — the zero mark says it.
- */
-export function gainCascade(terms: GainTerms): Cascade | null {
-  // Below half a cent an amount prints `0,00 €`, and float noise must not draw
-  // it as a 2 px step.
-  const isZero = (amount: number) => Math.abs(amount) < 0.005
-
-  const total = gainTotal(terms)
-  if (!total.known) return null
-
-  const drawn: { term: GainTermName; from: number; to: number }[] = []
-  let running = 0
-  for (const term of GAIN_TERMS) {
-    const amount = termAmount(terms, term) ?? 0
-    if (isZero(amount) || !termIsRendered(term, amount)) continue
-    if (termRendering(terms, term).kind !== 'figure') continue
-    drawn.push({ term, from: running, to: running + amount })
-    running += amount
-  }
-
-  const ends = [0, ...drawn.map((step) => step.to), total.value]
-  const lo = Math.min(...ends)
-  const hi = Math.max(...ends)
-  if (isZero(hi - lo)) return null
-  const at = (x: number) => (x - lo) / (hi - lo)
-  const step = (term: CascadeStep['term'], a: number, b: number): CascadeStep => ({
-    term,
-    left: at(Math.min(a, b)),
-    width: Math.abs(b - a) / (hi - lo),
-  })
-
-  const steps = drawn.map(({ term, from, to }) => step(term, from, to))
-  if (!isZero(total.value)) steps.push(step('total', 0, total.value))
-  return { steps, zero: at(0) }
 }
