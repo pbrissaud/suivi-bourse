@@ -164,6 +164,20 @@ CREATE TABLE IF NOT EXISTS advisory_ack (
 CREATE TABLE IF NOT EXISTS schema_step (
     step        VARCHAR PRIMARY KEY,
     applied_at  TIMESTAMPTZ NOT NULL);
+
+-- **The analyst's provider, and its key in clear** (#1114). One row. Because
+-- of ``api_key`` this file now holds a secret: no route may ever serve the
+-- store file or a dump of a whole table, and the key leaves the server as its
+-- last four characters only (``agent.describe``).
+CREATE TABLE IF NOT EXISTS agent_config (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+    provider    VARCHAR,
+    model       VARCHAR,
+    base_url    VARCHAR,
+    api_key     VARCHAR,
+    key_set_at  TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ NOT NULL);
 """
 
 DDL = ''.join((
@@ -181,6 +195,7 @@ TABLES = (
     'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
+    'agent_config',
 )
 
 #: The tables whose surrogate key this store hands out — see
