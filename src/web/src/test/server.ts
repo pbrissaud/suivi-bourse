@@ -88,7 +88,7 @@ export function defaultHandlers() {
       HttpResponse.json({ account: String(params.id), reassigned: 0 }),
     ),
     // The taxation models (#752). The read carries the **catalogue** — the kinds
-    // and the two templates — because the server is where that enumeration lives
+    // and their parameters — because the server is where that enumeration lives
     // and a handler inventing its own would let the front's copy drift from it.
     http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue())),
     http.post(ROUTES.taxationModels, async ({ request }) => {

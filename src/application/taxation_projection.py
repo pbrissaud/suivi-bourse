@@ -1,8 +1,8 @@
 """What one account would owe if everything in it were sold today (#919).
 
 **Pure**, and scalar: no store, no market, no numpy, and ``now`` arrives as an
-argument. :mod:`application.taxation` reserves itself for three things — the
-kinds, their parameters, the shipped templates — and sends the projection here.
+argument. :mod:`application.taxation` reserves itself for two things — the
+kinds and their parameters — and sends the projection here.
 
 Three rules the arithmetic is, and they are the reason this module exists rather
 than a formula inlined in the route:
@@ -113,10 +113,10 @@ def age_date(parameters: Mapping[str, Any],
     Under ``opening`` it is the declared date alone. Under ``first_payment`` it
     is the declared date where there is one and the ledger's earliest payment
     otherwise, **and that fallback is what makes the feature reachable at all**:
-    the shipped ``fr_pea`` template sets ``age_basis: FIRST_PAYMENT``, and the
-    form renders and sends ``opened_on`` only under ``opening``. Read the
-    declared date alone and every PEA declared through the shortcut this app
-    ships projects nothing, for ever, with no repair reachable from the screen.
+    a PEA counts from ``age_basis: FIRST_PAYMENT``, and the form renders and
+    sends ``opened_on`` only under ``opening``. Read the declared date alone and
+    every such PEA projects nothing, for ever, with no repair reachable from
+    the screen.
 
     This is not #918's bug returning. #918 is a *declared* date overwritten by a
     derived one; here there is no declaration to overwrite, and a declared date

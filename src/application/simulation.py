@@ -1,5 +1,4 @@
-"""What a sale would raise, and what moving its proceeds into a PEA would meet
-(#1108).
+"""What a sale would raise (#1108).
 
 **Pure**: no store, no market, ``now`` (a UTC calendar day) injected. The caller
 reads the store and hands plain data in, as :mod:`account_facts` does. The
@@ -16,36 +15,14 @@ The only tax arithmetic is :func:`taxation_projection.projected_tax`, applied to
 import math
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from application import taxation
-from application.taxation_projection import projected_tax, rate_changes_on
-
-#: The French PEA's contribution ceiling, in the base currency.
-PEA_CEILING = 150_000.0
+from application.taxation_projection import projected_tax
 
 #: The relative slack a quantity is compared with, so a float typed back from
 #: the screen still sells the whole line.
 _EPSILON = 1e-9
-
-MESSAGES = {
-    'pea_ceiling_exceeded':
-        'This payment would take the PEA past its contribution ceiling.',
-    'pea_ceiling_unknown':
-        'Whether this payment fits under the PEA ceiling cannot be told.',
-    'pea_eligibility_unknown':
-        'Whether the target security is PEA-eligible is not checked.',
-    'pea_withdrawal_before_threshold':
-        'Withdrawing from this PEA before its fifth anniversary may close it.',
-}
-
-#: The ``fr_pea`` template's values, which are what makes an account a PEA.
-_PEA_SHAPE = next(template['values'] for template in taxation.TEMPLATES
-                  if template['id'] == 'fr_pea')
-
-#: What an arbitrage leaves out, whatever the sale itself does.
-ARBITRAGE_NOT_MODELLED = ('progressive_scale_option (#1106)', 'loss_offset',
-                          'social_contributions_detail')
 
 
 class SimulationRefused(Exception):
@@ -69,7 +46,6 @@ class Account:
     opened_on: Optional[date]
     first_payment: Optional[date]
     lines: Sequence[Line]           # every held line of the account
-    net_contributed: Optional[float]
 
 
 def simulate_sale(account: Account, symbol: str, qty: float, *,
@@ -172,63 +148,4 @@ def _project(account: Account, base: float, now: date) -> Optional[float]:
                          first_payment=account.first_payment, now=now)
 
 
-def is_pea(account: Account) -> bool:
-    """The shape of the ``fr_pea`` template: declarations carry no wrapper
-    type, so this is the only way to tell one. Read off the parameters as the
-    record would accept them, so a ``"5"`` a hand edit left is a five."""
-    if account.kind != taxation.AGED_FLAT_REALISED:
-        return False
-    try:
-        parameters = taxation.validate(account.kind, account.parameters)
-    except taxation.ModelRejected:
-        return False
-    return all(parameters.get(name) == value
-               for name, value in _PEA_SHAPE.items())
-
-
-def simulate_arbitrage(from_account: Account, symbol: str, qty: float,
-                       to_account: Account, *, now: date) -> Dict[str, Any]:
-    """Sell out of one account and pay the net proceeds into another."""
-    if from_account.id == to_account.id:
-        raise SimulationRefused('source and target are the same account')
-    sale = simulate_sale(from_account, symbol, qty, now=now)
-    payment = sale['net_proceeds']
-    if from_account.kind == taxation.AGED_FLAT_REALISED:
-        # Paid into another account, the money leaves the wrapper: the exit
-        # tax the sale prices as ``if_withdrawn`` is due on the way out.
-        withdrawn = sale['if_withdrawn']
-        payment = (None if payment is None or withdrawn is None
-                   else payment - withdrawn)
-
-    warnings: List[Dict[str, Any]] = []
-    if is_pea(to_account):
-        contributed = to_account.net_contributed
-        if contributed is None or payment is None:
-            warnings.append(_warning('pea_ceiling_unknown', payment=payment,
-                                     ceiling=PEA_CEILING))
-        elif contributed + payment > PEA_CEILING:
-            warnings.append(_warning(
-                'pea_ceiling_exceeded', net_contributed=contributed,
-                payment=payment, ceiling=PEA_CEILING,
-                excess=contributed + payment - PEA_CEILING))
-        warnings.append(_warning('pea_eligibility_unknown'))
-    if is_pea(from_account):
-        day = rate_changes_on(
-            kind=from_account.kind, parameters=from_account.parameters,
-            opened_on=from_account.opened_on,
-            first_payment=from_account.first_payment, now=now)
-        if day is not None:
-            warnings.append(_warning(
-                'pea_withdrawal_before_threshold',
-                threshold_day=day.isoformat(), days_left=(day - now).days))
-
-    return {'sale': sale, 'payment': payment, 'warnings': warnings,
-            'not_modelled': list(ARBITRAGE_NOT_MODELLED)}
-
-
-def _warning(code: str, **figures: Any) -> Dict[str, Any]:
-    return {'code': code, 'message': MESSAGES[code], 'figures': figures}
-
-
-__all__ = ['Account', 'Line', 'PEA_CEILING', 'SimulationRefused', 'is_pea',
-           'simulate_arbitrage', 'simulate_sale']
+__all__ = ['Account', 'Line', 'SimulationRefused', 'simulate_sale']

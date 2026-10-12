@@ -31,44 +31,6 @@ def test_the_five_kinds_are_the_record_s_five():
         'withholding_income')
 
 
-def test_a_shipped_template_carries_structure_and_never_a_rate():
-    """The whole of what the app is allowed to ship.
-
-    Every rate, bracket bound and social rate in the survey is *per tax year* and
-    several move with a budget law, so the owner types theirs. What ships is what
-    is **not money** — a count of years and the day it runs from — and this test
-    is what keeps a rate from creeping into the constant.
-    """
-    assert taxation.TEMPLATES
-    for template in taxation.TEMPLATES:
-        # One kind of five has any structure at all, which is why the shortcut is
-        # nested under it rather than offered beside the kind.
-        assert template['kind'] == taxation.AGED_FLAT_REALISED
-        assert set(template['values']) == {'threshold_years', 'age_basis'}
-
-
-def test_the_portuguese_unit_linked_is_not_shipped():
-    """#752 asked that the figure be confirmed, and it does not survive the check.
-
-    The Portuguese regime has **two** thresholds — five years and eight — and
-    its reduced rates are conditional on 35 % of the premiums having been paid
-    in the first half of the contract. One ``threshold_years`` cannot say that,
-    and shipping ``8`` would silently drop the five-year tier: a stale bundled
-    figure of exactly the kind that record says is worse than an absent one.
-    """
-    assert [template['id'] for template in taxation.TEMPLATES] == [
-        'fr_pea', 'fr_assurance_vie']
-
-
-def test_the_pea_counts_from_the_first_payment_and_not_from_the_opening():
-    """*"A PEA's five years run from the first payment."* The two coincide often
-    enough to hide the mistake and not always enough to make it safe.
-    """
-    pea = next(t for t in taxation.TEMPLATES if t['id'] == 'fr_pea')
-    assert pea['values'] == {'threshold_years': 5,
-                             'age_basis': taxation.FIRST_PAYMENT}
-
-
 def test_the_catalogue_on_the_wire_states_each_kind_s_parameters():
     published = taxation.catalogue()
     aged = next(entry for entry in published['kinds']
@@ -287,7 +249,7 @@ def test_the_account_fact_table_declares_its_opening_date_column(store):
     assert columns == {'account', 'taxation_model', 'opened_on'}
 
 
-def test_a_shipped_template_is_never_a_row(store):
+def test_no_model_is_seeded(store):
     """The table holds the owner's own and nothing else — nothing is seeded."""
     assert accounts_module.read_models(store) == []
 
