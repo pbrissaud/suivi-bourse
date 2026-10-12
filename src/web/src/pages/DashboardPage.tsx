@@ -39,14 +39,14 @@
  *    end of the screen and its reason at the other.
  *  - **What empties the page and what empties a block are two lists.**
  *    `dashboardState` takes the two reads the page is *made of*; each block's
- *    own read is handed to that block. Folded into one, a failed accounts read
+ *    own read is handed to that block. Folded into one, a failed chart read
  *    would put the page in `failed` and empty it — the very disappearance being
  *    repaired, one level up.
  *  - **The value first, the chart under it** (dashboard redesign, direction
  *    1a, then the dashboard grid's 17A / D25). The page answers *how much is
  *    my portfolio worth* before anything else: the head's hero is the value,
- *    with the gain, the day and the year as pills under it, and the real
- *    chart across the head's full width below them. The accounts comparison
+ *    the cash named under it, the gain, the year, the day and the IRR as
+ *    pills, and the real chart across the head's full width below them. The accounts comparison
  *    left this page for the accounts page, where it is the subject.
  *  - **Under the head, a grid the owner arranges** (`DashboardGrid`): the
  *    cards, their order and their widths come from the saved layout; each card
@@ -73,7 +73,6 @@ import {
 import { Movers, moversRenderState } from '@/components/dashboard/Movers'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { api } from '@/lib/api'
-import { buildAccountRows } from '@/lib/accounts'
 import type { BlockId } from '@/lib/dashboardBlocks'
 import {
   DEFAULT_DASHBOARD_RANGE,
@@ -100,14 +99,6 @@ export default function DashboardPage() {
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
-  // The accounts page's own read, for the projected tax under the hero (#1112).
-  // It is not one of the reads the page is made of: in flight or failed, the
-  // net line is simply not drawn.
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-  const accountRows = useMemo(
-    () => (accounts.data && !accounts.isError ? buildAccountRows(accounts.data.accounts) : null),
-    [accounts.data, accounts.isError],
-  )
 
   // **The two reads the page is made of, and them alone.** A block's own read
   // failing removes that block and is named **by that block**, in the slot the
@@ -272,7 +263,6 @@ export default function DashboardPage() {
           totals={totals.data ?? null}
           rebuilding={runtime.data?.rebuilding ?? null}
           history={perf.data?.points ?? null}
-          accounts={accountRows}
           chart={
             state !== 'portfolio' ? null : (
               <HeroChart

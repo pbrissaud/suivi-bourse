@@ -287,7 +287,7 @@ export function PortfolioChart({
                   {/* What the pointer answers, and since #787 the **only**
                         thing that does: the axes went with the grid, so the exact
                         figure is a hover away and the magnitude at rest is the
-                        head's two statistics above. */}
+                        head's value above (#1174). */}
                   <ChartTooltip
                     format={(value) =>
                       reading === 'amounts' ? f.currency(value, currency) : f.percent(value)

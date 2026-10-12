@@ -1,7 +1,7 @@
 ---
 # gstack: design-md-format=spec
 name: SuiviBourse
-description: A warm, quiet workshop for your own figures, where every account shows what you would really keep, net of tax.
+description: A warm, tidy workshop where you read how you invest — what you put in, how regularly, where it went, what it cost — and whether it is building wealth.
 colors:
   background: "oklch(0.975 0.008 85)"
   surface: "oklch(0.995 0.004 85)"
@@ -98,19 +98,17 @@ components:
 
 ## Overview
 
-**Creative North Star:** "Atelier". The app should feel like a warm, tidy workshop
-where your own figures are laid out to be read: calm surfaces, real numbers, and the
-one figure nobody else shows, what you would keep net of tax.
+**Creative North Star:** "Atelier". A warm, tidy workshop where the user reads **how
+they invest**, not why they picked a stock: what they put in, how regularly, where it
+went, what it cost, and whether it is building wealth.
 
-**What we want remembered:** "Enfin mes vrais chiffres", finally my real numbers.
-Every decision below serves that sentence: the net figure sits under the hero, tax
-appears as a visible line in each account, and nothing is decorated to look better
-than it is.
+**What we want remembered:** « Je comprends comment je me constitue un patrimoine. »
 
 **Product context:** an open-source, self-hosted portfolio tracker for French retail
-investors holding a PEA, a compte-titres and a few positions. Its moat is the net
-figure: the tax model per account wrapper, the projected tax, the comparison with an
-index. Release 5.3 adds an analyst side panel (Vercel AI SDK, `useChat`).
+investors holding a PEA, a compte-titres and a few positions. Its subject is the
+user's investment strategy (rhythm, amounts, allocation, costs, comparison with an
+index), never their investment thesis. The tax model per account wrapper is one
+reading among others. Release 5.3 adds an analyst side panel (Vercel AI SDK, `useChat`).
 
 **Mode per surface:** every screen is Operate (an app UI: finish a task, read figures).
 The website under `website/` is out of scope for this file.
@@ -121,7 +119,8 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
 ("Le relevé", "Atelier", "Instrument"), see the Decisions Log.
 
 **Key characteristics:**
-- The value is the hero, and the net-of-tax line sits right under it.
+- The value is the hero, with the cash it holds named under it, then its pills:
+  total gain, since 1 January, today, IRR.
 - Sections are warm tinted planes, never boxes; Atelier carries no shadow.
 - Cards exist only where you decide something.
 - Colour means something: accent for action, gain and loss for the sign of a figure.
@@ -242,16 +241,17 @@ Ce qu'il vous resterait                            18 169,08 €
 
 ### The hero
 
-The portfolio value (decision 1A, #1099), then one line "Il vous resterait X € net
-d'impôt", then the pills: total gain, today, IRR per year. The TWR lives behind an `ⓘ`
+The portfolio value (decision 1A, #1099), then one line "dont X de liquidités" (drawn
+only with a cash ledger), then the pills: total gain, gain since 1 January, today, IRR
+per year. No net-of-tax line on the dashboard. The TWR lives behind an `ⓘ`
 that explains why it differs from the IRR. One performance figure per screen.
 
 Under them, the portfolio's chart across the hero's full width, with its readings and
 its range on one control bar: the real chart, never a decorative sparkline beside a
 dialog holding the real one.
 
-Under the chart, one row of statistics: Versé net, Titres, Liquidités, gain since 1 January.
-From `sm` up the row has one column per figure present, so it is never partly empty.
+No statistics row under the chart: net contributions are the chart's dashed curve, and
+the securities are the value less the cash.
 
 ## Elevation & Depth
 
@@ -295,8 +295,6 @@ page. No zero-offset glow, in either theme.
 
 ## Do's and Don'ts
 
-- Do put the net-of-tax figure where the user looks first on any screen that shows
-  money in an account.
 - Do keep one hero figure per screen and one performance figure (IRR) visible.
 - Do end every account section with the tax line and "Ce qu'il vous resterait".
 - Do set every figure in a table in Geist Mono and every other figure in Geist with
@@ -314,8 +312,8 @@ page. No zero-offset glow, in either theme.
 - **Approach:** minimal-functional.
 - **Easing:** enter ease-out, exit ease-in, move ease-in-out.
 - **Duration:** micro 80 ms, short 200 ms, medium 300 ms.
-- **The one authored moment:** after a proposal is merged, the net figure under the
-  hero recomposes from the old value to the new one (250 ms, ease-out). Nothing else
+- **The one authored moment:** after a proposal is merged, the hero value
+  recomposes from the old value to the new one (250 ms, ease-out). Nothing else
   animates on entry. `prefers-reduced-motion` turns it into an instant change.
 - **Dragging a dashboard section:** only the gesture moves; the other sections slide to
   their new place (short, ease-in-out), and not at all under `prefers-reduced-motion`.
@@ -334,5 +332,6 @@ page. No zero-offset glow, in either theme.
 | 2026-10-11 | The hero draws the real chart, full width | Reverses the sparkline-and-dialog of #1099 (direction 1a): one chart, readable by everyone, instead of a large mute picture plus a dialog. |
 | 2026-10-12 | The IRR is the third pill; the year-to-date gain moves to the statistics row (#1149) | Keeps the one performance figure next to the value on a phone; no figure leaves the page. |
 | 2026-10-12 | The statistics row names the cash, one column per figure (#1151) | `Titres` + `Liquidités` is the value to the cent, so the gap under the hero has a name; a missing figure shrinks the row instead of leaving an empty quarter. |
+| 2026-10-12 | Strategy, not tax, is the subject; the hero is lightened (#1174) | Reverses the 2026-10-10 « Net-of-tax line under the hero » row, the year-to-date half of the #1149 row and the #1151 statistics row: the cash is a line under the value, the year-to-date a pill, and the stat row repeated what the chart already draws. |
 | 2026-10-12 | Colour only the terms that can change sign | Dividends and transfer fees have a fixed sign, so colouring it carries no information and steals the signal from a realised loss; the bar follows the same rule (#1144). |
 | 2026-10-12 | Gain breakdown is a statement (#1175) | Reverses the cascade (#1143/#1161) and the in-card window (#1156/#1173): with four terms the figures are the content, the bars read as progress bars, and the year-to-date gain has its own pill. |

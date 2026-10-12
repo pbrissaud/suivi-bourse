@@ -61,10 +61,8 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
 
 /**
  * The chart's own card, taken by the one control that is only ever on it — the
- * chart's range radios. The legend names `Valeur totale` and `Versé net`, and so
- * do two of the head's statistics: one portfolio said twice, which is the
- * arrangement rather than a collision, so a legend assertion has to say **which
- * card** it is about.
+ * chart's range radios. A legend assertion has to say **which card** it is
+ * about.
  */
 async function chartCard(): Promise<HTMLElement> {
   // The chart is under the hero since the dashboard grid (17A / D25): the
@@ -95,23 +93,75 @@ describe('the value is the hero (direction 1a)', () => {
     expect(value?.className).not.toMatch(/text-(gain|loss)/)
     // `Valeur totale` left the row of statistics: it is the hero now.
     expect(screen.queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
-    for (const name of ['Versé net', 'Titres', 'Liquidités', 'TRI', 'Gain depuis le 1ᵉʳ janvier']) {
-      expect(figure(name)).toBeInTheDocument()
+    // The cash is named under the value, as a line rather than a statistic
+    // (#1174), and no sign colour: a balance is not a direction.
+    const cash = within(head).getByText(/^dont 500,00\D?€ de liquidités$/)
+    expect(cash.className).not.toMatch(/text-(gain|loss)/)
+    // No statistics row under the chart (#1174): `Versé net` is the chart's
+    // dashed curve, `Titres` the value less the cash.
+    for (const name of ['Versé net', 'Titres', 'Liquidités', 'Gain depuis le 1ᵉʳ janvier']) {
+      expect(screen.queryByRole('group', { name })).not.toBeInTheDocument()
     }
-    expect(figure('Liquidités')).toHaveTextContent(/500,00/)
-    // The row's order: what the value is made of, then the year's window on it.
-    const row = figure('Liquidités').parentElement as HTMLElement
-    expect(
-      within(row)
-        .getAllByRole('group')
-        .map((group) => group.getAttribute('aria-label')),
-    ).toEqual(['Versé net', 'Titres', 'Liquidités', 'Gain depuis le 1ᵉʳ janvier'])
-    // One column per figure from `sm`, so the row is never partly empty (#1151).
-    expect(row.className).toMatch(/\bgrid-cols-2 /)
-    expect(row.className).toContain('sm:grid-cols-none sm:grid-flow-col sm:auto-cols-fr')
-    expect(row.className).not.toContain('sm:grid-cols-4')
+    expect(within(await chartCard()).getByText('Versé net')).toBeInTheDocument()
     // One performance figure per screen (#1112): the TWR is not a statistic.
     expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
+  })
+
+  it('says no cash where there is no cash ledger, and a zero where it is empty', async () => {
+    server.use(totalsOf({ cash_balance: null }))
+    const { unmount } = renderApp()
+    const head = await hero()
+    expect(head).not.toHaveTextContent(/liquidités/)
+    unmount()
+
+    server.use(totalsOf({ cash_balance: 0 }))
+    renderApp()
+    expect(await hero()).toHaveTextContent(/dont 0,00\D?€ de liquidités/)
+  })
+
+  it('names no cash under a hero that is the securities alone', async () => {
+    server.use(totalsOf({ total_value: null, cash_balance: 500 }))
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Titres' })
+    expect(head).not.toHaveTextContent(/liquidités/)
+  })
+
+  it('draws nothing for the year where only its gain member is missing', async () => {
+    // A present `ytd` with a null `gain` is not computable on this install:
+    // neither a pill nor a sentence about a rebuild.
+    server.use(totalsOf({ ytd: { gain: null, twr: 0.01 } }))
+    renderApp()
+
+    const head = await hero()
+    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
+    expect(head).not.toHaveTextContent(/1ᵉʳ janvier/)
+  })
+
+  it('says nothing of tax, whatever the accounts declare, and reads none of them', async () => {
+    // The tax model is one reading among others, and its figures are not
+    // certain enough to sit under the hero (#1174): the accounts page owns it.
+    const requested: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      requested.push(new URL(request.url).pathname)
+    })
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload([
+            anAccount({ id: 'cto', taxation_kind: 'flat_realised', projected_tax: 1200 }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    await hero()
+    await screen.findByRole('list', { name: 'Mouvements' })
+
+    expect(screen.queryByText(/net d.impôt/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Il vous resterait/)).not.toBeInTheDocument()
+    expect(requested).not.toContain(ROUTES.accounts)
+    server.events.removeAllListeners()
   })
 
   // Replaces « draws a sparkline and keeps the full chart one click away »
@@ -222,34 +272,18 @@ describe('the gain is computed, never read', () => {
     renderApp()
 
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/470,00/)
-    expect(figure('Versé net')).toHaveTextContent(/2\D?430,00/)
     expect(figure('Valeur du portefeuille')).toHaveTextContent(/2\D?900,00/)
-    expect(figure('Titres')).toHaveTextContent(/2\D?400,00/)
-    // The cash takes no drift: `Titres` + `Liquidités` is the value.
-    expect(figure('Liquidités')).toHaveTextContent(/500,00/)
-  })
-
-  it('leaves no slot for the cash where there is none, and no dash in it', async () => {
-    server.use(totalsOf({ cash_balance: null }))
-    renderApp()
-
-    const row = (await screen.findByRole('group', { name: 'Titres' })).parentElement as HTMLElement
-    expect(screen.queryByRole('group', { name: 'Liquidités' })).not.toBeInTheDocument()
-    // The row shrinks: three figures, and no dash standing in for the fourth.
-    expect(
-      within(row)
-        .getAllByRole('group')
-        .map((group) => group.getAttribute('aria-label')),
-    ).toEqual(['Versé net', 'Titres', 'Gain depuis le 1ᵉʳ janvier'])
+    // The cash takes no drift: it is the pass's balance, to the cent.
+    expect(figure('Valeur du portefeuille')).toHaveTextContent(/dont 500,00\D?€ de liquidités/)
   })
 
   it('says a negative cash balance with its minus sign, in the colour of text', async () => {
     server.use(totalsOf({ cash_balance: -120 }))
     renderApp()
 
-    const cash = await screen.findByRole('group', { name: 'Liquidités' })
-    expect(cash).toHaveTextContent(/[-−]120,00/)
-    expect(cash.innerHTML).not.toMatch(/text-(gain|loss)/)
+    const cash = await within(await hero()).findByText(/de liquidités/)
+    expect(cash).toHaveTextContent(/dont [-−]120,00/)
+    expect(cash.outerHTML).not.toMatch(/text-(gain|loss)/)
   })
 
   it('never mentions the fourth term to an install whose transfers are free', async () => {
@@ -384,7 +418,7 @@ describe('the breakdown is a statement, with no drawing and no window (#1175)', 
 })
 
 describe('the year-to-date is two figures that do not touch', () => {
-  it('puts the euro in the statistics and the percentage inside the IRR’s bubble', async () => {
+  it('puts the euro on a pill and the percentage inside the IRR’s bubble', async () => {
     const { user } = renderApp()
 
     const head = await hero()
@@ -392,10 +426,10 @@ describe('the year-to-date is two figures that do not touch', () => {
     // `+40,69 €` and `−1,25 %` are of opposite signs over the same period and
     // both correct: the portfolio grew by deposits while its holdings lost.
     // Side by side they read as a contradiction.
-    expect(head).not.toHaveTextContent(/depuis le 1ᵉʳ janvier/)
+    const ytd = within(head).getByText(/depuis le 1ᵉʳ janvier/)
+    expect(ytd).toHaveTextContent(/^\+40,69\D?€ depuis le 1ᵉʳ janvier$/)
+    expect(ytd).toHaveClass('text-gain')
     expect(head).not.toHaveTextContent(/1,25/)
-    expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(/\+40,69\D?€/)
-    expect(figure('Gain depuis le 1ᵉʳ janvier')).not.toHaveTextContent(/1,25/)
 
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
     const bubble = await screen.findByRole('dialog')
@@ -429,8 +463,8 @@ describe('the year-to-date is two figures that do not touch', () => {
   })
 })
 
-describe('the three pills: total gain, today, IRR (#1149)', () => {
-  it('puts the IRR in the hero, third, with its unit', async () => {
+describe('the four pills: total gain, year-to-date, today, IRR (#1149, #1174)', () => {
+  it('puts them in that order, the IRR last with its unit', async () => {
     renderApp()
     const head = await hero()
 
@@ -440,9 +474,11 @@ describe('the three pills: total gain, today, IRR (#1149)', () => {
     await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
     const text = head.textContent ?? ''
     const gain = text.indexOf('de gain total')
+    const ytd = text.indexOf('depuis le 1ᵉʳ janvier')
     const today = text.indexOf('Aujourd’hui')
     expect(gain).toBeGreaterThan(-1)
-    expect(today).toBeGreaterThan(gain)
+    expect(ytd).toBeGreaterThan(gain)
+    expect(today).toBeGreaterThan(ytd)
     expect(text.indexOf('TRI')).toBeGreaterThan(today)
   })
 
@@ -464,8 +500,8 @@ describe('the three pills: total gain, today, IRR (#1149)', () => {
   it('draws no IRR pill when there is no IRR', async () => {
     server.use(totalsOf({ xirr: null }))
     renderApp()
-    await hero()
-    await screen.findByRole('group', { name: 'Gain depuis le 1ᵉʳ janvier' })
+    const head = await hero()
+    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
 
     expect(screen.queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
   })
@@ -530,7 +566,7 @@ describe('the two periods of the total', () => {
     const head = await hero()
     expect(head).toHaveTextContent(/370,00/)
     await waitFor(() => expect(screen.queryByText(/Aujourd’hui/)).not.toBeInTheDocument())
-    expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(/40,69/)
+    expect(head).toHaveTextContent(/\+40,69\D?€ depuis le 1ᵉʳ janvier/)
   })
 })
 
@@ -564,107 +600,6 @@ describe('one performance figure, and the TWR behind it (#1112)', () => {
   })
 })
 
-describe('the net-of-tax line under the hero (#1112)', () => {
-  const cto = (overrides: Parameters<typeof anAccount>[0] = {}) =>
-    anAccount({
-      id: 'cto',
-      label: 'CTO',
-      taxation_kind: 'flat_realised',
-      projected_tax: 1200,
-      ...overrides,
-    })
-  const pea = (overrides: Parameters<typeof anAccount>[0] = {}) =>
-    anAccount({ id: 'pea', label: 'PEA', taxation_kind: 'none', ...overrides })
-  const accountsOf = (...accounts: ReturnType<typeof anAccount>[]) =>
-    http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts)))
-
-  it('states what would be left, the hero less the projected tax', async () => {
-    server.use(accountsOf(cto(), pea()))
-    renderApp()
-    const head = await hero()
-
-    // 2 800,00 on the hero, 1 200,00 of tax on the CTO, nothing on the PEA.
-    await waitFor(() =>
-      expect(head).toHaveTextContent(/Il vous resterait 1\D?600,00\D?€ net d’impôt/),
-    )
-    expect(head).toHaveTextContent(/2\D?800,00/)
-  })
-
-  it('states no amount and names an account with no tax model', async () => {
-    const { taxation_kind: _, ...unmodelled } = pea()
-    server.use(accountsOf(cto(), unmodelled))
-    renderApp()
-    const head = await hero()
-
-    await waitFor(() =>
-      expect(head).toHaveTextContent(
-        /Net d’impôt incomplet : aucun modèle d’imposition déclaré pour PEA\./,
-      ),
-    )
-    expect(head).not.toHaveTextContent(/Il vous resterait/)
-  })
-
-  it('states no amount and names an account whose tax is not computable', async () => {
-    const { projected_tax: _, ...uncomputable } = cto()
-    server.use(accountsOf(uncomputable, pea()))
-    renderApp()
-    const head = await hero()
-
-    await waitFor(() =>
-      expect(head).toHaveTextContent(/Net d’impôt incomplet : impôt non calculable pour CTO\./),
-    )
-    expect(head).not.toHaveTextContent(/Il vous resterait/)
-  })
-
-  it('never says *no model declared* of a model the server rejected', async () => {
-    // A declared model the server could not apply leaves `taxation_kind`
-    // absent: the declaration needs repairing, it was not forgotten.
-    const { taxation_kind: _, projected_tax: __, ...rejected } = cto({ taxation_model: 'broken' })
-    server.use(accountsOf(rejected, pea()))
-    renderApp()
-    const head = await hero()
-
-    await waitFor(() => expect(head).toHaveTextContent(/impôt non calculable pour CTO/))
-    expect(head).not.toHaveTextContent(/aucun modèle/)
-  })
-
-  it('counts an account taxed on its income as zero, and never as incomplete', async () => {
-    server.use(accountsOf(cto(), pea({ taxation_kind: 'withholding_income' })))
-    renderApp()
-    const head = await hero()
-
-    await waitFor(() => expect(head).toHaveTextContent(/Il vous resterait 1\D?600,00/))
-    expect(head).not.toHaveTextContent(/incomplet/)
-  })
-
-  it('draws no line while the accounts are in flight, or when they failed', async () => {
-    server.use(
-      http.get(ROUTES.accounts, async () => {
-        await delay('infinite')
-        return HttpResponse.json(anAccountsPayload([cto()]))
-      }),
-    )
-    const { unmount } = renderApp()
-    const head = await hero()
-    expect(head).toHaveTextContent(/2\D?800,00/)
-    expect(head).not.toHaveTextContent(/net d’impôt|Net d’impôt/)
-    unmount()
-
-    server.use(
-      problemHandler(ROUTES.accounts, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
-    renderApp()
-    const failed = await hero()
-    await screen.findByRole('group', { name: 'Gain total' })
-    expect(failed).toHaveTextContent(/2\D?800,00/)
-    expect(failed).not.toHaveTextContent(/net d’impôt|Net d’impôt/)
-  })
-})
-
 describe('during the reconstruction', () => {
   it('keeps the head normal and degrades the year-to-date alone', async () => {
     server.use(totalsOf({ ytd: null }))
@@ -693,10 +628,12 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    await hero()
-    const ytd = await screen.findByRole('group', { name: 'Gain depuis le 1ᵉʳ janvier' })
-    expect(ytd).toHaveTextContent(/—/)
-    expect(ytd).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
+    const head = await hero()
+    await waitFor(() =>
+      expect(head).toHaveTextContent(
+        /Depuis le 1ᵉʳ janvier : historique pas encore reconstruit jusque-là/,
+      ),
+    )
 
     expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(1)
   })
@@ -715,10 +652,10 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    await hero()
+    const head = await hero()
     await waitFor(() =>
-      expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(
-        /rien d’enregistré avant le 1ᵉʳ janvier/,
+      expect(head).toHaveTextContent(
+        /Depuis le 1ᵉʳ janvier : rien d’enregistré avant le 1ᵉʳ janvier/,
       ),
     )
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
@@ -740,7 +677,9 @@ describe('during the reconstruction', () => {
     renderApp()
 
     await hero()
-    await waitFor(() => expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(/40,69/))
+    await waitFor(() =>
+      expect(screen.getByText(/40,69\D?€ depuis le 1ᵉʳ janvier/)).toBeInTheDocument(),
+    )
     // Neither sentence, on either figure — both would be false here.
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
     expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
@@ -763,10 +702,10 @@ describe('during the reconstruction', () => {
     )
     renderApp()
 
-    await hero()
+    const head = await hero()
     await waitFor(() =>
-      expect(figure('Gain depuis le 1ᵉʳ janvier')).toHaveTextContent(
-        /historique pas encore reconstruit jusque-là/,
+      expect(head).toHaveTextContent(
+        /Depuis le 1ᵉʳ janvier : historique pas encore reconstruit jusque-là/,
       ),
     )
     expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
@@ -1091,7 +1030,7 @@ describe('the convention bubble', () => {
     )
   })
 
-  it('puts three icons on the head, not nine', async () => {
+  it('puts two icons on the head, not nine', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
@@ -1103,7 +1042,6 @@ describe('the convention bubble', () => {
     const bubbles = screen.getAllByRole('button', { name: /^Ce que veut dire/ })
     expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
       'Ce que veut dire TRI',
-      'Ce que veut dire Versé net',
       'Ce que veut dire Gain total',
     ])
   })
@@ -1502,10 +1440,6 @@ describe('the allocation is not on this page', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // And the head's own `Titres` statistic stays: it is the same total, said
-    // by the figure that was always the head's, not by the ring that left.
-    expect(figure('Titres')).toHaveTextContent(/2\D?300,00/)
-
     // Nor in the chart's dialog.
     await chartCard()
     expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
@@ -1897,7 +1831,7 @@ describe('the four states of the page', () => {
   it('gives a portfolio that has sold everything an ordinary page', async () => {
     // The one place in the product where the em dash and the zero are read side
     // by side at the scale of the portfolio: `Plus-value latente —` because
-    // nothing is held, `Titres 0,00 €` because that is a figure.
+    // nothing is held, the value read off the cash alone.
     server.use(
       http.get(ROUTES.positions, () =>
         HttpResponse.json(
@@ -1922,7 +1856,7 @@ describe('the four states of the page', () => {
     expect(head).toHaveTextContent(/80,00/)
     expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent('—')
     expect(figure('Plus-value réalisée')).toHaveTextContent(/75,00/)
-    expect(figure('Titres')).toHaveTextContent(/0,00/)
+    expect(head).toHaveTextContent(/dont 500,00\D?€ de liquidités/)
 
     // And the block says **why** it is empty rather than being absent. There is
     // one of them here since #831: the allocation, which said the same thing
