@@ -346,11 +346,12 @@ export function DashboardHead({
         {chart === null ? null : <div className="mt-6">{chart}</div>}
 
         {/* The statistics, on a row of their own — and only the ones that exist.
-        They are **not** terms of the gain: `Versé net` and `Titres` are what
-        the value is made of, and the year's gain is a window on it. Four
-        columns from `sm`, two under it; a statistic that does not exist for
-        this installation leaves its slot rather than a dash in it. */}
-        <div className="mt-6.5 grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-4.5 sm:grid-cols-4">
+        They are **not** terms of the gain: `Versé net`, `Titres` and
+        `Liquidités` are what the value is made of, and the year's gain is a
+        window on it. One column per figure present from `sm`, two under it; a
+        statistic that does not exist for this installation leaves its slot
+        rather than a dash in it, and the row never has an empty column. */}
+        <div className="mt-6.5 grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-4.5 sm:grid-cols-none sm:grid-flow-col sm:auto-cols-fr">
           {totalsRow?.net_contributed == null ? null : (
             <Stat
               label={t('dashboard.netContributed')}
@@ -374,6 +375,15 @@ export function DashboardHead({
               at the scale of the portfolio. */}
           {holdingsValue === null || heroIsHoldings ? null : (
             <Stat label={t('dashboard.holdings')} value={f.currency(holdingsValue, currency)} />
+          )}
+          {/* The cash, so `Titres` adds up to the value (#1151): it takes no
+              drift, so the two sum to the hero to the cent. A balance, not a
+              direction — no sign colour, even below zero. */}
+          {totalsRow?.cash_balance == null || heroIsHoldings ? null : (
+            <Stat
+              label={t('dashboard.cash')}
+              value={f.currency(totalsRow.cash_balance, currency)}
+            />
           )}
           {/* The year's gain, in euros: a statistic since #1149, so the IRR can
               take its pill. Its percentage stays in the IRR's bubble — a group
