@@ -355,6 +355,26 @@ def declare_symbol(store, symbol: str) -> None:
             [symbol])
 
 
+def cap_dividend_fees(connection) -> List[Tuple[int, float]]:
+    """Cap every dividend's fee at its amount, and name the rows it moved (#1166).
+
+    The one write of ``event`` a schema step makes, kept here because this
+    module is the table's writer. It runs on the step's connection and inside
+    its transaction, so it opens none, stamps nothing and replays nothing: the
+    ledger it leaves is the one the boot replay validates next. The fee each row
+    held is appended to its label, for the owner to re-enter.
+    """
+    over = "event_type = 'DIVIDEND' AND fee > amount"
+    capped = connection.execute(
+        f'SELECT id, fee FROM event WHERE {over}').fetchall()
+    if capped:
+        connection.execute(
+            "UPDATE event SET notes = concat_ws(' ', notes, "
+            "         '(fee was ' || fee || ', capped at the amount)'), "
+            f"       fee = amount WHERE {over}")
+    return capped
+
+
 def _replays(store) -> None:
     """Replay the ledger this gesture would leave, before the commit."""
     EventAggregator().aggregate(ledger.read_events(store))
@@ -364,5 +384,5 @@ __all__ = [
     'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
     'UnknownEntry', 'InvalidEntry', 'Duplicate',
     'create', 'create_many', 'update', 'remove', 'remove_keys',
-    'content_key', 'split_duplicates', 'judge',
+    'content_key', 'split_duplicates', 'judge', 'cap_dividend_fees',
 ]

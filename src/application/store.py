@@ -825,16 +825,15 @@ def _cap_dividend_fee_at_amount(connection) -> None:
     the withholding that was meant: a log line alone does not outlive a
     redeploy. A no-op on a store holding no such row, and then the derived
     series stay.
+
+    The write itself is :func:`entries.cap_dividend_fees`, ``event`` having one
+    writer; it runs on this connection, inside this step's transaction. The
+    import is deferred because :mod:`entries` imports this module.
     """
-    over = "event_type = 'DIVIDEND' AND fee > amount"
-    capped = connection.execute(
-        f'SELECT id, fee FROM event WHERE {over}').fetchall()
+    from application import entries
+    capped = entries.cap_dividend_fees(connection)
     if not capped:
         return
-    connection.execute(
-        "UPDATE event SET notes = concat_ws(' ', notes, "
-        "         '(fee was ' || fee || ', capped at the amount)'), "
-        f"       fee = amount WHERE {over}")
     connection.execute('DELETE FROM account_metrics')
     connection.execute('DELETE FROM portfolio_totals')
     said = ', '.join(f'#{event_id} (fee {was})' for event_id, was in sorted(capped))
