@@ -104,7 +104,7 @@
   "dashboard.gain.pill": "{amount} de gain total",
   "dashboard.gain.pillAbsent": "Gain total : {reason}",
   "dashboard.breakdown.title": "D’où vient le gain",
-  "dashboard.ytd.gain": "{amount} depuis le 1ᵉʳ janvier",
+  "dashboard.ytd.label": "Gain depuis le 1ᵉʳ janvier",
   "dashboard.ytd.pending": "historique pas encore reconstruit jusque-là",
   "dashboard.ytd.noPreviousYear": "rien d’enregistré avant le 1ᵉʳ janvier",
   "dashboard.day.gain": "Aujourd’hui : {amount}",

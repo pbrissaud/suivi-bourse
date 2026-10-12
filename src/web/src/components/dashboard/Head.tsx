@@ -27,8 +27,8 @@
  * **The value is the hero, and the gain is its subtitle** (dashboard redesign,
  * direction 1a). The page answers *how much is my portfolio worth* first: the
  * value is the one figure at hero size, the gain total is a pill under it
- * beside the day's and the year's, and the four terms the gain is the sum of
- * left the head for a card of their own (`GainBreakdown.tsx`). That reverses
+ * beside the day's and the IRR's (#1149), and the four terms the gain is the
+ * sum of left the head for a card of their own (`GainBreakdown.tsx`). That reverses
  * variant A, which kept the gain alone at the top — and it is the same
  * argument read the other way round: the terms were subordinated by size, and
  * they are subordinated by distance now, which a reader cannot sum by accident
@@ -40,9 +40,13 @@
  * right with the real chart in a dialog (#1099, direction 1a); the real chart
  * is now on the page, and the dialog is gone.
  *
- * **The year-to-date is two figures that do not touch**: the euro on a pill
- * beside the head figure, the percentage inside the IRR's bubble, with the TWR
- * it belongs to (#1112: one performance figure per screen, and it is the IRR).
+ * **The IRR is the third pill** (#1149, DESIGN.md › The hero): the one
+ * performance figure (#1112) sits beside the value, not a screen below it on a
+ * phone.
+ *
+ * **The year-to-date is two figures that do not touch**: the euro is a
+ * statistic under the chart, the percentage inside the IRR's bubble, with the
+ * TWR it belongs to — two groups apart.
  * Measured on the real portfolio, `+40,69 €` and `−1,25 %` over the same
  * period, of opposite signs and both correct — the portfolio grew by 6 673 € of
  * deposits while its holdings lost 1,25 %. Side by side they read as a
@@ -54,8 +58,8 @@
  *
  * That *the same figure* is load-bearing rather than decorative: the day's move
  * is the movement of `gain_absolu` over one day (`lib/dashboard.ts`), which is
- * `_ytd`'s own definition over another window — so the two pills answer one
- * question twice and never two questions once.
+ * `_ytd`'s own definition over another window — so the day's pill and the
+ * year's statistic answer one question twice and never two questions once.
  *
  * The series it reduces is the chart's, read once by the page under the chart's
  * own condition and therefore costing no request of its own: one read, two
@@ -80,7 +84,7 @@ import { renderFigure } from '@/lib/absence'
 import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
 import { dayMove } from '@/lib/dashboard'
 import { useI18n } from '@/lib/i18n'
-import { signClass, signOf, type Sign } from '@/lib/sign'
+import { signClass, signOf } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 interface DashboardHeadProps {
@@ -196,8 +200,6 @@ export function DashboardHead({
   // case: an install with no cash event has a `twr_index` of `NULL` for ever,
   // so the collapse would make the sentence permanent.
   const ytdAbsent = (totalsRow?.ytd ?? null) === null
-  const ytdAbsence = (member: number | null) =>
-    member === null && ytdAbsent ? `${ABSENT} — ${ytdPending}` : ABSENT
   // `ytd: null` has **two** causes and they are not the same sentence (#763):
   // the reconstruction has not reached January, **or** the portfolio is younger
   // than the year — a first event in March, and no day on or before
@@ -298,24 +300,44 @@ export function DashboardHead({
                   })}
                 </p>
               )}
-              {/* The two **periods of the total**, and they stay with it. */}
+              {/* The day's **period of the total**, and it stays with it. */}
               {totalsRow === null || today === null ? null : (
                 <Period
                   amount={today}
                   text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
                 />
               )}
-              {totalsRow === null ? null : ytdGain === null ? (
-                // The one figure the rebuild degrades, and it says which figure
-                // and why — the head above it is exact from the first cycle. It
-                // stays a **sentence** rather than a pill: what it carries is a
-                // reason, and a reason does not fit in a badge.
-                <p className="text-sm text-muted-foreground">{ytdAbsence(ytdGain)}</p>
-              ) : (
-                <Period
-                  amount={ytdGain}
-                  text={t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
-                />
+              {totalsRow?.xirr == null ? null : (
+                <span role="group" aria-label={t('dashboard.xirr')} className={PILL}>
+                  <span className="text-muted-foreground">{t('dashboard.xirr')}</span>
+                  <SignedFigure amount={totalsRow.xirr} text={f.percent(totalsRow.xirr)} />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {t('dashboard.xirr.unit')}
+                  </span>
+                  {/* The TWR lives here since #1112: one rate per screen, and the
+                      bubble is where the second one says why it differs. */}
+                  {twrMove === null ? (
+                    <Explain
+                      figure={t('dashboard.xirr')}
+                      body="dashboard.xirr.explain"
+                      anchor="xirr"
+                    />
+                  ) : (
+                    <Explain
+                      figure={t('dashboard.xirr')}
+                      body="dashboard.xirr.explainTwr"
+                      values={{
+                        explain: t('dashboard.xirr.explain'),
+                        twr: f.percent(twrMove),
+                        ytd:
+                          ytdTwr === null
+                            ? ''
+                            : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
+                      }}
+                      anchor="xirr"
+                    />
+                  )}
+                </span>
               )}
             </div>
           </Stat>
@@ -325,7 +347,7 @@ export function DashboardHead({
 
         {/* The statistics, on a row of their own — and only the ones that exist.
         They are **not** terms of the gain: `Versé net` and `Titres` are what
-        the value is made of, and the two rates are not sums at all. Four
+        the value is made of, and the year's gain is a window on it. Four
         columns from `sm`, two under it; a statistic that does not exist for
         this installation leaves its slot rather than a dash in it. */}
         <div className="mt-6.5 grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-4.5 sm:grid-cols-4">
@@ -353,44 +375,23 @@ export function DashboardHead({
           {holdingsValue === null || heroIsHoldings ? null : (
             <Stat label={t('dashboard.holdings')} value={f.currency(holdingsValue, currency)} />
           )}
-          {totalsRow?.xirr == null ? null : (
+          {/* The year's gain, in euros: a statistic since #1149, so the IRR can
+              take its pill. Its percentage stays in the IRR's bubble — a group
+              apart (`Stat.tsx`). The one figure the rebuild degrades, and it
+              says why under the dash: a reason does not fit in a figure. */}
+          {totalsRow === null ? null : ytdGain === null ? (
             <Stat
-              label={t('dashboard.xirr')}
-              value={
-                <>
-                  {f.percent(totalsRow.xirr)}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {' '}
-                    {t('dashboard.xirr.unit')}
-                  </span>
-                </>
-              }
-              valueClassName={signClass(totalsRow.xirr)}
-              explain={
-                // The TWR lives here since #1112: one rate per screen, and the
-                // bubble is where the second one says why it differs.
-                twrMove === null ? (
-                  <Explain
-                    figure={t('dashboard.xirr')}
-                    body="dashboard.xirr.explain"
-                    anchor="xirr"
-                  />
-                ) : (
-                  <Explain
-                    figure={t('dashboard.xirr')}
-                    body="dashboard.xirr.explainTwr"
-                    values={{
-                      explain: t('dashboard.xirr.explain'),
-                      twr: f.percent(twrMove),
-                      ytd:
-                        ytdTwr === null
-                          ? ''
-                          : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
-                    }}
-                    anchor="xirr"
-                  />
-                )
-              }
+              label={t('dashboard.ytd.label')}
+              value={ABSENT}
+              valueClassName={signClass(ytdGain)}
+            >
+              {ytdAbsent ? <p className="text-xs text-muted-foreground">{ytdPending}</p> : null}
+            </Stat>
+          ) : (
+            <Stat
+              label={t('dashboard.ytd.label')}
+              value={f.signedCurrency(ytdGain, currency)}
+              valueClassName={signClass(ytdGain)}
             />
           )}
         </div>
@@ -412,42 +413,35 @@ export function DashboardHead({
   )
 }
 
+const PILL =
+  'tabular inline-flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1 text-sm font-medium'
+
 /**
- * One **period of the total** — today, or since 1 January.
+ * One pill of the total — the total itself, or today.
  *
  * A pill and not a statistic, deliberately: a `Stat` is a figure of its own,
- * and these two are the head's figure seen through another window.
+ * and these are the head's figure seen through another window.
  *
- * **It is tinted by its sign, and it carries the arrow of that sign** (#831,
- * the maquette's own pill). The neutral chip it used to be — a hairline border
- * on `bg-background/60`, with the sign in the text colour alone — put the two
- * periods in the chrome of the card rather than in the family of the figure
- * above them, and left the sign said **once**, in colour. The tint is the
- * figure's own token at a twelfth, so the pill stays a ground and never a mark;
- * the arrow is the redundant encoding that makes the direction legible without
- * the hue, which is the rule the allocation's ramp already answers one card
- * down. A **zero** takes neither: it is a figure, not a direction, and
- * `lib/sign.ts` is what says so.
+ * **Its ground is neutral and its figure carries the sign** (#1149, reversing
+ * the tint of #831): DESIGN.md does not colour a pill with `gain` or `loss`,
+ * it colours the figure. The arrow stays the redundant encoding that makes the
+ * direction legible without the hue. A **zero** takes no arrow and the colour
+ * of text: it is a figure, not a direction, and `lib/sign.ts` is what says so.
  */
-const PERIOD_TONES: Record<Sign, string> = {
-  gain: 'bg-gain/12 text-gain',
-  loss: 'bg-loss/12 text-loss',
-  // A day that moved by nothing is a figure in the colour of text, on the
-  // card's own muted ground — never the grey of absence, which it is not.
-  zero: 'bg-muted text-foreground',
-  absent: 'bg-muted text-muted-foreground',
+function Period({ amount, text }: { amount: number; text: string }) {
+  return (
+    <span className={PILL}>
+      <SignedFigure amount={amount} text={text} />
+    </span>
+  )
 }
 
-function Period({ amount, text }: { amount: number; text: string }) {
+/** The arrow of the sign and the text, both in the sign's colour. */
+function SignedFigure({ amount, text }: { amount: number; text: string }) {
   const sign = signOf(amount)
   const Arrow = sign === 'gain' ? ArrowUpRight : sign === 'loss' ? ArrowDownRight : null
   return (
-    <span
-      className={cn(
-        'tabular inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium',
-        PERIOD_TONES[sign],
-      )}
-    >
+    <span className={cn('inline-flex items-center gap-1.5', signClass(amount))}>
       {Arrow === null ? null : <Arrow className="size-3" aria-hidden />}
       {text}
     </span>
