@@ -14,7 +14,7 @@
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import type { Account } from '@/lib/api'
@@ -381,5 +381,33 @@ describe('the page’s own reads', () => {
         name: 'Comptes',
       }),
     ).toBeInTheDocument()
+  })
+})
+
+describe('a refetch that fails keeps the figures (#1180)', () => {
+  it('leaves the accounts on screen when the next poll gets a 503', async () => {
+    // The detail already waits on its data before it names a failure, so this
+    // one pins the page against the regression rather than reproducing it.
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(defaultAccounts()))),
+    )
+    const { queryClient } = renderApp({ url: '/accounts', fakeTimers: true })
+    await settled()
+    await waitFor(() => expect(entries()[0]).toMatch(/1\D?800,00/))
+
+    const unreadable = {
+      status: 503,
+      type: PROBLEM_TYPES.storageUnavailable,
+      title: 'storage unavailable',
+    }
+    server.use(
+      problemHandler(ROUTES.positions, unreadable),
+      problemHandler(ROUTES.portfolioTotals, unreadable),
+    )
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => expect(queryClient.getQueryState(['positions'])?.error).toBeTruthy())
+
+    expect(entries()[0]).toMatch(/1\D?800,00/)
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
   })
 })

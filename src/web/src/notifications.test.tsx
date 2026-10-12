@@ -12,8 +12,9 @@
  * never a word on screen — so the only way to assert it is on the gestures.
  */
 import { screen, waitFor, within } from '@testing-library/react'
+import type { QueryClient } from '@tanstack/react-query'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ROUTES, type Advisory, type InstallationFact } from '@/lib/api'
 import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
@@ -318,5 +319,137 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     )
     // …and the reading stays, because the condition does.
     expect(screen.getByText('25 % de cash')).toBeInTheDocument()
+  })
+})
+
+describe('the outage toast echoes the bell (#1180)', () => {
+  const TITLE = 'Le serveur ne répond plus'
+
+  function bell() {
+    return screen.getByRole('button', { name: /^Notifications/ })
+  }
+
+  /** The app with a healthy bell, the timers faked so the next poll can come. */
+  async function healthy() {
+    const rendered = renderApp({ fakeTimers: true })
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/Tout fonctionne/))
+    return rendered
+  }
+
+  /**
+   * The next poll, **landed**: the failure counted and the observers told.
+   * Advancing the clock alone returns before msw has answered, which would let
+   * an assertion about the toast pass before the poll it is about.
+   */
+  async function nextPoll(queryClient: QueryClient) {
+    const before = queryClient.getQueryState(['health'])?.dataUpdateCount ?? 0
+    const failures = queryClient.getQueryState(['health'])?.errorUpdateCount ?? 0
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => {
+      const state = queryClient.getQueryState(['health'])
+      expect((state?.dataUpdateCount ?? 0) + (state?.errorUpdateCount ?? 0)).toBeGreaterThan(
+        before + failures,
+      )
+    })
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  const down = () => server.use(http.get(ROUTES.health, () => HttpResponse.error()))
+
+  it('opens once on the outage, however many polls fail', async () => {
+    const { queryClient } = await healthy()
+    down()
+    await nextPoll(queryClient)
+
+    expect(await screen.findByText(TITLE)).toBeInTheDocument()
+    expect(
+      screen.getByText(/^Chiffres de \d{1,2}:\d{2}, nouvel essai chaque minute$/),
+    ).toBeInTheDocument()
+    expect(bell()).toHaveAccessibleName(/ne répond pas/)
+
+    await nextPoll(queryClient)
+    await nextPoll(queryClient)
+    expect(screen.getAllByText(TITLE)).toHaveLength(1)
+  })
+
+  it('stays dismissed until the next outage', async () => {
+    const { user, queryClient } = await healthy()
+    down()
+    await nextPoll(queryClient)
+    await screen.findByText(TITLE)
+
+    await user.click(screen.getByRole('button', { name: /close/i }))
+    await waitFor(() => expect(screen.queryByText(TITLE)).not.toBeInTheDocument())
+    await nextPoll(queryClient)
+    await nextPoll(queryClient)
+    expect(screen.queryByText(TITLE)).not.toBeInTheDocument()
+    // The bell has not forgotten.
+    expect(bell()).toHaveAccessibleName(/ne répond pas/)
+  })
+
+  it('stays dismissed when the API was down from the first visit', async () => {
+    // A read that never answered goes back to `pending` on every poll, which
+    // clears its error — and used to reopen the toast once a minute. The poll
+    // is held open until the bell has shown that `pending`, as a network would.
+    let release: (() => void) | null = null
+    server.use(
+      http.get(ROUTES.health, async () => {
+        if (release !== null) await new Promise<void>((resolve) => (release = resolve))
+        return HttpResponse.error()
+      }),
+    )
+    const { user, queryClient } = renderApp({ fakeTimers: true })
+    await screen.findByText(TITLE)
+    await user.click(screen.getByRole('button', { name: /close/i }))
+    await waitFor(() => expect(screen.queryByText(TITLE)).not.toBeInTheDocument())
+
+    const failures = queryClient.getQueryState(['health'])?.errorUpdateCount ?? 0
+    release = () => {}
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/inconnu/))
+    ;(release as () => void)()
+    await waitFor(() =>
+      expect(queryClient.getQueryState(['health'])?.errorUpdateCount).toBeGreaterThan(failures),
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    expect(screen.queryByText(TITLE)).not.toBeInTheDocument()
+  })
+
+  it('closes silently on recovery', async () => {
+    const { queryClient } = await healthy()
+    down()
+    await nextPoll(queryClient)
+    await screen.findByText(TITLE)
+
+    server.resetHandlers()
+    await nextPoll(queryClient)
+    await waitFor(() => expect(screen.queryByText(TITLE)).not.toBeInTheDocument())
+    expect(bell()).toHaveAccessibleName(/Tout fonctionne/)
+    // No *reconnected* receipt.
+    expect(document.querySelector('[data-sonner-toast]')).toBeNull()
+  })
+
+  it('says nothing for attention', async () => {
+    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
+    renderApp()
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande votre attention/))
+    expect(screen.queryByText(TITLE)).not.toBeInTheDocument()
+  })
+
+  it('opens on a first visit with the API already down, beside the page’s own sentence', async () => {
+    server.use(
+      http.get(ROUTES.health, () => HttpResponse.error()),
+      problemHandler(ROUTES.positions, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    expect(await screen.findByText(TITLE)).toBeInTheDocument()
+    // No figures were ever read, so there is no instant to name.
+    expect(screen.getByText('Nouvel essai chaque minute')).toBeInTheDocument()
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
   })
 })

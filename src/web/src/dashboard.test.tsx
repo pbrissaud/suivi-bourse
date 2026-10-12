@@ -14,7 +14,7 @@
  */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, delay, http } from 'msw'
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
@@ -748,6 +748,31 @@ describe('a perf pass that raised', () => {
     await screen.findByRole('group', { name: 'Gain total' })
     expect(screen.queryByText(/Le dernier recalcul a échoué/)).not.toBeInTheDocument()
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
+  })
+})
+
+describe('a refetch that fails keeps the figures (#1180)', () => {
+  it('leaves the value on screen when the next poll gets a 503', async () => {
+    // TanStack Query keeps `data` and sets `error` when a refetch fails. The
+    // page used to read the error alone and swap the figures for an
+    // `Unreadable` — on every outage the polling lives through.
+    const { queryClient } = renderApp({ fakeTimers: true })
+    expect(await hero()).toHaveTextContent(/2\D?800,00/)
+
+    const unreadable = {
+      status: 503,
+      type: PROBLEM_TYPES.storageUnavailable,
+      title: 'storage unavailable',
+    }
+    server.use(
+      problemHandler(ROUTES.positions, unreadable),
+      problemHandler(ROUTES.portfolioTotals, unreadable),
+    )
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => expect(queryClient.getQueryState(['positions'])?.error).toBeTruthy())
+
+    expect(await hero()).toHaveTextContent(/2\D?800,00/)
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
   })
 })
 

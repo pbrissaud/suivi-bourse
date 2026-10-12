@@ -286,7 +286,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // The events failing is the other news, and it empties the journal — so it is
   // said there, in the space the table would have filled, rather than in a
   // strip above a page that has nothing under it.
-  const ledgerFailure = oneFailure(readConditions({ errors: [events.error] }))
+  const ledgerFailure = oneFailure(readConditions({ queries: [events] }))
   const currency = totals.data?.base_currency ?? null
 
   return (

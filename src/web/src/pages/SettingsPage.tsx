@@ -107,8 +107,8 @@ export default function SettingsPage() {
   // pins its health entry in and links here, so a page that treated it as a
   // read in flight would answer *Voir dans Réglages* with a page that does not
   // mention the workloads at all.
-  const settingsFailure = oneFailure(readConditions({ errors: [config.error] }))
-  const storeFailure = oneFailure(readConditions({ errors: [store.error] }))
+  const settingsFailure = oneFailure(readConditions({ queries: [config] }))
+  const storeFailure = oneFailure(readConditions({ queries: [store] }))
 
   // **Narrowed with the bell's own validator, and that is the whole rule.**
   // `installationState` folds *two* answers onto `unreachable`: a request that
@@ -118,15 +118,26 @@ export default function SettingsPage() {
   // the same sentence in both. Reading only `health.error` would leave the
   // second answer handing `JobsBlock` an object it would tabulate three
   // workloads out of.
-  const readableHealth = health.data === undefined ? null : readHealth(health.data)
+  //
+  // **And the error alone, never the cached answer** (#1180): everywhere else
+  // a refetch that failed keeps the figures, but this block *is* the bell's
+  // state in prose, and the red bell's one link must not land on a green
+  // table from the last answer.
   const healthFailure = oneFailure(
     readConditions({
-      errors: [
-        health.error,
-        health.data !== undefined && readableHealth === null ? UNREADABLE_HEALTH : null,
+      queries: [
+        { error: health.error },
+        {
+          error:
+            health.data !== undefined && readHealth(health.data) === null
+              ? UNREADABLE_HEALTH
+              : null,
+        },
       ],
     }),
   )
+  const readableHealth =
+    health.data === undefined || healthFailure !== null ? null : readHealth(health.data)
 
   return (
     // 880 px, from the mock-up, and centred in whatever the shell gives. Every

@@ -16,7 +16,7 @@
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
@@ -1280,5 +1280,27 @@ describe('the valuation column takes no sign colour', () => {
     expect(cellsOf('Zeta Beta')[UNREALISED]).toHaveClass('text-foreground')
     expect(cellsOf('Zeta Gamma')[UNREALISED]).toHaveClass('text-foreground')
     expect(cellsOf('Zeta Iota')[UNREALISED]).toHaveClass('text-muted-foreground')
+  })
+})
+
+describe('a refetch that fails keeps the figures (#1180)', () => {
+  it('leaves the positions on screen when the next poll gets a 503', async () => {
+    server.use(
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
+    )
+    const { queryClient } = renderApp({ url: '/shares', fakeTimers: true })
+    await waitFor(() => expect(figure('Réalisée')).toHaveTextContent(/125,00/))
+
+    const unreadable = {
+      status: 503,
+      type: PROBLEM_TYPES.storageUnavailable,
+      title: 'storage unavailable',
+    }
+    server.use(problemHandler(ROUTES.positions, unreadable))
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => expect(queryClient.getQueryState(['positions'])?.error).toBeTruthy())
+
+    expect(figure('Réalisée')).toHaveTextContent(/125,00/)
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
   })
 })
