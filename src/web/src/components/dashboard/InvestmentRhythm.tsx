@@ -105,11 +105,18 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
             </p>
           </Stat>
         </div>
-        <MonthStrip months={rhythm.months} currency={rhythm.base_currency} />
+        <MonthStrip
+          months={rhythm.months}
+          median={rhythm.monthly_amount}
+          currency={rhythm.base_currency}
+        />
       </div>
     )
   }
 }
+
+const CAP_MULTIPLE = 3
+const FLOOR_PERCENT = 15
 
 /**
  * The observed months as columns, oldest on the left, **right-aligned in
@@ -121,11 +128,31 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
  * tick on the baseline, which is a fact about the rhythm and not a gap in the
  * drawing. Each column names its month and its amount, for a pointer and for a
  * screen reader alike.
+ *
+ * **One month does not set the scale for the other eleven** (#1152). Scaled to
+ * the largest month, a single large purchase pressed every other bar onto the
+ * floor, where a month bought in read as a month with nothing — the one thing
+ * the strip exists to tell apart. The scale stops at three times the median
+ * month, a month above it is drawn full height with a notch cut near its top,
+ * and its exact amount is still in its title and its screen-reader text. A
+ * month bought in never drops below 15 % of the column, four times the empty
+ * tick.
  */
-function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: string | null }) {
+function MonthStrip({
+  months,
+  median,
+  currency,
+}: {
+  months: RhythmMonth[]
+  median: number
+  currency: string | null
+}) {
   const { t } = useI18n()
   const f = useFormatters()
   const peak = Math.max(...months.map((one) => one.amount ?? 0))
+  // A median of `0` (free shares count as a `0` buy) would cap every month
+  // bought in, so the scale falls back on the peak.
+  const scaleTop = median > 0 ? Math.min(peak, CAP_MULTIPLE * median) : peak
   // The window ends on the month the measure was taken in (`rhythm.py`
   // anchors it on *now*), so the last column is the current month — read off
   // the payload rather than off the browser's clock.
@@ -161,20 +188,11 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
             >
               <span className="sr-only">{said}</span>
               <span aria-hidden className="flex h-14 w-full max-w-10 items-end">
-                <span
-                  className={
-                    one.amount === null
-                      ? 'block h-0.5 w-full bg-muted-foreground/35'
-                      : one.month === current
-                        ? 'block w-full rounded-t-[3px] bg-primary'
-                        : 'block w-full rounded-t-[3px] bg-muted-foreground/40'
-                  }
-                  style={
-                    one.amount === null
-                      ? undefined
-                      : { height: `${Math.max(6, (one.amount / peak) * 100)}%` }
-                  }
-                />
+                {one.amount === null ? (
+                  <span className="block h-0.5 w-full bg-muted-foreground/35" />
+                ) : (
+                  <Bar amount={one.amount} scaleTop={scaleTop} current={one.month === current} />
+                )}
               </span>
               <span aria-hidden className="h-4 whitespace-nowrap text-2xs text-muted-foreground">
                 {slot % 3 === 0 ? label(one.month, false) : null}
@@ -184,5 +202,32 @@ function MonthStrip({ months, currency }: { months: RhythmMonth[]; currency: str
         })}
       </ol>
     </div>
+  )
+}
+
+/** A month bought in; above the scale's top it is full height and notched. */
+function Bar({
+  amount,
+  scaleTop,
+  current,
+}: {
+  amount: number
+  scaleTop: number
+  current: boolean
+}) {
+  const capped = amount > scaleTop
+  return (
+    <span
+      data-capped={capped ? '' : undefined}
+      className={`block w-full rounded-t-[3px] ${capped ? 'relative ' : ''}${
+        current ? 'bg-primary' : 'bg-muted-foreground/40'
+      }`}
+      style={{
+        height: capped ? '100%' : `${Math.max(FLOOR_PERCENT, (amount / scaleTop) * 100 || 0)}%`,
+      }}
+    >
+      {/* The cut is the `Section`'s own background, so it reads in both themes. */}
+      {capped ? <span className="absolute inset-x-0 top-1.5 h-0.5 bg-muted" /> : null}
+    </span>
   )
 }

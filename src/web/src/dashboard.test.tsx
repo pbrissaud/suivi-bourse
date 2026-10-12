@@ -1602,6 +1602,52 @@ describe('the investment rhythm', () => {
     expect(screen.queryByText(/irrégulier/i)).not.toBeInTheDocument()
   })
 
+  it('lets no month set the scale for the others when none is out of line', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // The default months peak at 620, under three times the median of 500:
+    // the scale is the peak, as before #1152.
+    const strip = await screen.findByRole('list', { name: 'Acheté, mois par mois' })
+    expect(strip.querySelector('[data-capped]')).toBeNull()
+    const bars = strip.querySelectorAll<HTMLElement>('[style*="height"]')
+    expect(bars).toHaveLength(6)
+    expect(bars[3].style.height).toBe('100%')
+  })
+
+  it('caps one large month at three times the median and notches it', async () => {
+    // One large month used to press the other purchases onto the floor, where
+    // they read as months with nothing bought (#1152).
+    const months = aRhythm().months.map((one) =>
+      one.month === '2025-09'
+        ? { ...one, amount: 5000 }
+        : one.month === '2025-03'
+          ? { ...one, amount: 50 }
+          : one,
+    )
+    server.use(http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm({ months }))))
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    const strip = await screen.findByRole('list', { name: 'Acheté, mois par mois' })
+    const items = within(strip).getAllByRole('listitem')
+    const capped = items[6].querySelector<HTMLElement>('[data-capped]')
+    expect(capped).not.toBeNull()
+    expect(capped!.style.height).toBe('100%')
+    expect(capped!.children).toHaveLength(1)
+    expect(capped!.firstElementChild).toHaveClass('absolute', 'bg-muted')
+    // The exact amount survives the cap, for a pointer and a screen reader.
+    expect(items[6]).toHaveTextContent(/sept\. 2025 : 5\s000,00/)
+    expect(items[6].getAttribute('title')).toMatch(/5\s000,00/)
+    // The others are scaled to the cap (1 500), not to 5 000…
+    const height = (item: HTMLElement) =>
+      item.querySelector<HTMLElement>('[style*="height"]')!.style.height
+    expect(parseFloat(height(items[2]))).toBeCloseTo((500 / 1500) * 100)
+    // …and a small month stays well clear of the empty tick.
+    expect(height(items[0])).toBe('15%')
+    expect(items[1].querySelector('[style*="height"]')).toBeNull()
+  })
+
   it('says no purchase rather than a rhythm of zero', async () => {
     // The absence the record names: a null amount with a coverage of zero is
     // *nobody bought anything*, and rendering it as `0,00 €` would state a
