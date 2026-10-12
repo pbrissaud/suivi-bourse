@@ -90,7 +90,7 @@ another.
 | `name` | share events | the display name, e.g. `Apple Inc.` |
 | `quantity` | `BUY`, `SELL`, `GRANT` | number of shares; fractions are allowed |
 | `unit_price` | `BUY`, `SELL` | price per share, **in your base currency** |
-| `fee` | no | transaction fee; never negative |
+| `fee` | no | transaction fee; never negative, and never above `amount` on a `DIVIDEND` |
 | `amount` | `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` | the sum received or moved |
 | `notes` | no | free text, kept and shown, never interpreted |
 
@@ -146,7 +146,8 @@ is. Without one, it is **dilution** — the quantity rises and the basis does no
 which is what a bonus share or a stock split is.
 
 **`DIVIDEND`** — needs `amount`. It credits `amount − fee` to cash and counts in
-the *dividends* term of your gain. It never enters the profit and loss of the
+the *dividends* term of your gain. Its `fee` — a withholding, say — cannot exceed
+`amount`: a dividend that nets to less than zero is refused on the `fee` column. It never enters the profit and loss of the
 position: a dividend is not a price movement, and mixing the two produces a
 figure whose terms have different definitions.
 
