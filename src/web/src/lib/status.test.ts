@@ -154,7 +154,7 @@ describe('a surface names its own failed read, and nothing above it can do it', 
   it('names a read nothing above it can see', () => {
     // Without this the surface renders nothing at all, and *"the store is
     // unreadable"* and *"you own nothing yet"* become the same blank screen.
-    expect(oneFailure(readConditions({ errors: [unreadable] }))).toEqual({
+    expect(oneFailure(readConditions({ queries: [{ error: unreadable }] }))).toEqual({
       message: 'problem.storageUnavailable',
     })
   })
@@ -166,12 +166,28 @@ describe('a surface names its own failed read, and nothing above it can do it', 
     // *the store is not answering* in prose: naming it again three lines above
     // would put two announcers on one fact.
     expect(
-      readConditions({ namedElsewhere: new TypeError('Failed to fetch'), errors: [unreadable] }),
+      readConditions({
+        namedElsewhere: new TypeError('Failed to fetch'),
+        queries: [{ error: unreadable }],
+      }),
     ).toEqual([])
   })
 
   it('says nothing when the reads are fine', () => {
-    expect(readConditions({ errors: [undefined, null] })).toEqual([])
+    expect(readConditions({ queries: [{ error: undefined }, { error: null, data: {} }] })).toEqual(
+      [],
+    )
+  })
+
+  it('keeps the figures of a refetch that failed (#1180)', () => {
+    // TanStack Query keeps `data` and sets `error` when a refetch fails: the
+    // answer on screen is still an answer, and the bell says the rest.
+    expect(readConditions({ queries: [{ error: unreadable, data: { positions: [] } }] })).toEqual(
+      [],
+    )
+    expect(readConditions({ queries: [{ error: unreadable, data: undefined }] })).toEqual([
+      { message: 'problem.storageUnavailable' },
+    ])
   })
 })
 

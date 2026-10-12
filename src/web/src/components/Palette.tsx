@@ -187,9 +187,7 @@ export function Palette() {
   // is a line, neither a `Refusal` nor an `Unreadable`: the page underneath says
   // why *it* is empty in its own space, and what this says is why a section is
   // missing **here**, inside a dialog the reader opened one keystroke ago.
-  const failure = oneFailure(
-    readConditions({ errors: [positions.error, accounts.error, events.error] }),
-  )
+  const failure = oneFailure(readConditions({ queries: [positions, accounts, events] }))
 
   // **Every read has landed and nothing matched.** The one sentence here that is
   // a claim about the reader's data, so it is the one that waits: said while a

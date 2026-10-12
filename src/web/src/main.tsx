@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient } from '@tanstack/react-query'
 
 import { App } from '@/app'
+import { pollLiveReads } from '@/lib/live'
 import { createAppRouter } from '@/router'
 import './index.css'
 
@@ -23,6 +24,7 @@ const queryClient = new QueryClient({
     },
   },
 })
+pollLiveReads(queryClient)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -233,15 +233,22 @@ export function oneFailure(failures: readonly ReadFailure[]): ReadFailure | null
  * What is left of the parameter is `namedElsewhere`, and it has exactly one
  * caller: that same panel, which is not going to name three lines above what
  * its own health card is already saying.
+ *
+ * **A read that failed while it still holds an answer is not a failure here**
+ * (#1180). TanStack Query keeps `data` and sets `error` when a *refetch*
+ * fails, so taking the bare error replaced figures already on screen with an
+ * `Unreadable` on every outage the polling lives through. The figures stay;
+ * what says *the server is not answering* is the bell, and the toast that
+ * echoes it — `installationState` takes the error alone on purpose.
  */
 export function readConditions(input: {
   namedElsewhere?: unknown
-  errors: readonly unknown[]
+  queries: readonly { error: unknown; data?: unknown }[]
 }): ReadFailure[] {
   if (input.namedElsewhere) return []
-  return input.errors
-    .filter((error) => Boolean(error))
-    .map((error) => ({ message: problemMessageKey(error) }))
+  return input.queries
+    .filter((query) => Boolean(query.error) && query.data === undefined)
+    .map((query) => ({ message: problemMessageKey(query.error) }))
 }
 
 /**

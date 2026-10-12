@@ -92,7 +92,7 @@ export default function BenchmarkPage() {
     return <NoBaseCurrency />
   }
 
-  const failure = oneFailure(readConditions({ errors: [comparison.error] }))
+  const failure = oneFailure(readConditions({ queries: [comparison] }))
   if (failure !== null) {
     return <Unreadable failure={failure} />
   }

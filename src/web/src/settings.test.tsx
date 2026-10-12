@@ -22,7 +22,7 @@
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
@@ -623,6 +623,26 @@ describe('the workloads, which the bell’s health card develops', () => {
     // An empty state and never an alert: there is no band anywhere, and what
     // announces the installation is the bell, once.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('says it too when a poll fails over a table it already drew (#1180)', async () => {
+    // Everywhere else a refetch that failed keeps the figures. Not here: this
+    // block is the bell's state in prose, and a red bell must not link to a
+    // green table from the last answer.
+    const { queryClient } = renderApp({ url: '/settings', fakeTimers: true })
+    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+    expect(within(jobs).queryByText('Lecture impossible')).not.toBeInTheDocument()
+
+    server.use(http.get(ROUTES.health, () => HttpResponse.error()))
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => expect(queryClient.getQueryState(['health'])?.error).toBeTruthy())
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Les plans de charge' })).getByText(
+          'Lecture impossible',
+        ),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('says the same thing when the answer is a 200 that is not a health payload', async () => {

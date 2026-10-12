@@ -116,11 +116,11 @@ export default function AccountsPage() {
   // detail, so a refusal there is the page's own sentence. The four others are
   // what the detail is composed of — a ledger that would not answer must not
   // take the rail with it, which is the whole of why this is not one condition.
-  const pageFailure = oneFailure(readConditions({ errors: [accounts.error] }))
+  const pageFailure = oneFailure(readConditions({ queries: [accounts] }))
   const detailFailures = {
-    positions: oneFailure(readConditions({ errors: [positions.error, totals.error] })),
-    points: oneFailure(readConditions({ errors: [history.error] })),
-    events: oneFailure(readConditions({ errors: [events.error] })),
+    positions: oneFailure(readConditions({ queries: [positions, totals] })),
+    points: oneFailure(readConditions({ queries: [history] })),
+    events: oneFailure(readConditions({ queries: [events] })),
   }
 
   const currency = totals.data?.base_currency ?? null

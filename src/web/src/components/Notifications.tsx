@@ -136,7 +136,7 @@ export function Notifications() {
   const failure = oneFailure(
     readConditions({
       namedElsewhere: health.error,
-      errors: [facts.error, advisories.error, config.error],
+      queries: [facts, advisories, config],
     }),
   )
 
