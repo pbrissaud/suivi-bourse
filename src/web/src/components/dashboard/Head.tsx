@@ -3,17 +3,15 @@
  *
  * **One head, no discriminated union.** `MODE_MULTI_CURRENCY` is dead and a
  * `default` account is always seeded, so there is nothing to branch the whole
- * block on. Absence is rendered **per field**, and the statistics **shrink**
- * rather than fill with dashes: four dashes in the densest block of the page
- * would apply the absence rule where it has no subject — a field that does not
- * exist for this installation is not a missing value. A sentence under the head
- * names what a ledger would add.
+ * block on. Absence is rendered **per field**, and a field that does not exist
+ * for this installation is left out rather than dashed: it is not a missing
+ * value. A sentence under the head names what a ledger would add.
  *
  * **A read that fails is named by whoever is empty because of it, not here**
  * (#799, then #829). The head keeps its figures in every one of those cases,
  * which is the property both tickets bought.
  *
- * **The block reads nothing of its own** since the same ticket. The five reads
+ * **The block reads nothing of its own** since the same ticket. The four reads
  * it renders are the page's, handed down as props, and the two shapes that can
  * be *not answered yet* cross the boundary as `readonly X[] | null` — never as
  * `[]`.
@@ -27,9 +25,10 @@
  * **The value is the hero, and the gain is its subtitle** (dashboard redesign,
  * direction 1a). The page answers *how much is my portfolio worth* first: the
  * value is the one figure at hero size, the gain total is a pill under it
- * beside the day's and the IRR's (#1149), and the four terms the gain is the
- * sum of left the head for a card of their own (`GainBreakdown.tsx`). That reverses
- * variant A, which kept the gain alone at the top — and it is the same
+ * beside the year's, the day's and the IRR's (#1149, #1174), and the four
+ * terms the gain is the
+ * sum of left the head for a card of their own (`GainBreakdown.tsx`). That
+ * reverses variant A, which kept the gain alone at the top — and it is the same
  * argument read the other way round: the terms were subordinated by size, and
  * they are subordinated by distance now, which a reader cannot sum by accident
  * either.
@@ -40,13 +39,13 @@
  * right with the real chart in a dialog (#1099, direction 1a); the real chart
  * is now on the page, and the dialog is gone.
  *
- * **The IRR is the third pill** (#1149, DESIGN.md › The hero): the one
+ * **The IRR is the last pill** (#1149, DESIGN.md › The hero): the one
  * performance figure (#1112) sits beside the value, not a screen below it on a
  * phone.
  *
- * **The year-to-date is two figures that do not touch**: the euro is a
- * statistic under the chart, the percentage inside the IRR's bubble, with the
- * TWR it belongs to — two groups apart.
+ * **The year-to-date is two figures that do not touch**: the euro is the
+ * second pill (#1174), the percentage inside the IRR's bubble, with the TWR it
+ * belongs to — two groups apart.
  * Measured on the real portfolio, `+40,69 €` and `−1,25 %` over the same
  * period, of opposite signs and both correct — the portfolio grew by 6 673 € of
  * deposits while its holdings lost 1,25 %. Side by side they read as a
@@ -59,7 +58,7 @@
  * That *the same figure* is load-bearing rather than decorative: the day's move
  * is the movement of `gain_absolu` over one day (`lib/dashboard.ts`), which is
  * `_ytd`'s own definition over another window — so the day's pill and the
- * year's statistic answer one question twice and never two questions once.
+ * year's pill answer one question twice and never two questions once.
  *
  * The series it reduces is the chart's, read once by the page under the chart's
  * own condition and therefore costing no request of its own: one read, two
@@ -73,13 +72,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import type { PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
-import {
-  declaredLabel,
-  DEFAULT_ACCOUNT_LABEL,
-  projectedTaxTotal,
-  type AccountRow,
-} from '@/lib/accounts'
-import { ABSENT, useFormatters } from '@/lib/format'
+import { useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
 import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
 import { dayMove } from '@/lib/dashboard'
@@ -104,12 +97,6 @@ interface DashboardHeadProps {
    */
   history: readonly PerfPoint[] | null
   /**
-   * The accounts, for the net-of-tax line under the hero (#1112). `null` while
-   * the read is in flight or when it failed: the line is then not drawn, and
-   * the hero above it is exact either way.
-   */
-  accounts?: readonly AccountRow[] | null
-  /**
    * The portfolio's chart and its range control, under the value and its
    * pills — composed by the page, which owns the range. `null` draws the value
    * alone.
@@ -122,7 +109,6 @@ export function DashboardHead({
   totals,
   rebuilding,
   history,
-  accounts = null,
   chart = null,
 }: DashboardHeadProps) {
   const { t } = useI18n()
@@ -171,7 +157,7 @@ export function DashboardHead({
   // difference (`performance.py`), so the live gain less it is the market's
   // move since the pass — and a market move moves the securities, never the
   // cash or the contribution, which change only with an event and an event
-  // reruns the pass. The move is added to the row's own two figures, so nothing
+  // reruns the pass. The move is added to the row's own value, so nothing
   // is read from one snapshot and subtracted from another. A gain the head
   // cannot compute moves nothing: the row's figures then agree with nothing on
   // screen they could contradict.
@@ -180,12 +166,13 @@ export function DashboardHead({
       ? totalsRow.net_contributed + total.value - totalsRow.total_value
       : 0
   const totalValue = totalsRow?.total_value == null ? null : totalsRow.total_value + drift
-  const holdingsValue = totalsRow?.holdings_value == null ? null : totalsRow.holdings_value + drift
+  // The securities are read only where there is no value, and so no drift.
+  const holdingsValue = totalsRow?.holdings_value ?? null
   // **The hero is the value, and on an install with no cash ledger the value
   // is the securities' alone** (#708: `total_value` is `NULL` there, and
   // `holdings_value` is written always). It is then said under its own name —
   // *Titres* — rather than as the portfolio's value, which it is not, and the
-  // statistic of the same name below steps aside rather than repeat it.
+  // cash line under it has nothing to name.
   const heroIsHoldings = totalValue === null && holdingsValue !== null
   const heroValue = totalValue ?? holdingsValue
 
@@ -239,27 +226,6 @@ export function DashboardHead({
   // moved.
   const today = dayMove(history, new Date())
 
-  // **What would be left after tax** (#1112), off the hero *as displayed*, drift
-  // included, so the line always differs from the figure above it by exactly
-  // the tax. An account the tax cannot be stated for is named rather than
-  // counted as zero: a net that leaves a term out is a net that flatters.
-  const net = accounts === null ? null : projectedTaxTotal(accounts)
-  const names = (rows: readonly AccountRow[]) =>
-    rows.map((row) => declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)).join(', ')
-  const netLines =
-    net === null || heroValue === null
-      ? []
-      : net.unmodelled.length === 0 && net.uncomputable.length === 0
-        ? [t('dashboard.net.amount', { amount: f.currency(heroValue - net.tax, currency) })]
-        : [
-            ...(net.unmodelled.length === 0
-              ? []
-              : [t('dashboard.net.unmodelled', { accounts: names(net.unmodelled) })]),
-            ...(net.uncomputable.length === 0
-              ? []
-              : [t('dashboard.net.uncomputable', { accounts: names(net.uncomputable) })]),
-          ]
-
   return (
     // **The hero sits on the ground, not in a card** (DESIGN.md): the value,
     // its pills and the curve are the page's first object without a box to
@@ -276,12 +242,16 @@ export function DashboardHead({
             // the sign lives on the pills under it.
             value={f.currency(heroValue, currency)}
           >
-            {/* Right under the value, before the pills (DESIGN.md, Atelier). */}
-            {netLines.map((line) => (
-              <p key={line} className="text-sm text-muted-foreground">
-                {line}
+            {/* What of the value is cash (#1174), right under it. It takes no
+                drift (#1151), and it is a balance, not a direction: no sign
+                colour, even below zero; `0` is a figure, not an absence. */}
+            {totalsRow?.cash_balance == null || heroIsHoldings ? null : (
+              <p className="text-sm text-muted-foreground">
+                {t('dashboard.cashLine', {
+                  amount: f.currency(totalsRow.cash_balance, currency),
+                })}
               </p>
-            ))}
+            )}
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {/* The gain is the value's subtitle now, and it keeps its named
                   absences (#775): a rate on its way is said, a fourth term
@@ -300,6 +270,21 @@ export function DashboardHead({
                   })}
                 </p>
               )}
+              {/* The year's gain, in euros (#1174). Its percentage stays in the
+                  IRR's bubble — a group apart. The one figure the rebuild
+                  degrades, and it says why: a reason does not fit in a pill. A
+                  `ytd` present with a null `gain` is not computable here and
+                  draws nothing. */}
+              {totalsRow === null ? null : ytdGain !== null ? (
+                <Period
+                  amount={ytdGain}
+                  text={t('dashboard.ytd.pill', { amount: f.signedCurrency(ytdGain, currency) })}
+                />
+              ) : ytdAbsent ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('dashboard.ytd.pillAbsent', { reason: ytdPending })}
+                </p>
+              ) : null}
               {/* The day's **period of the total**, and it stays with it. */}
               {totalsRow === null || today === null ? null : (
                 <Period
@@ -345,67 +330,6 @@ export function DashboardHead({
 
         {chart === null ? null : <div className="mt-6">{chart}</div>}
 
-        {/* The statistics, on a row of their own — and only the ones that exist.
-        They are **not** terms of the gain: `Versé net`, `Titres` and
-        `Liquidités` are what the value is made of, and the year's gain is a
-        window on it. One column per figure present from `sm`, two under it; a
-        statistic that does not exist for this installation leaves its slot
-        rather than a dash in it, and the row never has an empty column. */}
-        <div className="mt-6.5 grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-4.5 sm:grid-cols-none sm:grid-flow-col sm:auto-cols-fr">
-          {totalsRow?.net_contributed == null ? null : (
-            <Stat
-              label={t('dashboard.netContributed')}
-              value={f.currency(totalsRow.net_contributed, currency)}
-              explain={
-                <Explain
-                  figure={t('dashboard.netContributed')}
-                  body="dashboard.netContributed.explain"
-                  anchor="net-contributed"
-                />
-              }
-            />
-          )}
-          {/* The securities, beside the value they are part of — and it is the
-              one money statistic an install with **no cash ledger** still has:
-              `holdings_value` is written always (#708), where `total_value` and
-              both returns are `NULL`. It is also what makes *events, and nothing
-              held* an ordinary page rather than an empty one: `0,00 €` is a
-              figure, in the colour of text, read beside the em dash of the latent
-              gain — the one place in the product where the two are side by side
-              at the scale of the portfolio. */}
-          {holdingsValue === null || heroIsHoldings ? null : (
-            <Stat label={t('dashboard.holdings')} value={f.currency(holdingsValue, currency)} />
-          )}
-          {/* The cash, so `Titres` adds up to the value (#1151): it takes no
-              drift, so the two sum to the hero to the cent. A balance, not a
-              direction — no sign colour, even below zero. */}
-          {totalsRow?.cash_balance == null || heroIsHoldings ? null : (
-            <Stat
-              label={t('dashboard.cash')}
-              value={f.currency(totalsRow.cash_balance, currency)}
-            />
-          )}
-          {/* The year's gain, in euros: a statistic since #1149, so the IRR can
-              take its pill. Its percentage stays in the IRR's bubble — a group
-              apart (`Stat.tsx`). The one figure the rebuild degrades, and it
-              says why under the dash: a reason does not fit in a figure. */}
-          {totalsRow === null ? null : ytdGain === null ? (
-            <Stat
-              label={t('dashboard.ytd.label')}
-              value={ABSENT}
-              valueClassName={signClass(ytdGain)}
-            >
-              {ytdAbsent ? <p className="text-xs text-muted-foreground">{ytdPending}</p> : null}
-            </Stat>
-          ) : (
-            <Stat
-              label={t('dashboard.ytd.label')}
-              value={f.signedCurrency(ytdGain, currency)}
-              valueClassName={signClass(ytdGain)}
-            />
-          )}
-        </div>
-
         {/* `totals: null` has **two** causes and they are not the same sentence
         (#745): no ledger at all, or a reporting currency nobody has answered.
         The second is the ordinary one here — reaching this line at all means
@@ -427,7 +351,7 @@ const PILL =
   'tabular inline-flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1 text-sm font-medium'
 
 /**
- * One pill of the total — the total itself, or today.
+ * One pill of the total — the total itself, the year, or today.
  *
  * A pill and not a statistic, deliberately: a `Stat` is a figure of its own,
  * and these are the head's figure seen through another window.
