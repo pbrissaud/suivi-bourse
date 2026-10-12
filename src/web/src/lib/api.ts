@@ -155,6 +155,11 @@ export const ROUTES = {
    */
   movers: '/api/portfolio/movers',
   /**
+   * The four gain terms at the day a window opens (#1156). The front subtracts
+   * them from the terms it already holds; « since inception » never asks.
+   */
+  gainBaseline: '/api/portfolio/gain-baseline',
+  /**
    * How much the owner buys in a month, and how often (#751).
    *
    * Derived on every read and stored nowhere, like {@link ROUTES.advisories}:
@@ -424,6 +429,8 @@ export interface DashboardPlacement {
   /** `Width` in `lib/dashboardBlocks`; spelled here so this module imports nothing. */
   width: 'half' | 'full'
   hidden: boolean
+  /** `GainPeriod` in `lib/gain`, spelled here for the same reason (#1156). Absent reads as `all`. */
+  period?: 'all' | 'ytd' | '12m'
 }
 
 /** What the store keeps. Read back as `unknown`: `normalizeLayout` vets it. */
@@ -805,6 +812,26 @@ export interface Mover {
   market_value: number | null
   /** What the move did in money — `change × quantity`. */
   contribution: number | null
+}
+
+/**
+ * The four gain terms at B, the close of the day before the window opens
+ * (#1156). `day` is the B used (`null` on an inception clamp or with no series);
+ * `since` is the first day the window covers.
+ */
+export interface GainBaselineResponse {
+  period: 'ytd' | '12m'
+  day: string | null
+  since: string | null
+  clamped: boolean
+  terms: {
+    unrealised: number | null
+    unrealised_unknown: 'rebuilding' | null
+    realised: number
+    dividends: number
+    transfer_fees: number
+    holds_position: boolean
+  }
 }
 
 export interface MoversResponse {
@@ -1916,6 +1943,8 @@ export const api = {
   portfolioTotalsHistory: () => get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
   positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
   movers: () => get<MoversResponse>(ROUTES.movers),
+  gainBaseline: (period: GainBaselineResponse['period']) =>
+    get<GainBaselineResponse>(`${ROUTES.gainBaseline}?period=${period}`),
   investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
   dashboardLayout: () => get<unknown>(ROUTES.dashboardLayout),
   saveDashboardLayout: (layout: DashboardLayout) =>

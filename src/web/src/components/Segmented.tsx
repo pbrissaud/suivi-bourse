@@ -24,7 +24,11 @@
  * the border is a prop: on the page the track needs an edge to be a track, on a
  * card the card's own edge is one already.
  */
+import type { KeyboardEvent } from 'react'
+
 import { cn } from '@/lib/utils'
+
+const STEPS: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }
 
 interface SegmentedOption<T extends string> {
   value: T
@@ -62,10 +66,23 @@ export function Segmented<T extends string>({
   size = 'default',
   className,
 }: SegmentedProps<T>) {
+  // A radiogroup is one tab stop, and the arrows move the value and the focus
+  // with it, wrapping (WAI-ARIA radio group pattern).
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const step = STEPS[event.key]
+    if (mode !== 'radio' || step === undefined) return
+    event.preventDefault()
+    const index = options.findIndex((option) => option.value === value)
+    const next = (index + step + options.length) % options.length
+    onChange(options[next].value)
+    event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus()
+  }
+
   return (
     <div
       role={mode === 'radio' ? 'radiogroup' : 'group'}
       aria-label={label}
+      onKeyDown={onKeyDown}
       className={cn(
         'inline-flex shrink-0 gap-0.5 rounded-lg bg-background p-0.75',
         bordered && 'border',
@@ -81,6 +98,7 @@ export function Segmented<T extends string>({
             role={mode === 'radio' ? 'radio' : undefined}
             aria-checked={mode === 'radio' ? on : undefined}
             aria-pressed={mode === 'pressed' ? on : undefined}
+            tabIndex={mode === 'radio' && !on ? -1 : undefined}
             onClick={() => onChange(option.value)}
             className={cn(
               'rounded-md whitespace-nowrap transition-colors',

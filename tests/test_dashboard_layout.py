@@ -70,6 +70,18 @@ def test_extra_fields_are_not_stored(tmp_path):
         'blocks': [{'id': 'rhythm', 'width': 'half', 'hidden': False}]}
 
 
+def test_a_card_keeps_its_period_and_goes_without_one(tmp_path):
+    """#1156: optional, so a layout saved before it still reads as `all`."""
+    client, _ = build_client_and_store(tmp_path)
+    layout = {'version': 1, 'blocks': [
+        {'id': 'gain-breakdown', 'width': 'half', 'hidden': False,
+         'period': 'ytd'},
+        {'id': 'movers', 'width': 'half', 'hidden': False}]}
+
+    assert client.put('/api/dashboard/layout', json=layout).status_code == 200
+    assert client.get('/api/dashboard/layout').get_json() == layout
+
+
 def test_delete_forgets_the_layout(tmp_path):
     client, _ = build_client_and_store(tmp_path)
     client.put('/api/dashboard/layout', json=LAYOUT)
@@ -114,13 +126,14 @@ def test_a_body_that_is_not_an_object_is_a_bad_request(tmp_path, body):
     {'version': 1, 'blocks': [_block(hidden='no')]},
     {'version': 1, 'blocks': [_block(hidden=0)]},
     {'version': 1, 'blocks': [_block(), _block()]},
+    {'version': 1, 'blocks': [_block(period='1m')]},
     {'version': 1, 'blocks': [_block(id=f'card-{n}') for n in range(51)]},
 ], ids=[
     'no-version', 'version-2', 'version-as-text', 'version-as-true',
     'version-as-float',
     'no-blocks', 'blocks-as-object', 'block-as-text', 'empty-id', 'long-id',
     'numeric-id', 'unknown-width', 'hidden-as-text', 'hidden-as-zero',
-    'duplicate-id', 'fifty-one-cards',
+    'duplicate-id', 'unknown-period', 'fifty-one-cards',
 ])
 def test_a_body_that_is_not_a_layout_is_refused_and_nothing_is_written(
         tmp_path, body):

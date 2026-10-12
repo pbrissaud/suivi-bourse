@@ -187,6 +187,8 @@ interface Surface {
  * dashboard, whose chart reads **one** of two series and picks by the same
  * discriminant that decides its reading. Without the second the valuation
  * series is armed under a condition false by default and never enters the net.
+ * A third state saves a window on the breakdown (#1156), whose baseline is
+ * armed the same way.
  *
  * **It was nine until #830**, the ledger page's installation tab having been a
  * second address onto the settings page's reads.
@@ -211,6 +213,22 @@ const SURFACES: readonly Surface[] = [
               }),
             ),
           ),
+        ),
+      ),
+  },
+  {
+    // The breakdown over a window (#1156): its baseline is asked for only
+    // once the saved layout names a period other than since-inception.
+    name: 'le tableau de bord, la décomposition sur l’année',
+    url: '/',
+    heading: 'Tableau de bord',
+    handlers: () =>
+      server.use(
+        http.get(ROUTES.dashboardLayout, () =>
+          HttpResponse.json({
+            version: 1,
+            blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false, period: 'ytd' }],
+          }),
         ),
       ),
   },

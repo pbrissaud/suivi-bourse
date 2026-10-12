@@ -420,6 +420,75 @@ def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
 
 
 # --------------------------------------------------------------------- #
+# Gain baseline (#1156)
+# --------------------------------------------------------------------- #
+
+def test_gain_baseline_answers_the_four_terms_at_the_day_before_the_window(
+        tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/events', json=_draft(date='2025-06-03'))
+    seed_totals(opened, day=date(2025, 12, 31), holdings_value=300.0)
+    seed_totals(opened, day=date(2026, 8, 5))
+
+    payload = client.get('/api/portfolio/gain-baseline?period=ytd').get_json()
+
+    assert payload == {
+        'period': 'ytd', 'day': '2025-12-31', 'since': '2026-01-01',
+        'clamped': False,
+        'terms': {'unrealised': pytest.approx(300.0 - 201.0),
+                  'unrealised_unknown': None, 'realised': 0.0,
+                  'dividends': 0.0, 'transfer_fees': 0.0,
+                  'holds_position': True},
+    }
+
+
+def test_gain_baseline_during_a_rebuild_keeps_an_inception_clamp_exact(tmp_path):
+    """A rebuild hides the latent term read at a day; a clamp reads no day."""
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/events', json=_draft(date='2025-09-01'))
+    seed_totals(opened, day=date(2026, 8, 5))
+    api_module.current_runtime().workloads.reconstruction = (1, 2)
+
+    terms = client.get('/api/portfolio/gain-baseline?period=12m').get_json()
+
+    assert (terms['day'], terms['clamped']) == (None, True)
+    assert terms['terms']['unrealised'] == 0.0
+    assert terms['terms']['unrealised_unknown'] is None
+
+    seed_totals(opened, day=date(2025, 12, 31))
+    rebuilt = client.get('/api/portfolio/gain-baseline?period=ytd').get_json()
+    assert rebuilt['terms']['unrealised'] is None
+    assert rebuilt['terms']['unrealised_unknown'] == 'rebuilding'
+
+
+@pytest.mark.parametrize('query', ['', '?period=1m', '?period=all'])
+def test_gain_baseline_refuses_a_period_it_does_not_measure(tmp_path, query):
+    client = build_client(tmp_path)
+
+    answer = client.get(f'/api/portfolio/gain-baseline{query}')
+
+    assert answer.status_code == 400
+    assert answer.mimetype == 'application/problem+json'
+
+
+def test_gain_baseline_on_an_oversold_ledger_answers_like_every_route(
+        tmp_path, mocker):
+    from application import gain_baseline
+    from application.events.aggregator import AggregationError
+    client = build_client(tmp_path)
+    mocker.patch.object(gain_baseline, 'measure', side_effect=AggregationError(
+        'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-06-10',
+        symbol='AAPL', wanted=12.0, owned=10.0, day=date(2024, 6, 10)))
+
+    answer = client.get('/api/portfolio/gain-baseline?period=12m')
+
+    assert answer.status_code == 409
+    body = answer.get_json()
+    assert body['type'] == problem.TYPE_UNREPLAYABLE
+    assert (body['symbol'], body['wanted'], body['owned']) == ('AAPL', 12.0, 10.0)
+
+
+# --------------------------------------------------------------------- #
 # The v5 pair the front reads (contract #745, issue #763)
 #
 # `/api/positions` and `/api/portfolio-totals` were declared in `lib/api.ts`

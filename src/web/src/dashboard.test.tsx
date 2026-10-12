@@ -352,6 +352,151 @@ describe('the breakdown draws a cascade onto its total (#1143)', () => {
   })
 })
 
+describe('the breakdown answers over a window chosen in the card (#1156)', () => {
+  const layoutWith = (period: string) =>
+    http.get(ROUTES.dashboardLayout, () =>
+      HttpResponse.json({
+        version: 1,
+        blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false, period }],
+      }),
+    )
+  // At B: +100 · +20 · +5 · −5, so the window reads +200 · +30 · +20, the fees
+  // drop out, and the total is 250 — against 370 since inception.
+  const aBaseline = (overrides: Record<string, unknown> = {}) => ({
+    period: 'ytd',
+    day: '2025-12-31',
+    since: '2026-01-01',
+    clamped: false,
+    terms: {
+      unrealised: 100,
+      unrealised_unknown: null,
+      realised: 20,
+      dividends: 5,
+      transfer_fees: -5,
+      holds_position: true,
+    },
+    ...overrides,
+  })
+  const baselineOf = (payload: object) =>
+    http.get(ROUTES.gainBaseline, () => HttpResponse.json(payload))
+  const card = async () => {
+    const found = await screen.findByRole('region', { name: 'D’où vient le gain' })
+    await within(found).findByRole('group', { name: 'Gain total' })
+    return within(found)
+  }
+
+  it('asks nothing since inception and draws the figures it always did', async () => {
+    let asked = 0
+    server.use(
+      http.get(ROUTES.gainBaseline, () => {
+        asked += 1
+        return HttpResponse.json(aBaseline())
+      }),
+    )
+    renderApp()
+    const breakdown = await card()
+
+    expect(breakdown.getByRole('radio', { name: 'Depuis le début' })).toBeChecked()
+    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
+    expect(breakdown.queryByText(/^Depuis le \d/)).not.toBeInTheDocument()
+    expect(asked).toBe(0)
+  })
+
+  it('draws the deltas since B and says where the window starts', async () => {
+    server.use(layoutWith('ytd'), baselineOf(aBaseline()))
+    renderApp()
+    const breakdown = await card()
+
+    expect(await breakdown.findByText('Depuis le 1ᵉʳ janv. 2026')).toBeInTheDocument()
+    expect(breakdown.getByRole('radio', { name: 'Cette année' })).toBeChecked()
+    expect(breakdown.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/200,00/)
+    expect(breakdown.getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(/30,00/)
+    expect(breakdown.getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/20,00/)
+    expect(breakdown.queryByRole('group', { name: 'Frais de versement' })).not.toBeInTheDocument()
+    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/250,00/)
+  })
+
+  it('reads a ledger younger than the window as since inception, from its first day', async () => {
+    const zero = { unrealised: 0, unrealised_unknown: null, realised: 0, dividends: 0 }
+    server.use(
+      layoutWith('12m'),
+      baselineOf(
+        aBaseline({
+          period: '12m',
+          day: null,
+          since: '2026-03-01',
+          clamped: true,
+          terms: { ...zero, transfer_fees: 0, holds_position: false },
+        }),
+      ),
+    )
+    renderApp()
+    const breakdown = await card()
+
+    expect(await breakdown.findByText('Depuis le 1ᵉʳ mars 2026')).toBeInTheDocument()
+    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
+  })
+
+  it('saves the period with the layout and stays in reading mode', async () => {
+    const saved: unknown[] = []
+    server.use(
+      baselineOf(aBaseline()),
+      http.put(ROUTES.dashboardLayout, async ({ request }) => {
+        const body = await request.json()
+        saved.push(body)
+        return HttpResponse.json(body)
+      }),
+      // A store: what was written is what the next read answers.
+      http.get(ROUTES.dashboardLayout, () => HttpResponse.json(saved.at(-1) ?? null)),
+    )
+    renderApp()
+    const breakdown = await card()
+
+    fireEvent.click(breakdown.getByRole('radio', { name: 'Cette année' }))
+
+    await waitFor(() => expect(saved).toHaveLength(1))
+    expect(saved[0]).toMatchObject({
+      blocks: expect.arrayContaining([
+        expect.objectContaining({ id: 'gain-breakdown', period: 'ytd' }),
+      ]),
+    })
+    expect(await breakdown.findByText(/^Depuis le \d/)).toBeInTheDocument()
+    expect(breakdown.getByRole('radio', { name: 'Cette année' })).toBeChecked()
+    expect(screen.queryByRole('button', { name: 'Terminé' })).not.toBeInTheDocument()
+  })
+
+  it('is one tab stop whose arrows move the period', async () => {
+    server.use(baselineOf(aBaseline()))
+    renderApp()
+    const breakdown = await card()
+    const radios = breakdown.getAllByRole('radio')
+
+    expect(radios.map((radio) => radio.tabIndex)).toEqual([0, -1, -1])
+    fireEvent.keyDown(radios[0], { key: 'ArrowRight' })
+
+    await waitFor(() => expect(breakdown.getByRole('radio', { name: 'Cette année' })).toBeChecked())
+    expect(breakdown.getByRole('radio', { name: 'Cette année' })).toHaveFocus()
+  })
+
+  it('dashes every term and names the failure when the baseline does not answer', async () => {
+    server.use(
+      layoutWith('ytd'),
+      problemHandler(ROUTES.gainBaseline, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+    const breakdown = await card()
+
+    expect(await breakdown.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(breakdown.getByRole('group', { name: 'Gain total' })).toHaveTextContent('—')
+    expect(breakdown.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent('—')
+    expect(breakdown.queryByText(/^Depuis le \d/)).not.toBeInTheDocument()
+  })
+})
+
 describe('the year-to-date is two figures that do not touch', () => {
   it('puts the euro in the statistics and the percentage inside the IRR’s bubble', async () => {
     const { user } = renderApp()
@@ -382,11 +527,13 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
 
-    // **One on the page**, and it is the chart's own (#838, then #1155 closed).
+    // **One on the page**, and it is the chart's own (#838, then #1155 closed) —
+    // beside the breakdown's own window, which is the card's and sets nothing
+    // else (#1156).
     await waitFor(() =>
       expect(
         screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
-      ).toEqual(['Plage']),
+      ).toEqual(['Plage', 'Période']),
     )
   })
 

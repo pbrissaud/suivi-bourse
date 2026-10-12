@@ -19,6 +19,8 @@ import {
   termIsRendered,
   termRendering,
   termTone,
+  windowTerms,
+  type GainTerms,
   type Sum,
 } from '@/lib/gain'
 import { signClass } from '@/lib/sign'
@@ -403,5 +405,75 @@ describe('the cascade adds up to the total (#1143)', () => {
     const terms = { ...staging, transferFees: 0 }
     expect(drawn(terms).termSteps.map((step) => step.term)).not.toContain('transferFees')
     expectAddsUp(terms)
+  })
+})
+
+describe('the terms over a window (#1156)', () => {
+  const now: GainTerms = {
+    unrealised: known(1800),
+    realised: -500,
+    dividends: 60,
+    transferFees: -20,
+    holdsPosition: true,
+  }
+  const base = {
+    unrealised: 1400 as number | null,
+    unrealised_unknown: null as 'rebuilding' | null,
+    realised: -450,
+    dividends: 40,
+    transfer_fees: -20,
+    holds_position: true,
+  }
+
+  it('subtracts each term at B from the term now, and the total follows', () => {
+    const terms = windowTerms(now, base)
+
+    expect(terms.unrealised).toEqual(known(400))
+    expect(terms.realised).toBe(-50)
+    expect(terms.dividends).toBe(20)
+    expect(gainTotal(terms)).toEqual(known(370))
+  })
+
+  it("keeps now's reason when the latent term is unknown now", () => {
+    const terms = windowTerms(
+      { ...now, unrealised: { known: false, because: 'awaitingRate' } },
+      {
+        ...base,
+        unrealised: null,
+        unrealised_unknown: 'rebuilding',
+      },
+    )
+
+    expect(terms.unrealised).toEqual({ known: false, because: 'awaitingRate' })
+  })
+
+  it('reads a latent term unknown at B as a rebuild', () => {
+    const terms = windowTerms(now, { ...base, unrealised: null, unrealised_unknown: 'rebuilding' })
+
+    expect(termRendering(terms, 'unrealised')).toBe(REBUILDING)
+    expect(gainCascade(terms)).toBeNull()
+  })
+
+  it('leaves unbounded fees unbounded', () => {
+    expect(windowTerms({ ...now, transferFees: null }, base).transferFees).toBeNull()
+  })
+
+  it('drops the fees when none were taken in the window', () => {
+    const terms = windowTerms(now, base)
+
+    expect(terms.transferFees).toBe(0)
+    expect(termIsRendered('transferFees', terms.transferFees)).toBe(false)
+  })
+
+  it('shows a position sold out in the window as the latent gain it gave up', () => {
+    const sold = { ...now, unrealised: known(0), holdsPosition: false }
+
+    const terms = windowTerms(sold, base)
+    expect(termRendering(terms, 'unrealised')).toBe(FIGURE)
+    expect(termAmount(terms, 'unrealised')).toBe(-1400)
+    // Empty at both ends: the #727 dash.
+    expect(termRendering(windowTerms(sold, { ...base, holds_position: false }), 'unrealised')).toBe(
+      DASH,
+    )
   })
 })

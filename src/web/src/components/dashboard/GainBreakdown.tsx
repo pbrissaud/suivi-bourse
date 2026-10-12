@@ -24,14 +24,27 @@
  *
  * A segment wears its figure's colour (`termCarriesSign`), at full strength:
  * direction says the sign, so colour is never the only cue.
+ *
+ * **It answers over a window chosen in the card** (#1156): since inception,
+ * this year, or twelve months. Each term is then `term(now) − term(B)`, B being
+ * the close before the window opens, and the server answers only the terms at
+ * B — so « since inception » makes no request and stays the figures it always
+ * was. The window lives here and not on the page (#1155): the movers answer
+ * the last session and the rhythm twelve months by nature, so a page-level
+ * period would have some cards follow it and others not. It is saved with the
+ * layout, and the card body is `inert` in edit mode, so it cannot move while a
+ * draft is open.
  */
 import { Explain } from '@/components/Explain'
+import { Segmented } from '@/components/Segmented'
+import { Unreadable } from '@/components/Unreadable'
 import { Section } from '@/components/ui/section'
-import type { PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
+import type { GainBaselineResponse, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
 import type { RenderState } from '@/lib/dashboardLayout'
-import { renderFigure } from '@/lib/absence'
+import { DASH, renderFigure } from '@/lib/absence'
 import { useFormatters } from '@/lib/format'
 import {
+  GAIN_PERIODS,
   GAIN_TERMS,
   gainCascade,
   gainTotal,
@@ -42,12 +55,15 @@ import {
   termIsRendered,
   termRendering,
   termTone,
+  windowTerms,
   type Cascade,
   type CascadeStep,
+  type GainPeriod,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
+import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 export const TERM_LABELS: Record<GainTermName, MessageKey> = {
@@ -110,6 +126,16 @@ interface GainBreakdownProps {
   totals: PortfolioTotalsResponse | null
 }
 
+interface GainWindowProps {
+  period: GainPeriod
+  onPeriod: (period: GainPeriod) => void
+  /** The terms at B for a window, `null` before the first one lands. */
+  baseline: GainBaselineResponse | null
+  /** `baseline` is the previous period's, held while the new one is read. */
+  busy: boolean
+  failure: ReadFailure | null
+}
+
 /**
  * What this block renders, and the **one** place it is decided: the block
  * calls it for its own `null`, and the dashboard's grid calls it to know
@@ -124,7 +150,15 @@ export function gainBreakdownRenderState({ positions, totals }: GainBreakdownPro
   return positions.positions.length === 0 && totals.totals === null ? 'nothing' : 'renders'
 }
 
-export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
+export function GainBreakdown({
+  positions,
+  totals,
+  period,
+  onPeriod,
+  baseline,
+  busy,
+  failure,
+}: GainBreakdownProps & GainWindowProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -135,10 +169,22 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
   const totalsRow = totals.totals
 
   const currency = positions.base_currency ?? totals.base_currency ?? null
-  const terms = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
+  const sinceInception = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
+  const windowed = period !== 'all'
+  const failed = windowed && failure !== null
+  const terms =
+    windowed && baseline !== null ? windowTerms(sinceInception, baseline.terms) : sinceInception
+  // Until a window's first baseline lands the card draws its control and
+  // nothing under it: a block waiting on a read renders nothing (#795), and the
+  // inception's rows would say things the window will not (a fee row it drops).
+  // Once one has landed, the next period's read holds the previous figures,
+  // dimmed. A window's date is never written above another window's figures.
+  const unanswered = windowed && baseline === null && !failed
+  const waiting = windowed && busy
+  const since = windowed && !waiting && !failed ? baseline?.since : null
   const total = gainTotal(terms)
   const shown = GAIN_TERMS.filter((term) => termIsRendered(term, termAmount(terms, term)))
-  const cascade = gainCascade(terms)
+  const cascade = failed ? null : gainCascade(terms)
 
   return (
     <Section title={t('dashboard.breakdown.title')}>
@@ -146,61 +192,95 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
           same row, the gap falls between the terms and their total, and both
           cards end on one line. */}
       <div className="flex flex-1 flex-col gap-4">
-        <ul className="flex flex-col gap-2.5 text-sm">
-          {shown.map((term) => (
-            <li
-              key={term}
+        <div className="flex flex-col gap-1.5">
+          <Segmented
+            mode="radio"
+            size="compact"
+            label={t('dashboard.breakdown.period')}
+            value={period}
+            onChange={onPeriod}
+            options={GAIN_PERIODS.map((candidate) => ({
+              value: candidate,
+              label: t(`dashboard.breakdown.period.${candidate}`),
+            }))}
+          />
+          {since ? (
+            <p className="text-sm text-muted-foreground">
+              {t('dashboard.breakdown.since', { date: f.date(since) })}
+            </p>
+          ) : null}
+        </div>
+        {failed ? <Unreadable failure={failure} /> : null}
+        {unanswered ? null : (
+          <>
+            <ul className={cn('flex flex-col gap-2.5 text-sm', waiting && 'opacity-60')}>
+              {shown.map((term) => (
+                <li
+                  key={term}
+                  role="group"
+                  aria-label={t(TERM_LABELS[term])}
+                  className="flex flex-col gap-1"
+                >
+                  <span className="flex items-center justify-between gap-4">
+                    <span className="truncate text-muted-foreground">{t(TERM_LABELS[term])}</span>
+                    <span
+                      className={cn(
+                        'tabular font-medium',
+                        failed ? signClass(null) : termTone(terms, term),
+                      )}
+                    >
+                      {renderFigure(
+                        failed ? DASH : termRendering(terms, term),
+                        () => f.currency(termAmount(terms, term), currency),
+                        t,
+                      )}
+                    </span>
+                  </span>
+                  {cascade ? (
+                    <Track cascade={cascade} term={term} amount={termAmount(terms, term) ?? 0} />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+
+            {/* The total the terms add up to, under them and ruled off: the sum is
+            the reader's to check, and this is where it is checked. */}
+            <div
               role="group"
-              aria-label={t(TERM_LABELS[term])}
-              className="flex flex-col gap-1"
+              aria-label={t('dashboard.gainTotal')}
+              className={cn(
+                'mt-auto flex flex-col gap-1 border-t pt-3 text-sm',
+                waiting && 'opacity-60',
+              )}
             >
               <span className="flex items-center justify-between gap-4">
-                <span className="truncate text-muted-foreground">{t(TERM_LABELS[term])}</span>
-                <span className={cn('tabular font-medium', termTone(terms, term))}>
+                <span className="flex items-center gap-1.5 font-medium">
+                  {t('dashboard.gainTotal')}
+                  <Explain
+                    figure={t('dashboard.gainTotal')}
+                    body="dashboard.gainTotal.explain"
+                    anchor="total-gain"
+                  />
+                </span>
+                <span
+                  className={cn(
+                    'tabular font-semibold',
+                    signClass(total.known && !failed ? total.value : null),
+                  )}
+                >
                   {renderFigure(
-                    termRendering(terms, term),
-                    () => f.currency(termAmount(terms, term), currency),
+                    failed ? DASH : sumRendering(total),
+                    () => f.currency(total.known ? total.value : null, currency),
                     t,
                   )}
                 </span>
               </span>
-              {cascade ? (
-                <Track cascade={cascade} term={term} amount={termAmount(terms, term) ?? 0} />
+              {cascade && total.known ? (
+                <Track cascade={cascade} term="total" amount={total.value} />
               ) : null}
-            </li>
-          ))}
-        </ul>
-
-        {/* The total the terms add up to, under them and ruled off: the sum is
-            the reader's to check, and this is where it is checked. */}
-        <div
-          role="group"
-          aria-label={t('dashboard.gainTotal')}
-          className="mt-auto flex flex-col gap-1 border-t pt-3 text-sm"
-        >
-          <span className="flex items-center justify-between gap-4">
-            <span className="flex items-center gap-1.5 font-medium">
-              {t('dashboard.gainTotal')}
-              <Explain
-                figure={t('dashboard.gainTotal')}
-                body="dashboard.gainTotal.explain"
-                anchor="total-gain"
-              />
-            </span>
-            <span
-              className={cn('tabular font-semibold', signClass(total.known ? total.value : null))}
-            >
-              {renderFigure(
-                sumRendering(total),
-                () => f.currency(total.known ? total.value : null, currency),
-                t,
-              )}
-            </span>
-          </span>
-          {cascade && total.known ? (
-            <Track cascade={cascade} term="total" amount={total.value} />
-          ) : null}
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </Section>
   )

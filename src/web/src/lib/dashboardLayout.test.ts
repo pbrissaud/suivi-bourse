@@ -13,6 +13,7 @@ import {
   sameLayout,
   toStored,
   withHidden,
+  withPeriod,
   withWidth,
   type Placement,
   type RenderState,
@@ -310,6 +311,46 @@ describe('the small edits', () => {
     expect(sameLayout(layout, [p('a', 'half'), p('m', 'full')])).toBe(true)
     expect(sameLayout(layout, [p('m', 'full'), p('a', 'half')])).toBe(false)
     expect(sameLayout(layout, withHidden(layout, 'a', true))).toBe(false)
+  })
+})
+
+describe('the breakdown period (#1156)', () => {
+  it('keeps a known period and drops any other', () => {
+    const saved = {
+      version: 1,
+      blocks: [
+        { id: 'a', width: 'half', hidden: false, period: 'ytd' },
+        { id: 'b', width: 'half', hidden: false, period: '1m' },
+      ],
+    }
+
+    const [a, b] = normalizeLayout(saved, REGISTRY)
+    expect(a).toEqual({ ...p('a', 'half'), period: 'ytd' })
+    expect(b).toEqual(p('b', 'half'))
+  })
+
+  it('writes the period only where there is one', () => {
+    expect(toStored([{ ...p('a', 'half'), period: '12m' }, p('m', 'full')] as never)).toEqual({
+      version: 1,
+      blocks: [
+        { id: 'a', width: 'half', hidden: false, period: '12m' },
+        { id: 'm', width: 'full', hidden: false },
+      ],
+    })
+  })
+
+  it('sets the period of one card', () => {
+    expect(withPeriod([p('a', 'half'), p('m', 'full')], 'a', 'ytd')).toEqual([
+      { ...p('a', 'half'), period: 'ytd' },
+      p('m', 'full'),
+    ])
+  })
+
+  it('keeps the period through a width change and a save', () => {
+    const layout = withPeriod([p('a', 'half'), p('m', 'full')], 'a', '12m')
+    const saved = toStored(withHidden(withWidth(layout, 'm', 'half'), 'm', true) as never)
+
+    expect(normalizeLayout(saved, REGISTRY)[0]).toEqual({ ...p('a', 'half'), period: '12m' })
   })
 })
 

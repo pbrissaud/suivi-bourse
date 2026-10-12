@@ -17,6 +17,7 @@ from application import benchmark_view
 from application import dashboard_layout
 from application import advisories
 from application import entries
+from application import gain_baseline
 from application import installation_facts
 from application import instants
 from application import ledger
@@ -217,6 +218,26 @@ def get_portfolio_movers():
         portfolio_view.build_shares(reader.positions(), _carried()),
         reader.previous_closes())
     return jsonify({'movers': [mover.to_dict() for mover in movers]})
+
+
+@api_bp.get('/portfolio/gain-baseline')
+def get_gain_baseline():
+    """The four gain terms at the day a window opens (#1156)."""
+    period = request.args.get('period')
+    if period not in gain_baseline.PERIODS:
+        return bad_request(
+            f"period is one of {', '.join(gain_baseline.PERIODS)}")
+    try:
+        payload = gain_baseline.measure(
+            _store(), _snapshot().events or [], period)
+    except AggregationError as exc:
+        return _unreplayable(exc, 'gain-baseline')
+    # Only a baseline read at a day can be in a rebuild's way: an inception
+    # clamp (`day` null) is an exact zero, and the window is since inception.
+    if _rebuilding() and payload['day'] is not None:
+        payload['terms']['unrealised'] = None
+        payload['terms']['unrealised_unknown'] = gain_baseline.REBUILDING
+    return jsonify(payload)
 
 
 @api_bp.get('/positions')
