@@ -33,6 +33,7 @@ AI_SDK_VERSION = 6
 OFF = 'The agent is off.'
 BUSY = 'A turn is already running in this conversation.'
 NOT_SAVED = 'The conversation could not be saved: {}'
+UNREADABLE = 'This conversation cannot be read: {}'
 
 #: A turn is one typed question; nothing a person types comes near this.
 MAX_BODY = 256 * 1024
@@ -119,11 +120,12 @@ def build_app(runtime, mcp) -> Starlette:
         if request.headers.get('content-type', '').split(';')[0].strip() \
                 != 'application/json':
             return _error(415, 'A turn is a JSON body.')
-        body = b''
+        body = bytearray()
         async for piece in request.stream():
-            body += piece
+            body.extend(piece)
             if len(body) > MAX_BODY:
                 return _error(413, f'A turn is at most {MAX_BODY} bytes.')
+        body = bytes(body)
         try:
             raw = json.loads(body)
         except ValueError:
@@ -180,7 +182,14 @@ def build_app(runtime, mcp) -> Starlette:
             return stored, agent_threads.answered(
                 agent_threads.messages(stored))
 
-        stored, history = await anyio.to_thread.run_sync(stored_history)
+        try:
+            stored, history = await anyio.to_thread.run_sync(stored_history)
+        except ValueError as exc:
+            # A hand edit, or messages an upgraded Pydantic AI no longer reads:
+            # said, and nothing written over the file.
+            logger.error(f"agent thread {directory / thread_id}.json: {exc}")
+            running.discard(thread_id)
+            return _error(409, UNREADABLE.format(exc))
         title = agent_threads.title_of(' '.join(
             getattr(part, 'text', '') for part in run_input.messages[0].parts))
 
@@ -248,11 +257,15 @@ def build_app(runtime, mcp) -> Starlette:
                 return None
             messages = VercelAIAdapter.dump_messages(
                 agent_threads.messages(stored), sdk_version=AI_SDK_VERSION)
-            return {'id': stored['id'], 'title': stored['title'],
+            return {'id': thread_id, 'title': stored.get('title'),
                     'messages': [m.model_dump(mode='json', by_alias=True,
                                               exclude_none=True)
                                  for m in messages]}
-        answer = await anyio.to_thread.run_sync(shown)
+        try:
+            answer = await anyio.to_thread.run_sync(shown)
+        except ValueError as exc:
+            logger.error(f"agent thread {root() / thread_id}.json: {exc}")
+            return _error(409, UNREADABLE.format(exc))
         if answer is None:
             return _error(404, 'No conversation has this id.')
         return JSONResponse(answer)

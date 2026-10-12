@@ -35,11 +35,18 @@ def valid_id(thread_id) -> bool:
 
 
 def read(root: Path, thread_id: str) -> Optional[dict]:
-    """The thread, or ``None`` when there is none by that id."""
+    """The thread, or ``None`` when there is none by that id.
+
+    A file that is not a thread raises ``ValueError``, as :func:`messages`
+    does on messages this version cannot read.
+    """
     try:
-        return json.loads((root / f'{thread_id}.json').read_text('utf-8'))
+        thread = json.loads((root / f'{thread_id}.json').read_text('utf-8'))
     except FileNotFoundError:
         return None
+    if not isinstance(thread, dict):
+        raise ValueError('the file holds no thread')
+    return thread
 
 
 def listing(root: Path) -> List[dict]:
@@ -61,7 +68,7 @@ def messages(thread: Optional[dict]) -> list:
     """The thread's model messages, or none."""
     if thread is None:
         return []
-    return ModelMessagesTypeAdapter.validate_python(thread['messages'])
+    return ModelMessagesTypeAdapter.validate_python(thread.get('messages'))
 
 
 def answered(history: list) -> list:
@@ -88,8 +95,8 @@ def saved(thread: Optional[dict], thread_id: str, title: str,
     return {
         'version': VERSION,
         'id': thread_id,
-        'title': thread['title'] if thread else title,
-        'created_at': thread['created_at'] if thread else stamp,
+        'title': (thread or {}).get('title') or title,
+        'created_at': (thread or {}).get('created_at') or stamp,
         'updated_at': stamp,
         'provider': provider,
         'model': model,

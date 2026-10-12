@@ -413,3 +413,26 @@ def test_a_failure_of_ours_is_not_put_on_the_provider(
               if c['type'] == 'error']
     assert errors == ["The analyst: 'a bug'"]
     assert any('agent turn failed' in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize('content', [
+    '{not json', '[1, 2]', json.dumps({'id': 'k1', 'messages': [{'kind': 'x'}]}),
+])
+def test_an_unreadable_thread_is_said_and_left_alone(
+        runtime, monkeypatch, content):
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=two_tools_then_text)))
+    root = agent_threads.directory(runtime.store.path)
+    root.mkdir(parents=True)
+    (root / 'k1.json').write_text(content)
+
+    first = run(runtime, post('k1'))
+    second = run(runtime, post('k1'))
+    shown = run(runtime, get('/agent/threads/k1'))
+
+    for answer in (first, second, shown):
+        assert answer.status_code == 409
+        assert answer.json()['error'].startswith(
+            'This conversation cannot be read: ')
+    assert (root / 'k1.json').read_text() == content
