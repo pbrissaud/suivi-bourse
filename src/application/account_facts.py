@@ -15,7 +15,7 @@ store is a failure to read and not an empty portfolio. Neither sentence belongs
 here.
 """
 from datetime import date, datetime
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
 from logfmt_logger import getLogger
 
@@ -91,10 +91,9 @@ def _declaration(store, snapshot) -> list:
     return [accounts_module.as_declared(row) for row in declaration]
 
 
-def simulation_accounts(store, snapshot, now: datetime, ids: Sequence[str],
-                        selling: str) -> Dict[str, simulation.Account]:
-    """The :class:`simulation.Account` of each id asked for (#1109), every
-    read made **once** whatever the number of ids.
+def simulation_account(store, snapshot, now: datetime, account_id: str,
+                       selling: str) -> simulation.Account:
+    """The :class:`simulation.Account` of ``account_id`` (#1109).
 
     **The symbol being sold is priced at the market, every other line at its
     carried value** — the one ``list_accounts`` projects on, so a delisted line
@@ -102,53 +101,45 @@ def simulation_accounts(store, snapshot, now: datetime, ids: Sequence[str],
     is never made at a carried price: an unpriced ``selling`` stays unpriced,
     and is refused as such.
 
-    Refuses an id nobody declared, and one carrying a model this version
+    Refuses an account nobody declared, and one carrying a model this version
     refuses: that account *has* a model, and simulating it as ``no_model``
     would say otherwise.
     """
     declaration = _declaration(store, snapshot)
     declared = sorted(account.id for account in declaration)
-    for account_id in ids:
-        if account_id not in declared:
-            raise simulation.SimulationRefused(
-                f"no account {account_id!r}; the declared accounts are: "
-                f"{', '.join(declared)}")
+    if account_id not in declared:
+        raise simulation.SimulationRefused(
+            f"no account {account_id!r}; the declared accounts are: "
+            f"{', '.join(declared)}")
 
     carried = accounts_module.taxation_models_by_account(store)
     models = {model.id: model
               for model in accounts_module.read_models(store)}
     usable = _usable(models, carried, declaration)
-    for account_id in ids:
-        if account_id in carried and account_id not in usable:
-            raise simulation.SimulationRefused(
-                f"account {account_id!r} carries a taxation model this version "
-                f"refuses; repair it in the app before simulating")
+    if account_id in carried and account_id not in usable:
+        raise simulation.SimulationRefused(
+            f"account {account_id!r} carries a taxation model this version "
+            f"refuses; repair it in the app before simulating")
 
     reader = PortfolioReader(store)
-    contributed = {row['account']: row.get('net_contributed')
-                   for row in reader.latest_account_metrics()}
     opened_on = accounts_module.opening_dates_by_account(store)
     payments = ledger.first_payments(store)
     terminal = quotes.terminal_symbols(store, snapshot.backfill_windows(), now)
     shares = portfolio_view.build_shares(reader.positions(), terminal)
 
-    built = {}
-    for account_id in ids:
-        model = usable.get(account_id)
-        built[account_id] = simulation.Account(
-            id=account_id,
-            kind=None if model is None else model.kind,
-            parameters={} if model is None else model.parameters,
-            opened_on=opened_on.get(account_id),
-            first_payment=payments.get(account_id),
-            lines=[simulation.Line(symbol=share.symbol,
-                                   quantity=holding.quantity or 0,
-                                   cost_basis=holding.cost_basis or 0,
-                                   price=_line_price(share, holding, selling))
-                   for share in shares for holding in share.accounts
-                   if holding.account == account_id],
-            net_contributed=contributed.get(account_id))
-    return built
+    model = usable.get(account_id)
+    return simulation.Account(
+        id=account_id,
+        kind=None if model is None else model.kind,
+        parameters={} if model is None else model.parameters,
+        opened_on=opened_on.get(account_id),
+        first_payment=payments.get(account_id),
+        lines=[simulation.Line(symbol=share.symbol,
+                               quantity=holding.quantity or 0,
+                               cost_basis=holding.cost_basis or 0,
+                               price=_line_price(share, holding, selling))
+               for share in shares for holding in share.accounts
+               if holding.account == account_id])
 
 
 def _line_price(share, holding, selling: str) -> Optional[float]:
@@ -296,4 +287,4 @@ def declared_only(facts: dict) -> dict:
     return {name: value for name, value in facts.items() if value is not None}
 
 
-__all__ = ['accounts_payload', 'declared_only', 'simulation_accounts']
+__all__ = ['accounts_payload', 'declared_only', 'simulation_account']
