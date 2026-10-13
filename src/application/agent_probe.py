@@ -12,6 +12,7 @@ a gesture made once, by hand, at setup, and not worth a second async route.
 honours ``HTTPS_PROXY`` like they do.
 """
 import re
+import time
 from typing import Any, Optional
 
 import httpx2
@@ -21,8 +22,12 @@ from application import agent
 
 logger = getLogger("agent")
 
-#: Seconds before a provider that does not answer is said not to.
+#: Seconds before a provider that does not answer is said not to: the whole
+#: exchange, not only the silence between two chunks, so a gateway that drips
+#: bytes cannot hold a Flask worker past it.
 TIMEOUT = 10.0
+#: A listing is a few hundred models; nothing a provider owes this is larger.
+MAX_BODY = 4 * 1024 * 1024
 
 ANTHROPIC_MODELS = 'https://api.anthropic.com/v1/models?limit=1000'
 ANTHROPIC_VERSION = '2023-06-01'
@@ -35,7 +40,7 @@ _NOT_A_CHAT_MODEL = re.compile(
     r'embedding|tts|whisper|dall-e|moderation|davinci|babbage|transcribe'
     r'|image|realtime|audio|search')
 
-#: How long a provider's message may be when it is not JSON (an HTML page).
+#: How long a provider's message may be, JSON or not (an HTML page).
 _SAID_MAX = 300
 
 
@@ -81,8 +86,7 @@ def models(config: dict, transport: Optional[httpx2.BaseTransport] = None) -> li
     label = agent.PROVIDERS[provider]
     url, headers = _request(config)
     try:
-        with httpx2.Client(timeout=TIMEOUT, transport=transport) as client:
-            answer = client.get(url, headers=headers)
+        answer = _fetch(url, headers, transport)
     except httpx2.HTTPError as exc:
         raise _refused(label, f'cannot be reached at {_where(url)} '
                               f'({str(exc) or type(exc).__name__})',
@@ -96,6 +100,29 @@ def models(config: dict, transport: Optional[httpx2.BaseTransport] = None) -> li
                               f'not a list of models', 'unreadable', key) from None
     logger.info(f"agent test: {label} lists {len(listed)} models")
     return listed
+
+
+def _fetch(url: str, headers: dict, transport) -> httpx2.Response:
+    """The answer, read whole within :data:`TIMEOUT` and :data:`MAX_BODY`."""
+    deadline = time.monotonic() + TIMEOUT
+    with httpx2.Client(timeout=TIMEOUT, transport=transport) as client:
+        with client.stream('GET', url, headers=headers) as streamed:
+            body = bytearray()
+            for chunk in streamed.iter_bytes():
+                body.extend(chunk)
+                if time.monotonic() > deadline:
+                    raise httpx2.ReadTimeout(
+                        f'no whole answer within {TIMEOUT:g} seconds',
+                        request=streamed.request)
+                if len(body) > MAX_BODY:
+                    raise httpx2.ReadError(
+                        f'an answer past {MAX_BODY // (1024 * 1024)} MB',
+                        request=streamed.request)
+            # Decoded already: only the type travels with the bytes.
+            kept = {k: v for k, v in streamed.headers.items()
+                    if k.lower() == 'content-type'}
+            return httpx2.Response(streamed.status_code, headers=kept,
+                                   content=bytes(body), request=streamed.request)
 
 
 def preselected(listed: list, current: Optional[str]) -> Optional[str]:
@@ -155,7 +182,7 @@ def _said(answer: httpx2.Response) -> str:
         inner = body.get('error', body)
         message = inner.get('message') if isinstance(inner, dict) else inner
         if isinstance(message, str) and message:
-            return message
+            return message[:_SAID_MAX]
     text = ' '.join(answer.text.split())[:_SAID_MAX]
     return text or f'HTTP {answer.status_code}'
 

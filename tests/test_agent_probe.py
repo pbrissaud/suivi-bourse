@@ -200,3 +200,31 @@ def test_a_test_writes_nothing(client, monkeypatch):
     client.post('/api/agent/test')
 
     assert client.get('/api/agent/config').get_json() == before
+
+
+def test_a_long_message_is_cut(client, monkeypatch):
+    configured(client, provider='openai', key=KEY)
+    provider(monkeypatch, lambda request: httpx2.Response(
+        400, json={'error': {'message': 'x' * 5000}}))
+
+    body = client.post('/api/agent/test').get_json()
+
+    assert body['detail'] == 'OpenAI: ' + 'x' * 300
+
+
+def test_an_answer_that_drips_past_the_deadline_is_cut(client, monkeypatch):
+    configured(client, provider='openai_compatible',
+               base_url='http://litellm:4000')
+    clock = iter(range(0, 1000, 4))
+    monkeypatch.setattr(agent_probe.time, 'monotonic', lambda: next(clock))
+
+    def drip():
+        while True:
+            yield b' '
+    provider(monkeypatch, lambda request: httpx2.Response(
+        200, content=drip()))
+
+    body = client.post('/api/agent/test').get_json()
+
+    assert body['reason'] == 'unreachable'
+    assert 'no whole answer within 10 seconds' in body['detail']
