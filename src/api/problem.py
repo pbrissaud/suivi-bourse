@@ -18,6 +18,7 @@ TYPE_UNREPLAYABLE = '/problems/unreplayable-ledger'
 TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
 TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
 TYPE_REFUSED = '/problems/refused'
+TYPE_PROVIDER_REFUSED = '/problems/provider-refused'
 
 
 def problem(status: int, title: str, detail: Optional[str] = None,
@@ -123,6 +124,18 @@ def unprocessable_file(detail: str):
 def too_large(detail: str, limit: int):
     """413 — the upload is past what one may carry."""
     return problem(413, 'File too large', detail, TYPE_TOO_LARGE, limit=limit)
+
+
+def provider_refused(detail: str, provider: str, reason: str):
+    """502 — the analyst's provider did not answer the connection test (#1115).
+
+    The one type whose ``detail`` the front renders: it is the provider's own
+    sentence (``Anthropic: invalid x-api-key``), the key masked, and the
+    reader acts on it at the provider's, where it means something. ``reason``
+    is ``unreachable``, ``refused`` or ``unreadable``.
+    """
+    return problem(502, 'Provider refused', detail, TYPE_PROVIDER_REFUSED,
+                   provider=provider, reason=reason)
 
 
 def foreign_origin(detail: str):

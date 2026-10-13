@@ -116,6 +116,19 @@ export const ROUTES = {
   config: '/api/config',
   /** The dials' one writer, and it is an HTTP route so headless stays whole. */
   settings: '/api/settings',
+  /**
+   * The analyst's provider, model and address, and of its key only `last4`
+   * (#1114). Written field by field; the server refuses a row an enabled
+   * analyst could not run on.
+   */
+  agentConfig: '/api/agent/config',
+  /** The provider's key: written and forgotten here, never read back. */
+  agentKey: '/api/agent/key',
+  /**
+   * *Tester la connexion* (#1115): the stored provider's models, listed with
+   * the stored key. Writes nothing.
+   */
+  agentTest: '/api/agent/test',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
@@ -1620,6 +1633,36 @@ export interface EnvironmentVariable {
   source: 'environment' | 'default'
 }
 
+/** The four kinds of provider the analyst runs on, as `agent.PROVIDERS` names them. */
+export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
+
+/** `GET /api/agent/config`: the key is never on the wire, only its end. */
+export interface AgentConfig {
+  enabled: boolean
+  provider: AgentProvider | null
+  model: string | null
+  base_url: string | null
+  key: { set: boolean; last4: string | null; set_at: string | null }
+  /** Present, and `true`, on the one write that switched the analyst off. */
+  disabled?: boolean
+}
+
+/** What `PUT /api/agent/config` takes: any subset of the four fields. */
+export interface AgentConfigDraft {
+  enabled?: boolean
+  provider?: AgentProvider
+  model?: string
+  base_url?: string | null
+}
+
+/** `POST /api/agent/test`: the provider's own list, newest first. */
+export interface AgentTestResult {
+  provider: AgentProvider
+  models: { id: string; name: string }[]
+  /** The stored model while the provider still serves it, else its newest. */
+  preselected: string | null
+}
+
 export interface ConfigResponse {
   log_level: string
   settings: SettingDescription[]
@@ -1935,6 +1978,11 @@ export const api = {
   config: () => get<ConfigResponse>(ROUTES.config),
   saveSettings: (values: Record<string, string | number>) =>
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
+  agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
+  saveAgentConfig: (draft: AgentConfigDraft) => send<AgentConfig>(ROUTES.agentConfig, 'PUT', draft),
+  saveAgentKey: (key: string) => send<AgentConfig>(ROUTES.agentKey, 'PUT', { key }),
+  forgetAgentKey: () => remove<AgentConfig>(ROUTES.agentKey),
+  testAgent: () => send<AgentTestResult>(ROUTES.agentTest, 'POST', {}),
   installationFacts: () => get<InstallationFactsResponse>(ROUTES.installationFacts),
   acknowledgeInstallationFact: (key: string) =>
     send<InstallationFact>(installationFactAcknowledgementPath(key), 'POST', {}),

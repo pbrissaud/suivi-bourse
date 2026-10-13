@@ -73,6 +73,7 @@ describe('the page, and the cards it is made of', () => {
     await waitFor(() =>
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
         'Ce que vous pouvez changer',
+        'L’analyste',
         'Les plans de charge',
         'Les titres orphelins',
         'Le magasin',

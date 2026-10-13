@@ -219,6 +219,11 @@ def page_line(page: Any) -> Optional[str]:
     return f"The user is on the page {route}{shown}."
 
 
+def masked(text: str, secret: Optional[str]) -> str:
+    """``text`` with every occurrence of ``secret`` replaced by ``…last4``."""
+    return text.replace(secret, '…' + secret[-4:]) if secret else text
+
+
 def _text(value: Any, most: int) -> bool:
     """One line of 1 to ``most`` characters, not all of them blank."""
     return (isinstance(value, str) and bool(value.strip()) and len(value) <= most and '\n' not in value)

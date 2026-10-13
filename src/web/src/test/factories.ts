@@ -79,6 +79,7 @@ import type {
   AccountsResponse,
   Advisory,
   ChartWindow,
+  AgentConfig,
   ConfigResponse,
   EnvironmentVariable,
   EventsResponse,
@@ -1278,6 +1279,18 @@ export function aBenchmark(overrides: Partial<BenchmarkResponse> = {}): Benchmar
     reference: null,
     offered: offeredBenchmarks(),
     consulted: [],
+    ...overrides,
+  }
+}
+
+/** The analyst as a fresh installation has it: off, unconfigured, keyless. */
+export function anAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
+  return {
+    enabled: false,
+    provider: null,
+    model: null,
+    base_url: null,
+    key: { set: false, last4: null, set_at: null },
     ...overrides,
   }
 }

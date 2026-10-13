@@ -48,6 +48,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
+import { AgentBlock } from '@/components/settings/AgentBlock'
 import { BuildBlock } from '@/components/settings/BuildBlock'
 import { DialsBlock } from '@/components/settings/DialsBlock'
 import { EnvironmentBlock } from '@/components/settings/EnvironmentBlock'
@@ -80,6 +81,8 @@ export default function SettingsPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
   const store = useQuery({ queryKey: ['store'], queryFn: api.store })
+  // The analyst's provider and model, and of its key only the end (#1115).
+  const agent = useQuery({ queryKey: ['agent-config'], queryFn: api.agentConfig })
   // **The same read the bell makes**, under the same key: the panel's health
   // card is one word and this page is that word developed, so a second query
   // would be a second observation of one installation — and the two would
@@ -109,6 +112,7 @@ export default function SettingsPage() {
   // mention the workloads at all.
   const settingsFailure = oneFailure(readConditions({ queries: [config] }))
   const storeFailure = oneFailure(readConditions({ queries: [store] }))
+  const agentFailure = oneFailure(readConditions({ queries: [agent] }))
 
   // **Narrowed with the bell's own validator, and that is the whole rule.**
   // `installationState` folds *two* answers onto `unreachable`: a request that
@@ -160,6 +164,15 @@ export default function SettingsPage() {
         <Unreadable failure={settingsFailure} />
       ) : config.data ? (
         <DialsBlock config={config.data} runtime={runtime.data} />
+      ) : null}
+
+      {/* The analyst's setup waits for its row like the dials wait for theirs:
+          a provider preselected, then changed under the reader's cursor, is a
+          choice they did not make. */}
+      {agentFailure !== null ? (
+        <Unreadable failure={agentFailure} />
+      ) : agent.data ? (
+        <AgentBlock config={agent.data} />
       ) : null}
 
       {/* What the bell's colour is a fold of, one line per workload

@@ -20,6 +20,7 @@ from starlette.routing import Route
 
 from application import agent
 from application import agent_threads
+from application.agent import masked
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter, VercelAIEventStream
 from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
@@ -86,11 +87,6 @@ def _said(error: Exception) -> str:
         if message:
             return str(message)
     return str(error)
-
-
-def masked(text: str, secret: Optional[str]) -> str:
-    """``text`` with every occurrence of ``secret`` replaced by ``…last4``."""
-    return text.replace(secret, '…' + secret[-4:]) if secret else text
 
 
 def _error(status: int, message: str) -> JSONResponse:
