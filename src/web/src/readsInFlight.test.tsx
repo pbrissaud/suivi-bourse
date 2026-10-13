@@ -71,6 +71,10 @@ const WRITE_ONLY_ROUTES = [
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
+  // The analyst's key is written and forgotten, never read; the connection
+  // test answers the reader's own press, and its answer is a receipt (#1115).
+  'agentKey',
+  'agentTest',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
