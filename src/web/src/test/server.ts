@@ -30,6 +30,7 @@ import {
   anAdvisory,
   anInstallationFact,
   aConfig,
+  anAgentConfig,
   aHealth,
   aTypedEvent,
   aLedgerPayload,
@@ -208,6 +209,8 @@ export function defaultHandlers() {
     // list are what a test asks for by name, both being exactly what the block
     // exists to render.
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
+    // The analyst is off by default (#1115), and nothing is configured.
+    http.get(ROUTES.agentConfig, () => HttpResponse.json(anAgentConfig())),
     // **No reference chosen** (#760), which is what a fresh installation reads
     // and what the shell's walk meets on this route. A test comparing anything
     // asks for the payload by name, exactly as it asks for an orphan.

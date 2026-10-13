@@ -13,6 +13,7 @@ from logfmt_logger import getLogger
 
 from application import account_facts
 from application import agent as agent_module
+from application import agent_probe
 from application import accounts as accounts_module
 from application import benchmark_view
 from application import dashboard_layout
@@ -51,6 +52,7 @@ from api.problem import (
     internal_error,
     problem,
     not_found,
+    provider_refused,
     storage_unavailable,
     too_large,
     unprocessable,
@@ -1396,6 +1398,31 @@ def put_agent_key():
 def delete_agent_key():
     """Forget the key; a provider that needs one is switched off with it."""
     return _write_agent_config(agent_module.without_key)
+
+
+@api_bp.post('/agent/test')
+def probe_agent():
+    """List the stored provider's models, with the stored address and key.
+
+    The answer names the models and the one to preselect; a provider that
+    refuses answers 502 in its own words. The key is in neither, nor in the
+    log, but as ``…last4``. Nothing is written: choosing a model and switching
+    the analyst on are ``PUT /api/agent/config``'s.
+    """
+    config = agent_module.read(_store())
+    try:
+        agent_probe.ready(config)
+        listed = agent_probe.models(config)
+    except agent_module.InvalidAgentConfig as exc:
+        return unprocessable(str(exc), key=exc.key)
+    except agent_probe.ProviderRefused as exc:
+        return provider_refused(
+            str(exc), agent_module.PROVIDERS[config['provider']], exc.reason)
+    return jsonify({
+        'provider': config['provider'],
+        'models': listed,
+        'preselected': agent_probe.preselected(listed, config['model']),
+    })
 
 
 def _write_agent_config(changed):

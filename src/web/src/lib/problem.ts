@@ -84,6 +84,17 @@ export const PROBLEM_TYPES = {
    * `detail`, so prose alone would have reached nobody.
    */
   taxationModelInUse: '/problems/taxation-model-in-use',
+  /**
+   * The analyst's provider did not answer *Tester la connexion* (#1115).
+   *
+   * **The one type whose `detail` is rendered**, and the exception is the
+   * point: the detail is the provider's own sentence (`Anthropic: invalid
+   * x-api-key`), the key masked, and the reader acts on it at the provider's,
+   * where those words mean something. It carries `provider` and `reason`
+   * (`unreachable`, `refused`, `unreadable`); read it through
+   * `providerRefusal` below.
+   */
+  providerRefused: '/problems/provider-refused',
   internal: '/problems/internal-error',
 } as const
 
@@ -106,6 +117,7 @@ const MESSAGES: Record<string, MessageKey> = {
   // refusal arrived without them. The one that names them is reached through
   // `problemMessage` below.
   [PROBLEM_TYPES.taxationModelInUse]: 'problem.taxationModelInUse',
+  [PROBLEM_TYPES.providerRefused]: 'problem.providerRefused',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 
@@ -236,4 +248,24 @@ export function problemSentence(
 ): string {
   const said = problemMessage(error)
   return t(said.message, said.values)
+}
+
+/**
+ * A failed connection test, as the setup tells it: who answered, why, and the
+ * provider's own words. `null` for any other failure, which is said by
+ * `problemMessageKey` like everywhere else.
+ */
+export function providerRefusal(
+  error: unknown,
+): { provider: string; reason: string; said: string } | null {
+  if (!(error instanceof ApiProblem) || error.type !== PROBLEM_TYPES.providerRefused) return null
+  const provider = text(error, 'provider') ?? ''
+  const detail = error.detail ?? ''
+  // The detail is prefixed with the provider's name for the log's sake; the
+  // setup names the provider in its own sentence, in the reader's language.
+  const said =
+    provider !== '' && detail.startsWith(`${provider}: `)
+      ? detail.slice(provider.length + 2)
+      : detail
+  return { provider, reason: text(error, 'reason') ?? 'refused', said }
 }
