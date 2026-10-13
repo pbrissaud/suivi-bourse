@@ -1690,15 +1690,25 @@ export function agentThreadPath(id: string): string {
  * The analyst's routes answer `{error}` rather than `problem+json`: they are
  * Starlette's, beside `/mcp`, not Flask's. The sentence is the server's.
  */
+/** A refusal from the analyst's routes: the server's sentence, and its status. */
+export class AgentError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function agentRead<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { Accept: 'application/json' } })
-  if (!response.ok) throw new Error(await agentError(response))
+  if (!response.ok) throw new AgentError(await agentError(response), response.status)
   return (await response.json()) as T
 }
 
 async function agentForget(path: string): Promise<void> {
   const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
-  if (!response.ok) throw new Error(await agentError(response))
+  if (!response.ok) throw new AgentError(await agentError(response), response.status)
 }
 
 async function agentError(response: Response): Promise<string> {

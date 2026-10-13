@@ -357,6 +357,7 @@ function AnalystConversation() {
     const last = messages.map((m) => m.role).lastIndexOf('user')
     if (last === -1) return
     const text = textOf(messages[last])
+    if (text === '') return
     setMessages(messages.slice(0, last))
     ask(text)
   }

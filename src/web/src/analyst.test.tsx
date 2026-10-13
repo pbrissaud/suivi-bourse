@@ -97,8 +97,9 @@ describe('the states (4A)', () => {
     const { user, panel } = await openPanel()
     const offered = await within(panel).findAllByRole('button', { name: /\?$/ })
     expect(offered).toHaveLength(3)
-    // The largest held line of the fixture, by name.
-    expect(offered[0]).toHaveAccessibleName(/Zeta Gamma/)
+    // The largest held line of the fixture, by value: 10 × 130 against
+    // 4 × 100 (converted) and 600 carried at cost.
+    expect(offered[0]).toHaveAccessibleName(/Zeta Alpha/)
 
     const question = offered[1].textContent ?? ''
     const sent = scripted(createChat().user(question).assistant('Oui, chaque mois.'))
@@ -324,6 +325,50 @@ describe('the threads (12A)', () => {
     expect(await within(panel).findByText(/Posez une question/)).toBeInTheDocument()
     expect(within(panel).queryByRole('alert')).not.toBeInTheDocument()
     expect(window.localStorage.getItem(THREAD_STORAGE_KEY)).toBeNull()
+  })
+
+  it('keeps the remembered thread when the server cannot be reached', async () => {
+    switchedOn()
+    window.localStorage.setItem(THREAD_STORAGE_KEY, 'kept')
+    server.use(http.get(ROUTES.agentThread, () => HttpResponse.error()))
+    const { panel } = await openPanel()
+    expect(await within(panel).findByText(/Posez une question/)).toBeInTheDocument()
+    expect(window.localStorage.getItem(THREAD_STORAGE_KEY)).toBe('kept')
+  })
+
+  it('shows the thread asked for last, whatever order the reads land in', async () => {
+    switchedOn()
+    server.use(
+      http.get(ROUTES.agentThreads, () =>
+        HttpResponse.json([
+          { id: 'slow', title: 'Lent', created_at: null, updated_at: null },
+          { id: 'fast', title: 'Rapide', created_at: null, updated_at: null },
+        ]),
+      ),
+      http.get(ROUTES.agentThread, async ({ params }) => {
+        const id = String(params.id)
+        if (id === 'slow') await new Promise((done) => setTimeout(done, 300))
+        return HttpResponse.json({
+          id,
+          title: id,
+          messages: [
+            { id: `a-${id}`, role: 'assistant', parts: [{ type: 'text', text: `Fil ${id}.` }] },
+          ],
+        })
+      }),
+    )
+    const { user, panel } = await openPanel()
+    const recent = () => user.click(within(panel).getByRole('button', { name: 'Fils récents' }))
+
+    await recent()
+    await user.click(await screen.findByRole('button', { name: /^Lent/ }))
+    await recent()
+    await user.click(await screen.findByRole('button', { name: /^Rapide/ }))
+
+    expect(await within(panel).findByText('Fil fast.')).toBeInTheDocument()
+    await new Promise((done) => setTimeout(done, 400))
+    expect(within(panel).getByText('Fil fast.')).toBeInTheDocument()
+    expect(within(panel).queryByText('Fil slow.')).not.toBeInTheDocument()
   })
 
   it('keeps the thread when the panel is closed and opened again', async () => {

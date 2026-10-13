@@ -278,15 +278,19 @@ def build_app(runtime, mcp) -> Starlette:
         if not agent_threads.valid_id(thread_id):
             return _error(400, "'id' is 1 to 64 letters, digits, '_' or '-'.")
         # The turn would write the file back on completion: refused rather
-        # than deleted under it.
+        # than deleted under it. And held while the file goes, so a turn that
+        # starts meanwhile is refused too rather than writing back what it read.
         if thread_id in running:
             return _error(409, BUSY)
+        running.add(thread_id)
         try:
             removed = await anyio.to_thread.run_sync(
                 agent_threads.remove, root(), thread_id)
         except OSError as exc:
             logger.error(f"agent thread {root() / thread_id}.json: {exc}")
             return _error(500, NOT_REMOVED.format(_reason(exc)))
+        finally:
+            running.discard(thread_id)
         if not removed:
             return _error(404, 'No conversation has this id.')
         return Response(status_code=204)

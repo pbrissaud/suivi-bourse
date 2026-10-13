@@ -150,7 +150,11 @@ export function exampleQuestions(
 ): ExampleQuestion[] {
   const held = positions
     .filter((p) => p.quantity > 0)
-    .map((p) => ({ position: p, weight: p.converted?.value ?? p.cost_basis }))
+    .map((p) => ({
+      position: p,
+      // `converted` is a unit price; `cost_basis` is already the line's whole cost.
+      weight: p.converted ? p.converted.value * p.quantity : p.cost_basis,
+    }))
     .sort((a, b) => b.weight - a.weight)
   const largest = held[0]?.position
   if (largest === undefined) {

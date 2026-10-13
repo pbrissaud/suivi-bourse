@@ -32,7 +32,7 @@ import {
 } from 'react'
 
 import { type AnalystLayout, analystSeam, layoutFor } from '@/lib/analyst'
-import { api } from '@/lib/api'
+import { AgentError, api } from '@/lib/api'
 import { browserStorage, rememberPreference } from '@/lib/storage'
 
 /** The thread on screen, kept across a reload. Per browser, a convenience. */
@@ -99,18 +99,19 @@ export function AnalystPanelProvider({ children }: { children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement | null>(null)
   const layout = useLayout()
 
-  const setOpen = useCallback((next: boolean) => {
-    setOpenState(next)
-    // Back to the button: a closed panel must not leave focus on nothing.
-    if (!next) requestAnimationFrame(() => trigger.current?.focus())
-  }, [])
+  const setOpen = useCallback((next: boolean) => setOpenState(next), [])
+  const toggle = useCallback(() => setOpenState((current) => !current), [])
 
-  const toggle = useCallback(() => {
-    setOpenState((current) => {
-      if (current) requestAnimationFrame(() => trigger.current?.focus())
-      return !current
-    })
-  }, [])
+  // Back to the button once a close has committed: a closed panel must not
+  // leave focus on nothing. A reopening before the frame cancels it.
+  const wasOpen = useRef(open)
+  useEffect(() => {
+    const closed = wasOpen.current && !open
+    wasOpen.current = open
+    if (!closed) return
+    const frame = requestAnimationFrame(() => trigger.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [open])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -123,14 +124,21 @@ export function AnalystPanelProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [toggle])
 
+  // The chat on screen, for stopping it from outside a state updater.
+  const current = useRef(chat)
+  useEffect(() => {
+    current.current = chat
+  }, [chat])
   const replace = useCallback((next: Chat<UIMessage>) => {
-    setChat((current) => {
-      current.stop()
-      return next
-    })
+    current.current.stop()
+    setChat(next)
   }, [])
 
+  /** The last read asked for: an answer to an earlier one is dropped. */
+  const reading = useRef(0)
+
   const startThread = useCallback(() => {
+    reading.current += 1
     forgetThread()
     setOpening(null)
     replace(chatFor(generateId()))
@@ -138,15 +146,20 @@ export function AnalystPanelProvider({ children }: { children: ReactNode }) {
 
   const read = useCallback(
     async (id: string, quietly: boolean) => {
+      const sequence = ++reading.current
       setOpening({ id, error: null })
       try {
         const thread = await api.agentThread(id)
+        if (sequence !== reading.current) return
         rememberPreference(THREAD_STORAGE_KEY, thread.id)
         replace(chatFor(thread.id, thread.messages))
         setOpening(null)
       } catch (error) {
+        if (sequence !== reading.current) return
         if (quietly) {
-          forgetThread()
+          // Forgotten only when the server says it is gone, or the analyst
+          // off (both a 404): a network failure keeps it for the next reload.
+          if (error instanceof AgentError && error.status === 404) forgetThread()
           setOpening(null)
         } else {
           setOpening({ id, error: error instanceof Error ? error.message : String(error) })
