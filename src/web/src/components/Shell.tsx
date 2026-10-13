@@ -36,10 +36,12 @@
  */
 import { Outlet } from '@tanstack/react-router'
 
+import { AnalystPanel } from '@/components/analyst/AnalystPanel'
 import { AppSidebar } from '@/components/AppSidebar'
 import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
 import { SIDEBAR_COOKIE_NAME, SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { AnalystPanelProvider } from '@/lib/analystPanel'
 
 /**
  * **Reading back what the registry component already writes.**
@@ -92,26 +94,32 @@ function navigationOpens(): boolean {
 
 export function Shell() {
   return (
-    <SidebarProvider defaultOpen={navigationOpens()}>
-      <AppSidebar />
-      {/* `min-w-0`, and it is not cosmetic — see the header comment: without it
+    <AnalystPanelProvider>
+      <SidebarProvider defaultOpen={navigationOpens()}>
+        <AppSidebar />
+        {/* `min-w-0`, and it is not cosmetic — see the header comment: without it
           a table wider than the column takes the whole page sideways with it,
           and every `overflow-x-auto` under here is inert. */}
-      <SidebarInset className="min-w-0">
-        <ContentHeader />
-        {/* `SidebarInset` is already the `<main>` landmark, so this is a plain
+        <SidebarInset className="min-w-0">
+          <ContentHeader />
+          {/* `SidebarInset` is already the `<main>` landmark, so this is a plain
             column — the padding, and nothing else. `mx-auto` went with the cap:
             centring a column that fills its parent does nothing, and what it
             centred in was never the viewport. */}
-        {/* The page's gutter is the header's, and it is the drawing's ladder:
+          {/* The page's gutter is the header's, and it is the drawing's ladder:
             14 px on a phone, 20 from `md`, 28 from `lg`. */}
-        <div className="w-full p-3.5 md:p-5 lg:p-7">
-          <Outlet />
-        </div>
-        {/* Mounted by the shell and not by a route: *first run* is a predicate,
+          <div className="w-full p-3.5 md:p-5 lg:p-7">
+            <Outlet />
+          </div>
+          {/* Mounted by the shell and not by a route: *first run* is a predicate,
             not a place, and it is as true on `/shares` as on `/` (#726). */}
-        <FirstRun />
-      </SidebarInset>
-    </SidebarProvider>
+          <FirstRun />
+        </SidebarInset>
+        {/* The analyst (#1117): beside `<main>` and not in it, so it is a
+          landmark of its own. Docked from 1 440 px it is a flex item and the
+          column shrinks for it; below, a sheet that portals out of here. */}
+        <AnalystPanel />
+      </SidebarProvider>
+    </AnalystPanelProvider>
   )
 }
