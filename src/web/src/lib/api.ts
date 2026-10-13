@@ -21,6 +21,8 @@
  * It grows one page ticket at a time. What is here is what the shell reads.
  */
 
+import type { UIMessage } from 'ai'
+
 /**
  * The paths, in one object, because the test harness fakes exactly this edge
  * (#712 Testing Decisions) and a fake that hardcoded its own strings would drift
@@ -129,6 +131,15 @@ export const ROUTES = {
    * the stored key. Writes nothing.
    */
   agentTest: '/api/agent/test',
+  /**
+   * The analyst's turn (#1114): a Vercel AI SDK UI stream, on the ASGI half
+   * and outside `/api`. The panel's `useChat` posts here (#1117).
+   */
+  agent: '/agent',
+  /** The conversations, the most recent first. */
+  agentThreads: '/agent/threads',
+  /** One conversation: read as UI messages, or deleted. A **pattern**. */
+  agentThread: '/agent/threads/:id',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
@@ -1655,6 +1666,52 @@ export interface AgentConfigDraft {
   base_url?: string | null
 }
 
+/** One line of `GET /agent/threads`. */
+export interface AgentThreadSummary {
+  id: string
+  /** The first 80 characters of the first question. */
+  title: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** `GET /agent/threads/<id>`: the messages as `useChat` holds them. */
+export interface AgentThread {
+  id: string
+  title: string | null
+  messages: UIMessage[]
+}
+
+export function agentThreadPath(id: string): string {
+  return ROUTES.agentThread.replace(':id', encodeURIComponent(id))
+}
+
+/**
+ * The analyst's routes answer `{error}` rather than `problem+json`: they are
+ * Starlette's, beside `/mcp`, not Flask's. The sentence is the server's.
+ */
+async function agentRead<T>(path: string): Promise<T> {
+  const response = await fetch(path, { headers: { Accept: 'application/json' } })
+  if (!response.ok) throw new Error(await agentError(response))
+  return (await response.json()) as T
+}
+
+async function agentForget(path: string): Promise<void> {
+  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
+  if (!response.ok) throw new Error(await agentError(response))
+}
+
+async function agentError(response: Response): Promise<string> {
+  const text = await response.text()
+  try {
+    const said = (JSON.parse(text) as { error?: unknown }).error
+    if (typeof said === 'string') return said
+  } catch {
+    // Not the analyst's shape: a proxy's page, say. Its status is all there is.
+  }
+  return `HTTP ${response.status}`
+}
+
 /** `POST /api/agent/test`: the provider's own list, newest first. */
 export interface AgentTestResult {
   provider: AgentProvider
@@ -1983,6 +2040,9 @@ export const api = {
   saveAgentKey: (key: string) => send<AgentConfig>(ROUTES.agentKey, 'PUT', { key }),
   forgetAgentKey: () => remove<AgentConfig>(ROUTES.agentKey),
   testAgent: () => send<AgentTestResult>(ROUTES.agentTest, 'POST', {}),
+  agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),
+  agentThread: (id: string) => agentRead<AgentThread>(agentThreadPath(id)),
+  forgetAgentThread: (id: string) => agentForget(agentThreadPath(id)),
   installationFacts: () => get<InstallationFactsResponse>(ROUTES.installationFacts),
   acknowledgeInstallationFact: (key: string) =>
     send<InstallationFact>(installationFactAcknowledgementPath(key), 'POST', {}),

@@ -436,3 +436,49 @@ def test_an_unreadable_thread_is_said_and_left_alone(
         assert answer.json()['error'].startswith(
             'This conversation cannot be read: ')
     assert (root / 'k1.json').read_text() == content
+
+
+def delete(path):
+    async def work(client):
+        return await client.delete(path)
+    return work
+
+
+def test_a_thread_is_deleted_with_its_file(runtime, monkeypatch):
+    """*Supprimer ce fil* (#1117): the file goes, and the listing with it."""
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=two_tools_then_text)))
+    run(runtime, post('k1'))
+    assert stored(runtime, 'k1') is not None
+
+    assert run(runtime, delete('/agent/threads/k1')).status_code == 204
+
+    assert stored(runtime, 'k1') is None
+    assert run(runtime, get('/agent/threads')).json() == []
+    assert run(runtime, delete('/agent/threads/k1')).status_code == 404
+
+
+def test_deleting_is_refused_off_with_a_bad_id_and_while_a_turn_runs(
+        runtime, monkeypatch):
+    assert run(runtime, delete('/agent/threads/k1')).status_code == 404
+    switched_on(runtime)
+    assert run(runtime, delete('/agent/threads/a/b')).status_code == 400
+
+    async def slow(messages, info):
+        await asyncio.sleep(2)
+        yield 'done'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=slow)))
+
+    async def work(client):
+        first = asyncio.create_task(
+            client.post('/agent', json=body('k1', text='one')))
+        await asyncio.sleep(0.5)
+        refused = await client.delete('/agent/threads/k1')
+        return await first, refused
+
+    first, refused = run(runtime, work)
+    assert first.status_code == 200
+    assert refused.status_code == 409
+    assert stored(runtime, 'k1') is not None

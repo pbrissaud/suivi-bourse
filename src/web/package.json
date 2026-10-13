@@ -12,13 +12,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.140",
     "@dnd-kit/dom": "^0.5.0",
     "@dnd-kit/react": "^0.5.0",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
+    "@shadcn/react": "^0.3.1",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-table": "^9.2.8",
+    "ai": "^7.0.137",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "intl-messageformat": "^12.0.0",
@@ -32,6 +35,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@shadcn/helpers": "^0.2.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
@@ -40,6 +44,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "axe-core": "^4.14.0",
     "jsdom": "^30.0.1",
     "msw": "^3.0.0",
     "tailwindcss": "^4.3.3",

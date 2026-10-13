@@ -39,7 +39,8 @@ import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { ROUTES, type RouteName } from '@/lib/api'
-import { aTotals, aTotalsPayload } from '@/test/factories'
+import { anAgentConfig, aTotals, aTotalsPayload } from '@/test/factories'
+import { THREAD_STORAGE_KEY } from '@/lib/analystPanel'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -75,6 +76,9 @@ const WRITE_ONLY_ROUTES = [
   // test answers the reader's own press, and its answer is a receipt (#1115).
   'agentKey',
   'agentTest',
+  // A turn is the reader's question, and its answer streams into the thread
+  // that asked it (#1117): a gesture, never a read a surface is drawn from.
+  'agent',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
@@ -285,7 +289,61 @@ const SURFACES: readonly Surface[] = [
     },
   },
   { name: 'les réglages', url: '/settings', heading: 'Réglages' },
+  {
+    // The analyst (#1117), switched on, its recent threads open:
+    // *Aucune conversation gardée* is a claim about the threads' directory,
+    // and the questions an empty thread offers are built from the positions.
+    name: 'l’analyste, ses fils récents ouverts',
+    url: '/',
+    heading: 'Tableau de bord',
+    handlers: () => server.use(...analystHandlers()),
+    open: async ({ user }) => {
+      await user.click(await screen.findByRole('button', { name: 'Analyste' }))
+      await user.click(await screen.findByRole('button', { name: 'Fils récents' }))
+      return screen.findByRole('button', { name: /^Ma question/ })
+    },
+  },
+  {
+    // And the thread this browser remembers, read back on the first opening:
+    // nothing of it is drawn, not even the empty thread's questions, until it
+    // has landed.
+    name: 'l’analyste, un fil gardé rouvert',
+    url: '/',
+    heading: 'Tableau de bord',
+    handlers: () => {
+      window.localStorage.setItem(THREAD_STORAGE_KEY, 't1')
+      server.use(...analystHandlers())
+    },
+    open: async ({ user }) => {
+      await user.click(await screen.findByRole('button', { name: 'Analyste' }))
+      return screen.findByText('Voici la simulation.')
+    },
+  },
 ]
+
+/** The analyst switched on, with one kept thread. */
+function analystHandlers() {
+  return [
+    http.get(ROUTES.agentConfig, () =>
+      HttpResponse.json(
+        anAgentConfig({ enabled: true, provider: 'anthropic', model: 'claude-sonnet-5-5' }),
+      ),
+    ),
+    http.get(ROUTES.agentThreads, () =>
+      HttpResponse.json([{ id: 't1', title: 'Ma question', created_at: null, updated_at: null }]),
+    ),
+    http.get(ROUTES.agentThread, () =>
+      HttpResponse.json({
+        id: 't1',
+        title: 'Ma question',
+        messages: [
+          { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Ma question' }] },
+          { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'Voici la simulation.' }] },
+        ],
+      }),
+    ),
+  ]
+}
 
 // ------------------------------------------------------------------------- //
 // The net

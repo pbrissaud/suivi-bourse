@@ -1,7 +1,8 @@
 """The analyst's routes, async on the event loop beside ``/mcp`` (#1114).
 
 ``POST /agent`` streams one turn in the Vercel AI SDK's UI protocol;
-``GET /agent/threads[/<id>]`` reads the conversations back. Not Flask: a turn
+``GET /agent/threads[/<id>]`` reads the conversations back, and
+``DELETE /agent/threads/<id>`` forgets one (*Supprimer ce fil*, #1117). Not Flask: a turn
 waits on a provider for seconds, and a WSGI worker held that long is one of
 four (``boot.WSGI_THREADS``). Nothing here blocks the loop: the config read and
 the thread files go through ``anyio.to_thread``, and the MCP SDK runs the tools'
@@ -15,7 +16,7 @@ import anyio
 from logfmt_logger import getLogger
 from pydantic import ValidationError
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from application import agent
@@ -27,14 +28,16 @@ from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
 
 logger = getLogger("agent")
 
-#: The Vercel AI SDK major the stream speaks. #1117 installs the matching
-#: ``ai@6`` in the front: changing one means changing the other.
-AI_SDK_VERSION = 6
+#: The Vercel AI SDK major the stream speaks. The panel (#1117) installs the
+#: matching ``ai@7``: changing one means changing the other. Pydantic AI writes
+#: v7 as the same wire as v6, so the move from 6 changed no chunk.
+AI_SDK_VERSION = 7
 
 OFF = 'The agent is off.'
 BUSY = 'A turn is already running in this conversation.'
 NOT_SAVED = 'The conversation could not be saved: {}'
 UNREADABLE = 'This conversation cannot be read: {}'
+NOT_REMOVED = 'The conversation could not be deleted: {}'
 
 #: A turn is one typed question; nothing a person types comes near this.
 MAX_BODY = 256 * 1024
@@ -266,12 +269,35 @@ def build_app(runtime, mcp) -> Starlette:
             return _error(404, 'No conversation has this id.')
         return JSONResponse(answer)
 
+    async def forget(request):
+        """Delete one conversation's file; a turn in flight keeps it."""
+        settings = await anyio.to_thread.run_sync(config)
+        if not settings['enabled']:
+            return _error(404, OFF)
+        thread_id = request.path_params['thread_id']
+        if not agent_threads.valid_id(thread_id):
+            return _error(400, "'id' is 1 to 64 letters, digits, '_' or '-'.")
+        # The turn would write the file back on completion: refused rather
+        # than deleted under it.
+        if thread_id in running:
+            return _error(409, BUSY)
+        try:
+            removed = await anyio.to_thread.run_sync(
+                agent_threads.remove, root(), thread_id)
+        except OSError as exc:
+            logger.error(f"agent thread {root() / thread_id}.json: {exc}")
+            return _error(500, NOT_REMOVED.format(_reason(exc)))
+        if not removed:
+            return _error(404, 'No conversation has this id.')
+        return Response(status_code=204)
+
     return Starlette(routes=[
         Route('/agent', turn, methods=['POST']),
         Route('/agent/threads', threads, methods=['GET']),
         # `:path` so an id holding a '/' reaches the check and is refused by
         # name, rather than matching no route at all.
         Route('/agent/threads/{thread_id:path}', thread, methods=['GET']),
+        Route('/agent/threads/{thread_id:path}', forget, methods=['DELETE']),
     ])
 
 

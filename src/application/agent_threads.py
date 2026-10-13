@@ -49,6 +49,18 @@ def read(root: Path, thread_id: str) -> Optional[dict]:
     return thread
 
 
+def remove(root: Path, thread_id: str) -> bool:
+    """Delete the thread's file; ``False`` when there was none.
+
+    An ``OSError`` other than a missing file is the caller's to report.
+    """
+    try:
+        (root / f'{thread_id}.json').unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def listing(root: Path) -> List[dict]:
     """Every thread's id, title and dates, the most recent first."""
     if not root.is_dir():
