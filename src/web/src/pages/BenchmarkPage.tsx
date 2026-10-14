@@ -42,7 +42,6 @@
  *    so neither the em dash nor an empty state applies.
  */
 import { Link } from '@tanstack/react-router'
-import { TriangleAlert } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { EmptyState } from '@/components/EmptyState'
@@ -64,7 +63,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { api, type BenchmarkExclusion, type BenchmarkResponse } from '@/lib/api'
+import { api, type BenchmarkResponse } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -175,7 +174,6 @@ export default function BenchmarkPage() {
             }
           />
         )}
-        <Excluded rows={data.excluded_accounts ?? []} />
         <PerAccount data={data} currency={currency} />
         {controls}
       </div>
@@ -210,7 +208,6 @@ export default function BenchmarkPage() {
           </div>
         }
       />
-      <Excluded rows={data.excluded_accounts ?? []} />
       <PerAccount data={data} currency={currency} />
     </div>
   )
@@ -561,40 +558,4 @@ function elapsedYears(from: string, to: string): number {
   const [ty, tm, td] = to.split('-').map(Number)
   const whole = ty - fy
   return tm > fm || (tm === fm && td >= fd) ? whole : whole - 1
-}
-
-/**
- * The accounts a grant with no declared price took out of the perimeter.
- *
- * **One line per account, and each names its own symbols.** Knowing a wrapper
- * is out is not actionable; knowing which grant did it is the whole gesture —
- * the reader goes to the ledger and prices that line. The payload has carried
- * `symbols` since #760, so the join below is the only thing that was missing.
- */
-function Excluded({ rows }: { rows: readonly BenchmarkExclusion[] }) {
-  const { t } = useI18n()
-
-  if (rows.length === 0) return null
-  return (
-    <div className="flex max-w-3xl gap-3 rounded-lg border border-attention/30 bg-attention/8 px-4 py-3 text-sm">
-      <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-attention" />
-      <div className="space-y-1">
-        {rows.map((row) => {
-          const symbols = (row.symbols ?? '').split(',').filter(Boolean)
-          return (
-            <p key={row.account}>
-              {t('benchmark.excluded', {
-                account: row.account,
-                symbols: symbols.join(', '),
-                count: symbols.length,
-              })}
-            </p>
-          )
-        })}
-        <Link to="/ledger" className="font-medium underline underline-offset-4">
-          {t('benchmark.empty.noEvents.link')}
-        </Link>
-      </div>
-    </div>
-  )
 }

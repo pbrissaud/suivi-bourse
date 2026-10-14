@@ -722,7 +722,6 @@
   "benchmark.term.yours": "Your portfolio",
   "benchmark.term.theirs": "The reference",
   "benchmark.returns.title": "Return over the period",
-  "benchmark.excluded": "{account} is out of the comparison: {symbols} {count, plural, one {was granted} other {were granted}} there with no declared price.",
   "benchmark.rebuild.title": "Rebuilding {symbol}'s history.",
   "benchmark.rebuild.progress": "Back to {reached} so far.",
   "benchmark.rebuild.target": "Back to {reached} so far, on a history that starts on {target}.",

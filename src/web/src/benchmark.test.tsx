@@ -42,7 +42,6 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
     gap_gross: 4212.8,
     portfolio_return: 0.112,
     reference_return: 0.048,
-    excluded_accounts: [],
     ...overrides,
   }
 }
@@ -252,18 +251,6 @@ describe('what the period costs', () => {
       ),
     ).toBeInTheDocument()
   })
-
-  it('names the grant, and not just the account, that left the perimeter', async () => {
-    renderBenchmark(
-      ready({
-        excluded_accounts: [{ account: 'pee', reason: 'undeclared_grant', symbols: 'ACME,WIDGET' }],
-      }),
-    )
-
-    // The account alone is not actionable: the reader has to know which line
-    // to go and price.
-    expect(await screen.findByText(/pee.*ACME, WIDGET.*sans prix déclaré/)).toBeInTheDocument()
-  })
 })
 
 describe('the contract a non-visual reader gets', () => {
@@ -452,7 +439,6 @@ describe('each account over its own period', () => {
       reference: 'CW8.PA',
       index: 'MSCI World',
       consulted: ['CW8.PA'],
-      excluded_accounts: [],
       per_account: [
         { ...TWO_ACCOUNTS[0], covered_from: '2019-10-30', covered_to: '2023-01-12' },
         TWO_ACCOUNTS[1],
@@ -475,7 +461,6 @@ describe('each account over its own period', () => {
       reference: 'CW8.PA',
       index: 'MSCI World',
       consulted: ['CW8.PA'],
-      excluded_accounts: [],
       per_account: [],
     })
 
@@ -578,7 +563,6 @@ describe('the shared period, per account (#1032)', () => {
       reference: 'CW8.PA',
       index: 'MSCI World',
       consulted: ['CW8.PA'],
-      excluded_accounts: [],
       per_account: OWN,
     })
 

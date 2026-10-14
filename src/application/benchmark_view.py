@@ -123,7 +123,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     # than an empty state that names what is missing.
     window = snapshot.tracked_windows(symbol).get(symbol)
     if not window:
-        return {**head, 'state': NOTHING_TO_COMPARE, 'excluded_accounts': []}
+        return {**head, 'state': NOTHING_TO_COMPARE}
 
     if symbol not in quotes.terminal_symbols(store, {symbol: window}, now):
         return {**head, 'state': REBUILDING,
@@ -146,11 +146,9 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': SPLITS_UNKNOWN,
                 'rebuild': _rebuild(store, symbol, offered, now)}
 
-    replayed, excluded, opened, reseed = _by_account(
-        store, snapshot, prices, symbol)
+    replayed, opened, reseed = _by_account(store, snapshot, prices, symbol)
     if not replayed:
-        return {**head, 'state': NOTHING_TO_COMPARE,
-                'excluded_accounts': excluded}
+        return {**head, 'state': NOTHING_TO_COMPARE}
 
     rows = _rows(replayed)
     aggregate = _aggregate(replayed, reseed, opened, min(prices))
@@ -162,11 +160,9 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         # years of one account but the whole of every one of them. The state
         # stays, because no headline figure can be stated; the rows travel with
         # it, because each of them can.
-        return {**head, 'state': NOTHING_TO_COMPARE,
-                'excluded_accounts': excluded, 'per_account': rows}
+        return {**head, 'state': NOTHING_TO_COMPARE, 'per_account': rows}
 
-    return {**head, 'state': READY, 'excluded_accounts': excluded,
-            'per_account': rows, **aggregate}
+    return {**head, 'state': READY, 'per_account': rows, **aggregate}
 
 
 def _offered() -> List[Dict[str, Any]]:
@@ -211,7 +207,7 @@ def _rebuild(store, symbol: str, offered, now: datetime) -> Dict[str, Any]:
 
 
 def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
-        Tuple[Dict[str, Any], List[Dict[str, str]], Dict[str, date], Any]):
+        Tuple[Dict[str, Any], Dict[str, date], Any]):
     """One replay per account over its own window, and a way to redo them all.
 
     The replays here are #1014's: each account from its **own** first day, which
@@ -231,22 +227,18 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
 
     replayed: Dict[str, Any] = {}
     materials: Dict[str, Any] = {}
-    excluded: List[Dict[str, str]] = []
     for account in _perimeter(store, snapshot):
         days = written.get(account)
         if not days:
             continue
 
-        # **A grant nobody priced takes its account out** (`declared_value`
-        # answers `0.0` on purpose). The portfolio gained shares on a day the
-        # reference would be handed nothing, so the comparison would trail by
-        # the whole undeclared amount for ever, and silently.
-        granted = performance.undeclared_grants(timeline, account)
-        if granted:
-            excluded.append({'account': account, 'reason': 'undeclared_grant',
-                             'symbols': ','.join(granted)})
-            continue
-
+        # **A grant nobody priced is the owner's edge, not a gap to close.** It
+        # enters `invested_flows` at `0.0` — nothing was paid for it, which is
+        # what the form promises when the price is left blank — so the
+        # reference is handed nothing that day and the portfolio keeps the
+        # shares. The comparison reads them as outperformance, which is what a
+        # free share is. Taking the account out instead hid the whole wrapper
+        # from the one screen that judges it, for a line that only helps it.
         # **The seed is the first day the pot exists** (#1025), floored at the
         # fund's own first quoted day. Every wrapper is opened by a deposit and
         # buys days or weeks later, so since #1018 an account's first written
@@ -267,9 +259,7 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
                        if day >= quoted_from and (value or 0) > 0), None)
         # No day at all the account held securities while the fund was quoted:
         # there is no comparison to make, not a short one. It leaves the
-        # perimeter unnamed — `excluded_accounts` carries the accounts taken
-        # out of a comparison they could otherwise have had, and this one never
-        # had it. Naming the causes the empty state currently lumps together is
+        # perimeter unnamed, because it never had a comparison to lose. Naming the causes the empty state currently lumps together is
         # #1025's own third point and its own ticket.
         if seeded is None:
             continue
@@ -337,7 +327,7 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
     # The third value is the first day each replayed account was **written**,
     # before any seeding: it is what tells who truncated the period, and the
     # wrong answer there names a cause the reader can go and check.
-    return (replayed, excluded,
+    return (replayed,
             {account: written[account][0][0] for account in replayed}, reseed)
 
 

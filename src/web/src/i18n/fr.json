@@ -722,7 +722,6 @@
   "benchmark.term.yours": "Votre portefeuille",
   "benchmark.term.theirs": "La référence",
   "benchmark.returns.title": "Rendement sur la période",
-  "benchmark.excluded": "{account} est exclu de la comparaison : {symbols} {count, plural, one {y a été attribué} other {y ont été attribués}} sans prix déclaré.",
   "benchmark.rebuild.title": "Reconstitution de l’historique de {symbol}.",
   "benchmark.rebuild.progress": "Remonté jusqu’au {reached}.",
   "benchmark.rebuild.target": "Remonté jusqu’au {reached}, sur un historique qui commence le {target}.",
