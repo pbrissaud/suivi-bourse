@@ -377,13 +377,16 @@ def test_the_curves_are_published_on_one_day_axis(named):
 # The perimeter
 # --------------------------------------------------------------------------- #
 
-def test_an_account_granted_shares_at_no_declared_price_leaves_the_perimeter(
-        named):
-    """`declared_value` answers `0.0` on purpose, and here that is the wrong
-    answer: the portfolio gained shares on a day the reference is handed
-    nothing, so it trails by the whole undeclared amount for ever. The account
-    leaves, and the screen names it."""
-    _write_curve(named, 'pea')
+def test_a_grant_at_no_declared_price_is_the_portfolio_s_edge(named):
+    """A free share is not replayed: the reference is handed nothing that day.
+
+    Leaving the price blank declares a grant that cost nothing, and the
+    comparison takes it at its word. The account stays in the perimeter, the
+    portfolio keeps the shares, and their value is a gap in its favour — which
+    is what free shares are.
+    """
+    _write_curve(named, 'pea', last='2024-01-14', value=1000.0)
+    _write_curve(named, 'pea', first='2024-01-15', value=1300.0)
     granted = Event(date(2024, 1, 15), EventType.GRANT, 'AAPL', 'Apple',
                     quantity=3, account='pea')
 
@@ -391,9 +394,12 @@ def test_an_account_granted_shares_at_no_declared_price_leaves_the_perimeter(
         named, _snapshot([_invest('2024-01-01', 'pea', 1000.0), granted]),
         NOW)
 
-    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
-    assert payload['excluded_accounts'] == [
-        {'account': 'pea', 'reason': 'undeclared_grant', 'symbols': 'AAPL'}]
+    assert payload['state'] == benchmark_view.READY
+    assert 'excluded_accounts' not in payload
+    assert payload['accounts'] == ['pea']
+    assert payload['reference_value'] == pytest.approx(1000.0)
+    assert payload['portfolio_value'] == pytest.approx(1300.0)
+    assert payload['gap_gross'] == pytest.approx(300.0)
 
 
 def test_a_reference_whose_splits_were_never_read_publishes_no_figure(named):

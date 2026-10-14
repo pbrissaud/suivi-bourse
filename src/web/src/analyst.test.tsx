@@ -338,6 +338,13 @@ describe('the threads (12A)', () => {
 
   it('shows the thread asked for last, whatever order the reads land in', async () => {
     switchedOn()
+    // The slow read is held until the fast one has been asked for, so the
+    // order is the test's and not the runner's: a fixed delay lets a loaded
+    // machine land it before the second click.
+    let release = () => {}
+    const held = new Promise<void>((done) => {
+      release = done
+    })
     server.use(
       http.get(ROUTES.agentThreads, () =>
         HttpResponse.json([
@@ -347,7 +354,7 @@ describe('the threads (12A)', () => {
       ),
       http.get(ROUTES.agentThread, async ({ params }) => {
         const id = String(params.id)
-        if (id === 'slow') await new Promise((done) => setTimeout(done, 300))
+        if (id === 'slow') await held
         return HttpResponse.json({
           id,
           title: id,
@@ -366,7 +373,8 @@ describe('the threads (12A)', () => {
     await user.click(await screen.findByRole('button', { name: /^Rapide/ }))
 
     expect(await within(panel).findByText('Fil fast.')).toBeInTheDocument()
-    await new Promise((done) => setTimeout(done, 400))
+    release()
+    await new Promise((done) => setTimeout(done, 100))
     expect(within(panel).getByText('Fil fast.')).toBeInTheDocument()
     expect(within(panel).queryByText('Fil slow.')).not.toBeInTheDocument()
   })

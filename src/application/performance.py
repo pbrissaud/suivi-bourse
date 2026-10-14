@@ -243,7 +243,10 @@ def invested_flows(timeline: Timeline, account: str) -> Dict[date, float]:
     #760 replays since #1018: a purchase is money deployed, a sale and a
     dividend are money coming back out of it, and a deposit that sat in cash
     never entered at all. A grant enters at its declared value, as it does on
-    the cash side — it is shares, and shares are the pot.
+    the cash side — it is shares, and shares are the pot. A grant with **no**
+    declared price enters at nothing, on purpose: it cost the owner nothing, so
+    the reference is handed nothing, and the shares it brought are the
+    portfolio's edge over it.
 
     A dividend as a **negative** flow is what makes the rule hold: the money
     left the securities, so for both sides to keep the same euros deployed on
@@ -258,22 +261,6 @@ def invested_flows(timeline: Timeline, account: str) -> Dict[date, float]:
         elif isinstance(flow, InKindFlow):
             by_date[flow.date] += _grant_value(flow)
     return dict(by_date)
-
-
-def undeclared_grants(timeline: Timeline, account: str) -> List[str]:
-    """The symbols this account was granted with **no price declared**, sorted.
-
-    :func:`declared_value` answers ``0.0`` for those on purpose — a grant nobody
-    priced contributed nothing the app can vouch for. That is the right answer
-    for a contribution line and the wrong one for a replay: the reference would
-    be handed nothing on a day the portfolio gained shares, and it would trail
-    by the whole undeclared amount for the rest of the comparison. The account
-    leaves the perimeter instead, and the screen names it.
-    """
-    granted = (flow for flow in timeline.flows
-               if isinstance(flow, InKindFlow) and flow.account == account)
-    return sorted({flow.symbol for flow in granted
-                   if flow.quantity and not _grant_value(flow)})
 
 
 def _external_flow_by_date(cash_flows, grant_flows) -> Dict[date, float]:

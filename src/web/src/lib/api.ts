@@ -918,13 +918,6 @@ export interface BenchmarkRebuild {
   ratio: number | null
 }
 
-/** An account the comparison could not take, and the reason in one word. */
-export interface BenchmarkExclusion {
-  account: string
-  reason: string
-  symbols?: string
-}
-
 /**
  * One account's own comparison, over **its own** window (#1014).
  *
@@ -1003,7 +996,6 @@ export interface BenchmarkResponse {
    */
   consulted: string[]
   rebuild?: BenchmarkRebuild
-  excluded_accounts?: BenchmarkExclusion[]
   covered_from?: string
   covered_to?: string
   /** The first day the perimeter was written, before any seeding. */
