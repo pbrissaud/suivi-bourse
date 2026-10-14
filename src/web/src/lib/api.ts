@@ -921,13 +921,11 @@ export interface BenchmarkRebuild {
 /**
  * One account's own comparison, over **its own** window (#1014).
  *
- * The aggregate above sums over the intersection of the accounts' periods,
- * which is the *youngest* account's start: a CTO opened in 2024 takes a PEA's
- * four earlier years out of the headline figure, and opening a second account
- * is an ordinary act that must not shorten the judgement of the first. Each
- * row therefore states its own period beside its own figures — and nothing on
- * a row may be read as the aggregate's, which is why the period is not
- * optional on it.
+ * The breakdown of the head: the head replays every account's money in one
+ * reference from the first purchase on, and these rows replay the same seeds
+ * and flows one account at a time, so their gaps add up to `gap_gross`. Each
+ * row states its own period beside its own figures — an account opened in
+ * 2024 is not judged on 2019 — which is why the period is not optional on it.
  */
 export interface BenchmarkAccountRow {
   account: string
@@ -940,24 +938,6 @@ export interface BenchmarkAccountRow {
   gap_gross: number | null
   portfolio_return: number | null
   reference_return: number | null
-}
-
-/**
- * The same account on the **shared** window, after the re-seed (#1032).
- *
- * The terms the head is summed from, published instead of discarded: these
- * gaps add up to `gap_gross`, which the own-window rows never could. Two rows
- * both ahead of the reference under a head that is behind is not a
- * contradiction — it is two questions — and the screen has to carry both
- * columns for that to be readable rather than alarming.
- */
-export interface BenchmarkSharedRow {
-  account: string
-  portfolio_value: number | null
-  reference_value: number | null
-  /** The denominator both sides of the row share. */
-  contributed: number | null
-  gap_gross: number | null
 }
 
 /** One day of the two curves, on a shared axis. */
@@ -1019,8 +999,6 @@ export interface BenchmarkResponse {
   reference_return?: number | null
   /** The same comparison per account, each over its own window (#1014). */
   per_account?: BenchmarkAccountRow[]
-  /** And per account over the head's own window, which sums to it (#1032). */
-  per_account_shared?: BenchmarkSharedRow[]
   series?: BenchmarkPoint[]
 }
 

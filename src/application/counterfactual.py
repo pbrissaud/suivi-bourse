@@ -38,9 +38,8 @@ longest window the closed list offers — 6 302 calendar days, 4 503 of them
 quoted, seventeen splits and 207 flows, which is heavier than a real portfolio
 — one replay takes **1,4 ms** (median of 20, 2026-09-20, Python 3.14 on an
 M-series laptop). The route runs one per account: 6,7 ms at five accounts,
-13,6 ms at ten. #1028 re-seeds every account from the shared covered day, so
-double it — 27 ms at ten accounts, derived rather than re-measured, because it
-is the same loop run twice.
+13,6 ms at ten — plus one more for the whole portfolio's merged flows, derived
+rather than re-measured, because it is the same loop.
 
 That is the whole argument against persisting the series. #760 reserved the
 right to switch to a stored curve "past a threshold"; the threshold is two

@@ -203,9 +203,9 @@ def test_an_account_funded_weeks_before_it_buys_is_seeded_on_its_purchase(
     Every wrapper is opened by a deposit and buys days or weeks later, so since
     #1018 its first written days carry a `holdings_value` of `0.0`. Seeded
     there, the replay opens on nothing, reads it as an exhausted reference and
-    closes the same day — and that one-day window sets the intersection for the
+    closes the same day — and that one-day window ends the period for the
     whole perimeter, so a second account is enough to take the screen down to
-    *nothing to compare* over a ledger that has years in it.
+    a single day over a ledger that has years in it.
     """
     _write_curve(named, 'pea', first='2024-01-01', last='2024-01-21',
                  value=0.0, cash=1000.0)
@@ -224,7 +224,7 @@ def test_an_account_funded_weeks_before_it_buys_is_seeded_on_its_purchase(
         NOW)
 
     assert payload['state'] == benchmark_view.READY
-    assert payload['covered_from'] == '2024-02-01'
+    assert payload['covered_from'] == '2024-01-22'
     assert payload['covered_to'] == '2024-02-29'
     assert payload['gap_gross'] == pytest.approx(0.0)
     # And the account's own row runs from its first purchase, not from the
@@ -272,12 +272,15 @@ def test_the_two_returns_share_the_denominator_they_are_compared_on(named):
     assert payload['reference_return'] == pytest.approx(0.0)
 
 
-def test_the_period_is_the_intersection_of_the_accounts_own(named):
-    """The latest of the starts and the earliest of the ends.
+def test_the_period_runs_from_the_first_account_to_the_last_measured_day(
+        named):
+    """The earliest of the starts and the earliest of the ends.
 
-    An account opened in February has nothing to say about January, and a
-    figure summed over a day one of its terms does not cover is a total missing
-    a term — which is not a smaller total.
+    The head replays every euro put into securities, so it starts with the
+    first account to hold any — an account opened in February simply has no
+    money in either side in January. The end still binds on every account: a
+    figure summed over a day one of its terms was not measured on is a total
+    missing a term, which is not a smaller total.
     """
     _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29')
     _write_curve(named, 'cto', first='2024-02-01', last='2024-02-20')
@@ -287,7 +290,7 @@ def test_the_period_is_the_intersection_of_the_accounts_own(named):
                           _invest('2024-02-01', 'cto', 500.0)],
                          accounts=('pea', 'cto')), NOW)
 
-    assert payload['covered_from'] == '2024-02-01'
+    assert payload['covered_from'] == '2024-01-01'
     assert payload['covered_to'] == '2024-02-20'
     assert payload['accounts'] == ['cto', 'pea']
 
@@ -504,42 +507,44 @@ def test_an_off_list_reference_gets_no_progress_bar_it_cannot_honour(named):
     assert payload['rebuild']['reached'] == '2024-02-20'
 
 
-def test_an_account_that_ended_early_closes_the_period_for_every_term(named):
-    """The aggregate reads each account **on the covered day**, not on its own.
+def test_a_withdrawal_one_account_could_not_fund_is_funded_by_the_others(
+        named):
+    """The money is the owner's, not the wrapper's.
 
-    One account's reference is exhausted in February while the other runs to
-    the end. The period stops at the earlier date, and a term taken from the
-    longer replay's last day would mix in months the screen says are not in
-    the comparison — the contribution behind the return, among them.
+    `pea`'s own reference holds 1 000 € when 1 500 € leave it: its row ends
+    there, exhausted, and says so. The head holds both accounts' money in one
+    reference — 2 000 € — so it funds the withdrawal and runs to the end.
     """
-    _write_curve(named, 'pea', value=1000.0)
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
+                 value=1000.0)
+    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-29',
+                 value=0.0)
     _write_curve(named, 'cto', value=1000.0)
 
     payload = benchmark_view.comparison(
         named,
         _snapshot([_invest('2024-01-01', 'pea', 1000.0),
-                   # Empties the reference on 1 February, closing the period.
-                   _invest('2024-02-01', 'pea', -5000.0),
-                   _invest('2024-01-01', 'cto', 1000.0),
-                   # Paid in *after* the period ends: must not reach any term.
-                   _invest('2024-02-15', 'cto', 10_000.0)],
+                   _invest('2024-02-01', 'pea', -1500.0),
+                   _invest('2024-01-01', 'cto', 1000.0)],
                   accounts=('pea', 'cto')),
         NOW)
 
-    assert payload['ended'] == counterfactual.EXHAUSTED
-    assert payload['covered_to'] == '2024-02-01'
-    # Two accounts seeded at 1 000 €, and the February contribution is outside
-    # the period — so the denominator is 2 000 € and not 12 000 €.
-    assert payload['reference_value'] == pytest.approx(2000.0)
-    assert payload['portfolio_return'] == pytest.approx(0.0)
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['pea']['ended'] == counterfactual.EXHAUSTED
+    assert payload['ended'] is None
+    assert payload['covered_to'] == '2024-02-29'
+    # A flat fund: 2 000 € in, 1 500 € out.
+    assert payload['reference_value'] == pytest.approx(500.0)
+    assert payload['portfolio_value'] == pytest.approx(1000.0)
 
 
-def test_two_accounts_whose_periods_never_overlap_have_nothing_to_compare(named):
-    """An intersection can be empty, and then there is no period to sum over.
+def test_an_account_opened_after_the_period_ends_is_in_neither_side(named):
+    """The end binds on every account, so a later one can fall past it.
 
-    One account closed in January, another opened in February: the latest start
-    falls after the earliest end. Every term would be read at a day one of them
-    never lived, and the screen would state a period running backwards.
+    `old` was measured through 20 January only, which ends the period there;
+    `new` bought its first securities on 1 February. Its money is in neither
+    side of the head, the period printed under it says where it stops, and its
+    own row still answers it.
     """
     _write_curve(named, 'old', first='2024-01-01', last='2024-01-20')
     _write_curve(named, 'new', first='2024-02-01', last='2024-02-29')
@@ -549,14 +554,13 @@ def test_two_accounts_whose_periods_never_overlap_have_nothing_to_compare(named)
                           _invest('2024-02-01', 'new', 1000.0)],
                          accounts=('old', 'new')), NOW)
 
-    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
-    assert 'gap_gross' not in payload
-    # **And the rows survive the state** (#1014). The head has no period to
-    # state, which is what the state says; each account still has its own, and
-    # this is the case where the empty intersection hides not four years of one
-    # account but the whole of every one of them.
+    assert payload['state'] == benchmark_view.READY
+    assert payload['accounts'] == ['old']
+    assert payload['covered_from'] == '2024-01-01'
+    assert payload['covered_to'] == '2024-01-20'
+    assert payload['reference_value'] == pytest.approx(1000.0)
     assert [row['account'] for row in payload['per_account']] == ['new', 'old']
-    assert payload['per_account'][1]['covered_to'] == '2024-01-20'
+    assert payload['per_account'][0]['covered_from'] == '2024-02-01'
 
 
 def test_the_end_reason_belongs_to_the_account_that_ended_the_period(named):
@@ -602,13 +606,12 @@ def _double_the_reference_in_february(store):
 # Each account's own window (#1014)
 # --------------------------------------------------------------------------- #
 
-def test_the_older_account_keeps_the_years_the_younger_one_cut_off(named):
-    """A second account shortens the aggregate and must not shorten the rows.
+def test_a_younger_account_shortens_neither_the_head_nor_the_older_row(named):
+    """Opening a second account is an ordinary act.
 
-    `pea` has run since 1 January and `cto` since 1 February, so the aggregate
-    compares from 1 February — it has to, a single headline figure names a
-    single period. The PEA's January is not missing from the comparison, it is
-    missing from the *aggregate*, and the row publishes it.
+    `pea` has run since 1 January and `cto` since 1 February. Neither the head
+    nor the PEA's row loses January: the head starts with the first money in,
+    and each row with its own.
     """
     _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29')
     _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29')
@@ -618,7 +621,7 @@ def test_the_older_account_keeps_the_years_the_younger_one_cut_off(named):
                           _invest('2024-02-01', 'cto', 500.0)],
                          accounts=('pea', 'cto')), NOW)
 
-    assert payload['covered_from'] == '2024-02-01'
+    assert payload['covered_from'] == '2024-01-01'
     rows = {row['account']: row for row in payload['per_account']}
     assert rows['pea']['covered_from'] == '2024-01-01'
     assert rows['cto']['covered_from'] == '2024-02-01'
@@ -698,22 +701,17 @@ def test_a_row_carries_the_gap_and_the_two_returns_of_its_own_account(named):
 
 
 # --------------------------------------------------------------------------- #
-# The start of the period, enforced (#1028)
+# The head is the sum of the rows
 # --------------------------------------------------------------------------- #
 
-def test_the_aggregate_starts_where_it_says_it_starts(named):
-    """The head figure is measured over the period printed under it.
+def test_the_rows_add_up_to_the_head(named):
+    """The table under the head is read as its breakdown, so it has to be one.
 
-    `pea` holds 1 000 € of flat securities since 1 January; `cto` puts 500 €
-    in on 1 February, which is where the aggregate's period starts. The fund
-    doubles on that very day, so a `pea` replay left on its own January seed
-    walks into February already worth 2 000 € — a thousand euros of head start
-    earned before the period, and the old aggregate counted every one of them
-    as this period's gap.
-
-    Re-seeded on 1 February with the pot the account really held that evening,
-    both sides open on the same 1 500 €, and a flat month later they are still
-    equal.
+    `pea` holds 1 000 € of flat securities since 1 January and the fund
+    doubles on 1 February, the day `cto` puts 500 € in. The PEA's January is
+    inside the head — the owner's money, in the owner's portfolio — so the
+    PEA is a thousand euros behind on its row and on the head alike, and the
+    CTO, opened at the new price, is level.
     """
     _double_the_reference_in_february(named)
     _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29',
@@ -726,108 +724,47 @@ def test_the_aggregate_starts_where_it_says_it_starts(named):
                           _invest('2024-02-01', 'cto', 500.0)],
                          accounts=('pea', 'cto')), NOW)
 
-    assert payload['covered_from'] == '2024-02-01'
-    # The one number that proves it: on the stated first day the reference has
-    # bought exactly the portfolio and neither is ahead.
-    first = payload['series'][0]
-    assert first['t'] == '2024-02-01'
-    assert first['reference'] == pytest.approx(first['portfolio'])
-    assert payload['reference_value'] == pytest.approx(1500.0)
-    assert payload['gap_gross'] == pytest.approx(0.0)
-
-    # And the row keeps the whole life of the account, head start included:
-    # that thousand is real, it just belongs to January.
+    assert payload['covered_from'] == '2024-01-01'
+    assert payload['reference_value'] == pytest.approx(2500.0)
+    assert payload['gap_gross'] == pytest.approx(-1000.0)
     rows = {row['account']: row for row in payload['per_account']}
-    assert rows['pea']['covered_from'] == '2024-01-01'
-    assert rows['pea']['reference_value'] == pytest.approx(2000.0)
     assert rows['pea']['gap_gross'] == pytest.approx(-1000.0)
+    assert rows['cto']['gap_gross'] == pytest.approx(0.0)
+    for term in ('portfolio_value', 'reference_value', 'gap_gross'):
+        assert sum(row[term] for row in payload['per_account']) == (
+            pytest.approx(payload[term]))
+    # Both sides open on the same euro, on the first day of the period.
+    first = payload['series'][0]
+    assert first['t'] == '2024-01-01'
+    assert first['reference'] == pytest.approx(first['portfolio'])
 
 
-def test_the_shared_start_is_a_day_the_fund_was_quoted_on(named):
-    """A closed market cannot carry the seed either.
+def test_an_account_opened_on_a_closed_market_enters_at_its_own_price(named):
+    """It buys the reference where its own row did, or the two disagree.
 
-    `pea` sells out on 1 February — the day `cto` opens, so the shared start
-    has to walk forward to the first day both accounts hold something again.
-    That day is a Saturday here: the fund has no close, and `replay` does not
-    refuse it, it lands the seed on the next quoted day instead. Seeded on the
-    3rd and opened on the 4th, the reference would miss the 300 € the
-    portfolio's own holdings made in between — #1028's head start again, one
-    weekend wide.
-
-    So the day walks on to the 4th, where the pot read and the first published
-    point are the same day, and the two curves open on the same 1 800 €.
+    `cto` buys on 3 February, a day the fund has no close, and the fund has
+    doubled by its next close on the 4th. The row's replay lands the seed on
+    that next quoted day, at 200. Carried in at the 2nd's 100 instead, the head
+    would hold twice the shares the row does.
     """
     named.execute('DELETE FROM price_point WHERE symbol = ? '
-                  'AND CAST(ts AS DATE) = ?', [REFERENCE, date(2024, 2, 3)])
-    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
-                 value=1000.0)
-    _write_curve(named, 'pea', first='2024-02-01', last='2024-02-02',
-                 value=0.0, cash=1000.0)
-    _write_curve(named, 'pea', first='2024-02-03', last='2024-02-03',
-                 value=1000.0)
-    _write_curve(named, 'pea', first='2024-02-04', last='2024-02-29',
-                 value=1300.0)
-    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29',
+                  'AND CAST(ts AS DATE) >= ?', [REFERENCE, date(2024, 2, 3)])
+    quotes.record_history(named, REFERENCE, [
+        {'timestamp': datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+         'price': 200.0, 'converted': 200.0, 'rate': 1.0}
+        for day in (date(2024, 2, 4) + timedelta(days=n) for n in range(26))])
+    _write_curve(named, 'pea', value=1000.0)
+    _write_curve(named, 'cto', first='2024-02-03', last='2024-02-29',
                  value=500.0)
 
     payload = benchmark_view.comparison(
         named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
-                          _invest('2024-02-01', 'pea', -1000.0),
-                          _invest('2024-02-03', 'pea', 1000.0),
-                          _invest('2024-02-01', 'cto', 500.0)],
+                          _invest('2024-02-03', 'cto', 500.0)],
                          accounts=('pea', 'cto')), NOW)
 
-    assert payload['covered_from'] == '2024-02-04'
-    first = payload['series'][0]
-    assert first['t'] == '2024-02-04'
-    assert first['portfolio'] == pytest.approx(1800.0)
-    assert first['reference'] == pytest.approx(1800.0)
-    assert payload['reference_value'] == pytest.approx(1800.0)
-    assert payload['gap_gross'] == pytest.approx(0.0)
-
-
-# --------------------------------------------------------------------------- #
-# The shared window, per account (#1032)
-# --------------------------------------------------------------------------- #
-
-def test_the_shared_rows_sum_to_the_head_and_the_own_rows_do_not(named):
-    """The table under the head has to have a column that is its breakdown.
-
-    The ticket's own case, in miniature: `pea` has run since 1 January and
-    `cto` opened on 1 February, the day the fund doubles. Over its own window
-    the PEA is a thousand euros behind a reference that had all of January to
-    grow; over the shared window both accounts open on the pot they really
-    held and the head is exactly zero.
-
-    Both are true and they answer two questions — which is why the screen has
-    to publish both. Added up, the own-window rows land a thousand euros from
-    the figure above them; the shared ones land on it.
-    """
-    _double_the_reference_in_february(named)
-    _write_curve(named, 'pea', first='2024-01-01', last='2024-02-29',
-                 value=1000.0)
-    _write_curve(named, 'cto', first='2024-02-01', last='2024-02-29',
-                 value=500.0)
-
-    payload = benchmark_view.comparison(
-        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
-                          _invest('2024-02-01', 'cto', 500.0)],
-                         accounts=('pea', 'cto')), NOW)
-
-    shared = {row['account']: row for row in payload['per_account_shared']}
-    assert sorted(shared) == payload['accounts']
-    assert sum(row['gap_gross'] for row in payload['per_account_shared']) == (
-        pytest.approx(payload['gap_gross']))
-    assert sum(row['reference_value']
-               for row in payload['per_account_shared']) == (
-        pytest.approx(payload['reference_value']))
-    # Re-seeded on the shared first day, at the pot the account really held.
-    assert shared['pea']['portfolio_value'] == pytest.approx(1000.0)
-    assert shared['pea']['reference_value'] == pytest.approx(1000.0)
-    assert shared['pea']['contributed'] == pytest.approx(1000.0)
-    assert shared['pea']['gap_gross'] == pytest.approx(0.0)
-
-    # And #1014's rows are untouched — they are not a breakdown, and the whole
-    # point of publishing a second column is that this sum is a different one.
+    rows = {row['account']: row for row in payload['per_account']}
+    assert rows['cto']['reference_value'] == pytest.approx(500.0)
+    assert payload['reference_value'] == pytest.approx(
+        rows['pea']['reference_value'] + 500.0)
     assert sum(row['gap_gross'] for row in payload['per_account']) == (
-        pytest.approx(-1000.0))
+        pytest.approx(payload['gap_gross']))
