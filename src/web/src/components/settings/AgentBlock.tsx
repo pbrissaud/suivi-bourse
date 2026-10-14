@@ -31,6 +31,7 @@ import {
   keyRequired,
   OLLAMA_ADDRESS,
   setupWrites,
+  storedKeyApplies,
   type AgentDraft,
 } from '@/lib/agentSetup'
 import { api, type AgentConfig, type AgentProvider, type AgentTestResult } from '@/lib/api'
@@ -85,8 +86,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const test = useMutation({
     mutationFn: async () => {
       for (const write of setupWrites(config, draft)) {
-        if (write.kind === 'forgetKey') stored(await api.forgetAgentKey())
-        else if (write.kind === 'config') stored(await api.saveAgentConfig(write.body))
+        if (write.kind === 'config') stored(await api.saveAgentConfig(write.body))
         else stored(await api.saveAgentKey(write.key))
       }
       return api.testAgent()
@@ -111,7 +111,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const testable = canTest(config, draft)
   const keyShown = provider !== null && !keyRefused(provider)
   const addressShown = provider !== null && addressRequired(provider)
-  const keyLast4 = config.key.set && config.provider === provider ? config.key.last4 : null
+  const keyLast4 = storedKeyApplies(config, draft) ? config.key.last4 : null
   const keyPage = provider ? KEY_PAGE[provider] : undefined
   const refusal = providerRefusal(test.error)
 

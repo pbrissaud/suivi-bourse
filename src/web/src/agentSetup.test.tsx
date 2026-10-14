@@ -38,18 +38,21 @@ function provider(
     http.put(ROUTES.agentConfig, async ({ request }) => {
       const body = (await request.json()) as AgentConfigDraft
       writes.push(['config', body])
-      row = { ...row, ...body }
+      // A key belongs to its provider and its address (#1197).
+      const moved = (['provider', 'base_url'] as const).some(
+        (name) => name in body && body[name] !== row[name],
+      )
+      row = {
+        ...row,
+        ...body,
+        ...(moved ? { key: { set: false, last4: null, set_at: null } } : {}),
+      }
       return HttpResponse.json(row)
     }),
     http.put(ROUTES.agentKey, async ({ request }) => {
       const body = (await request.json()) as { key: string }
       writes.push(['key', body.key])
       row = { ...row, key: { set: true, last4: body.key.slice(-4), set_at: null } }
-      return HttpResponse.json(row)
-    }),
-    http.delete(ROUTES.agentKey, () => {
-      writes.push(['forgetKey', null])
-      row = { ...row, key: { set: false, last4: null, set_at: null } }
       return HttpResponse.json(row)
     }),
     http.post(ROUTES.agentTest, () => {
@@ -158,7 +161,7 @@ describe('switching the agent on', () => {
     expect(within(block).queryByLabelText('Modèle')).not.toBeInTheDocument()
   })
 
-  it('asks Ollama for an address and no key, and forgets a key left from before', async () => {
+  it('asks Ollama for an address and no key', async () => {
     const writes = provider(
       () => HttpResponse.json({ provider: 'ollama', models: [], preselected: null }),
       anAgentConfig({
@@ -181,7 +184,6 @@ describe('switching the agent on', () => {
     ).toBeInTheDocument()
     expect(activate(block)).toBeDisabled()
     expect(writes).toEqual([
-      ['forgetKey', null],
       ['config', { provider: 'ollama', base_url: 'http://localhost:11434' }],
       ['test', null],
     ])
@@ -204,5 +206,22 @@ describe('switching the agent on', () => {
     expect(within(block).getByLabelText('Clé d’API')).toHaveAttribute('placeholder', '…abcd')
     // A stored key for the chosen provider is enough to test again.
     expect(testButton(block)).toBeEnabled()
+  })
+  it('asks for the key again once the address changes', async () => {
+    provider(
+      undefined,
+      anAgentConfig({
+        provider: 'openai_compatible',
+        base_url: 'http://litellm:4000',
+        key: { set: true, last4: 'abcd', set_at: null },
+      }),
+    )
+    const { user, block } = await openAgent()
+    const key = within(block).getByLabelText(/Clé d’API/)
+    expect(key).toHaveAttribute('placeholder', '…abcd')
+
+    await user.type(within(block).getByLabelText('Adresse'), '/v1')
+
+    expect(key).not.toHaveAttribute('placeholder')
   })
 })

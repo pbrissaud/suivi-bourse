@@ -1380,9 +1380,12 @@ def get_agent_config():
 
 @api_bp.put('/agent/config')
 def put_agent_config():
-    """Change any of ``enabled``, ``provider``, ``model``, ``base_url``."""
+    """Change any of ``enabled``, ``provider``, ``model``, ``base_url``.
+
+    A different provider or address forgets the key (#1197).
+    """
     return _write_agent_config(
-        lambda config: (agent_module.change(config, _json_object()), False))
+        lambda config: agent_module.change(config, _json_object()))
 
 
 @api_bp.put('/agent/key')

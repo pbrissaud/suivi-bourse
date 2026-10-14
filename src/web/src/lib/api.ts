@@ -2009,7 +2009,6 @@ export const api = {
   agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
   saveAgentConfig: (draft: AgentConfigDraft) => send<AgentConfig>(ROUTES.agentConfig, 'PUT', draft),
   saveAgentKey: (key: string) => send<AgentConfig>(ROUTES.agentKey, 'PUT', { key }),
-  forgetAgentKey: () => remove<AgentConfig>(ROUTES.agentKey),
   testAgent: () => send<AgentTestResult>(ROUTES.agentTest, 'POST', {}),
   agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),
   agentThread: (id: string) => agentRead<AgentThread>(agentThreadPath(id)),
