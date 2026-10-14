@@ -270,19 +270,27 @@ function AgentOff() {
 
 function AgentThread() {
   const { t } = useI18n()
-  const { chat, opening } = useAgentChat()
+  const { chat, opening, openThread } = useAgentChat()
   // A thread being read draws nothing until it lands (#795); one that could
-  // not be read — gone, or never there — says so in the server's words, and
-  // offers a new one rather than rewriting the address.
+  // not be read — gone, never there, or a server out of reach — says so in
+  // the server's words, and offers it again or a new one rather than
+  // rewriting the address.
   if (opening !== null) {
-    return opening.error === null ? null : (
+    if (opening.error === null) return null
+    const { id, error } = opening
+    return (
       <div className="flex flex-col items-start gap-3 px-4 py-3">
         <p role="alert" className="text-sm text-destructive">
-          {opening.error}
+          {error}
         </p>
-        <Button asChild variant="outline" className="min-h-11">
-          <Link to="/agent">{t('agent.newThread')}</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="min-h-11" onClick={() => openThread(id)}>
+            {t('agent.retry')}
+          </Button>
+          <Button asChild variant="outline" className="min-h-11">
+            <Link to="/agent">{t('agent.newThread')}</Link>
+          </Button>
+        </div>
       </div>
     )
   }
@@ -296,20 +304,12 @@ function AgentConversation() {
   const { chat } = useAgentChat()
   const threadId = useThreadParam()
   const navigate = useNavigate()
-  const client = useQueryClient()
   const { messages, sendMessage, status, error, stop, setMessages, clearError } = useChat({
     chat,
   })
   const busy = status === 'submitted' || status === 'streaming'
   const notKept = useNotKept(chat.id, error)
   const announcement = useAnnouncement(status, messages)
-
-  // A turn that ends has a title, or a newer date: the thread list follows.
-  const wasBusy = useRef(busy)
-  useEffect(() => {
-    if (wasBusy.current && !busy) void client.invalidateQueries({ queryKey: ['agent-threads'] })
-    wasBusy.current = busy
-  }, [busy, client])
 
   const ask = (text: string) => {
     // The first question gives the thread its address, in place of `/agent`:

@@ -12,6 +12,7 @@
  * from the server.
  */
 import { Chat } from '@ai-sdk/react'
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { generateId, type UIMessage } from 'ai'
 import {
   createContext,
@@ -40,12 +41,22 @@ interface AgentChatValue {
 
 const AgentChatContext = createContext<AgentChatValue | null>(null)
 
-function chatFor(id: string, messages: UIMessage[] = []): Chat<UIMessage> {
-  return new Chat<UIMessage>({ id, messages, transport: agentSeam.transport() })
+/**
+ * A thread's `Chat`. A turn that ends gives the thread a title, or a newer
+ * date: the list follows, whether or not the page is on screen to see it end.
+ */
+function chatFor(client: QueryClient, id: string, messages: UIMessage[] = []): Chat<UIMessage> {
+  return new Chat<UIMessage>({
+    id,
+    messages,
+    transport: agentSeam.transport(),
+    onFinish: () => void client.invalidateQueries({ queryKey: ['agent-threads'] }),
+  })
 }
 
 export function AgentChatProvider({ children }: { children: ReactNode }) {
-  const [chat, setChat] = useState(() => chatFor(generateId()))
+  const client = useQueryClient()
+  const [chat, setChat] = useState(() => chatFor(client, generateId()))
   const [opening, setOpening] = useState<AgentChatValue['opening']>(null)
 
   // The chat on screen, for stopping it from outside a state updater.
@@ -64,8 +75,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const startThread = useCallback(() => {
     reading.current += 1
     setOpening(null)
-    replace(chatFor(generateId()))
-  }, [replace])
+    replace(chatFor(client, generateId()))
+  }, [client, replace])
 
   const openThread = useCallback(
     async (id: string) => {
@@ -80,14 +91,14 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       try {
         const thread = await api.agentThread(id)
         if (sequence !== reading.current) return
-        replace(chatFor(thread.id, thread.messages))
+        replace(chatFor(client, thread.id, thread.messages))
         setOpening(null)
       } catch (error) {
         if (sequence !== reading.current) return
         setOpening({ id, error: error instanceof Error ? error.message : String(error) })
       }
     },
-    [replace],
+    [client, replace],
   )
 
   const value = useMemo<AgentChatValue>(

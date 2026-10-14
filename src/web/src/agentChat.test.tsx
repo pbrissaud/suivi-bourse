@@ -27,6 +27,8 @@ const QUESTION = 'Si je vends mes Zeta Alpha, combien je paie ?'
 
 function switchedOn(overrides: Partial<AgentConfig> = {}) {
   server.use(
+    // A turn that ends reads the list again; a test that lists none says so.
+    http.get(ROUTES.agentThreads, () => HttpResponse.json([])),
     http.get(ROUTES.agentConfig, () =>
       HttpResponse.json(
         anAgentConfig({
@@ -106,7 +108,7 @@ describe('the states (4A)', () => {
     expect(offered[1]).toHaveTextContent(fr['agent.example.rhythm'])
     await user.click(offered[1])
 
-    expect(await within(main).findByText('Oui, chaque mois.')).toBeInTheDocument()
+    expect((await within(main).findAllByText('Oui, chaque mois.'))[0]).toBeInTheDocument()
     expect(sent).toHaveBeenCalledTimes(1)
     expect(within(main).queryAllByRole('button', { name: /\?$/ })).toHaveLength(0)
   })
@@ -222,7 +224,7 @@ describe('the tool lines (2A)', () => {
     )
     const { user, main } = await openPage()
     await ask(user, main, QUESTION)
-    await within(main).findByText('Fini.')
+    await within(main).findAllByText('Fini.')
 
     const line = within(main).getByText('Lecture de vos positions.').closest('details')
     expect(line).not.toBeNull()
@@ -426,6 +428,31 @@ describe('the address (#1196)', () => {
     expect(read).not.toHaveBeenCalled()
   })
 
+  it('reads a thread again on Réessayer once the server is back', async () => {
+    switchedOn()
+    let down = true
+    server.use(
+      http.get(ROUTES.agentThread, ({ params }) =>
+        down
+          ? HttpResponse.json({ error: 'The store is unavailable.' }, { status: 503 })
+          : HttpResponse.json({
+              id: String(params.id),
+              title: 'Revenu',
+              messages: [
+                { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'Fil revenu.' }] },
+              ],
+            }),
+      ),
+    )
+    const { user, main, router } = await openPage('/agent/t1')
+    expect(await within(main).findByRole('alert')).toHaveTextContent('The store is unavailable.')
+
+    down = false
+    await user.click(within(main).getByRole('button', { name: 'Réessayer' }))
+    expect(await within(main).findByText('Fil revenu.')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/agent/t1')
+  })
+
   it('drops a failed read when Back returns to the thread on screen', async () => {
     switchedOn()
     const { read } = storedThreads()
@@ -467,6 +494,41 @@ describe('the address (#1196)', () => {
     expect(await screen.findByText('La réponse entière.')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(thread)
     expect(sent).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the thread list when a turn ends while the reader is elsewhere', async () => {
+    switchedOn()
+    let listed = 0
+    server.use(
+      http.get(ROUTES.agentThreads, () => {
+        listed += 1
+        return HttpResponse.json([])
+      }),
+    )
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer.tool('simulate_sale', { input: {} }).sleep(300).output({})
+          writer.text('Fini ailleurs.', { mode: 'instant' })
+        }),
+    )
+    const { user, main, router, queryClient } = await openPage()
+    // The app's own freshness (`main.tsx`): coming back alone refetches nothing.
+    queryClient.setQueryDefaults(['agent-threads'], { staleTime: 30_000 })
+    await within(main).findByRole('navigation', { name: 'Fils récents' })
+    await ask(user, main, QUESTION)
+    await within(main).findByText('Simulation en cours…')
+    const thread = router.state.location.pathname
+
+    await router.navigate({ to: '/' })
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+    await new Promise((done) => setTimeout(done, 500))
+    const before = listed
+    await router.navigate({ to: thread })
+
+    expect(await screen.findByText('Fini ailleurs.')).toBeInTheDocument()
+    await waitFor(() => expect(listed).toBeGreaterThan(before))
   })
 
   it('sends no page with a turn', async () => {
