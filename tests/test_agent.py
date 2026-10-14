@@ -19,12 +19,18 @@ def client(tmp_path):
 
 
 def configured(client, **fields):
-    """Write ``fields``, the key first when one is given."""
+    """Write ``fields``, the key after the provider it belongs to and before
+    ``enabled``."""
     key = fields.pop('key', None)
-    if key:
-        assert client.put('/api/agent/key', json={'key': key}).status_code == 200
+    enabled = fields.pop('enabled', None)
     answer = client.put('/api/agent/config', json=fields)
     assert answer.status_code == 200, answer.get_json()
+    if key:
+        answer = client.put('/api/agent/key', json={'key': key})
+        assert answer.status_code == 200, answer.get_json()
+    if enabled is not None:
+        answer = client.put('/api/agent/config', json={'enabled': enabled})
+        assert answer.status_code == 200, answer.get_json()
     return answer.get_json()
 
 
@@ -143,16 +149,51 @@ def test_switching_on_names_what_is_missing(client, fields, missing):
     assert answer.get_json()['key'] == missing
 
 
-def test_switching_provider_under_an_enabled_analyst_is_checked(client):
+def test_switching_provider_under_an_enabled_analyst_switches_it_off(client):
     configured(client, enabled=True, provider='ollama', model='llama',
                base_url='http://ollama:11434')
 
     answer = client.put('/api/agent/config',
                         json={'provider': 'anthropic', 'base_url': None})
 
-    assert answer.status_code == 422
-    assert answer.get_json()['key'] == 'key'
-    assert client.get('/api/agent/config').get_json()['provider'] == 'ollama'
+    assert answer.status_code == 200
+    assert answer.get_json()['enabled'] is False
+    assert answer.get_json()['disabled'] is True
+
+
+@pytest.mark.parametrize('body', [
+    {'provider': 'openai', 'base_url': None},
+    {'base_url': 'http://other:4000'},
+    {'provider': 'ollama', 'base_url': 'http://ollama:11434'},
+])
+def test_another_provider_or_address_forgets_the_key(client, body):
+    configured(client, key=KEY, provider='openai_compatible',
+               base_url='http://litellm:4000')
+
+    answer = client.put('/api/agent/config', json=body).get_json()
+
+    assert answer['key'] == {'set': False, 'last4': None, 'set_at': None}
+
+
+def test_the_same_provider_and_address_keep_the_key(client):
+    configured(client, key=KEY, provider='openai_compatible',
+               base_url='http://litellm:4000')
+
+    answer = client.put('/api/agent/config', json={
+        'provider': 'openai_compatible', 'base_url': 'http://litellm:4000',
+        'model': 'm'}).get_json()
+
+    assert answer['key']['last4'] == 'abcd'
+
+
+def test_a_new_provider_with_enabled_true_is_refused_without_its_key(client):
+    configured(client, key=KEY, enabled=True, provider='anthropic', model='m')
+
+    answer = client.put('/api/agent/config',
+                        json={'provider': 'openai', 'enabled': True})
+
+    assert answer.status_code == 422 and answer.get_json()['key'] == 'key'
+    assert client.get('/api/agent/config').get_json()['key']['set'] is True
 
 
 @pytest.mark.parametrize('body, key', [

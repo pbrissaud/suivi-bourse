@@ -6,14 +6,9 @@
  * decides is **which writes put the form in the store, in an order the server
  * takes each of**, and when *Tester* and *Activer* may be pressed.
  *
- * Two rules come from `agent.check` on the server and are mirrored here so the
- * writes never meet them:
- *
- *  - Ollama takes no key: a stored key is forgotten **before** the provider
- *    changes, or the change is refused;
- *  - a key belongs to the provider it was typed for: switching provider with no
- *    new key forgets the old one, rather than sending an Anthropic key to a
- *    gateway.
+ * A key belongs to the provider and the address it was typed for: the server
+ * forgets it when either changes (#1197), so the screen stops offering it as
+ * soon as the draft's differ, and asks for a new one.
  *
  * And one of the setup's own: **any change to the provider, its key or its
  * address switches the analyst off**, since what was tested is no longer what
@@ -59,21 +54,24 @@ export function draftOf(config: AgentConfig): AgentDraft {
 }
 
 /** One write, in the order {@link setupWrites} lists them. */
-export type SetupWrite =
-  | { kind: 'forgetKey' }
-  | { kind: 'config'; body: AgentConfigDraft }
-  | { kind: 'key'; key: string }
+export type SetupWrite = { kind: 'config'; body: AgentConfigDraft } | { kind: 'key'; key: string }
 
-/** Whether the stored key may stand for the draft's provider. */
-function storedKeyApplies(stored: AgentConfig, provider: AgentProvider): boolean {
-  return stored.key.set && stored.provider === provider && !keyRefused(provider)
+/** The address the draft stores: `null` for a provider that takes none. */
+const addressOf = (draft: AgentDraft) =>
+  draft.provider !== null && addressRequired(draft.provider) ? draft.baseUrl.trim() : null
+
+/** Whether the stored key survives the draft: same provider, same address. */
+export function storedKeyApplies(stored: AgentConfig, draft: AgentDraft): boolean {
+  return (
+    stored.key.set && stored.provider === draft.provider && stored.base_url === addressOf(draft)
+  )
 }
 
 /** Whether *Tester la connexion* has what a test needs. */
 export function canTest(stored: AgentConfig, draft: AgentDraft): boolean {
   const { provider } = draft
   if (provider === null) return false
-  if (keyRequired(provider) && draft.key.trim() === '' && !storedKeyApplies(stored, provider)) {
+  if (keyRequired(provider) && draft.key.trim() === '' && !storedKeyApplies(stored, draft)) {
     return false
   }
   return !addressRequired(provider) || HTTP_URL.test(draft.baseUrl.trim())
@@ -84,15 +82,11 @@ export function setupWrites(stored: AgentConfig, draft: AgentDraft): SetupWrite[
   const provider = draft.provider
   if (provider === null) return []
   const key = keyRefused(provider) ? '' : draft.key.trim()
-  const baseUrl = addressRequired(provider) ? draft.baseUrl.trim() : null
-  const switched = provider !== stored.provider
+  const baseUrl = addressOf(draft)
   const writes: SetupWrite[] = []
 
-  if (stored.key.set && (keyRefused(provider) || (switched && key === ''))) {
-    writes.push({ kind: 'forgetKey' })
-  }
   const body: AgentConfigDraft = {}
-  if (switched) body.provider = provider
+  if (provider !== stored.provider) body.provider = provider
   if (baseUrl !== stored.base_url) body.base_url = baseUrl
   const changed = Object.keys(body).length > 0 || key !== ''
   if (changed && stored.enabled) body.enabled = false

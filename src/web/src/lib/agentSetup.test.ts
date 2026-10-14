@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { canActivate, canTest, setupWrites } from '@/lib/agentSetup'
+import { canActivate, canTest, setupWrites, storedKeyApplies } from '@/lib/agentSetup'
 import { anAgentConfig } from '@/test/factories'
 
 const stored = anAgentConfig({
@@ -32,7 +32,6 @@ describe('the writes that put the form in the store', () => {
         baseUrl: 'http://litellm:4000',
       }),
     ).toEqual([
-      { kind: 'forgetKey' },
       {
         kind: 'config',
         body: { provider: 'openai_compatible', base_url: 'http://litellm:4000', enabled: false },
@@ -61,6 +60,17 @@ describe('when the two buttons may be pressed', () => {
     )
     // The stored key is Anthropic's: it does not stand for OpenAI.
     expect(canTest(stored, { provider: 'openai', key: '', baseUrl: '' })).toBe(false)
+  })
+
+  it('asks for the key again once the address changes', () => {
+    const gateway = anAgentConfig({
+      provider: 'openai_compatible',
+      base_url: 'http://litellm:4000',
+      key: { set: true, last4: 'abcd', set_at: null },
+    })
+    const draft = { provider: 'openai_compatible' as const, key: '' }
+    expect(storedKeyApplies(gateway, { ...draft, baseUrl: ' http://litellm:4000 ' })).toBe(true)
+    expect(storedKeyApplies(gateway, { ...draft, baseUrl: 'http://other:4000' })).toBe(false)
   })
 
   it('activates only after a passed test, with a model', () => {

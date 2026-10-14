@@ -96,8 +96,15 @@ def describe(config: dict, **extra: Any) -> dict:
     }
 
 
-def change(config: dict, body: Any) -> dict:
-    """``config`` with ``body`` (any subset of the four fields) applied."""
+def change(config: dict, body: Any) -> tuple:
+    """``config`` with ``body`` (any subset of the four fields) applied, and
+    whether that turned the analyst off.
+
+    A key belongs to the provider and the address it was typed for: a
+    different ``provider`` or ``base_url`` forgets it in the same write, as
+    :func:`without_key` does, unless ``body`` says itself whether the analyst
+    is on.
+    """
     if not isinstance(body, dict):
         raise InvalidAgentConfig('a JSON object is required', 'body')
     allowed = ('enabled', 'provider', 'model', 'base_url')
@@ -125,7 +132,13 @@ def change(config: dict, body: Any) -> dict:
     changed.update(body)
     if isinstance(changed['model'], str):
         changed['model'] = changed['model'].strip()
-    return check(changed)
+    moved = any(name in body and body[name] != config[name]
+                for name in ('provider', 'base_url'))
+    if moved and 'enabled' not in body:
+        return without_key(changed)
+    if moved:
+        changed.update(api_key=None, key_set_at=None)
+    return check(changed), False
 
 
 def with_key(config: dict, key: Any, now: datetime) -> dict:
