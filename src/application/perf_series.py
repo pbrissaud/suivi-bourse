@@ -4,7 +4,8 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
-from application.store import INCOMING, finite
+from application.incoming import INCOMING
+from application.store import finite
 
 logger = getLogger("perf_series")
 

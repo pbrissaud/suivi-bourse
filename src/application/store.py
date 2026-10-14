@@ -13,6 +13,7 @@ from logfmt_logger import getLogger
 
 from application import boot_env
 from application import settings_registry
+from application.incoming import INCOMING
 from application.events.schemas import canonical_symbol
 
 logger = getLogger("store")
@@ -204,10 +205,6 @@ TABLES = (
 KEYED_TABLES = ('event',)
 
 DEFAULT_ACCOUNT_ROW = ('default', 'Default account')
-
-#: The name :meth:`Store.write_arrow` binds its Arrow table under, and therefore
-#: the name the statement handed to it reads ``FROM``.
-INCOMING = 'incoming'
 
 
 class Store:
@@ -827,34 +824,6 @@ def _fold_symbol_case(connection) -> None:
     logger.info(f'Folded the symbols stored under another spelling: {folded}')
 
 
-def _cap_dividend_fee_at_amount(connection) -> None:
-    """Bring a stored dividend's fee down to its amount (#1166).
-
-    The aggregator books ``amount - fee``, so a fee past the gross booked a
-    negative dividend, and the validator now refuses one. The boot replay
-    validates the whole ledger, so a row written before that refusal would stop
-    the app from starting: it is capped here, the dividend nets to zero, the
-    least the row can say without inventing the figure that was meant.
-
-    The fee it held is appended to the row's label, so the owner can re-enter
-    the withholding that was meant: a log line alone does not outlive a
-    redeploy. A no-op on a store holding no such row, and then the derived
-    series stay.
-
-    The write itself is :func:`entries.cap_dividend_fees`, ``event`` having one
-    writer; it runs on this connection, inside this step's transaction. The
-    import is deferred because :mod:`entries` imports this module.
-    """
-    from application import entries
-    capped = entries.cap_dividend_fees(connection)
-    if not capped:
-        return
-    connection.execute('DELETE FROM account_metrics')
-    connection.execute('DELETE FROM portfolio_totals')
-    said = ', '.join(f'#{event_id} (fee {was})' for event_id, was in sorted(capped))
-    logger.warning(f'Capped the fee of these dividends at their amount: {said}')
-
-
 def _buy_the_series_again(connection) -> None:
     """Forget every stored close and the two series computed from them.
 
@@ -893,6 +862,12 @@ def _buy_the_series_again(connection) -> None:
 #:
 #: Forward only. This app has one writer and no fleet, and a downgrade is a
 #: promise nobody can keep about data a newer version wrote.
+#:
+#: These are **the store's own** steps, and this tuple is closed: the list a
+#: store walks is :data:`application.schema_steps.STEPS`, which the app hands
+#: to :func:`open_store` (#1198), and **every new step is appended there** —
+#: one written here would run before ``cap_dividend_fee_at_amount`` on a new
+#: file and after it on every store that already ran it.
 STEPS = (
     ('drop_account_type', _drop_account_type),
     ('add_newest_window_tried', _add_newest_window_tried),
@@ -902,12 +877,11 @@ STEPS = (
     ('drop_dividend_adjusted_prices', _drop_dividend_adjusted_prices),
     ('refetch_prices_bucketed_in_utc', _refetch_prices_bucketed_in_utc),
     ('fold_symbol_case', _fold_symbol_case),
-    ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
 )
 
 
-def apply_steps(connection) -> List[str]:
-    """Run the steps this store has not run, and name the ones that ran.
+def apply_steps(connection, steps) -> List[str]:
+    """Run the ``steps`` this store has not run, and name the ones that ran.
 
     Each step gets **its own transaction, with its own mark inside it**, so the
     schema and the record of it move together: a step that raises rolls both
@@ -920,7 +894,7 @@ def apply_steps(connection) -> List[str]:
         'SELECT step FROM schema_step').fetchall()}
 
     ran = []
-    for name, step in STEPS:
+    for name, step in steps:
         if name in applied:
             continue
         connection.execute('BEGIN TRANSACTION')
@@ -937,8 +911,11 @@ def apply_steps(connection) -> List[str]:
     return ran
 
 
-def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
-    """Bring an open connection to the current schema and seed it."""
+def prepare(connection: 'duckdb.DuckDBPyConnection', steps=None) -> bool:
+    """Bring an open connection to the current schema and seed it.
+
+    ``steps`` defaults to the store's own :data:`STEPS`, read at the call.
+    """
     connection.execute("SET TimeZone='UTC'")
 
     existing = {
@@ -953,7 +930,7 @@ def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
     # Right after the DDL and before anything is seeded (#926): the DDL is what
     # declares ``schema_step``, and what a step rebuilds must not be holding a
     # row this boot has just put there.
-    ran = apply_steps(connection)
+    ran = apply_steps(connection, STEPS if steps is None else steps)
     if ran and not is_new:
         # Said out loud only where it *did* something. A new file walks the
         # same list and records the same marks, but nothing was brought
@@ -973,8 +950,12 @@ def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
     return is_new
 
 
-def open_store(path: Optional[Path] = None) -> Store:
-    """Open the store, create it if it is not there, and return it ready to use."""
+def open_store(path: Optional[Path] = None, steps=None) -> Store:
+    """Open the store, create it if it is not there, and return it ready to use.
+
+    The app passes its complete list of ``steps``; without one, the store walks
+    only its own (see :func:`prepare`).
+    """
     target = Path(path) if path is not None else store_path()
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -984,7 +965,7 @@ def open_store(path: Optional[Path] = None) -> Store:
             f"Cannot open the store at {target}: {exc}") from exc
 
     try:
-        created = prepare(connection)
+        created = prepare(connection, steps)
     except Exception as exc:
         connection.close()
         raise StoreUnavailable(

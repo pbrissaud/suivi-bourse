@@ -43,6 +43,7 @@ from application import boot_env
 from application import entries
 from application import main
 from application import market
+from application import schema_steps
 from application import store
 import api
 from application.events.schemas import Event, EventType
@@ -203,6 +204,15 @@ def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
     # And it is the one the ledger is read through: handed to the manager at
     # construction, and never taken back.
     assert fake_config.attached == [runtime.store]
+
+
+def test_the_boot_walks_the_apps_steps_and_not_only_the_stores(fake_config):
+    """Without the app's list the store walks only its own (#1198), and the
+    cap of #1166 would never run on the file the app serves from."""
+    runtime = main.build_runtime()
+
+    assert runtime.store.query('SELECT step FROM schema_step ORDER BY step') \
+        == sorted((name,) for name, _ in schema_steps.STEPS)
 
 
 def test_the_boot_opens_the_store_exactly_once(fake_config, mocker):

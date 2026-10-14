@@ -11,7 +11,7 @@ from application import settings_registry
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
 from application.events.schemas import DEFAULT_ACCOUNT, Event, canonical_symbol
-from application.store import INCOMING
+from application.incoming import INCOMING
 
 logger = getLogger("entries")
 

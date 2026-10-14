@@ -28,6 +28,7 @@ import duckdb
 import pytest
 
 from application import quotes
+from application import schema_steps
 from application import settings_registry
 from application import store as store_module
 
@@ -1055,7 +1056,7 @@ def test_the_fold_leaves_a_store_already_canonical_untouched(tmp_path):
 
 def _before_the_cap(path, *events):
     """Today's store, minus the cap's mark, holding ``events`` as written."""
-    created = store_module.open_store(path)
+    created = store_module.open_store(path, schema_steps.STEPS)
     created.close()
     connection = duckdb.connect(str(path))
     connection.execute(
@@ -1087,7 +1088,7 @@ def test_the_cap_brings_a_stored_dividend_fee_down_to_its_amount(
                     (4, 'WITHDRAWAL', 12.0, 10.0))
 
     with caplog.at_level(logging.INFO, logger='store'):
-        opened = store_module.open_store(path)
+        opened = store_module.open_store(path, schema_steps.STEPS)
     try:
         assert opened.query('SELECT id, fee FROM event ORDER BY id') == [
             (1, 10.0), (2, 1.0), (3, None), (4, 12.0)]
@@ -1101,12 +1102,36 @@ def test_the_cap_brings_a_stored_dividend_fee_down_to_its_amount(
         opened.close()
 
 
+def test_the_oldest_store_walks_the_rebuilds_and_then_the_cap(tmp_path):
+    """The path an old install takes: every rebuild, then the cap, in one boot.
+
+    The store's own list stops short of the cap (#1198), so the generation tests
+    above no longer reach it; this one opens the oldest shape, residue included,
+    with the list the app hands over.
+    """
+    path = tmp_path / 'ancient.duckdb'
+    _generation_zero(path, residue=True)
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, fee, amount) "
+        "VALUES (3, '2024-03-01', 'DIVIDEND', 'pea', 'AAPL', 12.0, 10.0)")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query('SELECT fee FROM event WHERE id = 3') == [(10.0,)]
+        assert opened.query('SELECT step FROM schema_step') == \
+            [(name,) for name, _ in schema_steps.STEPS]
+    finally:
+        opened.close()
+
+
 def test_the_cap_leaves_a_store_without_such_a_dividend_untouched(tmp_path):
     """No rebuild where no fee moves — the derived series stay."""
     path = tmp_path / 'store.duckdb'
     _before_the_cap(path, (1, 'DIVIDEND', 10.0, 10.0))
 
-    opened = store_module.open_store(path)
+    opened = store_module.open_store(path, schema_steps.STEPS)
     try:
         assert opened.query('SELECT fee FROM event') == [(10.0,)]
         assert opened.query('SELECT count(*) FROM portfolio_totals') == [(1,)]
