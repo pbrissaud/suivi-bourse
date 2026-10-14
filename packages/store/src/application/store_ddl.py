@@ -176,8 +176,8 @@ TABLES = (
 )
 
 #: The tables whose surrogate key this store hands out — see
-#: :meth:`Store.reserve`. ``event`` is the only one, and the tuple is what says
-#: so: every other table is keyed by something the domain already names.
+#: :meth:`store.Store.reserve`. ``event`` is the only one, and the tuple is what
+#: says so: every other table is keyed by something the domain already names.
 KEYED_TABLES = ('event',)
 
 DEFAULT_ACCOUNT_ROW = ('default', 'Default account')

@@ -354,7 +354,7 @@ def _buy_the_series_again(connection) -> None:
 #:
 #: These are **the store's own** steps, and this tuple is closed: the list a
 #: store walks is :data:`application.schema_steps.STEPS`, which the app hands
-#: to :func:`open_store` (#1198), and **every new step is appended there** —
+#: to :func:`store.open_store` (#1198), and **every new step is appended there** —
 #: one written here would run before ``cap_dividend_fee_at_amount`` on a new
 #: file and after it on every store that already ran it.
 STEPS = (
@@ -375,9 +375,9 @@ def apply_steps(connection, steps) -> List[str]:
     Each step gets **its own transaction, with its own mark inside it**, so the
     schema and the record of it move together: a step that raises rolls both
     back and the store is exactly what it was, down to the mark. The failure
-    then propagates — :func:`open_store` turns it into ``StoreUnavailable``,
-    because a store the app could not bring forward is a store it must not
-    serve from.
+    then propagates — :func:`store.open_store` turns it into
+    ``StoreUnavailable``, because a store the app could not bring forward is a
+    store it must not serve from.
     """
     applied = {row[0] for row in connection.execute(
         'SELECT step FROM schema_step').fetchall()}

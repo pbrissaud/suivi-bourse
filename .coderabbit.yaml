@@ -91,9 +91,10 @@ reviews:
           that owns them already writes.
 
         THE SCHEMA MOVES IN ONE PLACE.
-        - `ALTER TABLE` appears in `packages/store/src/application/store_steps.py` and
-          nowhere else. A schema change outside it is one no store records
-          having run.
+        - `ALTER TABLE` appears in a schema step and nowhere else: the store's
+          own in `packages/store/src/application/store_steps.py`, the app's in
+          `packages/app/src/application/schema_steps.py`. A schema change
+          outside a step is one no store records having run.
         - The DDL is `IF NOT EXISTS` and stays the first answer. Dropping a
           column, renaming one and adding one to a table that already exists
           are the three gestures it cannot express — the DDL only builds a
