@@ -55,10 +55,14 @@ def test_a_store_migrated_before_the_split_opens_without_running_a_step(
 
 def test_the_store_imports_nothing_above_it():
     """The cycle #1198 broke: the store reaches only what sits below it, and a
-    deferred import inside a function counts as much as one at the top."""
-    source = Path(store_module.__file__).read_text()
+    deferred import inside a function counts as much as one at the top. Its
+    three files (#1201) are read together, and may import each other."""
+    files = ('store.py', 'store_ddl.py', 'store_steps.py')
+    own = {f'application.{name[:-3]}' for name in files}
+    here = Path(store_module.__file__).parent
     imported = set()
-    for node in ast.walk(ast.parse(source)):
+    for node in (node for name in files
+                 for node in ast.walk(ast.parse((here / name).read_text()))):
         if isinstance(node, ast.ImportFrom):
             # ``from .entries import x`` and ``from . import entries`` are
             # spelled relative to ``application``, where the store lives.
@@ -71,6 +75,7 @@ def test_the_store_imports_nothing_above_it():
                 imported.add(module)
         elif isinstance(node, ast.Import):
             imported.update(alias.name for alias in node.names)
-    assert {name for name in imported if name.startswith('application')} == {
+    assert {name for name in imported
+            if name.startswith('application')} - own == {
         'application.boot_env', 'application.settings_registry',
         'application.incoming', 'application.events.schemas'}

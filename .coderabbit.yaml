@@ -91,15 +91,17 @@ reviews:
           that owns them already writes.
 
         THE SCHEMA MOVES IN ONE PLACE.
-        - `ALTER TABLE` appears in `packages/store/src/application/store.py` and nowhere else. A
-          schema change outside it is one no store records having run.
+        - `ALTER TABLE` appears in `packages/store/src/application/store_steps.py` and
+          nowhere else. A schema change outside it is one no store records
+          having run.
         - The DDL is `IF NOT EXISTS` and stays the first answer. Dropping a
           column, renaming one and adding one to a table that already exists
           are the three gestures it cannot express — the DDL only builds a
           table it does not find — and they are appended to
           `packages/app/src/application/schema_steps.py`'s `STEPS`, forward only: that is the
           list `main.py` hands `store.open_store`, and `store.STEPS` is closed
-          (a step added there runs out of order on a new file). Flag a column
+          (a step added there, in `store_steps.py`, runs out of order on a new
+          file). Flag a column
           added to the DDL with no step beside it: a new file gets it, every
           store in circulation raises a Binder Error, and CI creates only new
           files.
