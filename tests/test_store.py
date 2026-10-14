@@ -1056,7 +1056,7 @@ def test_the_fold_leaves_a_store_already_canonical_untouched(tmp_path):
 
 def _before_the_cap(path, *events):
     """Today's store, minus the cap's mark, holding ``events`` as written."""
-    created = store_module.open_store(path)
+    created = store_module.open_store(path, schema_steps.STEPS)
     created.close()
     connection = duckdb.connect(str(path))
     connection.execute(
@@ -1098,6 +1098,30 @@ def test_the_cap_brings_a_stored_dividend_fee_down_to_its_amount(
             ('(fee was 12.0, capped at the amount)',)]
         assert opened.query('SELECT notes FROM event WHERE id = 2') == [(None,)]
         assert '#1 (fee 12.0)' in caplog.text
+    finally:
+        opened.close()
+
+
+def test_the_oldest_store_walks_the_rebuilds_and_then_the_cap(tmp_path):
+    """The path an old install takes: every rebuild, then the cap, in one boot.
+
+    The store's own list stops short of the cap (#1198), so the generation tests
+    above no longer reach it; this one opens the oldest shape, residue included,
+    with the list the app hands over.
+    """
+    path = tmp_path / 'ancient.duckdb'
+    _generation_zero(path, residue=True)
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, fee, amount) "
+        "VALUES (3, '2024-03-01', 'DIVIDEND', 'pea', 'AAPL', 12.0, 10.0)")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query('SELECT fee FROM event WHERE id = 3') == [(10.0,)]
+        assert opened.query('SELECT step FROM schema_step') == \
+            [(name,) for name, _ in schema_steps.STEPS]
     finally:
         opened.close()
 
