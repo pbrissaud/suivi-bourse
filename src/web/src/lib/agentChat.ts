@@ -1,11 +1,11 @@
 /**
- * The analyst panel's pure half (#1117): the transport `useChat` posts
+ * The agent's pure half (#1117): the transport `useChat` posts
  * through, the sentence each tool is read in, what an error says, and the
  * three questions an empty thread offers.
  *
- * **The transport is a seam, and the only one.** The panel never builds its
- * own: it asks {@link analystSeam}, which the browser answers with an HTTP
- * transport to `/agent` and a test answers with a scripted conversation
+ * **The transport is a seam, and the only one.** The page never builds its
+ * own: it asks {@link agentSeam}, which the browser answers with an HTTP
+ * transport to `/api/agent/chat` and a test answers with a scripted conversation
  * (`@shadcn/helpers/ai-sdk`) — no model, no key, the rest of the app as it
  * ships.
  */
@@ -15,22 +15,6 @@ import type { ChatTransport, DynamicToolUIPart, ToolUIPart, UIMessage } from 'ai
 import { ROUTES, type Position } from '@/lib/api'
 import type { MessageKey } from '@/lib/i18n'
 
-/** The panel's three widths (DESIGN.md, Layout). */
-export type AnalystLayout = 'docked' | 'sheet' | 'full'
-
-/** From 1 440 px the panel docks beside the page; from 768 it lies over it. */
-export const DOCKED_FROM = 1440
-export const SHEET_FROM = 768
-
-export function layoutFor(width: number): AnalystLayout {
-  if (width >= DOCKED_FROM) return 'docked'
-  if (width >= SHEET_FROM) return 'sheet'
-  return 'full'
-}
-
-/** What `page.route` may hold on the server (`agent._ROUTE`): anything else is left out. */
-const ROUTE = /^\/[A-Za-z0-9/_.~%-]{0,199}$/
-
 /**
  * The HTTP transport. **Only the last message travels**: the server reads the
  * history from the thread's file and uses the last user message alone
@@ -39,53 +23,46 @@ const ROUTE = /^\/[A-Za-z0-9/_.~%-]{0,199}$/
  */
 export function httpTransport(): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
-    api: ROUTES.agent,
-    prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => {
-      const route = window.location.pathname
-      return {
-        body: {
-          id,
-          trigger,
-          messageId,
-          messages: messages.slice(-1),
-          ...(ROUTE.test(route) ? { page: { route } } : {}),
-        },
-      }
-    },
+    api: ROUTES.agentChat,
+    // No `page` (#1196): the agent is a page of its own now, and reads the
+    // portfolio through its tools rather than off the reader's location.
+    prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => ({
+      body: { id, trigger, messageId, messages: messages.slice(-1) },
+    }),
   })
 }
 
-export const analystSeam = {
+export const agentSeam = {
   transport: (): ChatTransport<UIMessage> => httpTransport(),
 }
 
 /** The tools the MCP server serves (`mcp_server.build_server`), in plain words. */
 const TOOL_SENTENCES: Record<string, MessageKey> = {
-  list_positions: 'analyst.tool.list_positions',
-  get_portfolio_totals: 'analyst.tool.get_portfolio_totals',
-  get_portfolio_history: 'analyst.tool.get_portfolio_history',
-  list_accounts: 'analyst.tool.list_accounts',
-  list_events: 'analyst.tool.list_events',
-  get_investment_rhythm: 'analyst.tool.get_investment_rhythm',
-  simulate_sale: 'analyst.tool.simulate_sale',
+  list_positions: 'agent.tool.list_positions',
+  get_portfolio_totals: 'agent.tool.get_portfolio_totals',
+  get_portfolio_history: 'agent.tool.get_portfolio_history',
+  list_accounts: 'agent.tool.list_accounts',
+  list_events: 'agent.tool.list_events',
+  get_investment_rhythm: 'agent.tool.get_investment_rhythm',
+  simulate_sale: 'agent.tool.simulate_sale',
 }
 
 /** The sentence a tool call is shown as; a tool this list does not know is named. */
 export function toolSentence(name: string): { key: MessageKey; values?: { name: string } } {
   const key = TOOL_SENTENCES[name]
-  return key ? { key } : { key: 'analyst.tool.other', values: { name } }
+  return key ? { key } : { key: 'agent.tool.other', values: { name } }
 }
 
-export type AnalystToolPart = ToolUIPart | DynamicToolUIPart
+export type AgentToolPart = ToolUIPart | DynamicToolUIPart
 
-export function toolParts(message: UIMessage): AnalystToolPart[] {
+export function toolParts(message: UIMessage): AgentToolPart[] {
   return message.parts.filter(isToolUIPart)
 }
 
 export { getToolName, isToolUIPart }
 
 /** A tool still waiting on its result. */
-export function toolRunning(part: AnalystToolPart): boolean {
+export function toolRunning(part: AgentToolPart): boolean {
   return part.state === 'input-streaming' || part.state === 'input-available'
 }
 
@@ -100,7 +77,7 @@ export function textOf(message: UIMessage): string {
 /**
  * What the server said, out of whatever the SDK wrapped it in. A refusal
  * before the stream (`409`, `500`) arrives as the response body, which the
- * analyst's routes write as `{"error": "…"}`; a failure during it is the
+ * agent's routes write as `{"error": "…"}`; a failure during it is the
  * error chunk's text, already a sentence.
  */
 export function errorSentence(error: Error): string {
@@ -159,18 +136,18 @@ export function exampleQuestions(
   const largest = held[0]?.position
   if (largest === undefined) {
     return [
-      { key: 'analyst.example.totals' },
-      { key: 'analyst.example.rhythm' },
-      { key: 'analyst.example.events' },
+      { key: 'agent.example.totals' },
+      { key: 'agent.example.rhythm' },
+      { key: 'agent.example.events' },
     ]
   }
   const name = largest.name ?? largest.symbol
   const account = held.find((h) => h.position.account !== largest.account)?.position.account
   return [
-    { key: 'analyst.example.sell', values: { name, account: labelOf(largest.account) } },
-    { key: 'analyst.example.rhythm' },
+    { key: 'agent.example.sell', values: { name, account: labelOf(largest.account) } },
+    { key: 'agent.example.rhythm' },
     account === undefined
-      ? { key: 'analyst.example.totals' }
-      : { key: 'analyst.example.account', values: { account: labelOf(account) } },
+      ? { key: 'agent.example.totals' }
+      : { key: 'agent.example.account', values: { account: labelOf(account) } },
   ]
 }

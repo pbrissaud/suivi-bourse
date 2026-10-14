@@ -1,5 +1,5 @@
 /**
- * Switching the analyst on, in four steps (#1115) — the rules, without React.
+ * Switching the agent on, in four steps (#1115) — the rules, without React.
  *
  * The server holds the configuration and the key (#1114); the setup only
  * writes them, then asks the server to test what it stored. So what this module
@@ -11,7 +11,7 @@
  * soon as the draft's differ, and asks for a new one.
  *
  * And one of the setup's own: **any change to the provider, its key or its
- * address switches the analyst off**, since what was tested is no longer what
+ * address switches the agent off**, since what was tested is no longer what
  * is stored. It goes back on with *Activer*, after a new test.
  */
 import type { AgentConfig, AgentConfigDraft, AgentProvider } from '@/lib/api'

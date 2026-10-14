@@ -81,7 +81,7 @@ export default function SettingsPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
   const store = useQuery({ queryKey: ['store'], queryFn: api.store })
-  // The analyst's provider and model, and of its key only the end (#1115).
+  // The agent's provider and model, and of its key only the end (#1115).
   const agent = useQuery({ queryKey: ['agent-config'], queryFn: api.agentConfig })
   // **The same read the bell makes**, under the same key: the panel's health
   // card is one word and this page is that word developed, so a second query
@@ -166,7 +166,7 @@ export default function SettingsPage() {
         <DialsBlock config={config.data} runtime={runtime.data} />
       ) : null}
 
-      {/* The analyst's setup waits for its row like the dials wait for theirs:
+      {/* The agent's setup waits for its row like the dials wait for theirs:
           a provider preselected, then changed under the reader's cursor, is a
           choice they did not make. */}
       {agentFailure !== null ? (

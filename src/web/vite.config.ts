@@ -54,11 +54,6 @@ export default defineConfig({
         target: process.env.SB_API_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
-      // The analyst's turn and threads (#1117), on the ASGI half beside `/mcp`.
-      '/agent': {
-        target: process.env.SB_API_URL || 'http://localhost:8080',
-        changeOrigin: true,
-      },
     },
   },
 })

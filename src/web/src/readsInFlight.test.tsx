@@ -40,7 +40,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { ROUTES, type RouteName } from '@/lib/api'
 import { anAgentConfig, aTotals, aTotalsPayload } from '@/test/factories'
-import { THREAD_STORAGE_KEY } from '@/lib/analystPanel'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -72,13 +71,13 @@ const WRITE_ONLY_ROUTES = [
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
-  // The analyst's key is written and forgotten, never read; the connection
+  // The agent's key is written and forgotten, never read; the connection
   // test answers the reader's own press, and its answer is a receipt (#1115).
   'agentKey',
   'agentTest',
   // A turn is the reader's question, and its answer streams into the thread
   // that asked it (#1117): a gesture, never a read a surface is drawn from.
-  'agent',
+  'agentChat',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
@@ -290,39 +289,28 @@ const SURFACES: readonly Surface[] = [
   },
   { name: 'les réglages', url: '/settings', heading: 'Réglages' },
   {
-    // The analyst (#1117), switched on, its recent threads open:
+    // The agent (#1117, #1196), switched on, its recent threads in the column:
     // *Aucune conversation gardée* is a claim about the threads' directory,
     // and the questions an empty thread offers are built from the positions.
-    name: 'l’analyste, ses fils récents ouverts',
-    url: '/',
-    heading: 'Tableau de bord',
-    handlers: () => server.use(...analystHandlers()),
-    open: async ({ user }) => {
-      await user.click(await screen.findByRole('button', { name: 'Analyste' }))
-      await user.click(await screen.findByRole('button', { name: 'Fils récents' }))
-      return screen.findByRole('button', { name: /^Ma question/ })
-    },
+    name: 'l’agent, ses fils récents',
+    url: '/agent',
+    heading: 'Agent',
+    handlers: () => server.use(...agentHandlers()),
+    open: () => screen.findByRole('link', { name: /^Ma question/ }),
   },
   {
-    // And the thread this browser remembers, read back on the first opening:
-    // nothing of it is drawn, not even the empty thread's questions, until it
-    // has landed.
-    name: 'l’analyste, un fil gardé rouvert',
-    url: '/',
-    heading: 'Tableau de bord',
-    handlers: () => {
-      window.localStorage.setItem(THREAD_STORAGE_KEY, 't1')
-      server.use(...analystHandlers())
-    },
-    open: async ({ user }) => {
-      await user.click(await screen.findByRole('button', { name: 'Analyste' }))
-      return screen.findByText('Voici la simulation.')
-    },
+    // And a thread read back by its address: nothing of it is drawn, not even
+    // the empty thread's questions, until it has landed.
+    name: 'l’agent, un fil gardé rouvert',
+    url: '/agent/t1',
+    heading: 'Agent',
+    handlers: () => server.use(...agentHandlers()),
+    open: () => screen.findByText('Voici la simulation.'),
   },
 ]
 
-/** The analyst switched on, with one kept thread. */
-function analystHandlers() {
+/** The agent switched on, with one kept thread. */
+function agentHandlers() {
   return [
     http.get(ROUTES.agentConfig, () =>
       HttpResponse.json(

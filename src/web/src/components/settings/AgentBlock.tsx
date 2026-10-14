@@ -1,5 +1,5 @@
 /**
- * *L’analyste* — **switching it on, in four guided steps** (#1115, design
+ * *L’agent* — **switching it on, in four guided steps** (#1115, design
  * review 6A), for a reader who has never configured a model.
  *
  * 1. **The provider**, each with the one sentence that tells them apart;
@@ -12,7 +12,7 @@
  *    what is on screen**: any edit to steps 1 and 2 takes the pass back.
  *
  * The key is typed here and never read back: the server answers its last four
- * characters and nothing else (#1114). The analyst is off by default.
+ * characters and nothing else (#1114). The agent is off by default.
  */
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'

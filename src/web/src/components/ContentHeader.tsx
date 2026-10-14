@@ -13,7 +13,6 @@
  */
 import { Languages, MonitorCog, Moon, Rows3, Sun } from 'lucide-react'
 
-import { AnalystButton } from '@/components/analyst/AnalystButton'
 import { Notifications } from '@/components/Notifications'
 import { Palette } from '@/components/Palette'
 import { PreferenceMenu } from '@/components/PreferenceMenu'
@@ -70,8 +69,6 @@ export function ContentHeader() {
             interface on a phone, and this bar is where a control that belongs to
             no page lives. */}
         <Palette />
-        {/* The analyst's way in (#1117), beside the palette's: ⌘J and ⌘K. */}
-        <AnalystButton />
         <Notifications />
         <PreferenceMenu<DensityChoice>
           label={t('header.density')}

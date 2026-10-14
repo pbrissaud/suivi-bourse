@@ -34,7 +34,7 @@ ANTHROPIC_VERSION = '2023-06-01'
 OPENAI_MODELS = 'https://api.openai.com/v1/models'
 
 #: OpenAI's listing holds every model the account may call, the ones that
-#: cannot hold a conversation included: offering ``whisper-1`` as an analyst
+#: cannot hold a conversation included: offering ``whisper-1`` to the agent
 #: is offering a model that refuses the first turn.
 _NOT_A_CHAT_MODEL = re.compile(
     r'embedding|tts|whisper|dall-e|moderation|davinci|babbage|transcribe'
@@ -148,7 +148,7 @@ def _request(config: dict) -> tuple:
         return f'{base}/api/tags', {}
     # An OpenAI-compatible gateway is addressed like build_model does: the
     # stored address already holds its /v1, and /models sits beside the
-    # /chat/completions the analyst will call.
+    # /chat/completions the agent will call.
     return f'{base}/models', ({'Authorization': f'Bearer {key}'} if key else {})
 
 

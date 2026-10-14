@@ -55,7 +55,7 @@ dependencies = [
     # answer to the schema the tool publishes before the SDK does, with the
     # same validator the SDK uses — so a refusal arrives in words.
     "pydantic>=2.0",
-    # The in-app analyst (#1114): an agent loop over the MCP server above, in
+    # The in-app agent (#1114): an agent loop over the MCP server above, in
     # process, streamed to the front in the Vercel AI SDK's UI protocol. Pinned
     # like uvicorn: `agent_routes` subclasses its event stream, and the stream's
     # `sdk_version` is held to the front's `ai` major.

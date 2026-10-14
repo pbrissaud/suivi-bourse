@@ -60,7 +60,7 @@ if (!document.getAnimations) {
 // The router restores scroll on every navigation, and jsdom answers that one
 // with a "Not implemented" line per route change.
 window.scrollTo = () => {}
-// The analyst's message scroller (#1117) moves its viewport with them.
+// The agent's message scroller (#1117) moves its viewport with them.
 if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = () => {}
   Element.prototype.scrollBy = () => {}

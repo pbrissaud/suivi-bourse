@@ -1,8 +1,10 @@
-"""The analyst's routes, async on the event loop beside ``/mcp`` (#1114).
+"""The agent's routes, async on the event loop beside ``/mcp`` (#1114).
 
-``POST /agent`` streams one turn in the Vercel AI SDK's UI protocol;
-``GET /agent/threads[/<id>]`` reads the conversations back, and
-``DELETE /agent/threads/<id>`` forgets one (*Supprimer ce fil*, #1117). Not Flask: a turn
+``POST /api/agent/chat`` streams one turn in the Vercel AI SDK's UI protocol;
+``GET /api/agent/threads[/<id>]`` reads the conversations back, and
+``DELETE /api/agent/threads/<id>`` forgets one (*Supprimer ce fil*, #1117).
+Under ``/api`` since #1196, so ``/agent`` is the front's page; ``boot`` sends
+these two prefixes here and nothing else of ``/api/agent``. Not Flask: a turn
 waits on a provider for seconds, and a WSGI worker held that long is one of
 four (``boot.WSGI_THREADS``). Nothing here blocks the loop: the config read and
 the thread files go through ``anyio.to_thread``, and the MCP SDK runs the tools'
@@ -28,7 +30,7 @@ from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
 
 logger = getLogger("agent")
 
-#: The Vercel AI SDK major the stream speaks. The panel (#1117) installs the
+#: The Vercel AI SDK major the stream speaks. The front (#1117) installs the
 #: matching ``ai@7``: changing one means changing the other. Pydantic AI writes
 #: v7 as the same wire as v6, so the move from 6 changed no chunk.
 AI_SDK_VERSION = 7
@@ -54,11 +56,11 @@ class _EventStream(VercelAIEventStream):
         """``Anthropic: invalid x-api-key``, the key masked as ``…last4``.
 
         Only a provider's failure is put in the provider's mouth; anything
-        else (a bug of ours, a usage limit) is said as the analyst's.
+        else (a bug of ours, a usage limit) is said as the agent's.
         """
         said = masked(_said(error), self.secret)
         speaker = (self.provider_label if isinstance(error, ModelAPIError)
-                   else 'The analyst')
+                   else 'The agent')
         logger.warning(f"agent turn failed: {speaker}: {said}")
         async for chunk in super().on_error(error):
             if isinstance(chunk, ErrorChunk):
@@ -98,7 +100,7 @@ def _error(status: int, message: str) -> JSONResponse:
 
 
 def build_app(runtime, mcp) -> Starlette:
-    """The analyst's Starlette app, over ``runtime``'s store and ``mcp``'s tools."""
+    """The agent's Starlette app, over ``runtime``'s store and ``mcp``'s tools."""
     #: The threads with a turn in flight. One process, one loop: a set checked
     #: and filled between two awaits is as good as a lock per thread.
     running = set()
@@ -140,7 +142,7 @@ def build_app(runtime, mcp) -> Starlette:
         except (ValueError, ValidationError) as exc:
             return _error(400, str(exc))
         # Regenerating an answer would need the thread rewound first; until
-        # the panel asks for it, a turn is a new question and nothing else.
+        # the page asks for it, a turn is a new question and nothing else.
         if run_input.trigger != 'submit-message':
             return _error(400, "A turn is a 'submit-message'.")
         asked = [m for m in run_input.messages if m.role == 'user']
@@ -149,7 +151,7 @@ def build_app(runtime, mcp) -> Starlette:
         if not all(part.type == 'text' for part in asked[-1].parts):
             return _error(400, 'A question is text, and text only.')
         # Only the user's last message: the history is the file's, so a client
-        # cannot put words, or tool results, in the analyst's mouth.
+        # cannot put words, or tool results, in the agent's mouth.
         run_input.messages = [asked[-1]]
 
         if thread_id in running:
@@ -166,10 +168,10 @@ def build_app(runtime, mcp) -> Starlette:
         directory = root()
         # Off the loop: the first build imports a provider SDK (half a second),
         # and the history is validated whole.
-        analyst = await anyio.to_thread.run_sync(
+        assistant = await anyio.to_thread.run_sync(
             lambda: agent.build_agent(agent.build_model(settings), mcp))
         adapter = _Adapter(
-            agent=analyst,
+            agent=assistant,
             run_input=run_input, accept=request.headers.get('accept'),
             sdk_version=AI_SDK_VERSION,
             provider_label=agent.PROVIDERS[settings['provider']],
@@ -296,12 +298,12 @@ def build_app(runtime, mcp) -> Starlette:
         return Response(status_code=204)
 
     return Starlette(routes=[
-        Route('/agent', turn, methods=['POST']),
-        Route('/agent/threads', threads, methods=['GET']),
+        Route('/api/agent/chat', turn, methods=['POST']),
+        Route('/api/agent/threads', threads, methods=['GET']),
         # `:path` so an id holding a '/' reaches the check and is refused by
         # name, rather than matching no route at all.
-        Route('/agent/threads/{thread_id:path}', thread, methods=['GET']),
-        Route('/agent/threads/{thread_id:path}', forget, methods=['DELETE']),
+        Route('/api/agent/threads/{thread_id:path}', thread, methods=['GET']),
+        Route('/api/agent/threads/{thread_id:path}', forget, methods=['DELETE']),
     ])
 
 

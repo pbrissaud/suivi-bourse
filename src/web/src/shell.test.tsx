@@ -101,7 +101,7 @@ describe('the page title, now the header’s', () => {
   })
 })
 
-describe('the navigation, six entries in four and two', () => {
+describe('the navigation, seven entries in five and two', () => {
   /** The nav's links, in the order a reader — and a screen reader — meets them. */
   const entries = () =>
     within(nav())
@@ -118,12 +118,14 @@ describe('the navigation, six entries in four and two', () => {
     // on** — so it is asserted as an order and not as a set. *Référence* joins
     // the first group and sits last in it (#760): it is read, never acted on,
     // and it is the only one of the four that can be empty on an installation
-    // that is otherwise complete.
+    // that is otherwise complete. *Agent* follows it (#1196): a page one asks
+    // questions on, about what the four above show.
     expect(entries()).toEqual([
       'Tableau de bord',
       'Titres',
       'Comptes',
       'Référence',
+      'Agent',
       'Grand livre',
       'Réglages',
     ])
@@ -169,7 +171,7 @@ describe('the navigation, six entries in four and two', () => {
     expect(sidebar()).toHaveAttribute('data-state', 'collapsed')
   })
 
-  it('is a drawer at 390 px, behind a gesture, with the six entries in it', async () => {
+  it('is a drawer at 390 px, behind a gesture, with the seven entries in it', async () => {
     setViewportWidth(390)
     const { user } = renderApp()
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
@@ -180,7 +182,7 @@ describe('the navigation, six entries in four and two', () => {
 
     await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
     const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(drawer).getAllByRole('link')).toHaveLength(6)
+    expect(within(drawer).getAllByRole('link')).toHaveLength(7)
   })
 })
 

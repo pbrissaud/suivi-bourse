@@ -77,9 +77,9 @@ the app. Give it time rather than reloading: **about 25 minutes for 30 symbols
 over five years**, and figures that depend on a price you do not have yet say
 so instead of guessing.
 
-## Switch on the analyst (optional)
+## Switch on the agent (optional)
 
-The analyst is **off** until you switch it on, in **Settings → The analyst**:
+The agent is **off** until you switch it on, in **Settings → The agent**:
 choose a provider (Anthropic, OpenAI, an OpenAI-compatible gateway, or Ollama on
 your own machine), give it its key or its address, press **Test the connection**,
 and pick one of the models the provider lists. **Switch on** stays greyed out
@@ -91,9 +91,9 @@ the page only ever shows its last four characters, and so does every log line.
 There is no environment variable for it. Anyone who can copy the volume, or a
 backup of it, holds the key: treat that volume the way you treat the key.
 
-**Do not switch the analyst on in an instance reachable without
+**Do not switch the agent on in an instance reachable without
 authentication.** The app has no login: whoever reaches its port can ask the
-analyst questions, and every question is spent on *your* key, at your
+agent questions, and every question is spent on *your* key, at your
 provider's rates. Keep the port on your own machine or network, or behind a
 reverse proxy with authentication, a VPN or a tunnel — the rule
 [Connect your own agent](./connect-your-own-agent.mdx#who-can-reach-it) already

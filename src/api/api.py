@@ -1374,7 +1374,7 @@ def delete_dashboard_layout():
 
 @api_bp.get('/agent/config')
 def get_agent_config():
-    """The analyst's provider and model, and of its key only ``last4``."""
+    """The agent's provider and model, and of its key only ``last4``."""
     return jsonify(agent_module.describe(agent_module.read(_store())))
 
 
@@ -1410,7 +1410,7 @@ def probe_agent():
     The answer names the models and the one to preselect; a provider that
     refuses answers 502 in its own words. The key is in neither, nor in the
     log, but as ``…last4``. Nothing is written: choosing a model and switching
-    the analyst on are ``PUT /api/agent/config``'s.
+    the agent on are ``PUT /api/agent/config``'s.
     """
     config = agent_module.read(_store())
     try:
@@ -1432,7 +1432,7 @@ def _write_agent_config(changed):
     """Read, change and write the row under the writers' mutex.
 
     ``changed`` maps the stored configuration to the new one and whether that
-    switched the analyst off. A refusal names the field, and never the key.
+    switched the agent off. A refusal names the field, and never the key.
     """
     runtime = current_runtime()
     try:

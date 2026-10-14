@@ -39,7 +39,7 @@ from application import store as store_module
 
 def test_a_new_file_carries_the_sixteen_tables(store):
     assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
-    # **Seventeen since #1114** — ``agent_config``, the analyst's provider
+    # **Seventeen since #1114** — ``agent_config``, the agent's provider
     # and its key. **Sixteen since #760** — ``symbol_split``, the ratios #988's correction
     # consumes and nothing kept, which anything counting units across a split
     # needs. The fifteenth was #926's ``schema_step``, the one table that is

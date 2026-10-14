@@ -46,16 +46,16 @@ its parent does not.
 
 | Variable | Container default | What it holds |
 |---|---|---|
-| `SB_STORE_DIR` | `/data` | the store — everything the app writes, the analyst's key included |
+| `SB_STORE_DIR` | `/data` | the store — everything the app writes, the agent's key included |
 
 **The default describes the container**, which is the deployment that has no
 choice; a Docker-less install is the one that overrides it. Give `SB_STORE_DIR` a
 directory of your own.
 
-That directory holds **the analyst's provider key**, in clear, once you switch
-the analyst on — there is no environment variable for it. Give it the
+That directory holds **the agent's provider key**, in clear, once you switch
+the agent on — there is no environment variable for it. Give it the
 permissions you would give the key itself, and read
-[Switch on the analyst](./get-started.mdx#switch-on-the-analyst-optional)
+[Switch on the agent](./get-started.mdx#switch-on-the-agent-optional)
 before you do it on a machine others can reach.
 
 There is nowhere to put a file for the app to find: you hand it one from the

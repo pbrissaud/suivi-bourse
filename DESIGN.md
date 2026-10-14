@@ -89,9 +89,9 @@ components:
   chip:
     borderColor: "{colors.rule}"
     rounded: "{rounded.full}"
-  agent-panel:
+  agent-thread-column:
     backgroundColor: "{colors.tint}"
-    width: 380px
+    width: 240px
 ---
 
 # SuiviBourse
@@ -108,7 +108,7 @@ went, what it cost, and whether it is building wealth.
 investors holding a PEA, a compte-titres and a few positions. Its subject is the
 user's investment strategy (rhythm, amounts, allocation, costs, comparison with an
 index), never their investment thesis. The tax model per account wrapper is one
-reading among others. Release 5.3 adds an analyst side panel (Vercel AI SDK, `useChat`).
+reading among others. Release 5.3 adds an agent page, `/agent` (Vercel AI SDK, `useChat`).
 
 **Mode per surface:** every screen is Operate (an app UI: finish a task, read figures).
 The website under `website/` is out of scope for this file.
@@ -167,7 +167,7 @@ shipped face would cost every screen for no reader benefit.
 - **Figure (28/32, 600):** a secondary figure that stands alone (an account's value).
 - **Section title (20/28, 600):** sentence case. No uppercase, letter-spaced overlines,
   no kicker above a heading.
-- **Prose (15/22):** the analyst's answers and any explanatory paragraph.
+- **Prose (15/22):** the agent's answers and any explanatory paragraph.
 - **Body (14/20):** controls, table text, labels in forms. Below the usual 16 px rule
   on purpose: this is a dense tool UI; long reading text uses Prose.
 - **Label (12/16, 500):** meta and column headers, `text-muted`, never letter-spaced.
@@ -178,11 +178,10 @@ shipped face would cost every screen for no reader benefit.
 
 ## Layout
 
-- **Desktop ≥ 1440 px:** sidebar 200 px, content up to 1040 px, analyst panel docked
-  right at 380 px; the content shrinks to make room.
-- **768 to 1439 px:** the analyst panel is a right `sheet` over the content.
-- **< 768 px:** single column; the analyst panel is a full-screen `sheet` with a back
-  button.
+- **Desktop ≥ 1440 px:** sidebar 200 px, content up to 1040 px.
+- **< 768 px:** single column.
+- The agent is a page, `/agent`: a 240 px thread column from 1 024 px, the conversation
+  at most 720 px.
 - **Rhythm:** 20 px between sections, 24 px around the content, 12 px between a section
   title and its content. Large gaps (40, 64) only separate the hero from the first
   section and the page from its footer.
@@ -258,13 +257,11 @@ the securities are the value less the cash.
 Flat. Atelier's shadow opacity is 0, so depth comes from the step between
 `background`, `tint` and `surface`, not from shadows. Components still carry shadcn's
 `shadow-*` utilities (a card `shadow-sm`, a menu `shadow-md`), so a replacement theme's
-shadows show. The only shadow Atelier draws is the right `sheet` of the analyst panel below
-1440 px: 8 px horizontal offset, 24 px blur, 8 % black, so it reads as lying over the
-page. No zero-offset glow, in either theme.
+shadows show. Atelier draws none. No zero-offset glow, in either theme.
 
 ## Shapes
 
-- `rounded.lg` (18 px): sections and the analyst panel's inner planes.
+- `rounded.lg` (18 px): sections and the agent page's thread column.
 - `rounded.md` (14 px): cards. A card sits on a section, so 18 − 4 keeps the curves
   concentric.
 - `rounded.sm` (8 px): buttons, inputs, menus.
@@ -275,21 +272,22 @@ page. No zero-offset glow, in either theme.
 - **Section:** see Layout. No hover state; the section itself is not interactive. In
   the dashboard's edit mode its title row carries the ⋯ menu (see The dashboard grid).
 - **Card:** `surface`, `rounded.md`, 14 px padding. Allowed only for something the
-  user decides (an analyst proposal, a profile fact to confirm, a first-run step, a
+  user decides (an agent proposal, a profile fact to confirm, a first-run step, a
   destructive confirmation) or selects (an account tile). Never a card inside a card.
   A decided proposal loses its buttons and shows one status line (decision 5A).
 - **Weight bar:** a 6 px `primary` bar with its percentage in Label, inside holding rows.
 - **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
   opacity, no pointer events, the reason given in text next to it.
-- **Chips (analyst profile facts):** outlined, Label size; each opens a popover with
+- **Chips (agent profile facts):** outlined, Label size; each opens a popover with
   the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
-- **Analyst panel:** `tint` plane, 380 px docked. Header: "Analyste", the provider and
-  model, "Nouveau fil", "Fils récents". Tool calls are one muted line in plain words
+- **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
+  "Nouveau fil" and "Fils récents" head the `tint` thread column from 1 024 px, and are
+  the header's buttons below. Tool calls are one muted line in plain words
   with a "détail" disclosure (2A). The CIF line "Simulations à partir de vos données
   déclarées, pas un conseil en investissement." stays fixed under the input (3A).
-  States follow decision 4A. Region `complementary` named "Analyste", ⌘/Ctrl + J,
-  answers announced once complete (11A).
+  States follow decision 4A. The conversation is the page's `<main>` content, its
+  `<h1>` and document title "Agent"; answers announced once complete (11A).
 - **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings
   are `primary`; scrollbars are thin and use `rule`.
 
@@ -325,7 +323,7 @@ page. No zero-offset glow, in either theme.
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-10-10 | Initial design system created ("Atelier") | Created by /design-consultation from the 5.3 design doc, the staging audit of 2026-10-09, and research on Wealthfolio, Kubera and Sharesight. Chosen over "Le relevé" (judged too austere) and "Instrument" (too dense for the non-technical users the analyst targets). |
+| 2026-10-10 | Initial design system created ("Atelier") | Created by /design-consultation from the 5.3 design doc, the staging audit of 2026-10-09, and research on Wealthfolio, Kubera and Sharesight. Chosen over "Le relevé" (judged too austere) and "Instrument" (too dense for the non-technical users the agent targets). |
 | 2026-10-10 | Keep Geist and Geist Mono, keep #838 | Already shipped and self-hosted; the figure is the display voice. |
 | 2026-10-10 | Warm neutrals replace the cool ones | Serves "Enfin mes vrais chiffres" with a calmer, less clinical surface. |
 | 2026-10-10 | Sections are tinted planes; cards only for decisions and selections | Resolves point 8C of the 5.3 design review (no stacked cards). |
@@ -339,3 +337,4 @@ page. No zero-offset glow, in either theme.
 | 2026-10-12 | The hero recomposes on a refreshed value too (#1180) | The figures poll every minute; one movement with two triggers (a merged proposal, a refreshed value), at or above 0.1 % of the value, rather than a second animation. No refresh indicator: the header's quote date already moves. |
 | 2026-10-12 | Colour only the terms that can change sign | Dividends and transfer fees have a fixed sign, so colouring it carries no information and steals the signal from a realised loss; the bar follows the same rule (#1144). |
 | 2026-10-12 | Gain breakdown is a statement (#1175) | Reverses the cascade (#1143/#1161) and the in-card window (#1156/#1173): with four terms the figures are the content, the bars read as progress bars, and the year-to-date gain has its own pill. |
+| 2026-10-14 | The agent is a page, `/agent`, not a side panel (#1196) | Docked at 380 px the panel left a 13" laptop about 840 px of the 1 040 the content is designed for, and charts and tables broke; it bought one line of context (the route) that the agent reads through its tools anyway. Its user-facing name becomes "Agent", the same word in both languages. |

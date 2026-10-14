@@ -119,9 +119,9 @@ export const ROUTES = {
   /** The dials' one writer, and it is an HTTP route so headless stays whole. */
   settings: '/api/settings',
   /**
-   * The analyst's provider, model and address, and of its key only `last4`
+   * The agent's provider, model and address, and of its key only `last4`
    * (#1114). Written field by field; the server refuses a row an enabled
-   * analyst could not run on.
+   * agent could not run on.
    */
   agentConfig: '/api/agent/config',
   /** The provider's key: written and forgotten here, never read back. */
@@ -132,14 +132,14 @@ export const ROUTES = {
    */
   agentTest: '/api/agent/test',
   /**
-   * The analyst's turn (#1114): a Vercel AI SDK UI stream, on the ASGI half
-   * and outside `/api`. The panel's `useChat` posts here (#1117).
+   * The agent's turn (#1114): a Vercel AI SDK UI stream, on the ASGI half
+   * (`boot._is_agent`). The `/agent` page's `useChat` posts here (#1196).
    */
-  agent: '/agent',
+  agentChat: '/api/agent/chat',
   /** The conversations, the most recent first. */
-  agentThreads: '/agent/threads',
+  agentThreads: '/api/agent/threads',
   /** One conversation: read as UI messages, or deleted. A **pattern**. */
-  agentThread: '/agent/threads/:id',
+  agentThread: '/api/agent/threads/:id',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
@@ -1614,7 +1614,7 @@ export interface EnvironmentVariable {
   source: 'environment' | 'default'
 }
 
-/** The four kinds of provider the analyst runs on, as `agent.PROVIDERS` names them. */
+/** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
 
 /** `GET /api/agent/config`: the key is never on the wire, only its end. */
@@ -1624,7 +1624,7 @@ export interface AgentConfig {
   model: string | null
   base_url: string | null
   key: { set: boolean; last4: string | null; set_at: string | null }
-  /** Present, and `true`, on the one write that switched the analyst off. */
+  /** Present, and `true`, on the one write that switched the agent off. */
   disabled?: boolean
 }
 
@@ -1636,7 +1636,7 @@ export interface AgentConfigDraft {
   base_url?: string | null
 }
 
-/** One line of `GET /agent/threads`. */
+/** One line of `GET /api/agent/threads`. */
 export interface AgentThreadSummary {
   id: string
   /** The first 80 characters of the first question. */
@@ -1645,7 +1645,7 @@ export interface AgentThreadSummary {
   updated_at: string | null
 }
 
-/** `GET /agent/threads/<id>`: the messages as `useChat` holds them. */
+/** `GET /api/agent/threads/<id>`: the messages as `useChat` holds them. */
 export interface AgentThread {
   id: string
   title: string | null
@@ -1657,28 +1657,19 @@ export function agentThreadPath(id: string): string {
 }
 
 /**
- * The analyst's routes answer `{error}` rather than `problem+json`: they are
- * Starlette's, beside `/mcp`, not Flask's. The sentence is the server's.
+ * The agent's routes answer `{error}` rather than `problem+json`: they are
+ * Starlette's, under `/api/agent/{chat,threads}`, not Flask's. A refusal is
+ * thrown as the server's sentence.
  */
-/** A refusal from the analyst's routes: the server's sentence, and its status. */
-export class AgentError extends Error {
-  readonly status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.status = status
-  }
-}
-
 async function agentRead<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { Accept: 'application/json' } })
-  if (!response.ok) throw new AgentError(await agentError(response), response.status)
+  if (!response.ok) throw new Error(await agentError(response))
   return (await response.json()) as T
 }
 
 async function agentForget(path: string): Promise<void> {
   const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
-  if (!response.ok) throw new AgentError(await agentError(response), response.status)
+  if (!response.ok) throw new Error(await agentError(response))
 }
 
 async function agentError(response: Response): Promise<string> {
@@ -1687,7 +1678,7 @@ async function agentError(response: Response): Promise<string> {
     const said = (JSON.parse(text) as { error?: unknown }).error
     if (typeof said === 'string') return said
   } catch {
-    // Not the analyst's shape: a proxy's page, say. Its status is all there is.
+    // Not the agent's shape: a proxy's page, say. Its status is all there is.
   }
   return `HTTP ${response.status}`
 }

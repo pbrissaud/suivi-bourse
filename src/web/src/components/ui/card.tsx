@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * **A card is for something the user decides or selects** (DESIGN.md): an
- * analyst proposal, a profile fact to confirm, a first-run step, a destructive
+ * agent proposal, a profile fact to confirm, a first-run step, a destructive
  * confirmation, an account tile. Never decoration, never a card inside a card;
  * a block of the page is a `Section`. It carries the theme's small shadow,
  * which Atelier sets to nothing: there, the step from the ground is the depth.

@@ -2,7 +2,7 @@
 
 **Pure**: no store, no market, ``now`` (a UTC calendar day) injected. The caller
 reads the store and hands plain data in, as :mod:`account_facts` does. The
-analyst narrates these figures and never computes one: every number about a
+agent narrates these figures and never computes one: every number about a
 sale comes from here.
 
 The position after a sale follows from the single ``build_shares`` row, with no
