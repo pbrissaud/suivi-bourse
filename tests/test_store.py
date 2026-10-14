@@ -28,6 +28,7 @@ import duckdb
 import pytest
 
 from application import quotes
+from application import schema_steps
 from application import settings_registry
 from application import store as store_module
 
@@ -1087,7 +1088,7 @@ def test_the_cap_brings_a_stored_dividend_fee_down_to_its_amount(
                     (4, 'WITHDRAWAL', 12.0, 10.0))
 
     with caplog.at_level(logging.INFO, logger='store'):
-        opened = store_module.open_store(path)
+        opened = store_module.open_store(path, schema_steps.STEPS)
     try:
         assert opened.query('SELECT id, fee FROM event ORDER BY id') == [
             (1, 10.0), (2, 1.0), (3, None), (4, 12.0)]
@@ -1106,7 +1107,7 @@ def test_the_cap_leaves_a_store_without_such_a_dividend_untouched(tmp_path):
     path = tmp_path / 'store.duckdb'
     _before_the_cap(path, (1, 'DIVIDEND', 10.0, 10.0))
 
-    opened = store_module.open_store(path)
+    opened = store_module.open_store(path, schema_steps.STEPS)
     try:
         assert opened.query('SELECT fee FROM event') == [(10.0,)]
         assert opened.query('SELECT count(*) FROM portfolio_totals') == [(1,)]

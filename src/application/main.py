@@ -23,6 +23,7 @@ from application import mounts
 from application import positions
 from application import runtime_state
 from application import scheduling
+from application import schema_steps
 from application import settings as settings_module
 from application import settings_registry
 from application import store
@@ -271,7 +272,7 @@ class ConfigurationManager:
                 f"The store at {self._store.path} is closed")
         if self._store is None:
             self._store = store.open_store(
-                self.config_dir / store.STORE_FILENAME)
+                self.config_dir / store.STORE_FILENAME, schema_steps.STEPS)
         return self._store
 
     def report_unread_files(self) -> List[str]:
@@ -417,7 +418,7 @@ def build_runtime() -> Runtime:
     report_unread_environment()
 
     store_path = boot.store_dir / store.STORE_FILENAME
-    opened = store.open_store(store_path)
+    opened = store.open_store(store_path, schema_steps.STEPS)
 
     # Everything past the open runs under the guard (issue #857): a boot that
     # will not finish gives the file back before it raises, and a statement

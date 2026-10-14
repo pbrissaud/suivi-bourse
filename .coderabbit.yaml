@@ -97,8 +97,10 @@ reviews:
         - The DDL is `IF NOT EXISTS` and stays the first answer. Dropping a
           column, renaming one and adding one to a table that already exists
           are the three gestures it cannot express — the DDL only builds a
-          table it does not find — and they are appended to `store.STEPS`,
-          forward only. Flag a column added to the DDL with no step beside it:
+          table it does not find — and they are appended to
+          `application/schema_steps.py`'s `STEPS`, forward only: that is the
+          list `main.py` hands `store.open_store`, and `store.STEPS` is closed
+          (a step added there runs out of order on a new file). Flag a column added to the DDL with no step beside it:
           a new file gets it, every store in circulation raises a Binder Error,
           and CI creates only new files.
         - A step's name is its identity forever. Flag any edit or rename of a

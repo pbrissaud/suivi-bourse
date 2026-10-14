@@ -10,7 +10,8 @@ from logfmt_logger import getLogger
 from application import carrying
 from application import instants
 from application import retention
-from application.store import INCOMING, finite
+from application.incoming import INCOMING
+from application.store import finite
 
 logger = getLogger("quotes")
 
