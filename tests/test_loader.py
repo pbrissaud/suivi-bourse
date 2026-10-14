@@ -7,7 +7,7 @@ by date. Parse failures inside a row raise ``ValueError`` which the loader
 wraps into ``EventLoaderError`` together with the 1-indexed row number
 (``enumerate(..., start=2)`` so the first data row is row 2).
 
-Every assertion below is grounded in the actual code in src/application/events/loader.py.
+Every assertion below is grounded in the actual code in packages/app/src/application/events/loader.py.
 No network / no real InfluxDB / no real yfinance is touched here — the loader
 only does local file I/O against paths we create under ``tmp_path``.
 """

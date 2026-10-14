@@ -139,10 +139,11 @@ dmypy.json
 # dans un dépôt public. La référence de forme se lit en local, jamais versionnée.
 docs/design-revamp-*.html
 
-# --- The application (`src/`) -----------------------------------------------
-# Vite's build output, served by Flask. `src/api/_static_dir()` resolves it as
-# `<parent of the api package>/static`, which is this path in a checkout and
-# `/home/appuser/src/static` in the image.
+# --- The application (`packages/`, `src/web`) --------------------------------
+# Vite's build output, served by Flask. `api._static_dir()` resolves it inside
+# the `api` package, so the image's `app` wheel carries it. `src/static/` is
+# where it landed before #1199: a checkout may still hold one.
+packages/app/src/api/static/
 src/static/
 
 # The front's workspace.

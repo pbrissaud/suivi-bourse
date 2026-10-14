@@ -1,8 +1,8 @@
 """
 Shared pytest fixtures for the SuiviBourse test suite.
 
-`pytest.ini` sets ``pythonpath = src`` so tests (and this conftest) import the
-application modules exactly like ``src/application/main.py`` does::
+The workspace members are installed editable, so tests (and this conftest)
+import the application modules exactly like ``packages/app/src/application/main.py`` does::
 
     from application import main
     from application import quotes

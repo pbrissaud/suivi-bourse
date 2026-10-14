@@ -27,9 +27,15 @@ ENV UV_NO_DEV=1 \
 
 WORKDIR /app
 
+# The dependency layer needs each member's manifest to resolve the workspace,
+# and none of its sources: a source change does not reinstall the dependencies.
 COPY pyproject.toml uv.lock ./
+COPY packages/core/pyproject.toml packages/core/
+COPY packages/store/pyproject.toml packages/store/
+COPY packages/market/pyproject.toml packages/market/
+COPY packages/app/pyproject.toml packages/app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-install-project \
+    uv sync --locked --no-install-workspace \
  && apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends binutils \
  && find /opt/venv -type d -name tests -prune -print0 | xargs -0 rm -rf \
@@ -46,12 +52,13 @@ RUN useradd --create-home appuser \
     && chown appuser:appuser /data
 WORKDIR /home/appuser
 
-COPY ./src/application /home/appuser/src/application
-COPY ./src/api /home/appuser/src/api
-
-ENV PYTHONPATH=/home/appuser/src
-
-COPY --from=web /build/static /home/appuser/src/static
+# The members, built into the venv as wheels (#1199). The front goes inside
+# `api` first, so the `app` wheel carries it where `api._static_dir()` looks.
+COPY packages /app/packages
+COPY --from=web /packages/app/src/api/static /app/packages/app/src/api/static
+RUN --mount=type=cache,target=/root/.cache/uv \
+    cd /app && uv sync --locked --package app --no-editable \
+ && rm -rf /app/packages
 
 ENV XDG_CACHE_HOME=/tmp/.cache
 

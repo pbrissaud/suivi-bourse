@@ -15,7 +15,7 @@
 import { ApiProblem } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 
-/** Mirrors `src/api/problem.py`. Relative URI references, as RFC 9457 allows. */
+/** Mirrors `packages/app/src/api/problem.py`. Relative URI references, as RFC 9457 allows. */
 export const PROBLEM_TYPES = {
   storageUnavailable: '/problems/storage-unavailable',
   notFound: '/problems/not-found',

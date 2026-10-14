@@ -27,12 +27,10 @@ export default defineConfig({
     testTimeout: 20_000,
   },
   build: {
-    // Straight into the Python source tree. One path serves both worlds: Flask
-    // resolves the bundle as `<parent of the web package>/static`, which is
-    // `src/static` in a checkout and `/home/appuser/static` in the image
-    // (the Dockerfile copies `./src` to the home directory). No second
-    // convention, and no COPY that has to agree with a config value.
-    outDir: path.resolve(import.meta.dirname, '../static'),
+    // Straight into the `api` package, which Flask resolves the bundle from
+    // (`api/static`). One path serves both worlds: the checkout's editable
+    // install reads it in place, and the image builds it into the `app` wheel.
+    outDir: path.resolve(import.meta.dirname, '../../packages/app/src/api/static'),
     emptyOutDir: true,
   },
   server: {

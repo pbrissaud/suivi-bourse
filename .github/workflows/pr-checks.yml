@@ -19,7 +19,7 @@ jobs:
 
       - uses: ricardochaves/python-lint@v1.4.0
         with:
-          python-root-list: "src/application/ src/api/"
+          python-root-list: "packages/"
           use-pycodestyle: false
           use-pylint: false
           use-black: false
@@ -112,6 +112,7 @@ jobs:
         with:
           files: |
             src/**
+            packages/**
             tests/**
             Dockerfile
             .dockerignore
