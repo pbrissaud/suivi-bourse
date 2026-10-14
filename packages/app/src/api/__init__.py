@@ -86,8 +86,8 @@ def current_runtime() -> main.Runtime:
 
 
 def _static_dir() -> Path:
-    """Where the built SPA lives — one path, resolved from the package."""
-    return Path(__file__).resolve().parent.parent / 'static'
+    """Where the built SPA lives — inside the package, so the wheel carries it."""
+    return Path(__file__).resolve().parent / 'static'
 
 
 __all__ = ['create_app', 'current_runtime']

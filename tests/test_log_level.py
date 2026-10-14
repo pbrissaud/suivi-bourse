@@ -58,14 +58,13 @@ class TestLogLevel:
         added later is simply not in it, and nothing says so — four were
         missing, `fx` among them, which is the module that most often explains
         why a conversion is absent and therefore the commonest reason to reach
-        for DEBUG at all. Read off both source
-        packages so the list cannot drift again: the API's own logger lives in
-        `src/api`, not beside `main`.
+        for DEBUG at all. Read off every workspace member so the list cannot
+        drift again: `fx` lives in `core`, and the API's own logger in `api`,
+        not beside `main`.
         """
-        src = Path(main.__file__).resolve().parents[1]
+        packages = Path(__file__).resolve().parents[1] / 'packages'
         named = {match.group(1)
-                 for package in ('application', 'api')
-                 for path in (src / package).rglob('*.py')
+                 for path in packages.glob('*/src/**/*.py')
                  for match in re.finditer(r'getLogger\(\s*[\'"]([^\'"]+)[\'"]',
                                           path.read_text(encoding='utf-8'))}
 
@@ -80,18 +79,16 @@ class TestLogLevel:
         loggers at boot, before `MANAGED_LOGGERS` has anything to turn. Nothing
         in the running process can answer for that — the suite has imported
         `main` long ago and `set_log_level` has moved every one of them since —
-        so this asks a **subprocess**, on the same reasoning as
-        `test_the_pure_modules_are_pure_at_the_import`: a level nobody would
-        set by accident, read straight off `logging` after the import alone.
+        so this asks a **subprocess**: a level nobody would set by accident,
+        read straight off `logging` after the import alone.
         """
         program = (
-            'import sys; sys.path.insert(0, %r)\n'
             'import logging\n'
             'import application.main\n'
             'print(",".join(logging.getLevelName(logging.getLogger(n).level)\n'
             '               for n in ("suivi_bourse", "apscheduler.scheduler",\n'
             '                         "yfinance")))\n'
-        ) % str(Path(main.__file__).resolve().parents[1])
+        )
 
         result = subprocess.run(
             [sys.executable, '-c', program], capture_output=True, text=True,

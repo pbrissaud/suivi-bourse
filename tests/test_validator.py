@@ -2,7 +2,7 @@
 Tests for events.validator.EventValidator.
 
 Every assertion is grounded in the actual behavior of
-``src/application/events/validator.py``. Event objects are constructed directly.
+``packages/core/src/application/events/validator.py``. Event objects are constructed directly.
 """
 
 from datetime import date

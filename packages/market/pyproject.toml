@@ -1,0 +1,25 @@
+# The one door to the market: `import yfinance` lives here and nowhere else.
+# Independent of `store`.
+[project]
+name = "market"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = [
+    "core",
+    "yfinance==1.7.0",
+    "pandas>=2.0.0",       # NaN-safe close prices (also required by yfinance)
+    "urllib3==2.8.0",
+    "logfmt-logger==0.1.2",
+]
+
+[tool.uv.sources]
+core = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11.9,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "application"
+namespace = true
+

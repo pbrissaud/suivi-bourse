@@ -41,15 +41,22 @@ beside `src/web`, which is the front and is not Python. Nothing is installable
 ### The application
 
 ```bash
-uv sync                                             # runtime + dev tooling into .venv
-uv run flake8 src/application src/api --ignore=E501 # the two packages, never `src/`
-uv run pytest tests/                                # unit + end-to-end, all network-mocked
-PYTHONPATH=src uv run python -m application.boot    # run it, on http://localhost:8080
+uv sync                                  # the four members + dev tooling into .venv
+uv run flake8 packages --ignore=E501     # the backend, never `src/`
+uv run pytest tests/                     # unit + end-to-end, all network-mocked
+uv run python -m application.boot        # run it, on http://localhost:8080
 ```
 
-The lint names the two packages rather than `src/`, which would walk the front's
-`node_modules`. `src/application/boot.py` is the only boot path: the web API and
-the scheduler share one process and that file holds the whole sequence.
+The backend is four uv workspace members under `packages/`, sharing the
+`application` namespace: `core` (the domain, no heavy dependency), `store`
+(DuckDB), `market` (yfinance) and `app` (everything else). Dependencies point
+down — app → store, market → core — and `tests/test_layers.py` holds that, since
+the shared venv would let an undeclared import through.
+
+The lint names `packages` rather than `src/`, which would walk the front's
+`node_modules`. `packages/app/src/application/boot.py` is the only boot path: the
+web API and the scheduler share one process and that file holds the whole
+sequence.
 
 **It runs on macOS**, and that is new: the app no longer forks, so
 there is no longer a container to build in order to see it work.
@@ -61,7 +68,7 @@ cd src/web && pnpm install
 pnpm lint    # tsc -b --noEmit, then biome check: lint rules and format
 pnpm exec biome check --write src   # applies the format lint refuses
 pnpm test    # vitest — no network, no configuration
-pnpm build   # → src/static/, which Flask serves; git-ignored
+pnpm build   # → packages/app/src/api/static/, which Flask serves; git-ignored
 pnpm dev     # Vite on :5173, proxying /api and /health to localhost:8080
 ```
 
@@ -103,7 +110,7 @@ changelog, and a subject it cannot parse is discarded whole.
 ### Technical Requirements
 
 * Must pass the [DCO check](#sign-off-your-work) — every commit signed off
-* `flake8` over `src/application` and `src/api`
+* `flake8` over `packages`
 * `uv run pytest tests/`
 * The front's `pnpm lint`, `pnpm test` and `pnpm build`, when `src/web` changed
 * The image builds and honours its contract, when what it is built from changed

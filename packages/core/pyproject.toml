@@ -1,0 +1,19 @@
+# The domain: the event vocabulary, the replay and every module that touches
+# neither the store nor the market and takes `now` injected. It may not
+# import duckdb, yfinance, pandas or openpyxl (`tests/test_layers.py`).
+[project]
+name = "core"
+version = "0.0.0"  # the release is the root's; nothing reads a member's
+requires-python = ">=3.14"
+dependencies = [
+    "logfmt-logger==0.1.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.9,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "application"
+namespace = true
+

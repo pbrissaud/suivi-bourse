@@ -11,7 +11,7 @@
       "automerge": true
     },
     {
-      "matchFileNames": ["pyproject.toml", "Dockerfile"],
+      "matchFileNames": ["pyproject.toml", "packages/*/pyproject.toml", "Dockerfile"],
       "semanticCommitScope": "app"
     },
     {

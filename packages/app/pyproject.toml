@@ -1,0 +1,61 @@
+# Everything else: the boot, the API, the workloads, the agent and the MCP
+# server. The only member the image installs by name; the rest follow.
+[project]
+name = "app"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = [
+    "core",
+    "store",
+    "market",
+    "APScheduler==3.11.3",
+    # Read directly by `api.api` and `mcp_server` for the error they catch.
+    "duckdb>=1.4.0",
+    "logfmt-logger==0.1.2",
+    "openpyxl>=3.1.0",
+    # `watchdog` left with the drop folder it watched (ADR-0032): a file is
+    # handed to the app by `POST /api/events/import`, read once and never seen
+    # again, so there is no directory left to observe.
+    "Flask==3.1.3",        # web UI + API, served in-process alongside the scheduler (issue #651)
+    # The server, and the adapter that lets the Flask app above stay a WSGI app
+    # (ADR-0039). gunicorn left because it always forks, and the fork is what
+    # segfaults the scrape job on macOS — measured, not assumed. uvicorn is
+    # called **programmatically** from `application/boot.py`, never from a
+    # command line: that is how its multiprocess mode stays out of reach
+    # without a guard.
+    "uvicorn==0.54.0",
+    "a2wsgi==1.10.10",
+    # The agent's interface (ADR-0040, issue #749). It is mounted **inside** this
+    # process, on the one socket, beside the Flask app — so it adds a reader and
+    # not a service. It is the heaviest line here and the tail is worth naming:
+    # pydantic, starlette, sse-starlette, httpx2, jsonschema, pyjwt[crypto] and
+    # `opentelemetry-api`. That last one is a protocol library's transitive
+    # dependency and **not the Prometheus exporter coming back** (ADR-0033):
+    # nothing in this app emits a span or a metric, and the read that used to be
+    # a gauge is still the health body and the runtime tab.
+    "mcp>=2.1.0",
+    # Named because `mcp_server.reading()` imports it (#958): it holds each
+    # answer to the schema the tool publishes before the SDK does, with the
+    # same validator the SDK uses — so a refusal arrives in words.
+    "pydantic>=2.0",
+    # The in-app agent (#1114): an agent loop over the MCP server above, in
+    # process, streamed to the front in the Vercel AI SDK's UI protocol. Pinned
+    # like uvicorn: `agent_routes` subclasses its event stream, and the stream's
+    # `sdk_version` is held to the front's `ai` major.
+    "pydantic-ai-slim[mcp,ui,openai,anthropic]==2.55.0",
+]
+
+[tool.uv.sources]
+core = { workspace = true }
+store = { workspace = true }
+market = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11.9,<0.13"]
+build-backend = "uv_build"
+
+# `api` (Flask) ships beside this member's part of the namespace, and the
+# built front lands inside it as `api/static`.
+[tool.uv.build-backend]
+module-name = ["application", "api"]
+namespace = true

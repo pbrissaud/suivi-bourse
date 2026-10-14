@@ -21,7 +21,7 @@ src/web/dist/
 src/web/.vite/
 
 # Built by the node stage inside the image; a stale local copy must never win.
-src/static/
+packages/app/src/api/static/
 
 # The suite runs in CI and in a checkout, never in the image.
 tests/

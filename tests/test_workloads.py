@@ -12,8 +12,8 @@ The ConfigurationManager is still a lightweight in-memory fake, because what is
 under test here is the job and not the ledger — but it carries the real store
 and hands it out exactly as the production one does, mutex included.
 
-Imports work top-level because pytest.ini sets ``pythonpath = src`` (same as
-how src/application/main.py imports its own modules).
+Imports work top-level because the workspace members are installed editable
+(same as how packages/app/src/application/main.py imports its own modules).
 """
 
 from contextlib import contextmanager
