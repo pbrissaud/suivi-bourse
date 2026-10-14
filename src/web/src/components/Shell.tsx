@@ -36,12 +36,11 @@
  */
 import { Outlet } from '@tanstack/react-router'
 
-import { AnalystPanel } from '@/components/analyst/AnalystPanel'
 import { AppSidebar } from '@/components/AppSidebar'
 import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
 import { SIDEBAR_COOKIE_NAME, SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
-import { AnalystPanelProvider } from '@/lib/analystPanel'
+import { AgentChatProvider } from '@/lib/agentChatProvider'
 
 /**
  * **Reading back what the registry component already writes.**
@@ -94,7 +93,9 @@ function navigationOpens(): boolean {
 
 export function Shell() {
   return (
-    <AnalystPanelProvider>
+    // Above the outlet (#1196): leaving `/agent` mid-answer keeps the stream,
+    // and coming back shows it, finished or still running.
+    <AgentChatProvider>
       <SidebarProvider defaultOpen={navigationOpens()}>
         <AppSidebar />
         {/* `min-w-0`, and it is not cosmetic — see the header comment: without it
@@ -115,11 +116,7 @@ export function Shell() {
             not a place, and it is as true on `/shares` as on `/` (#726). */}
           <FirstRun />
         </SidebarInset>
-        {/* The analyst (#1117): beside `<main>` and not in it, so it is a
-          landmark of its own. Docked from 1 440 px it is a flex item and the
-          column shrinks for it; below, a sheet that portals out of here. */}
-        <AnalystPanel />
       </SidebarProvider>
-    </AnalystPanelProvider>
+    </AgentChatProvider>
   )
 }

@@ -30,7 +30,15 @@
  * the settings.
  */
 import { Link, useRouterState } from '@tanstack/react-router'
-import { CircleDollarSign, Database, LayoutDashboard, Scale, Settings, Wallet } from 'lucide-react'
+import {
+  CircleDollarSign,
+  Database,
+  LayoutDashboard,
+  Scale,
+  Settings,
+  Sparkles,
+  Wallet,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import {
@@ -43,10 +51,11 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar'
+import { useAgentChat } from '@/lib/agentChatProvider'
 import { useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {
-  to: '/' | '/shares' | '/accounts' | '/benchmark' | '/ledger' | '/settings'
+  to: '/' | '/shares' | '/accounts' | '/benchmark' | '/agent' | '/ledger' | '/settings'
   label: MessageKey
   icon: LucideIcon
 }
@@ -57,6 +66,8 @@ const PORTFOLIO: Entry[] = [
   { to: '/shares', label: 'nav.shares', icon: CircleDollarSign },
   { to: '/accounts', label: 'nav.accounts', icon: Wallet },
   { to: '/benchmark', label: 'nav.benchmark', icon: Scale },
+  // Always there, the agent switched off included: the page says what to connect.
+  { to: '/agent', label: 'nav.agent', icon: Sparkles },
 ]
 
 /**
@@ -74,7 +85,7 @@ export function AppSidebar() {
   const t = useT()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
-  // **The six entries are six, at every N.** The accounts entry used to
+  // **The seven entries are seven, at every N.** The accounts entry used to
   // disappear at one account, and the argument was the page's own: comparing
   // one term is not comparing. The comparison entry follows the same rule for
   // a stronger reason — it is a page whose whole purpose is to be reached
@@ -139,6 +150,14 @@ export function AppSidebar() {
 
 function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
   const t = useT()
+  const { chat } = useAgentChat()
+  // The agent's entry leads back to the conversation on screen (#1196):
+  // `/agent` is a new thread, and starting one stops an answer still
+  // streaming. Read on each render, which a change of page is.
+  const link =
+    entry.to === '/agent' && (chat.messages.length > 0 || pathname === `/agent/${chat.id}`)
+      ? ({ to: '/agent/$threadId', params: { threadId: chat.id } } as const)
+      : ({ to: entry.to } as const)
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -148,7 +167,7 @@ function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
         // entries light up at once.
         isActive={entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)}
       >
-        <Link to={entry.to}>
+        <Link {...link}>
           <entry.icon />
           <span>{t(entry.label)}</span>
         </Link>

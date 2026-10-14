@@ -11,11 +11,11 @@ const stored = anAgentConfig({
 })
 
 describe('the writes that put the form in the store', () => {
-  it('writes nothing when nothing changed, so a re-test leaves the analyst on', () => {
+  it('writes nothing when nothing changed, so a re-test leaves the agent on', () => {
     expect(setupWrites(stored, { provider: 'anthropic', key: '', baseUrl: '' })).toEqual([])
   })
 
-  it('switches the analyst off before a new key is kept', () => {
+  it('switches the agent off before a new key is kept', () => {
     expect(
       setupWrites(stored, { provider: 'anthropic', key: ' new-key-1234 ', baseUrl: '' }),
     ).toEqual([

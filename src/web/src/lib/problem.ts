@@ -85,7 +85,7 @@ export const PROBLEM_TYPES = {
    */
   taxationModelInUse: '/problems/taxation-model-in-use',
   /**
-   * The analyst's provider did not answer *Tester la connexion* (#1115).
+   * The agent's provider did not answer *Tester la connexion* (#1115).
    *
    * **The one type whose `detail` is rendered**, and the exception is the
    * point: the detail is the provider's own sentence (`Anthropic: invalid

@@ -1,5 +1,5 @@
 /**
- * *L’analyste* in Settings (#1115): switching it on in four steps, the whole
+ * *L’agent* in Settings (#1115): switching it on in four steps, the whole
  * app in jsdom and HTTP the only faked edge.
  *
  * The rule the ticket asks a test of is the first one: **Activer stays
@@ -62,7 +62,7 @@ function provider(
 
 async function openAgent() {
   const rendered = renderApp({ url: '/settings' })
-  const block = await screen.findByRole('region', { name: 'L’analyste' })
+  const block = await screen.findByRole('region', { name: 'L’agent' })
   return { ...rendered, block }
 }
 
@@ -70,7 +70,7 @@ const activate = (block: HTMLElement) => within(block).getByRole('button', { nam
 const testButton = (block: HTMLElement) =>
   within(block).getByRole('button', { name: 'Tester la connexion' })
 
-describe('switching the analyst on', () => {
+describe('switching the agent on', () => {
   it('is off by default, and Activer stays disabled until the test passes', async () => {
     const writes = provider()
     const { user, block } = await openAgent()

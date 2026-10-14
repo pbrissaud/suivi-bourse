@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS schema_step (
     step        VARCHAR PRIMARY KEY,
     applied_at  TIMESTAMPTZ NOT NULL);
 
--- **The analyst's provider, and its key in clear** (#1114). One row. Because
+-- **The agent's provider, and its key in clear** (#1114). One row. Because
 -- of ``api_key`` this file now holds a secret: no route may ever serve the
 -- store file or a dump of a whole table, and the key leaves the server as its
 -- last four characters only (``agent.describe``).

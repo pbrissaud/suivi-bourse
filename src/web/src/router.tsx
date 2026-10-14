@@ -5,6 +5,7 @@ import { NotFound } from '@/components/NotFound'
 import { Shell } from '@/components/Shell'
 import { validateLedgerSearch, type LedgerSearch } from '@/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
+import AgentPage from '@/pages/AgentPage'
 import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
@@ -162,6 +163,24 @@ const benchmarkRoute = createRoute({
   component: BenchmarkPage,
 })
 
+/**
+ * The seventh route, and the agent's (#1196): `/agent` is a new thread, and
+ * the first question gives it its address. The thread is a **path** segment
+ * rather than a search parameter: it is what the page is, not a reduction of
+ * it.
+ */
+const agentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent',
+  component: AgentPage,
+})
+
+const agentThreadRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent/$threadId',
+  component: AgentPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
@@ -169,6 +188,8 @@ const routeTree = rootRoute.addChildren([
   benchmarkRoute,
   dataRoute,
   settingsRoute,
+  agentRoute,
+  agentThreadRoute,
 ])
 
 /**

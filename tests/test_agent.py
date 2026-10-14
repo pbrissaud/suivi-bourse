@@ -1,4 +1,4 @@
-"""The analyst's configuration, its model and its page line (#1114).
+"""The agent's configuration, its model and its page line (#1114).
 
 The routes are driven through Flask's test client over a real store, as the
 rest of ``/api`` is; no provider is ever called.
@@ -92,7 +92,7 @@ def test_anything_else_in_a_page_is_refused(page):
 
 # ------------------------------------------------------------ the routes --
 
-def test_the_analyst_is_off_and_keyless_until_configured(client):
+def test_the_agent_is_off_and_keyless_until_configured(client):
     assert client.get('/api/agent/config').get_json() == {
         'enabled': False, 'provider': None, 'model': None, 'base_url': None,
         'key': {'set': False, 'last4': None, 'set_at': None}}
@@ -143,7 +143,7 @@ def test_switching_on_names_what_is_missing(client, fields, missing):
     assert answer.get_json()['key'] == missing
 
 
-def test_switching_provider_under_an_enabled_analyst_is_checked(client):
+def test_switching_provider_under_an_enabled_agent_is_checked(client):
     configured(client, enabled=True, provider='ollama', model='llama',
                base_url='http://ollama:11434')
 

@@ -1,7 +1,9 @@
-"""``/agent`` on the ASGI application uvicorn is handed (#1114).
+"""The agent's routes on the ASGI application uvicorn is handed (#1114).
+
+``/api/agent/chat`` and ``/api/agent/threads`` since #1196.
 
 Driven through ``httpx2.ASGITransport`` on :class:`boot.Serving` itself, so the
-routing between Flask, ``/mcp`` and ``/agent`` is the product's. Every turn is
+routing between Flask, ``/mcp`` and the agent is the product's. Every turn is
 scripted with Pydantic AI's ``FunctionModel``: no network, no provider.
 """
 import asyncio
@@ -15,6 +17,7 @@ from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
+import api
 from api import create_app
 from application import agent, agent_routes, agent_threads, boot, mcp_server
 from test_mcp_server import call, payload, rich_runtime
@@ -89,7 +92,7 @@ def run(runtime, work):
 
 def post(thread_id, **kwargs):
     async def work(client):
-        return await client.post('/agent', json=body(thread_id, **kwargs))
+        return await client.post('/api/agent/chat', json=body(thread_id, **kwargs))
     return work
 
 
@@ -106,7 +109,7 @@ def stored(runtime, thread_id):
 
 # ------------------------------------------------------------------------ #
 
-def test_an_analyst_switched_off_answers_404_and_builds_no_client(
+def test_an_agent_switched_off_answers_404_and_builds_no_client(
         runtime, monkeypatch):
     def refused(*args, **kwargs):
         raise AssertionError('a provider client was built')
@@ -118,14 +121,50 @@ def test_an_analyst_switched_off_answers_404_and_builds_no_client(
         monkeypatch.setattr(built, '__init__', refused)
 
     assert run(runtime, post('k1')).status_code == 404
-    assert run(runtime, get('/agent/threads')).json() == {
+    assert run(runtime, get('/api/agent/threads')).json() == {
         'error': 'The agent is off.'}
-    assert run(runtime, get('/agent/threads/k1')).status_code == 404
+    assert run(runtime, get('/api/agent/threads/k1')).status_code == 404
 
 
 def test_agents_is_still_flask_s(runtime):
     answer = run(runtime, get('/agents'))
     assert 'The agent is off.' not in answer.text
+
+
+@pytest.mark.parametrize('path, mine', [
+    ('/api/agent/chat', True),
+    ('/api/agent/threads', True),
+    ('/api/agent/threads/x', True),
+    ('/api/agent/config', False),
+    ('/api/agent/key', False),
+    ('/agent', False),
+    ('/api/agents', False),
+    ('/api/agent/chatx', False),
+    ('/api/agent/threadsx', False),
+])
+def test_only_the_chat_and_the_threads_are_the_agent_s(path, mine):
+    assert boot._is_agent(path) is mine
+
+
+def test_the_agent_page_is_the_front_s_and_runs_no_turn(runtime, tmp_path,
+                                                        monkeypatch):
+    """``/agent`` is a page now (#1196): a reload gets the shell, not a turn."""
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    (bundle / 'index.html').write_text('<div id=root>', encoding='utf-8')
+    monkeypatch.setattr(api, '_static_dir', lambda: bundle)
+    switched_on(runtime)
+
+    async def work(client):
+        return (await client.get('/agent'),
+                await client.get('/agent/0b5e4a1c-77b2-4c55-9f4e-2a8a8d3c1e11'),
+                await client.post('/agent', json=body('k1')))
+    page, thread, turn = run(runtime, work)
+
+    assert (page.status_code, thread.status_code) == (200, 200)
+    assert 'id=root' in page.text and 'id=root' in thread.text
+    assert turn.status_code in (404, 405)
+    assert not stored(runtime, 'k1')
 
 
 def test_a_scripted_turn_streams_both_tools_and_keeps_them(runtime, monkeypatch):
@@ -152,9 +191,9 @@ def test_a_scripted_turn_streams_both_tools_and_keeps_them(runtime, monkeypatch)
     assert kinds[-1] == 'text'
     assert thread['title'] == 'Que se passe-t-il si je vends ?'
 
-    listed = run(runtime, get('/agent/threads')).json()
+    listed = run(runtime, get('/api/agent/threads')).json()
     assert [t['id'] for t in listed] == ['k1']
-    shown = run(runtime, get('/agent/threads/k1')).json()
+    shown = run(runtime, get('/api/agent/threads/k1')).json()
     assert shown['messages'][0]['role'] == 'user'
     assert {m['role'] for m in shown['messages'][1:]} == {'assistant'}
 
@@ -257,7 +296,7 @@ def test_an_id_that_could_leave_the_directory_is_refused(
 
 def test_a_thread_id_with_a_slash_is_refused_on_read(runtime):
     switched_on(runtime)
-    assert run(runtime, get('/agent/threads/a/b')).status_code == 400
+    assert run(runtime, get('/api/agent/threads/a/b')).status_code == 400
 
 
 def test_a_threads_directory_that_cannot_be_written_is_said(
@@ -317,9 +356,9 @@ def test_a_second_turn_on_a_busy_thread_is_refused_and_the_api_answers(
 
     async def work(client):
         first = asyncio.create_task(
-            client.post('/agent', json=body('k1', text='one')))
+            client.post('/api/agent/chat', json=body('k1', text='one')))
         await asyncio.sleep(0.5)
-        second = await client.post('/agent', json=body('k1', text='two'))
+        second = await client.post('/api/agent/chat', json=body('k1', text='two'))
         started = time.monotonic()
         totals = await client.get('/api/portfolio-totals')
         took = time.monotonic() - started
@@ -356,7 +395,7 @@ def test_the_api_answers_while_a_tool_is_running(runtime, monkeypatch):
         FunctionModel(stream_function=sale)))
 
     async def work(client):
-        first = asyncio.create_task(client.post('/agent', json=body('k1')))
+        first = asyncio.create_task(client.post('/api/agent/chat', json=body('k1')))
         await asyncio.sleep(1)
         started = time.monotonic()
         totals = await client.get('/api/portfolio-totals')
@@ -384,7 +423,7 @@ def test_a_turn_is_a_new_question_in_text_only(runtime, change):
     change(sent)
 
     async def work(client):
-        return await client.post('/agent', json=sent)
+        return await client.post('/api/agent/chat', json=sent)
 
     assert run(runtime, work).status_code == 400
     assert stored(runtime, 'k1') is None
@@ -411,7 +450,7 @@ def test_a_failure_of_ours_is_not_put_on_the_provider(
 
     errors = [c['errorText'] for c in chunks(answer.text)
               if c['type'] == 'error']
-    assert errors == ["The analyst: 'a bug'"]
+    assert errors == ["The agent: 'a bug'"]
     assert any('agent turn failed' in r.getMessage() for r in caplog.records)
 
 
@@ -429,7 +468,7 @@ def test_an_unreadable_thread_is_said_and_left_alone(
 
     first = run(runtime, post('k1'))
     second = run(runtime, post('k1'))
-    shown = run(runtime, get('/agent/threads/k1'))
+    shown = run(runtime, get('/api/agent/threads/k1'))
 
     for answer in (first, second, shown):
         assert answer.status_code == 409
@@ -452,18 +491,18 @@ def test_a_thread_is_deleted_with_its_file(runtime, monkeypatch):
     run(runtime, post('k1'))
     assert stored(runtime, 'k1') is not None
 
-    assert run(runtime, delete('/agent/threads/k1')).status_code == 204
+    assert run(runtime, delete('/api/agent/threads/k1')).status_code == 204
 
     assert stored(runtime, 'k1') is None
-    assert run(runtime, get('/agent/threads')).json() == []
-    assert run(runtime, delete('/agent/threads/k1')).status_code == 404
+    assert run(runtime, get('/api/agent/threads')).json() == []
+    assert run(runtime, delete('/api/agent/threads/k1')).status_code == 404
 
 
 def test_deleting_is_refused_off_with_a_bad_id_and_while_a_turn_runs(
         runtime, monkeypatch):
-    assert run(runtime, delete('/agent/threads/k1')).status_code == 404
+    assert run(runtime, delete('/api/agent/threads/k1')).status_code == 404
     switched_on(runtime)
-    assert run(runtime, delete('/agent/threads/a/b')).status_code == 400
+    assert run(runtime, delete('/api/agent/threads/a/b')).status_code == 400
 
     async def slow(messages, info):
         await asyncio.sleep(2)
@@ -473,9 +512,9 @@ def test_deleting_is_refused_off_with_a_bad_id_and_while_a_turn_runs(
 
     async def work(client):
         first = asyncio.create_task(
-            client.post('/agent', json=body('k1', text='one')))
+            client.post('/api/agent/chat', json=body('k1', text='one')))
         await asyncio.sleep(0.5)
-        refused = await client.delete('/agent/threads/k1')
+        refused = await client.delete('/api/agent/threads/k1')
         return await first, refused
 
     first, refused = run(runtime, work)

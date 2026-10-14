@@ -1,4 +1,4 @@
-"""The analyst's conversations on disk (#1114)."""
+"""The agent's conversations on disk (#1114)."""
 import os
 
 import pytest

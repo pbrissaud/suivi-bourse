@@ -1273,7 +1273,7 @@ def test_the_boot_hands_the_agents_interface_to_the_socket(tmp_path, monkeypatch
     boot.sequence({})
 
     assert isinstance(handed["mcp"], MCPServer)
-    # And the in-app analyst's routes beside it (#1114).
+    # And the in-app agent's routes beside it (#1114).
     assert isinstance(handed["agent"], Starlette)
 
 

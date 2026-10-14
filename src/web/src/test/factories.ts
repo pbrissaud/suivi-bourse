@@ -1283,7 +1283,7 @@ export function aBenchmark(overrides: Partial<BenchmarkResponse> = {}): Benchmar
   }
 }
 
-/** The analyst as a fresh installation has it: off, unconfigured, keyless. */
+/** The agent as a fresh installation has it: off, unconfigured, keyless. */
 export function anAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     enabled: false,

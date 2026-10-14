@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { exampleQuestions } from '@/lib/analyst'
+import { exampleQuestions } from '@/lib/agentChat'
 import { aPosition } from '@/test/factories'
 
 const label = (id: string) => id.toUpperCase()
@@ -17,10 +17,10 @@ describe('the questions an empty thread offers', () => {
       label,
     )
     expect(questions[0]).toEqual({
-      key: 'analyst.example.sell',
+      key: 'agent.example.sell',
       values: { name: 'Many cheap', account: 'CTO' },
     })
-    expect(questions[2]).toEqual({ key: 'analyst.example.account', values: { account: 'PEA' } })
+    expect(questions[2]).toEqual({ key: 'agent.example.account', values: { account: 'PEA' } })
   })
 
   it('weighs a line with no price at its cost', () => {
@@ -36,9 +36,9 @@ describe('the questions an empty thread offers', () => {
 
   it('asks the general questions when nothing is held', () => {
     expect(exampleQuestions([], label).map((q) => q.key)).toEqual([
-      'analyst.example.totals',
-      'analyst.example.rhythm',
-      'analyst.example.events',
+      'agent.example.totals',
+      'agent.example.rhythm',
+      'agent.example.events',
     ])
   })
 })

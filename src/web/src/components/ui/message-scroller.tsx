@@ -112,7 +112,7 @@ function MessageScrollerButton({
         <>
           <ArrowDownIcon />
           <span className="sr-only">
-            {t(direction === 'end' ? 'analyst.scrollToEnd' : 'analyst.scrollToStart')}
+            {t(direction === 'end' ? 'agent.scrollToEnd' : 'agent.scrollToStart')}
           </span>
         </>
       )}

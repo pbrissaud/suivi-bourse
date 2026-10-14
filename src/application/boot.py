@@ -19,7 +19,9 @@ WSGI_THREADS = 4
 
 MCP_PATH = '/mcp'
 
-AGENT_PATH = '/agent'
+AGENT_CHAT_PATH = '/api/agent/chat'
+
+AGENT_THREADS_PATH = '/api/agent/threads'
 
 NO_HOST_ALLOWLIST = TransportSecuritySettings(
     enable_dns_rebinding_protection=False)
@@ -34,7 +36,7 @@ class Serving:
                  agent=None):
         """Wrap the two applications, and build the agent's one **now**.
 
-        ``agent`` is the in-app analyst's Starlette app (#1114), async beside
+        ``agent`` is the in-app agent's Starlette app (#1114), async beside
         ``/mcp`` so that a turn waiting on a provider holds no WSGI worker.
         """
         self.wsgi = WSGIMiddleware(app, workers=WSGI_THREADS)
@@ -103,8 +105,9 @@ def _is_mcp(path: str) -> bool:
 
 
 def _is_agent(path: str) -> bool:
-    """Is this path the in-app analyst's? ``/agents`` is not."""
-    return path == AGENT_PATH or path.startswith(AGENT_PATH + '/')
+    """Is this path the in-app agent's? ``/api/agent/config`` is Flask's."""
+    return any(path == prefix or path.startswith(prefix + '/')
+               for prefix in (AGENT_CHAT_PATH, AGENT_THREADS_PATH))
 
 
 def serve(app, environment: boot_env.BootEnvironment,

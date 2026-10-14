@@ -1,7 +1,7 @@
-"""The analyst's conversations, one JSON file each (#1114).
+"""The agent's conversations, one JSON file each (#1114).
 
 ``<store dir>/agent/threads/<id>.json``, written outside the store and outside
-its write lock: a thread is the analyst's memory, not the portfolio's. Every
+its write lock: a thread is the agent's memory, not the portfolio's. Every
 function here does file I/O and is called from a worker thread.
 """
 import contextlib

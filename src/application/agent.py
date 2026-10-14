@@ -1,4 +1,4 @@
-"""The in-app analyst (#1114): its configuration, its model, its instructions.
+"""The in-app agent (#1114): its configuration, its model, its instructions.
 
 **The configuration lives in the store, key included**, in the one row of
 ``agent_config``. No environment variable provides the key: the app is
@@ -21,7 +21,8 @@ from application import instants
 os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')
 
 SYSTEM_PROMPT = (
-    "You are the analyst of a SuiviBourse portfolio. Every figure you state "
+    "You are the agent that analyses a SuiviBourse portfolio. Every figure "
+    "you state "
     "comes from a tool result in this conversation; you never compute, "
     "estimate or invent a figure, and when no tool gives it you say so. You "
     "present simulated outcomes and their trade-offs; you never recommend "
@@ -67,7 +68,7 @@ _PAGE_ID = re.compile(r'[A-Za-z0-9._:^=-]+')
 
 
 class InvalidAgentConfig(ValueError):
-    """A write that would leave a configuration the analyst cannot run on."""
+    """A write that would leave a configuration the agent cannot run on."""
 
     def __init__(self, message: str, key: str):
         super().__init__(message)
@@ -75,7 +76,7 @@ class InvalidAgentConfig(ValueError):
 
 
 def read(store) -> dict:
-    """The row, or :data:`EMPTY` when the analyst was never configured."""
+    """The row, or :data:`EMPTY` when the agent was never configured."""
     rows = store.query(
         f"SELECT {', '.join(_COLUMNS)} FROM agent_config WHERE id = 1")
     return dict(zip(_COLUMNS, rows[0])) if rows else dict(EMPTY)
@@ -140,7 +141,7 @@ def with_key(config: dict, key: Any, now: datetime) -> dict:
 
 
 def without_key(config: dict) -> tuple:
-    """``config`` without its key, and whether that turned the analyst off.
+    """``config`` without its key, and whether that turned the agent off.
 
     A provider that cannot run without a key is switched off in the same
     write, rather than the deletion being refused.
@@ -156,7 +157,7 @@ def check(config: dict) -> dict:
     """``config`` itself, or :class:`InvalidAgentConfig` naming the field.
 
     Run on **every** write, not only on ``enabled: true``: a provider switched,
-    an address cleared or a key deleted under an enabled analyst is caught here
+    an address cleared or a key deleted under an enabled agent is caught here
     too.
     """
     provider = config['provider']
@@ -169,7 +170,7 @@ def check(config: dict) -> dict:
             if missing:
                 named = f" for {PROVIDERS[provider]}" if provider else ''
                 raise InvalidAgentConfig(
-                    f"the analyst cannot be on without its "
+                    f"the agent cannot be on without its "
                     f"{name.replace('_', ' ')}{named}", name)
     if provider in BASE_URL_REFUSED and config['base_url'] is not None:
         raise InvalidAgentConfig(
@@ -256,7 +257,7 @@ def build_model(config: dict):
 
 
 def build_agent(model, mcp):
-    """The analyst: ``model`` over the MCP server's tools, in process.
+    """The agent: ``model`` over the MCP server's tools, in process.
 
     No tool exists only for the agent. ``deps`` stays empty: the investor's
     profile facts are #1116's.
