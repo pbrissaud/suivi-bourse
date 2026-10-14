@@ -40,7 +40,7 @@
  * fact the reader can act on — *« jamais »* would be a guess, and it is not
  * computable.
  */
-import type { Converted, Quote } from '@/lib/api'
+import type { Converted, Quote } from '@/features/shares/lib/api'
 import { ABSENT } from '@/lib/format'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 

@@ -38,7 +38,7 @@ import { cleanup, screen, waitFor } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { ROUTES, type RouteName } from '@/lib/api'
+import { type RouteName, ROUTES } from '@/lib/api'
 import { anAgentConfig, aTotals, aTotalsPayload } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'

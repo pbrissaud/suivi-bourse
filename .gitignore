@@ -155,3 +155,4 @@ src/web/.vite/
 # `lib/` — the module directory that holds half the front's code — unless it is
 # taken back by name.
 !src/web/src/lib/
+!src/web/src/features/*/lib/

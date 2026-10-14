@@ -38,7 +38,7 @@
  * because nothing may be claimed about a subject nobody has heard from, while a
  * gesture is the reader's own act and the app owes them its end.
  */
-import type { ExportFile } from '@/lib/api'
+import type { ExportFile } from '@/features/data/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 
 export type Receipt =

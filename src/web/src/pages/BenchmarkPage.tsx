@@ -46,9 +46,9 @@ import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
-import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
-import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
-import { ReferenceSelect } from '@/components/benchmark/ReferenceSelect'
+import { BenchmarkChart } from '@/features/benchmark/components/BenchmarkChart'
+import { ReferenceRebuild } from '@/features/benchmark/components/ReferenceRebuild'
+import { ReferenceSelect } from '@/features/benchmark/components/ReferenceSelect'
 import { Card } from '@/components/ui/card'
 import {
   Table,
@@ -58,7 +58,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { api, type BenchmarkResponse } from '@/lib/api'
+import { benchmarkApi, type BenchmarkResponse } from '@/features/benchmark/lib/api'
+import { settingsApi } from '@/features/settings/lib/api'
+import { api } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -69,8 +71,8 @@ import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 export default function BenchmarkPage() {
   const { t } = useI18n()
 
-  const comparison = useQuery({ queryKey: ['benchmark'], queryFn: api.benchmark })
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const comparison = useQuery({ queryKey: ['benchmark'], queryFn: benchmarkApi.benchmark })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   // The comparison's own curve **is** `account_metrics` (`benchmark_view`,
   // #1018), so this page serves the perf job's figures like the two others —
   // and it is the one read that says whether the last pass wrote them. Same

@@ -23,7 +23,7 @@
  * header sums its rows, can never show it. With it the sum telescopes exactly.
  */
 import { AWAITING_RATE, DASH, FIGURE, REBUILDING, absenceCase, type Rendering } from '@/lib/absence'
-import type { Position } from '@/lib/api'
+import type { Position } from '@/features/shares/lib/api'
 import { toneOf } from '@/lib/sign'
 
 export const GAIN_TERMS = ['unrealised', 'realised', 'dividends', 'transferFees'] as const

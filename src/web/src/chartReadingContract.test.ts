@@ -41,7 +41,7 @@ const SOURCE = path.join(path.resolve(import.meta.dirname), '.')
  * as writing its sentence.
  */
 const HIDDEN_ON_PURPOSE: Record<string, string> = {
-  'components/shares/Allocation.tsx':
+  'features/shares/components/Allocation.tsx':
     'no tooltip is mounted, so nothing navigates, and the legend is already the whole reading',
 }
 
@@ -174,13 +174,13 @@ describe('every plot the product mounts', () => {
     // sparkline, one per account row, each an `<svg>` Recharts had made focusable
     // inside an `aria-hidden` span.
     expect(CHARTS.map((one) => one.rel).sort()).toEqual([
-      'components/accounts/AccountCurve.tsx',
-      'components/benchmark/BenchmarkChart.tsx',
+      'features/accounts/components/AccountCurve.tsx',
+      'features/benchmark/components/BenchmarkChart.tsx',
       // `HeroChart` drew a sparkline until the dashboard grid (D25) put the
       // real chart, `PortfolioChart`, under the hero in its place.
-      'components/dashboard/PortfolioChart.tsx',
-      'components/shares/Allocation.tsx',
-      'components/shares/PriceChart.tsx',
+      'features/dashboard/components/PortfolioChart.tsx',
+      'features/shares/components/Allocation.tsx',
+      'features/shares/components/PriceChart.tsx',
     ])
   })
 

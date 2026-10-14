@@ -3,7 +3,7 @@ import type { RouterHistory } from '@tanstack/react-router'
 
 import { NotFound } from '@/components/NotFound'
 import { Shell } from '@/components/Shell'
-import { validateLedgerSearch, type LedgerSearch } from '@/lib/ledger'
+import { validateLedgerSearch, type LedgerSearch } from '@/features/data/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
 import AgentPage from '@/pages/AgentPage'
 import BenchmarkPage from '@/pages/BenchmarkPage'
@@ -111,7 +111,7 @@ const accountsRoute = createRoute({
  * are a **reduction** (#797).
  *
  * `q`, `type` and `account` are the ledger's own dimensions under the names the
- * export resource already parses (`lib/ledger.ts`): the address of a reduced
+ * export resource already parses (`features/data/lib/ledger.ts`): the address of a reduced
  * ledger is the query string of its own export, which is what an event result in
  * the ⌘K palette leads to. `open` is the other species — a gesture, spent on
  * arrival — and the two live side by side here because they arrive by the same

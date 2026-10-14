@@ -1,5 +1,5 @@
 /**
- * What the ⌘K palette offers, pure — in the taste of `lib/ledger.ts` (#797).
+ * What the ⌘K palette offers, pure — in the taste of `features/data/lib/ledger.ts` (#797).
  *
  * The palette is five sections over three reads, and every rule about *what is
  * in a section* lives here rather than in the render: the titles are folded to
@@ -12,7 +12,8 @@
  * one of the rare places `?? []` is legitimate, and it is annotated as such at
  * the three sites in `components/Palette.tsx`.
  */
-import type { LedgerEvent, Position } from '@/lib/api'
+import type { LedgerEvent } from '@/features/data/lib/api'
+import type { Position } from '@/features/shares/lib/api'
 import {
   accountOf,
   byDateDescending,
@@ -22,7 +23,7 @@ import {
   NO_FILTERS,
   type LedgerFilters,
   type Title,
-} from '@/lib/ledger'
+} from '@/features/data/lib/ledger'
 
 /**
  * How many entries a section that reads may draw.
@@ -37,7 +38,7 @@ export const SHARES_SHOWN = 5
 const ACCOUNTS_SHOWN = 5
 export const EVENTS_SHOWN = 5
 
-// The matching rule and the `Title` shape left for `lib/ledger.ts` at #1036: the
+// The matching rule and the `Title` shape left for `features/data/lib/ledger.ts` at #1036: the
 // ledger cannot import this module, which already imports it.
 
 /**
