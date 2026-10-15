@@ -963,6 +963,11 @@ export interface BenchmarkPoint {
 export interface BenchmarkResponse {
   base_currency: string | null
   state: 'no_reference' | 'rebuilding' | 'splits_unknown' | 'nothing_to_compare' | 'ready'
+  /**
+   * Why there is nothing to compare, on `nothing_to_compare` only (#1207).
+   * Only `no_events` is an empty ledger; absent or unknown reads as it.
+   */
+  reason?: 'no_events' | 'not_computed' | 'nothing_held' | 'no_rate_on_seed'
   reference: string | null
   index?: string | null
   inception?: string | null
