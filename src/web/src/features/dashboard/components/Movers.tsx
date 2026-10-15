@@ -2,9 +2,9 @@
  * What moved since the last session close (#727), **as one list** (#838).
  *
  * The block was two columns of five — *Hausses* over *Baisses* — and the
- * drawing has one list, ordered from the day's best to its worst. The order is
- * the reading: the two ends of the day sit at the two ends of a short list,
- * and the two headings and their two *nothing went down* lines paid for
+ * drawing has one list, ranked by the size of the move, whichever way it went.
+ * The order is the reading: what moved most comes first, the colour says which
+ * way, and the two headings and their two *nothing went down* lines paid for
  * nothing the shortness does not say.
  *
  * **Five lines on half the width, ten across the full width** (dashboard grid,

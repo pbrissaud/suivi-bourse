@@ -193,7 +193,7 @@ describe('the movers', () => {
     return rowsOf(symbols.map((symbol) => aPosition({ symbol })))
   }
 
-  it('cuts at five on half the width and at ten across the full width, by size then sign', () => {
+  it('cuts at five on half the width and at ten across the full width, by size', () => {
     const symbols = Array.from({ length: 12 }, (_, index) => `S${index}`)
     const movers = symbols.map((symbol, index) =>
       aMover({ symbol, change_pct: ((index % 2 === 0 ? 1 : -1) * (index + 1)) / 100 }),
@@ -204,18 +204,18 @@ describe('the movers', () => {
 
     expect(half.rows).toHaveLength(5)
     expect(full.rows).toHaveLength(10)
-    // The ten that moved most, either way, laid out from the best to the worst.
+    // The ten that moved most, either way, ranked by how much they moved.
     expect(full.rows.map((one) => one.symbol)).toEqual([
-      'S10',
-      'S8',
-      'S6',
-      'S4',
-      'S2',
-      'S3',
-      'S5',
-      'S7',
-      'S9',
       'S11',
+      'S10',
+      'S9',
+      'S8',
+      'S7',
+      'S6',
+      'S5',
+      'S4',
+      'S3',
+      'S2',
     ])
     expect(full.others).toBe(2)
   })
@@ -232,8 +232,8 @@ describe('the movers', () => {
       heldLines(['A', 'B', 'C', 'D', 'E', 'F']),
     )
 
-    // One list, best first: the riser, then the faller. The line that moved by
-    // nothing is in neither, and is counted by the sentence instead.
+    // One list, biggest move first: the riser, then the faller. The line that
+    // moved by nothing is in neither, and is counted by the sentence instead.
     expect(reading.rows.map((mover) => mover.symbol)).toEqual(['A', 'C'])
     expect(reading.unchanged).toBe(1)
     // Six held, two shown: the unchanged one, and the three lines the server
@@ -276,7 +276,7 @@ describe('the movers', () => {
     expect(reading.unchanged).toBeLessThanOrEqual(reading.others)
   })
 
-  it('takes the five biggest moves, whichever way they went, best first', () => {
+  it('takes the five biggest moves, whichever way they went, biggest first', () => {
     // Four up and four down, so the list has to choose across the whole set and
     // not five from one end of it: the day's best and its worst both belong
     // (#1096). Sorted by sign and cut at five, this read the five best of eight
@@ -287,15 +287,15 @@ describe('the movers', () => {
     )
     const reading = moversList(movers, heldLines(symbols))
 
-    // +3,6 −3,4 +2,6 −2,4 +1,6 are the five biggest, laid out best first: the
-    // two ends of the day are the two ends of the list.
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U1', 'U0'])
+    // +3,6 −3,4 +2,6 −2,4 +1,6 are the five biggest, ranked by size whatever
+    // their sign.
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['U7', 'U0', 'U6', 'U1', 'U5'])
     expect(reading.others).toBe(3)
   })
 
   it('keeps a heavy loss over a light one', () => {
     // The staging day the ticket was filed on, reduced: five small moves and one
-    // large fall. The fall is in the list, and it closes it.
+    // large fall. The fall is in the list, and it leads it.
     const day = { SAN: 0.0143, MC: 0.0096, CAP: 0.005, C500: -0.0032, EUNL: -0.0044, BNP: -0.0382 }
     const symbols = Object.keys(day)
     const movers = symbols.map((symbol) =>
@@ -303,7 +303,7 @@ describe('the movers', () => {
     )
     const reading = moversList(movers, heldLines(symbols))
 
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['SAN', 'MC', 'CAP', 'EUNL', 'BNP'])
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['BNP', 'SAN', 'MC', 'CAP', 'EUNL'])
     expect(reading.others).toBe(1)
   })
 })
