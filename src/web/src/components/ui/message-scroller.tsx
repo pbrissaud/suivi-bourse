@@ -74,10 +74,11 @@ function MessageScrollerItem({
     <MessageScrollerPrimitive.Item
       data-slot="message-scroller-item"
       scrollAnchor={scrollAnchor}
-      className={cn(
-        'min-w-0 shrink-0 [contain-intrinsic-size:auto_10rem] [content-visibility:auto]',
-        className,
-      )}
+      // No `content-visibility: auto`: an item off screen then measures its
+      // 10rem placeholder, and `defaultScrollPosition="last-anchor"` judged a
+      // long answer short enough to fit, opening a thread at its bottom rather
+      // than on its last question. Re-apply when the component is regenerated.
+      className={cn('min-w-0 shrink-0', className)}
       {...props}
     />
   )

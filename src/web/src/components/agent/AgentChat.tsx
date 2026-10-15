@@ -10,8 +10,8 @@
  * **Built on the shadcn AI components**: `message-scroller` keeps a streamed
  * answer in view while the reader is at the live edge, `message` and `bubble`
  * lay the turns out, `attachment` shows a refused file. The answers are read
- * in Prose (15/22); a tool call is one muted line in plain words with a
- * *détail* disclosure holding the raw call (2A).
+ * in Prose (15/22), their Markdown drawn rather than shown; a tool call is one
+ * muted line in plain words with a *détail* disclosure holding the raw call (2A).
  *
  * **Announced once** (11A): the scroller's content is a `log` live region,
  * which would read every streamed token; it is silenced, and one polite
@@ -21,18 +21,22 @@ import { useChat } from '@ai-sdk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import type { UIMessage } from 'ai'
-import { History, SquarePen, Trash2 } from 'lucide-react'
+import { ArrowUp, History, SquarePen, Trash2 } from 'lucide-react'
 import {
   type ClipboardEvent,
+  type ComponentProps,
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
+  memo,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import Markdown, { type Components, type ExtraProps } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 import {
   Attachment,
@@ -88,11 +92,13 @@ export function AgentChat({ wide }: { wide: boolean }) {
   if (config.data === undefined) return null
   if (!config.data.enabled) return <AgentOff />
   return (
-    <div className="flex h-full min-h-0 gap-5">
+    <div className="flex h-full min-h-0">
       {wide ? (
+        // A rail, flush with the navigation and as tall as the page: a box
+        // floating in the corner read as detached from the conversation.
         <nav
           aria-labelledby="agent-threads"
-          className="flex w-60 shrink-0 flex-col gap-1 rounded-lg bg-muted p-2"
+          className="flex w-60 shrink-0 flex-col gap-1 border-r bg-muted p-2"
         >
           <NewThread />
           <p id="agent-threads" className="label px-2 pt-2 pb-1">
@@ -101,7 +107,9 @@ export function AgentChat({ wide }: { wide: boolean }) {
           <ThreadList />
         </nav>
       ) : null}
-      <section className="mx-auto flex min-h-0 w-full max-w-180 min-w-0 flex-col">
+      {/* Centred in what the rail leaves, at 768 px: wider, a line ran past 110
+          characters; pinned to the rail, the right of the screen stood empty. */}
+      <section className="mx-auto flex min-h-0 w-full max-w-180 min-w-0 flex-col lg:max-w-192 lg:pt-5">
         <AgentHeader config={config.data} wide={wide} />
         <AgentThread />
       </section>
@@ -180,7 +188,15 @@ function RecentThreads() {
           <History />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-1">
+      <PopoverContent
+        align="end"
+        className="w-80 p-1"
+        // Escape on a deletion being asked answers the question, not the menu:
+        // Radix hears the key on the document before the row does.
+        onEscapeKeyDown={(event) => {
+          if (document.activeElement?.closest('[data-confirm-delete]')) event.preventDefault()
+        }}
+      >
         <p className="label px-2 py-1.5">{t('agent.recent')}</p>
         <ThreadList onOpened={() => setOpen(false)} />
       </PopoverContent>
@@ -188,7 +204,14 @@ function RecentThreads() {
   )
 }
 
-/** The last twenty threads, opened (a push: Back returns) or deleted from here. */
+/**
+ * The last twenty threads, opened (a push: Back returns) or deleted from here.
+ *
+ * **A deletion is asked in the row**, which names the thread and offers *Le
+ * garder* first: the bin sits next to the link, and a slip lost a whole
+ * conversation. In the row and not in a dialog, because under 1 024 px the list
+ * lives in a popover that a dialog would close, unmounting the dialog with it.
+ */
 function ThreadList({ onOpened }: { onOpened?: () => void }) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -196,6 +219,15 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
   const navigate = useNavigate()
   const threadId = useThreadParam()
   const threads = useQuery({ queryKey: ['agent-threads'], queryFn: api.agentThreads })
+  const [doomed, setDoomed] = useState<string | null>(null)
+  const list = useRef<HTMLUListElement>(null)
+  // Kept: focus goes back to the bin that asked, not to the top of the page.
+  const keep = (id: string) => {
+    setDoomed(null)
+    requestAnimationFrame(() =>
+      list.current?.querySelector<HTMLElement>(`[data-delete="${CSS.escape(id)}"]`)?.focus(),
+    )
+  }
   const remove = useMutation({
     mutationFn: api.forgetAgentThread,
     onSuccess: (_, id) => {
@@ -215,19 +247,56 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
       ) : threads.data === undefined ? null : threads.data.length === 0 ? (
         <p className="px-2 py-1.5 text-sm text-muted-foreground">{t('agent.recent.empty')}</p>
       ) : (
-        <ul className="max-h-80 overflow-y-auto lg:max-h-none">
+        // `-m-1 p-1`: room inside the scroll box for the focus rings it would clip.
+        <ul ref={list} className="-m-1 max-h-80 min-h-0 overflow-y-auto p-1 lg:max-h-none">
           {threads.data.slice(0, RECENT).map((thread) => {
             const title = thread.title || t('agent.recent.untitled')
+            if (doomed === thread.id) {
+              return (
+                <li
+                  key={thread.id}
+                  data-confirm-delete
+                  className="flex flex-col gap-2 rounded-md bg-card p-2"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') keep(thread.id)
+                  }}
+                >
+                  <p className="line-clamp-2 text-sm break-words text-muted-foreground">{title}</p>
+                  <p className="text-sm">{t('agent.delete.question')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      className="min-h-11"
+                      autoFocus
+                      onClick={() => keep(thread.id)}
+                    >
+                      {t('agent.delete.keep')}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="min-h-11"
+                      onClick={() => {
+                        setDoomed(null)
+                        remove.mutate(thread.id)
+                      }}
+                    >
+                      {t('agent.delete.confirm')}
+                    </Button>
+                  </div>
+                </li>
+              )
+            }
             return (
               <li key={thread.id} className="flex items-center gap-1">
                 <Link
                   to="/agent/$threadId"
                   params={{ threadId: thread.id }}
-                  className="flex min-h-11 min-w-0 flex-1 flex-col items-start rounded-md px-2 py-1 text-left hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-accent"
+                  className="flex min-h-11 min-w-0 flex-1 flex-col items-start rounded-md px-2 py-1 text-left hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-background aria-[current=page]:font-medium"
                   onClick={onOpened}
                 >
-                  <span className="w-full truncate text-sm">{title}</span>
-                  <span className="text-xs text-muted-foreground">
+                  {/* Two lines: a title cut at 25 characters told two threads apart badly. */}
+                  <span className="line-clamp-2 w-full text-sm break-words">{title}</span>
+                  <span className="text-xs font-normal text-muted-foreground">
                     {f.dateTime(thread.updated_at)}
                   </span>
                 </Link>
@@ -235,9 +304,10 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
                   variant="ghost"
                   size="icon"
                   className="size-11"
+                  data-delete={thread.id}
                   aria-label={t('agent.delete.named', { title })}
                   title={t('agent.delete')}
-                  onClick={() => remove.mutate(thread.id)}
+                  onClick={() => setDoomed(thread.id)}
                 >
                   <Trash2 />
                 </Button>
@@ -343,7 +413,8 @@ function AgentConversation() {
         </p>
       ) : null}
       <div className="min-h-0 flex-1">
-        <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+        {/* A thread read back opens on its last question, not halfway down its answer. */}
+        <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor">
           <MessageScroller>
             <MessageScrollerViewport aria-label={t('agent.messages')} className="px-4">
               {/* Silenced: the polite region below announces the whole answer once. */}
@@ -379,12 +450,14 @@ function AgentConversation() {
                 ) : null}
               </MessageScrollerContent>
             </MessageScrollerViewport>
-            <MessageScrollerButton className="size-11" />
+            {/* Bordered: over the text, a bare arrow on the page's ground hid words. */}
+            <MessageScrollerButton className="size-11 border" />
           </MessageScroller>
         </MessageScrollerProvider>
       </div>
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {announcement}
+        {/* Drawn like the answer, or a screen reader reads its asterisks. */}
+        <AnswerMarkdown>{announcement}</AnswerMarkdown>
       </div>
       <Composer busy={busy} onAsk={ask} onStop={() => void stop()} />
     </>
@@ -473,6 +546,63 @@ function Examples({ onAsk }: { onAsk: (text: string) => void }) {
   )
 }
 
+/**
+ * How an answer's Markdown is drawn. No raw HTML: `react-markdown` drops it.
+ *
+ * - **A heading is a bold line**, not an `<h2>`: the page has one outline, and
+ *   an answer is not a section of it.
+ * - **Inline code is plain text**: the model quotes a field name now and then,
+ *   and mono in the middle of a sentence is a bug (DESIGN.md).
+ * - **A link is its words, an image its alt text**: the answer reads ledger
+ *   notes the owner typed, and an address it was steered to write is neither
+ *   followed nor fetched from here — an image URL would leak whatever the
+ *   model put in its query string the moment the answer renders.
+ */
+const strongLine = ({ node: _, ...props }: ComponentProps<'p'> & ExtraProps) => (
+  <p className="font-semibold" {...props} />
+)
+const ANSWER: Components = {
+  h1: strongLine,
+  h2: strongLine,
+  h3: strongLine,
+  h4: strongLine,
+  h5: strongLine,
+  h6: strongLine,
+  strong: ({ node: _, ...props }) => <strong className="font-semibold" {...props} />,
+  ul: ({ node: _, ...props }) => (
+    <ul className="flex list-disc flex-col gap-1 pl-5 [&_ol]:mt-1 [&_ul]:mt-1" {...props} />
+  ),
+  ol: ({ node: _, ...props }) => (
+    <ol className="flex list-decimal flex-col gap-1 pl-5 [&_ol]:mt-1 [&_ul]:mt-1" {...props} />
+  ),
+  code: ({ children }) => <>{children}</>,
+  pre: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+  a: ({ children }) => <>{children}</>,
+  img: ({ alt }) => <>{alt}</>,
+  table: ({ node: _, ...props }) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm tabular-nums" {...props} />
+    </div>
+  ),
+  th: ({ node: _, ...props }) => <th className="label border-b px-2 py-1.5 text-left" {...props} />,
+  td: ({ node: _, ...props }) => <td className="border-b px-2 py-1.5" {...props} />,
+}
+
+const REMARK = [remarkGfm]
+
+/**
+ * An answer's text, drawn for the eye and again for the announcement. Memoised
+ * on the text: every streamed token re-renders the conversation, and without it
+ * each past answer of the thread was parsed again.
+ */
+const AnswerMarkdown = memo(function AnswerMarkdown({ children }: { children: string }) {
+  return (
+    <Markdown remarkPlugins={REMARK} components={ANSWER}>
+      {children}
+    </Markdown>
+  )
+})
+
 function Turn({ message }: { message: UIMessage }) {
   if (message.role === 'user') {
     return (
@@ -492,9 +622,9 @@ function Turn({ message }: { message: UIMessage }) {
           const key = `${message.id}-${index}`
           if (part.type === 'text') {
             return part.text.trim() === '' ? null : (
-              <p key={key} className="text-prose whitespace-pre-wrap">
-                {part.text}
-              </p>
+              <div key={key} className="flex flex-col gap-3 text-prose">
+                <AnswerMarkdown>{part.text}</AnswerMarkdown>
+              </div>
             )
           }
           if (isToolUIPart(part)) return <ToolLine key={key} part={part} />
@@ -511,9 +641,10 @@ function ToolLine({ part }: { part: AgentToolPart }) {
   const name = getToolName(part)
   const sentence = toolSentence(name)
   return (
+    // 44 px on touch only: three reads stacked 156 px of chrome before the answer.
     <details className="group text-sm text-muted-foreground">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md">
-        <span className="min-w-0 flex-1">{t(sentence.key, sentence.values)}</span>
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-md pointer-coarse:min-h-11">
+        <span className="min-w-0">{t(sentence.key, sentence.values)}</span>
         <span className="shrink-0 text-xs underline-offset-2 group-open:underline">
           {t('agent.tool.detail')}
         </span>
@@ -532,7 +663,7 @@ function ToolLine({ part }: { part: AgentToolPart }) {
             <dt className="font-medium">{t('agent.tool.output')}</dt>
             <dd>
               <pre className="max-h-60 overflow-auto font-mono break-all whitespace-pre-wrap">
-                {JSON.stringify(part.output, null, 2)}
+                {JSON.stringify(part.output, sixFigures, 2)}
               </pre>
             </dd>
           </div>
@@ -546,6 +677,13 @@ function ToolLine({ part }: { part: AgentToolPart }) {
       </dl>
     </details>
   )
+}
+
+/** A float at six significant figures: `16626.4`, not `16626.385821235686`. */
+function sixFigures(_: string, value: unknown): unknown {
+  return typeof value === 'number' && !Number.isInteger(value)
+    ? Number(value.toPrecision(6))
+    : value
 }
 
 /** The input, *Envoyer* or *Arrêter*, and the CIF line fixed under it (3A). */
@@ -563,6 +701,7 @@ function Composer({
   const [refused, setRefused] = useState<string[]>([])
   const input = useRef<HTMLTextAreaElement>(null)
   const fieldId = useId()
+  const hintId = useId()
 
   // Focus goes to the input when the page mounts (11A).
   useEffect(() => {
@@ -599,8 +738,10 @@ function Composer({
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) submit(event)
   }
 
+  // The scroller's gutter, reserved here too: the input and *Envoyer* end where
+  // the messages do, not 11 px past them.
   return (
-    <div className="flex flex-col gap-2 px-4 pt-2 pb-3">
+    <div className="flex scrollbar-thin scrollbar-gutter-stable flex-col gap-2 overflow-hidden px-4 pt-2 pb-3">
       {refused.length > 0 ? (
         <div role="alert" className="flex flex-col gap-1">
           {refused.map((name) => (
@@ -623,7 +764,10 @@ function Composer({
           value={text}
           rows={1}
           placeholder={t('agent.input.placeholder')}
-          className="max-h-40 min-h-11 resize-none bg-card"
+          aria-describedby={hintId}
+          // Body 14/20 like every control. Focused from the mount (11A), so the
+          // focus is the border alone: the ring read as an alert on arrival.
+          className="max-h-40 min-h-11 resize-none bg-card md:text-md focus-visible:ring-0"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -634,12 +778,24 @@ function Composer({
             {t('agent.stop')}
           </Button>
         ) : (
-          <Button type="submit" className="min-h-11" disabled={text.trim() === ''}>
-            {t('agent.send')}
+          // An arrow under 640 px: the word left the input 241 px on a phone.
+          <Button
+            type="submit"
+            className="min-h-11 max-sm:size-11 max-sm:px-0"
+            disabled={text.trim() === ''}
+          >
+            <ArrowUp className="sm:hidden" />
+            <span className="max-sm:sr-only">{t('agent.send')}</span>
           </Button>
         )}
       </form>
-      <p className="text-xs text-muted-foreground">{t('agent.cif')}</p>
+      <div className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+        <p className="text-xs text-muted-foreground">{t('agent.cif')}</p>
+        {/* Keys only where there is a keyboard to press them. */}
+        <p id={hintId} className="hidden text-xs text-muted-foreground pointer-fine:block">
+          {t('agent.input.hint')}
+        </p>
+      </div>
     </div>
   )
 }
