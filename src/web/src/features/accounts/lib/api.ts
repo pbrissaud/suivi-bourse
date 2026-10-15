@@ -10,15 +10,15 @@
 import { get, ROUTES, remove, send } from '@/lib/api'
 
 export function accountPath(id: string): string {
-  return `/api/accounts/${encodeURIComponent(id)}`
+  return ROUTES.account.replace(':id', encodeURIComponent(id))
 }
 
 export function accountReassignmentPath(id: string): string {
-  return `${accountPath(id)}/reassignment`
+  return ROUTES.accountReassignment.replace(':id', encodeURIComponent(id))
 }
 
 export function taxationModelPath(id: string): string {
-  return `/api/taxation-models/${encodeURIComponent(id)}`
+  return ROUTES.taxationModel.replace(':id', encodeURIComponent(id))
 }
 
 // ------------------------------------------------------------------------- //
@@ -75,8 +75,9 @@ export interface Account {
   /**
    * The day the index counts from. Served for the agent; the table rebases.
    *
-   * Optional and never `| null`, unlike its namesake on {@link PortfolioTotals}:
-   * this one goes out through `declared_only`, so absent is the only absence.
+   * Optional and never `| null`, unlike its namesake on `PortfolioTotals`
+   * (`features/dashboard/lib/api.ts`): this one goes out through
+   * `declared_only`, so absent is the only absence.
    */
   twr_since?: string
   /**
@@ -331,7 +332,7 @@ export interface AccountHistoryResponse {
 export const SERIES_ORIGIN = '1970-01-01'
 
 function accountHistoryPath(account: string, from: string = SERIES_ORIGIN): string {
-  return `/api/accounts/${encodeURIComponent(account)}/history?from=${from}`
+  return `${ROUTES.accountHistory.replace(':account', encodeURIComponent(account))}?from=${from}`
 }
 
 export const accountsApi = {

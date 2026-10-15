@@ -1,5 +1,6 @@
 /**
- * What the dashboard reads: the portfolio's totals and their series, the valuation curve, the movers, the investment rhythm, and the saved layout.
+ * What the dashboard reads: the portfolio's totals and their series, the
+ * valuation curve, the movers, the investment rhythm, and the saved layout.
  *
  * The types are the contract of #712 §11 for this domain, and the calls go
  * through the transport of `lib/api.ts`, which also holds every path in

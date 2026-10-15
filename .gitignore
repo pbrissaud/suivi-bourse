@@ -152,7 +152,6 @@ src/web/dist/
 src/web/.vite/
 
 # `lib/` above is a Python packaging artefact, and it swallows the front's own
-# `lib/` — the module directory that holds half the front's code — unless it is
+# `lib/` directories — `src/lib` and each feature's — unless they are
 # taken back by name.
-!src/web/src/lib/
-!src/web/src/features/*/lib/
+!src/web/src/**/lib/

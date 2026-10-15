@@ -51,7 +51,7 @@
  *    field this list serves is labelled `Ticker`, and the value it writes is a
  *    ticker — so the ticker is the label and the name is the hint. It also
  *    degrades correctly: every event this product's own create form writes
- *    carries `name: null` (`lib/api.ts`, `EventDraft`), so on a typed portfolio
+ *    carries `name: null` (`features/data/lib/api.ts`, `EventDraft`), so on a typed portfolio
  *    the palette's order would have printed the ticker twice and nothing else.
  *
  *  - **A taller row, and a different highlight.** `py-3` against the palette's

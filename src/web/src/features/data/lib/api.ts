@@ -10,7 +10,7 @@
 import { download, get, ROUTES, remove, send, upload } from '@/lib/api'
 
 function eventPath(id: string): string {
-  return `/api/events/${encodeURIComponent(id)}`
+  return ROUTES.event.replace(':id', encodeURIComponent(id))
 }
 
 /**

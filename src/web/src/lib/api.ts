@@ -57,7 +57,8 @@ export const ROUTES = {
   portfolioTotals: '/api/portfolio-totals',
   /**
    * One symbol's price series. A **pattern**, `:symbol`, because it is what the
-   * harness's handler registers; {@link pricesPath} is what a caller builds.
+   * harness's handler registers; `pricesPath` (`features/shares/lib/api.ts`)
+   * is what a caller builds.
    */
   prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
@@ -209,11 +210,11 @@ export const ROUTES = {
 export type RouteName = keyof typeof ROUTES
 
 function installationFactAcknowledgementPath(key: string): string {
-  return `/api/installation-facts/${encodeURIComponent(key)}/acknowledgement`
+  return ROUTES.installationFactAcknowledgement.replace(':key', encodeURIComponent(key))
 }
 
 function advisoryAcknowledgementPath(key: string): string {
-  return `/api/advisories/${encodeURIComponent(key)}/acknowledgement`
+  return ROUTES.advisoryAcknowledgement.replace(':key', encodeURIComponent(key))
 }
 
 /**

@@ -19,12 +19,16 @@ export const CHART_WINDOWS = ['1M', '1Y', '2Y', 'MAX'] as const
 
 export type ChartWindow = (typeof CHART_WINDOWS)[number]
 
+function symbolPricesPath(symbol: string): string {
+  return ROUTES.prices.replace(':symbol', encodeURIComponent(symbol))
+}
+
 function pricesPath(symbol: string, window: ChartWindow): string {
-  return `/api/prices/${encodeURIComponent(symbol)}?window=${window}`
+  return `${symbolPricesPath(symbol)}?window=${window}`
 }
 
 function priceAtPath(symbol: string, day: string): string {
-  return `/api/prices/${encodeURIComponent(symbol)}?at=${encodeURIComponent(day)}`
+  return `${symbolPricesPath(symbol)}?at=${encodeURIComponent(day)}`
 }
 
 // ------------------------------------------------------------------------- //
