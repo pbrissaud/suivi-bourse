@@ -36,7 +36,6 @@
  *    has a complete, correct answer over a shorter window; nothing is missing,
  *    so neither the em dash nor an empty state applies.
  */
-import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { EmptyState } from '@/components/EmptyState'
@@ -47,6 +46,7 @@ import { Stat } from '@/components/Stat'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
+import { NothingToCompare } from '@/components/benchmark/NothingToCompare'
 import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
 import { ReferenceSelect } from '@/components/benchmark/ReferenceSelect'
 import { Card } from '@/components/ui/card'
@@ -146,15 +146,7 @@ export default function BenchmarkPage() {
   if (data.state === 'nothing_to_compare') {
     return (
       <div className="space-y-6">
-        <EmptyState
-          title={t('benchmark.empty.noEvents.title')}
-          description={t('benchmark.empty.noEvents.body')}
-          action={
-            <Link to="/ledger" className="font-medium underline underline-offset-4">
-              {t('benchmark.empty.noEvents.link')}
-            </Link>
-          }
-        />
+        <NothingToCompare reason={data.reason} />
         <PerAccount data={data} currency={currency} />
         {controls}
       </div>

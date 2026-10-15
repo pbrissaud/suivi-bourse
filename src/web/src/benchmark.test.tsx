@@ -435,14 +435,39 @@ describe('each account over its own period', () => {
   it('still sends an empty ledger to the ledger', async () => {
     renderBenchmark({
       state: 'nothing_to_compare',
+      reason: 'no_events',
       reference: 'CW8.PA',
       index: 'MSCI World',
       consulted: ['CW8.PA'],
-      per_account: [],
     })
 
     // Nothing replayed at all is a different emptiness, and it keeps its way out.
     expect(await screen.findByText(/Enregistrez vos premiers événements/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ouvrir le grand livre' })).toBeInTheDocument()
+  })
+
+  // #1207: four causes, and only one of them is an empty ledger.
+  it.each([
+    ['not_computed', 'Calcul en cours', /pas encore calculées/, false],
+    ['nothing_held', 'Rien à comparer', /pas sur les liquidités/, true],
+    ['no_rate_on_seed', 'Total non comparable', /un taux de change manque/, false],
+    [undefined, 'Rien à comparer pour l’instant', /Enregistrez vos premiers événements/, true],
+    ['from_a_newer_server', 'Rien à comparer pour l’instant', /Enregistrez/, true],
+  ] as const)('names why there is nothing to compare: %s', async (reason, title, body, link) => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reason: reason as BenchmarkResponse['reason'],
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+    })
+
+    expect(await screen.findByText(title)).toBeInTheDocument()
+    expect(screen.getByText(body)).toBeInTheDocument()
+    expect(Boolean(screen.queryByRole('link', { name: 'Ouvrir le grand livre' }))).toBe(link)
+    if (reason !== undefined && reason !== 'from_a_newer_server') {
+      expect(screen.queryByText(/Enregistrez vos premiers événements/)).not.toBeInTheDocument()
+    }
   })
 
   it('renders nothing on a single account, where the row repeats the head', async () => {
@@ -522,6 +547,7 @@ describe('the rows as the breakdown of the head', () => {
   it('has no total to print where there is no head', async () => {
     renderBenchmark({
       state: 'nothing_to_compare',
+      reason: 'no_rate_on_seed',
       reference: 'CW8.PA',
       index: 'MSCI World',
       consulted: ['CW8.PA'],
@@ -531,5 +557,6 @@ describe('the rows as the breakdown of the head', () => {
     const row = (await screen.findByText('PEA')).closest('tr') as HTMLElement
     expect(within(row).getByText('-3 691,65 €')).toBeInTheDocument()
     expect(screen.queryByText('Ensemble des comptes')).not.toBeInTheDocument()
+    expect(screen.getByText('Total non comparable')).toBeInTheDocument()
   })
 })
