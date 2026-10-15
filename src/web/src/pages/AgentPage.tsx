@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { AgentChat, useThreadParam } from '@/components/agent/AgentChat'
-import { useAgentChat } from '@/lib/agentChatProvider'
+import { AgentChat, useThreadParam } from '@/features/agent/components/AgentChat'
+import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
 import { useT } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 

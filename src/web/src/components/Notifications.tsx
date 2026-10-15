@@ -42,6 +42,7 @@ import { toast } from 'sonner'
 import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { settingsApi } from '@/features/settings/lib/api'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { currencyUnanswered } from '@/lib/firstRun'
@@ -125,7 +126,7 @@ export function Notifications() {
   const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
   // The same read the first-run modal composes its predicate from — one query
   // key, so it is one request and **no new API state** for either surface.
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
 
   const state = installationState({ health: health.data, error: health.error })
 

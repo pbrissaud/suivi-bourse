@@ -16,7 +16,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
-import { ROUTES, type Advisory, type InstallationFact } from '@/lib/api'
+import { type Advisory, type InstallationFact, ROUTES } from '@/lib/api'
 import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
