@@ -105,6 +105,7 @@ def test_no_reference_named_offers_the_list_and_states_nothing_else(store):
     assert payload['reference'] is None
     assert [entry['symbol'] for entry in payload['offered']][:1] == [REFERENCE]
     assert 'gap_gross' not in payload
+    assert 'reason' not in payload
 
 
 def test_a_reference_still_backfilling_publishes_a_bar_and_no_figure(store):
@@ -130,6 +131,7 @@ def test_a_reference_still_backfilling_publishes_a_bar_and_no_figure(store):
     assert payload['rebuild']['symbol'] == REFERENCE
     assert payload['rebuild']['target'] == '2009-06-16'   # the fund's own
     assert 'gap_gross' not in payload
+    assert 'reason' not in payload
 
 
 def test_terminality_is_read_from_the_store_and_survives_a_restart(named):
@@ -152,6 +154,78 @@ def test_a_perimeter_with_no_written_day_has_nothing_to_compare(named):
     payload = benchmark_view.comparison(named, _snapshot([]), NOW)
 
     assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NO_EVENTS
+    assert 'per_account' not in payload
+
+
+# --------------------------------------------------------------------------- #
+# Why there is nothing to compare (#1207): only one cause is an empty ledger
+# --------------------------------------------------------------------------- #
+
+def test_events_the_perf_pass_has_not_written_yet_are_not_computed(named):
+    """Right after an import: events, and no `account_metrics` row yet."""
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NOT_COMPUTED
+
+
+def test_written_days_with_nothing_held_name_that_and_not_the_ledger(named):
+    """Days written, none with securities held while the fund was quoted."""
+    _write_curve(named, 'pea', value=0.0, cash=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NOTHING_HELD
+
+
+def test_an_account_seeded_on_a_close_with_no_rate_says_so(store):
+    """Path 2c: the only account's seed day carries an unconverted close."""
+    store.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbol', ?)", [REFERENCE])
+    _quote_the_reference(store)
+    quotes.record_history(store, REFERENCE, [
+        {'timestamp': datetime(2024, 1, 2, tzinfo=UTC), 'price': 100.0,
+         'converted': None, 'rate': None}])
+    _write_curve(store, 'pea', first='2024-01-02')
+
+    payload = benchmark_view.comparison(
+        store, _snapshot([_invest('2024-01-02', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NO_RATE_ON_SEED
+
+
+def test_a_whole_portfolio_with_no_seed_keeps_its_rows_and_says_why(
+        named, monkeypatch):
+    """Path 3: the accounts replayed, the merged replay did not.
+
+    `_merged` seeds on a priced day, so this is forced rather than built; the
+    branch stays, and it has to name its cause like the others.
+    """
+    _write_curve(named, 'pea')
+    monkeypatch.setattr(benchmark_view, '_merged', lambda *_: None)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NO_RATE_ON_SEED
+    assert [row['account'] for row in payload['per_account']] == ['pea']
+
+
+def test_a_ready_comparison_carries_no_reason(named):
+    """The cause belongs to `nothing_to_compare` alone."""
+    _write_curve(named, 'pea')
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert 'reason' not in payload
 
 
 # --------------------------------------------------------------------------- #
@@ -423,6 +497,7 @@ def test_a_reference_whose_splits_were_never_read_publishes_no_figure(named):
 
     assert payload['state'] == benchmark_view.SPLITS_UNKNOWN
     assert 'gap_gross' not in payload
+    assert 'reason' not in payload
     assert payload['rebuild']['symbol'] == REFERENCE
 
 

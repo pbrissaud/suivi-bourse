@@ -51,7 +51,7 @@ store = { workspace = true }
 market = { workspace = true }
 
 [build-system]
-requires = ["uv_build>=0.11.9,<0.13"]
+requires = ["uv_build>=0.13,<0.14"]
 build-backend = "uv_build"
 
 # `api` (Flask) ships beside this member's part of the namespace, and the
