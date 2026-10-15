@@ -76,6 +76,11 @@ def test_the_prompt_holds_the_two_rules():
     assert 'comes from a tool result' in agent.SYSTEM_PROMPT
 
 
+def test_the_prompt_names_an_account_by_its_label_and_quotes_no_field():
+    assert 'by its `label`, never by its `id`' in agent.SYSTEM_PROMPT
+    assert "never quote a tool's field names" in agent.SYSTEM_PROMPT
+
+
 # ------------------------------------------------------- the page line --
 
 def test_a_page_is_one_line_naming_the_route_and_its_ids():
