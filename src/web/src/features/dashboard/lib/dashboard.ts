@@ -277,11 +277,10 @@ export function tickerBadge(symbol: string): string {
  *
  * The block was two columns — *Hausses* over *Baisses* — and the drawing has
  * one: the `limit` lines that moved most (five, or ten across the full
- * width), either way, the day's best at the top
- * and its worst at the bottom, which
- * is the order the eye reads a movement in and the one that puts the two ends
- * of the day on one screen. The split cost a heading and a *nothing went down*
- * per column to say what the list says by being short.
+ * width), either way, ranked by the size of the move — `−3,8 %` above
+ * `+1,4 %`. The rank is what the block is about: which lines moved the most,
+ * the sign being the colour's to say. The split cost a heading and a *nothing
+ * went down* per column to say what the list says by being short.
  *
  * The three members still describe **one set**: the payload is reduced to the
  * lines actually held (`isClosed`, the shares page's own predicate), so a
@@ -302,16 +301,16 @@ export function moversList(
   const held = rows.filter((row) => !isClosed(row))
   const holds = new Set(held.map((row) => row.symbol))
   const shown = movers.filter((mover) => holds.has(mover.symbol))
-  // **Chosen by size, ordered by sign** (#1096). Sorted best first and cut at
-  // five, the list was the day's five best and never its worst: on a day when
-  // twelve lines moved, `BNP.PA −3,82 %` sat under the cut while `EUNL.DE
-  // −0,44 %` closed the list. The cut is taken on the magnitude, and only then
-  // are the five laid out from the best to the worst.
+  // **Chosen and ranked by size** (#1096). Sorted best first and cut at five,
+  // the list was the day's five best and never its worst: on a day when twelve
+  // lines moved, `BNP.PA −3,82 %` sat under the cut while `EUNL.DE −0,44 %`
+  // closed the list. The cut is taken on the magnitude, and so is the order: a
+  // list re-laid from the best to the worst put a `+0,09 %` above a `−1,02 %`
+  // under ranks that then said nothing about how much either moved.
   const moved = shown
     .filter((mover) => mover.change_pct !== null && mover.change_pct !== 0)
     .sort((left, right) => Math.abs(right.change_pct ?? 0) - Math.abs(left.change_pct ?? 0))
     .slice(0, limit)
-    .sort((left, right) => (right.change_pct ?? 0) - (left.change_pct ?? 0))
   return {
     rows: moved,
     others: Math.max(held.length - moved.length, 0),

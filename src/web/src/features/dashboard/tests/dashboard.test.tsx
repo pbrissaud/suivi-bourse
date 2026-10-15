@@ -1473,12 +1473,12 @@ describe('the allocation is not on this page', () => {
 })
 
 describe('the movers', () => {
-  it('shows one list, best first, and counts what it does not show', async () => {
+  it('shows one list, biggest move first, and counts what it does not show', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // **One list and no headings** (#838): the day's best at the top and its
-    // worst at the bottom, which is what a five-row list says without a column
+    // **One list and no headings** (#838): what moved most at the top, either
+    // way, which is what a five-row list says without a column
     // called *Hausses* and a *Rien n'a baissé* under an empty one.
     const list = within(await screen.findByRole('list', { name: 'Mouvements' }))
     expect(screen.queryByText('Hausses')).not.toBeInTheDocument()
