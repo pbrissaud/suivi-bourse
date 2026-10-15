@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { cn } from '@/lib/utils'
 import { blocks, declarations, read, WEB_ROOT } from '@/test/stylesheet'
 
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
@@ -103,6 +104,20 @@ describe('index.css says what DESIGN.md says', () => {
     )
     expect(said('--text-hero--line-height')).toBe('calc(64 / 60)')
     expect(said('--tracking-hero')).toBe(designType('hero', 'letterSpacing'))
+  })
+})
+
+describe('every rung index.css declares is a size to cn', () => {
+  it('lets the later rung win over another size, and keeps a colour beside it', () => {
+    // A rung tailwind-merge has no name for is read as a colour: `text-prose`
+    // lost to the bubble's `text-sm` and the questions came out at 13 px.
+    const rungs = [...read().matchAll(/^\s*--text-([a-z0-9]+):/gm)].map((rung) => rung[1])
+    expect(rungs).toContain('prose')
+    for (const rung of rungs) {
+      const other = rung === 'sm' ? 'text-lg' : 'text-sm'
+      expect(cn(other, `text-${rung}`), rung).toBe(`text-${rung}`)
+      expect(cn(`text-${rung}`, 'text-gain'), rung).toBe(`text-${rung} text-gain`)
+    }
   })
 })
 
