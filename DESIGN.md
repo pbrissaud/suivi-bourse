@@ -147,6 +147,10 @@ contrast.
   `src/web/src/lib/gain.ts`.
 - `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
 - `rule` separates rows inside a section and nothing else.
+- A job's history bar (System page, #1236) is the one place a status colours a mark: an
+  hour with a failed pass is `destructive` with ✕, one that needs a look `foreground`
+  with ▲, a good one `text-muted`; an idle hour is a `rule` stub, an hour with no pass a
+  dashed `rule` outline. The glyph carries the meaning, the colour repeats it.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
   warm hue, never a neutral gray.
 - Gain is `primary` and loss is `destructive`: `--gain` and `--loss` point at them.
@@ -360,3 +364,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-15 | The agent's threads are a full-height rail, the conversation centred at 768 px | The staging audit of /agent: the 720 px conversation pinned beside a floating column left about 170 px empty on the right of a 1 440 px screen, and filling that width ran lines past 110 characters. Chosen by the owner over a full-width conversation and over a centred floating column, after the pattern of the chat apps. |
 | 2026-10-16 | Tool calls are shadcn Trace lines, the raw call a Code Block | Chosen by the owner when shadcn shipped Trace and Code Block for agentic interfaces (October 2026): the chevron replaces the word "détail", a running call shimmers (not under `prefers-reduced-motion`), the panel opens with the collapsible's short slide, and the JSON is coloured by shiki (github-light/dark, loaded on the first opening). |
 | 2026-10-16 | An optional PIN behind one screen, off by default (#1203) | The app is reached on a local network by anyone who can reach the port; the PIN closes that door without a login page of accounts and passwords. One centred column rather than a card on a card, and the in-app 401 is a dialog over the page so a typed form survives it. |
+| 2026-10-16 | A job's failed pass colours its history bar (#1236) | The System page draws each job's last 24 hours, one bar an hour; telling a job that failed once from one failing since yesterday is the whole point, so the error owns `destructive` there, always doubled by a glyph. |

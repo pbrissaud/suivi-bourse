@@ -90,6 +90,66 @@ export interface StoreState {
   orphans: OrphanSymbol[]
 }
 
+/** How one pass went: `idle` is a backfill cycle with nothing to do. */
+export type PassOutcome = 'ok' | 'attention' | 'error' | 'idle'
+
+/** One hour of a job, counted. */
+export interface JobSlot {
+  hour: string
+  passes: number
+  errors: number
+  attentions: number
+  idles: number
+  /** Summed over the hour's passes, in seconds. */
+  duration: number
+  last_error: string | null
+  last_error_at: string | null
+}
+
+/** A WARNING-or-above line one pass logged, cut at 300 characters. */
+export interface JobLogLine {
+  level: string
+  logger: string
+  message: string
+}
+
+/** One of the 20 most recent passes, kept whole. */
+export interface JobPass {
+  at: string
+  duration: number
+  outcome: PassOutcome
+  error: string | null
+  lines: JobLogLine[]
+  /** The lines past the tenth, counted and dropped. */
+  overflow: number
+  /** Set on `scrape_recent`, which mixes symbols. */
+  symbol?: string
+}
+
+/** One job's last 24 hours: 24 slots, the oldest first, and its newest passes first. */
+export interface JobTrack {
+  slots: JobSlot[]
+  passes: JobPass[]
+  /** The newest pass, even older than the window. */
+  last: JobPass | null
+}
+
+/** `GET /api/jobs/history` — process memory, lost at every restart (#1236). */
+export interface JobsHistory {
+  now: string
+  /** When this process started: the hours before it have no pass to show. */
+  started: string
+  jobs: { backfill: JobTrack; performance: JobTrack; ingestion: JobTrack }
+  /**
+   * One track per symbol scraped since start: a held symbol with no pass yet is
+   * absent. Its passes come **without** their log lines, which ride on
+   * `scrape_recent` only.
+   */
+  scrape: Record<string, JobTrack>
+  /** The scrape's 20 newest passes, all symbols mixed, with their lines. */
+  scrape_recent: JobPass[]
+}
+
 /** What the purge answers: rows, and never bytes. */
 interface PurgeResult {
   symbols: string[]
@@ -101,5 +161,6 @@ export const settingsApi = {
   saveSettings: (values: Record<string, string | number | boolean>) =>
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
   store: () => get<StoreState>(ROUTES.store),
+  jobsHistory: () => get<JobsHistory>(ROUTES.jobsHistory),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
 }

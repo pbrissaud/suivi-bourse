@@ -3,6 +3,8 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
+from application import job_history
+
 
 SCRAPE_WROTE = 'wrote'
 SCRAPE_WRITE_FAILED = 'write_failed'
@@ -107,6 +109,8 @@ class RuntimeRecorder:
         self._backfill: Dict[Tuple[str, str], BackfillRecord] = {}
         self._ingest: Optional[IngestRecord] = None
         self._perf: Optional[PerfRecord] = None
+        #: The last 24 hours of passes, beside the last one (#1236).
+        self.history = job_history.JobHistory()
 
     def record_scrape(self, record: ScrapeRecord) -> ScrapeRecord:
         """Publish one symbol's pass. N scrape threads reach this concurrently."""
@@ -139,6 +143,7 @@ class RuntimeRecorder:
         """Drop a departed symbol's **scrape** record, mirroring #617's cleanup."""
         with self._lock:
             self._scrape.pop(symbol, None)
+        self.history.forget(symbol)
 
     def retain(self, symbols: Iterable[str]) -> None:
         """Keep only the records of symbols the ledger still names."""
@@ -148,6 +153,7 @@ class RuntimeRecorder:
                 del self._scrape[symbol]
             for key in [k for k in self._backfill if k[0] not in keep]:
                 del self._backfill[key]
+        self.history.retain(keep)
 
     def scrape_of(self, symbol: str) -> Optional[ScrapeRecord]:
         return self._scrape.get(symbol)
@@ -155,6 +161,12 @@ class RuntimeRecorder:
     def backfill_of(self, symbol: str,
                     direction: str) -> Optional[BackfillRecord]:
         return self._backfill.get((symbol, direction))
+
+    def backfill_since(self, at: datetime) -> list:
+        """The ``(symbol, direction)`` passes published at or after ``at``."""
+        with self._lock:
+            return [record for record in self._backfill.values()
+                    if record.at >= at]
 
     def records_for(self, shares: Iterable[Mapping[str, Any]]) -> Tuple[
             Dict[str, Optional[ScrapeRecord]],

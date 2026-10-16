@@ -27,6 +27,7 @@ from application import entries
 from application import main
 from application import market
 from application import quotes
+from application import runtime_state
 from application import runtime_view
 from application import settings as settings_module
 from application.workloads import Workloads
@@ -1692,3 +1693,76 @@ def test_a_reference_that_was_held_and_sold_keeps_its_own_first_day(store, mocke
         2021, 10, 5, tzinfo=timezone.utc)
     forward = metrics.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
     assert forward is not None and forward.skipped is None
+
+
+def test_each_job_records_a_timed_pass_with_its_outcome(
+        store, mocker, sample_events):
+    """#1236: the façade times every pass; the classifier names its outcome."""
+    metrics, _ = _build_metrics([_valid_shares("AAPL")], store,
+                                mode="events", events=sample_events)
+    mocker.patch.object(metrics, "update_account_metrics",
+                        side_effect=RuntimeError("store gone"))
+    mocker.patch.object(metrics._backfill, "run")
+
+    metrics.recompute_perf()
+    metrics.backfill()
+
+    history = metrics.recorder.history.read(datetime.now(timezone.utc))
+    perf = history['jobs']['performance']['passes'][0]
+    assert perf['outcome'] == 'error'
+    assert perf['error'] == 'store gone'
+    assert perf['lines'][0]['message'].startswith('Failed to update account')
+    assert history['jobs']['backfill']['passes'][0]['outcome'] == 'idle'
+
+
+def test_a_raising_scrape_and_a_failed_replay_are_errors_in_the_history(
+        store, mocker):
+    """#1236: the scrape keeps a track per symbol; a failed replay is an error."""
+    metrics, cfg = _build_metrics([_valid_shares("AAPL")], store)
+    mocker.patch.object(metrics, "_fetch_ticker_data",
+                        side_effect=RuntimeError("yahoo down"))
+    mocker.patch.object(cfg, "reload", side_effect=RuntimeError("bad ledger"))
+
+    metrics._scrape_symbol("AAPL")
+    metrics.ingest()
+
+    history = metrics.recorder.history.read(datetime.now(timezone.utc))
+    scrape = history['scrape']['AAPL']['passes'][0]
+    assert scrape['outcome'] == 'error'
+    assert scrape['error'] == 'RuntimeError: yahoo down'
+    ingestion = history['jobs']['ingestion']['passes'][0]
+    assert (ingestion['outcome'], ingestion['error']) == ('error', 'bad ledger')
+
+
+def test_a_backfill_cycle_reads_only_the_passes_it_published(store, mocker):
+    """A record older than the cycle is not this cycle's: it stays idle."""
+    metrics, _ = _build_metrics([_valid_shares("AAPL")], store)
+    metrics.recorder.record_backfill(runtime_state.BackfillRecord(
+        symbol="AAPL", direction=runtime_state.BACKWARD,
+        at=datetime.now(timezone.utc) - timedelta(minutes=5), failed=True))
+    run = mocker.patch.object(metrics._backfill, "run")
+
+    metrics.backfill()
+    run.side_effect = lambda now: metrics.recorder.record_backfill(
+        runtime_state.BackfillRecord(
+            symbol="AAPL", direction=runtime_state.FORWARD,
+            at=datetime.now(timezone.utc), failed=True, error="timeout"))
+    metrics.backfill()
+
+    passes = metrics.recorder.history.read(
+        datetime.now(timezone.utc))['jobs']['backfill']['passes']
+    assert [(one['outcome'], one['error']) for one in passes] == [
+        ('error', 'timeout'), ('idle', None)]
+
+
+def test_a_pass_that_ends_after_its_symbol_was_sold_leaves_no_track(
+        store, mocker):
+    """The reconciliation forgot it mid-pass; the pass's record must not revive it."""
+    metrics, _ = _build_metrics([_valid_shares("AAPL")], store)
+    mocker.patch.object(metrics, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(metrics, "_held_symbols", return_value=set())
+
+    metrics._scrape_symbol("AAPL")
+
+    assert metrics.recorder.history.read(
+        datetime.now(timezone.utc))['scrape'] == {}

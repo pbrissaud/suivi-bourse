@@ -30,6 +30,7 @@ from application import advisories
 from application import build_info
 from application import entries
 from application import installation_facts
+from application import job_history
 from application import ledger
 from application import main
 from application import perf_series
@@ -6365,3 +6366,39 @@ def test_a_tracked_never_held_symbol_adds_no_day_to_the_curve(tmp_path):
         {'t': '2024-06-01', 'value': 2000.0, 'invested': 1500.0},
         {'t': '2024-06-03', 'value': 2100.0, 'invested': 1500.0},
     ]
+
+
+def test_the_job_history_is_its_own_read_and_health_keeps_its_shape(tmp_path):
+    """#1236: the passes come from ``/api/jobs/history``; ``/health`` is unmoved.
+
+    The bell polls ``/health``, so a history that leaked into it would grow
+    every poll. Its keys are pinned here, before and after a pass is recorded.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(api_module.current_runtime())
+    before = client.get('/health').get_json()
+
+    with pytest.raises(RuntimeError):
+        with job_history.timed(runtime.recorder.history,
+                               job_history.PERFORMANCE):
+            raise RuntimeError('boom')
+    runtime.recorder.history.record(
+        job_history.SCRAPE, 'AAPL', job_history.Pass(
+            at=datetime.now(timezone.utc), duration=1.0, outcome=job_history.OK,
+            error=None))
+    after = client.get('/health').get_json()
+    history = client.get('/api/jobs/history').get_json()
+
+    assert set(after) == set(before) == {
+        'status', 'now', 'scheduler_running', 'jobs'}
+    assert set(after['jobs']) == {'scrape', 'backfill', 'performance'}
+    assert set(after['jobs']['performance']) == {
+        'status', 'at', 'verdict', 'error'}
+    assert set(history) == {
+        'now', 'started', 'jobs', 'scrape', 'scrape_recent'}
+    assert set(history['jobs']) == {'backfill', 'performance', 'ingestion'}
+    assert history['jobs']['performance']['passes'][0]['error'] == (
+        'RuntimeError: boom')
+    assert history['scrape']['AAPL']['passes'][0]['outcome'] == 'ok'
+    assert len(history['scrape']['AAPL']['slots']) == 24

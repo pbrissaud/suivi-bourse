@@ -176,6 +176,11 @@ export const ROUTES = {
   advisoryAcknowledgement: '/api/advisories/:key/acknowledgement',
   /** The store's own figures — size, last ledger write, orphans (#724). */
   store: '/api/store',
+  /**
+   * Each job's last 24 hours (#1236). Its own read and never a field of
+   * {@link ROUTES.health}: the bell polls that one and it must stay small.
+   */
+  jobsHistory: '/api/jobs/history',
   /** The orphans as a collection: the only thing done to it is removing it. */
   storeOrphans: '/api/store/orphans',
   /** One account's perf series. A **pattern**, like {@link ROUTES.prices}. */
