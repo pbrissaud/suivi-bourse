@@ -1,0 +1,479 @@
+{
+  "$defs": {
+    "Account": {
+      "properties": {
+        "as_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cash_balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_payment": {
+          "type": "string"
+        },
+        "gain_absolu": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "holdings_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "net_contributed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opened_on": {
+          "type": "string"
+        },
+        "projected_base": {
+          "type": "number"
+        },
+        "projected_rate_changes_on": {
+          "type": "string"
+        },
+        "projected_rates": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "projected_tax": {
+          "type": "number"
+        },
+        "taxation_kind": {
+          "type": "string"
+        },
+        "taxation_model": {
+          "type": "string"
+        },
+        "total_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transfer_fees": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "twr_index": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "twr_since": {
+          "type": "string"
+        },
+        "xirr": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "as_of",
+        "cash_balance",
+        "holdings_value",
+        "total_value",
+        "net_contributed",
+        "gain_absolu",
+        "xirr",
+        "twr_index",
+        "transfer_fees"
+      ],
+      "title": "Account",
+      "type": "object"
+    },
+    "AccountsPayload": {
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/Account"
+          },
+          "type": "array"
+        },
+        "declared": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "declared",
+        "accounts"
+      ],
+      "title": "AccountsPayload",
+      "type": "object"
+    },
+    "Converted": {
+      "properties": {
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "currency",
+        "rate",
+        "rate_at"
+      ],
+      "title": "Converted",
+      "type": "object"
+    },
+    "Fundamentals": {
+      "properties": {
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dividend_yield": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exchange": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "industry": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "market_cap": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pe_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quote_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "currency",
+        "exchange",
+        "quote_type",
+        "dividend_yield",
+        "pe_ratio",
+        "market_cap",
+        "sector",
+        "industry",
+        "country"
+      ],
+      "title": "Fundamentals",
+      "type": "object"
+    },
+    "Position": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "closed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "converted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Converted"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost_basis": {
+          "type": "number"
+        },
+        "dividends": {
+          "type": "number"
+        },
+        "fundamentals": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fundamentals"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Price"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "type": "number"
+        },
+        "realised": {
+          "type": "number"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account",
+        "symbol",
+        "name",
+        "quantity",
+        "cost_basis",
+        "realised",
+        "dividends",
+        "price",
+        "converted",
+        "closed_at",
+        "terminal",
+        "fundamentals"
+      ],
+      "title": "Position",
+      "type": "object"
+    },
+    "Positions": {
+      "properties": {
+        "base_currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/Position"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "base_currency",
+        "positions"
+      ],
+      "title": "Positions",
+      "type": "object"
+    },
+    "Price": {
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "currency",
+        "at"
+      ],
+      "title": "Price",
+      "type": "object"
+    }
+  },
+  "title": "Api"
+}

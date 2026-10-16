@@ -1081,10 +1081,12 @@ def test_the_structured_copy_is_the_text_copy(tmp_path):
             assert json.loads(_text(result)) == result.structured_content, name
 
 
-def test_a_nan_is_served_as_a_null_and_not_as_a_crash(tmp_path, monkeypatch):
-    """Under a plain ``float`` the SDK dumps a NaN as ``null`` and the
-    **client** then refuses its own answer, so the call raises instead of
-    answering. Under ``Optional`` it is the null the absence rule already means.
+def test_a_nan_in_a_member_never_null_is_refused_in_words(tmp_path, monkeypatch):
+    """The SDK dumps a NaN as ``null``, and the **client** then refuses its own
+    answer, so the call raises with no words. ``cost_basis`` is a plain
+    ``float`` since #1204 — the column is ``NOT NULL`` and the front's types are
+    generated off this one — so ``reading()`` makes the same round trip first
+    and the refusal names the member.
 
     The store is not where it comes from: the reader already turns a stored
     NaN into None through ``store_module.finite`` (``store_reads._stamp``), and
@@ -1101,9 +1103,11 @@ def test_a_nan_is_served_as_a_null_and_not_as_a_crash(tmp_path, monkeypatch):
         lambda *args: [{**row, 'cost_basis': math.nan}
                        for row in built(*args)])
 
-    rows = payload(call(runtime, 'list_positions'))['positions']
+    result = call(runtime, 'list_positions')
 
-    assert rows and all(row['cost_basis'] is None for row in rows)
+    assert result.is_error is True
+    assert 'does not match the schema' in _text(result)
+    assert 'cost_basis' in _text(result)
 
 
 def test_an_answer_the_schema_refuses_arrives_in_words(tmp_path, monkeypatch):

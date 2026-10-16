@@ -2,7 +2,7 @@
 (#749, #1109)."""
 from datetime import date, datetime, timedelta, timezone
 from functools import cache
-from typing import Any, Dict, List, NotRequired, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 import duckdb
 from pydantic import StrictFloat, TypeAdapter, ValidationError
@@ -11,6 +11,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from application import account_facts
+from application.account_facts import AccountsPayload
 from application import instants
 from application import portfolio_facts
 from application import rhythm
@@ -415,28 +416,49 @@ left.
 # answer to it: a key declared nowhere here is dropped from the structured
 # content without a word, and a value of the wrong kind is refused. So a member
 # that can be missing is `Optional` (a NaN is served as `null` rather than
-# breaking the client), and a member the builder *omits* rather than nulls is
+# breaking the client; a member that cannot, a NaN is refused in words by
+# `reading()`), and a member the builder *omits* rather than nulls is
 # `NotRequired` — the absence rule of #845, stated in the schema. The builders
 # live in `portfolio_view`, `account_facts` and `rhythm`; the types live here,
-# with the one reader they have, and the suite holds the two together.
+# with the one reader they have, and the suite holds the two together. The
+# front's copy of `Positions` and `AccountsPayload` is generated off these by
+# `api_schema` (#1204), so a member changed here is changed there.
 
+# A price as observed, in the currency it was quoted in.
 class Price(TypedDict):
-    value: Optional[float]
+    value: float
+    # The unit the number is in — **and it can be absent** (#774).
+    # `_build_position` reads it off `symbol_quote.currency`, which only a
+    # *successful `.info` fetch* ever writes, so a symbol Yahoo answers closes
+    # for without naming a currency serves a `price` with no `currency`. The
+    # number is kept rather than the whole object suppressed — dropping it would
+    # turn *quoted* into *never quoted* — and `lib/absence.ts` reads the pair,
+    # because **a number with no unit is not a price**: the line is carried at
+    # its cost and never left *waiting*.
     currency: Optional[str]
     at: Optional[str]
 
 
+# The same price in the base currency, with the rate that got it there.
 class Converted(TypedDict):
-    value: Optional[float]
+    value: float
     currency: Optional[str]
     rate: Optional[float]
     rate_at: Optional[str]
 
 
+# What the instrument **is**, beside what the holding is worth (#720). It rides
+# on the position's row the way `price` does: P1 hands it back per
+# `(account, symbol)`, and the shares page folds a symbol's rows into one line.
+# Nothing here is ever summed. A `null` member is the ordinary absence (no
+# `pe_ratio` for an ETF, `quote_type` beside it making that legible); the
+# **object** being `null` means nothing has ever been observed about the symbol.
 class Fundamentals(TypedDict):
+    # The security's own quote currency, not the reporting one.
     currency: Optional[str]
     exchange: Optional[str]
     quote_type: Optional[str]
+    # In **percent points**, not a ratio — the writer multiplies by 100.
     dividend_yield: Optional[float]
     pe_ratio: Optional[float]
     market_cap: Optional[float]
@@ -446,21 +468,36 @@ class Fundamentals(TypedDict):
 
 
 class Position(TypedDict):
-    account: Optional[str]
-    symbol: Optional[str]
+    account: str
+    symbol: str
     name: Optional[str]
-    quantity: Optional[float]
-    cost_basis: Optional[float]
-    realised: Optional[float]
-    dividends: Optional[float]
+    # Owned. Zero is a closed position, which stays in the table.
+    quantity: float
+    # What the position cost — the carrying price.
+    cost_basis: float
+    realised: float
+    dividends: float
+    # `null` — never observed. The position is carried at its cost.
     price: Optional[Price]
+    # `null` with a non-null `price` — quoted, and the rate is missing.
     converted: Optional[Converted]
+    # The day this position reached zero, `null` while it is held (#719). The
+    # folded section of the shares page **sorts on it** — market value is zero
+    # across the section — and the client cannot derive it: a position carries
+    # a quantity, never the event that emptied it.
     closed_at: Optional[str]
+    # Has the backward pass reached this symbol's first acquisition? (#845) The
+    # second term of the carrying convention: a **fact and not a verdict**, the
+    # verdict having two terms and `lib/absence.ts` being the judge. It rides on
+    # the row because it is the *symbol's*, and P1 is keyed by
+    # `(account, symbol)`.
     terminal: bool
+    # `null` — nothing has ever been observed about this symbol.
     fundamentals: Optional[Fundamentals]
 
 
 class Positions(TypedDict):
+    # The single currency everything is reported in.
     base_currency: Optional[str]
     positions: List[Position]
 
@@ -507,34 +544,8 @@ History = TypedDict('History', {
 })
 
 
-class Account(TypedDict):
-    id: str
-    label: Optional[str]
-    as_of: Optional[str]
-    cash_balance: Optional[float]
-    holdings_value: Optional[float]
-    total_value: Optional[float]
-    net_contributed: Optional[float]
-    gain_absolu: Optional[float]
-    xirr: Optional[float]
-    twr_index: Optional[float]
-    transfer_fees: Optional[float]
-    # `account_facts.declared_only` drops each of these where there is none.
-    taxation_model: NotRequired[str]
-    opened_on: NotRequired[str]
-    first_payment: NotRequired[str]
-    twr_since: NotRequired[str]
-    taxation_kind: NotRequired[str]
-    projected_tax: NotRequired[Optional[float]]
-    projected_base: NotRequired[Optional[float]]
-    projected_rates: NotRequired[List[float]]
-    projected_rate_changes_on: NotRequired[str]
-
-
-class Accounts(TypedDict):
+class Accounts(AccountsPayload):
     base_currency: Optional[str]
-    declared: bool
-    accounts: List[Account]
 
 
 class LedgerEvent(TypedDict):
@@ -666,7 +677,11 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         """
         try:
             answer = work()
-            _adapter(shape).validate_python(answer)
+            adapter = _adapter(shape)
+            adapter.validate_python(answer)
+            # The SDK dumps a NaN as `null`, which a member typed `float`
+            # refuses at the client (#1204): the round trip refuses it here.
+            adapter.validate_json(adapter.dump_json(answer))
             return answer
         except ToolError:
             raise

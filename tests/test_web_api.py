@@ -21,6 +21,7 @@ import re
 
 import openpyxl
 import pytest
+from pydantic import TypeAdapter
 from apscheduler.schedulers.background import BackgroundScheduler
 from werkzeug.exceptions import NotAcceptable
 
@@ -43,6 +44,8 @@ from application import workloads
 from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
+from application.account_facts import AccountsPayload
+from application.mcp_server import Positions
 from api import create_app, problem
 from conftest import write_legacy_taxation_model
 
@@ -470,6 +473,30 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
                             'at': '2024-06-01T12:00:00+00:00'}
     assert row['converted'] == {'value': 180.0, 'currency': 'EUR', 'rate': 0.9,
                                 'rate_at': '2024-06-01T12:00:00+00:00'}
+
+
+def test_the_positions_body_is_the_shape_the_front_is_generated_from(tmp_path):
+    """The REST body holds to `Positions`, the type `api.gen.ts` comes from (#1204)."""
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1500.0)
+        seed_quote(opened, price=200.0, currency='USD', converted=180.0,
+                   rate=0.9)
+        seed_position(opened, symbol='MSFT', name='Microsoft', account='pea')
+
+    body = build_client(tmp_path, seed=seed).get('/api/positions').get_json()
+
+    assert TypeAdapter(Positions).validate_python(body, strict=True) == body
+
+
+def test_the_accounts_body_is_the_shape_the_front_is_generated_from(tmp_path):
+    """The REST body holds to `AccountsPayload`, without the MCP's `base_currency`."""
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS, seed=seed_account_metrics)
+
+    body = client.get('/api/accounts').get_json()
+
+    assert body['accounts']
+    assert TypeAdapter(AccountsPayload).validate_python(body, strict=True) == body
 
 
 def test_the_two_kinds_of_time_reach_the_wire_each_in_its_own_shape(tmp_path):
