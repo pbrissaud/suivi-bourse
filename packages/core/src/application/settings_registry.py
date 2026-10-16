@@ -15,6 +15,8 @@ CURRENCY = 'currency'
 
 SYMBOL = 'symbol'
 
+BOOLEAN = 'boolean'
+
 
 class InvalidSetting(ValueError):
     """A value the registry refuses: unknown key, wrong type, out of bounds."""
@@ -42,6 +44,10 @@ class SettingSpec:
 
 def _int(raw: str) -> int:
     return int(raw)
+
+
+def _bool(raw: str) -> bool:
+    return str(raw).strip().lower() == 'true'
 
 
 def _currency(raw: str) -> str:
@@ -86,6 +92,11 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'here, not because it is held: no acquisition event is needed, and the '
         'backfill keeps its series current all the same. Optional — blank '
         'means no comparison.'),
+    SettingSpec(
+        'update_check', 'true', BOOLEAN, _bool, NEXT_CYCLE,
+        'Whether the server asks api.github.com, at most every 6 hours, if a '
+        'newer release is out. Only its IP address and a User-Agent leave the '
+        'box. Off means no request at all.'),
 )
 
 BY_KEY: Dict[str, SettingSpec] = {spec.key: spec for spec in SETTINGS}
@@ -142,6 +153,13 @@ def validate(key: str, value: Any):
             return None
         raise InvalidSetting(
             key, f"{key} has no value; a setting is answered, never blanked")
+    if spec.kind == BOOLEAN:
+        # Before the refusal below: here a boolean is the only answer.
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().lower() in ('true', 'false'):
+            return _bool(value)
+        raise InvalidSetting(key, f"{key} must be true or false, got {value!r}")
     if isinstance(value, bool):
         raise InvalidSetting(key, f"{key} is not a boolean")
 
@@ -203,12 +221,14 @@ def stored_form(key: str, value: Any) -> str:
     if value is None:
         return ''  # an unset dial, stored as the blank ``resolve`` reads back
     spec = spec_for(key)
+    if spec.kind == BOOLEAN:
+        return 'true' if value else 'false'
     return str(int(value)) if spec.kind == INTEGER else str(value)
 
 
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
-    'INTEGER', 'CURRENCY', 'SYMBOL',
+    'INTEGER', 'CURRENCY', 'SYMBOL', 'BOOLEAN',
     'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
     'spec_for', 'seeded_defaults', 'required_keys', 'default_for', 'defaults',
     'resolve', 'validate', 'stored_form',

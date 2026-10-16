@@ -1191,7 +1191,7 @@ export function aSetting(overrides: Partial<SettingDescription> = {}): SettingDe
   }
 }
 
-/** The seven, in the registry's order. Nothing here is written twice by the form. */
+/** The eight, in the registry's order. Nothing here is written twice by the form. */
 export function defaultSettings(): SettingDescription[] {
   return [
     aSetting(),
@@ -1238,6 +1238,17 @@ export function defaultSettings(): SettingDescription[] {
       value: null,
       default: null,
       type: 'symbol',
+      minimum: null,
+      maximum: null,
+      effect: 'next_cycle',
+      stored: false,
+    }),
+    // A switch, saved at once, outside the form's draft (#1237).
+    aSetting({
+      key: 'update_check',
+      value: true,
+      default: true,
+      type: 'boolean',
       minimum: null,
       maximum: null,
       effect: 'next_cycle',

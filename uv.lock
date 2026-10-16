@@ -331,10 +331,14 @@ version = "0.0.0"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "logfmt-logger" },
+    { name = "packaging" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "logfmt-logger", specifier = "==0.1.2" }]
+requires-dist = [
+    { name = "logfmt-logger", specifier = "==0.1.2" },
+    { name = "packaging", specifier = "==26.2" },
+]
 
 [[package]]
 name = "cryptography"

@@ -23,9 +23,9 @@ import { get, ROUTES, remove, send } from '@/lib/api'
 export interface SettingDescription {
   key: string
   /** The effective value: the row if there is one, the code's default otherwise. */
-  value: string | number | null
-  default: string | number | null
-  type: 'integer' | 'string' | 'currency' | 'symbol'
+  value: string | number | boolean | null
+  default: string | number | boolean | null
+  type: 'integer' | 'string' | 'currency' | 'symbol' | 'boolean'
   minimum: number | null
   maximum: number | null
   /** What changing it triggers, as a token the catalogue turns into a sentence. */
@@ -98,7 +98,7 @@ interface PurgeResult {
 
 export const settingsApi = {
   config: () => get<ConfigResponse>(ROUTES.config),
-  saveSettings: (values: Record<string, string | number>) =>
+  saveSettings: (values: Record<string, string | number | boolean>) =>
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
   store: () => get<StoreState>(ROUTES.store),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),

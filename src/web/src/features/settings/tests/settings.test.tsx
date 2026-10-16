@@ -265,6 +265,154 @@ describe('the build', () => {
   })
 })
 
+describe('a newer release (#1237)', () => {
+  const NOTES = 'https://github.com/pbrissaud/suivi-bourse/releases/tag/v5.1.0'
+  const notes = (version: string) => ({ name: `Notes de la version ${version} (nouvel onglet)` })
+
+  function answering(response: () => Response) {
+    const asked = { count: 0 }
+    server.use(
+      http.get(ROUTES.release, () => {
+        asked.count += 1
+        return response()
+      }),
+    )
+    return asked
+  }
+
+  it('links a newer release to its notes, in a new tab', async () => {
+    answering(() => HttpResponse.json({ latest: { version: '5.1.0', url: NOTES } }))
+    await openSystem()
+
+    const link = await screen.findByRole('link', notes('5.1.0'))
+    expect(link).toHaveTextContent('Version 5.1.0 disponible')
+    expect(link).toHaveAttribute('href', NOTES)
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noreferrer')
+  })
+
+  it.each([
+    ['is up to date', () => HttpResponse.json({ latest: null })],
+    ['could not be checked', () => new HttpResponse(null, { status: 500 })],
+  ])('says nothing when the install %s', async (_, response) => {
+    const asked = answering(response)
+    await openSystem()
+
+    await waitFor(() => expect(asked.count).toBe(1))
+    await screen.findByText(/^Version :/)
+    expect(screen.queryByText(/disponible/)).not.toBeInTheDocument()
+  })
+
+  it('never asks on a build with no version to compare', async () => {
+    const asked = answering(() => HttpResponse.json({ latest: { version: '5.1.0', url: NOTES } }))
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({ build: { version: null, revision: '8f0a02e1c0ffee00', source: 'commit' } }),
+        ),
+      ),
+    )
+    await openSystem()
+
+    await screen.findByText(/^Version :/)
+    expect(asked.count).toBe(0)
+    expect(screen.queryByRole('link', notes('5.1.0'))).not.toBeInTheDocument()
+  })
+
+  it('asks again once the container is upgraded', async () => {
+    answering(() => HttpResponse.json({ latest: { version: '5.1.0', url: NOTES } }))
+    const { queryClient } = await openSystem()
+    await screen.findByRole('link', notes('5.1.0'))
+
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({
+            build: { version: '5.1.0', revision: '8f0a02e1c0ffee00', source: 'release' },
+          }),
+        ),
+      ),
+    )
+    answering(() => HttpResponse.json({ latest: null }))
+    await queryClient.invalidateQueries({ queryKey: ['runtime'] })
+
+    await screen.findByText('5.1.0')
+    await waitFor(() => expect(screen.queryByRole('link', notes('5.1.0'))).not.toBeInTheDocument())
+  })
+})
+
+describe('the release switch (#1237)', () => {
+  const toggle = () => screen.findByRole('switch', { name: 'Signaler les nouvelles versions' })
+
+  it('saves at once, and holds still while it does', async () => {
+    let sent: unknown = null
+    let release: () => void = () => {}
+    server.use(
+      http.put(ROUTES.settings, async ({ request }) => {
+        sent = await request.json()
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json({ settings: aConfig().settings, changed: ['update_check'] })
+      }),
+    )
+    const { user } = await openSettings()
+
+    const control = await toggle()
+    expect(control).toBeChecked()
+    await user.click(control)
+
+    await waitFor(() => expect(sent).toEqual({ update_check: false }))
+    expect(control).toBeDisabled()
+    release()
+    await waitFor(() => expect(control).toBeEnabled())
+  })
+
+  it('says so when the write is refused', async () => {
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json(
+          { status: 422, title: 'refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await openSettings()
+
+    await user.click(await toggle())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('rien n’a été enregistré')
+  })
+
+  it('keeps an unsaved dial when it is toggled', async () => {
+    let off = false
+    server.use(
+      http.get(ROUTES.config, () => {
+        const config = aConfig()
+        return HttpResponse.json({
+          ...config,
+          settings: config.settings.map((setting) =>
+            setting.key === 'update_check' ? { ...setting, value: !off } : setting,
+          ),
+        })
+      }),
+      http.put(ROUTES.settings, () => {
+        off = true
+        return HttpResponse.json({ settings: aConfig().settings, changed: ['update_check'] })
+      }),
+    )
+    const { user } = await openSettings()
+
+    const field = await screen.findByLabelText('Cadence de relevé')
+    await user.clear(field)
+    await user.type(field, '300')
+    await user.click(await toggle())
+
+    await waitFor(async () => expect(await toggle()).not.toBeChecked())
+    expect(screen.getByLabelText('Cadence de relevé')).toHaveValue(300)
+  })
+})
+
 describe('the orphaned securities', () => {
   it('do not exist at zero', async () => {
     await openSystem()

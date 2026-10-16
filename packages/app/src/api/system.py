@@ -1,9 +1,10 @@
 """The installation under ``/api``: runtime, store, facts, advisories, config."""
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from application import advisories
+from application import build_info
 from application import installation_facts
 from application import instants
 from application import ledger
@@ -58,6 +59,18 @@ def _next_runs(scheduler) -> dict:
     from application.scrape import scrape_next_runs
 
     return scrape_next_runs(scheduler)
+
+
+@bp.get('/system/release')
+def get_release():
+    """A newer release than this one, or ``null`` (#1237)."""
+    build = current_runtime().build
+    if build.source != build_info.RELEASE:
+        return jsonify({'latest': None})
+    if not settings_module.read_all(_store())['update_check']:
+        return jsonify({'latest': None})
+    checker = current_app.config['RELEASE_CHECKER']
+    return jsonify({'latest': checker.latest(build.version, datetime.now(timezone.utc))})
 
 
 @bp.get('/store')
