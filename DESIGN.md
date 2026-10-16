@@ -286,8 +286,9 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
 - **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
   "Nouveau fil" and "Fils récents" head the `tint` thread rail (a `rule` on its right, no radius) from 1 024 px, and are
-  the header's buttons below. Tool calls are one muted line in plain words
-  with a "détail" disclosure (2A). The CIF line "Simulations à partir de vos données
+  the header's buttons below. Tool calls are one muted shadcn `trace` line in plain
+  words, shimmering while the call runs; its chevron opens the raw call in a `code-block`, its JSON
+  coloured by shiki (2A). The CIF line "Simulations à partir de vos données
   déclarées, pas un conseil en investissement." stays fixed under the input (3A).
   States follow decision 4A. The conversation is the page's `<main>` content, its
   `<h1>` and document title "Agent"; answers announced once complete (11A).
@@ -342,3 +343,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-12 | Gain breakdown is a statement (#1175) | Reverses the cascade (#1143/#1161) and the in-card window (#1156/#1173): with four terms the figures are the content, the bars read as progress bars, and the year-to-date gain has its own pill. |
 | 2026-10-14 | The agent is a page, `/agent`, not a side panel (#1196) | Docked at 380 px the panel left a 13" laptop about 840 px of the 1 040 the content is designed for, and charts and tables broke; it bought one line of context (the route) that the agent reads through its tools anyway. Its user-facing name becomes "Agent", the same word in both languages. |
 | 2026-10-15 | The agent's threads are a full-height rail, the conversation centred at 768 px | The staging audit of /agent: the 720 px conversation pinned beside a floating column left about 170 px empty on the right of a 1 440 px screen, and filling that width ran lines past 110 characters. Chosen by the owner over a full-width conversation and over a centred floating column, after the pattern of the chat apps. |
+| 2026-10-16 | Tool calls are shadcn Trace lines, the raw call a Code Block | Chosen by the owner when shadcn shipped Trace and Code Block for agentic interfaces (October 2026): the chevron replaces the word "détail", a running call shimmers (not under `prefers-reduced-motion`), the panel opens with the collapsible's short slide, and the JSON is coloured by shiki (github-light/dark, loaded on the first opening). |

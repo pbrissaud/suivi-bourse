@@ -788,7 +788,6 @@
   "agent.files.refused": "This model does not read images. Paste the text or a CSV.",
   "agent.notKept": "This conversation will not be kept.",
   "agent.cif": "Simulations from the data you declared, not investment advice.",
-  "agent.tool.detail": "detail",
   "agent.tool.input": "Call",
   "agent.tool.output": "Result",
   "agent.tool.failed": "The tool failed: {reason}",

@@ -140,6 +140,33 @@ describe('the states (4A)', () => {
     expect(within(main).getByRole('button', { name: 'Envoyer' })).toBeInTheDocument()
   })
 
+  it('shimmers the running call, and stops when the turn is stopped mid-call', async () => {
+    switchedOn()
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer.tool('simulate_sale', { input: {} }).sleep(5000).output({})
+        }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const sentence = await within(main).findByText(
+      'Simulation d’une vente, impôts et frais compris.',
+    )
+    const line = sentence.closest('[data-slot=trace-line]') as HTMLElement
+    expect(line).toHaveAttribute('data-status', 'running')
+    await user.click(within(main).getByRole('button', { name: 'Arrêter' }))
+    // The answer never comes: the line says so rather than shimmering on.
+    await within(main).findByRole('button', { name: 'Envoyer' })
+    expect(
+      within(main)
+        .getByText('Simulation d’une vente, impôts et frais compris.')
+        .closest('[data-slot=trace-line]'),
+    ).toHaveAttribute('data-status', 'error')
+  })
+
   it('says a provider error in its words, keeps the message, and offers Réessayer', async () => {
     switchedOn()
     const sent = scripted(createChat().user(QUESTION).error('Anthropic: invalid x-api-key'))
@@ -212,7 +239,7 @@ describe('the states (4A)', () => {
 })
 
 describe('the tool lines (2A)', () => {
-  it('show the plain sentence, and the raw call behind détail', async () => {
+  it('show the plain sentence, and the raw call behind its chevron', async () => {
     switchedOn()
     scripted(
       createChat()
@@ -227,13 +254,15 @@ describe('the tool lines (2A)', () => {
     await ask(user, main, QUESTION)
     await within(main).findAllByText('Fini.')
 
-    const line = within(main).getByText('Lecture de vos positions.').closest('details')
-    expect(line).not.toBeNull()
-    expect(line).not.toHaveAttribute('open')
-    await user.click(within(line as HTMLElement).getByText('détail'))
-    expect(line).toHaveAttribute('open')
+    const trigger = within(main).getByRole('button', { name: 'Lecture de vos positions.' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    const line = trigger.closest('[data-slot=trace-collapsible]') as HTMLElement
     expect(line).toHaveTextContent('list_positions({})')
     expect(line).toHaveTextContent('"positions": []')
+    // Coloured once shiki has loaded the JSON grammar, on the first opening.
+    await waitFor(() => expect(line.querySelector('[style*="--shiki-light"]')).not.toBeNull())
     // A tool the page has no sentence for is named, never hidden.
     expect(within(main).getByText('Appel de l’outil get_dividends.')).toBeInTheDocument()
   })
@@ -254,10 +283,11 @@ describe('the tool lines (2A)', () => {
     await ask(user, main, QUESTION)
     await within(main).findAllByText('Fini.')
 
-    const line = within(main)
-      .getByText('Simulation d’une vente, impôts et frais compris.')
-      .closest('details') as HTMLElement
-    await user.click(within(line).getByText('détail'))
+    const trigger = within(main).getByRole('button', {
+      name: 'Simulation d’une vente, impôts et frais compris.',
+    })
+    await user.click(trigger)
+    const line = trigger.closest('[data-slot=trace-collapsible]') as HTMLElement
     expect(line).toHaveTextContent('"net": 16626.4')
     expect(line).not.toHaveTextContent('16626.385')
     // Seven digits, kept whole: an integer is a count, never rounded.
@@ -675,7 +705,8 @@ describe('the address (#1196)', () => {
     const nav = screen.getByRole('navigation', { name: 'Sections' })
     await user.click(within(nav).getByRole('link', { name: 'Agent' }))
 
-    expect(await screen.findByText('La réponse entière.')).toBeInTheDocument()
+    // Twice once whole: on screen, and in the polite region that announces it (11A).
+    expect((await screen.findAllByText('La réponse entière.'))[0]).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(thread)
     expect(sent).toHaveBeenCalledTimes(1)
   })

@@ -19,8 +19,8 @@
  * until the day it meets a colour on the same element — which is exactly the
  * kind of silence this file exists to remove.
  */
-import { clsx, type ClassValue } from 'clsx'
-import { extendTailwindMerge } from 'tailwind-merge'
+import { clsx, type ClassValue } from 'cn'
+import { extendTailwindMerge } from 'cn/config'
 
 const twMerge = extendTailwindMerge({
   extend: {
