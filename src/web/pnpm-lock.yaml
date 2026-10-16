@@ -168,7 +168,7 @@ importers:
     dependencies:
       '@ai-sdk/react':
         specifier: ^4.0.140
-        version: 4.0.141(react@19.3.0)(zod@3.25.76)
+        version: 4.0.142(react@19.3.0)(zod@3.25.76)
       '@dnd-kit/dom':
         specifier: ^0.5.0
         version: 0.5.0
@@ -327,8 +327,8 @@ packages:
     resolution: {integrity: sha512-TtWwm6SxFiPomlMIbTQa+yhJte+w4/oCsW+wJrJzMC3MqHpAY9e5dJF1Y4HxyKt3W2Csac0KiI76Ckio11TFYw==}
     engines: {node: '>=22'}
 
-  '@ai-sdk/react@4.0.141':
-    resolution: {integrity: sha512-wK6YFOG/ZVl7UkfN3lI/B4Sz8ZKk7C+Mix6RhaHAyi+bJgFBZpNEFWt5q484kFA07qyV3txg75DS/ypX6TxTtA==}
+  '@ai-sdk/react@4.0.142':
+    resolution: {integrity: sha512-74wU/+zbsyyWTOnomRu6qTIfGSsV3o+lUqjuyAgGRRT9BtRi1brCeMjFgYk3E82SZZhExgfgFFulyXGv0EcnfA==}
     engines: {node: '>=22'}
     peerDependencies:
       react: ^18 || ~19.0.1 || ~19.1.2 || ^19.2.1
@@ -4126,12 +4126,12 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@ai-sdk/react@4.0.141(react@19.3.0)(zod@3.25.76)':
+  '@ai-sdk/react@4.0.142(react@19.3.0)(zod@3.25.76)':
     dependencies:
       '@ai-sdk/mcp': 2.0.74(zod@3.25.76)
       '@ai-sdk/provider': 4.0.27
       '@ai-sdk/provider-utils': 5.0.59(zod@3.25.76)
-      ai: 7.0.138(zod@3.25.76)
+      ai: 7.0.139(zod@3.25.76)
       react: 19.3.0
       swr: 2.5.1(react@19.3.0)
       throttleit: 2.1.0
