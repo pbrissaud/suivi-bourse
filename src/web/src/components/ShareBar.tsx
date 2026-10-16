@@ -37,15 +37,18 @@
 import { cn } from '@/lib/utils'
 
 /**
- * Two heights, because they are the same object at two distances — `Stat`'s
+ * Three heights, because they are the same object at three distances — `Stat`'s
  * three sizes, one order of magnitude down. `line` sits under a legend row or
  * inside a table cell, where the bar is subordinate to the text above it;
- * `block` sits under a figure of its own, where it is the drawing. A prop
+ * `weight` is DESIGN.md's 6 px weight bar, the drawing of a legend with no ring
+ * beside it (the dashboard's allocation card, #1206); `block` sits under a
+ * figure of its own, where it is the drawing. A prop
  * rather than a second copy of this component: the whole reason the primitive
  * exists is that the product had three.
  */
-const HEIGHTS: Record<'line' | 'block', string> = {
+const HEIGHTS: Record<'line' | 'weight' | 'block', string> = {
   line: 'h-[3px]',
+  weight: 'h-1.5',
   block: 'h-2',
 }
 
@@ -60,7 +63,7 @@ interface ShareBarProps {
    * ramp, the rail's identity wheel — and never here.
    */
   fill: string
-  size?: 'line' | 'block'
+  size?: 'line' | 'weight' | 'block'
   /**
    * The share the bar is drawn **full** at — the largest one on the surface,
    * where a list is compared down its own column (#838). `1` is the default and

@@ -1093,6 +1093,10 @@ describe('the allocation', () => {
     // said twice rather than two figures that happen to agree.
     const card = list.closest('[data-slot="card"]') as HTMLElement
     expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
+    // The scope beside the heading, unchanged by its extraction (#1206).
+    expect(card.querySelector('[data-slot="card-header"]')).toHaveTextContent(
+      'Répartition3 lignes en portefeuille',
+    )
   })
 
   it('names what it could not place instead of dropping it in silence', async () => {
