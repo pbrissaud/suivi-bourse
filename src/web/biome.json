@@ -80,6 +80,15 @@
       "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]
     },
     {
+      "path": "./lint/no-bare-fetch.grit",
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}",
+        "!**/src/lib/api.ts"
+      ]
+    },
+    {
       "path": "./lint/no-runtime-error-on-surfaces.grit",
       "includes": ["**/src/pages/*Page.tsx", "**/features/data/components/Ledger.tsx"]
     }

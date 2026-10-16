@@ -11,6 +11,7 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 
 import { Toaster } from '@/components/ui/sonner'
+import { AuthBoot } from '@/features/auth/components/AuthBoot'
 import { DensityProvider } from '@/lib/density'
 import { I18nProvider } from '@/lib/i18n'
 import { PageHeadingProvider } from '@/lib/pageHeading'
@@ -34,9 +35,14 @@ export function App({
           <QueryClientProvider client={queryClient}>
             {/* Above the router, because the shell's header draws what the page
                 under it declares: the title is the header's now (#789). */}
-            <PageHeadingProvider>
-              <RouterProvider router={router} />
-            </PageHeadingProvider>
+            {/* Before the router (#1203): nothing of the app is drawn until
+                `/auth/status` says it may be, and the first-run predicate is
+                read after it. */}
+            <AuthBoot>
+              <PageHeadingProvider>
+                <RouterProvider router={router} />
+              </PageHeadingProvider>
+            </AuthBoot>
             {/* The receipt surface (#726). One mount for the app: a receipt
                 acknowledges a gesture, and a gesture can be made from any page. */}
             <Toaster />

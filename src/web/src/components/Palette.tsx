@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -26,6 +27,7 @@ import {
   CalendarDays,
   Coins,
   LayoutDashboard,
+  LogOut,
   Plus,
   Search,
   Settings,
@@ -35,6 +37,8 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { useAuth } from '@/features/auth/components/AuthBoot'
+import { authApi } from '@/features/auth/lib/api'
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dataApi } from '@/features/data/lib/api'
@@ -74,6 +78,7 @@ export function Palette() {
   const { t } = useI18n()
   const f = useFormatters()
   const navigate = useNavigate()
+  const auth = useAuth()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -186,6 +191,26 @@ export function Palette() {
     hint: null,
     run: () => leave(() => void navigate(action.go)),
   }))
+  // Signing out exists only while a code does (#1203).
+  if (
+    auth.status.enabled &&
+    matchesQuery(query, [t('palette.action.logout'), t('palette.action.logout.keywords')])
+  ) {
+    actions.push({
+      key: 'palette.action.logout',
+      mark: <LogOut className="size-3.5" />,
+      label: t('palette.action.logout'),
+      hint: null,
+      run: () =>
+        leave(
+          () =>
+            void authApi
+              .logout()
+              .then(auth.signedOut)
+              .catch(() => toast.error(t('palette.action.logout.failed'))),
+        ),
+    })
+  }
 
   // What Enter in the field runs: the first entry drawn, whichever section it is
   // in. A palette answers a typed name; asking the reader to reach for the one

@@ -10,6 +10,7 @@ from a2wsgi import WSGIMiddleware
 from mcp.server.transport_security import TransportSecuritySettings
 
 from application import agent_routes
+from application import auth_gate
 from application import boot_env
 from application import main
 from application import mcp_server
@@ -33,11 +34,13 @@ class Serving:
     """The ASGI application uvicorn is handed: the Flask app, the agent's, and the teardown."""
 
     def __init__(self, app, on_shutdown: Callable[[], None], mcp=None,
-                 agent=None):
+                 agent=None, gate=None):
         """Wrap the two applications, and build the agent's one **now**.
 
         ``agent`` is the in-app agent's Starlette app (#1114), async beside
         ``/mcp`` so that a turn waiting on a provider holds no WSGI worker.
+        ``gate`` wraps the routing below in the PIN's gate (#1203): given the
+        router, it returns the ASGI app every request goes through first.
         """
         self.wsgi = WSGIMiddleware(app, workers=WSGI_THREADS)
         self._agent = agent
@@ -48,13 +51,17 @@ class Serving:
                                     transport_security=NO_HOST_ALLOWLIST)
             if mcp is not None else None)
         self._sessions: Optional[contextlib.AsyncExitStack] = None
+        self._entry = gate(self._route) if gate is not None else self._route
 
     async def __call__(self, scope, receive, send) -> None:
-        """Three ways out: the lifespan, the agent's interface, the front."""
+        """The lifespan here; every request through the gate, then routed."""
         if scope['type'] == 'lifespan':
             await self._lifespan(receive, send)
             return
+        await self._entry(scope, receive, send)
 
+    async def _route(self, scope, receive, send) -> None:
+        """Three ways out: the agent's interface, the in-app agent, the front."""
         if self._mcp_app is not None and _is_mcp(scope.get('path', '')):
             await self._mcp_app(scope, receive, send)
             return
@@ -111,16 +118,32 @@ def _is_agent(path: str) -> bool:
 
 
 def serve(app, environment: boot_env.BootEnvironment,
-          on_shutdown: Callable[[], None], mcp=None, agent=None) -> None:
-    """Bind the one socket and serve until a signal says otherwise."""
+          on_shutdown: Callable[[], None], mcp=None, agent=None,
+          gate=None) -> None:
+    """Bind the one socket and serve until a signal says otherwise.
+
+    ``forwarded_allow_ips`` is passed even when empty: uvicorn's own default
+    trusts ``X-Forwarded-For`` from localhost, and the throttle counts by IP.
+    """
     level = environment.log_level.lower()
     uvicorn.run(
-        Serving(app, on_shutdown, mcp, agent),
+        Serving(app, on_shutdown, mcp, agent, gate),
         host='0.0.0.0',
         port=environment.web_port,
         log_level=level if level in _UVICORN_LEVELS else 'info',
         access_log=False,
+        proxy_headers=True,
+        forwarded_allow_ips=environment.forwarded_allow_ips,
     )
+
+
+def build_gate(runtime: main.Runtime, environment: boot_env.BootEnvironment):
+    """The PIN's gate over this runtime's store, after the reset if one is asked for."""
+    if environment.reset_auth:
+        auth_gate.reset(runtime.store)
+    index = api._static_dir() / 'index.html'
+    index_html = index.read_bytes() if index.is_file() else None
+    return partial(auth_gate.Gate, store=runtime.store, index_html=index_html)
 
 
 def sequence(env: Mapping[str, str]) -> None:
@@ -132,8 +155,9 @@ def sequence(env: Mapping[str, str]) -> None:
         app = api.create_app(runtime)
         mcp = mcp_server.build_server(runtime)
         agent = agent_routes.build_app(runtime, mcp)
+        gate = build_gate(runtime, environment)
         main.start_runtime(runtime)
-        serve(app, environment, teardown, mcp, agent)
+        serve(app, environment, teardown, mcp, agent, gate)
     finally:
         teardown()
 

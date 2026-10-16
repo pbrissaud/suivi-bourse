@@ -89,6 +89,14 @@ const WRITE_ONLY_ROUTES = [
   'exportEvents',
   'exportEventsWorkbook',
   'exportPortfolio',
+  // The PIN's gestures (#1203): each answers the reader's own press. The status
+  // is a read, and the one the whole app waits on before it draws anything.
+  'authPin',
+  'authLogout',
+  'authEnable',
+  'authChange',
+  'authDisable',
+  'authToken',
 ] as const satisfies readonly RouteName[]
 
 /** Every route a page reads — the net, computed and never written down twice. */

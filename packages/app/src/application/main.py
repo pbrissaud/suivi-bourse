@@ -49,7 +49,7 @@ MANAGED_LOGGERS = (
     'uploads',
     'advisories',
     'market',
-    'agent',
+    'agent', 'auth',
 )
 
 

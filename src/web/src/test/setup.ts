@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
 import { installMatchMedia, setViewportWidth } from '@/test/media'
+import { sessionResumed } from '@/lib/session'
 import { server } from '@/test/server'
 
 // Neither jsdom 30 nor the Node it runs on provides Web Storage here, and the
@@ -46,6 +47,10 @@ if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false
   Element.prototype.setPointerCapture = () => {}
   Element.prototype.releasePointerCapture = () => {}
+}
+// input-otp looks for a password manager's badge beside its field (#1203).
+if (!document.elementFromPoint) {
+  document.elementFromPoint = () => null
 }
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
@@ -123,6 +128,8 @@ beforeEach(() => {
 
 afterEach(() => {
   server.resetHandlers()
+  // A 401 a test provoked must not leave the code dialog over the next one.
+  sessionResumed()
   vi.useRealTimers()
   // The receipts. `sonner` portals its toaster into `document.body` and holds
   // its own module-level store, so neither survives a render and both survive

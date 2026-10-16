@@ -24,6 +24,8 @@
  *    anything.
  */
 
+import { sessionEnded } from '@/lib/session'
+
 /**
  * The paths, in one object, because the test harness fakes exactly this edge
  * (#712 Testing Decisions) and a fake that hardcoded its own strings would drift
@@ -142,6 +144,17 @@ export const ROUTES = {
   agentThreads: '/api/agent/threads',
   /** One conversation: read as UI messages, or deleted. A **pattern**. */
   agentThread: '/api/agent/threads/:id',
+  /**
+   * The PIN (#1203): the gate in front of the whole socket answers these, never
+   * Flask. A `401` from one of them is a wrong code, not a session that ended.
+   */
+  authStatus: '/auth/status',
+  authPin: '/auth/pin',
+  authLogout: '/auth/logout',
+  authEnable: '/auth/enable',
+  authChange: '/auth/change',
+  authDisable: '/auth/disable',
+  authToken: '/auth/token',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
@@ -266,6 +279,23 @@ export class ApiProblem extends Error {
   }
 }
 
+/**
+ * **The one `fetch`** (#1203), and a lint rule (`lint/no-bare-fetch.grit`)
+ * refuses any other in `src/`. A `401` outside `/auth/*` is a session that
+ * ended: it is reported to `lib/session.ts`, which puts the code dialog over
+ * the page, and handed back to the caller like any other refusal.
+ */
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, init)
+  if (response.status === 401 && !pathOf(input).startsWith('/auth/')) sessionEnded()
+  return response
+}
+
+function pathOf(input: RequestInfo | URL): string {
+  const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  return new URL(raw, 'http://app').pathname
+}
+
 async function unwrap<T>(response: Response, path: string): Promise<T> {
   if (!response.ok) throw await refusal(response, path)
   return response.json() as Promise<T>
@@ -289,7 +319,7 @@ async function refusal(response: Response, path: string): Promise<ApiProblem> {
 }
 
 export async function get<T>(path: string): Promise<T> {
-  return unwrap<T>(await fetch(path, { headers: { Accept: 'application/json' } }), path)
+  return unwrap<T>(await authFetch(path, { headers: { Accept: 'application/json' } }), path)
 }
 
 /**
@@ -303,7 +333,7 @@ export async function send<T>(
   body: unknown,
 ): Promise<T> {
   return unwrap<T>(
-    await fetch(path, {
+    await authFetch(path, {
       method,
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -332,7 +362,7 @@ export async function upload<T>(path: string, file: File, params: string[] = [])
   // out of the same multipart payload it parses their ledger out of.
   const target = params.length === 0 ? path : `${path}?${params.join('&')}`
   return unwrap<T>(
-    await fetch(target, { method: 'POST', headers: { Accept: 'application/json' }, body }),
+    await authFetch(target, { method: 'POST', headers: { Accept: 'application/json' }, body }),
     path,
   )
 }
@@ -358,7 +388,7 @@ export interface DownloadedFile {
  * knows whether anything was held back.
  */
 export async function download(path: string): Promise<DownloadedFile> {
-  const response = await fetch(path, { headers: { Accept: '*/*' } })
+  const response = await authFetch(path, { headers: { Accept: '*/*' } })
   if (!response.ok) throw await refusal(response, path)
   return { blob: await response.blob(), filename: filenameOf(response, path) }
 }
@@ -382,14 +412,17 @@ function filenameOf(response: Response, path: string): string {
  */
 export async function remove<T>(path: string): Promise<T> {
   return unwrap<T>(
-    await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }),
+    await authFetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }),
     path,
   )
 }
 
 /** A `DELETE` whose success is a `204` — no body to parse. */
 export async function forget(path: string): Promise<void> {
-  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
+  const response = await authFetch(path, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  })
   if (!response.ok) throw await refusal(response, path)
 }
 

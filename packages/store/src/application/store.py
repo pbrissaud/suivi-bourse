@@ -179,6 +179,19 @@ CREATE TABLE IF NOT EXISTS agent_config (
     api_key     VARCHAR,
     key_set_at  TIMESTAMPTZ,
     updated_at  TIMESTAMPTZ NOT NULL);
+
+-- **The PIN and what it opens** (#1203). One row, absent while the PIN is off,
+-- so a store from before it boots unlocked. Written and read by ``auth_gate``
+-- alone: no settings route, MCP tool or export reads it. ``revoked`` is a JSON
+-- object of logged-out session ids to the instant they left.
+CREATE TABLE IF NOT EXISTS auth_secret (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    pin_hash          VARCHAR NOT NULL,
+    session_secret    VARCHAR NOT NULL,
+    token_hash        VARCHAR,
+    token_created_at  TIMESTAMPTZ,
+    revoked           VARCHAR NOT NULL DEFAULT '{}',
+    updated_at        TIMESTAMPTZ NOT NULL);
 """
 
 DDL = ''.join((
@@ -196,7 +209,7 @@ TABLES = (
     'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
-    'agent_config',
+    'agent_config', 'auth_secret',
 )
 
 #: The tables whose surrogate key this store hands out — see

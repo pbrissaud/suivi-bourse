@@ -292,6 +292,21 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   déclarées, pas un conseil en investissement." stays fixed under the input (3A).
   States follow decision 4A. The conversation is the page's `<main>` content, its
   `<h1>` and document title "Agent"; answers announced once complete (11A).
+- **PIN screen and Accès block (#1203):** the PIN screen is a single 360 px column on a
+  `tint` plane (`rounded.lg`, no border, no shadow) centred on `background`: the product
+  name in Label `text-muted`, the heading "Entrez votre code" in Section title, six 44 px
+  slots (`surface`, 1 px `rule`, `rounded.sm`, a dot for a filled slot) in one real
+  numeric input, and a full-width 44 px primary "Déverrouiller". The code is sent at the
+  sixth digit; a wrong code clears the slots and says so in `destructive`; a throttled
+  wait counts down from `Retry-After`, announced at its start and end only. "Code
+  oublié ?" is a collapsible naming `SB_RESET_AUTH`. Under 768 px there is no plane: the
+  column sits on the background, 14 px gutter, in the top third; under 340 px the slot gap
+  narrows to 4 px. A session that ends inside the app opens the same form in a modal,
+  non-dismissable dialog over the mounted page. The *Accès* settings section carries a
+  `Switch` in its title row that flips only once its card's action succeeds; with the PIN
+  on, three `rule`-separated rows (Code, Jeton MCP, Cet appareil) each open a `surface`
+  card under them, one at a time, Escape closing it — except the token card, which only
+  "J'ai copié le jeton" closes.
 - **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings
   are `primary`; scrollbars are thin and use `rule`.
 
@@ -344,3 +359,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-14 | The agent is a page, `/agent`, not a side panel (#1196) | Docked at 380 px the panel left a 13" laptop about 840 px of the 1 040 the content is designed for, and charts and tables broke; it bought one line of context (the route) that the agent reads through its tools anyway. Its user-facing name becomes "Agent", the same word in both languages. |
 | 2026-10-15 | The agent's threads are a full-height rail, the conversation centred at 768 px | The staging audit of /agent: the 720 px conversation pinned beside a floating column left about 170 px empty on the right of a 1 440 px screen, and filling that width ran lines past 110 characters. Chosen by the owner over a full-width conversation and over a centred floating column, after the pattern of the chat apps. |
 | 2026-10-16 | Tool calls are shadcn Trace lines, the raw call a Code Block | Chosen by the owner when shadcn shipped Trace and Code Block for agentic interfaces (October 2026): the chevron replaces the word "détail", a running call shimmers (not under `prefers-reduced-motion`), the panel opens with the collapsible's short slide, and the JSON is coloured by shiki (github-light/dark, loaded on the first opening). |
+| 2026-10-16 | An optional PIN behind one screen, off by default (#1203) | The app is reached on a local network by anyone who can reach the port; the PIN closes that door without a login page of accounts and passwords. One centred column rather than a card on a card, and the in-app 401 is a dialog over the page so a typed form survives it. |

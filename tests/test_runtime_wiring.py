@@ -547,8 +547,9 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     assert "COMPOSE_PROJECT_NAME" not in names
 
 
-def test_the_inventory_is_the_four_and_no_fifth():
-    """The environment says four things (the theme since #1130); everything else is a dial, the two the
+def test_the_inventory_is_the_six_and_no_seventh():
+    """The environment says six things (the theme since #1130, the PIN's reset
+    and trusted proxies since #1203); everything else is a dial, the two the
     exporter answered for left with it, and the drop folder's own left with the
     mount.
 
@@ -558,8 +559,9 @@ def test_the_inventory_is_the_four_and_no_fifth():
     """
     names = [name for name, _ in boot_env.INVENTORY]
 
-    assert len(names) == 4
-    assert set(names) == {"LOG_LEVEL", "SB_STORE_DIR", "SB_WEB_PORT", "SB_TWEAKCN_THEME"}
+    assert len(names) == 6
+    assert set(names) == {"LOG_LEVEL", "SB_STORE_DIR", "SB_WEB_PORT", "SB_TWEAKCN_THEME",
+                          "SB_RESET_AUTH", "SB_FORWARDED_ALLOW_IPS"}
 
 
 def test_the_bundle_location_is_no_longer_an_environment_variable(monkeypatch):

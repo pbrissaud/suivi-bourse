@@ -78,6 +78,7 @@ describe('the page', () => {
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
         'Général',
         'L’agent',
+        'Accès',
         'Fiscalité',
       ]),
     )
