@@ -36,6 +36,7 @@ import {
   defaultPositions,
   NOW,
 } from '@/test/factories'
+import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -1469,6 +1470,190 @@ describe('the allocation is not on this page', () => {
     await chartCard()
     expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
     expect(screen.queryByText('Répartition')).not.toBeInTheDocument()
+  })
+})
+
+describe('the allocation card (#1206)', () => {
+  function showAllocation(width: 'half' | 'full') {
+    server.use(
+      http.get(ROUTES.dashboardLayout, () =>
+        HttpResponse.json({
+          version: 1,
+          blocks: [{ id: 'allocation', width, hidden: false }],
+        }),
+      ),
+    )
+  }
+
+  it('arrives under « Nouveau » and draws nothing until it is shown', async () => {
+    renderApp()
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier le tableau de bord' }))
+
+    const hidden = await screen.findByRole('region', { name: 'Cartes masquées' })
+    expect(within(hidden).getByText('Répartition').closest('li')).toHaveTextContent('Nouveau')
+    expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
+  })
+
+  it('at half width, sets the total on the title row and draws a legend with no ring', async () => {
+    showAllocation('half')
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
+    expect(titleRow).toHaveTextContent(/2\D?300,00/)
+    expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
+    expect(card).toHaveTextContent('3 lignes en portefeuille')
+
+    // The selector swaps the slot: pressed, not a radio, and the total holds.
+    const bySecurity = within(card).getByRole('button', { name: 'Titre' })
+    const byAccount = within(card).getByRole('button', { name: 'Compte' })
+    expect(bySecurity).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(byAccount)
+    expect(byAccount).toHaveAttribute('aria-pressed', 'true')
+    const legend = within(card).getByRole('list', { name: 'Répartition' })
+    expect(within(legend).getByText('alpha')).toBeInTheDocument()
+    expect(card).toHaveTextContent('3 comptes en portefeuille')
+    expect(titleRow).toHaveTextContent(/2\D?300,00/)
+  })
+
+  it('switches the view from the keyboard', async () => {
+    showAllocation('half')
+    const { user } = renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    const byAccount = within(card).getByRole('button', { name: 'Compte' })
+    byAccount.focus()
+    await user.keyboard('{Enter}')
+    expect(byAccount).toHaveAttribute('aria-pressed', 'true')
+    await user.keyboard(' ')
+    expect(byAccount).toHaveAttribute('aria-pressed', 'true')
+    expect(within(card).getByRole('button', { name: 'Titre' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  it('folds past eight lines into « Autres · N lignes » and says so', async () => {
+    showAllocation('half')
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(
+            Array.from({ length: 9 }, (_, index) =>
+              aPosition({ symbol: `Z${index}`, name: `Zeta ${index}`, price: 90 - index }),
+            ),
+          ),
+        ),
+      ),
+    )
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    const legend = within(card).getByRole('list', { name: 'Répartition' })
+    expect(within(legend).getAllByRole('listitem')).toHaveLength(8)
+    expect(within(legend).getByText('Autres · 2 lignes')).toBeInTheDocument()
+    expect(card).toHaveTextContent('9 lignes · top 7 détaillé, 2 regroupées')
+  })
+
+  it('names the seeded account from the catalogue, not by its id', async () => {
+    showAllocation('half')
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            aPosition({ account: 'default', symbol: 'ZZA', name: 'Zeta Alpha' }),
+            aPosition({ account: 'alpha', symbol: 'ZZB', name: 'Zeta Beta' }),
+          ]),
+        ),
+      ),
+    )
+    const { user } = renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+    await user.click(within(card).getByRole('button', { name: 'Compte' }))
+
+    const legend = within(card).getByRole('list', { name: 'Répartition' })
+    expect(within(legend).getByText('Non affecté')).toBeInTheDocument()
+    expect(within(legend).queryByText('default')).not.toBeInTheDocument()
+  })
+
+  it('at full width, draws the ring with the total in its hole and the amounts', async () => {
+    showAllocation('full')
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
+    const row = within(card).getByText('Zeta Alpha').closest('li')!
+    expect(row).toHaveTextContent(/1\D?300,00/)
+    expect(within(card).getByRole('group', { name: 'Répartir par' })).toBeInTheDocument()
+  })
+
+  it('freezes the selector on the title row while the grid is arranged', async () => {
+    showAllocation('full')
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+    expect(within(card).getByRole('group', { name: 'Répartir par' }).closest('[inert]')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier le tableau de bord' }))
+    await waitFor(() =>
+      expect(
+        within(card).getByRole('group', { name: 'Répartir par' }).closest('[inert]'),
+      ).not.toBeNull(),
+    )
+  })
+
+  it('at 390 px, draws the half-width legend whatever the saved width', async () => {
+    setViewportWidth(390)
+    showAllocation('full')
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
+    const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
+    expect(titleRow).toHaveTextContent(/2\D?300,00/)
+  })
+
+  it('names the lines it could not place, even when it could place none', async () => {
+    showAllocation('half')
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            aPosition({ symbol: 'ZZB', price: 125, currency: 'USD', rate: null }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    expect(card).toHaveTextContent(/1 ligne n’est pas dans cette répartition.*ZZB/)
+  })
+
+  it('offers no selector while fewer than two accounts hold a placed line', async () => {
+    showAllocation('half')
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            aPosition({ account: 'alpha', symbol: 'ZZA', name: 'Zeta Alpha' }),
+            aClosedPosition({ account: 'beta', symbol: 'ZZD', closed_at: '2025-11-04' }),
+            // Held, but with nothing placed: gamma is no slice either.
+            aPosition({
+              account: 'gamma',
+              symbol: 'ZZB',
+              price: 125,
+              currency: 'USD',
+              rate: null,
+            }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    expect(within(card).queryByRole('group', { name: 'Répartir par' })).not.toBeInTheDocument()
   })
 })
 

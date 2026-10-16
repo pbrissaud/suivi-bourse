@@ -58,6 +58,18 @@ async function openMenu(user: ReturnType<typeof renderApp>['user'], card: string
 
 afterEach(() => setViewportWidth(1024))
 
+/**
+ * The default layout once saved: the allocation (#1206) arrived hidden and a
+ * save wrote it in, so nothing is *Nouveau* and a « Terminé » with no change
+ * has nothing to write.
+ */
+const SEEN = [
+  { id: 'gain-breakdown', width: 'half', hidden: false },
+  { id: 'rhythm', width: 'half', hidden: false },
+  { id: 'movers', width: 'full', hidden: false },
+  { id: 'allocation', width: 'half', hidden: true },
+] as const satisfies DashboardLayout['blocks']
+
 describe('reading mode', () => {
   it('gives the edit entry and the ⓘ a 24 px hit area, 44 px on touch', async () => {
     renderApp()
@@ -235,9 +247,10 @@ describe('edit mode', () => {
     // The gain is alone on its row now and half-only: the other half is free.
     expect(screen.getByText('Place libre')).toBeInTheDocument()
 
-    await user.click(within(hidden).getByRole('button', { name: 'Afficher' }))
+    const rhythm = within(hidden).getByText('Rythme d’investissement').closest('li')!
+    await user.click(within(rhythm).getByRole('button', { name: 'Afficher' }))
     expect(order(container)).toEqual(TITLES)
-    expect(within(hidden).getByText('Aucune carte masquée.')).toBeInTheDocument()
+    expect(within(hidden).queryByText('Rythme d’investissement')).not.toBeInTheDocument()
   })
 
   it('writes the layout once, on « Terminé », and goes back to the entry', async () => {
@@ -257,6 +270,8 @@ describe('edit mode', () => {
           { id: 'movers', width: 'full', hidden: false },
           { id: 'gain-breakdown', width: 'half', hidden: false },
           { id: 'rhythm', width: 'half', hidden: false },
+          // Written in hidden: saving is what ends its *Nouveau* (18A).
+          { id: 'allocation', width: 'half', hidden: true },
         ],
       },
     })
@@ -266,6 +281,7 @@ describe('edit mode', () => {
   })
 
   it('writes nothing when nothing changed', async () => {
+    server.use(layoutOf([...SEEN]))
     const writes = recordWrites()
     const { user } = renderApp()
     await user.click(await landed())
@@ -477,6 +493,7 @@ describe('dragging a card', () => {
   })
 
   it('says a drop in place, and leaves nothing to write', async () => {
+    server.use(layoutOf([...SEEN]))
     const writes = recordWrites()
     const { user, container } = renderApp()
     await user.click(await landed())
@@ -517,6 +534,7 @@ describe('dragging a card', () => {
         { id: 'movers', width: 'full', hidden: false },
         { id: 'gain-breakdown', width: 'half', hidden: false },
         { id: 'rhythm', width: 'half', hidden: false },
+        { id: 'allocation', width: 'half', hidden: true },
       ],
     })
   })

@@ -48,6 +48,7 @@ describe('the registry', () => {
       { id: 'gain-breakdown', width: 'half', hidden: false },
       { id: 'rhythm', width: 'half', hidden: false },
       { id: 'movers', width: 'full', hidden: false },
+      { id: 'allocation', width: 'half', hidden: true },
     ])
   })
 
@@ -115,8 +116,8 @@ describe('newBlocks', () => {
     expect(newBlocks({ version: 1, blocks: [{ id: 'n', hidden: true }] }, REGISTRY)).toEqual([])
   })
 
-  it('names nothing in the shipped registry, where no card arrived later yet', () => {
-    expect(newBlocks(null)).toEqual([])
+  it('names the allocation in the shipped registry, the first card to arrive later (#1206)', () => {
+    expect(newBlocks(null)).toEqual(['allocation'])
   })
 })
 
