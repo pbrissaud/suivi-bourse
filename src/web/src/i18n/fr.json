@@ -788,7 +788,6 @@
   "agent.files.refused": "Ce modèle ne lit pas les images. Collez le texte ou un CSV.",
   "agent.notKept": "Cette conversation ne sera pas gardée.",
   "agent.cif": "Simulations à partir de vos données déclarées, pas un conseil en investissement.",
-  "agent.tool.detail": "détail",
   "agent.tool.input": "Appel",
   "agent.tool.output": "Résultat",
   "agent.tool.failed": "L’outil a échoué : {reason}",

@@ -11,7 +11,8 @@
  * answer in view while the reader is at the live edge, `message` and `bubble`
  * lay the turns out, `attachment` shows a refused file. The answers are read
  * in Prose (15/22), their Markdown drawn rather than shown; a tool call is one
- * muted line in plain words with a *détail* disclosure holding the raw call (2A).
+ * muted `trace` line in plain words whose chevron opens the raw call in a
+ * `code-block` (2A).
  *
  * **Announced once** (11A): the scroller's content is a `log` live region,
  * which would read every streamed token; it is silenced, and one polite
@@ -46,6 +47,8 @@ import {
 } from '@/components/ui/attachment'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
+import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block'
+import { useHighlightedCode } from '@/hooks/use-highlighted-code'
 import { Message, MessageContent } from '@/components/ui/message'
 import {
   MessageScroller,
@@ -57,6 +60,14 @@ import {
 } from '@/components/ui/message-scroller'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceLine,
+  TraceTitle,
+} from '@/components/ui/trace'
 import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/features/accounts/lib/accounts'
 import {
   type AgentToolPart,
@@ -432,7 +443,7 @@ function AgentConversation() {
                     messageId={message.id}
                     scrollAnchor={message.role === 'user'}
                   >
-                    <Turn message={message} />
+                    <Turn message={message} live={busy && message === messages.at(-1)} />
                   </MessageScrollerItem>
                 ))}
                 {waiting ? (
@@ -605,7 +616,8 @@ const AnswerMarkdown = memo(function AnswerMarkdown({ children }: { children: st
   )
 })
 
-function Turn({ message }: { message: UIMessage }) {
+/** `live`: the turn still streams, so a call without its answer is running, not halted. */
+function Turn({ message, live }: { message: UIMessage; live: boolean }) {
   if (message.role === 'user') {
     return (
       <Message align="end">
@@ -620,64 +632,103 @@ function Turn({ message }: { message: UIMessage }) {
   return (
     <Message>
       <MessageContent className="gap-2">
-        {message.parts.map((part, index) => {
+        {stepsAndText(message.parts).map((group, index) => {
           const key = `${message.id}-${index}`
-          if (part.type === 'text') {
-            return part.text.trim() === '' ? null : (
-              <div key={key} className="flex flex-col gap-3 text-prose">
-                <AnswerMarkdown>{part.text}</AnswerMarkdown>
-              </div>
+          if (Array.isArray(group)) {
+            return (
+              <Trace key={key}>
+                {group.map((part) => (
+                  <ToolLine key={part.toolCallId} part={part} live={live} />
+                ))}
+              </Trace>
             )
           }
-          if (isToolUIPart(part)) return <ToolLine key={key} part={part} />
-          return null
+          return group.trim() === '' ? null : (
+            <div key={key} className="flex flex-col gap-3 text-prose">
+              <AnswerMarkdown>{group}</AnswerMarkdown>
+            </div>
+          )
         })}
       </MessageContent>
     </Message>
   )
 }
 
-/** One tool call: its sentence, and the raw call behind *détail* (2A). */
-function ToolLine({ part }: { part: AgentToolPart }) {
+/** The parts in order, consecutive tool calls gathered into one Trace. */
+function stepsAndText(parts: UIMessage['parts']): (string | AgentToolPart[])[] {
+  const groups: (string | AgentToolPart[])[] = []
+  for (const part of parts) {
+    if (part.type === 'text') groups.push(part.text)
+    else if (isToolUIPart(part)) {
+      const last = groups.at(-1)
+      if (Array.isArray(last)) last.push(part)
+      else groups.push([part])
+    }
+  }
+  return groups
+}
+
+/**
+ * One tool call (2A): a Trace line in plain words, shimmering while it runs,
+ * whose chevron opens the raw call and what came back.
+ */
+function ToolLine({ part, live }: { part: AgentToolPart; live: boolean }) {
   const { t } = useI18n()
   const name = getToolName(part)
   const sentence = toolSentence(name)
+  // Stopped or cut mid-call: the answer never comes, so the line stops shimmering.
+  const running = toolRunning(part) && live
+  const failed = part.state === 'output-error' || (toolRunning(part) && !live)
   return (
-    // 44 px on touch only: three reads stacked 156 px of chrome before the answer.
-    <details className="group text-sm text-muted-foreground">
-      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-md pointer-coarse:min-h-11">
-        <span className="min-w-0">{t(sentence.key, sentence.values)}</span>
-        <span className="shrink-0 text-xs underline-offset-2 group-open:underline">
-          {t('agent.tool.detail')}
-        </span>
-      </summary>
-      <dl className="mt-1 flex flex-col gap-2 rounded-md bg-card p-2 text-xs">
-        <div>
-          <dt className="font-medium">{t('agent.tool.input')}</dt>
-          <dd>
-            <pre className="font-mono break-all whitespace-pre-wrap">
-              {name}({JSON.stringify(part.input ?? {}, null, 2)})
-            </pre>
-          </dd>
-        </div>
+    <TraceCollapsible>
+      {/* 44 px on touch only: three reads stacked 156 px of chrome before the answer. */}
+      <TraceCollapsibleTrigger className="min-h-8 pointer-coarse:min-h-11">
+        <TraceLine status={running ? 'running' : failed ? 'error' : undefined}>
+          <TraceTitle className="overflow-visible whitespace-normal">
+            {t(sentence.key, sentence.values)}
+          </TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="flex flex-col gap-2 text-xs">
+        <p className="font-medium">{t('agent.tool.input')}</p>
+        <CodeBlock size="sm">
+          <JsonContent code={`${name}(${JSON.stringify(part.input ?? {}, null, 2)})`} />
+        </CodeBlock>
         {part.state === 'output-available' ? (
-          <div>
-            <dt className="font-medium">{t('agent.tool.output')}</dt>
-            <dd>
-              <pre className="max-h-60 overflow-auto font-mono break-all whitespace-pre-wrap">
-                {JSON.stringify(part.output, sixFigures, 2)}
-              </pre>
-            </dd>
-          </div>
+          <>
+            <p className="font-medium">{t('agent.tool.output')}</p>
+            <CodeBlock size="sm">
+              <JsonContent code={JSON.stringify(part.output, sixFigures, 2)} className="max-h-60" />
+            </CodeBlock>
+          </>
         ) : null}
         {part.state === 'output-error' ? (
-          <div>
-            <dt className="font-medium">{t('agent.tool.output')}</dt>
-            <dd>{t('agent.tool.failed', { reason: part.errorText })}</dd>
-          </div>
+          <>
+            <p className="font-medium">{t('agent.tool.output')}</p>
+            <CodeBlock size="sm" variant="destructive">
+              <CodeBlockContent wrap>
+                {t('agent.tool.failed', { reason: part.errorText })}
+              </CodeBlockContent>
+            </CodeBlock>
+          </>
         ) : null}
-      </dl>
-    </details>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  )
+}
+
+/**
+ * JSON coloured by shiki. Mounted only once its line is opened (Radix drops a
+ * closed collapsible's content), so the highlighter loads on the first *détail*.
+ */
+function JsonContent({ code, className }: { code: string; className?: string }) {
+  const lines = useHighlightedCode(code, 'json')
+  return (
+    <CodeBlockContent wrap className={className}>
+      {lines.map((line, index) => (
+        <CodeBlockLine key={index}>{line}</CodeBlockLine>
+      ))}
+    </CodeBlockContent>
   )
 }
 
