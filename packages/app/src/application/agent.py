@@ -51,9 +51,6 @@ BASE_URL_REFUSED = ('anthropic', 'openai')
 KEY_MIN, KEY_MAX = 8, 512
 MODEL_MAX = 200
 BASE_URL_MAX = 500
-PAGE_ROUTE_MAX = 200
-PAGE_IDS_MAX = 20
-PAGE_ID_MAX = 64
 
 _COLUMNS = ('enabled', 'provider', 'model', 'base_url', 'api_key',
             'key_set_at', 'updated_at')
@@ -62,11 +59,6 @@ EMPTY = {'enabled': False, 'provider': None, 'model': None, 'base_url': None,
          'api_key': None, 'key_set_at': None, 'updated_at': None}
 
 _HTTP_URL = re.compile(r'https?://\S+')
-
-#: What a page's route and ids may hold: the line lands in the instructions,
-#: so it carries a path and identifiers, never a sentence.
-_ROUTE = re.compile(r'/[A-Za-z0-9/_.~%-]*')
-_PAGE_ID = re.compile(r'[A-Za-z0-9._:^=-]+')
 
 
 class InvalidAgentConfig(ValueError):
@@ -215,26 +207,6 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def page_line(page: Any) -> Optional[str]:
-    """The page the user is on, as one line of instructions, or ``ValueError``."""
-    if page is None:
-        return None
-    if not isinstance(page, dict) or set(page) - {'route', 'ids'}:
-        raise ValueError("'page' holds a 'route' and its 'ids', nothing else")
-    route = page.get('route')
-    if not (isinstance(route, str) and len(route) <= PAGE_ROUTE_MAX and _ROUTE.fullmatch(route)):
-        raise ValueError(
-            f"'page.route' is a path starting with '/', of at most "
-            f"{PAGE_ROUTE_MAX} characters")
-    ids = page.get('ids', [])
-    if not isinstance(ids, list) or len(ids) > PAGE_IDS_MAX or not all(isinstance(i, str) and len(i) <= PAGE_ID_MAX and _PAGE_ID.fullmatch(i) for i in ids):
-        raise ValueError(
-            f"'page.ids' is a list of at most {PAGE_IDS_MAX} ids of 1 to "
-            f"{PAGE_ID_MAX} characters")
-    shown = f", showing {', '.join(ids)}" if ids else ''
-    return f"The user is on the page {route}{shown}."
-
-
 def masked(text: str, secret: Optional[str]) -> str:
     """``text`` with every occurrence of ``secret`` replaced by ``…last4``."""
     return text.replace(secret, '…' + secret[-4:]) if secret else text
@@ -276,7 +248,15 @@ def build_agent(model, mcp):
 
     No tool exists only for the agent. ``deps`` stays empty: the investor's
     profile facts are #1116's.
+
+    ``cache=True`` puts a breakpoint after the tools, the instructions and the
+    conversation for the providers that take one (Anthropic, OpenAI from
+    GPT-5.6); the others ignore it. A turn re-sends all three, so the prefix
+    is read back at a tenth of the price, as long as it stays byte-stable:
+    nothing per request goes into :data:`SYSTEM_PROMPT` (#1190).
     """
     from pydantic_ai import Agent
     from pydantic_ai.mcp import MCPToolset
-    return Agent(model, toolsets=[MCPToolset(mcp)], instructions=SYSTEM_PROMPT)
+    from pydantic_ai.settings import ModelSettings
+    return Agent(model, toolsets=[MCPToolset(mcp)], instructions=SYSTEM_PROMPT,
+                 model_settings=ModelSettings(cache=True))
