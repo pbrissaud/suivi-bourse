@@ -137,7 +137,6 @@ def build_app(runtime, mcp) -> Starlette:
         if not agent_threads.valid_id(thread_id):
             return _error(400, "'id' is 1 to 64 letters, digits, '_' or '-'.")
         try:
-            page = agent.page_line(raw.get('page'))
             run_input = VercelAIAdapter.build_run_input(body)
         except (ValueError, ValidationError) as exc:
             return _error(400, str(exc))
@@ -158,12 +157,12 @@ def build_app(runtime, mcp) -> Starlette:
             return _error(409, BUSY)
         running.add(thread_id)
         try:
-            return await _start(request, settings, thread_id, page, run_input)
+            return await _start(request, settings, thread_id, run_input)
         except BaseException:
             running.discard(thread_id)
             raise
 
-    async def _start(request, settings, thread_id, page, run_input):
+    async def _start(request, settings, thread_id, run_input):
         """Keep the question, then hand the turn to the adapter."""
         directory = root()
         # Off the loop: the first build imports a provider SDK (half a second),
@@ -214,6 +213,13 @@ def build_app(runtime, mcp) -> Starlette:
 
         async def on_complete(result):
             """Rewrite the thread with the whole run, or say it was not kept."""
+            # The counts alone: what the cache saved, never the key or a word.
+            usage = result.usage
+            logger.info(
+                f"agent turn: {settings['provider']} {settings['model']} "
+                f"input={usage.input_tokens} output={usage.output_tokens} "
+                f"cache_read={usage.cache_read_tokens} "
+                f"cache_write={usage.cache_write_tokens}")
             try:
                 await anyio.to_thread.run_sync(
                     save, result.all_messages(), first)
@@ -226,7 +232,7 @@ def build_app(runtime, mcp) -> Starlette:
             """The stream, giving the thread back however it ends."""
             try:
                 async for chunk in adapter.run_stream(
-                        message_history=history, instructions=page,
+                        message_history=history,
                         on_complete=on_complete):
                     yield chunk
             finally:

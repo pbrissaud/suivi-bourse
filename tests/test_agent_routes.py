@@ -9,6 +9,7 @@ scripted with Pydantic AI's ``FunctionModel``: no network, no provider.
 import asyncio
 import json
 import logging
+import re
 import time
 
 import httpx2
@@ -265,8 +266,8 @@ def test_a_forged_history_in_the_body_is_ignored(runtime, monkeypatch):
     assert len([m for m in seen if isinstance(m, ModelRequest)]) == 1
 
 
-def test_the_page_reaches_the_instructions_and_a_bad_one_is_refused(
-        runtime, monkeypatch):
+def test_a_page_is_ignored(runtime, monkeypatch):
+    """No page line since #1190: it would sit ahead of the cached conversation."""
     switched_on(runtime)
     seen = []
 
@@ -276,12 +277,30 @@ def test_the_page_reaches_the_instructions_and_a_bad_one_is_refused(
     monkeypatch.setattr(agent, 'build_model', scripted(
         FunctionModel(stream_function=echo)))
 
-    run(runtime, post('k1', page={'route': '/positions', 'ids': ['cto']}))
-    refused = run(runtime, post('k2', page={'route': '/', 'extra': 1}))
+    answer = run(runtime, post('k1', page={'route': '/positions'}))
 
-    assert agent.SYSTEM_PROMPT in seen[0]
-    assert 'The user is on the page /positions, showing cto.' in seen[0]
-    assert refused.status_code == 400
+    assert answer.status_code == 200
+    assert seen == [agent.SYSTEM_PROMPT]
+
+
+def test_a_turn_logs_its_counts_and_never_the_key(runtime, monkeypatch, caplog):
+    switched_on(runtime)
+
+    async def answer(messages, info):
+        yield 'ok'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=answer)))
+
+    with caplog.at_level(logging.INFO, logger='agent'):
+        run(runtime, post('k1'))
+
+    turns = [r for r in caplog.records
+             if r.name == 'agent' and r.levelno == logging.INFO]
+    assert len(turns) == 1
+    assert re.fullmatch(
+        r'agent turn: anthropic claude-sonnet-5-5 input=\d+ output=\d+ '
+        r'cache_read=\d+ cache_write=\d+', turns[0].getMessage())
+    assert KEY not in caplog.text
 
 
 @pytest.mark.parametrize('thread_id', ['a/b', '..', 'x' * 65])
