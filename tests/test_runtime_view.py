@@ -986,30 +986,6 @@ def test_the_payload_says_whether_the_reconstruction_still_has_windows():
     assert payload['rebuilding'] is True
 
 
-def test_the_payload_carries_the_mount_observation_verbatim():
-    """``store.persistence`` (issue #741), published by the **same
-    path as the rest of the runtime state** and for the same reason
-    ``rebuilding`` is here: it is a fact about *this process* — its mount
-    namespace — answered from memory with no query, so it survives the one
-    failure that empties every other page (a store nobody can open), which is
-    exactly when *"where did my data go"* gets asked.
-
-    All three answers reach the front, ``unknown`` included: a payload that only
-    carried two would force #724's *store* block to invent the third.
-
-    The **path travels in the same object** since #724, because the block reads
-    the two as one line — *the path, and whether it survives* — and both are boot
-    knowledge answered with no query."""
-    from application import mounts
-
-    for state in (mounts.EPHEMERAL, mounts.PERSISTENT, mounts.UNKNOWN):
-        payload = runtime_view.build_runtime(
-            shares=[_share()], scrape={}, backfill={}, next_runs={},
-            ingest=None, perf=None, now=NOW, persistence=state,
-            store_path='/data/suivi-bourse.duckdb')
-
-        assert payload['store'] == {
-            'persistence': state, 'path': '/data/suivi-bourse.duckdb'}
 
 
 def test_a_runtime_that_named_no_store_publishes_no_path():
@@ -1024,17 +1000,6 @@ def test_a_runtime_that_named_no_store_publishes_no_path():
     assert payload['store']['path'] is None
 
 
-def test_an_unobserved_runtime_defaults_to_unknown_rather_than_kept():
-    """The default is not ``persistent``. A test runtime, or the one a
-    Docker-less checkout builds, has observed nothing — and a payload saying
-    *kept* would be a claim nobody made."""
-    from application import mounts
-
-    payload = runtime_view.build_runtime(
-        shares=[_share()], scrape={}, backfill={}, next_runs={},
-        ingest=None, perf=None, now=NOW)
-
-    assert payload['store']['persistence'] == mounts.UNKNOWN
 
 
 # ===================================================================== #

@@ -127,6 +127,7 @@ describe('the navigation, seven entries in five and two', () => {
       'Référence',
       'Agent',
       'Grand livre',
+      'Système',
       'Réglages',
     ])
   })
@@ -140,7 +141,7 @@ describe('the navigation, seven entries in five and two', () => {
     // A route that renders a stub is a promise; this one renders the surface —
     // the dials, and the store the reader came to read.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Le magasin' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Général' })).toBeInTheDocument()
   })
 
   it('answers on its own address, so a bookmark on the settings survives', async () => {
@@ -182,7 +183,7 @@ describe('the navigation, seven entries in five and two', () => {
 
     await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
     const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(drawer).getAllByRole('link')).toHaveLength(7)
+    expect(within(drawer).getAllByRole('link')).toHaveLength(8)
   })
 })
 
@@ -259,7 +260,7 @@ describe('the bell is the one global indicator (#829)', () => {
     // place that survives the three sidebar states.
     expect(within(panel).getByText('Quelque chose s’est arrêté')).toBeInTheDocument()
     // Health is **repaired, never dismissed**: a link, and no acknowledgement.
-    expect(within(panel).getByRole('link', { name: 'Voir dans Réglages' })).toBeInTheDocument()
+    expect(within(panel).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
   })
 
   it('has no sidebar card left to disagree with it', async () => {

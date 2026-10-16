@@ -264,15 +264,15 @@ def test_a_boot_that_will_not_finish_gives_the_file_back(monkeypatch):
 def test_the_guard_covers_every_statement_past_the_open(fake_config, mocker):
     """The store is given back even when the failure is *before* the reload (#857).
 
-    The mount reading and the manager's construction used to sit between the
+    The manager's construction used to sit between the
     open and the ``try``: an exception there travelled up to ``boot.run`` with
     nobody left to close the file, and DuckDB exits on a ``.wal`` nobody
     checkpointed. The failure is provoked at the first of those statements,
     and the assertion is the connection's own state.
     """
     opens = mocker.spy(store, "open_store")
-    mocker.patch.object(main.mounts, "store_persistence",
-                        side_effect=OSError("/proc/self/mountinfo vanished"))
+    mocker.patch.object(main, "ConfigurationManager",
+                        side_effect=OSError("boom"))
 
     with pytest.raises(OSError):
         main.build_runtime()
@@ -330,74 +330,19 @@ def _conditions_said(caplog):
             if 'condition' in getattr(record, 'context', {})]
 
 
-def test_a_bare_container_says_the_three_lines_once_each(
-        fake_config, monkeypatch, caplog):
+def test_a_bare_container_says_the_two_lines_once_each(
+        fake_config, caplog):
     """#741's whole shape: the boot **observes and states** where #677/D12
     refused to start. The fake config publishes no event and the store has no
-    ``base_currency`` row, so all three conditions stand at once — which is
-    exactly the state of ``docker run`` with nothing attached to it."""
-    monkeypatch.setattr(main.mounts, "store_persistence",
-                        lambda *_args, **_kwargs: main.mounts.EPHEMERAL)
+    ``base_currency`` row, so both conditions stand at once."""
     caplog.set_level(logging.INFO)
 
     main.build_runtime()
 
     assert _conditions_said(caplog) == [
-        boot_conditions.NO_PERSISTENCE,
         boot_conditions.NO_BASE_CURRENCY,
         boot_conditions.NO_PORTFOLIO,
     ]
-
-
-def test_a_mounted_container_says_nothing_at_all_about_persistence(
-        fake_config, monkeypatch, caplog):
-    """The criterion, stated on the boot rather than on the pure function: a
-    container whose store is on a volume must not be told to mount one."""
-    monkeypatch.setattr(main.mounts, "store_persistence",
-                        lambda *_args, **_kwargs: main.mounts.PERSISTENT)
-    caplog.set_level(logging.INFO)
-
-    main.build_runtime()
-
-    assert boot_conditions.NO_PERSISTENCE not in _conditions_said(caplog)
-
-
-def test_an_unobservable_mount_prints_nothing_and_answers_unknown(
-        fake_config, monkeypatch, caplog):
-    """The third answer, end to end. On a developer's macOS there is no
-    ``/proc/self/mountinfo`` at all, and neither the line nor a *"the store is
-    kept"* may be manufactured from that silence.
-
-    ``store_persistence`` on the runtime is where that third answer lives: it is
-    what the runtime and store resources publish, and it says ``unknown``
-    rather than picking one of the two real answers. The gauge that said the
-    same thing by being absent was the redundant half, and it has since gone
-    (#806, #808).
-    """
-    monkeypatch.setattr(main.mounts, "store_persistence",
-                        lambda *_args, **_kwargs: main.mounts.UNKNOWN)
-    caplog.set_level(logging.INFO)
-
-    runtime = main.build_runtime()
-
-    assert boot_conditions.NO_PERSISTENCE not in _conditions_said(caplog)
-    assert runtime.store_persistence == main.mounts.UNKNOWN
-
-
-@pytest.mark.parametrize("state", [main.mounts.EPHEMERAL,
-                                   main.mounts.PERSISTENT])
-def test_the_boot_carries_the_persistence_in_both_directions(
-        fake_config, monkeypatch, state):
-    """Observed in the **master**, so it crosses the fork on the runtime object
-    the worker inherits — and carried in both directions, because *"the store is
-    kept"* is as much of an answer as *"it is not"* and the resources that serve
-    it have to be able to say either."""
-    monkeypatch.setattr(main.mounts, "store_persistence",
-                        lambda *_args, **_kwargs: state)
-
-    runtime = main.build_runtime()
-
-    assert runtime.store_persistence == state
 
 
 def test_the_boot_stamps_the_runtime_with_what_the_image_says_it_is(
@@ -439,31 +384,10 @@ def test_an_unstamped_boot_reads_the_checkout_it_runs_from(
     assert runtime.build.source == main.build_info.CHECKOUT
 
 
-def test_the_observation_interrogates_the_store_directory_it_was_given(
-        fake_config, monkeypatch, tmp_path):
-    """The **directory**, never the file: the store file does not exist yet on a
-    first boot, and #740's *"they are directories, never files"* is what makes
-    the question answerable at all."""
-    monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
-    asked = []
-
-    def _spy(store_dir, *_args, **_kwargs):
-        asked.append(store_dir)
-        return main.mounts.PERSISTENT
-
-    monkeypatch.setattr(main.mounts, "store_persistence", _spy)
-
-    main.build_runtime()
-
-    assert asked == [tmp_path / "vol"]
-
-
 def test_the_conditions_are_not_said_when_the_boot_fails_on_the_config(
         monkeypatch, caplog):
     """A boot that ends in an exception has a fatal message to say instead of
     three conditions about a portfolio it never managed to read."""
-    monkeypatch.setattr(main.mounts, "store_persistence",
-                        lambda *_args, **_kwargs: main.mounts.EPHEMERAL)
     monkeypatch.setattr(
         main, "ConfigurationManager",
         lambda **kwargs: _FakeConfigManager(
@@ -474,15 +398,6 @@ def test_the_conditions_are_not_said_when_the_boot_fails_on_the_config(
         main.build_runtime()
 
     assert _conditions_said(caplog) == []
-
-
-def test_the_runtime_answers_unknown_until_something_observed_it():
-    """The default on ``Runtime`` is not *persistent*. A test runtime, and the
-    one a Docker-less checkout builds, has observed nothing — and there is no
-    honest reading of that other than :data:`mounts.UNKNOWN`."""
-    runtime = main.Runtime(_FakeConfigManager())
-
-    assert runtime.store_persistence == main.mounts.UNKNOWN
 
 
 def test_build_runtime_propagates_a_broken_config(monkeypatch):

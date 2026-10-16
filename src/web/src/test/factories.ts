@@ -101,12 +101,7 @@ import type {
   ImportReceipt,
   LedgerEvent,
 } from '@/features/data/lib/api'
-import type {
-  ConfigResponse,
-  EnvironmentVariable,
-  SettingDescription,
-  StoreState,
-} from '@/features/settings/lib/api'
+import type { ConfigResponse, SettingDescription, StoreState } from '@/features/settings/lib/api'
 import type {
   ChartWindow,
   Fundamentals,
@@ -1062,7 +1057,7 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     // The ordinary installation is the mounted one (#741), so the factory's
     // default is the state that says nothing on screen; the other two are what
     // a test asks for by name.
-    store: { persistence: 'persistent', path: '/data/suivi-bourse.duckdb' },
+    store: { path: '/data/suivi-bourse.duckdb' },
     // The ordinary installation is a published image (#741's taste applied to
     // the stamp): the default is what an owner who pulled a tag runs, and the
     // three other states are what a test asks for by name.
@@ -1251,21 +1246,6 @@ export function defaultSettings(): SettingDescription[] {
   ]
 }
 
-/**
- * The three boot variables — a **description**, never a form (#740).
- *
- * Three and not six: the metrics flag and its port left with the exporter
- * and the drop folder's own with the mount, and this
- * fixture is the API's answer, so it is where the tab's list shortens.
- */
-export function defaultEnvironment(): EnvironmentVariable[] {
-  return [
-    { name: 'SB_STORE_DIR', value: '/data', set: false, source: 'default' },
-    { name: 'SB_WEB_PORT', value: '8080', set: true, source: 'environment' },
-    { name: 'LOG_LEVEL', value: 'INFO', set: true, source: 'environment' },
-  ]
-}
-
 /** The five references the comparison offers, as the route publishes them. */
 export function offeredBenchmarks(): OfferedBenchmark[] {
   return [
@@ -1327,7 +1307,6 @@ export function aConfig(overrides: Partial<ConfigResponse> = {}): ConfigResponse
   return {
     log_level: 'INFO',
     settings: defaultSettings(),
-    environment: defaultEnvironment(),
     unread_environment: [],
     ...overrides,
   }
@@ -1453,7 +1432,6 @@ export function aStore(overrides: Partial<StoreState> = {}): StoreState {
     // Absent at zero on screen: the list is the visible consequence of a forget
     // the reader has just made, not a maintenance table.
     orphans: [],
-    persistence: 'persistent',
     ...overrides,
   }
 }

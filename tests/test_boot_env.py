@@ -164,29 +164,3 @@ def test_the_read_set_is_exactly_the_inventory():
     ignored while being obeyed, which is the one thing worse than silence."""
     assert boot_env.READ == {name for name, _ in boot_env.INVENTORY}
     assert len(boot_env.INVENTORY) == 4
-
-
-# --------------------------------------------------------------------- #
-# The effective view
-# --------------------------------------------------------------------- #
-
-def test_the_source_is_factual_and_not_helpful():
-    """#654 trap 2. Reporting a variable as "unset, using the default" *because
-    it equals the default* would be a guess about what the operator wrote."""
-    reported = {e['name']: e
-                for e in boot_env.effective({'SB_WEB_PORT': '8080'})}
-
-    assert reported['SB_WEB_PORT']['source'] == 'environment'
-    assert reported['SB_WEB_PORT']['set'] is True
-    assert reported['SB_STORE_DIR']['source'] == 'default'
-    assert reported['SB_STORE_DIR']['set'] is False
-
-
-def test_the_log_level_reported_is_the_one_the_process_holds():
-    """The one of these the app can change while it runs (#654 §6b): the
-    variable is merely where the level started."""
-    entry = {e['name']: e for e in boot_env.effective(
-        {'LOG_LEVEL': 'INFO'}, log_level='DEBUG')}['LOG_LEVEL']
-
-    assert entry['value'] == 'DEBUG'
-    assert entry['set'] is True

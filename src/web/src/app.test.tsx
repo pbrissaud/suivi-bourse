@@ -48,7 +48,7 @@ describe('the walking skeleton', () => {
     const { user } = renderApp()
 
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
-    expect(within(nav()).getAllByRole('link')).toHaveLength(7)
+    expect(within(nav()).getAllByRole('link')).toHaveLength(8)
 
     await chooseInMenu(user, 'Thème', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
@@ -61,7 +61,15 @@ describe('the walking skeleton', () => {
     // built yet has no subject once every one of them is, and a route arriving
     // later — #760's comparison is the sixth — arrives with its page rather
     // than with a promise of one, and so does #1196's agent, the seventh.
-    for (const entry of ['Shares', 'Accounts', 'Reference', 'Agent', 'Ledger', 'Settings']) {
+    for (const entry of [
+      'Shares',
+      'Accounts',
+      'Reference',
+      'Agent',
+      'Ledger',
+      'System',
+      'Settings',
+    ]) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
       // `level: 1` is the page's own name, which the header draws (#789). The
       // settings page needs it said: the block it renders is *called* the
@@ -218,9 +226,9 @@ describe('when the app is not answering', () => {
     // panel's health card offers a link to where one repairs.
     await user.click(bell)
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    expect(within(panel).getByRole('link', { name: 'Voir dans Réglages' })).toHaveAttribute(
+    expect(within(panel).getByRole('link', { name: 'Voir dans Système' })).toHaveAttribute(
       'href',
-      expect.stringContaining('/settings'),
+      expect.stringContaining('/system'),
     )
   })
 })

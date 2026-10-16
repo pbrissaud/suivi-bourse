@@ -406,6 +406,13 @@ function CardLink({
       </Link>
     )
   }
+  if (to.to === '/system') {
+    return (
+      <Link to="/system" className={className} onClick={onFollow}>
+        {label}
+      </Link>
+    )
+  }
   return (
     <Link to="/settings" className={className} onClick={onFollow}>
       {label}

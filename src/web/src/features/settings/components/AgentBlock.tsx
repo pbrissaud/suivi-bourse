@@ -18,8 +18,9 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Section } from '@/components/ui/section'
+import { Switch } from '@/components/ui/switch'
 import {
   AGENT_PROVIDERS,
   addressRequired,
@@ -40,10 +41,9 @@ import {
   type AgentProvider,
   type AgentTestResult,
 } from '@/features/agent/lib/api'
+import { docsPageHref } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey, providerRefusal } from '@/lib/problem'
-
-const AGENT_HEADING = 'settings-agent'
 
 /** The `<select>` skin the forms share (`TaxationModelField`, `EventForm`). */
 const SELECT =
@@ -70,16 +70,20 @@ const FAILURE: Record<string, MessageKey> = {
 }
 
 export function AgentBlock({ config }: { config: AgentConfig }) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const client = useQueryClient()
   // Seeded once from the store: a refetch after a write must not wipe what
   // the reader is typing, nor the test that just passed.
   const [draft, setDraft] = useState<AgentDraft>(() => draftOf(config))
   const [tested, setTested] = useState<AgentTestResult | null>(null)
   const [model, setModel] = useState('')
+  // Steps 1 and 2 edited since the last passed test: the stored model no longer
+  // answers for them, even once a failed test has written them to the store.
+  const [untested, setUntested] = useState(false)
 
   const edit = (change: Partial<AgentDraft>) => {
     setDraft((current) => ({ ...current, ...change }))
+    setUntested(true)
     // What was tested is no longer what is on screen.
     setTested(null)
     setModel('')
@@ -98,6 +102,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
     },
     onSuccess: (answer) => {
       setTested(answer)
+      setUntested(false)
       setModel(answer.preselected ?? '')
       // Stored now: the field goes back to saying so by its last four.
       setDraft((current) => ({ ...current, key: '' }))
@@ -107,7 +112,9 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
 
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
-      agentApi.saveAgentConfig(enabled ? { model, enabled: true } : { enabled: false }),
+      agentApi.saveAgentConfig(
+        enabled ? { model: model || (config.model ?? ''), enabled: true } : { enabled: false },
+      ),
     onSuccess: stored,
   })
 
@@ -119,42 +126,42 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const keyLast4 = storedKeyApplies(config, draft) ? config.key.last4 : null
   const keyPage = provider ? KEY_PAGE[provider] : undefined
   const refusal = providerRefusal(test.error)
+  // A test this session decides; without one, the stored model can be switched back on.
+  const activatable =
+    tested !== null ? canActivate(true, model) : !untested && config.model !== null
 
   return (
-    <Card role="region" aria-labelledby={AGENT_HEADING}>
-      <CardHeader>
-        <h2 id={AGENT_HEADING} className="label">
-          {t('settings.agent.title')}
-        </h2>
-        <p className="max-w-prose text-xs text-muted-foreground">{t('settings.agent.note')}</p>
-        {config.enabled && config.provider && config.model ? (
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <p role="status" className="text-sm">
+    <Section
+      title={t('settings.agent.title')}
+      aside={
+        <span className="flex items-center gap-3">
+          {config.enabled && config.provider && config.model ? (
+            <span role="status" className="text-sm text-muted-foreground">
               {t('settings.agent.on', {
                 provider: t(PROVIDER_LABEL[config.provider]),
                 model: config.model,
               })}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={toggle.isPending}
-              onClick={() => toggle.mutate(false)}
-            >
-              {t('settings.agent.disable')}
-            </Button>
-          </div>
-        ) : null}
-      </CardHeader>
-      <CardContent className="space-y-6">
+            </span>
+          ) : null}
+          <Switch
+            aria-label={t('settings.agent.switch')}
+            checked={config.enabled}
+            // On needs a model: the one the test just picked, or the one stored.
+            disabled={toggle.isPending || (!config.enabled && !activatable)}
+            onCheckedChange={(on) => toggle.mutate(on)}
+          />
+        </span>
+      }
+    >
+      <div className="space-y-6">
+        <p className="max-w-prose text-xs text-muted-foreground">{t('settings.agent.note')}</p>
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">{t('settings.agent.step.provider')}</legend>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {AGENT_PROVIDERS.map((one) => (
               <label
                 key={one}
-                className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border p-3 has-checked:border-primary"
+                className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-card p-3 has-checked:border-primary"
               >
                 <input
                   type="radio"
@@ -293,6 +300,18 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
                       </option>
                     ))}
                   </select>
+                  {/* While on, the switch has nothing to flip: a new model is saved here. */}
+                  {config.enabled && model !== '' && model !== config.model ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={toggle.isPending}
+                      onClick={() => toggle.mutate(true)}
+                    >
+                      {t('settings.agent.model.use')}
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -313,46 +332,27 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
           ) : null}
         </section>
 
-        <section className="space-y-3">
-          <h3 className="text-sm font-medium">{t('settings.agent.step.contract')}</h3>
-          <div className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-            <div>
-              <p className="label">{t('settings.agent.contract.sent')}</p>
-              <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                <li>{t('settings.agent.contract.sent.tools')}</li>
-                <li>{t('settings.agent.contract.sent.facts')}</li>
-                <li>{t('settings.agent.contract.sent.conversation')}</li>
-                <li>{t('settings.agent.contract.sent.statements')}</li>
-              </ul>
-            </div>
-            <div>
-              <p className="label">{t('settings.agent.contract.kept')}</p>
-              <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                <li>{t('settings.agent.contract.kept.key')}</li>
-                <li>{t('settings.agent.contract.kept.income')}</li>
-                <li>{t('settings.agent.contract.kept.install')}</li>
-              </ul>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              disabled={!canActivate(tested !== null, model) || toggle.isPending}
-              onClick={() => toggle.mutate(true)}
-            >
-              {t('settings.agent.activate')}
-            </Button>
-            {tested === null ? (
-              <p className="text-xs text-muted-foreground">{t('settings.agent.activate.why')}</p>
-            ) : null}
-            {toggle.isError ? (
-              <p role="alert" className="text-sm text-destructive">
-                {t(problemMessageKey(toggle.error))}
-              </p>
-            ) : null}
-          </div>
-        </section>
-      </CardContent>
-    </Card>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {config.enabled ? null : (
+            <p>
+              {t(activatable ? 'settings.agent.activate.ready' : 'settings.agent.activate.why')}
+            </p>
+          )}
+          <a
+            href={docsPageHref(language, 'settings', 'agent')}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            {t('settings.agent.contract')}
+          </a>
+        </div>
+        {toggle.isError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(problemMessageKey(toggle.error))}
+          </p>
+        ) : null}
+      </div>
+    </Section>
   )
 }

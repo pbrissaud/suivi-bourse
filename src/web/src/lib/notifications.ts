@@ -60,6 +60,7 @@ export type Said = { key: MessageKey; values?: MessageValues } | { text: string 
  */
 export type Destination =
   | { to: '/settings' }
+  | { to: '/system' }
   | { to: '/accounts'; search: { account: string } }
   | { to: '/shares'; search: { symbol: string } }
   | { to: '/ledger'; search: { symbol: string[] } }
@@ -122,7 +123,7 @@ function factLink(fact: InstallationFact): Entry['link'] {
   // says what to do out there, so inventing a button would be inventing a
   // power the app does not have.
   if (fact.key === 'reconstruction_running') {
-    return { label: 'notification.link.settings', to: { to: '/settings' } }
+    return { label: 'notification.link.system', to: { to: '/system' } }
   }
   return null
 }
@@ -279,7 +280,7 @@ export function notifications(input: NotificationsInput): Entry[] {
       at: null,
       // Health is **repaired, never dismissed** — so it offers a link and no
       // acknowledgement, and the link goes where the jobs and the store are.
-      link: { label: 'notification.link.settings', to: { to: '/settings' } },
+      link: { label: 'notification.link.system', to: { to: '/system' } },
       acknowledge: null,
     })
   }

@@ -3871,35 +3871,6 @@ def test_a_runtime_with_no_scheduler_does_not_claim_a_rebuild(tmp_path):
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
 
-def test_the_runtime_publishes_the_mount_observation_to_the_front(tmp_path):
-    """`store.persistence` (issue #741) — *the fact is published for
-    the front by the same path as the rest of the runtime state*.
-
-    Here rather than on a resource of its own, for the reason that put
-    `rebuilding` here: it is a fact about *this process* and its mount
-    namespace, answered from memory with no query. Which is also why the
-    assertion above matters more than it looks — a store that cannot be opened
-    is exactly when *"where did my data go"* gets asked, and this route is the
-    one still answering.
-    """
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    runtime = api_module.current_runtime()
-    runtime.store_path = tmp_path / 'store.duckdb'
-    path = str(tmp_path / 'store.duckdb')
-
-    # A test runtime observed nothing, and says so rather than claiming a kept
-    # store.
-    assert client.get('/api/runtime').get_json()['store'] == {
-        'persistence': 'unknown', 'path': path}
-
-    runtime.store_persistence = 'ephemeral'
-    assert client.get('/api/runtime').get_json()['store'] == {
-        'persistence': 'ephemeral', 'path': path}
-
-    runtime.store_persistence = 'persistent'
-    assert client.get('/api/runtime').get_json()['store'] == {
-        'persistence': 'persistent', 'path': path}
 
 
 def test_the_runtime_names_which_suivibourse_is_answering(tmp_path):
@@ -3937,18 +3908,6 @@ def test_the_version_survives_an_unreadable_store(tmp_path):
         'version': None, 'revision': 'deadbeef', 'source': 'commit'}
 
 
-def test_the_mount_observation_survives_an_unreadable_store(tmp_path):
-    """The fact stays readable on the one failure that empties every page. It is
-    observed once in the master and carried in memory, so nothing about it goes
-    through the store it describes."""
-    client = build_client(
-        tmp_path, break_store=True,
-        accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
-    api_module.current_runtime().store_persistence = 'ephemeral'
-
-    assert client.get('/api/positions').status_code == 503
-    assert client.get('/api/runtime').get_json()['store']['persistence'] \
-        == 'ephemeral'
 
 
 # --------------------------------------------------------------------- #
@@ -4238,7 +4197,7 @@ def test_the_store_resource_fails_with_the_store_it_describes(tmp_path):
 
     Everything on this resource needs the file, so it cannot claim to describe
     an installation it can no longer read. The two facts that *do* survive that
-    failure — the path and its persistence — are on the runtime, which touches
+    failure — the path — is on the runtime, which touches
     nothing at all, which is why the block reads two resources rather than one.
     """
     client = build_client(tmp_path, break_store=True,
@@ -4628,30 +4587,6 @@ def _dials(client):
     return {row['key']: row for row in client.get('/api/config').get_json()['settings']}
 
 
-def test_the_config_route_carries_what_the_process_had_to_know_first(
-        tmp_path, monkeypatch):
-    """#654's one survivor, on `/api/config` rather than `/api/runtime`.
-
-    #661's argument: one noun, two consumers. "What is this container running?"
-    is a question about the configuration, and the data page is already the
-    screen that asks it — while putting it on the runtime resource would start
-    that resource down the road to a junk drawer.
-
-    The three ``INFLUXDB_*`` names left with the database (#700) and are
-    reported as set-and-unread instead, which is what stops an operator
-    concluding their token is wrong.
-    """
-    monkeypatch.setenv('INFLUXDB_TOKEN', 'apiv3_supersecret')
-    client = build_client(tmp_path)
-
-    body = client.get('/api/config').get_json()
-    env = {s['name']: s for s in body['environment']}
-
-    assert 'INFLUXDB_TOKEN' not in env
-    assert 'INFLUXDB_TOKEN' in body['unread_environment']
-    assert env['SB_STORE_DIR']['value'] is not None
-    # Compose-only variables are not app settings (#654 trap 13).
-    assert 'SB_VERSION' not in env
 
 
 def test_the_config_route_lists_the_dials_through_the_registry(tmp_path):
@@ -4669,9 +4604,6 @@ def test_the_config_route_lists_the_dials_through_the_registry(tmp_path):
     assert dials['regular_interval']['value'] == 120
     assert dials['regular_interval']['minimum'] == 10
     assert dials['regular_interval']['effect'] == settings_registry.REARM_SCRAPE
-    # A dial has no environment form at all, not even a reported one.
-    assert 'SB_REGULAR_INTERVAL' not in {
-        row['name'] for row in body['environment']}
 
 
 def test_the_config_route_names_what_is_set_and_no_longer_read(

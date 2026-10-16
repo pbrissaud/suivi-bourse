@@ -71,6 +71,28 @@ lengthens it. No interface can hide that, because the number in the form is the
 number in the formula. [How prices are collected](./how-prices-are-collected.mdx)
 has the rest of the back-off.
 
+## The agent {#agent}
+
+The agent is off until you turn it on. Pick a provider, give it a key (or
+Ollama's address), test the connection, then flip the switch at the top of the
+section. The key stays on this server, in the `/data` volume, and is never sent
+back to the browser: the page only shows its last four characters.
+
+**What goes to the provider:**
+
+- the results of the agent's tools — your figures, as the app computes them;
+- the profile facts you have confirmed;
+- the conversation;
+- a statement, only once you confirm it, one statement at a time.
+
+**What never does:**
+
+- the key: it authenticates the request and never enters the conversation;
+- your income, unless you tick the box that shares it;
+- this installation's paths and variables.
+
+With Ollama on your own machine, nothing leaves it.
+
 ## What the container imposes
 
 Four names. This is the complete list of what the app reads from its

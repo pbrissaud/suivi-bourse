@@ -1,45 +1,39 @@
-/**
- * The settings **page** (#724, #794, #830), at the one seam: the whole app in
- * jsdom, HTTP the only faked edge.
- *
- * What it holds is what that record enumerates: the dials — *stale-price
- * horizon included* — the workloads, the orphans, the store and what the
- * container imposes.
- *
- * Every case below names what it prevents, and three of them are measurements
- * or corrections rather than opinions:
- *
- *  - **79 % of a store's rows purged for zero bytes** — 126,0 Mo before, 126,0
- *    Mo after, the same content rebuilt from scratch fitting in 26,0. That is
- *    why a size and a purge button cannot be shown without the sentence between
- *    them;
- *  - **a greyed-out form that refused** — the environment card is a
- *    description, and the test of that is mechanical: nothing in it is an
- *    `input`;
- *  - **a page whose `<h1>` and first `<h2>` read the same word** — *Réglages*
- *    over *Réglages* — which is what the block being lifted out of the tab and
- *    cut into cards repairs.
- */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
+import { taxationModelPath } from '@/features/accounts/lib/api'
 import type { StoreState } from '@/features/settings/lib/api'
 import { type HealthState, type InstallationFact, ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aConfig,
+  anAccount,
+  anAccountsPayload,
   anEnvironmentFact,
   aFrozenScrape,
   aHealth,
   aHealthJobs,
   aRuntime,
   aStore,
+  aTaxationCatalogue,
+  aTaxationModel,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-async function openSettings(facts?: InstallationFact[], store?: StoreState, health?: HealthState) {
+const UNAVAILABLE = {
+  status: 503,
+  type: PROBLEM_TYPES.storageUnavailable,
+  title: 'storage unavailable',
+}
+
+async function openSettings(
+  facts?: InstallationFact[],
+  store?: StoreState,
+  health?: HealthState,
+  url = '/settings',
+) {
   if (facts) {
     server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json(facts)))
   }
@@ -49,82 +43,84 @@ async function openSettings(facts?: InstallationFact[], store?: StoreState, heal
   if (health) {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(health)))
   }
-  return renderApp({ url: '/settings' })
+  return renderApp({ url })
+}
+
+function openSystem(store?: StoreState, health?: HealthState) {
+  return openSettings(undefined, store, health, '/system')
 }
 
 function block(name: RegExp | string) {
   return screen.getByRole('region', { name })
 }
 
-describe('the page, and the cards it is made of', () => {
-  it('is a page: one h1, and no tab anywhere', async () => {
+async function followTheBell() {
+  const { user } = renderApp({ url: '/' })
+  await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+  const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+  await user.click(within(panel).getByRole('link', { name: 'Voir dans Système' }))
+  await screen.findByRole('heading', { level: 1, name: 'Système' })
+  return screen.findByRole('region', { name: 'Tâches' })
+}
+
+describe('the page', () => {
+  it('is one h1 and no tabs', async () => {
     await openSettings()
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
   })
 
-  it('names each card for what it holds, in the order the mock-up reads them', async () => {
-    await openSettings(undefined, aStore({ orphans: [{ symbol: 'ZZX', points: 1204 }] }))
+  it('holds what the owner sets, without the environment variables', async () => {
+    await openSettings()
 
-    // The defect this ticket repairs is in the first entry: the page's `<h1>`
-    // read *Réglages* and so did the `<h2>` under it, which names the page
-    // rather than the card.
     await waitFor(() =>
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
-        'Ce que vous pouvez changer',
+        'Général',
         'L’agent',
-        'Les plans de charge',
-        'Les titres orphelins',
-        'Le magasin',
-        'Ce que le conteneur impose',
-        'La version',
+        'Fiscalité',
+      ]),
+    )
+    expect(screen.queryByText('SB_STORE_DIR')).not.toBeInTheDocument()
+  })
+
+  it('leaves what the installation reports to the status page', async () => {
+    await openSystem(aStore({ orphans: [{ symbol: 'ZZX', points: 1204 }] }))
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Système' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
+        'Tâches',
+        'Titres orphelins',
       ]),
     )
   })
 
-  it('names the rebuild card too, so no region on the page is anonymous', async () => {
-    // Six cards set `role="region"` and `aria-labelledby`, and this one did
-    // not: navigating by region skipped the card carrying the page's heaviest
-    // gesture, which is the one a reader arrives at from the bell (#861).
+  it('names the rebuild section', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
-    await openSettings()
+    await openSystem()
 
     expect(
       await screen.findByRole('region', { name: 'Reconstruction en cours' }),
     ).toBeInTheDocument()
   })
 
-  it('says nothing about the notices, which live behind the bell', async () => {
+  it('leaves the notices to the bell', async () => {
     await openSettings([anEnvironmentFact()])
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
+    await screen.findByRole('heading', { name: 'Général' })
 
-    expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
   })
 })
 
-describe('the settings, which are one surface', () => {
-  it('has two cards and no separate effective-configuration card', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
-
-    expect(block('Ce que vous pouvez changer')).toBeInTheDocument()
-    expect(block('Ce que le conteneur impose')).toBeInTheDocument()
-    // It was drawn twice from the same source on the same page, and it answered
-    // a precedence problem that no longer exists.
-    expect(screen.queryByText(/configuration effective/i)).not.toBeInTheDocument()
-  })
-
-  it('draws the form from the registry rather than from a list of its own', async () => {
+describe('the settings form', () => {
+  it('is drawn from the registry, unknown dials included', async () => {
     server.use(
       http.get(ROUTES.config, () =>
         HttpResponse.json(
           aConfig({
             settings: [
               ...aConfig().settings,
-              // A dial the catalogue has never heard of. The form renders it,
-              // with its bounds, because the registry is the single list.
               {
                 key: 'a_dial_from_the_future',
                 value: 7,
@@ -143,7 +139,7 @@ describe('the settings, which are one surface', () => {
       ),
     )
     await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
+    await screen.findByRole('heading', { name: 'Général' })
 
     const field = screen.getByLabelText('a_dial_from_the_future')
     expect(field).toHaveAttribute('min', '1')
@@ -151,15 +147,11 @@ describe('the settings, which are one surface', () => {
     expect(screen.getByText('Something a later version added.')).toBeInTheDocument()
   })
 
-  it('carries the five dials and the currency, the mock-up having dropped three', async () => {
+  it('carries the five dials and the currency, not the benchmark', async () => {
     await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
+    await screen.findByRole('heading', { name: 'Général' })
 
-    // The list is the registry's and the words are the catalogue's, so this is
-    // an assertion about *the tab*, not about a hard-written form: the redesign
-    // kept two of the six and this is what says the other four came back
-    // (#787, #794).
-    const settings = block('Ce que vous pouvez changer')
+    const settings = block('Général')
     for (const dial of [
       'Cadence de relevé',
       'Cadence de reconstruction',
@@ -170,33 +162,12 @@ describe('the settings, which are one surface', () => {
     ]) {
       expect(within(settings).getByText(dial)).toBeInTheDocument()
     }
-  })
-
-  it('leaves the comparison reference off the form, though the route still writes it', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
-
-    // The list is the registry's **less one** (#760). Choosing a reference
-    // costs the fund's whole history to fetch, and the comparison screen is
-    // what says so before the click — the inception, the download state, the
-    // minutes-to-hours warning. A bare text field here offers the same write
-    // with none of it, and the way back would be emptying the field.
-    //
-    // `PUT /api/settings` is untouched: the dial is a dial, it is simply not
-    // asked for here. This assertion is on the **form**, not on the registry.
-    const settings = block('Ce que vous pouvez changer')
     expect(within(settings).queryByText('Référence de comparaison')).not.toBeInTheDocument()
-    expect(aConfig().settings.some((setting) => setting.key === 'benchmark_symbol')).toBe(true)
   })
 
-  it('keeps the stale-price horizon settable, and says what zero does', async () => {
+  it('accepts 0 on the stale-price horizon', async () => {
     const { user } = await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
-
-    // The dial the redesign dropped and #787 brought back. *Present* is not
-    // enough: it has to be **settable**, and the one value with a meaning of
-    // its own has to say what it means — `0` disables the sonde altogether,
-    // which is the registry's own reading (`settings_registry.py`).
+    await screen.findByRole('heading', { name: 'Général' })
     expect(screen.getByText(/0 pour ne jamais signaler/)).toBeInTheDocument()
 
     let sent: Record<string, string> | null = null
@@ -216,35 +187,27 @@ describe('the settings, which are one surface', () => {
     await waitFor(() => expect(sent).toEqual({ staleness_horizon: '0' }))
   })
 
-  it('quantifies what a cadence change reaches, and names the retroactive trap', async () => {
+  it('says what a cadence change reaches, and that it is retroactive', async () => {
     await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
+    await screen.findByRole('heading', { name: 'Général' })
 
-    // Two markets open, one shut: a portfolio-wide dial that reaches part of
-    // the portfolio has to say so, or the other symbols read as misconfigured.
     expect(
       screen.getByText(
         /S’applique maintenant à 2 titres, et à 1 autre à l’ouverture de son marché/,
       ),
     ).toBeInTheDocument()
-    // No interface can hide it: the number in the form is the number in the
-    // back-off's own formula.
-    expect(screen.getByText(/s’applique aussi aux titres déjà en échec/)).toBeInTheDocument()
+    expect(screen.getByText(/y compris ceux déjà en échec/)).toBeInTheDocument()
   })
 
-  it('writes only what moved, and reports what the write reached', async () => {
+  it('writes only what moved', async () => {
     const { user } = await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que vous pouvez changer' })
+    await screen.findByRole('heading', { name: 'Général' })
 
     let sent: Record<string, string> | null = null
     server.use(
       http.put(ROUTES.settings, async ({ request }) => {
         sent = (await request.json()) as Record<string, string>
-        return HttpResponse.json({
-          settings: aConfig().settings,
-          changed: Object.keys(sent),
-          effect: { symbols_rescheduled: 2, symbols_at_market_open: 1, jobs_rescheduled: [] },
-        })
+        return HttpResponse.json({ settings: aConfig().settings, changed: Object.keys(sent) })
       }),
     )
 
@@ -252,156 +215,23 @@ describe('the settings, which are one surface', () => {
     await user.type(screen.getByLabelText('Cadence de relevé'), '300')
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
 
-    // `reschedule_job` recomputes the next run from *now*, so a save button that
-    // posted every field would reset every timer on every click, invisibly.
     await waitFor(() => expect(sent).toEqual({ regular_interval: '300' }))
-    // The receipt says what **happened**, in its own words: repeating the
-    // forecast verbatim would put two announcers on one fact, one of them in
-    // the past tense and one of them not.
-    const receipt = await screen.findByRole('status')
-    expect(receipt).toHaveTextContent('1 réglage enregistré')
-    expect(receipt).toHaveTextContent(/2 titres réarmés/)
-    expect(receipt).toHaveTextContent(/1 autre à l’ouverture de son marché/)
-  })
-
-  it('renders the container card as a description and never as fields', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Ce que le conteneur impose' })
-
-    // Greyed-out fields invite the click and read as a form that refused.
-    const imposed = block('Ce que le conteneur impose')
-    expect(within(imposed).queryAllByRole('textbox')).toHaveLength(0)
-    expect(imposed.querySelectorAll('input, select, textarea, button')).toHaveLength(0)
-    // The list is the API's and never a hard-written one, which is what makes
-    // this an assertion about *the page*: three names — the two the exporter
-    // answered for and the drop folder's own are gone from
-    // the payload rather than hidden here.
-    for (const name of ['SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL']) {
-      expect(within(imposed).getByText(name)).toBeInTheDocument()
-    }
-    expect(within(imposed).queryByText('SB_PROMETHEUS_ENABLED')).not.toBeInTheDocument()
-    expect(within(imposed).queryByText('SB_METRICS_PORT')).not.toBeInTheDocument()
-    // Written once for the section, never under each of four rows.
-    expect(within(imposed).getAllByText(/En changer une, c’est recréer le conteneur/)).toHaveLength(
-      1,
-    )
+    expect(await screen.findByRole('status')).toHaveTextContent('1 réglage enregistré.')
   })
 })
 
-describe('the store', () => {
-  it('states the path, its persistence, the size and the last ledger write', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
+describe('the build', () => {
+  const footer = () => screen.findByTitle(/·|Version|commit|Dépôt|Inconnue/)
 
-    const store = block('Le magasin')
-    expect(store).toHaveTextContent('/data/suivi-bourse.duckdb')
-    expect(store).toHaveTextContent(/sur un volume qui survit au conteneur/)
-    // French units, from `Intl` — the header of this very file writes them.
-    expect(store).toHaveTextContent(/26,0\s*Mo/)
-    // The last **write of the ledger**, never the last observed price — that
-    // second one is liveness, which the bell answers (#829).
-    expect(store).toHaveTextContent('Dernière écriture du grand livre')
-    expect(store).toHaveTextContent(/10 févr\. 2026/)
+  it('names the release at the foot of the navigation', async () => {
+    await openSystem()
+
+    const line = await footer()
+    expect(line).toHaveTextContent('Version : 5.0.0')
+    expect(line).toHaveAttribute('title', expect.stringContaining('8f0a02e1c0ff'))
   })
 
-  it('never shows a size without saying what a purge does not do', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
-
-    // Measured: 79 % of the rows purged for zero bytes returned. Shown bare
-    // beside a purge button, the figure is a lie by juxtaposition.
-    expect(
-      within(block('Le magasin')).getByText(/libère des lignes, pas des octets/),
-    ).toBeInTheDocument()
-  })
-
-  it('lets an ephemeral store dominate the block instead of noting it', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } }),
-        ),
-      ),
-    )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
-
-    // The only screen where a trial run learns that it is a trial run.
-    expect(screen.getByText('Ce conteneur ne garde rien')).toBeInTheDocument()
-    // The panel is where every open entry is counted since #829, so this is
-    // asked of the badge itself.
-    expect(screen.getByRole('button', { name: /^Notifications/ })).not.toHaveAccessibleName(
-      /conteneur/i,
-    )
-  })
-
-  it('says nothing about persistence it cannot observe', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(aRuntime({ store: { persistence: 'unknown', path: '/data/x.duckdb' } })),
-      ),
-    )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
-
-    // The observation is a property of the kernel: off Linux there is nothing
-    // to report, and a reader must not be told either of the other two answers.
-    expect(block('Le magasin')).toHaveTextContent(/ne peut pas dire si ce chemin survit/)
-    expect(screen.queryByText('Ce conteneur ne garde rien')).not.toBeInTheDocument()
-  })
-
-  it('keeps the em dash for a process that named no store', async () => {
-    // The read **landed** and there is nothing to compute — the one
-    // state the `??` #777 gated out of the row was legitimately carrying, and
-    // the phrase net cannot see it: an em dash carries no word.
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(aRuntime({ store: { persistence: 'unknown', path: null } })),
-      ),
-    )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
-
-    const store = block('Le magasin')
-    expect(store).toHaveTextContent('Où il se trouve')
-    expect(within(store).getByText('—')).toBeInTheDocument()
-  })
-
-  it('says nothing about the ledger while its own read is in flight', async () => {
-    server.use(http.get(ROUTES.store, () => new Promise<never>(() => {})))
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
-
-    const store = block('Le magasin')
-    // The two facts that ride on `/api/runtime` are why the block does not wait
-    // as a whole (#668, #724): they are on screen in flight as in failure.
-    expect(store).toHaveTextContent('/data/suivi-bourse.duckdb')
-    expect(store).toHaveTextContent(/sur un volume qui survit au conteneur/)
-    // What the store itself was to say does not exist yet — the block's own
-    // rule applied one notch lower, never a dash and never a sentence.
-    expect(store).not.toHaveTextContent('Rien n’a encore été importé')
-    expect(store).not.toHaveTextContent('Dernière écriture du grand livre')
-    expect(store).not.toHaveTextContent('Taille sur le disque')
-  })
-})
-
-describe('the version', () => {
-  it('names the release an image was published under', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'La version' })
-
-    const version = block('La version')
-    expect(version).toHaveTextContent('5.0.0')
-    // The commit, shortened here and nowhere upstream: a truncated hash cannot
-    // be lengthened again, so the payload keeps the whole of it.
-    expect(version).toHaveTextContent('8f0a02e1c0ff')
-    expect(version).toHaveTextContent(/Image publiée sous ce numéro de version/)
-  })
-
-  it('states a build from a branch as complete rather than as a release with a hole', async () => {
-    // What a PaaS rebuilding on every push produces. There is no version, and
-    // the row is **absent** rather than an em dash: an em dash beside *Version*
-    // reads as a release whose number went missing.
+  it('falls back to the short revision on a build from a commit', async () => {
     server.use(
       http.get(ROUTES.runtime, () =>
         HttpResponse.json(
@@ -409,33 +239,17 @@ describe('the version', () => {
         ),
       ),
     )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'La version' })
+    await openSystem()
 
-    const version = block('La version')
-    expect(within(version).queryByText('Version')).not.toBeInTheDocument()
-    expect(version).toHaveTextContent('8f0a02e1c0ff')
-    expect(version).toHaveTextContent(/construite depuis un commit/)
-  })
-
-  it('says a checkout is a checkout, not the commit it names', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ build: { version: null, revision: '8f0a02e1c0ffee00', source: 'checkout' } }),
-        ),
-      ),
+    const line = await footer()
+    expect(line).toHaveTextContent('8f0a02e')
+    expect(line).toHaveAttribute(
+      'title',
+      expect.stringContaining('Image construite depuis un commit'),
     )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'La version' })
-
-    // The fourth word earns its place on screen: a working tree may differ from
-    // the commit it names, and the sentence refuses to let the hash be read as
-    // proof of what is running.
-    expect(block('La version')).toHaveTextContent(/pas ce qui a été modifié depuis/)
   })
 
-  it('keeps the card when nothing stamped the build', async () => {
+  it('says nothing when nothing stamped the build', async () => {
     server.use(
       http.get(ROUTES.runtime, () =>
         HttpResponse.json(
@@ -443,131 +257,73 @@ describe('the version', () => {
         ),
       ),
     )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'La version' })
+    await openSystem()
+    await screen.findByRole('heading', { name: 'Tâches' })
 
-    // A card that vanished here would send somebody who built the image by hand
-    // hunting for a version the page had decided not to mention — and no
-    // fabricated one takes its place.
-    const version = block('La version')
-    expect(version).toHaveTextContent(/Rien n’a estampillé cette construction/)
-    expect(version).not.toHaveTextContent('0.0.0')
-  })
-
-  it('is still readable when the store is not', async () => {
-    // The reason it rides on `/api/runtime`: this is the screen the question is
-    // asked on, and every card fed by a read of the store is a hole on it.
-    const unavailable = {
-      status: 503,
-      type: PROBLEM_TYPES.storageUnavailable,
-      title: 'storage unavailable',
-    }
-    server.use(
-      problemHandler(ROUTES.config, unavailable),
-      problemHandler(ROUTES.store, unavailable),
-    )
-    await openSettings()
-    await screen.findByRole('heading', { name: 'La version' })
-
-    expect(block('La version')).toHaveTextContent('5.0.0')
+    expect(screen.queryByText(/^Version :/)).not.toBeInTheDocument()
   })
 })
 
 describe('the orphaned securities', () => {
-  it('does not exist at zero', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
+  it('do not exist at zero', async () => {
+    await openSystem()
+    await screen.findByRole('heading', { name: 'Tâches' })
 
-    // It is not a maintenance table: it is the visible consequence of a
-    // deletion the reader has just made.
-    expect(screen.queryByRole('heading', { name: 'Les titres orphelins' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Purger ces historiques' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Titres orphelins' })).not.toBeInTheDocument()
   })
 
-  it('says the count, names each one with the series it holds, and purges them at once', async () => {
-    const { user } = await openSettings(
-      undefined,
-      aStore({ orphans: [{ symbol: 'ZZX', points: 1204 }] }),
-    )
-    const orphans = await screen.findByRole('region', { name: 'Les titres orphelins' })
+  it('are counted, named, and purged at once', async () => {
+    const { user } = await openSystem(aStore({ orphans: [{ symbol: 'ZZX', points: 1204 }] }))
+    const orphans = await screen.findByRole('region', { name: 'Titres orphelins' })
 
-    // The count **said**, rather than left to be inferred from the rows.
-    expect(orphans).toHaveTextContent('1 titre que plus rien ne déclare')
+    expect(orphans).toHaveTextContent('1 titre')
     expect(orphans).toHaveTextContent('ZZX')
     expect(orphans).toHaveTextContent('1 204 cours')
-    // A sold position is not one of them — its events are still recorded.
-    expect(orphans).toHaveTextContent(/Les positions que vous avez soldées ne sont pas concernées/)
 
     server.use(http.get(ROUTES.store, () => HttpResponse.json(aStore())))
-    await user.click(within(orphans).getByRole('button', { name: 'Purger ces historiques' }))
+    await user.click(within(orphans).getByRole('button', { name: 'Purger' }))
 
-    // The card is the consequence of the gesture, so the gesture takes it away.
     await waitFor(() =>
-      expect(
-        screen.queryByRole('heading', { name: 'Les titres orphelins' }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole('heading', { name: 'Titres orphelins' })).not.toBeInTheDocument(),
     )
   })
 })
 
-describe('the workloads, which the bell’s health card develops', () => {
-  it('is where the bell’s health card lands, from any page', async () => {
-    // Walked from the dashboard, through the panel, to the card's own control.
+describe('the jobs', () => {
+  it('are where the bell’s health card lands', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    const { user } = renderApp({ url: '/' })
 
-    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
-
-    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
-    expect(jobs).toHaveTextContent(/Cours figés alors que leur marché bouge/)
+    expect(await followTheBell()).toHaveTextContent(/Cours figés/)
   })
 
-  it('names the three the body carries, and never a fourth', async () => {
-    await openSettings()
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+  it('are the three the health payload carries', async () => {
+    await openSystem()
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
 
-    // Three and not four: **ingestion is not a job** — it is the boot or a
-    // write — so `/health` publishes no last pass for it and this page invents
-    // none, the mock-up's four rows notwithstanding.
     expect(within(jobs).getByText('Relevé des cours')).toBeInTheDocument()
     expect(within(jobs).getByText('Reconstruction de l’historique')).toBeInTheDocument()
     expect(within(jobs).getByText('Calcul de la performance')).toBeInTheDocument()
-    expect(within(jobs).queryByText(/Écriture du grand livre/)).not.toBeInTheDocument()
-    expect(jobs).toHaveTextContent('Tout fonctionne normalement.')
+    expect(jobs).toHaveTextContent('Tout fonctionne.')
   })
 
-  it('renders a verdict as a sentence, and names the securities it is about', async () => {
-    // A writer frozen since Tuesday: the scheduler runs, the store answers, the
-    // code is `200` — and this is the surface that says *what* is wrong.
-    await openSettings(undefined, undefined, aFrozenScrape())
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+  it('render a verdict as a sentence, never the raw word', async () => {
+    await openSystem(undefined, aFrozenScrape())
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
 
-    expect(jobs).toHaveTextContent('Quelque chose demande votre attention.')
-    expect(jobs).toHaveTextContent(/Cours figés alors que leur marché bouge/)
-    // The server's own word is never rendered raw, and the count alone would
-    // leave the one thing the reader cannot look up: which line to go and read.
+    expect(jobs).toHaveTextContent('À vérifier.')
+    expect(jobs).toHaveTextContent(/Cours figés/)
     expect(jobs).not.toHaveTextContent('frozen')
   })
 
-  it('says a stopped scheduler above the three jobs it would explain', async () => {
-    await openSettings(
-      undefined,
-      undefined,
-      aHealth({ status: 'attention', scheduler_running: false }),
-    )
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+  it('say a stopped scheduler', async () => {
+    await openSystem(undefined, aHealth({ status: 'attention', scheduler_running: false }))
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
 
-    // The cause, not a fourth row: it is *why* three jobs with a healthy last
-    // pass will never run again.
     expect(jobs).toHaveTextContent(/Le planificateur est arrêté/)
   })
 
-  it('names a pass this process has never seen instead of dashing it', async () => {
-    await openSettings(
-      undefined,
+  it('name a job that never ran', async () => {
+    await openSystem(
       undefined,
       aHealth({
         status: 'unknown',
@@ -576,53 +332,24 @@ describe('the workloads, which the bell’s health card develops', () => {
         }),
       }),
     )
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
 
-    // An em dash is *there is nothing to compute*, and a container a
-    // minute old has plenty to compute and has simply not got there yet.
-    expect(jobs).toHaveTextContent('Pas encore passé')
+    expect(jobs).toHaveTextContent('Jamais')
   })
 
-  it('does not exist while the health read is in flight', async () => {
+  it('do not exist while the health read is in flight', async () => {
     server.use(http.get(ROUTES.health, () => new Promise<never>(() => {})))
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Le magasin' })
+    await openSystem()
+    await screen.findByRole('heading', { level: 1, name: 'Système' })
 
-    // *Everything is running* is a claim about an installation nobody has
-    // observed yet, title included.
-    expect(screen.queryByRole('heading', { name: 'Les plans de charge' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Tâches' })).not.toBeInTheDocument()
   })
 
-  it('says why it could not be read where the bell’s link lands', async () => {
-    // **The state the bell is loudest in**, and it was the one this page said
-    // nothing about: `/health` refuses, `installationState` reads `unreachable`
-    // off the failed request, and the panel pins *Le magasin ne répond pas*
-    // whose one offer is a link here. A card that vanished on it — a refusal
-    // read as a read in flight — would answer *Voir dans Réglages* with a page
-    // that does not mention the workloads at all. Walked the way a reader walks
-    // it, from the dashboard.
-    server.use(
-      problemHandler(ROUTES.health, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
-    const { user } = renderApp({ url: '/' })
+  it('say why they could not be read when /health refuses', async () => {
+    server.use(problemHandler(ROUTES.health, UNAVAILABLE))
 
-    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
-
-    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
-    // The card the link named, keeping its name and carrying the reason its
-    // three rows are not there — the same rule the dials and the store follow
-    // (#829), one block further along.
+    const jobs = await followTheBell()
     expect(within(jobs).getByText('Lecture impossible')).toBeInTheDocument()
-    expect(jobs).toHaveTextContent(/son magasin ne répond pas/)
-    // An empty state and never an alert: there is no band anywhere, and what
-    // announces the installation is the bell, once.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
@@ -630,8 +357,8 @@ describe('the workloads, which the bell’s health card develops', () => {
     // Everywhere else a refetch that failed keeps the figures. Not here: this
     // block is the bell's state in prose, and a red bell must not link to a
     // green table from the last answer.
-    const { queryClient } = renderApp({ url: '/settings', fakeTimers: true })
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+    const { queryClient } = renderApp({ url: '/system', fakeTimers: true })
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
     expect(within(jobs).queryByText('Lecture impossible')).not.toBeInTheDocument()
 
     server.use(http.get(ROUTES.health, () => HttpResponse.error()))
@@ -639,84 +366,135 @@ describe('the workloads, which the bell’s health card develops', () => {
     await waitFor(() => expect(queryClient.getQueryState(['health'])?.error).toBeTruthy())
     await waitFor(() =>
       expect(
-        within(screen.getByRole('region', { name: 'Les plans de charge' })).getByText(
-          'Lecture impossible',
-        ),
+        within(screen.getByRole('region', { name: 'Tâches' })).getByText('Lecture impossible'),
       ).toBeInTheDocument(),
     )
   })
 
-  it('says the same thing when the answer is a 200 that is not a health payload', async () => {
-    // **The other half of `unreachable`, and the one that used to take the
-    // route down with it.** `installationState` folds two answers onto that
-    // word: a refused request, and a `200` whose body is not this object —
-    // a proxy answering with its own JSON, a stale image, the SPA catch-all
-    // (#819). The bell shouts identically in both and lands here in
-    // both. Before #830's repair this page read `health.error` alone, so the
-    // second answer reached the table, which tabulates three workloads out of
-    // `jobs` — and threw on the first row, with no error boundary under it.
+  it('say the same on a 200 that is not a health payload', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json({ status: 'ok' })))
-    const { user } = renderApp({ url: '/' })
 
-    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
-
-    // The route renders at all, which is the half that was broken.
-    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
-    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+    const jobs = await followTheBell()
     expect(within(jobs).getByText('Lecture impossible')).toBeInTheDocument()
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
 
-describe('the page’s own reads', () => {
-  it('names an unreadable store instead of rendering an empty page', async () => {
-    server.use(
-      problemHandler(ROUTES.config, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-      problemHandler(ROUTES.store, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
+describe('an unreadable store', () => {
+  it('is said in place of the dials', async () => {
+    server.use(problemHandler(ROUTES.config, UNAVAILABLE))
     renderApp({ url: '/settings' })
 
-    // **Each block says why it is empty, and there is no band** (#829): the space the dials would have filled carries the reason they
-    // are not there, and the store card carries the reason its two figures are
-    // not.
-    await screen.findAllByText('Lecture impossible')
-    expect(screen.getAllByText('Lecture impossible')).toHaveLength(2)
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    // The two facts that ride on the runtime survive it, which is why they are
-    // there: this is the moment *where did my data go* gets asked.
-    expect(block('Le magasin')).toHaveTextContent('/data/suivi-bourse.duckdb')
-    expect(block('Le magasin')).toHaveTextContent(/son magasin ne répond pas/)
-    // Both halves of the settings read go together: a description of a
-    // configuration nobody could read is a description of nothing.
-    expect(
-      screen.queryByRole('heading', { name: 'Ce que vous pouvez changer' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('heading', { name: 'Ce que le conteneur impose' }),
-    ).not.toBeInTheDocument()
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Général' })).not.toBeInTheDocument()
   })
 })
 
-describe('the page in English', () => {
-  it('renders the cards whole', async () => {
-    renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
+describe('in English', () => {
+  it('renders every section', async () => {
+    const { unmount } = renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
+    expect(await screen.findByRole('heading', { name: 'General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Taxation' })).toBeInTheDocument()
+    unmount()
 
-    expect(await screen.findByRole('heading', { name: 'What you can change' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'The workloads' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'The store' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'What the container imposes' })).toBeInTheDocument()
-    // The catalogue is the source in English, so this is where a key that
-    // landed in one file and not the other is caught.
-    expect(screen.getByText('Last write to your ledger')).toBeInTheDocument()
+    renderApp({ url: '/system', browserLanguages: ['en-GB'] })
+    expect(await screen.findByRole('heading', { level: 1, name: 'System' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument()
+  })
+})
+
+describe('taxation', () => {
+  it('lists each model with its rates and the accounts that carry it', async () => {
+    server.use(
+      http.get(ROUTES.taxationModels, () =>
+        HttpResponse.json(
+          aTaxationCatalogue({
+            models: [
+              aTaxationModel({
+                id: 'pea',
+                name: 'PEA',
+                kind: 'aged_flat_realised',
+                parameters: {
+                  rate_before: 0.128,
+                  rate_after: 0,
+                  threshold_years: 5,
+                  age_basis: 'first_payment',
+                  social_rate: 0.172,
+                },
+              }),
+            ],
+          }),
+        ),
+      ),
+    )
+    await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+
+    expect(taxation).toHaveTextContent('PEA')
+    expect(taxation).toHaveTextContent(/12,8\s%, puis 0\s% après 5 ans/)
+    expect(taxation).toHaveTextContent(/prélèvements sociaux 17,2\s%/)
+  })
+
+  it('writes a new model from the settings page', async () => {
+    let sent: unknown = null
+    server.use(
+      http.post(ROUTES.taxationModels, async ({ request }) => {
+        sent = await request.json()
+        return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
+      }),
+    )
+    const { user } = await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+
+    await user.click(within(taxation).getByRole('button', { name: 'Nouveau modèle' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Nouveau modèle' })
+    await user.type(within(sheet).getByLabelText('Le nom de ce modèle'), 'CTO')
+    await user.selectOptions(within(sheet).getByLabelText('Forme'), 'flat_realised')
+    await user.type(within(sheet).getByLabelText('Taux'), '30')
+    await user.click(within(sheet).getByRole('button', { name: 'Enregistrer ce modèle' }))
+
+    await waitFor(() =>
+      expect(sent).toEqual({ name: 'CTO', kind: 'flat_realised', parameters: { rate: 0.3 } }),
+    )
+  })
+
+  it('names the accounts that block a removal', async () => {
+    server.use(
+      http.delete(taxationModelPath('model-one'), () =>
+        HttpResponse.json(
+          {
+            type: PROBLEM_TYPES.taxationModelInUse,
+            title: 'Taxation model in use',
+            status: 409,
+            accounts: ['alpha'],
+          },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+
+    await user.click(within(taxation).getByRole('button', { name: 'Supprimer A flat model' }))
+    const confirm = await screen.findByRole('dialog', { name: 'Supprimer « A flat model » ?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
+
+    expect(await within(confirm).findByText(/alpha/)).toBeInTheDocument()
+  })
+
+  it('does not offer to remove a model an account carries', async () => {
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload([
+            anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' }),
+          ]),
+        ),
+      ),
+    )
+    await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+
+    await waitFor(() => expect(taxation).toHaveTextContent('Utilisé par 1 compte'))
+    expect(within(taxation).getByRole('button', { name: 'Supprimer A flat model' })).toBeDisabled()
   })
 })

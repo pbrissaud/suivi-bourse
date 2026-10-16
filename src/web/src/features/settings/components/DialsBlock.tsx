@@ -1,41 +1,11 @@
-/**
- * *What you can change* — **the dials, and only the dials** (#724, #830).
- *
- * The **effective-configuration card disappears as an object** — it was drawn
- * twice from the same source on the same page, and it answered a precedence
- * problem that no longer exists: there is one place that says what a setting is
- * worth.
- *
- * **The two halves are two cards now** (#830). They were one `<section>` headed
- * *Réglages*, which is the name of the page they sit on: a page whose `<h1>`
- * and whose first `<h2>` read the same word says its title twice and names
- * nothing.
- *
- * Three things here are decisions rather than layout:
- *
- *  - **The form is drawn by the registry.** `settings_registry.py` is the
- *    single list — key, type, bounds, effect — and this component iterates what
- *    the API hands over. **`staleness_horizon` is on this page because it is in
- *    that list** and for no other reason, which is the whole of what makes it
- *    impossible for the redesign to drop it again.
- *  - **The cadence says who it reaches.** A portfolio-wide dial that reaches
- *    three symbols out of twelve has to say so, or the reader concludes the
- *    other nine are misconfigured. The count comes from `/api/runtime` and it
- *    is the same split the write path applies (`features/settings/lib/installation.ts`).
- *  - **The trap is stated, because no interface can hide it.** The dead-ticker
- *    back-off waits `regular_interval × 2^(n−3)`; no absolute delay is stored
- *    anywhere, so changing this number **rescales retroactively** the wait of a
- *    symbol that has been failing since this morning. The number in the form is
- *    the number in the formula.
- */
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { CurrencyField } from '@/components/CurrencyField'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Section } from '@/components/ui/section'
 import {
   type ConfigResponse,
   type SettingDescription,
@@ -56,39 +26,12 @@ import {
 } from '@/features/settings/lib/installation'
 
 /**
- * The dial the first-run modal asks about, and the one the closed list is for.
- * Named from `lib/firstRun.ts` rather than spelled again: the modal and this
- * form are two mounts of one field (#726).
- */
-const CURRENCY = CURRENCY_KEY
-
-/** The id the card's landmark is named by — one constant, two readers. */
-const DIALS_HEADING = 'settings-dials'
-
-/**
- * The one dial this form does **not** render, though the registry declares it
- * and `PUT /api/settings` still writes it (#760).
- *
- * The comparison screen is the reference's only door now. It is not a second
- * door closed for tidiness: choosing a reference there costs the fund's whole
- * history to fetch, and the screen is what says so before the click — the
- * inception, the download state, the minutes-to-hours warning. A bare text
- * field here offers the same write with none of that, and a ticker typed into
- * it reaches the same backfill with no way back except emptying the field.
- *
- * The exclusion is named here, where the list is made, because the sentence
- * under `DIAL_LABEL` says the list is the registry's — and this is the one
- * place it is not.
+ * Registry dials this form leaves out. The benchmark is chosen on the
+ * comparison page, which says what fetching its history costs (#760).
  */
 const NOT_A_DIAL = new Set(['benchmark_symbol'])
 
-/**
- * One sentence per dial, in the reader's language. The **list** is the
- * registry's less :data:`NOT_A_DIAL`; only the words are here, exactly as the
- * six event types are named by the catalogue and enumerated by the API. A dial
- * the catalogue does not know yet renders under its key with the registry's own
- * note beside it, which is the honest degradation and not a hole.
- */
+/** An unknown dial falls back to its key and the registry's own doc. */
 const DIAL_LABEL: Record<string, MessageKey> = {
   regular_interval: 'settings.regular_interval',
   backfill_interval: 'settings.backfill_interval',
@@ -98,12 +41,6 @@ const DIAL_LABEL: Record<string, MessageKey> = {
   base_currency: 'settings.base_currency',
 }
 
-/**
- * The unit a dial is counted in, **beside the field and not inside its label**
- * (#838). The drawing sets a short field and the word next to it — which is how
- * a form reads a quantity — where the label carried `(secondes)` in brackets.
- * The currency has none: its value *is* the unit.
- */
 const DIAL_UNIT: Record<string, MessageKey> = {
   regular_interval: 'settings.unit.seconds',
   backfill_interval: 'settings.unit.seconds',
@@ -132,28 +69,19 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
   const [draft, setDraft] = useState<Record<string, string>>(() => draftFrom(config.settings))
   const [receipt, setReceipt] = useState<SettingsWriteResponse | null>(null)
 
-  // The store is the authority, so the fields follow what came back from it —
-  // including after a save, where the answer carries the new list.
   useEffect(() => {
     setDraft(draftFrom(config.settings))
   }, [config.settings])
 
-  // Whether the one dial with no default has been answered — which is what
-  // decides both the sentence under it and whether it is drawn as a field at
-  // all (#794). It is read off the settings this block already has, so the
-  // ledger read this block used to make for it went with the rule that needed
-  // it.
   const fixed = currencyFixed(config.settings)
 
   const save = useMutation({
+    // Only what moved: rescheduling resets a job's timer.
     mutationFn: () => settingsApi.saveSettings(changedValues(config.settings, draft)),
     onSuccess: (answer) => {
       setReceipt(answer)
-      // The one dial with a receipt of its own: it is the app's single
-      // question, and answering it is retroactive over every stored quote
-      // (#704). The other five are described by the sentence under the form.
-      if (answer.changed.includes(CURRENCY)) {
-        const currency = String(draft[CURRENCY] ?? '')
+      if (answer.changed.includes(CURRENCY_KEY)) {
+        const currency = String(draft[CURRENCY_KEY] ?? '')
         const { message, values } = receiptMessage({ kind: 'currency.saved', currency })
         toast.success(t(message, values))
       }
@@ -168,68 +96,48 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
   const pending = Object.keys(changedValues(config.settings, draft)).length
 
   return (
-    // `Card` ships a `div`, so the landmark's role is stated rather than
-    // inherited from a `<section>` — the shape one page over (`AccountDetail`).
-    <Card role="region" aria-labelledby={DIALS_HEADING}>
-      <CardHeader>
-        <h2 id={DIALS_HEADING} className="label">
-          {t('installation.settings.editable')}
-        </h2>
-        {/* The counterpart of the environment card's own note, and the reason
-            the two are told apart at a glance: nothing here needs a restart. */}
-        <p className="max-w-prose text-xs text-muted-foreground">
-          {t('installation.settings.editable.note')}
-        </p>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault()
-            save.mutate()
-          }}
-        >
-          <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
-            {config.settings
-              .filter((setting) => !NOT_A_DIAL.has(setting.key))
-              .map((setting) => (
-                <Dial
-                  key={setting.key}
-                  setting={setting}
-                  value={draft[setting.key] ?? ''}
-                  reach={reach}
-                  fixed={fixed}
-                  onChange={(value) =>
-                    setDraft((current) => ({ ...current, [setting.key]: value }))
-                  }
-                />
-              ))}
-          </div>
+    <Section title={t('installation.settings.editable')}>
+      <form
+        className="space-y-5"
+        onSubmit={(event) => {
+          event.preventDefault()
+          save.mutate()
+        }}
+      >
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2 2xl:grid-cols-3">
+          {config.settings
+            .filter((setting) => !NOT_A_DIAL.has(setting.key))
+            .map((setting) => (
+              <Dial
+                key={setting.key}
+                setting={setting}
+                value={draft[setting.key] ?? ''}
+                reach={reach}
+                fixed={fixed}
+                onChange={(value) => setDraft((current) => ({ ...current, [setting.key]: value }))}
+              />
+            ))}
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={pending === 0 || save.isPending}>
-              {t('installation.settings.save')}
-            </Button>
-            {save.isError ? (
-              <p role="alert" className="text-sm text-destructive">
-                {t('installation.settings.refused')}
-              </p>
-            ) : null}
-            {receipt && !save.isError ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                {receipt.changed.length === 0
-                  ? t('installation.settings.unchanged')
-                  : t('installation.settings.saved', {
-                      count: receipt.changed.length,
-                      now: Number(receipt.effect?.symbols_rescheduled ?? 0),
-                      later: Number(receipt.effect?.symbols_at_market_open ?? 0),
-                    })}
-              </p>
-            ) : null}
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={pending === 0 || save.isPending}>
+            {t('installation.settings.save')}
+          </Button>
+          {save.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t('installation.settings.refused')}
+            </p>
+          ) : null}
+          {receipt && !save.isError ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {receipt.changed.length === 0
+                ? t('installation.settings.unchanged')
+                : t('installation.settings.saved', { count: receipt.changed.length })}
+            </p>
+          ) : null}
+        </div>
+      </form>
+    </Section>
   )
 }
 
@@ -243,7 +151,6 @@ function Dial({
   setting: SettingDescription
   value: string
   reach: CadenceReach | null
-  /** Whether the currency is answered — the currency's own rule, and only its. */
   fixed: boolean | undefined
   onChange: (value: string) => void
 }) {
@@ -251,15 +158,10 @@ function Dial({
   const id = settingFieldId(setting.key)
   const label = DIAL_LABEL[setting.key]
   const hint = DIAL_HINT[setting.key]
-  // A fixed currency is not drawn as a field, so nothing here is labellable:
-  // a `<label for>` pointing at a paragraph names something a reader cannot
-  // reach, and the name belongs to the value all the same.
-  const drawn = !(setting.type === 'currency' && fixed === true)
-  // Both sentences are about **this** dial, so they live under it rather than
-  // under the section: read at the bottom of a form they would be about the
-  // save, and only one of the six dials rescales anything retroactively.
-  const retroactive = setting.key === RETROACTIVE_DIAL
   const unit = DIAL_UNIT[setting.key]
+  // A fixed currency is shown as text, so there is no field to label.
+  const drawn = !(setting.type === 'currency' && fixed === true)
+  const retroactive = setting.key === RETROACTIVE_DIAL
 
   return (
     <div className="space-y-1.5">
@@ -270,22 +172,12 @@ function Dial({
       ) : (
         <p className="text-sm text-muted-foreground">{label ? t(label) : setting.key}</p>
       )}
-      {/* The currency is the one dial whose *values* are a closed list, and the
-          registry says so with its own type — so the field follows the registry
-          here as everywhere else, and it is the same component the first-run
-          modal mounts (#726). */}
       {setting.type === 'currency' ? (
         <CurrencyField id={id} value={value} onChange={onChange} fixed={fixed} />
       ) : (
-        // **A quantity gets the width of a quantity, and its unit beside it**
-        // (#838): an integer of at most four digits in a field as wide as the
-        // card is a field that reads as free text, and `(secondes)` in the
-        // label was the unit written where the eye does not look for it.
         <div className="flex items-center gap-2.5">
           <Input
             id={id}
-            // The type comes from the registry, so a dial added there renders
-            // with its own bounds without a line changing here.
             type={setting.type === 'integer' ? 'number' : 'text'}
             inputMode={setting.type === 'integer' ? 'numeric' : undefined}
             min={setting.minimum ?? undefined}
@@ -297,18 +189,16 @@ function Dial({
           {unit ? <span className="text-xs text-muted-foreground">{t(unit)}</span> : null}
         </div>
       )}
-      <p className="text-2xs leading-relaxed text-muted-foreground">
-        {hint ? t(hint) : setting.doc}
-      </p>
+      {drawn ? (
+        <p className="text-xs text-muted-foreground">{hint ? t(hint) : setting.doc}</p>
+      ) : null}
       {retroactive && reach ? (
-        <p className="text-2xs leading-relaxed text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {t('settings.cadence.reach', { now: reach.now, later: reach.atMarketOpen })}
         </p>
       ) : null}
       {retroactive ? (
-        <p className="text-2xs leading-relaxed text-muted-foreground">
-          {t('settings.backoff.retroactive')}
-        </p>
+        <p className="text-xs text-muted-foreground">{t('settings.backoff.retroactive')}</p>
       ) : null}
     </div>
   )

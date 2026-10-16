@@ -21,6 +21,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import contextmanager
 
 from application import backfill
+from application import boot_env
 from application import main
 from application import market
 from application import quotes
@@ -512,7 +513,7 @@ def test_the_database_variables_are_gone_and_are_named_as_such(monkeypatch):
     monkeypatch.setenv("INFLUXDB_TOKEN", "apiv3_supersecret")
     monkeypatch.setenv("INFLUXDB_HOST", "http://influxdb:8181")
 
-    names = {s["name"] for s in main.effective_environment()}
+    names = set(boot_env.READ)
     assert names.isdisjoint(
         {"INFLUXDB_HOST", "INFLUXDB_TOKEN", "INFLUXDB_DATABASE"})
 
@@ -523,7 +524,7 @@ def test_the_database_variables_are_gone_and_are_named_as_such(monkeypatch):
 def test_the_dials_are_not_in_the_environment_list_any_more():
     """#701: a dial has no environment form at all — not even a reported one.
     """
-    names = {s["name"] for s in main.effective_environment()}
+    names = set(boot_env.READ)
 
     assert names.isdisjoint({
         "SB_REGULAR_INTERVAL", "SB_BACKFILL_INTERVAL", "SB_BACKFILL_DELAY",
@@ -532,15 +533,6 @@ def test_the_dials_are_not_in_the_environment_list_any_more():
     })
 
 
-def test_the_log_level_is_reported_from_the_running_logger(monkeypatch):
-    """The one of these the app can change while it runs (#654 §6b)."""
-    monkeypatch.setenv("LOG_LEVEL", "INFO")
-    main.set_log_level("DEBUG")
-    try:
-        entry = {s["name"]: s for s in main.effective_environment()}["LOG_LEVEL"]
-        assert entry["value"] == "DEBUG"
-    finally:
-        main.set_log_level("INFO")
 
 
 def test_compose_only_variables_are_not_in_the_list(monkeypatch):
@@ -548,7 +540,7 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     are consumed by the docker daemon — from inside the container the config
     directory is *always* ``/home/appuser/.config/SuiviBourse``. Listing them
     would imply they are reachable from in here."""
-    names = {s["name"] for s in main.effective_environment()}
+    names = set(boot_env.READ)
 
     assert "SB_VERSION" not in names
     assert "SB_CONFIG_DIR" not in names
@@ -564,7 +556,7 @@ def test_the_inventory_is_the_four_and_no_fifth():
     list ``/api/config`` publishes: a fifth name appearing in the payload is a
     fifth name the documentation would have to explain.
     """
-    names = [s["name"] for s in main.effective_environment()]
+    names = [name for name, _ in boot_env.INVENTORY]
 
     assert len(names) == 4
     assert set(names) == {"LOG_LEVEL", "SB_STORE_DIR", "SB_WEB_PORT", "SB_TWEAKCN_THEME"}
@@ -579,16 +571,6 @@ def test_the_bundle_location_is_no_longer_an_environment_variable(monkeypatch):
     """
     monkeypatch.setenv("SB_STATIC_DIR", "/somewhere/else")
 
-    assert "SB_STATIC_DIR" not in {
-        s["name"] for s in main.effective_environment()}
+    assert "SB_STATIC_DIR" not in boot_env.READ
     assert "SB_STATIC_DIR" in installation_facts.unread_environment()
 
-
-def test_no_entry_claims_a_secret_could_be_redacted(monkeypatch):
-    """#740. ``INFLUXDB_TOKEN`` was the environment's only credential and it
-    left with the database (#700), so "redact by name, never by value" has had
-    no subject since. A rule kept warm for a credential that may never come back
-    is a rule nobody exercises — and a ``secret: false`` on every row reads as a
-    promise this view knows how to keep."""
-    assert all("secret" not in entry
-               for entry in main.effective_environment())

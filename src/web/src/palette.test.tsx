@@ -99,7 +99,7 @@ describe('the three sections that read', () => {
     await open(user)
 
     // The pages and the actions are there at once — they read nothing.
-    expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(6)
     expect(section('Actions')).not.toBeNull()
     // And the three that read are **gone**, not empty, and not holding the rest.
     expect(section('Titres détenus')).toBeNull()
