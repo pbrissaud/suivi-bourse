@@ -8,9 +8,17 @@
  * chips are the confirmed facts, each opening its value, its date, *Modifier*
  * and *Oublier* (13A).
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UIMessage } from 'ai'
-import { type ComponentProps, type FormEvent, type ReactNode, useId, useState } from 'react'
+import {
+  type ComponentProps,
+  type FormEvent,
+  type ReactNode,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +27,8 @@ import { getToolName, isToolUIPart } from '@/features/agent/lib/agentChat'
 import {
   FACTS,
   factLabel,
+  LABEL_MAX,
+  MARGINAL_RATE_MAX_PERCENT,
   type Profile,
   profileApi,
   type ProjectValue,
@@ -26,13 +36,14 @@ import {
   proposalId,
   RISK_TOLERANCES,
 } from '@/features/agent/lib/profile'
+import { ApiProblem } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 
 /** Beyond this many chips, a *+N* chip opens the whole profile. */
 const CHIPS = 4
 
-/** Shared with the other forms' `<select>`s (`AgentBlock`, `EventForm`). */
+/** The `<select>` skin of the other forms (`AgentBlock`, `EventForm`), copied as they copy it. */
 const SELECT =
   'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
 
@@ -62,18 +73,35 @@ export function useProposals(
     queryKey: ['proposals', threadId, ids],
     queryFn: () => profileApi.proposals(ids),
     enabled: !busy && ids.length > 0,
+    // A proposal made mid-stream changes the key: the cards already read keep
+    // their state, and the new one is its tool line until the turn ends.
+    placeholderData: keepPreviousData,
   })
-  if (read.error) return new Map()
-  return read.data && new Map(read.data.proposals.map((p) => [p.id, p]))
+  const failed = read.error !== null
+  return useMemo(
+    () => (failed ? new Map() : read.data && new Map(read.data.proposals.map((p) => [p.id, p]))),
+    [failed, read.data],
+  )
 }
 
 /** A proposal (5A): the question and its two answers, or the one line it came to. */
 export function FactCard({ proposal }: { proposal: Proposal }) {
   const { t, locale } = useI18n()
+  const f = useFormatters()
   const client = useQueryClient()
   const decide = useMutation({
     mutationFn: (confirm: boolean) =>
       confirm ? profileApi.confirm(proposal.id) : profileApi.ignore(proposal.id),
+    // Written at once: while a later turn streams, the read is disabled and an
+    // invalidation alone would leave the buttons standing.
+    onSuccess: ({ proposal: decided }) =>
+      client.setQueriesData<{ proposals: Proposal[] }>(
+        { queryKey: ['proposals'] },
+        (read) =>
+          read && {
+            proposals: read.proposals.map((p) => (p.id === decided.id ? decided : p)),
+          },
+      ),
     // A 409 too: the card then reads what the server holds.
     onSettled: () =>
       Promise.all([
@@ -82,10 +110,22 @@ export function FactCard({ proposal }: { proposal: Proposal }) {
       ]),
   })
   const label = factLabel(proposal.key, proposal.value, locale)
-  const named = t(label.key, label.values)
+  // The owner's own screen: an income is confirmed on its amount, which only
+  // the model is never sent back.
+  const income = proposal.key === 'income' ? (proposal.value as IncomeValue) : null
+  const named = income
+    ? t('agent.fact.income', { amount: f.currency(income.amount, income.currency) })
+    : t(label.key, label.values)
+  // A refusal the card cannot outlive (a project forgotten since, no reporting
+  // currency) is said in the server's words; anything else in ours.
+  const refused =
+    decide.error instanceof ApiProblem && decide.error.detail
+      ? decide.error.detail
+      : t('agent.fact.failed')
 
   return (
-    <div className="flex flex-col gap-3 rounded-card border bg-card p-3.5">
+    // Polite: the decision replaces the buttons, and is said once it has.
+    <div aria-live="polite" className="flex flex-col gap-3 rounded-card border bg-card p-3.5">
       {proposal.status === 'ready' ? (
         <>
           <p className="text-prose">
@@ -112,7 +152,7 @@ export function FactCard({ proposal }: { proposal: Proposal }) {
           </div>
           {decide.error ? (
             <p role="alert" className="text-sm text-destructive">
-              {t('agent.fact.failed')}
+              {refused}
             </p>
           ) : null}
         </>
@@ -124,6 +164,11 @@ export function FactCard({ proposal }: { proposal: Proposal }) {
       )}
     </div>
   )
+}
+
+interface IncomeValue {
+  amount: number
+  currency: string
 }
 
 // ---------------------------------------------------------------- chips --
@@ -153,6 +198,9 @@ function entries(profile: Profile): Entry[] {
 /** The confirmed profile as chips (13A). Nothing while it is read, nor when empty. */
 export function ProfileChips() {
   const { t } = useI18n()
+  const list = useRef<HTMLUListElement>(null)
+  // A forgotten chip takes its popover and the focus with it: the list keeps it.
+  const forgotten = () => list.current?.focus()
   const profile = useQuery({ queryKey: ['profile'], queryFn: profileApi.profile })
   if (profile.data === undefined) return null
   const all = entries(profile.data)
@@ -160,11 +208,16 @@ export function ProfileChips() {
   const shown = all.length > CHIPS ? all.slice(0, CHIPS) : all
 
   return (
-    <ul aria-label={t('agent.profile')} className="flex flex-wrap gap-1.5 pt-1.5">
+    <ul
+      ref={list}
+      tabIndex={-1}
+      aria-label={t('agent.profile')}
+      className="flex flex-wrap gap-1.5 pt-1.5 focus:outline-none"
+    >
       {shown.map((entry) => (
         <li key={entry.key}>
           <Chip label={<EntryLabel entry={entry} />}>
-            <FactDetail entry={entry} />
+            <FactDetail entry={entry} onForgotten={forgotten} />
           </Chip>
         </li>
       ))}
@@ -172,12 +225,12 @@ export function ProfileChips() {
         <li>
           <Chip
             label={t('agent.profile.more', { count: all.length - shown.length })}
-            name={t('agent.profile.all')}
+            name={`${t('agent.profile.all')} (${t('agent.profile.more', { count: all.length - shown.length })})`}
           >
             <div className="flex flex-col divide-y">
               {all.map((entry) => (
                 <div key={entry.key} className="py-2 first:pt-0 last:pb-0">
-                  <FactDetail entry={entry} />
+                  <FactDetail entry={entry} onForgotten={forgotten} />
                 </div>
               ))}
             </div>
@@ -214,17 +267,26 @@ function Chip({ label, name, children }: { label: ReactNode; name?: string; chil
 }
 
 /** One fact: its value, when it was confirmed, *Modifier* and *Oublier*. */
-function FactDetail({ entry }: { entry: Entry }) {
+function FactDetail({ entry, onForgotten }: { entry: Entry; onForgotten: () => void }) {
   const { t } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
   const [editing, setEditing] = useState(false)
+  // Back from the editor, the focus returns to *Modifier*, not to the page.
+  const [edited, setEdited] = useState(false)
   const forget = useMutation({
     mutationFn: () => profileApi.forgetFact(entry.key),
+    onSuccess: onForgotten,
     onSettled: () => client.invalidateQueries({ queryKey: ['profile'] }),
   })
 
-  if (editing) return <FactEditor entry={entry} onDone={() => setEditing(false)} />
+  if (editing) {
+    const done = () => {
+      setEditing(false)
+      setEdited(true)
+    }
+    return <FactEditor entry={entry} onDone={done} />
+  }
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm font-medium">
@@ -234,7 +296,12 @@ function FactDetail({ entry }: { entry: Entry }) {
         {t('agent.profile.confirmedOn', { date: f.date(entry.confirmed_at) })}
       </p>
       <div className="flex gap-2">
-        <Button variant="outline" className="min-h-11" onClick={() => setEditing(true)}>
+        <Button
+          variant="outline"
+          className="min-h-11"
+          autoFocus={edited}
+          onClick={() => setEditing(true)}
+        >
           {t('agent.profile.edit')}
         </Button>
         <Button
@@ -259,16 +326,15 @@ function FactDetail({ entry }: { entry: Entry }) {
 function FactValue({ entry }: { entry: Entry }) {
   const f = useFormatters()
   if (entry.key === 'income') {
-    const income = entry.value as { amount: number; currency: string }
+    const income = entry.value as IncomeValue
     return <>{f.currency(income.amount, income.currency)}</>
   }
+  if (!entry.key.startsWith('project:')) return <EntryLabel entry={entry} />
   const project = entry.value as ProjectValue
   return (
     <>
       <EntryLabel entry={entry} />
-      {entry.key.startsWith('project:') && project.amount != null
-        ? ` · ${f.number(project.amount, 0)}`
-        : null}
+      {project.amount != null ? ` · ${f.number(project.amount, 0)}` : null}
     </>
   )
 }
@@ -292,7 +358,7 @@ function FactEditor({ entry, onDone }: { entry: Entry; onDone: () => void }) {
   }
   const field = (name: string, label: string, props: ComponentProps<typeof Input>) => (
     <div className="flex flex-col gap-1">
-      <label htmlFor={`${id}-${name}`} className="label">
+      <label htmlFor={`${id}-${name}`} className="block text-sm">
         {label}
       </label>
       <Input
@@ -317,14 +383,14 @@ function FactEditor({ entry, onDone }: { entry: Entry; onDone: () => void }) {
         ? field('rate', t('agent.profile.field.rate'), {
             type: 'number',
             min: 0,
-            max: 60,
+            max: MARGINAL_RATE_MAX_PERCENT,
             step: 0.1,
             required: true,
           })
         : null}
       {entry.key === 'risk_tolerance' ? (
         <div className="flex flex-col gap-1">
-          <label htmlFor={`${id}-risk`} className="label">
+          <label htmlFor={`${id}-risk`} className="block text-sm">
             {t('agent.profile.field.risk')}
           </label>
           <select
@@ -343,7 +409,7 @@ function FactEditor({ entry, onDone }: { entry: Entry; onDone: () => void }) {
       ) : null}
       {entry.key.startsWith('project:') ? (
         <>
-          {field('label', t('agent.profile.field.label'), { maxLength: 80, required: true })}
+          {field('label', t('agent.profile.field.label'), { maxLength: LABEL_MAX, required: true })}
           {field('year', t('agent.profile.field.year'), { type: 'number', required: true })}
           {field('amount', t('agent.profile.field.projectAmount'), { type: 'number', min: 0 })}
         </>

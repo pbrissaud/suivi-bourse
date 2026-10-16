@@ -103,15 +103,25 @@ class ProposalNotReady(Exception):
 
 def is_key(key: str) -> bool:
     """A key a fact can be stored under."""
-    return key in FACTS or bool(_PROJECT_KEY.fullmatch(key))
+    return key in FACTS or _is_project(key)
+
+
+def _is_project(key: Any) -> bool:
+    """``project:<id>``: a project that was confirmed, never a new one."""
+    return isinstance(key, str) and bool(_PROJECT_KEY.fullmatch(key))
 
 
 def is_proposal_id(text: str) -> bool:
     return bool(_PROPOSAL_ID.fullmatch(text))
 
 
-def validate(key: Any, value: Any, now: datetime) -> Any:
-    """``value`` as stored, or :class:`InvalidProfileFact` naming the rule."""
+def validate(key: Any, value: Any, now: datetime,
+             earliest: Optional[int] = None) -> Any:
+    """``value`` as stored, or :class:`InvalidProfileFact` naming the rule.
+
+    ``earliest`` lowers a project's first allowed year: an edit may keep the
+    year a project already holds, even once it has passed.
+    """
     if key == 'income':
         if not isinstance(value, dict) or set(value) != {'amount'}:
             raise InvalidProfileFact(
@@ -130,8 +140,8 @@ def validate(key: Any, value: Any, now: datetime) -> Any:
                 f"the risk tolerance is one of {', '.join(RISK_TOLERANCES)}",
                 key)
         return value
-    if key == NEW_PROJECT or (isinstance(key, str) and _PROJECT_KEY.fullmatch(key)):
-        return _project(value, key, now)
+    if key == NEW_PROJECT or _is_project(key):
+        return _project(value, key, now, earliest)
     raise InvalidProfileFact(
         f"the key is one of {', '.join(FACTS)}, {NEW_PROJECT} or "
         f"project:<id>", str(key))
@@ -149,9 +159,12 @@ def status(row: dict, now: datetime) -> Status:
 def propose(store, key: Any, value: Any, now: datetime) -> str:
     """Record a proposal, ``ready``, and its id. Writes no fact."""
     value = validate(key, value, now)
-    _currency(store, key)
-    if key.startswith('project:'):
-        _existing_project(store, key)
+    if key == 'income':
+        # Fixed now: the amount was stated in this currency, whatever the
+        # reporting currency is by the time the owner confirms it.
+        value = {**value, 'currency': _currency(store)}
+    if _is_project(key):
+        _existing(store, key)
     proposal_id = uuid4().hex
     store.execute(
         'INSERT INTO proposal (id, kind, payload, status, created_at) '
@@ -162,46 +175,38 @@ def propose(store, key: Any, value: Any, now: datetime) -> str:
 
 def confirm(store, proposal_id: str, now: datetime) -> Proposal:
     """Write the proposed fact and mark the proposal ``merged``, together."""
-    row = _proposal(store, proposal_id)
-    current = status(row, now)
-    if current != 'ready':
-        raise ProposalNotReady(current)
-    key = row['key']
+    row = _ready(store, proposal_id, now)
+    key, value, currency = row['key'], row['value'], None
+    if key == 'income':
+        value, currency = {'amount': value['amount']}, value.get('currency')
     if key == NEW_PROJECT:
         key = f'project:{uuid4().hex[:12]}'
-    elif key.startswith('project:'):
-        _existing_project(store, key)
+    elif _is_project(key):
+        _existing(store, key)
     with store.transaction():
-        _write(store, key, row['value'], now)
-        store.execute("UPDATE proposal SET status = 'merged', decided_at = ? "
-                      'WHERE id = ?', [now, proposal_id])
-    return _shape(_proposal(store, proposal_id), now)
+        _write(store, key, value, now, currency=currency)
+        return _decide(store, proposal_id, 'merged', now)
 
 
 def ignore(store, proposal_id: str, now: datetime) -> Proposal:
     """Mark the proposal ``ignored``; nothing else changes."""
-    row = _proposal(store, proposal_id)
-    current = status(row, now)
-    if current != 'ready':
-        raise ProposalNotReady(current)
-    store.execute("UPDATE proposal SET status = 'ignored', decided_at = ? "
-                  'WHERE id = ?', [now, proposal_id])
-    return _shape(_proposal(store, proposal_id), now)
+    _ready(store, proposal_id, now)
+    return _decide(store, proposal_id, 'ignored', now)
 
 
 def put(store, key: str, value: Any, now: datetime) -> None:
     """The UI's edit of a fact, or of a project that exists."""
     if not is_key(key):
         raise UnknownFact(key)
-    if key.startswith('project:'):
-        _existing_project(store, key)
-    _write(store, key, value, now)
+    earliest = None
+    if _is_project(key):
+        earliest = json.loads(_existing(store, key))['target_year']
+    _write(store, key, value, now, earliest)
 
 
 def forget(store, key: str) -> None:
     """Delete one fact, or :class:`UnknownFact` when there is none."""
-    if not store.query('SELECT 1 FROM profile_fact WHERE key = ?', [key]):
-        raise UnknownFact(key)
+    _existing(store, key)
     store.execute('DELETE FROM profile_fact WHERE key = ?', [key])
 
 
@@ -231,13 +236,16 @@ def read_proposals(store, ids: Sequence[str], now: datetime) -> List[Proposal]:
         return []
     marks = ', '.join('?' for _ in ids)
     rows = {row['id']: row for row in map(_row, store.query(
-        f'SELECT {_COLUMNS} FROM proposal WHERE id IN ({marks})', list(ids)))}
+        f'SELECT {_COLUMNS} FROM proposal WHERE {_KIND} AND id IN ({marks})',
+        list(ids)))}
     return [_shape(rows[i], now) for i in ids if i in rows]
 
 
 # ----------------------------------------------------------------- inside --
 
 _COLUMNS = 'id, payload, status, created_at, decided_at'
+#: The proposals this module decides; #1119's kinds are not its to confirm.
+_KIND = "kind = 'profile_fact'"
 
 
 def _row(row: tuple) -> dict:
@@ -255,17 +263,36 @@ def _shape(row: dict, now: datetime) -> Proposal:
 
 
 def _proposal(store, proposal_id: str) -> dict:
-    rows = store.query(f'SELECT {_COLUMNS} FROM proposal WHERE id = ?',
-                       [proposal_id])
+    rows = store.query(
+        f'SELECT {_COLUMNS} FROM proposal WHERE {_KIND} AND id = ?',
+        [proposal_id])
     if not rows:
         raise UnknownProposal(proposal_id)
     return _row(rows[0])
 
 
-def _write(store, key: str, value: Any, now: datetime) -> None:
-    value = validate(key, value, now)
+def _ready(store, proposal_id: str, now: datetime) -> dict:
+    """The proposal, or :class:`ProposalNotReady` once decided or expired."""
+    row = _proposal(store, proposal_id)
+    current = status(row, now)
+    if current != 'ready':
+        raise ProposalNotReady(current)
+    return row
+
+
+def _decide(store, proposal_id: str, decided: str, now: datetime) -> Proposal:
+    store.execute(f'UPDATE proposal SET status = ?, decided_at = ? '
+                  f'WHERE {_KIND} AND id = ?', [decided, now, proposal_id])
+    return _shape(_proposal(store, proposal_id), now)
+
+
+def _write(store, key: str, value: Any, now: datetime,
+           earliest: Optional[int] = None,
+           currency: Optional[str] = None) -> None:
+    """Upsert one fact; an income takes ``currency``, else the reporting one."""
+    value = validate(key, value, now, earliest)
     if key == 'income':
-        value = {**value, 'currency': _currency(store, key)}
+        value = {**value, 'currency': currency or _currency(store)}
     store.execute(
         'INSERT INTO profile_fact (key, value, confirmed_at) VALUES (?, ?, ?) '
         'ON CONFLICT (key) DO UPDATE SET value = excluded.value, '
@@ -273,21 +300,22 @@ def _write(store, key: str, value: Any, now: datetime) -> None:
         [key, json.dumps(value), now])
 
 
-def _currency(store, key: str) -> Optional[str]:
+def _currency(store) -> str:
     """The reporting currency an income is written in; refused while unset."""
-    if key != 'income':
-        return None
     currency = store.setting('base_currency')
     if not currency:
         raise InvalidProfileFact(
             "declare the reporting currency first: an income is kept in it",
-            key)
+            'income')
     return currency
 
 
-def _existing_project(store, key: str) -> None:
-    if not store.query('SELECT 1 FROM profile_fact WHERE key = ?', [key]):
+def _existing(store, key: str) -> str:
+    """The fact's stored value, or :class:`UnknownFact` when there is none."""
+    rows = store.query('SELECT value FROM profile_fact WHERE key = ?', [key])
+    if not rows:
         raise UnknownFact(key)
+    return rows[0][0]
 
 
 def _number(value: Any) -> bool:
@@ -301,19 +329,20 @@ def _amount(value: Any, key: str, what: str) -> float:
     return value
 
 
-def _project(value: Any, key: str, now: datetime) -> dict:
+def _project(value: Any, key: str, now: datetime,
+             earliest: Optional[int]) -> dict:
     if not isinstance(value, dict) or not {'label', 'target_year'} <= set(value) or set(value) - {'label', 'target_year', 'amount'}:
         raise InvalidProfileFact(
             'a project is {"label", "target_year", "amount"?}', key)
     label = value['label']
-    if not (isinstance(label, str) and label.strip() and len(label.strip()) <= LABEL_MAX and '\n' not in label):
+    if not (isinstance(label, str) and label.strip() and len(label.strip()) <= LABEL_MAX and label.isprintable()):
         raise InvalidProfileFact(
             f"a project's label is one line of 1 to {LABEL_MAX} characters",
             key)
-    year = value['target_year']
-    if type(year) is not int or not now.year <= year <= now.year + HORIZON_YEARS:
+    year, first = value['target_year'], min(now.year, earliest or now.year)
+    if type(year) is not int or not first <= year <= now.year + HORIZON_YEARS:
         raise InvalidProfileFact(
-            f"a project's target year is from {now.year} to "
+            f"a project's target year is from {first} to "
             f"{now.year + HORIZON_YEARS}", key)
     amount = value.get('amount')
     if amount is not None:

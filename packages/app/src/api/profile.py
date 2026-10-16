@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from application import profile as profile_module
-from api.problem import bad_request, conflict, not_found, unprocessable
+from api.problem import (
+    bad_request, conflict, not_found, unprocessable_request,
+)
 from api.common import _store, _json_object, current_runtime
 
 bp = Blueprint('profile', __name__)
@@ -39,7 +41,7 @@ def put_profile_fact(key):
         with current_runtime().config_manager.writing() as opened:
             profile_module.put(opened, key, body['value'], _now())
     except profile_module.InvalidProfileFact as exc:
-        return unprocessable(str(exc), key=exc.key)
+        return unprocessable_request(str(exc), key=exc.key)
     except profile_module.UnknownFact:
         return not_found(f"no project {key!r} in the profile")
     return jsonify(profile_module.read(_store()))
@@ -48,6 +50,8 @@ def put_profile_fact(key):
 @bp.delete('/profile/<key>')
 def delete_profile_fact(key):
     """Forget one fact, at once."""
+    if not profile_module.is_key(key):
+        return not_found(f"{key!r} is not a fact of the profile")
     try:
         with current_runtime().config_manager.writing() as opened:
             profile_module.forget(opened, key)
@@ -82,6 +86,8 @@ def ignore_proposal(proposal_id):
 
 
 def _decide(proposal_id, decide, with_profile):
+    if not profile_module.is_proposal_id(proposal_id):
+        return not_found("no proposal has this id")
     try:
         with current_runtime().config_manager.writing() as opened:
             proposal = decide(opened, proposal_id, _now())
@@ -90,7 +96,7 @@ def _decide(proposal_id, decide, with_profile):
     except profile_module.ProposalNotReady as exc:
         return conflict(f"Cette proposition est {_DECIDED[exc.status]}.")
     except profile_module.InvalidProfileFact as exc:
-        return unprocessable(str(exc), key=exc.key)
+        return unprocessable_request(str(exc), key=exc.key)
     except profile_module.UnknownFact:
         return not_found("the project this proposal changes is gone")
     if with_profile:

@@ -48,7 +48,7 @@ function switchedOn(profile: Profile = { facts: {}, projects: [] }) {
 }
 
 /** A stored thread whose one answer proposed a fact. */
-function threadWithProposal(proposal: Proposal | null) {
+function threadWithProposal(proposal: Proposal | null, part: Record<string, unknown> = {}) {
   const asked: string[] = []
   server.use(
     http.get(ROUTES.agentThread, () =>
@@ -67,6 +67,7 @@ function threadWithProposal(proposal: Proposal | null) {
                 state: 'output-available',
                 input: { key: 'marginal_rate', value: 0.3 },
                 output: { proposal_id: ID, status: 'ready' },
+                ...part,
               },
               { type: 'text', text: 'À confirmer.' },
             ],
@@ -155,13 +156,94 @@ describe('the proposal card (5A)', () => {
     })
   }
 
+  it('ignores through the app, and reads Ignoré after', async () => {
+    switchedOn()
+    threadWithProposal(aProposal('ready'))
+    const hit: string[] = []
+    server.use(
+      http.post(ROUTES.profileProposalConfirm, () => {
+        hit.push('confirm')
+        return HttpResponse.json({ proposal: aProposal('merged') })
+      }),
+      http.post(ROUTES.profileProposalIgnore, () => {
+        hit.push('ignore')
+        return HttpResponse.json({ proposal: aProposal('ignored') })
+      }),
+    )
+    const { user, main } = await openPage()
+
+    const ignore = await within(main).findByRole('button', { name: 'Ignorer' })
+    // What the server holds once the proposal is ignored.
+    threadWithProposal(aProposal('ignored'))
+    await user.click(ignore)
+
+    expect(await within(main).findByText('Ignoré')).toBeInTheDocument()
+    expect(hit).toEqual(['ignore'])
+  })
+
+  it('says a refusal in the server’s words and keeps the buttons', async () => {
+    switchedOn()
+    threadWithProposal(aProposal('ready'))
+    server.use(
+      http.post(ROUTES.profileProposalConfirm, () =>
+        HttpResponse.json(
+          {
+            type: '/problems/not-found',
+            title: 'Not found',
+            status: 404,
+            detail: 'the project this proposal changes is gone',
+          },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user, main } = await openPage()
+
+    await user.click(await within(main).findByRole('button', { name: 'Confirmer' }))
+
+    expect(await within(main).findByRole('alert')).toHaveTextContent(
+      'the project this proposal changes is gone',
+    )
+    expect(within(main).getByRole('button', { name: 'Confirmer' })).toBeInTheDocument()
+  })
+
+  it('asks for an income on its amount, which only the model is not sent', async () => {
+    switchedOn()
+    threadWithProposal({
+      ...aProposal('ready'),
+      key: 'income',
+      value: { amount: 54321, currency: 'EUR' },
+    })
+    const { main } = await openPage()
+
+    expect(
+      await within(main).findByText(/^Je note : revenu de 54\s321,00\s€ \?$/),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the failed tool line for a refused proposal', async () => {
+    switchedOn()
+    const asked = threadWithProposal(null, {
+      state: 'output-error',
+      output: undefined,
+      errorText: 'this fact is refused: the marginal tax rate is a fraction from 0 to 0.6',
+    })
+    const { main } = await openPage()
+
+    expect(
+      await within(main).findByText('Proposition d’un fait pour votre profil.'),
+    ).toBeInTheDocument()
+    expect(within(main).queryByText(/Je note/)).not.toBeInTheDocument()
+    expect(asked).toEqual([])
+  })
+
   it('falls back to the tool line for a proposal the server does not know', async () => {
     switchedOn()
     threadWithProposal(null)
     const { main } = await openPage()
 
     expect(
-      await within(main).findByText('Proposition d’un fait de votre profil.'),
+      await within(main).findByText('Proposition d’un fait pour votre profil.'),
     ).toBeInTheDocument()
     expect(within(main).queryByText(/Je note/)).not.toBeInTheDocument()
   })
@@ -211,7 +293,7 @@ describe('the profile chips (13A)', () => {
       'Maison · 2028',
       '+2',
     ])
-    await user.click(within(chips).getByRole('button', { name: 'Tout votre profil' }))
+    await user.click(within(chips).getByRole('button', { name: 'Tout votre profil (+2)' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getAllByRole('button', { name: 'Oublier' })).toHaveLength(6)
     expect(within(dialog).getByText('Voilier · 2040')).toBeInTheDocument()

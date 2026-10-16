@@ -13,6 +13,9 @@ export type { Profile, Proposal }
 /** The facts that are one value each, in the order their chips read. */
 export const FACTS = ['income', 'marginal_rate', 'risk_tolerance'] as const
 export const RISK_TOLERANCES = ['prudent', 'balanced', 'dynamic'] as const
+/** The server's bounds (`application/profile.py`), so a field says them first. */
+export const LABEL_MAX = 80
+export const MARGINAL_RATE_MAX_PERCENT = 60
 
 export interface ProjectValue {
   label: string
@@ -21,7 +24,7 @@ export interface ProjectValue {
 }
 
 function factPath(key: string): string {
-  return ROUTES.profileFact.replace(':key', key)
+  return ROUTES.profileFact.replace(':key', encodeURIComponent(key))
 }
 
 function proposalPath(route: string, id: string): string {

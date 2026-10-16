@@ -870,6 +870,7 @@
   "agent.profile.failed": "The change was not saved.",
   "agent.fact.ask": "Shall I note: {label}?",
   "agent.fact.ask.project": "Shall I note the project {label}?",
+  "agent.fact.income": "an income of {amount}",
   "agent.fact.confirm": "Confirm",
   "agent.fact.ignore": "Ignore",
   "agent.fact.merged": "Noted",

@@ -298,3 +298,87 @@ def test_a_turn_with_an_invalid_value_is_a_tool_error_and_records_nothing(
     assert 'this fact is refused' in error['errorText']
     assert not any(c['type'] == 'error' for c in streamed)
     assert runtime.store.query('SELECT count(*) FROM proposal') == before
+
+
+# --------------------------------------------------- after the review --
+
+def test_the_instructions_name_the_one_tool_that_proposes(tmp_path):
+    from test_mcp_server import instructions
+    runtime, _ = build_runtime(tmp_path)
+
+    said = ' '.join(instructions(runtime).split())
+
+    assert 'cannot change it' not in said
+    assert '`propose_profile_fact`' in said and 'no tool confirms one' in said
+
+
+def test_an_expired_proposal_answers_409_and_reads_expired(client):
+    http, runtime = client
+    stale = datetime.now(timezone.utc) - profile.EXPIRY - timedelta(seconds=1)
+    proposal_id = profile.propose(runtime.store, 'marginal_rate', 0.3, stale)
+
+    answer = http.post(f'/api/profile/proposals/{proposal_id}/confirm')
+
+    assert answer.status_code == 409 and 'expirée' in answer.get_json()['detail']
+    assert facts(runtime.store) == []
+    [read] = http.get(f'/api/profile/proposals?ids={proposal_id}').get_json()['proposals']
+    assert read['status'] == 'expired'
+
+
+def test_confirm_refuses_an_unknown_or_malformed_id_and_a_bodyless_put(client):
+    http, _ = client
+    assert http.post(f'/api/profile/proposals/{"0" * 32}/confirm').status_code == 404
+    assert http.post('/api/profile/proposals/nope/confirm').status_code == 404
+    assert http.delete('/api/profile/age').status_code == 404
+    assert http.put('/api/profile/marginal_rate', json={}).status_code == 400
+    assert http.put('/api/profile/marginal_rate', data='0.3').status_code == 400
+
+
+def _a_project(opened, now=NOW, year=2028):
+    profile.confirm(opened, profile.propose(
+        opened, 'project', {'label': 'Maison', 'target_year': year}, now), now)
+    return 'project:' + profile.read(opened)['projects'][0]['id']
+
+
+def test_a_change_to_a_project_is_confirmed_in_place(opened):
+    key = _a_project(opened)
+
+    profile.confirm(opened, profile.propose(
+        opened, key, {'label': 'Grande maison', 'target_year': 2030}, NOW), NOW)
+
+    [project] = profile.read(opened)['projects']
+    assert (project['label'], project['target_year']) == ('Grande maison', 2030)
+
+
+def test_a_change_to_a_project_forgotten_since_answers_404(client):
+    http, runtime = client
+    now = datetime.now(timezone.utc)
+    key = _a_project(runtime.store, now, now.year + 2)
+    proposal_id = profile.propose(runtime.store, key,
+                                  {'label': 'Autre', 'target_year': now.year + 3}, now)
+    assert http.delete(f'/api/profile/{key}').status_code == 204
+
+    answer = http.post(f'/api/profile/proposals/{proposal_id}/confirm')
+
+    assert answer.status_code == 404
+    assert facts(runtime.store) == []
+
+
+def test_an_income_is_confirmed_in_the_currency_it_was_proposed_in(opened):
+    proposal_id = profile.propose(opened, 'income', {'amount': 54321}, NOW)
+    opened.execute("UPDATE setting SET value = 'USD' WHERE key = 'base_currency'")
+
+    profile.confirm(opened, proposal_id, NOW)
+
+    assert profile.read(opened)['facts']['income']['value'] == {
+        'amount': 54321, 'currency': 'EUR'}
+
+
+def test_a_project_whose_year_has_passed_can_still_be_renamed(opened):
+    key = _a_project(opened, NOW.replace(year=2025), 2025)
+
+    profile.put(opened, key, {'label': 'Maison achetée', 'target_year': 2025}, NOW)
+
+    assert profile.read(opened)['projects'][0]['label'] == 'Maison achetée'
+    with pytest.raises(profile.InvalidProfileFact, match='2025 to 2076'):
+        profile.put(opened, key, {'label': 'Maison', 'target_year': 2024}, NOW)
