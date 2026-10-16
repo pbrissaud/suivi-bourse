@@ -171,6 +171,22 @@
       "title": "AccountsPayload",
       "type": "object"
     },
+    "Confirmed": {
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "proposal": {
+          "$ref": "#/$defs/Proposal"
+        }
+      },
+      "required": [
+        "proposal",
+        "profile"
+      ],
+      "title": "Confirmed",
+      "type": "object"
+    },
     "Converted": {
       "properties": {
         "currency": {
@@ -214,6 +230,20 @@
         "rate_at"
       ],
       "title": "Converted",
+      "type": "object"
+    },
+    "Fact": {
+      "properties": {
+        "confirmed_at": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "value",
+        "confirmed_at"
+      ],
+      "title": "Fact",
       "type": "object"
     },
     "Fundamentals": {
@@ -321,6 +351,18 @@
         "country"
       ],
       "title": "Fundamentals",
+      "type": "object"
+    },
+    "Ignored": {
+      "properties": {
+        "proposal": {
+          "$ref": "#/$defs/Proposal"
+        }
+      },
+      "required": [
+        "proposal"
+      ],
+      "title": "Ignored",
       "type": "object"
     },
     "Position": {
@@ -472,6 +514,121 @@
         "at"
       ],
       "title": "Price",
+      "type": "object"
+    },
+    "Profile": {
+      "properties": {
+        "facts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Fact"
+          },
+          "type": "object"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/Project"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "projects"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Project": {
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confirmed_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "target_year": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "target_year",
+        "amount",
+        "confirmed_at"
+      ],
+      "title": "Project",
+      "type": "object"
+    },
+    "Proposal": {
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "decided_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "merged",
+            "ignored",
+            "expired"
+          ],
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "id",
+        "key",
+        "value",
+        "status",
+        "created_at",
+        "decided_at"
+      ],
+      "title": "Proposal",
+      "type": "object"
+    },
+    "ProposalsPayload": {
+      "properties": {
+        "proposals": {
+          "items": {
+            "$ref": "#/$defs/Proposal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "proposals"
+      ],
+      "title": "ProposalsPayload",
       "type": "object"
     }
   },

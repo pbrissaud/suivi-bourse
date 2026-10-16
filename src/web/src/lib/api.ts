@@ -147,6 +147,16 @@ export const ROUTES = {
   /** One conversation: read as UI messages, or deleted. A **pattern**. */
   agentThread: '/api/agent/threads/:id',
   /**
+   * The investor's profile (#1116): the facts the owner confirmed, the income
+   * amount included. Each fact is edited or forgotten at `profileFact`.
+   */
+  profile: '/api/profile',
+  profileFact: '/api/profile/:key',
+  /** The agent's proposals, read by `?ids=` and decided only here. */
+  profileProposals: '/api/profile/proposals',
+  profileProposalConfirm: '/api/profile/proposals/:id/confirm',
+  profileProposalIgnore: '/api/profile/proposals/:id/ignore',
+  /**
    * The PIN (#1203): the gate in front of the whole socket answers these, never
    * Flask. A `401` from one of them is a wrong code, not a session that ended.
    */

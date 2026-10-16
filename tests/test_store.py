@@ -45,7 +45,7 @@ def test_a_new_file_carries_the_sixteen_tables(store):
     # consumes and nothing kept, which anything counting units across a split
     # needs. The fifteenth was #926's ``schema_step``, the one table that is
     # about the store rather than about the portfolio.
-    assert len(store_module.TABLES) == 18
+    assert len(store_module.TABLES) == 20
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):

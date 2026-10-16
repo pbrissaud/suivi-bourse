@@ -20,7 +20,8 @@ from api.problem import (
     too_large,
 )
 from api import (
-    accounts, agent, events, export, jobs, portfolio, settings, system,
+    accounts, agent, events, export, jobs, portfolio, profile, settings,
+    system,
 )
 
 logger = getLogger("api.api")
@@ -32,7 +33,7 @@ SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 # Nested, never siblings: a child of `api_bp` inherits its origin guard and
 # its problem+json handler, and a sibling would silently have neither.
 for _domain in (portfolio, accounts, events, export, system, jobs, settings,
-                agent):
+                agent, profile):
     api_bp.register_blueprint(_domain.bp)
 
 

@@ -78,6 +78,12 @@ const WRITE_ONLY_ROUTES = [
   // A turn is the reader's question, and its answer streams into the thread
   // that asked it (#1117): a gesture, never a read a surface is drawn from.
   'agentChat',
+  // The profile's gestures (#1116): an edit, a forgetting, and a proposal
+  // decided all answer the reader's own press. The profile and the proposals
+  // a thread made are reads.
+  'profileFact',
+  'profileProposalConfirm',
+  'profileProposalIgnore',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
@@ -318,6 +324,15 @@ const SURFACES: readonly Surface[] = [
   },
 ]
 
+const PROPOSAL = {
+  id: 'a'.repeat(32),
+  key: 'risk_tolerance',
+  value: 'prudent',
+  status: 'ready',
+  created_at: '2026-10-12T09:00:00+00:00',
+  decided_at: null,
+}
+
 /** The agent switched on, with one kept thread. */
 function agentHandlers() {
   return [
@@ -335,10 +350,25 @@ function agentHandlers() {
         title: 'Ma question',
         messages: [
           { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Ma question' }] },
-          { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'Voici la simulation.' }] },
+          {
+            id: 'm2',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-propose_profile_fact',
+                toolCallId: 'p1',
+                state: 'output-available',
+                input: { key: 'risk_tolerance', value: 'prudent' },
+                output: { proposal_id: PROPOSAL.id },
+              },
+              { type: 'text', text: 'Voici la simulation.' },
+            ],
+          },
         ],
       }),
     ),
+    // The proposal the thread made (#1116): its card is drawn from this read.
+    http.get(ROUTES.profileProposals, () => HttpResponse.json({ proposals: [PROPOSAL] })),
   ]
 }
 
