@@ -1,6 +1,6 @@
 """The four workloads and the state they share (issue #850)."""
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -8,9 +8,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from application import backfill
 from application import fx
 from application import ingestion
+from application import job_history
 from application import market
 from application import perf_job
 from application import runtime_state
+from application import runtime_view
 from application import scheduling
 from application import scrape
 from application import settings_registry
@@ -140,7 +142,18 @@ class Workloads:
 
     def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
         """Scrape one symbol and re-arm its job — what every job is armed on."""
-        return self._scrape.scrape_symbol(symbol, now)
+        with job_history.timed(self.recorder.history, job_history.SCRAPE,
+                               symbol) as run:
+            self._scrape.scrape_symbol(symbol, now)
+            run.settle(*runtime_view.scrape_outcome(
+                self.recorder.scrape_of(symbol)))
+        # A pass still running when its symbol was sold records after the
+        # reconciliation forgot it; forget it again.
+        try:
+            if symbol not in self._held_symbols():
+                self.recorder.history.forget(symbol)
+        except Exception:
+            pass
 
     def scrape_held(self):
         """Fetch and store every held symbol's quote, once — the e2e driver."""
@@ -206,7 +219,12 @@ class Workloads:
 
     def backfill(self, now: Optional[datetime] = None):
         """One cycle — the ladder, then three passes a symbol (issue #705)."""
-        return self._backfill.run(now)
+        started = datetime.now(timezone.utc)
+        with job_history.timed(self.recorder.history,
+                               job_history.BACKFILL) as run:
+            self._backfill.run(now)
+            run.settle(*runtime_view.backfill_outcome(
+                self.recorder.backfill_since(started)))
 
     def _rebuild_series(self) -> Dict[str, Optional[date]]:
         """The pass itself — the seam the suite watches for overlap."""
@@ -218,11 +236,20 @@ class Workloads:
 
     def recompute_perf(self) -> None:
         """Rebuild the perf cache, in full, every cycle — **guarded**."""
-        return self._recompute.recompute()
+        with job_history.timed(self.recorder.history,
+                               job_history.PERFORMANCE) as run:
+            # Under the pass's own lock, so a concurrent pass cannot publish
+            # its verdict between this one and the read.
+            with self._perf_lock:
+                self._recompute.recompute()
+                run.settle(*runtime_view.perf_outcome(self.recorder.perf()))
 
     def ingest(self, force: bool = False):
         """The boot's bootstrap, and the replay that follows a write (#697)."""
-        return self._ingestion.ingest(force)
+        with job_history.timed(self.recorder.history,
+                               job_history.INGESTION) as run:
+            self._ingestion.ingest(force)
+            run.settle(*runtime_view.ingest_outcome(self.recorder.ingest()))
 
     def _adopt_declared_currency(self) -> None:
         return self._ingestion.adopt_declared_currency()

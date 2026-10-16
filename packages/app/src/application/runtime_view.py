@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from application import build_info
 from application import instants
+from application import job_history
 from application import runtime_state
 from application import scheduling
 
@@ -482,6 +483,56 @@ def health_performance(
     }
 
 
+Outcome = Tuple[str, Optional[str]]
+
+
+def scrape_outcome(record: Optional[runtime_state.ScrapeRecord]) -> Outcome:
+    """One scrape pass, as the history colours it (#1236).
+
+    The error first: a raising pass also carries a ``failure_count``, and it is
+    an error, not the bell's attention.
+    """
+    if record is None:
+        return job_history.IDLE, None
+    if record.error:
+        return job_history.ERROR, record.error
+    if symbol_pill(record) in _SCRAPE_ATTENTION:
+        return job_history.ATTENTION, None
+    return job_history.OK, None
+
+
+def backfill_outcome(
+        records: Sequence[runtime_state.BackfillRecord]) -> Outcome:
+    """One backfill cycle, over the ``(symbol, direction)`` passes it published."""
+    if not records:
+        return job_history.IDLE, None
+    failed = [record for record in records if record.failed]
+    if failed:
+        first = failed[0]
+        return job_history.ERROR, (
+            first.error or f"{first.symbol} ({first.direction}) failed")
+    if any(record.terminal == runtime_state.TERMINAL_UNCONVERTIBLE
+           for record in records):
+        return job_history.ATTENTION, None
+    return job_history.OK, None
+
+
+def perf_outcome(record: Optional[runtime_state.PerfRecord]) -> Outcome:
+    if record is None:
+        return job_history.IDLE, None
+    if record.verdict == runtime_state.PERF_FAILED:
+        return job_history.ERROR, record.error
+    return job_history.OK, None
+
+
+def ingest_outcome(record: Optional[runtime_state.IngestRecord]) -> Outcome:
+    if record is None:
+        return job_history.IDLE, None
+    if record.outcome == runtime_state.INGEST_FAILED:
+        return job_history.ERROR, record.error
+    return job_history.OK, None
+
+
 def _health_status(verdict: str, attention: Sequence[str]) -> str:
     """One job's verdict, read as one of the three states."""
     if verdict in attention:
@@ -533,4 +584,5 @@ __all__ = [
     'build_errors', 'is_rebuilding', 'build_runtime',
     'HEALTH_OK', 'HEALTH_ATTENTION', 'HEALTH_UNKNOWN',
     'health_scrape', 'health_backfill', 'health_performance', 'build_health',
+    'scrape_outcome', 'backfill_outcome', 'perf_outcome', 'ingest_outcome',
 ]

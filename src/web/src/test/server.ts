@@ -28,6 +28,7 @@ import {
   aConfig,
   anAgentConfig,
   aHealth,
+  aJobsHistory,
   aTypedEvent,
   aLedgerPayload,
   aMoversPayload,
@@ -223,6 +224,7 @@ export function defaultHandlers() {
     // it asks for an orphan.
     http.get(ROUTES.advisories, () => HttpResponse.json([])),
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
+    http.get(ROUTES.jobsHistory, () => HttpResponse.json(aJobsHistory())),
     // The write answers with the new list and **quantifies its effect**: a
     // portfolio-wide cadence that reaches part of the portfolio has to say so.
     http.put(ROUTES.settings, async ({ request }) => {
