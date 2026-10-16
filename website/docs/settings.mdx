@@ -95,7 +95,7 @@ With Ollama on your own machine, nothing leaves it.
 
 ## What the container imposes
 
-Four names. This is the complete list of what the app reads from its
+Six names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
 | Variable | Default | What it decides |
@@ -104,6 +104,8 @@ environment; nothing else in it is consulted.
 | `SB_WEB_PORT` | `8080` | the socket the app is bound to |
 | `LOG_LEVEL` | `INFO` | how loudly the app logs |
 | `SB_TWEAKCN_THEME` | unset | a [tweakcn](https://tweakcn.com) theme id whose colours, fonts, radius and shadows replace the bundled theme; read once at start-up |
+| `SB_RESET_AUTH` | unset | `1` clears the access code, its sessions and the MCP token at start-up, and says so in the log at every start while it is set — remove it once you are back in |
+| `SB_FORWARDED_ALLOW_IPS` | unset | the reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed, comma-separated; none by default |
 
 - **The path is a directory, never a file.** The app names its own store file
   inside it. That removes the entire class of mistake where you point at a file

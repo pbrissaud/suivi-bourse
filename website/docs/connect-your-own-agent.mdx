@@ -68,20 +68,33 @@ answer with.
 
 ## Who can reach it
 
-**Anyone who can reach the port.** There is no password, no token and no login —
-exactly as there is none for the page itself. That is the app's whole security
-model: it is one person's application, and reaching its address *is* the
+**Without an access code, anyone who can reach the port.** The code is off by
+default, exactly as it is for the page: reaching the address *is* the
 permission.
 
-So the rule is the one that already applies to the app: **do not publish the port
-to the open internet**. On your own machine or your own network, nothing more is
-needed. If you want to reach it from outside, put it behind whatever you already
-use for that — a VPN, a reverse proxy with authentication, a tunnel — the same way
-you would for the page.
+**With an access code**, `/mcp` asks for a bearer token instead of the page's
+session. It is shown once when you turn the code on, under *Settings → Access*,
+with the Claude Desktop entry ready to paste:
 
-If your client connects over anything but plain HTTP on your own network, be aware
-that this app terminates no TLS itself. That, too, belongs to the proxy in front
-of it.
+```json
+{
+  "mcpServers": {
+    "suivi-bourse": {
+      "command": "npx",
+      "args": ["mcp-remote", "http://localhost:8080/mcp", "--header", "Authorization:${AUTH_HEADER}"],
+      "env": { "AUTH_HEADER": "Bearer <your token>" }
+    }
+  }
+}
+```
+
+Changing the code keeps the token; *Regenerate* replaces it, and the old one
+stops working; turning the code off deletes it. The app's own chat talks to the
+server in memory and needs none of this.
+
+Either way, **do not publish the port to the open internet**: the code is sent
+as it is over plain HTTP. To reach the app from outside, put it behind whatever
+you already use for that — a VPN, a reverse proxy with TLS, a tunnel.
 
 ## Your figures leave your machine
 
