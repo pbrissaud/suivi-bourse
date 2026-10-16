@@ -25,8 +25,9 @@ def _never(url):
 
 @pytest.fixture
 def http(tmp_path):
-    client, _ = build_client_and_store(tmp_path)
+    client, opened = build_client_and_store(tmp_path)
     client.application.config['TWEAKCN_FETCH'] = _never
+    client.opened = opened
     return client
 
 
@@ -129,11 +130,21 @@ def test_font_imports_lead_the_stylesheet(http):
     assert body.index('@import') < body.index('html:root{')
 
 
-def test_a_store_error_serves_the_default(http, monkeypatch, caplog):
+@pytest.mark.parametrize('error', [duckdb.Error('boom'), RuntimeError('boom')])
+def test_a_store_error_serves_the_default(http, monkeypatch, caplog, error):
     def broken():
-        raise duckdb.Error('boom')
+        raise error
 
     monkeypatch.setattr(settings_api, '_store', broken)
     with caplog.at_level(logging.WARNING):
         assert _css(http) == '/* default theme */'
     assert any('boom' in record.getMessage() for record in caplog.records)
+
+
+def test_an_unparseable_row_reads_null_and_serves_the_default(http, caplog):
+    http.opened.execute("INSERT INTO setting (key, value) VALUES ('theme', 'not json')")
+
+    with caplog.at_level(logging.WARNING):
+        assert http.get('/api/theme').get_json() is None
+        assert _css(http) == '/* default theme */'
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 2

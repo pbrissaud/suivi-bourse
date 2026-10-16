@@ -60,9 +60,22 @@ def sanitize(value: object) -> Optional[str]:
     if not isinstance(value, str) or len(value) > 300:
         return None
     lowered = value.lower()
-    if any(bad in lowered for bad in _FORBIDDEN):
+    if any(bad in lowered for bad in _FORBIDDEN) or not _balanced(value):
         return None
     return value
+
+
+def _balanced(value: str) -> bool:
+    """No bracket or quote left open: an open ``(`` swallows the rest of the sheet."""
+    if value.count('"') % 2 or value.count("'") % 2:
+        return False
+    depth = 0
+    for char in value:
+        depth += char in '(['
+        depth -= char in ')]'
+        if depth < 0:
+            return False
+    return depth == 0
 
 
 def _ground(entry: dict, name: str) -> Dict[str, object]:
@@ -164,16 +177,18 @@ def normalize(css_vars: object) -> Dict[str, Dict[str, str]]:
 
 def validate(body: object) -> Dict[str, Dict[str, str]]:
     """``normalize``, refusing by name the first key it would have dropped."""
-    kept = normalize(body)
     if len(json.dumps(body)) > MAX_BYTES:
         raise InvalidTheme(None, f'a theme is at most {MAX_BYTES} bytes')
+    kept = normalize(body)
     for key in body:
         if key not in kept:
             raise InvalidTheme(key, f'a theme has no {key!r}')
     for ground in _GROUNDS:
         for key in body.get(ground) or {}:
             if key not in kept[ground]:
-                raise InvalidTheme(key, f'{ground}: {key!r} is not a value a theme may set')
+                raise InvalidTheme(
+                    key, f'{ground}: {key!r} is not a value a theme may set, '
+                         f'or is set on one ground only')
     return kept
 
 

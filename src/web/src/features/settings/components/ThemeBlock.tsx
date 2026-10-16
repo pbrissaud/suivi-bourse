@@ -129,7 +129,7 @@ export function ThemeBlock({ stored }: { stored: ThemeVars | null }) {
               placeholder={t('settings.theme.import.placeholder')}
               autoComplete="off"
               spellCheck={false}
-              aria-invalid={importing.isError ? true : undefined}
+              aria-invalid={importRefused ? true : undefined}
               aria-describedby={importing.isError ? 'theme-id-error' : undefined}
               onChange={(event) => {
                 setId(event.target.value)
@@ -158,10 +158,10 @@ export function ThemeBlock({ stored }: { stored: ThemeVars | null }) {
         </div>
 
         <Collapsible open={open} onOpenChange={setOpen}>
-          <CollapsibleTrigger className="group flex items-center gap-1 text-sm font-medium">
+          <CollapsibleTrigger className="group flex min-h-8 items-center gap-1 rounded-sm text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11">
             <ChevronRightIcon
               aria-hidden
-              className="size-4 transition-transform group-data-[state=open]:rotate-90"
+              className="size-4 transition-transform motion-reduce:transition-none group-data-[state=open]:rotate-90"
             />
             {t('settings.theme.json')}
           </CollapsibleTrigger>

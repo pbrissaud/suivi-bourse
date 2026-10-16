@@ -174,9 +174,53 @@ describe('the theme card', () => {
     expect(await within(block).findByRole('alert')).toHaveTextContent(
       'tweakcn n’a pas rendu de thème : OSError: HTTP 404',
     )
-    expect(within(block).getByLabelText('Importer depuis tweakcn')).toHaveAttribute(
+    expect(within(block).getByLabelText('Importer depuis tweakcn')).not.toHaveAttribute(
       'aria-invalid',
-      'true',
     )
+  })
+
+  it('marks the id field when the server refuses the id', async () => {
+    store()
+    server.use(
+      http.post(ROUTES.themeImport, () =>
+        HttpResponse.json(
+          { type: PROBLEM_TYPES.badRequest, title: 'Invalid request', status: 422, key: 'id' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user, block } = await openTheme()
+    const field = within(block).getByLabelText('Importer depuis tweakcn')
+
+    await user.type(field, 'Nope')
+    await user.click(within(block).getByRole('button', { name: 'Importer' }))
+
+    expect(await within(block).findByRole('alert')).toHaveTextContent(
+      'Un identifiant tweakcn ne contient que',
+    )
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(field).toHaveFocus())
+  })
+
+  it('applies pasted JSON, refills it with what was kept, and repaints', async () => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = '/api/theme.css'
+    document.head.append(link)
+    const writes = store()
+    const { user, block } = await openTheme()
+    await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
+    const field = within(block).getByRole('textbox', { name: 'Modifier le JSON' })
+
+    await user.click(field)
+    await user.paste('{"light": {"primary": "red"}, "dark": {"primary": "blue"}}')
+    await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
+
+    expect(await within(block).findByRole('status')).toHaveTextContent(
+      'Thème personnalisé · appliqué',
+    )
+    expect(writes).toEqual([['put', { light: { primary: 'red' }, dark: { primary: 'blue' } }]])
+    expect(JSON.parse((field as HTMLTextAreaElement).value)).toEqual(THEME)
+    expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/)
   })
 })

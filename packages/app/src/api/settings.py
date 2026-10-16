@@ -116,7 +116,8 @@ def get_theme():
     """The stored theme, or ``null``: Atelier as bundled."""
     try:
         return jsonify(_read_theme(_store()))
-    except ValueError:
+    except ValueError as exc:
+        logger.warning("stored theme unreadable, answering null: %s", exc)
         return jsonify(None)
 
 

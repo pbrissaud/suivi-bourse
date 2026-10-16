@@ -33,9 +33,10 @@ def test_sanitize_keeps_numbers_and_plain_strings_and_drops_the_rest():
     assert tweakcn.sanitize(0) == '0'
     assert tweakcn.sanitize(0.5) == '0.5'
     assert tweakcn.sanitize('oklch(0.5 0.1 160)') == 'oklch(0.5 0.1 160)'
+    assert tweakcn.sanitize("'Open Sans', calc(var(--x) * 2)") == "'Open Sans', calc(var(--x) * 2)"
     for bad in (None, True, [], {}, float('nan'), float('inf'), 'red;}body{display:none',
                 'a<b', 'a\\b', 'url(https://x)', 'URL(https://x)', 'image-set("x" 1x)',
-                'red /*', 'a\nb', 'x' * 301):
+                'red /*', 'a\nb', 'x' * 301, 'calc(1px', 'var(--x))', '"Open Sans', "a'b"):
         assert tweakcn.sanitize(bad) is None, bad
 
 
@@ -176,9 +177,11 @@ def test_validate_names_the_first_key_it_would_drop(body, key):
     assert refused.value.key == key
 
 
-def test_validate_bounds_the_size():
-    with pytest.raises(tweakcn.InvalidTheme):
-        tweakcn.validate(_theme(theme={'radius': 'x' * (tweakcn.MAX_BYTES + 1)}))
+def test_validate_bounds_the_size(monkeypatch):
+    monkeypatch.setattr(tweakcn, 'MAX_BYTES', 10)
+    with pytest.raises(tweakcn.InvalidTheme) as refused:
+        tweakcn.validate(_theme(theme={'radius': '1rem'}))
+    assert refused.value.key is None
 
 
 def test_fetch_refuses_a_bad_id_before_any_fetch():
