@@ -1,4 +1,4 @@
-"""The four things the environment still says (store, port, log level, theme), and the names it no longer says."""
+"""What the environment still says (store, port, log level, theme, the PIN's two), and the names it no longer says."""
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
@@ -13,6 +13,12 @@ LOG_LEVEL = 'LOG_LEVEL'
 #: A tweakcn theme id laid over the bundled Atelier (#1130). Unset by default.
 THEME = 'SB_TWEAKCN_THEME'
 
+#: ``1`` clears the PIN, the session secret and the MCP token at boot (#1203).
+RESET_AUTH = 'SB_RESET_AUTH'
+
+#: The proxies whose ``X-Forwarded-For``/``-Proto`` are believed. Empty: none.
+FORWARDED_ALLOW_IPS = 'SB_FORWARDED_ALLOW_IPS'
+
 DEFAULT_STORE_DIR = '/data'
 DEFAULT_WEB_PORT = 8080
 DEFAULT_LOG_LEVEL = 'INFO'
@@ -22,6 +28,8 @@ INVENTORY: Tuple[Tuple[str, str], ...] = (
     (STORE_DIR, DEFAULT_STORE_DIR),
     (WEB_PORT, str(DEFAULT_WEB_PORT)),
     (THEME, ''),
+    (RESET_AUTH, ''),
+    (FORWARDED_ALLOW_IPS, ''),
 )
 
 READ: frozenset = frozenset(name for name, _ in INVENTORY)
@@ -84,20 +92,25 @@ class BootEnvironment:
     web_port: int
     log_level: str
     unread: Tuple[str, ...]
+    reset_auth: bool = False
+    forwarded_allow_ips: str = ''
 
 
 def read(env: Mapping[str, str]) -> BootEnvironment:
-    """The three boot values and the muted names, from a mapping like ``os.environ``."""
+    """The boot values and the muted names, from a mapping like ``os.environ``."""
     return BootEnvironment(
         store_dir=directory(env, STORE_DIR, DEFAULT_STORE_DIR),
         web_port=integer(env, WEB_PORT, DEFAULT_WEB_PORT),
         log_level=text(env, LOG_LEVEL, DEFAULT_LOG_LEVEL),
         unread=unread(env),
+        reset_auth=text(env, RESET_AUTH) == '1',
+        forwarded_allow_ips=text(env, FORWARDED_ALLOW_IPS, ''),
     )
 
 
 __all__ = [
-    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'THEME',
+    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'THEME', 'RESET_AUTH',
+    'FORWARDED_ALLOW_IPS',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',
     'BootEnvironment', 'read', 'unread', 'notice',
