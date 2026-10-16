@@ -1586,6 +1586,35 @@ describe('the allocation card (#1206)', () => {
     const row = within(card).getByText('Zeta Alpha').closest('li')!
     expect(row).toHaveTextContent(/1\D?300,00/)
     expect(within(card).getByRole('group', { name: 'Répartir par' })).toBeInTheDocument()
+
+    // By account: the same total in the hole, each account with its amount.
+    fireEvent.click(within(card).getByRole('button', { name: 'Compte' }))
+    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
+    expect(within(card).getByText('alpha').closest('li')).toHaveTextContent(/1\D?300,00/)
+    expect(within(card).getByText('gamma').closest('li')).toHaveTextContent(/600,00/)
+  })
+
+  it('folds past eight accounts into « Autres · N comptes » and counts accounts', async () => {
+    showAllocation('half')
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(
+            Array.from({ length: 9 }, (_, index) =>
+              aPosition({ account: `acct${index}`, symbol: `Z${index}`, price: 90 - index }),
+            ),
+          ),
+        ),
+      ),
+    )
+    const { user } = renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+    await user.click(within(card).getByRole('button', { name: 'Compte' }))
+
+    const legend = within(card).getByRole('list', { name: 'Répartition' })
+    expect(within(legend).getAllByRole('listitem')).toHaveLength(8)
+    expect(within(legend).getByText('Autres · 2 comptes')).toBeInTheDocument()
+    expect(card).toHaveTextContent('9 comptes · top 7 détaillé, 2 regroupés')
   })
 
   it('freezes the selector on the title row while the grid is arranged', async () => {
@@ -1628,6 +1657,10 @@ describe('the allocation card (#1206)', () => {
     const card = await screen.findByRole('region', { name: 'Répartition' })
 
     expect(card).toHaveTextContent(/1 ligne n’est pas dans cette répartition.*ZZB/)
+    // No total on the title row and the empty state's reason, with nothing placed.
+    const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
+    expect(titleRow).not.toHaveTextContent(/€/)
+    expect(card).toHaveTextContent('Aucune position détenue')
   })
 
   it('offers no selector while fewer than two accounts hold a placed line', async () => {
