@@ -7,7 +7,7 @@ version = "0.0.0"  # the release is the root's; nothing reads a member's
 requires-python = ">=3.14"
 dependencies = [
     "logfmt-logger==0.1.2",
-    "packaging==26.2",
+    "packaging==26.3",
 ]
 
 [build-system]
