@@ -237,6 +237,114 @@ describe('the tool lines (2A)', () => {
     // A tool the page has no sentence for is named, never hidden.
     expect(within(main).getByText('Appel de l’outil get_dividends.')).toBeInTheDocument()
   })
+
+  it('round a float to six figures in the raw output, and leave an integer whole', async () => {
+    switchedOn()
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer
+            .tool('simulate_sale', { input: {} })
+            .output({ net: 16626.385821235686, quantity: 1234567, lines: [{ pru: 1.23456789 }] })
+          writer.text('Fini.', { mode: 'instant' })
+        }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+    await within(main).findAllByText('Fini.')
+
+    const line = within(main)
+      .getByText('Simulation d’une vente, impôts et frais compris.')
+      .closest('details') as HTMLElement
+    await user.click(within(line).getByText('détail'))
+    expect(line).toHaveTextContent('"net": 16626.4')
+    expect(line).not.toHaveTextContent('16626.385')
+    // Seven digits, kept whole: an integer is a count, never rounded.
+    expect(line).toHaveTextContent('"quantity": 1234567')
+    expect(line).toHaveTextContent('"pru": 1.23457')
+  })
+})
+
+describe('the answer', () => {
+  it('draws its Markdown, and keeps neither a link nor a heading of its own', async () => {
+    switchedOn()
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer.text(
+            '## Vue\n\n**Gain** total de `gain_absolu` :\n\n- PEA\n- [CTO](https://example.com)\n\n![Courbe](https://example.com/x.png?d=secret)\n\n<b>brut</b>',
+            { mode: 'instant' },
+          )
+        }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    // The conversation, not the region announcing it once more.
+    const log = main.querySelector('[role="log"]') as HTMLElement
+    const strong = await within(log).findByText('Gain')
+    expect(strong.tagName).toBe('STRONG')
+    expect(within(main).queryByText(/\*\*/)).toBeNull()
+    expect(
+      within(log)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['PEA', 'CTO'])
+    // The page has one outline, and an address in an answer is not followed.
+    expect(within(main).queryByRole('heading', { name: 'Vue' })).toBeNull()
+    expect(within(main).queryByRole('link', { name: 'CTO' })).toBeNull()
+    // Nor is an image fetched: its URL would carry whatever the model put in it.
+    expect(main.querySelector('img')).toBeNull()
+    expect(within(log).getByText('Courbe')).toBeInTheDocument()
+    // Raw HTML is not drawn either.
+    expect(log.querySelector('b')).toBeNull()
+    expect(within(log).getByText(/total de gain_absolu/)).toBeInTheDocument()
+  })
+
+  it('draws a table in a scroll box, an ordered list, and a code block as plain text', async () => {
+    switchedOn()
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer.text(
+            '# Bilan\n\n| Compte | Gain |\n| --- | --- |\n| PEA | 12 € |\n\n1. un\n2. deux\n\n```\nnet_proceeds\n```',
+            { mode: 'instant' },
+          )
+        }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const log = main.querySelector('[role="log"]') as HTMLElement
+    const table = await within(log).findByRole('table')
+    expect(table.parentElement).toHaveClass('overflow-x-auto')
+    expect(within(table).getByRole('columnheader', { name: 'Compte' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: '12 €' })).toBeInTheDocument()
+    const ordered = log.querySelector('ol') as HTMLElement
+    expect(
+      within(ordered)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['un', 'deux'])
+    expect(log.querySelector('pre, code')).toBeNull()
+    expect(within(log).getByText('net_proceeds').tagName).toBe('P')
+    expect(within(main).queryByRole('heading', { name: 'Bilan' })).toBeNull()
+  })
+
+  it('announces the answer drawn, not its Markdown', async () => {
+    switchedOn()
+    scripted(createChat().user(QUESTION).assistant('**Gain** de 12 €.'))
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const live = main.querySelector('[aria-live="polite"]') as HTMLElement
+    await waitFor(() => expect(live).toHaveTextContent('Gain de 12 €.'))
+    expect(live.textContent).not.toContain('**')
+    expect(within(live).getByText('Gain').tagName).toBe('STRONG')
+  })
 })
 
 /** The stored threads `t1` and `t2`, each one question and its answer. */
@@ -303,11 +411,86 @@ describe('the threads (12A)', () => {
     await user.click(
       within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
     )
+    // Asked in the row, naming the thread, with the harmless answer focused.
+    expect(
+      within(column).getByText('Supprimer ce fil ? La conversation est effacée.'),
+    ).toBeInTheDocument()
+    expect(within(column).getByText('Vendre Zeta')).toBeInTheDocument()
+    expect(within(column).getByRole('button', { name: 'Le garder' })).toHaveFocus()
+    expect(deleted).toEqual([])
+    await user.click(within(column).getByRole('button', { name: 'Supprimer' }))
     await waitFor(() => expect(deleted).toEqual(['t1']))
     // The thread on screen was the one deleted: an empty one takes its place.
     expect(await within(main).findByText(/Posez une question/)).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/agent')
     expect(router.history.length).toBe(before)
+  })
+
+  it('keeps the menu open on Escape under 1 024 px, closing only the question', async () => {
+    switchedOn()
+    const { deleted } = storedThreads()
+    const { user, main } = await openPage('/agent', 1023)
+    await user.click(await within(main).findByRole('button', { name: 'Fils récents' }))
+    const menu = await screen.findByRole('dialog')
+
+    await user.click(
+      await within(menu).findByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
+    )
+    expect(within(menu).getByRole('button', { name: 'Le garder' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(within(menu).queryByRole('button', { name: 'Le garder' })).toBeNull()
+    expect(deleted).toEqual([])
+  })
+
+  it('keeps a thread on Le garder or Escape, and gives focus back to its bin', async () => {
+    switchedOn()
+    const { deleted } = storedThreads()
+    const { user, main } = await openPage()
+    const column = await within(main).findByRole('navigation', { name: 'Fils récents' })
+    const bin = await within(column).findByRole('button', {
+      name: 'Supprimer le fil « Vendre Zeta »',
+    })
+
+    await user.click(bin)
+    await user.click(within(column).getByRole('button', { name: 'Le garder' }))
+    await waitFor(() =>
+      expect(
+        within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
+      ).toHaveFocus(),
+    )
+
+    await user.click(
+      within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
+    )
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(
+        within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
+      ).toHaveFocus(),
+    )
+    expect(within(column).queryByRole('button', { name: 'Le garder' })).toBeNull()
+    expect(deleted).toEqual([])
+  })
+
+  it('says a deletion the server refused, and keeps the thread listed', async () => {
+    switchedOn()
+    storedThreads()
+    server.use(
+      http.delete(ROUTES.agentThread, () =>
+        HttpResponse.json({ error: 'The store is unavailable.' }, { status: 503 }),
+      ),
+    )
+    const { user, main } = await openPage()
+    const column = await within(main).findByRole('navigation', { name: 'Fils récents' })
+
+    await user.click(
+      await within(column).findByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
+    )
+    await user.click(within(column).getByRole('button', { name: 'Supprimer' }))
+    expect(await within(column).findByRole('status')).toHaveTextContent('The store is unavailable.')
+    expect(within(column).getByRole('link', { name: /^Vendre Zeta/ })).toBeInTheDocument()
   })
 
   it('shows the thread asked for last, whatever order the reads land in', async () => {
@@ -644,6 +827,14 @@ describe('accessibility (11A)', () => {
     )
     // The streamed log itself is silenced: only the region above speaks.
     expect(main.querySelector('[role="log"]')).toHaveAttribute('aria-live', 'off')
+  })
+
+  it('describes the input by its keys', async () => {
+    switchedOn()
+    const { main } = await openPage()
+    expect(
+      await within(main).findByRole('textbox', { name: 'Votre question' }),
+    ).toHaveAccessibleDescription(fr['agent.input.hint'])
   })
 
   it('keeps every control of the conversation at 44 px or more', async () => {

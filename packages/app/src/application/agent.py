@@ -28,7 +28,9 @@ SYSTEM_PROMPT = (
     "present simulated outcomes and their trade-offs; you never recommend "
     "buying, selling, transferring or any other specific act, and when asked "
     "what to do you lay out the simulated options instead. Answer in the "
-    "language of the user's last message."
+    "language of the user's last message. Name an account by its `label`, "
+    "never by its `id`, and never quote a tool's field names: say what a "
+    "figure is in words."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.

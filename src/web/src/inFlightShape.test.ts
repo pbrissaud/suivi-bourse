@@ -134,6 +134,20 @@ describe('a read in flight is not an absence, held on the source', () => {
     return false
   }
 
+  /**
+   * **A library's prop is not a read of ours.** `react-markdown` declares
+   * `remarkPlugins: PluggableList | null | undefined`, the family's shape with
+   * nothing of its meaning: the `null` there is *no plugins*, never *not read
+   * yet*, and nothing the app reads crosses it.
+   */
+  const declaredByALibrary = (attribute: ts.JsxAttribute): boolean => {
+    const props = checker.getContextualType(attribute.parent)
+    const prop = props?.getProperty(attribute.name.getText())
+    return (prop?.declarations ?? []).some((declaration) =>
+      declaration.getSourceFile().fileName.includes(`${path.sep}node_modules${path.sep}`),
+    )
+  }
+
   /** The three doors a value can reach a declared slot through. */
   type Door = 'prop' | 'local' | 'argument'
 
@@ -172,7 +186,12 @@ describe('a read in flight is not an absence, held on the source', () => {
     }
 
     const visit = (node: ts.Node): void => {
-      if (ts.isJsxExpression(node) && node.expression && ts.isJsxAttribute(node.parent)) {
+      if (
+        ts.isJsxExpression(node) &&
+        node.expression &&
+        ts.isJsxAttribute(node.parent) &&
+        !declaredByALibrary(node.parent)
+      ) {
         const declared = checker.getContextualType(node.expression)
         if (declared) judge(node.expression, declared, node.parent.name.getText(), 'prop')
       }
