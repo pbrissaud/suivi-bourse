@@ -382,3 +382,17 @@ def test_a_project_whose_year_has_passed_can_still_be_renamed(opened):
     assert profile.read(opened)['projects'][0]['label'] == 'Maison achetée'
     with pytest.raises(profile.InvalidProfileFact, match='2025 to 2076'):
         profile.put(opened, key, {'label': 'Maison', 'target_year': 2024}, NOW)
+
+
+def test_a_decision_on_a_proposal_decided_meanwhile_writes_nothing(opened):
+    proposal_id = profile.propose(opened, 'marginal_rate', 0.3, NOW)
+    # Another writer decided it between the read and the write.
+    opened.execute("UPDATE proposal SET status = 'ignored' WHERE id = ?",
+                   [proposal_id])
+
+    with pytest.raises(profile.ProposalNotReady) as refused:
+        with opened.transaction():
+            profile._write(opened, 'marginal_rate', 0.3, NOW)
+            profile._decide(opened, proposal_id, 'merged', NOW)
+    assert refused.value.status == 'ignored'
+    assert facts(opened) == []

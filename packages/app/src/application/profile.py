@@ -190,8 +190,9 @@ def confirm(store, proposal_id: str, now: datetime) -> Proposal:
 
 def ignore(store, proposal_id: str, now: datetime) -> Proposal:
     """Mark the proposal ``ignored``; nothing else changes."""
-    _ready(store, proposal_id, now)
-    return _decide(store, proposal_id, 'ignored', now)
+    with store.transaction():
+        _ready(store, proposal_id, now)
+        return _decide(store, proposal_id, 'ignored', now)
 
 
 def put(store, key: str, value: Any, now: datetime) -> None:
@@ -281,9 +282,20 @@ def _ready(store, proposal_id: str, now: datetime) -> dict:
 
 
 def _decide(store, proposal_id: str, decided: str, now: datetime) -> Proposal:
-    store.execute(f'UPDATE proposal SET status = ?, decided_at = ? '
-                  f'WHERE {_KIND} AND id = ?', [decided, now, proposal_id])
-    return _shape(_proposal(store, proposal_id), now)
+    """Decide a proposal that is still ready, or :class:`ProposalNotReady`.
+
+    The guard is in the ``UPDATE`` itself, so a decision that lost a race
+    writes nothing, and inside :func:`confirm`'s transaction rolls the fact
+    back with it.
+    """
+    decided_rows = store.query(
+        f"UPDATE proposal SET status = ?, decided_at = ? "
+        f"WHERE {_KIND} AND id = ? AND status = 'ready' AND created_at >= ? "
+        f"RETURNING id", [decided, now, proposal_id, now - EXPIRY])
+    row = _proposal(store, proposal_id)
+    if not decided_rows:
+        raise ProposalNotReady(status(row, now))
+    return _shape(row, now)
 
 
 def _write(store, key: str, value: Any, now: datetime,

@@ -36,7 +36,9 @@ import {
   proposalId,
   RISK_TOLERANCES,
 } from '@/features/agent/lib/profile'
+import { settingsApi } from '@/features/settings/lib/api'
 import { ApiProblem } from '@/lib/api'
+import { baseCurrency } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 
@@ -330,11 +332,30 @@ function FactValue({ entry }: { entry: Entry }) {
     return <>{f.currency(income.amount, income.currency)}</>
   }
   if (!entry.key.startsWith('project:')) return <EntryLabel entry={entry} />
+  return <ProjectAmount entry={entry} />
+}
+
+/** A project, its amount in the reporting currency (a plain number while unanswered). */
+function ProjectAmount({ entry }: { entry: Entry }) {
+  const f = useFormatters()
+  // The currency cannot move once answered, so no refetch on every mount.
+  const config = useQuery({
+    queryKey: ['config'],
+    queryFn: settingsApi.config,
+    refetchOnMount: false,
+  })
+  const currency = baseCurrency(config.data?.settings)
   const project = entry.value as ProjectValue
+  const amount =
+    project.amount == null
+      ? null
+      : currency
+        ? f.currency(project.amount, currency, 0)
+        : f.number(project.amount, 0)
   return (
     <>
       <EntryLabel entry={entry} />
-      {project.amount != null ? ` · ${f.number(project.amount, 0)}` : null}
+      {amount === null ? null : ` · ${amount}`}
     </>
   )
 }
