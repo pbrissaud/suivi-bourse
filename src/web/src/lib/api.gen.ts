@@ -80,7 +80,7 @@ export interface Position {
   fundamentals: Fundamentals | null;
   name: string | null;
   price: Price | null;
-  quantity: number | string;
+  quantity: number;
   realised: number;
   symbol: string;
   terminal: boolean;
