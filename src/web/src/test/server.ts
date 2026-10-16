@@ -144,6 +144,8 @@ export function defaultHandlers() {
       return HttpResponse.json(aPriceSeries({ symbol, window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
+    // Up to date: the footer's second line is drawn only when a test asks.
+    http.get(ROUTES.release, () => HttpResponse.json({ latest: null })),
     // What the bell reads — the status dot's read since #819,
     // inherited whole when #829 folded the dot into it. The default is a well
     // install; the amber — a scrape frozen with a `200` — is `aFrozenScrape()`,
