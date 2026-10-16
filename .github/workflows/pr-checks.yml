@@ -73,14 +73,17 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: src/web/pnpm-lock.yaml
-      # Three gates, and the order is the cost: types, then the suite, then the
-      # bundle. `pnpm test` needs neither network nor configuration — the seam
+      # The generated API types first (#1204): `api.gen.ts` must be what
+      # `api.schema.json` makes, which `tests/test_api_schema.py` holds to the
+      # Python. Then three gates, and the order is the cost: types, then the
+      # suite, then the bundle. `pnpm test` needs neither network nor configuration — the seam
       # fakes HTTP and errors on any request no handler names.
       - name: Check the front if it changed
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         working-directory: src/web
         run: |
           pnpm install --frozen-lockfile
+          pnpm gen:api && git diff --exit-code src/lib/api.gen.ts
           pnpm lint
           pnpm test
           pnpm build

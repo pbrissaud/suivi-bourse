@@ -287,6 +287,9 @@ export function fundamentalsOf(overrides: Partial<Fundamentals> = {}): Fundament
     dividend_yield: 1.75,
     pe_ratio: 21.4,
     market_cap: 1.2e9,
+    sector: null,
+    industry: null,
+    country: null,
     ...overrides,
   }
 }

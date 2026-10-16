@@ -15,7 +15,7 @@ store is a failure to read and not an empty portfolio. Neither sentence belongs
 here.
 """
 from datetime import date, datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 from logfmt_logger import getLogger
 
@@ -37,7 +37,72 @@ logger = getLogger(__name__)
 _NEEDS_POSITIONS = taxation_projection.PROJECTED_KINDS
 
 
-def accounts_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
+class Account(TypedDict):
+    # The id events carry. `default` is the bucket of the unassigned.
+    id: str
+    # What the owner called it. `NOT NULL` in the store, nullable because
+    # `AccountSummary` publishes it so; the front folds it in `lib/accounts.ts`,
+    # and reads its own catalogue on `default` while it still wears the seeded
+    # name (#745).
+    label: Optional[str]
+    # The account's **newest** `account_metrics` row, ridden on this resource
+    # rather than on a second one. Every member is nullable *by field* since
+    # #708, and `as_of` — a **day**, never an instant — is `null` on an account
+    # no cycle has written anything for.
+    as_of: Optional[str]
+    cash_balance: Optional[float]
+    holdings_value: Optional[float]
+    total_value: Optional[float]
+    net_contributed: Optional[float]
+    gain_absolu: Optional[float]
+    # Money-weighted, annualised **since the origin**: it has no window to narrow.
+    xirr: Optional[float]
+    # Base 100 since the account's own first day, and never rendered as is: two
+    # indices from two origins are not a comparison, so the front rebases the
+    # series to the visible window.
+    twr_index: Optional[float]
+    # Not a column of `account_metrics`: derived from `event` bounded by this
+    # row's own day, as `/api/portfolio-totals` derives the global one. `null`
+    # where no day was written; zero is a **figure** (a free transfer).
+    transfer_fees: Optional[float]
+    # `account_facts.declared_only` drops each of these where there is none.
+    # The taxation model this account carries (#752) — absent where none.
+    taxation_model: NotRequired[str]
+    # The day the wrapper was opened, **as its owner declared it** (#918). It
+    # cannot be derived: a transferred PEA's ledger starts years late.
+    opened_on: NotRequired[str]
+    # The earliest declared `DEPOSIT`, derived on every read and stored nowhere:
+    # the opening date the form pre-fills where none is declared.
+    first_payment: NotRequired[str]
+    # The day the index counts from. Absent is the only absence here.
+    twr_since: NotRequired[str]
+    # The `kind` of the carried model — the words, not the arithmetic (#919).
+    taxation_kind: NotRequired[str]
+    # What this account would owe if everything in it were sold today (#919),
+    # **absent** wherever there is no figure: no model, a kind with no realised
+    # gain, an aged wrapper with no date, an assiette one unvalued line makes
+    # unknown. A projected zero and a zero nobody could compute differ.
+    projected_tax: NotRequired[float]
+    # The latent gain `projected_tax` was computed on — not the head's `Gain`,
+    # which adds realised, dividends and fees.
+    projected_base: NotRequired[float]
+    # The rate or rates that produced `projected_tax`, as fractions: one per
+    # flat family, one per rung of a ladder. Published so the front never
+    # re-reads the rule.
+    projected_rates: NotRequired[List[float]]
+    # The day an aged rate changes, where the threshold is still ahead.
+    projected_rate_changes_on: NotRequired[str]
+
+
+class AccountsPayload(TypedDict):
+    # **Mandatory in the client contract** (#745). `false` is the install that
+    # declared nothing, and it is not an empty array: the seeded `default` row
+    # is always there.
+    declared: bool
+    accounts: List[Account]
+
+
+def accounts_payload(store, snapshot, now: datetime) -> AccountsPayload:
     """The **declared** accounts, each with its newest perf figures and facts."""
     accounts = snapshot.accounts
     declaration = _declaration(store, snapshot)
