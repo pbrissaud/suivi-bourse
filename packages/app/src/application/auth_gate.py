@@ -278,18 +278,17 @@ class Gate:
         if not state.enabled:
             await _problem(send, 409, 'No code is set')
             return
+        # Every attempt is counted, session or not: a copied cookie must not be
+        # a way to test PINs here without limit, as on the current-code routes.
         ip = _client(scope)
-        admission = None
-        if session is None:
-            admission = self.throttle.enter(ip)
-            if not admission.admitted:
-                await _too_many(send, admission.retry_after)
-                return
+        admission = self.throttle.enter(ip)
+        if not admission.admitted:
+            await _too_many(send, admission.retry_after)
+            return
         if not await self._verify(body.get('pin'), state.pin_hash):
-            remaining = admission.remaining if admission else auth_rules.FREE_ATTEMPTS
             wait = self.throttle.wait(ip)
             await _problem(
-                send, 401, 'Wrong code', remaining=remaining,
+                send, 401, 'Wrong code', remaining=admission.remaining,
                 retry_after=wait or None,
                 headers=[(b'retry-after', str(wait).encode())] if wait else ())
             return

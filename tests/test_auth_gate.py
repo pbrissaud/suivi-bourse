@@ -606,3 +606,17 @@ def test_a_foreign_cookie_beside_ours_does_not_hide_it(opened):
                 'cookie': f'other={{"a":1}}; {COOKIE}={cookie}'})).status_code
 
     assert run(work) == 200
+
+
+def test_sign_in_is_throttled_even_with_a_session(opened):
+    gate = Gate(Inner(), opened, INDEX)
+
+    async def work():
+        _, cookie = await enable(gate)
+        async with client(gate) as c:
+            return [await c.post('/auth/pin', json={'pin': '000000'},
+                                 headers=with_cookie(cookie)) for _ in range(6)]
+    answers = run(work)
+
+    assert [a.status_code for a in answers] == [401] * 5 + [429]
+    assert [a.json()['remaining'] for a in answers[:5]] == [4, 3, 2, 1, 0]

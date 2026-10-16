@@ -26,15 +26,19 @@ and `/health` all answer on it.
 
 **An optional PIN closes that socket on your local network.** It is off by
 default and turned on in the settings, under *Access*. While it is on, one gate
-in front of the whole socket answers every request first: without a session
-only the PIN screen, its stylesheet, the static assets and `/health` answer,
-and any route added later is closed whatever its path. A session is an
+in front of the whole socket answers every request first. Without a session,
+only these answer: the PIN screen, its stylesheet, the static assets,
+`/health`, and `/auth` and `/auth/*`. The `/auth` routes are answered by the
+gate itself, and reaching them opens nothing: they say whether a PIN is set,
+take a code to sign in, and refuse every change to the PIN without both a
+session and the current code. Any route added later is closed whatever its
+path. A session is an
 `HttpOnly`, `SameSite=Strict` cookie; `/mcp` takes a bearer token instead,
 shown once when the PIN is set. Attempts are throttled per address and
 globally.
 
-**What the PIN does not protect: the internet without TLS.** The code and the
-cookie cross the network as they are. To reach the app from outside, put a
+**What the PIN does not protect: the internet without TLS.** The code, the
+cookie and the MCP bearer token cross the network as they are. To reach the app from outside, put a
 reverse proxy with TLS, a VPN or an identity layer in front of it, PIN or not.
 Behind a proxy, name it in `SB_FORWARDED_ALLOW_IPS` so the throttle counts the
 real client address and the cookie is marked `Secure` over https; no proxy is
