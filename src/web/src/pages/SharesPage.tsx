@@ -204,7 +204,7 @@ export default function SharesPage() {
   // *now* would be the very reading the mention exists to prevent.
   const pricedAt = rows.reduce<string | null>(
     (newest, row) =>
-      row.price !== null && (newest === null || row.price.at > newest) ? row.price.at : newest,
+      row.price?.at != null && (newest === null || row.price.at > newest) ? row.price.at : newest,
     null,
   )
 

@@ -1,7 +1,9 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "root": true,
-  "files": { "includes": ["src/**", "lint/fixtures/**"] },
+  "files": {
+    "includes": ["src/**", "lint/fixtures/**", "!src/lib/api.gen.ts", "!src/lib/api.schema.json"]
+  },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "javascript": {
     "formatter": {
