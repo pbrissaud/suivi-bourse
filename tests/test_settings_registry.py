@@ -24,11 +24,12 @@ def test_the_registry_is_the_single_list_of_dials():
     ``benchmark_symbol`` is the seventh and it arrives the same way anything
     arrives — as a line here (#982), which is what makes *followed without
     being held* a declared setting rather than a second notion of holding.
+    ``update_check`` is the eighth (#1237), the first boolean.
     """
     assert [spec.key for spec in registry.SETTINGS] == [
         'regular_interval', 'backfill_interval', 'backfill_delay',
         'backfill_chunk_days', 'staleness_horizon', 'base_currency',
-        'benchmark_symbol',
+        'benchmark_symbol', 'update_check',
     ]
     assert set(registry.BY_KEY) == {spec.key for spec in registry.SETTINGS}
 
@@ -259,3 +260,27 @@ def test_the_blank_stays_refused_where_a_dial_answers_or_must_be_answered(key, v
     """
     with pytest.raises(registry.InvalidSetting):
         registry.validate(key, value)
+
+
+# --------------------------------------------------------------------- #
+# update_check — the one boolean dial (#1237)
+# --------------------------------------------------------------------- #
+
+def test_the_release_check_is_on_until_said_otherwise():
+    assert registry.spec_for('update_check').kind == registry.BOOLEAN
+    assert registry.seeded_defaults()['update_check'] == 'true'
+    assert registry.resolve('update_check', None) is True
+    assert registry.resolve('update_check', 'false') is False
+
+
+@pytest.mark.parametrize('value, parsed', [
+    (True, True), (False, False), ('true', True), (' False ', False)])
+def test_a_boolean_dial_takes_a_boolean(value, parsed):
+    assert registry.validate('update_check', value) is parsed
+    assert registry.stored_form('update_check', parsed) == str(parsed).lower()
+
+
+@pytest.mark.parametrize('value', [1, 'yes', 0.0])
+def test_a_boolean_dial_takes_nothing_else(value):
+    with pytest.raises(registry.InvalidSetting, match='true or false'):
+        registry.validate('update_check', value)

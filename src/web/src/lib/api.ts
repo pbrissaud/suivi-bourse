@@ -64,6 +64,8 @@ export const ROUTES = {
    */
   prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
+  /** A newer published release, or `null`: the server asks GitHub, at most every 6 h (#1237). */
+  release: '/api/system/release',
   /**
    * **The one route with no `/api` prefix**, and it is not an oversight (#819):
    * it is the container's own probe, written into the image's `HEALTHCHECK`
@@ -723,6 +725,11 @@ export interface Advisory {
 
 type AdvisoriesResponse = Advisory[]
 
+/** What `GET /api/system/release` answers: `null` when up to date or unknown. */
+export interface ReleaseState {
+  latest: { version: string; url: string } | null
+}
+
 /** What the acknowledgement answers: the advisory, and when it wakes up. */
 interface AcknowledgedAdvisory extends Advisory {
   acknowledged_until: string
@@ -730,6 +737,7 @@ interface AcknowledgedAdvisory extends Advisory {
 
 export const api = {
   runtime: () => get<RuntimeState>(ROUTES.runtime),
+  release: () => get<ReleaseState>(ROUTES.release),
   // Typed for the caller, and **narrowed all the same** where it is read
   // (`lib/status.ts`): this is the one payload whose shape the dot has to
   // survive losing, a proxy or a stale image being able to answer `200` with

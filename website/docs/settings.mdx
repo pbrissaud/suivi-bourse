@@ -30,10 +30,29 @@ deleted rather than moved, so the settings form has a single class of field.
 | `backfill_delay` | `10` | seconds of politeness between two requests to Yahoo! Finance |
 | `backfill_chunk_days` | `365` | days of history fetched per request |
 | `staleness_horizon` | `900` | seconds before a frozen price is reported as stale; `0` disables the check |
+| `update_check` | `true` | whether the footer says when a newer release is out; `false` sends no request at all |
 
 That is the whole list. You turn them on the **Settings** page of the app, or
 with one call on the write API, which is always served on the same port as the
 page.
+
+### The release check
+
+On a published release, the server asks GitHub whether a newer one is out, and
+the foot of the navigation says so with a link to its notes:
+
+- **To** `api.github.com`, `GET /repos/pbrissaud/suivi-bourse/releases/latest`,
+  unauthenticated.
+- **What leaves the box**: the container's IP address and a `User-Agent`. Never
+  the install's hostname, nothing about the portfolio.
+- **How often**: at most once every 6 hours, on the first page load after that,
+  whatever the outcome. A failure (offline, rate-limited) is a single warning in
+  the log and nothing on screen until the next attempt.
+- **Never** on an image built from a commit or a local checkout: there is no
+  version to compare.
+
+Turn it off with the **Show new releases** switch on the Settings page, or
+`PUT /api/settings` with `{"update_check": false}`.
 
 ### The base currency
 

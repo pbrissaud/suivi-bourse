@@ -153,22 +153,44 @@ export function AppSidebar() {
   )
 }
 
-/** The running build, small at the foot of the column: what a bug report copies. */
+/**
+ * The running build, small at the foot of the column: what a bug report copies.
+ * Under it, a newer release when the server found one (#1237).
+ */
 function BuildLine() {
   const t = useT()
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const build = runtime.data?.build
+  // Keyed on the version: an upgraded container never shows two that disagree.
+  const release = useQuery({
+    queryKey: ['release', build?.version],
+    queryFn: api.release,
+    enabled: build?.source === 'release',
+  })
+  const latest = release.data?.latest
   const shown = build?.version ?? build?.revision?.slice(0, 7)
   if (!build || !shown) return null
   return (
-    <p
-      title={[t('installation.build.source', { source: build.source }), build.revision]
-        .filter(Boolean)
-        .join(' · ')}
-      className="mx-3 border-t px-2 pt-3 pb-4 text-2xs text-muted-foreground group-data-[collapsible=icon]:hidden"
-    >
-      {t('nav.version')} <span className="font-mono">{shown}</span>
-    </p>
+    <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-2xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+      <p
+        title={[t('installation.build.source', { source: build.source }), build.revision]
+          .filter(Boolean)
+          .join(' · ')}
+      >
+        {t('nav.version')} <span className="font-mono">{shown}</span>
+      </p>
+      {latest ? (
+        <a
+          href={latest.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('nav.release.label', { version: latest.version })}
+          className="tabular block w-fit rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
+        </a>
+      ) : null}
+    </div>
   )
 }
 

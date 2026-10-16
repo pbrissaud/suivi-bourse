@@ -50,6 +50,7 @@ MANAGED_LOGGERS = (
     'advisories',
     'market',
     'agent', 'auth',
+    'update_check',
 )
 
 
