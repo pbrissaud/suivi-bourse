@@ -203,7 +203,8 @@ Under the hero, the dashboard's sections sit on a grid of **two widths**: half o
 width, never a free two-dimensional placement, so the reading order is the focus order.
 
 - A section takes the full width only if it **shows more** there (the movers: five
-  lines on half, ten across the full width). A section that would only stretch is
+  lines on half, ten across the full width; the allocation: a one-column legend on
+  half, the ring and the amounts across the full width). A section that would only stretch is
   half-only: the gain breakdown and the investment rhythm.
 - The gain breakdown is a statement: four ruled rows and a ruled-off total, like an
   account section. No drawing, no window.
@@ -276,7 +277,8 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   user decides (an agent proposal, a profile fact to confirm, a first-run step, a
   destructive confirmation) or selects (an account tile). Never a card inside a card.
   A decided proposal loses its buttons and shows one status line (decision 5A).
-- **Weight bar:** a 6 px `primary` bar with its percentage in Label, inside holding rows.
+- **Weight bar:** a 6 px `primary` bar with its percentage in Label, inside holding rows
+  and in a legend drawn without a ring (the dashboard's allocation at half width).
 - **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
   opacity, no pointer events, the reason given in text next to it.

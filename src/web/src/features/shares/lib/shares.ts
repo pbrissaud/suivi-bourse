@@ -531,7 +531,17 @@ export function allocation(rows: readonly ShareRow[]): Allocation {
     })
   }
 
-  placed.sort((left, right) =>
+  return { ...foldSlices(placed), unplaced }
+}
+
+/**
+ * Sort the placed slices, fold past `ALLOCATION_SLICES`, and state each one's
+ * share — the drawing's rule, whatever the slices divide (#1206: securities on
+ * the shares page, securities or accounts on the dashboard). The tail names no
+ * unit: « lignes » or « comptes » is the surface's to write.
+ */
+export function foldSlices(placed: readonly AllocationSlice[]): Omit<Allocation, 'unplaced'> {
+  const sorted = [...placed].sort((left, right) =>
     left.value === right.value
       ? (left.symbol ?? '').localeCompare(right.symbol ?? '')
       : right.value - left.value,
@@ -542,10 +552,10 @@ export function allocation(rows: readonly ShareRow[]): Allocation {
   // contrasted rank, which is what a fold of the smallest lines should be. It
   // folds only past `ALLOCATION_SLICES` lines: at exactly eight there is
   // nothing to gain by hiding one of them behind a word.
-  let slices = placed
-  if (placed.length > ALLOCATION_SLICES) {
-    const named = placed.slice(0, ALLOCATION_SLICES - 1)
-    const rest = placed.slice(ALLOCATION_SLICES - 1)
+  let slices = sorted
+  if (sorted.length > ALLOCATION_SLICES) {
+    const named = sorted.slice(0, ALLOCATION_SLICES - 1)
+    const rest = sorted.slice(ALLOCATION_SLICES - 1)
     slices = [
       ...named,
       {
@@ -565,8 +575,46 @@ export function allocation(rows: readonly ShareRow[]): Allocation {
       share: total === 0 ? 0 : slice.value / total,
     })),
     total,
-    unplaced,
   }
+}
+
+/**
+ * The same figure **by account** (#1206). It starts from the positions and
+ * not from the rows, because a `ShareRow` folds one symbol across accounts.
+ *
+ * An account's slice is the value of its placed lines; a closed line is no
+ * part of it, and a line with no value in the reporting currency is named
+ * with its account (« XYZ (PEA) ») and left out, while its account keeps the
+ * slice its other lines make. An account with nothing placed is no slice.
+ *
+ * `name` turns an account's id into what the owner calls it; the slice keeps
+ * the id as its `symbol`, which is what identifies it.
+ */
+export function accountAllocation(
+  positions: readonly Position[],
+  name: (account: string) => string = (account) => account,
+): Allocation {
+  const placed: AllocationSlice[] = []
+  const unplaced: string[] = []
+  for (const group of accountGroups(positions, new Map())) {
+    // Never `null` here: the groups are built from the positions' own accounts.
+    const account = group.account ?? ''
+    const label = name(account)
+    let value = 0
+    let lines = 0
+    for (const row of group.rows) {
+      if (isClosed(row)) continue
+      const worth = marketValue(row)
+      if (worth === null) {
+        unplaced.push(`${row.symbol} (${label})`)
+        continue
+      }
+      value += worth
+      lines += 1
+    }
+    if (lines > 0) placed.push({ symbol: account, label, value, share: 0, count: 1 })
+  }
+  return { ...foldSlices(placed), unplaced }
 }
 
 // ------------------------------------------------------------------------- //

@@ -55,6 +55,13 @@ export const DASHBOARD_BLOCKS = {
     width: 'full',
     minHeight: 300,
   },
+  allocation: {
+    label: 'dashboard.allocation.title',
+    widths: ['half', 'full'],
+    width: 'half',
+    minHeight: 300,
+    arrivesHidden: true,
+  },
 } as const satisfies Record<string, BlockSpec>
 
 export type BlockId = keyof typeof DASHBOARD_BLOCKS

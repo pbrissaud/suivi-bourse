@@ -62,6 +62,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
+import { AllocationCard, allocationRenderState } from '@/features/dashboard/components/Allocation'
 import { DashboardGrid, type GridBlock } from '@/features/dashboard/components/DashboardGrid'
 import {
   GainBreakdown,
@@ -204,7 +205,7 @@ export default function DashboardPage() {
       : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
-  // **The three cards, each with the rule for what it renders.** `?? null` and
+  // **The cards, each with the rule for what it renders.** `?? null` and
   // never `?? []`: these reads are armed only once the page reaches
   // `portfolio`, so there is a real window in which an empty array would state
   // *« Rien à comparer »* about movements nobody has answered for.
@@ -212,6 +213,7 @@ export default function DashboardPage() {
     const breakdown = { positions: positions.data ?? null, totals: totals.data ?? null }
     const moversRead = { movers: movers.data?.movers ?? null, failure: moversFailure }
     const rhythmRead = { rhythm: rhythm.data ?? null, failure: rhythmFailure }
+    const allocationRead = { positions: positions.data ?? null }
     return {
       'gain-breakdown': {
         state: gainBreakdownRenderState(breakdown),
@@ -234,6 +236,11 @@ export default function DashboardPage() {
             currency={positions.data?.base_currency ?? null}
           />
         ),
+      },
+      allocation: {
+        state: allocationRenderState(allocationRead),
+        bare: false,
+        render: (width) => <AllocationCard {...allocationRead} rows={rows} width={width} />,
       },
     }
   }

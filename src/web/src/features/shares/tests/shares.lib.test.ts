@@ -11,11 +11,13 @@ import { describe, expect, it } from 'vitest'
 import type { Position } from '@/features/shares/lib/api'
 import { positionRenderings } from '@/lib/absence'
 import {
+  accountAllocation,
   accountBreakdown,
   allocation,
   buildShareRows,
   closedRows,
   eventMarkers,
+  foldSlices,
   heldRows,
   isAnomalous,
   isClosed,
@@ -514,5 +516,100 @@ describe('the allocation', () => {
 
     expect(slices.map((slice) => slice.symbol)).toEqual(['ZZA', 'ZZC'])
     expect(slices[1].value).toBe(600)
+  })
+})
+
+// ------------------------------------------------------------------------- //
+// The fold, and the allocation by account (#1206)
+// ------------------------------------------------------------------------- //
+
+const slice = (symbol: string, value: number) => ({
+  symbol,
+  label: symbol,
+  value,
+  share: 0,
+  count: 1,
+})
+
+describe('foldSlices', () => {
+  it('names all eight at eight, and seven and a tail of two at nine', () => {
+    const lines = (n: number) =>
+      Array.from({ length: n }, (_, index) => slice(`Z${index}`, n - index))
+
+    const eight = foldSlices(lines(8)).slices
+    expect(eight.map((one) => one.symbol)).toEqual(['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'])
+    expect(eight.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
+    const nine = foldSlices(lines(9)).slices
+    expect(nine.slice(0, 7).map((one) => one.symbol)).toEqual([
+      'Z0',
+      'Z1',
+      'Z2',
+      'Z3',
+      'Z4',
+      'Z5',
+      'Z6',
+    ])
+    expect(nine.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
+    expect(nine[7]).toMatchObject({ symbol: null, count: 2, value: 2 + 1 })
+    expect(foldSlices(lines(9)).total).toBe(45)
+  })
+})
+
+describe('accountAllocation', () => {
+  it('sums each account, skips a closed line, and names an unvalued one with its account', () => {
+    const { slices, total, unplaced } = accountAllocation([
+      aPosition({ account: 'PEA', symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+      aPosition({ account: 'PEA', symbol: 'ZZB', quantity: 2, cost_basis: 200, price: 100 }),
+      // No rate: named, not counted, and PEA keeps the slice its others make.
+      aPosition({
+        account: 'PEA',
+        symbol: 'XYZ',
+        quantity: 4,
+        cost_basis: 400,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
+      aPosition({ account: 'CTO', symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null }),
+      aPosition({
+        account: 'CTO',
+        symbol: 'XYZ',
+        quantity: 1,
+        cost_basis: 100,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
+      aClosedPosition({ account: 'AV', symbol: 'ZZD', closed_at: '2025-11-04' }),
+    ])
+
+    expect(slices.map((one) => [one.symbol, one.value])).toEqual([
+      ['PEA', 1500],
+      ['CTO', 600],
+    ])
+    expect(total).toBe(2100)
+    // Once per account, each with its own.
+    expect(unplaced).toEqual(['XYZ (CTO)', 'XYZ (PEA)'])
+  })
+
+  it('names the accounts as told, and gives no slice to one with nothing placed', () => {
+    const { slices, unplaced } = accountAllocation(
+      [
+        aPosition({ account: 'pea', symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+        aPosition({
+          account: 'cto',
+          symbol: 'XYZ',
+          quantity: 1,
+          cost_basis: 100,
+          price: 125,
+          currency: 'USD',
+          rate: null,
+        }),
+      ],
+      (account) => account.toUpperCase(),
+    )
+
+    expect(slices.map((one) => [one.symbol, one.label])).toEqual([['pea', 'PEA']])
+    expect(unplaced).toEqual(['XYZ (CTO)'])
   })
 })
