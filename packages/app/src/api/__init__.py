@@ -9,6 +9,7 @@ from werkzeug.exceptions import HTTPException
 from application import boot_env
 from application import main
 from application import tweakcn
+from application import update_check
 from application import uploads
 from api import problem
 from api.api import api_bp, refused
@@ -28,6 +29,7 @@ def create_app(runtime: main.Runtime) -> Flask:
     flask_app.config['TWEAKCN_CACHE_DIR'] = boot_env.directory(
         os.environ, boot_env.STORE_DIR, boot_env.DEFAULT_STORE_DIR) / 'theme'
     flask_app.config['TWEAKCN_FETCH'] = tweakcn.http_fetch
+    flask_app.config['RELEASE_CHECKER'] = update_check.Checker(update_check.http_fetch)
     flask_app.register_blueprint(health_bp)
     flask_app.register_blueprint(api_bp)
 
