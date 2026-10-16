@@ -82,6 +82,13 @@ import {
   unreadableFiles,
 } from '@/features/agent/lib/agentChat'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
+import {
+  FactCard,
+  ProfileChips,
+  proposalOf,
+  useProposals,
+} from '@/features/agent/components/AgentProfile'
+import type { Proposal } from '@/features/agent/lib/profile'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { agentApi, type AgentConfig } from '@/features/agent/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
@@ -149,6 +156,7 @@ function AgentHeader({ config, wide }: { config: AgentConfig; wide: boolean }) {
             ) : null}
           </p>
         ) : null}
+        <ProfileChips />
       </div>
       {wide ? null : (
         <>
@@ -394,6 +402,7 @@ function AgentConversation() {
   const busy = status === 'submitted' || status === 'streaming'
   const notKept = useNotKept(chat.id, error)
   const announcement = useAnnouncement(status, messages)
+  const proposals = useProposals(chat.id, messages, busy)
 
   const ask = (text: string) => {
     // The first question gives the thread its address, in place of `/agent`:
@@ -457,7 +466,11 @@ function AgentConversation() {
                     messageId={message.id}
                     scrollAnchor={message.role === 'user'}
                   >
-                    <Turn message={message} live={busy && message === messages.at(-1)} />
+                    <Turn
+                      message={message}
+                      live={busy && message === messages.at(-1)}
+                      proposals={proposals}
+                    />
                   </MessageScrollerItem>
                 ))}
                 {waiting ? (
@@ -630,8 +643,19 @@ const AnswerMarkdown = memo(function AnswerMarkdown({ children }: { children: st
   )
 })
 
-/** `live`: the turn still streams, so a call without its answer is running, not halted. */
-function Turn({ message, live }: { message: UIMessage; live: boolean }) {
+/**
+ * `live`: the turn still streams, so a call without its answer is running, not
+ * halted. `proposals`: the thread's, as stored; `undefined` while unread.
+ */
+function Turn({
+  message,
+  live,
+  proposals,
+}: {
+  message: UIMessage
+  live: boolean
+  proposals: Map<string, Proposal> | undefined
+}) {
   if (message.role === 'user') {
     return (
       <Message align="end">
@@ -646,8 +670,11 @@ function Turn({ message, live }: { message: UIMessage; live: boolean }) {
   return (
     <Message>
       <MessageContent className="gap-2">
-        {stepsAndText(message.parts).map((group, index) => {
+        {stepsAndText(message.parts, proposals).map((group, index) => {
           const key = `${message.id}-${index}`
+          if (typeof group === 'object' && 'proposal' in group) {
+            return group.proposal === null ? null : <FactCard key={key} proposal={group.proposal} />
+          }
           if (Array.isArray(group)) {
             return (
               <Trace key={key}>
@@ -668,11 +695,23 @@ function Turn({ message, live }: { message: UIMessage; live: boolean }) {
   )
 }
 
-/** The parts in order, consecutive tool calls gathered into one Trace. */
-function stepsAndText(parts: UIMessage['parts']): (string | AgentToolPart[])[] {
-  const groups: (string | AgentToolPart[])[] = []
+type Step = string | AgentToolPart[] | { proposal: Proposal | null }
+
+/**
+ * The parts in order, consecutive tool calls gathered into one Trace. A
+ * proposal is a card of its own (5A): nothing until its state is read, and
+ * the plain tool line when the server does not know it.
+ */
+function stepsAndText(
+  parts: UIMessage['parts'],
+  proposals: Map<string, Proposal> | undefined,
+): Step[] {
+  const groups: Step[] = []
   for (const part of parts) {
+    const id = proposalOf(part)
+    const proposal = id === null ? undefined : proposals === undefined ? null : proposals.get(id)
     if (part.type === 'text') groups.push(part.text)
+    else if (proposal !== undefined) groups.push({ proposal })
     else if (isToolUIPart(part)) {
       const last = groups.at(-1)
       if (Array.isArray(last)) last.push(part)

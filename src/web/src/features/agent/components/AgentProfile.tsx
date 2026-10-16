@@ -1,0 +1,392 @@
+/**
+ * The investor's profile on the agent's page (#1116): the proposal cards in a
+ * thread, and the chips of what is confirmed in its header.
+ *
+ * **The agent proposes, only this page decides.** A `propose_profile_fact`
+ * call is drawn as a card reading its stored state (5A): *Confirmer* and
+ * *Ignorer* while it is ready, one status line once decided or expired. The
+ * chips are the confirmed facts, each opening its value, its date, *Modifier*
+ * and *Oublier* (13A).
+ */
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { UIMessage } from 'ai'
+import { type ComponentProps, type FormEvent, type ReactNode, useId, useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { getToolName, isToolUIPart } from '@/features/agent/lib/agentChat'
+import {
+  FACTS,
+  factLabel,
+  type Profile,
+  profileApi,
+  type ProjectValue,
+  type Proposal,
+  proposalId,
+  RISK_TOLERANCES,
+} from '@/features/agent/lib/profile'
+import { useFormatters } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
+
+/** Beyond this many chips, a *+N* chip opens the whole profile. */
+const CHIPS = 4
+
+/** Shared with the other forms' `<select>`s (`AgentBlock`, `EventForm`). */
+const SELECT =
+  'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
+
+// ------------------------------------------------------------ proposals --
+
+/** The proposal a tool part came back with, or `null` for any other part. */
+export function proposalOf(part: UIMessage['parts'][number]): string | null {
+  if (!isToolUIPart(part) || getToolName(part) !== 'propose_profile_fact') return null
+  return part.state === 'output-available' ? proposalId(part.output) : null
+}
+
+/**
+ * The stored state of every proposal the thread made, read once its turn has
+ * ended: a reloaded thread, or one returned to, shows what was decided.
+ * `undefined` while the read has not answered (#795); a read that failed is an
+ * empty answer, so each card falls back to its plain tool line.
+ */
+export function useProposals(
+  threadId: string,
+  messages: UIMessage[],
+  busy: boolean,
+): Map<string, Proposal> | undefined {
+  const ids = [
+    ...new Set(messages.flatMap((m) => m.parts.map(proposalOf)).filter((id) => id !== null)),
+  ].sort()
+  const read = useQuery({
+    queryKey: ['proposals', threadId, ids],
+    queryFn: () => profileApi.proposals(ids),
+    enabled: !busy && ids.length > 0,
+  })
+  if (read.error) return new Map()
+  return read.data && new Map(read.data.proposals.map((p) => [p.id, p]))
+}
+
+/** A proposal (5A): the question and its two answers, or the one line it came to. */
+export function FactCard({ proposal }: { proposal: Proposal }) {
+  const { t, locale } = useI18n()
+  const client = useQueryClient()
+  const decide = useMutation({
+    mutationFn: (confirm: boolean) =>
+      confirm ? profileApi.confirm(proposal.id) : profileApi.ignore(proposal.id),
+    // A 409 too: the card then reads what the server holds.
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: ['proposals'] }),
+        client.invalidateQueries({ queryKey: ['profile'] }),
+      ]),
+  })
+  const label = factLabel(proposal.key, proposal.value, locale)
+  const named = t(label.key, label.values)
+
+  return (
+    <div className="flex flex-col gap-3 rounded-card border bg-card p-3.5">
+      {proposal.status === 'ready' ? (
+        <>
+          <p className="text-prose">
+            {t(proposal.key === 'project' ? 'agent.fact.ask.project' : 'agent.fact.ask', {
+              label: named,
+            })}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              className="min-h-11"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate(true)}
+            >
+              {t('agent.fact.confirm')}
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate(false)}
+            >
+              {t('agent.fact.ignore')}
+            </Button>
+          </div>
+          {decide.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t('agent.fact.failed')}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <p className="text-prose">
+          {named} ·{' '}
+          <span className="text-muted-foreground">{t(`agent.fact.${proposal.status}`)}</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- chips --
+
+interface Entry {
+  /** The fact's key, a project's being `project:<id>`. */
+  key: string
+  value: unknown
+  confirmed_at: string
+}
+
+/** The facts in their order, then the projects in the server's. */
+function entries(profile: Profile): Entry[] {
+  return [
+    ...FACTS.flatMap((key) => {
+      const fact = profile.facts[key]
+      return fact ? [{ key, ...fact }] : []
+    }),
+    ...profile.projects.map(({ id, confirmed_at, ...value }) => ({
+      key: `project:${id}`,
+      value,
+      confirmed_at,
+    })),
+  ]
+}
+
+/** The confirmed profile as chips (13A). Nothing while it is read, nor when empty. */
+export function ProfileChips() {
+  const { t } = useI18n()
+  const profile = useQuery({ queryKey: ['profile'], queryFn: profileApi.profile })
+  if (profile.data === undefined) return null
+  const all = entries(profile.data)
+  if (all.length === 0) return null
+  const shown = all.length > CHIPS ? all.slice(0, CHIPS) : all
+
+  return (
+    <ul aria-label={t('agent.profile')} className="flex flex-wrap gap-1.5 pt-1.5">
+      {shown.map((entry) => (
+        <li key={entry.key}>
+          <Chip label={<EntryLabel entry={entry} />}>
+            <FactDetail entry={entry} />
+          </Chip>
+        </li>
+      ))}
+      {all.length > shown.length ? (
+        <li>
+          <Chip
+            label={t('agent.profile.more', { count: all.length - shown.length })}
+            name={t('agent.profile.all')}
+          >
+            <div className="flex flex-col divide-y">
+              {all.map((entry) => (
+                <div key={entry.key} className="py-2 first:pt-0 last:pb-0">
+                  <FactDetail entry={entry} />
+                </div>
+              ))}
+            </div>
+          </Chip>
+        </li>
+      ) : null}
+    </ul>
+  )
+}
+
+function EntryLabel({ entry }: { entry: Entry }) {
+  const { t, locale } = useI18n()
+  const label = factLabel(entry.key, entry.value, locale)
+  return <>{t(label.key, label.values)}</>
+}
+
+function Chip({ label, name, children }: { label: ReactNode; name?: string; children: ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={name}
+          className="label min-h-8 rounded-full border px-2.5 text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none pointer-coarse:min-h-11"
+        >
+          {label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72">
+        {children}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** One fact: its value, when it was confirmed, *Modifier* and *Oublier*. */
+function FactDetail({ entry }: { entry: Entry }) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const client = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const forget = useMutation({
+    mutationFn: () => profileApi.forgetFact(entry.key),
+    onSettled: () => client.invalidateQueries({ queryKey: ['profile'] }),
+  })
+
+  if (editing) return <FactEditor entry={entry} onDone={() => setEditing(false)} />
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium">
+        <FactValue entry={entry} />
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t('agent.profile.confirmedOn', { date: f.date(entry.confirmed_at) })}
+      </p>
+      <div className="flex gap-2">
+        <Button variant="outline" className="min-h-11" onClick={() => setEditing(true)}>
+          {t('agent.profile.edit')}
+        </Button>
+        <Button
+          variant="outline"
+          className="min-h-11"
+          disabled={forget.isPending}
+          onClick={() => forget.mutate()}
+        >
+          {t('agent.profile.forget')}
+        </Button>
+      </div>
+      {forget.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('agent.profile.failed')}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** The value in full: on the owner's own screen the income shows its amount. */
+function FactValue({ entry }: { entry: Entry }) {
+  const f = useFormatters()
+  if (entry.key === 'income') {
+    const income = entry.value as { amount: number; currency: string }
+    return <>{f.currency(income.amount, income.currency)}</>
+  }
+  const project = entry.value as ProjectValue
+  return (
+    <>
+      <EntryLabel entry={entry} />
+      {entry.key.startsWith('project:') && project.amount != null
+        ? ` · ${f.number(project.amount, 0)}`
+        : null}
+    </>
+  )
+}
+
+/** *Modifier*: the field the fact's kind takes, then `PUT`. */
+function FactEditor({ entry, onDone }: { entry: Entry; onDone: () => void }) {
+  const { t } = useI18n()
+  const client = useQueryClient()
+  const id = useId()
+  const [draft, setDraft] = useState<Record<string, string>>(() => initialDraft(entry))
+  const save = useMutation({
+    mutationFn: (value: unknown) => profileApi.putFact(entry.key, value),
+    onSuccess: (profile) => {
+      client.setQueryData(['profile'], profile)
+      onDone()
+    },
+  })
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    save.mutate(valueOf(entry.key, draft))
+  }
+  const field = (name: string, label: string, props: ComponentProps<typeof Input>) => (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={`${id}-${name}`} className="label">
+        {label}
+      </label>
+      <Input
+        id={`${id}-${name}`}
+        value={draft[name]}
+        onChange={(event) => setDraft({ ...draft, [name]: event.target.value })}
+        {...props}
+      />
+    </div>
+  )
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      {entry.key === 'income'
+        ? field('amount', t('agent.profile.field.amount'), {
+            type: 'number',
+            min: 0,
+            required: true,
+          })
+        : null}
+      {entry.key === 'marginal_rate'
+        ? field('rate', t('agent.profile.field.rate'), {
+            type: 'number',
+            min: 0,
+            max: 60,
+            step: 0.1,
+            required: true,
+          })
+        : null}
+      {entry.key === 'risk_tolerance' ? (
+        <div className="flex flex-col gap-1">
+          <label htmlFor={`${id}-risk`} className="label">
+            {t('agent.profile.field.risk')}
+          </label>
+          <select
+            id={`${id}-risk`}
+            className={SELECT}
+            value={draft.risk}
+            onChange={(event) => setDraft({ ...draft, risk: event.target.value })}
+          >
+            {RISK_TOLERANCES.map((risk) => (
+              <option key={risk} value={risk}>
+                {t(`agent.profile.risk.${risk}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+      {entry.key.startsWith('project:') ? (
+        <>
+          {field('label', t('agent.profile.field.label'), { maxLength: 80, required: true })}
+          {field('year', t('agent.profile.field.year'), { type: 'number', required: true })}
+          {field('amount', t('agent.profile.field.projectAmount'), { type: 'number', min: 0 })}
+        </>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="submit" className="min-h-11" disabled={save.isPending}>
+          {t('agent.profile.save')}
+        </Button>
+        <Button type="button" variant="outline" className="min-h-11" onClick={onDone}>
+          {t('agent.profile.cancel')}
+        </Button>
+      </div>
+      {save.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('agent.profile.failed')}
+        </p>
+      ) : null}
+    </form>
+  )
+}
+
+function initialDraft(entry: Entry): Record<string, string> {
+  const value = entry.value as Record<string, unknown> | number | string
+  if (entry.key === 'income') return { amount: String((value as { amount: number }).amount) }
+  if (entry.key === 'marginal_rate')
+    return { rate: String(Math.round((value as number) * 1000) / 10) }
+  if (entry.key === 'risk_tolerance') return { risk: value as string }
+  const project = value as unknown as ProjectValue
+  return {
+    label: project.label,
+    year: String(project.target_year),
+    amount: project.amount == null ? '' : String(project.amount),
+  }
+}
+
+/** The draft as the value `PUT` takes; the server holds the rules. */
+function valueOf(key: string, draft: Record<string, string>): unknown {
+  if (key === 'income') return { amount: Number(draft.amount) }
+  if (key === 'marginal_rate') return Number(draft.rate) / 100
+  if (key === 'risk_tolerance') return draft.risk
+  return {
+    label: draft.label,
+    target_year: Number(draft.year),
+    ...(draft.amount === '' ? {} : { amount: Number(draft.amount) }),
+  }
+}

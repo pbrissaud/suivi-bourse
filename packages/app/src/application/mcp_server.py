@@ -1,5 +1,5 @@
-"""The agent's interface — six read tools and a sale simulator on the one socket
-(#749, #1109)."""
+"""The agent's interface — six read tools, a sale simulator, the owner's
+profile and the one write, a proposal, on the one socket (#749, #1109, #1116)."""
 from datetime import date, datetime, timedelta, timezone
 from functools import cache
 from typing import Any, Dict, List, Optional, TypedDict
@@ -14,6 +14,7 @@ from application import account_facts
 from application.account_facts import AccountsPayload
 from application import instants
 from application import portfolio_facts
+from application import profile
 from application import rhythm
 from application import simulation
 from application import store as store_module
@@ -619,6 +620,91 @@ class SimulatedSale(Sale):
     base_currency: Optional[str]
 
 
+GET_PROFILE_DESCRIPTION = f"""\
+What the owner has declared about themself and confirmed in the app: their
+facts and their named projects. Read it before you frame an answer around their
+situation; never ask again for what it already holds.
+
+`facts` holds at most three entries, each present only once confirmed:
+`facts.marginal_rate` (`facts.marginal_rate.value` is a fraction, 0.3 for
+30 %), `facts.risk_tolerance` (`facts.risk_tolerance.value` is prudent,
+balanced or dynamic) and `facts.income`. Each carries the instant it was
+confirmed: `facts.marginal_rate.confirmed_at`,
+`facts.risk_tolerance.confirmed_at`, `facts.income.confirmed_at`.
+
+THE INCOME AMOUNT IS NEVER SENT. `facts.income.declared` says the owner has
+declared one, and that is all this tool gives: do not ask for the figure, and
+do not estimate it.
+
+`projects` lists what the owner saves for, sorted by year: `projects.id`,
+`projects.label`, `projects.target_year`, `projects.amount` (in the reporting
+currency, null when none was given) and `projects.confirmed_at`.
+
+AN ABSENT FACT WAS NEVER DECLARED. It is not a zero, not a default and not a
+refusal; a proposal the owner has not confirmed is not in this answer either.
+
+{_ABSENCE}
+"""
+
+PROPOSE_PROFILE_FACT_DESCRIPTION = f"""\
+Propose a fact the owner stated about themself. THIS WRITES NO FACT: it records
+a proposal the owner confirms or ignores in SuiviBourse, and only what they
+confirm reaches `get_profile`. A proposal left unconfirmed expires after 7 days.
+Never tell the owner a proposed fact is noted; say it awaits their
+confirmation.
+
+`key` and `value`, one fact per call:
+- "income": {{"amount": <annual amount>}}, in the reporting currency.
+- "marginal_rate": the marginal tax rate as a fraction from 0 to 0.6.
+- "risk_tolerance": "prudent", "balanced" or "dynamic".
+- "project": a new project, {{"label": <one line>, "target_year": <year>,
+  "amount": <optional>}}; "project:<id>" changes the project of that id, as
+  `get_profile.projects.id` names it.
+
+The answer is the proposal: `proposal_id`, its `key`, its `status` (always
+ready here), `created_at`, `expires_at`, and a `note` to relay. A value outside
+these rules is refused in words naming the rule, and nothing is recorded.
+
+{_ABSENCE}
+"""
+
+
+class DeclaredIncome(TypedDict):
+    declared: bool
+    confirmed_at: str
+
+
+class ConfirmedRate(TypedDict):
+    value: float
+    confirmed_at: str
+
+
+class ConfirmedTolerance(TypedDict):
+    value: str
+    confirmed_at: str
+
+
+class ProfileFacts(TypedDict, total=False):
+    income: DeclaredIncome
+    marginal_rate: ConfirmedRate
+    risk_tolerance: ConfirmedTolerance
+
+
+class OwnerProfile(TypedDict):
+    """``profile.read``, the income amount withheld."""
+    facts: ProfileFacts
+    projects: List[profile.Project]
+
+
+class ProposedFact(TypedDict):
+    proposal_id: str
+    key: str
+    status: str
+    created_at: str
+    expires_at: str
+    note: str
+
+
 #: One validator per shape, built on first use and kept.
 _adapter = cache(TypeAdapter)
 
@@ -630,9 +716,11 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         instructions=(
             "SuiviBourse tracks one person's stock portfolio. A portfolio here "
             "is a dated ledger of what its owner did; everything else — the "
-            "positions, the prices, the returns — is derived from it. These "
-            "tools read that data and cannot change it. One of them simulates "
-            "a sale; a simulation changes nothing and is not advice.\n\n"
+            "positions, the prices, the returns — is derived from it. Every "
+            "tool reads, except `propose_profile_fact`, which records a "
+            "proposal the owner confirms or ignores in the app; no tool "
+            "confirms one. One tool simulates a sale; a simulation changes "
+            "nothing and is not advice.\n\n"
             "THIS IS NOT THE OWNER'S WHOLE WEALTH. The ledger holds listed "
             "instruments, valued from market data: anything held outside that "
             "— private equity, an SPV, property, a holding with no ticker — "
@@ -653,8 +741,9 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     def _store():
         """The runtime's read view on the store, raising when there is none.
 
-        This server writes nothing — every tool below reads, the simulator
-        too — so it reads through the same connection of its own the ``/api``
+        Every tool below reads, the simulator too, except
+        ``propose_profile_fact``, which writes under the writers' mutex — so
+        the reads go through the same connection of its own the ``/api``
         blueprint uses (#967), rather than waiting behind a background pass.
         """
         if runtime.store is None:
@@ -687,6 +776,12 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             raise
         except simulation.SimulationRefused as exc:
             raise ToolError(f"this simulation is refused: {exc}") from exc
+        except profile.InvalidProfileFact as exc:
+            raise ToolError(f"this fact is refused: {exc}") from exc
+        except profile.UnknownFact as exc:
+            raise ToolError(
+                f"there is no project {exc} in the profile; read "
+                f"get_profile for the ids") from exc
         except ValidationError as exc:
             raise ToolError(
                 f"this answer does not match the schema the tool publishes, so "
@@ -820,6 +915,39 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                     **simulation.simulate_sale(built, symbol, quantity,
                                                now=now.date())}
         return reading(_body, SimulatedSale)
+
+    @mcp.tool(description=GET_PROFILE_DESCRIPTION)
+    def get_profile() -> OwnerProfile:
+        """``profile.read``, with the income reduced to its being declared."""
+        def _body():
+            """The read, then the income amount taken out."""
+            read = profile.read(_store())
+            facts = dict(read['facts'])
+            if 'income' in facts:
+                facts['income'] = {
+                    'declared': True,
+                    'confirmed_at': facts['income']['confirmed_at']}
+            return {'facts': facts, 'projects': read['projects']}
+        return reading(_body, OwnerProfile)
+
+    @mcp.tool(description=PROPOSE_PROFILE_FACT_DESCRIPTION)
+    def propose_profile_fact(key: str, value: Any) -> ProposedFact:
+        """**The only write on this server**: a ``proposal`` row, ``ready``.
+
+        No tool confirms or ignores it; only the app's
+        ``/api/profile/proposals/<id>/confirm`` writes the fact.
+        """
+        def _body():
+            """The write, under the writers' mutex like every other."""
+            now = datetime.now(timezone.utc)
+            with runtime.config_manager.writing() as opened:
+                proposal_id = profile.propose(opened, key, value, now)
+            return {'proposal_id': proposal_id, 'key': key, 'status': 'ready',
+                    'created_at': instants.iso(now),
+                    'expires_at': instants.iso(now + profile.EXPIRY),
+                    'note': "Le propriétaire doit confirmer dans SuiviBourse ; "
+                            "rien n'est noté avant."}
+        return reading(_body, ProposedFact)
 
     return mcp
 

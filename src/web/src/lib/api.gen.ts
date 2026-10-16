@@ -44,6 +44,55 @@ export interface AccountsPayload {
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "Confirmed".
+ */
+export interface Confirmed {
+  profile: Profile;
+  proposal: Proposal;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "Profile".
+ */
+export interface Profile {
+  facts: {
+    [k: string]: Fact;
+  };
+  projects: Project[];
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "Fact".
+ */
+export interface Fact {
+  confirmed_at: string;
+  value: unknown;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "Project".
+ */
+export interface Project {
+  amount: number | null;
+  confirmed_at: string;
+  id: string;
+  label: string;
+  target_year: number;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "Proposal".
+ */
+export interface Proposal {
+  created_at: string;
+  decided_at: string | null;
+  id: string;
+  key: string;
+  status: "ready" | "merged" | "ignored" | "expired";
+  value: unknown;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
  * via the `definition` "Converted".
  */
 export interface Converted {
@@ -66,6 +115,13 @@ export interface Fundamentals {
   pe_ratio: number | null;
   quote_type: string | null;
   sector: string | null;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "Ignored".
+ */
+export interface Ignored {
+  proposal: Proposal;
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema
@@ -101,4 +157,11 @@ export interface Price {
 export interface Positions {
   base_currency: string | null;
   positions: Position[];
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "ProposalsPayload".
+ */
+export interface ProposalsPayload {
+  proposals: Proposal[];
 }

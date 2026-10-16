@@ -30,7 +30,10 @@ SYSTEM_PROMPT = (
     "what to do you lay out the simulated options instead. Answer in the "
     "language of the user's last message. Name an account by its `label`, "
     "never by its `id`, and never quote a tool's field names: say what a "
-    "figure is in words."
+    "figure is in words. When the user states their income, marginal tax "
+    "rate, risk tolerance or a project, propose it with "
+    "`propose_profile_fact`; never treat a proposal as confirmed. Read what "
+    "is confirmed with `get_profile`."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.
@@ -275,7 +278,8 @@ def build_agent(model, mcp):
     """The agent: ``model`` over the MCP server's tools, in process.
 
     No tool exists only for the agent. ``deps`` stays empty: the investor's
-    profile facts are #1116's.
+    profile is a tool, ``get_profile``, and the agent's one write,
+    ``propose_profile_fact``, is a proposal only the app confirms (#1116).
     """
     from pydantic_ai import Agent
     from pydantic_ai.mcp import MCPToolset

@@ -26,6 +26,7 @@ from application import main
 from application import mcp_server
 from application import perf_series
 from application import portfolio_facts
+from application import profile
 from application import quotes
 from application import store as store_module
 from conftest import write_legacy_taxation_model
@@ -122,25 +123,28 @@ LEDGER = [
 # The surface itself
 # --------------------------------------------------------------------- #
 
-def test_the_surface_is_seven_tools_and_nothing_else(tmp_path):
-    """Seven, named, and no eighth arriving by accident.
+def test_the_surface_is_nine_tools_and_nothing_else(tmp_path):
+    """Nine, named, and no tenth arriving by accident.
 
     Either should fail a test rather than a user's setup.
 
     The sixth is the investment rhythm (#751), and it arrived with a route of
     its own: this module's opening promise — *it computes nothing* — is kept at
     the word rather than gaining a second exception. The seventh is
-    the sale simulator (#1109), with flat arguments.
+    the sale simulator (#1109), with flat arguments. The eighth and ninth are
+    the profile (#1116): one read, and one proposal that no tool confirms.
     """
     runtime, _ = build_runtime(tmp_path)
 
     names = sorted(tool.name for tool in listed(runtime))
     assert names == ['get_investment_rhythm', 'get_portfolio_history',
-                     'get_portfolio_totals', 'list_accounts', 'list_events',
-                     'list_positions', 'simulate_sale']
+                     'get_portfolio_totals', 'get_profile', 'list_accounts',
+                     'list_events', 'list_positions', 'propose_profile_fact',
+                     'simulate_sale']
     arguments = {tool.name: list(tool.input_schema['properties'])
                  for tool in listed(runtime)}
     assert arguments['simulate_sale'] == ['account', 'symbol', 'quantity']
+    assert arguments['propose_profile_fact'] == ['key', 'value']
 
 
 def test_every_description_states_the_absence_rule(tmp_path):
@@ -919,6 +923,7 @@ SERVED_WITH = {
         {'account': 'pea', 'symbol': 'AAPL', 'quantity': 2},
         {'account': 'other', 'symbol': 'AAPL', 'quantity': 2},
     ],
+    'propose_profile_fact': [{'key': 'marginal_rate', 'value': 0.3}],
 }
 
 
@@ -1029,6 +1034,13 @@ def rich_runtime(tmp_path):
                 'industry': 'Consumer Electronics',
                 'country': 'United States'},
         184.0, 0.92)
+    now = datetime.now(timezone.utc)
+    profile.put(opened, 'income', {'amount': 54321}, now)
+    profile.put(opened, 'marginal_rate', 0.3, now)
+    profile.put(opened, 'risk_tolerance', 'balanced', now)
+    profile.confirm(opened, profile.propose(
+        opened, 'project', {'label': 'Maison', 'target_year': today.year + 2,
+                            'amount': 300000}, now), now)
     year_end = date(today.year - 1, 12, 31)
     perf_series.write_portfolio_totals(opened, [
         PortfolioTotalPoint(day=day, cash_balance=100.0, holdings_value=1000.0,

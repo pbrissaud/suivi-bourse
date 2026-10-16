@@ -54,6 +54,8 @@ const TOOL_SENTENCES: Record<string, MessageKey> = {
   list_events: 'agent.tool.list_events',
   get_investment_rhythm: 'agent.tool.get_investment_rhythm',
   simulate_sale: 'agent.tool.simulate_sale',
+  get_profile: 'agent.tool.get_profile',
+  propose_profile_fact: 'agent.tool.propose_profile_fact',
 }
 
 /** The sentence a tool call is shown as; a tool this list does not know is named. */

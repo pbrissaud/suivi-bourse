@@ -14,10 +14,12 @@ def test_the_committed_schema_is_the_one_the_python_states():
         '`pnpm gen:api` in src/web')
 
 
-def test_the_schema_names_exactly_the_seven_shapes():
+def test_the_schema_names_exactly_its_shapes():
     assert set(api_schema.schema()['$defs']) == {
         'Account', 'AccountsPayload', 'Converted', 'Fundamentals', 'Position',
-        'Positions', 'Price'}
+        'Positions', 'Price',
+        'Confirmed', 'Fact', 'Ignored', 'Profile', 'Project', 'Proposal',
+        'ProposalsPayload'}
 
 
 def test_a_quantity_is_never_null_and_may_be_nan():

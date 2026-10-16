@@ -192,6 +192,24 @@ CREATE TABLE IF NOT EXISTS auth_secret (
     token_created_at  TIMESTAMPTZ,
     revoked           VARCHAR NOT NULL DEFAULT '{}',
     updated_at        TIMESTAMPTZ NOT NULL);
+
+-- What the owner declares **about themself** (#1116), confirmed in the UI and
+-- never written by the agent. An absent row is an absence. ``value`` is JSON,
+-- validated by ``application.profile``.
+CREATE TABLE IF NOT EXISTS profile_fact (
+    key           VARCHAR PRIMARY KEY,   -- 'income' | 'marginal_rate' | 'risk_tolerance' | 'project:<id>'
+    value         VARCHAR NOT NULL,
+    confirmed_at  TIMESTAMPTZ NOT NULL);
+
+-- What the agent proposes and only the UI decides (#1116, #1119). ``expired``
+-- is read, never stored: a ``ready`` row older than ``profile.EXPIRY``.
+CREATE TABLE IF NOT EXISTS proposal (
+    id          VARCHAR PRIMARY KEY,     -- uuid4 hex
+    kind        VARCHAR NOT NULL,        -- 'profile_fact'
+    payload     VARCHAR NOT NULL,        -- JSON: {"key": ..., "value": ...}
+    status      VARCHAR NOT NULL,        -- 'ready' | 'merged' | 'ignored'
+    created_at  TIMESTAMPTZ NOT NULL,
+    decided_at  TIMESTAMPTZ);
 """
 
 DDL = ''.join((
@@ -209,7 +227,7 @@ TABLES = (
     'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
-    'agent_config', 'auth_secret',
+    'agent_config', 'auth_secret', 'profile_fact', 'proposal',
 )
 
 #: The tables whose surrogate key this store hands out — see

@@ -90,7 +90,7 @@ def test_the_product_declares_sixteen_tables_and_one_of_them_is_the_ack():
     impossible — it was that a declared fact has its own writer, its own
     absence and its own lifetime.
     """
-    assert len(store_module.TABLES) == 18
+    assert len(store_module.TABLES) == 20
     assert 'advisory_ack' in store_module.TABLES
 
 
