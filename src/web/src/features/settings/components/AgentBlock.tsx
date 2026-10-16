@@ -77,9 +77,13 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const [draft, setDraft] = useState<AgentDraft>(() => draftOf(config))
   const [tested, setTested] = useState<AgentTestResult | null>(null)
   const [model, setModel] = useState('')
+  // Steps 1 and 2 edited since the last passed test: the stored model no longer
+  // answers for them, even once a failed test has written them to the store.
+  const [untested, setUntested] = useState(false)
 
   const edit = (change: Partial<AgentDraft>) => {
     setDraft((current) => ({ ...current, ...change }))
+    setUntested(true)
     // What was tested is no longer what is on screen.
     setTested(null)
     setModel('')
@@ -98,6 +102,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
     },
     onSuccess: (answer) => {
       setTested(answer)
+      setUntested(false)
       setModel(answer.preselected ?? '')
       // Stored now: the field goes back to saying so by its last four.
       setDraft((current) => ({ ...current, key: '' }))
@@ -122,7 +127,8 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const keyPage = provider ? KEY_PAGE[provider] : undefined
   const refusal = providerRefusal(test.error)
   // A test this session decides; without one, the stored model can be switched back on.
-  const activatable = tested !== null ? canActivate(true, model) : config.model !== null
+  const activatable =
+    tested !== null ? canActivate(true, model) : !untested && config.model !== null
 
   return (
     <Section

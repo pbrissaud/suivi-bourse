@@ -96,7 +96,6 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
     )
 
 
-
 __all__ = [
     'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'THEME',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',

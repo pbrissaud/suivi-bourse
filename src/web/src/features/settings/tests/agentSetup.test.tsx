@@ -148,6 +148,37 @@ describe('switching the agent on', () => {
     expect(activate(block)).toBeDisabled()
   })
 
+  it('does not switch the stored model back on after a failed test on another provider', async () => {
+    provider(
+      () =>
+        HttpResponse.json(
+          {
+            type: PROBLEM_TYPES.providerRefused,
+            title: 'Provider refused',
+            status: 502,
+            detail: 'OpenAI: invalid key',
+            provider: 'OpenAI',
+            reason: 'refused',
+          },
+          { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      anAgentConfig({
+        provider: 'anthropic',
+        model: 'claude-x',
+        key: { set: true, last4: 'abcd', set_at: null },
+      }),
+    )
+    const { user, block } = await openAgent()
+    expect(activate(block)).toBeEnabled()
+
+    await user.click(within(block).getByRole('radio', { name: /modèles GPT/ }))
+    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(block))
+
+    await within(block).findByRole('alert')
+    expect(activate(block)).toBeDisabled()
+  })
+
   it('takes the pass back when the key is edited after it', async () => {
     provider()
     const { user, block } = await openAgent()
