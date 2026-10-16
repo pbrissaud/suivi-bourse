@@ -10,6 +10,7 @@ import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
 import SettingsPage from '@/pages/SettingsPage'
+import SystemPage from '@/pages/SystemPage'
 import SharesPage from '@/pages/SharesPage'
 
 /**
@@ -143,6 +144,13 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+/** What the installation is doing and what it is: the bell's health link lands here. */
+const systemRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/system',
+  component: SystemPage,
+})
+
 /**
  * The sixth route, and the second of the two that read nothing off their own
  * address (#760).
@@ -188,6 +196,7 @@ const routeTree = rootRoute.addChildren([
   benchmarkRoute,
   dataRoute,
   settingsRoute,
+  systemRoute,
   agentRoute,
   agentThreadRoute,
 ])

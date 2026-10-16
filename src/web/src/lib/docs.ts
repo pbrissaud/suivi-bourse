@@ -54,7 +54,12 @@ export const DOCS_ANCHORS = [
 export type DocsAnchor = (typeof DOCS_ANCHORS)[number]
 
 export function docsHref(language: Language, anchor: DocsAnchor): string {
+  return docsPageHref(language, DOCS_PAGE, anchor)
+}
+
+/** Any other page of the docs; its anchor is a `{#id}` written by hand there. */
+export function docsPageHref(language: Language, page: string, anchor: string): string {
   // English is the site's default locale and therefore has **no** segment.
   const locale = language === 'en' ? '' : `${language}/`
-  return `${DOCS_ORIGIN}/${locale}docs/${DOCS_VERSION}/${DOCS_PAGE}#${anchor}`
+  return `${DOCS_ORIGIN}/${locale}docs/${DOCS_VERSION}/${page}#${anchor}`
 }

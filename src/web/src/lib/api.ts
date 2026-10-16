@@ -447,31 +447,8 @@ export interface RuntimeAccount {
   horizon: string | null
 }
 
-/**
- * Does the store outlive the container? (issue #741)
- *
- * Observed once at boot from `/proc/self/mountinfo` and answered from process
- * memory, which is why it travels on this resource and not beside the figures.
- *
- * `unknown` is a real answer and not a placeholder: the observation is a
- * property of the kernel, so a deployment with no `/proc` — a developer on
- * macOS — has nothing to report, and a reader must not turn that silence into
- * either of the other two. The data page's *store* block (#724) is what renders
- * the three; nothing else on the front branches on it.
- */
-export type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
-
 export interface RuntimeStore {
-  persistence: StorePersistence
-  /**
-   * Where the file is. Boot knowledge, so it travels beside the persistence
-   * rather than on the store's own resource — the two are read as one line
-   * (*the path, and whether it survives*), and the pair has to stay legible on
-   * the one failure where the store cannot answer for itself.
-   *
-   * `null` is a process that named no store, which a browser will not meet and
-   * a test runtime does. Never an empty string, which reads as a root.
-   */
+  /** Where the file is; `null` when the process named no store (tests). */
   path: string | null
 }
 

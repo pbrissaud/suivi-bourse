@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from application import build_info
 from application import instants
-from application import mounts
 from application import runtime_state
 from application import scheduling
 
@@ -378,7 +377,6 @@ def build_runtime(
     now: datetime,
     scheduler_running: bool = True,
     reconstruction: Optional[Tuple[int, int]] = None,
-    persistence: str = mounts.UNKNOWN,
     store_path: Optional[str] = None,
     build: build_info.Build = build_info.UNSTAMPED,
 ) -> Dict[str, Any]:
@@ -389,7 +387,7 @@ def build_runtime(
         'now': instants.iso(now),
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
-        'store': {'persistence': persistence, 'path': store_path},
+        'store': {'path': store_path},
         'build': build.to_dict(),
         'symbols': [symbol.to_dict() for symbol in symbols],
         'accounts': build_accounts(perf),

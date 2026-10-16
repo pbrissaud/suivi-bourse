@@ -78,7 +78,7 @@ describe('the two axes, and only one of them is a word on screen', () => {
     const [entry] = notifications({ ...QUIET, health: 'unreachable' })
 
     expect(entry.acknowledge).toBeNull()
-    expect(entry.link?.to).toEqual({ to: '/settings' })
+    expect(entry.link?.to).toEqual({ to: '/system' })
   })
 
   it('acknowledges an installation fact for good and an advisory for a window', () => {

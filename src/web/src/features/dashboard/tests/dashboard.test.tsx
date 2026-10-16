@@ -2159,9 +2159,9 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
         ),
       ),
     )
-    renderApp({ url: '/settings' })
+    renderApp({ url: '/system' })
 
-    expect(await screen.findByText(/Alpha est le compte le plus en retard/)).toBeInTheDocument()
+    expect(await screen.findByText(/Compte le plus en retard : Alpha/)).toBeInTheDocument()
     // (2026-03-02 → 2026-01-01) over (2026-03-02 → 2025-12-24), the oldest day
     // the ledger names: 60 days of 68.
     expect(await screen.findByRole('progressbar')).toHaveAccessibleName(
@@ -2173,8 +2173,8 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
     // A block with nothing in it does not exist. The workloads card names the
     // backfill whatever it is doing, which is why the absence is asked of *this*
     // card's own name rather than of the word `reconstruction` on the page.
-    renderApp({ url: '/settings' })
-    await screen.findByRole('heading', { name: 'Le magasin' })
+    renderApp({ url: '/system' })
+    await screen.findByRole('heading', { name: 'Tâches' })
 
     expect(screen.queryByText('Reconstruction en cours')).not.toBeInTheDocument()
   })

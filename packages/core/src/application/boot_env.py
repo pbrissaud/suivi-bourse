@@ -1,7 +1,7 @@
 """The four things the environment still says (store, port, log level, theme), and the names it no longer says."""
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Mapping, Optional, Tuple
 
 
 STORE_DIR = 'SB_STORE_DIR'
@@ -96,29 +96,11 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
     )
 
 
-def effective(env: Mapping[str, str],
-              log_level: Optional[str] = None) -> List[Dict]:
-    """The read-only *effective configuration* ``/api/config`` publishes."""
-    reported: List[Dict] = []
-    for name, default in INVENTORY:
-        raw = text(env, name)
-        source, value = ('environment', raw) if raw is not None \
-            else ('default', default)
-        if name == LOG_LEVEL and log_level is not None:
-            value = log_level
-        reported.append({
-            'name': name,
-            'value': value,
-            'set': raw is not None,
-            'source': source,
-        })
-    return reported
-
 
 __all__ = [
     'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'THEME',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',
-    'BootEnvironment', 'read', 'unread', 'notice', 'effective',
+    'BootEnvironment', 'read', 'unread', 'notice',
     'text', 'integer', 'directory',
 ]

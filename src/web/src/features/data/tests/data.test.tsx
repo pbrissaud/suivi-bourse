@@ -82,7 +82,7 @@ describe('one route, one thing', () => {
     for (const hash of ['#installation', '#toString']) {
       const view = renderData(ledgerEvents(), `/ledger${hash}`)
       expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
-      expect(screen.queryByRole('heading', { name: 'Le magasin' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Installation' })).not.toBeInTheDocument()
       view.unmount()
     }
   })

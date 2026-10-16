@@ -7,7 +7,7 @@
  * no page test.
  */
 
-import { get, ROUTES, remove, type StorePersistence, send } from '@/lib/api'
+import { get, ROUTES, remove, send } from '@/lib/api'
 
 // ------------------------------------------------------------------------- //
 // The installation (#724)
@@ -48,33 +48,9 @@ export interface SettingDescription {
   stored: boolean
 }
 
-/**
- * One boot variable — what the process had to know before it could open the
- * store. **Four and no fifth** (#740).
- *
- * It is a *description*: rendered as greyed-out fields it invites the click and
- * reads as a form that refused, when the honest statement is that nothing here
- * is answerable from in here at all. The section says *changes when the
- * container is recreated* **once**, for all of them.
- */
-export interface EnvironmentVariable {
-  name: string
-  /** What the app is running on — the variable's, or the app's own default. */
-  value: string | null
-  /** Whether the environment named it at all. */
-  set: boolean
-  /**
-   * Where the value came from, and it is **factual rather than helpful**:
-   * reporting a variable as *unset, using the default* because it happens to
-   * equal the default would be a guess (#654 trap 2).
-   */
-  source: 'environment' | 'default'
-}
-
 export interface ConfigResponse {
   log_level: string
   settings: SettingDescription[]
-  environment: EnvironmentVariable[]
   /** Set in the environment and obeyed by nothing. Computed, so it cannot drift. */
   unread_environment: string[]
 }
@@ -98,7 +74,7 @@ export interface OrphanSymbol {
 }
 
 /**
- * The store's own figures. The path and the persistence are **not** here — they
+ * The store's own figures. The path is **not** here — they
  * are process memory and ride on `/api/runtime`, which opens nothing and is
  * therefore still answering when this resource is not.
  */
@@ -112,8 +88,6 @@ export interface StoreState {
    */
   ledger_last_write: string | null
   orphans: OrphanSymbol[]
-  /** Repeated from the runtime so a report quoting this resource is whole. */
-  persistence: StorePersistence
 }
 
 /** What the purge answers: rows, and never bytes. */

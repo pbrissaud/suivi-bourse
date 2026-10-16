@@ -2,16 +2,16 @@
 #
 # The image's contract, asserted from outside (issue #744, spec #730 § 7).
 #
-# Ten assertions. The first one — `docker build .` succeeds — is the step
+# The first assertion — `docker build .` succeeds — is the step
 # that produced $IMAGE and cannot be made after the fact, so it lives in the
-# workflow; the nine that follow live here. What they all have in common is
+# workflow; the others live here. What they all have in common is
 # that they attest **observable behaviour** and never the shape of a line of
 # `Dockerfile`: a test that greps the file for `HEALTHCHECK` breaks at the first
 # refactor *and passes on a broken probe*, while one that asks `docker inspect`
 # and then waits for `healthy` attests the thing itself.
 #
 # Each assertion fails for its own reason and says which number it is, because
-# the nine are nine decisions of ADR-0015 and #742 rather than nine details:
+# each is a decision of ADR-0015 and #742 rather than a detail:
 # a bare container that no longer starts and a healthcheck that never turns
 # green are two different pieces of news.
 #
@@ -31,10 +31,8 @@ IMAGE="${IMAGE:-suivi-bourse:pr}"
 LABEL='suivi-bourse-contract=744'
 
 BARE=sb-contract-bare
-KEPT=sb-contract-kept
 PORTS=sb-contract-ports
 LEGACY=sb-contract-legacy
-STORE_VOLUME=sb-contract-store
 
 # Host ports, all in one place and all **below** the ephemeral range the runner
 # allocates from — Linux hands out 32768-60999 — so the kernel never gives one
@@ -46,7 +44,6 @@ STORE_VOLUME=sb-contract-store
 # second `-p` here would be the very dead mapping this script exists to keep out
 # of the documentation.
 BARE_WEB=18080
-KEPT_WEB=18090
 PORTS_WEB=19090
 LEGACY_WEB=19081
 
@@ -111,7 +108,7 @@ http_code() {
 # The ordinary wait, and deliberately **not** the image's own probe: the two
 # would collapse assertion 2 into assertion 8, and a `HEALTHCHECK` deleted from
 # the Dockerfile would then be reported as "the bare container does not start".
-# Each of the nine has to fail for its own reason, so liveness is asked of the
+# Each one has to fail for its own reason, so liveness is asked of the
 # route and greenness is asked of the probe, separately.
 wait_serving() {
     local name="$1" url="$2" waited=0
@@ -157,17 +154,6 @@ condition_keys() {
     docker logs "$1" 2>&1 | grep -o 'condition="[a-z_]*"' | sort || true
 }
 
-# The store's persistence as the app itself publishes it (ADR-0033). Read from
-# `/api/runtime` and not from `/api/store`: it is the one that makes no query,
-# so it still answers on an install whose store will not open — which is exactly
-# when *"where did my data go?"* is asked. `tr` then `sed` rather than a JSON
-# parser, because the runner is not promised one and the member is a bare word.
-persistence_of() {
-    curl -s --max-time 10 "$1/api/runtime" \
-        | tr ',{}' '\n\n\n' \
-        | sed -n 's/^[[:space:]]*"persistence"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p'
-}
-
 # The revision the image carries in its own environment — what `docker run`
 # hands the process — and the one it publishes once running. Assertion 10 puts
 # the two side by side, which is what makes it an assertion about the chain
@@ -188,17 +174,11 @@ published_revision() {
 # --------------------------------------------------------------------------- #
 #
 # Started before anything is asserted, because their boots are independent and
-# serialising four of them would spend a minute of a pull request's check on
+# serialising them would spend a minute of a pull request's check on
 # waiting alone.
-
-docker volume create --label "$LABEL" "$STORE_VOLUME" >/dev/null
 
 # Bare: no volume, no variable. The trial run of ADR-0015.
 start "$BARE" -p "$BARE_WEB:8080"
-
-# The same image with a named volume on /data — the installation that keeps
-# what it writes.
-start "$KEPT" -v "$STORE_VOLUME:/data" -p "$KEPT_WEB:8080"
 
 # The port moved, so the assertion is about the *variable* and not about a
 # number that happens to be the default. It is also the container assertion 5
@@ -222,22 +202,6 @@ sleep 5
 [ "$(docker inspect -f '{{.State.Restarting}}' "$BARE")" = 'false' ] \
     || { dump "$BARE"; fail "assertion 2: the bare container is restarting"; }
 ok 'a bare docker run boots and keeps running'
-
-assertion '3 — it says it keeps nothing, once'
-# The grep is on the logfmt `condition=` key rather than on the sentence: the
-# key is the contract (#741), the wording is not. **Once** is the half that
-# matters — the line is said in `build_runtime`, and there is one process saying
-# it (ADR-0039), so a boot that started saying it twice would mean a restart loop
-# was under way.
-said="$(count_in_logs "$BARE" 'condition="store_ephemeral"')"
-[ "$said" -eq 1 ] || { dump "$BARE"; fail "assertion 3: the ephemeral-store line was said $said time(s), expected exactly 1"; }
-ok 'the no-persistence condition is logged exactly once'
-
-assertion '4 — with a volume it does not say it'
-wait_serving "$KEPT" "http://127.0.0.1:$KEPT_WEB/health"
-said="$(count_in_logs "$KEPT" 'condition="store_ephemeral"')"
-[ "$said" -eq 0 ] || { dump "$KEPT"; fail "assertion 4: a mounted store still logged the ephemeral condition $said time(s)"; }
-ok 'a mounted store says nothing about persistence'
 
 assertion '5 — /health on SB_WEB_PORT, and nothing answers on a second port'
 wait_serving "$PORTS" "http://127.0.0.1:$PORTS_WEB/health"
@@ -272,23 +236,6 @@ for dead_port in 8081 9091; do
     fi
 done
 ok 'the web port is the only socket the app binds'
-
-assertion '6 — the store says it is ephemeral bare and persistent mounted'
-# Read from the app's own resource and no longer from a gauge (ADR-0033): the
-# fact outlived its instrument, and this is the assertion that proves the
-# substitution rather than assuming it.
-#
-# Stated in both directions on purpose (#741): a member that *disappeared* would
-# read as an install that has nothing to say, never as "it keeps what it
-# writes". So the mounted case asserts the word `persistent` and not the absence
-# of `ephemeral`.
-bare_persistence="$(persistence_of "http://127.0.0.1:$BARE_WEB")"
-[ "$bare_persistence" = 'ephemeral' ] \
-    || fail "assertion 6: the bare container published '${bare_persistence:-nothing}', expected 'ephemeral'"
-kept_persistence="$(persistence_of "http://127.0.0.1:$KEPT_WEB")"
-[ "$kept_persistence" = 'persistent' ] \
-    || fail "assertion 6: the mounted container published '${kept_persistence:-nothing}', expected 'persistent'"
-ok 'the one fact that reports the installation rather than the portfolio'
 
 assertion '7 — not root, and /data — the one mount — is writable'
 whoami="$(docker exec "$BARE" id -un)"

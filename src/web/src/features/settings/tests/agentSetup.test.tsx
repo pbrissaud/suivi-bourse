@@ -2,7 +2,7 @@
  * *L’agent* in Settings (#1115): switching it on in four steps, the whole
  * app in jsdom and HTTP the only faked edge.
  *
- * The rule the ticket asks a test of is the first one: **Activer stays
+ * The rule the ticket asks a test of is the first one: **The switch stays
  * disabled until Tester la connexion succeeds** — for what is on screen, so an
  * edit after a pass takes it back.
  */
@@ -70,12 +70,13 @@ async function openAgent() {
   return { ...rendered, block }
 }
 
-const activate = (block: HTMLElement) => within(block).getByRole('button', { name: 'Activer' })
+const activate = (block: HTMLElement) =>
+  within(block).getByRole('switch', { name: 'Activer l’agent' })
 const testButton = (block: HTMLElement) =>
   within(block).getByRole('button', { name: 'Tester la connexion' })
 
 describe('switching the agent on', () => {
-  it('is off by default, and Activer stays disabled until the test passes', async () => {
+  it('is off by default, and the switch stays disabled until the test passes', async () => {
     const writes = provider()
     const { user, block } = await openAgent()
 
@@ -122,7 +123,7 @@ describe('switching the agent on', () => {
     expect(writes.at(-1)).toEqual(['config', { model: 'claude-old', enabled: true }])
   })
 
-  it('says a failed test in the provider’s own words, and keeps Activer disabled', async () => {
+  it('says a failed test in the provider’s own words, and keeps the switch disabled', async () => {
     provider(() =>
       HttpResponse.json(
         {

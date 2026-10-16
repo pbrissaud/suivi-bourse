@@ -47,7 +47,6 @@ def get_runtime():
         scheduler_running=runtime.scheduler is not None,
         reconstruction=(runtime.workloads.reconstruction_state()
                         if runtime.workloads is not None else None),
-        persistence=runtime.store_persistence,
         build=runtime.build,
         store_path=(str(runtime.store_path)
                     if runtime.store_path is not None else None),
@@ -64,7 +63,6 @@ def _next_runs(scheduler) -> dict:
 @bp.get('/store')
 def get_store():
     """What the installation's store *is*: its size, its last write, its orphans."""
-    runtime = current_runtime()
     opened = _store()
     return jsonify({
         'size_bytes': store_module.file_size(opened.path),
@@ -73,7 +71,6 @@ def get_store():
             {'symbol': orphan.symbol, 'points': orphan.points}
             for orphan in ledger.orphan_symbols(opened)
         ],
-        'persistence': runtime.store_persistence,
     })
 
 
@@ -149,7 +146,6 @@ def get_config():
     return jsonify({
         'log_level': main.current_log_level(),
         'settings': settings_module.describe(_store()),
-        'environment': main.effective_environment(),
         'unread_environment': installation_facts.unread_environment(),
         'shares': _snapshot().shares,
     })

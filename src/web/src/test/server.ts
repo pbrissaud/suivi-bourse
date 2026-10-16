@@ -200,10 +200,7 @@ export function defaultHandlers() {
     // reduction, so its name never moves.
     http.get(ROUTES.exportPortfolio, () => exported('portfolio', 'csv')),
 
-    // The installation tab (#724). The default install has one notice standing,
-    // a store on a mount and no orphan — the ephemeral store and the orphan
-    // list are what a test asks for by name, both being exactly what the block
-    // exists to render.
+    // The default install has one notice standing and no orphan.
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
     // The agent is off by default (#1115), and nothing is configured.
     http.get(ROUTES.agentConfig, () => HttpResponse.json(anAgentConfig())),
@@ -215,7 +212,7 @@ export function defaultHandlers() {
     // **And nothing to advise on, by default** (#829). An advisory is an audit
     // on the *data*, and the default portfolio is one nothing is wrong with —
     // a test that wants a chip beside a figure asks for it by name, exactly as
-    // it asks for an ephemeral store.
+    // it asks for an orphan.
     http.get(ROUTES.advisories, () => HttpResponse.json([])),
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
     // The write answers with the new list and **quantifies its effect**: a

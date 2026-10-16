@@ -61,10 +61,6 @@
  *  walk** rather than about the currency: the currency is now said where it is
  *  asked, one block down, and what a reader needs at the top is how long this
  *  is and that it releases them.
- *  - **The ephemeral-store warning is here**, and it is the only surface
- *    *every* trial user meets: the installation tab is two clicks down, and the
- *    boot lines are at a terminal nobody watching a browser is reading. It does
- *    not leave the tab either — the ceiling loses nothing (#724).
  *  - **The accounts passage demands nothing.** It is satisfied by the seeded
  *    row every install owns — a declaration the owner may decline to add to —
  *    and its whole job is that the notion exists *before* a file naming
@@ -87,7 +83,7 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Check, CreditCard, Plus, TriangleAlert } from 'lucide-react'
+import { Check, CreditCard, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { CurrencyField } from '@/components/CurrencyField'
@@ -104,7 +100,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { type AccountDraft, accountsApi } from '@/features/accounts/lib/api'
 import { type ConfigResponse, settingsApi } from '@/features/settings/lib/api'
-import { api } from '@/lib/api'
 import { DEFAULT_ACCOUNT_LABEL, declaredLabel } from '@/features/accounts/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
@@ -156,13 +151,8 @@ export function FirstRun() {
   const [walking, setWalking] = useState(false)
   const open = stands || walking
 
-  // The two reads are **armed by the walk**, so an install that has answered the
-  // question pays for neither on any page. The runtime is the shell's own read
-  // under the same key — the shell asks for it on every route —
-  // so arming it here costs nothing and takes nothing away; the accounts are
-  // read from the top of the walk rather than on arrival at their own passage,
-  // which is what makes them there to be named when the reader gets to them.
-  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime, enabled: open })
+  // Armed by the walk, and read from its top so the accounts are there to be
+  // named when the reader reaches their passage.
   const accounts = useQuery({
     queryKey: ['accounts'],
     queryFn: accountsApi.accounts,
@@ -227,7 +217,6 @@ export function FirstRun() {
   if (stands && !walking) setWalking(true)
   if (!walking) return null
 
-  const ephemeral = runtime.data?.store.persistence === 'ephemeral'
   const last = nextPassage(passage) === null
 
   return (
@@ -249,13 +238,6 @@ export function FirstRun() {
             <span className="block">{t('firstRun.what.walk')}</span>
           </DialogDescription>
         </DialogHeader>
-
-        {ephemeral ? (
-          <p className="flex gap-2.5 rounded-lg border border-attention/40 bg-attention/10 p-3 text-sm leading-relaxed text-attention text-pretty">
-            <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-            <span>{t('firstRun.ephemeral')}</span>
-          </p>
-        ) : null}
 
         <PassageRail current={passage} />
 

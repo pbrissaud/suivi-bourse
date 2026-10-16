@@ -35,7 +35,6 @@ import {
   aConfig,
   aLedgerPayload,
   aFrozenScrape,
-  aRuntime,
   noAccountsDeclared,
   theSeededAccount,
 } from '@/test/factories'
@@ -163,30 +162,6 @@ describe('what it says, and what it refuses to say', () => {
     expect(described.getByText(/relève les cours tout seul/)).toBeInTheDocument()
     expect(described.getByText(/Trois passages pour démarrer/)).toBeInTheDocument()
     expect(described.queryByText(/PRU|prix de revient|moyen pondéré/i)).not.toBeInTheDocument()
-  })
-
-  it('warns that an ephemeral container keeps nothing, being the only surface every trial user meets', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } }),
-        ),
-      ),
-    )
-    await firstRun()
-
-    await waitFor(() =>
-      expect(within(modal()).getByText(/Ce conteneur ne garde rien/)).toBeInTheDocument(),
-    )
-  })
-
-  it('says nothing about persistence on a mounted store', async () => {
-    await firstRun()
-
-    await waitFor(() =>
-      expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument(),
-    )
-    expect(within(modal()).queryByText(/ne garde rien/)).not.toBeInTheDocument()
   })
 })
 
@@ -477,9 +452,9 @@ describe('the bell is a state and a link, and the link arrives', () => {
 
     await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
+    await user.click(within(panel).getByRole('link', { name: 'Voir dans Système' }))
 
-    expect(await screen.findByRole('heading', { name: 'Le magasin', level: 2 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tâches', level: 2 })).toBeInTheDocument()
   })
 })
 
@@ -826,11 +801,6 @@ describe('mandatory means traversed, never answered', () => {
     // the trial into a wall, so the three passages are walked and the only
     // thing that happens is that they end.
     server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ store: { persistence: 'ephemeral', path: '/data/suivi-bourse.duckdb' } }),
-        ),
-      ),
       http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
       http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))),
     )

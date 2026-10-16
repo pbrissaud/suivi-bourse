@@ -1,11 +1,8 @@
-"""The three lines a bare container says at start-up (issue #741)."""
+"""The lines a bare container says at start-up (issue #741)."""
 import logging
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
-from application import mounts
-
-NO_PERSISTENCE = 'store_ephemeral'
 
 NO_BASE_CURRENCY = 'base_currency_unanswered'
 
@@ -22,22 +19,10 @@ class Condition:
     context: Dict[str, str]
 
 
-def observe(persistence: str, store_dir, base_currency: Optional[str],
-            recorded_events: int, web_port: int) -> Tuple[Condition, ...]:
+def observe(base_currency: Optional[str], recorded_events: int,
+            web_port: int) -> Tuple[Condition, ...]:
     """The conditions that stand, in order. An empty tuple says nothing at all."""
     conditions = []
-
-    if persistence == mounts.EPHEMERAL:
-        conditions.append(Condition(
-            key=NO_PERSISTENCE,
-            level=logging.WARNING,
-            message=(
-                f"This container keeps nothing: {store_dir} is the container's "
-                f"writable layer, so the store — the ledger, the prices and the "
-                f"figures alike — goes when the container does. Mount a volume "
-                f"on {store_dir} to keep it."),
-            context={'condition': NO_PERSISTENCE, 'store_dir': str(store_dir)},
-        ))
 
     if not base_currency:
         conditions.append(Condition(
@@ -69,6 +54,6 @@ def observe(persistence: str, store_dir, base_currency: Optional[str],
 
 
 __all__ = [
-    'NO_PERSISTENCE', 'NO_BASE_CURRENCY', 'NO_PORTFOLIO',
+    'NO_BASE_CURRENCY', 'NO_PORTFOLIO',
     'Condition', 'observe',
 ]

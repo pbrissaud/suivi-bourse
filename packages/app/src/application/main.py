@@ -19,7 +19,6 @@ from application import build_info
 from application import carrying
 from application import installation_facts
 from application import ledger
-from application import mounts
 from application import positions
 from application import runtime_state
 from application import scheduling
@@ -86,14 +85,12 @@ def report_unread_environment() -> List[str]:
     return found
 
 
-def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
+def report_boot_conditions(boot: boot_env.BootEnvironment,
                            base_currency: Optional[str],
                            recorded_events: int) -> List[str]:
-    """Say the three things that are true of this start-up, once each (#741)."""
+    """Say what is true of this start-up, once each (#741)."""
     said = []
     for condition in boot_conditions.observe(
-            persistence=persistence,
-            store_dir=boot.store_dir,
             base_currency=base_currency,
             recorded_events=recorded_events,
             web_port=boot.web_port):
@@ -101,11 +98,6 @@ def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
                        extra={'context': condition.context})
         said.append(condition.key)
     return said
-
-
-def effective_environment() -> List[Dict]:
-    """What this container was started with, read-only (#654 §6a → #656)."""
-    return boot_env.effective(os.environ, log_level=current_log_level())
 
 
 def register_interval_jobs(scheduler, workloads_,
@@ -376,7 +368,6 @@ class Runtime:
 
     def __init__(self, config_manager: ConfigurationManager,
                  store_path: Optional[Path] = None,
-                 store_persistence: str = mounts.UNKNOWN,
                  opened_store: Optional['store.Store'] = None,
                  build: build_info.Build = build_info.UNSTAMPED):
         self.config_manager = config_manager
@@ -385,8 +376,6 @@ class Runtime:
 
         self.store_path: Optional[Path] = store_path
         self.store: Optional[store.Store] = opened_store
-
-        self.store_persistence: str = store_persistence
 
         self.build: build_info.Build = build
 
@@ -425,15 +414,13 @@ def build_runtime() -> Runtime:
     # added here must not be able to escape that.
     config_manager = None
     try:
-        persistence = mounts.store_persistence(boot.store_dir)
-
         config_manager = ConfigurationManager(opened_store=opened)
 
         config_manager.report_unread_files()
 
         config_manager.reload()
         report_boot_conditions(
-            boot, persistence,
+            boot,
             base_currency=opened.setting('base_currency'),
             recorded_events=len(config_manager.current().events))
     except BaseException:
@@ -443,7 +430,7 @@ def build_runtime() -> Runtime:
         raise
 
     return Runtime(config_manager, store_path=store_path,
-                   store_persistence=persistence, opened_store=opened,
+                   opened_store=opened,
                    build=build)
 
 

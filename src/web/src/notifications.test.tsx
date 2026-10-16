@@ -87,7 +87,7 @@ describe('the panel holds three registers under four subjects', () => {
     await openPanel({ facts: [] })
 
     const health = card('Quelque chose s’est arrêté')
-    expect(within(health).getByRole('link', { name: 'Voir dans Réglages' })).toBeInTheDocument()
+    expect(within(health).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
     expect(within(health).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
   })
 

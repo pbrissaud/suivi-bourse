@@ -22,6 +22,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import type { LucideIcon } from 'lucide-react'
 import {
+  Server,
   CalendarDays,
   Coins,
   LayoutDashboard,
@@ -56,6 +57,7 @@ const PAGES = [
   { to: '/shares', label: 'nav.shares', icon: Coins },
   { to: '/accounts', label: 'nav.accounts', icon: Wallet },
   { to: '/ledger', label: 'nav.ledger', icon: Table2 },
+  { to: '/system', label: 'nav.system', icon: Server },
   { to: '/settings', label: 'nav.settings', icon: Settings },
 ] as const satisfies readonly { to: string; label: MessageKey; icon: LucideIcon }[]
 

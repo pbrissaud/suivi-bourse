@@ -29,8 +29,10 @@
  * *act on* — the ledger, where events are declared, corrected and deleted, and
  * the settings.
  */
+import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
+  Server,
   CircleDollarSign,
   Database,
   LayoutDashboard,
@@ -52,10 +54,11 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
+import { api } from '@/lib/api'
 import { useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {
-  to: '/' | '/shares' | '/accounts' | '/benchmark' | '/agent' | '/ledger' | '/settings'
+  to: '/' | '/shares' | '/accounts' | '/benchmark' | '/agent' | '/ledger' | '/system' | '/settings'
   label: MessageKey
   icon: LucideIcon
 }
@@ -78,6 +81,7 @@ const PORTFOLIO: Entry[] = [
  */
 const WORKINGS: Entry[] = [
   { to: '/ledger', label: 'nav.ledger', icon: Database },
+  { to: '/system', label: 'nav.system', icon: Server },
   { to: '/settings', label: 'nav.settings', icon: Settings },
 ]
 
@@ -143,8 +147,28 @@ export function AppSidebar() {
           </nav>
         </SidebarGroup>
       </SidebarContent>
+      <BuildLine />
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+/** The running build, small at the foot of the column: what a bug report copies. */
+function BuildLine() {
+  const t = useT()
+  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  const build = runtime.data?.build
+  const shown = build?.version ?? build?.revision?.slice(0, 7)
+  if (!build || !shown) return null
+  return (
+    <p
+      title={[t('installation.build.source', { source: build.source }), build.revision]
+        .filter(Boolean)
+        .join(' · ')}
+      className="mx-3 border-t px-2 pt-3 pb-4 text-2xs text-muted-foreground group-data-[collapsible=icon]:hidden"
+    >
+      {t('nav.version')} <span className="font-mono">{shown}</span>
+    </p>
   )
 }
 
