@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { anEvent, aPosition, ledgerEvents } from '@/test/factories'
-import { matchesQuery, NO_FILTERS, selectionParams } from '@/lib/ledger'
+import { matchesQuery, NO_FILTERS, selectionParams } from '@/features/data/lib/ledger'
 import {
   accountsMatching,
   eventReduction,

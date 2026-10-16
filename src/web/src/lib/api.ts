@@ -1,14 +1,19 @@
 /**
- * The one module that knows a URL.
+ * The one module that knows a URL, and the transport every call goes through.
  *
  * That is a rule, not an accident of layout (#712 §1). The store (#695) has not
  * frozen its paths, so the front is written **in front of** the back end: the
- * day a route is renamed, this file and the test harness's handlers change, and
+ * day a route is renamed, `ROUTES` and the test harness's handlers change, and
  * **no page test moves**. A component that fetched its own path would turn that
  * rename into a hunt through twenty files.
  *
- * The types below are the contract of #712 §11, and they carry two traps in
- * their shape rather than in a comment:
+ * The types and the calls of each domain live in their feature's
+ * `features/<domain>/lib/api.ts` (#1202); what is left here is the transport,
+ * the paths, and what the shell itself reads — the process state, the health,
+ * the installation facts and the advisories.
+ *
+ * The contract of #712 §11 carries two traps in its shape rather than in a
+ * comment:
  *
  *  - a **price** is `{ value, currency, at }` and its conversion is a *separate*
  *    object carrying the rate and the rate's timestamp — because the page has to
@@ -17,16 +22,7 @@
  *    single nullable number cannot;
  *  - `symbol` is the identity, `name` is display only: a rename must not split
  *    anything.
- *
- * It grows one page ticket at a time. What is here is what the shell reads.
  */
-
-import type { UIMessage } from 'ai'
-import type {
-  Account,
-  AccountsPayload as AccountsResponse,
-  Positions as PositionsResponse,
-} from './api.gen'
 
 /**
  * The paths, in one object, because the test harness fakes exactly this edge
@@ -61,7 +57,8 @@ export const ROUTES = {
   portfolioTotals: '/api/portfolio-totals',
   /**
    * One symbol's price series. A **pattern**, `:symbol`, because it is what the
-   * harness's handler registers; {@link pricesPath} is what a caller builds.
+   * harness's handler registers; `pricesPath` (`features/shares/lib/api.ts`)
+   * is what a caller builds.
    */
   prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
@@ -194,7 +191,7 @@ export const ROUTES = {
   investmentRhythm: '/api/investment-rhythm',
   /**
    * The dashboard's saved layout — one row of the store, its shape checked and
-   * its cards not: the registry of cards is the front's (`lib/dashboardBlocks`).
+   * its cards not: the registry of cards is the front's (`features/dashboard/lib/dashboardBlocks`).
    */
   dashboardLayout: '/api/dashboard/layout',
   /**
@@ -212,46 +209,12 @@ export const ROUTES = {
 
 export type RouteName = keyof typeof ROUTES
 
-function eventPath(id: string): string {
-  return `/api/events/${encodeURIComponent(id)}`
-}
-
-export function accountPath(id: string): string {
-  return `/api/accounts/${encodeURIComponent(id)}`
-}
-
-export function accountReassignmentPath(id: string): string {
-  return `${accountPath(id)}/reassignment`
-}
-
-export function taxationModelPath(id: string): string {
-  return `/api/taxation-models/${encodeURIComponent(id)}`
-}
-
 function installationFactAcknowledgementPath(key: string): string {
-  return `/api/installation-facts/${encodeURIComponent(key)}/acknowledgement`
+  return ROUTES.installationFactAcknowledgement.replace(':key', encodeURIComponent(key))
 }
 
 function advisoryAcknowledgementPath(key: string): string {
-  return `/api/advisories/${encodeURIComponent(key)}/acknowledgement`
-}
-
-/**
- * The window a chart asks for. The four are the **rungs of the retention
- * ladder** (#684 D10) and not four round numbers: as written under a
- * year, hourly from one to two, daily beyond — so changing the range changes
- * the resolution *visibly*, which is the whole reason `3M` left.
- */
-export const CHART_WINDOWS = ['1M', '1Y', '2Y', 'MAX'] as const
-
-export type ChartWindow = (typeof CHART_WINDOWS)[number]
-
-function pricesPath(symbol: string, window: ChartWindow): string {
-  return `/api/prices/${encodeURIComponent(symbol)}?window=${window}`
-}
-
-function priceAtPath(symbol: string, day: string): string {
-  return `/api/prices/${encodeURIComponent(symbol)}?at=${encodeURIComponent(day)}`
+  return ROUTES.advisoryAcknowledgement.replace(':key', encodeURIComponent(key))
 }
 
 /**
@@ -325,7 +288,7 @@ async function refusal(response: Response, path: string): Promise<ApiProblem> {
   return new ApiProblem({ status: response.status, title: `${path}: no problem+json` })
 }
 
-async function get<T>(path: string): Promise<T> {
+export async function get<T>(path: string): Promise<T> {
   return unwrap<T>(await fetch(path, { headers: { Accept: 'application/json' } }), path)
 }
 
@@ -334,7 +297,7 @@ async function get<T>(path: string): Promise<T> {
  * `problem+json` whose `type` the caller branches on, exactly like a failed
  * read. There is no second error contract for writes.
  */
-async function send<T>(
+export async function send<T>(
   path: string,
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   body: unknown,
@@ -357,7 +320,7 @@ async function send<T>(
  * refusal is read exactly as every other refusal is — `problem+json`, and a
  * `type` the caller branches on — so an upload has no second error contract.
  */
-async function upload<T>(path: string, file: File, params: string[] = []): Promise<T> {
+export async function upload<T>(path: string, file: File, params: string[] = []): Promise<T> {
   const body = new FormData()
   // The **third argument is the filename**, and it is not optional in practice:
   // the receipt is named after the file, and an implementation that reads the
@@ -373,19 +336,6 @@ async function upload<T>(path: string, file: File, params: string[] = []): Promi
     path,
   )
 }
-
-/**
- * The four files a reader can ask for (#796, #836), named so a receipt can say
- * which one is being made. They are names of *files*, not of routes: three of
- * them are one resource — two reductions of it, and one of those in the other
- * shape — and the fourth is a different subject altogether.
- *
- * `portfolio` is that fourth, and it is **the one that is not a backup**: the
- * accounts and their positions, balances and valuations included.
- */
-const EXPORT_FILES = ['events', 'workbook', 'selection', 'portfolio'] as const
-
-export type ExportFile = (typeof EXPORT_FILES)[number]
 
 /** Bytes the server named, on their way to the reader's own *Save as*. */
 export interface DownloadedFile {
@@ -407,7 +357,7 @@ export interface DownloadedFile {
  * does not carry the backup's name, and that rule lives on the one side that
  * knows whether anything was held back.
  */
-async function download(path: string): Promise<DownloadedFile> {
+export async function download(path: string): Promise<DownloadedFile> {
   const response = await fetch(path, { headers: { Accept: '*/*' } })
   if (!response.ok) throw await refusal(response, path)
   return { blob: await response.blob(), filename: filenameOf(response, path) }
@@ -430,7 +380,7 @@ function filenameOf(response: Response, path: string): string {
  * `POST` to a verb-shaped path because what the one caller does to the orphan
  * collection is remove it whole (#724).
  */
-async function remove<T>(path: string): Promise<T> {
+export async function remove<T>(path: string): Promise<T> {
   return unwrap<T>(
     await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }),
     path,
@@ -438,513 +388,9 @@ async function remove<T>(path: string): Promise<T> {
 }
 
 /** A `DELETE` whose success is a `204` — no body to parse. */
-async function forget(path: string): Promise<void> {
+export async function forget(path: string): Promise<void> {
   const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
   if (!response.ok) throw await refusal(response, path)
-}
-
-// ------------------------------------------------------------------------- //
-// The dashboard's layout
-// ------------------------------------------------------------------------- //
-
-/** Where a card sits: its order is its index in `blocks`. */
-export interface DashboardPlacement {
-  id: string
-  /** `Width` in `lib/dashboardBlocks`; spelled here so this module imports nothing. */
-  width: 'half' | 'full'
-  hidden: boolean
-}
-
-/** What the store keeps. Read back as `unknown`: `normalizeLayout` vets it. */
-export interface DashboardLayout {
-  version: 1
-  blocks: DashboardPlacement[]
-}
-
-// ------------------------------------------------------------------------- //
-// Accounts
-// ------------------------------------------------------------------------- //
-
-export type { Account, AccountsResponse }
-
-/**
- * What the declaration form sends (#729).
- *
- * A field for it here would put the third level back on the one surface that
- * creates the rows.
- *
- * `id` is sent on a creation and **never on an edit**: it is the value events
- * name, so changing it would rewrite every event that names it. An event is
- * addressed by its own key and never by a column somebody else may rewrite
- * (#816) — the server refuses it for that reason, and the form does not offer
- * it. Reassignment is the gesture that moves events, and it names its subject.
- */
-export interface AccountDraft {
-  id?: string
-  label: string
-  /**
-   * Move the events still naming the seeded row onto this account, in the same
-   * request (#725). Sent on a **declaration** only, where the offer is checked
-   * by default; omitted is what a client that never heard of it sends, and the
-   * declaration is never refused for want of it.
-   */
-  reassign?: boolean
-  /**
-   * The model to attach, `null` to detach — and **absent to leave it alone**
-   * (#752).
-   *
-   * The three are three, and the middle one is why the member is optional: a
-   * `PATCH` sent to rename an account must not drop the model it carries, so
-   * *say nothing* has to be sayable. The form sends it on every submission all
-   * the same, because the select always has an answer.
-   */
-  taxation_model?: string | null
-  /**
-   * The opening date, `null` to take it away — and **absent to leave it alone**
-   * (#918), on `taxation_model`'s own three-way rule.
-   *
-   * Sent only where the field was **shown**: it is not asked for when the
-   * account's taxation model counts its threshold from anything but the
-   * opening, and a client that never asked the question must not answer it.
-   */
-  opened_on?: string | null
-}
-
-// ------------------------------------------------------------------------- //
-// The taxation models (#752)
-// ------------------------------------------------------------------------- //
-
-/** What a parameter is. The four the server's enumeration knows. */
-export type TaxationParameterType = 'rate' | 'years' | 'age_basis' | 'brackets'
-
-export interface TaxationParameter {
-  name: string
-  type: TaxationParameterType
-  required: boolean
-}
-
-/** One rung of a `bracketed_realised` ladder; the top one has no ceiling. */
-export interface TaxationBracket {
-  upper_bound: number | null
-  rate: number
-}
-
-/**
- * A model's parameters. Typed loosely on purpose: which members are there is
- * decided by the `kind`, and the server is what states the pairing — a union per
- * kind here would be a second declaration of the enumeration, which is the thing
- * {@link ROUTES.taxationModels} exists to serve rather than duplicate.
- */
-export type TaxationParameters = Record<string, number | string | TaxationBracket[]>
-
-export interface TaxationModel {
-  id: string
-  name: string
-  kind: string
-  parameters: TaxationParameters
-}
-
-export interface TaxationModelsResponse {
-  kinds: { kind: string; parameters: TaxationParameter[] }[]
-  age_bases: string[]
-  models: TaxationModel[]
-}
-
-/** What the model form sends. `kind` and `parameters` travel together. */
-export interface TaxationModelDraft {
-  name: string
-  kind: string
-  parameters: TaxationParameters
-}
-
-/**
- * One day of a perf series, at either level (#721).
- *
- * **One shape for the account and for the portfolio**, deliberately: the
- * accounts page draws N account curves and reads a portfolio scalar off the
- * same rebasing, so two shapes would mean two rebasings and, sooner or later,
- * two answers to *how did this period go*. The five members are the ones
- * `account_metrics` and `portfolio_totals` have in common.
- */
-export interface PerfPoint {
-  /** The calendar day — a bare `YYYY-MM-DD`, never an instant (the store's rule). */
-  t: string | null
-  cash_balance: number | null
-  holdings_value: number | null
-  total_value: number | null
-  net_contributed: number | null
-  /** Base 100 since the series' own origin. Rebased before it is ever shown. */
-  twr_index: number | null
-}
-
-export interface AccountHistoryResponse {
-  account: string
-  from: string
-  to: string
-  points: PerfPoint[]
-}
-
-export interface PortfolioTotalsHistoryResponse {
-  from: string
-  to: string
-  points: PerfPoint[]
-}
-
-/**
- * The day a perf series is asked from, and it is the **origin of time** on
- * purpose (#721).
- *
- * `MAX` is not offered as a *range* — a time-weighted index has no bounded
- * amplitude, and one account's spike at +542 % crushes every other curve into
- * the bottom sixth of the plot. But the longest window offered, *since the
- * opening*, is `max` over the accounts' first days, and no payload states an
- * account's first day: the only place it is written is the series itself.
- * Asking the server for a bounded window instead would mean knowing the bound
- * before reading what defines it.
- *
- * The cost is stated rather than hidden: on a 6,8-year account the series is ~2
- * 500 days, dense over calendar days, five numbers each — and it is read
- * **once** for the four presets rather than once per preset, which is the same
- * property that makes the chart and the table's scalar column one announcer
- * instead of two.
- */
-const SERIES_ORIGIN = '1970-01-01'
-
-function accountHistoryPath(account: string, from: string = SERIES_ORIGIN): string {
-  return `/api/accounts/${encodeURIComponent(account)}/history?from=${from}`
-}
-
-function portfolioTotalsHistoryPath(from: string = SERIES_ORIGIN): string {
-  return `${ROUTES.portfolioTotalsHistory}?from=${from}`
-}
-
-function positionsHistoryPath(from: string = SERIES_ORIGIN): string {
-  return `${ROUTES.positionsHistory}?from=${from}`
-}
-
-/**
- * One day of the valuation curve — **the fallback reading** of the dashboard's
- * chart (#727).
- *
- * The two members are two different figures and their names keep them apart:
- * `invested` is what the positions **cost**, never money the owner put in, so
- * the area between the curves is the *latent* gain and the page renames it.
- * Conflating it with `net_contributed` is the mistake the server refuses to make
- * by giving them two names.
- *
- * `null` on either is a day whose sum could not be taken at all — never a zero,
- * which would draw a crater the portfolio never had.
- */
-export interface ValuationPoint {
-  /** The calendar day — a bare `YYYY-MM-DD`, like every other series. */
-  t: string | null
-  value: number | null
-  invested: number | null
-}
-
-export interface PositionsHistoryResponse {
-  from: string
-  to: string
-  points: ValuationPoint[]
-}
-
-/**
- * One security's move since the previous session close (#727).
- *
- * A share with **no baseline** (its first day) or no current price is simply not
- * in the collection: it has not failed to move, it has nothing to compare
- * against, and a zero in a movers list is a claim. It is still in the
- * allocation, which needs no history — and the block counts what it does not
- * show rather than letting it disappear.
- */
-export interface Mover {
-  symbol: string
-  name: string | null
-  price: number | null
-  previous_price: number | null
-  change: number | null
-  /** The ratio, signed. **`0` is a value**: it is what the block must not hide. */
-  change_pct: number | null
-  market_value: number | null
-  /** What the move did in money — `change × quantity`. */
-  contribution: number | null
-}
-
-export interface MoversResponse {
-  /** Each against the last price before the day of its own latest quote (#1142). */
-  movers: Mover[]
-}
-
-/**
- * One investment rhythm — the portfolio's, or one account's (#751).
- *
- * **`monthly_amount` and `months_covered` are one figure in two members**, and
- * nothing on any surface may show the first without the second: `500 €` alone
- * is read as `6 000 €` a year when half of that never went in. The amount is
- * the **median of the months that carried a purchase** — months with none are
- * not averaged in as zeros, which is why the coverage is what makes it honest.
- *
- * `months_observed` is twelve, bounded by the age of the ledger and counted
- * from its first event of any kind. A month with no purchase is observed and
- * uncovered, never unobserved: that is how a stop in investing stays visible.
- *
- * `monthly_amount: null` with `months_covered: 0` is **no purchase in the
- * window** — never a rhythm of zero. With `months_observed: 0` as well, nothing
- * has been observed at all. `dispersion` is the coefficient of variation of the
- * covered months' amounts, `null` when there is nothing to disperse.
- */
-interface RhythmFigures {
-  monthly_amount: number | null
-  months_covered: number
-  months_observed: number
-  dispersion: number | null
-  /**
-   * The observed months themselves, oldest first — `amount` is `null` on a
-   * month with no purchase. The four figures above are reductions of this
-   * series, and the block draws the series: the coverage and the spread are
-   * **shown**, month by month, rather than quoted as two ratios.
-   */
-  months: RhythmMonth[]
-}
-
-export interface RhythmMonth {
-  /** `YYYY-MM`. */
-  month: string
-  amount: number | null
-}
-
-/** The same four members, for one account — `default` included. */
-interface AccountRhythm extends RhythmFigures {
-  account: string
-}
-
-export interface InvestmentRhythmResponse extends RhythmFigures {
-  base_currency: string | null
-  /**
-   * The breakdown, **by account and never by symbol**. No block
-   * renders it today: the dashboard states the habit at the portfolio grain,
-   * and the breakdown is what the MCP tool reaches over the same route — the
-   * surface being a contract in which a field is added safely and removed
-   * never.
-   */
-  accounts: AccountRhythm[]
-}
-
-// ------------------------------------------------------------------------- //
-// The comparison against a reference (#760)
-// ------------------------------------------------------------------------- //
-
-/** One of the five references the selector offers. */
-export interface OfferedBenchmark {
-  symbol: string
-  /** The index it tracks. Named **first**; the ticker is subordinate. */
-  index: string
-  /**
-   * The fund's first quoted day — what truncation costs, said *before* the
-   * click. A 2024 fund silently drops eleven years of a 2013 owner's history.
-   */
-  inception: string
-}
-
-/** The reconstruction bar, fed from the store and never from the recorder. */
-export interface BenchmarkRebuild {
-  symbol: string
-  /** How far back the backward pass has reached, or `null`. */
-  reached: string | null
-  /** Where it is heading — the fund's own inception. */
-  target: string | null
-  /** `0`…`1`, or `null` when there is nothing to take a ratio of. */
-  ratio: number | null
-}
-
-/**
- * One account's own comparison, over **its own** window (#1014).
- *
- * The breakdown of the head: the head replays every account's money in one
- * reference from the first purchase on, and these rows replay the same seeds
- * and flows one account at a time, so their gaps add up to `gap_gross`. Each
- * row states its own period beside its own figures — an account opened in
- * 2024 is not judged on 2019 — which is why the period is not optional on it.
- */
-export interface BenchmarkAccountRow {
-  account: string
-  covered_from: string
-  covered_to: string
-  /** Why this account's period ended early, or `null`. Its own, not the head's. */
-  ended: string | null
-  portfolio_value: number | null
-  reference_value: number | null
-  gap_gross: number | null
-  portfolio_return: number | null
-  reference_return: number | null
-}
-
-/** One day of the two curves, on a shared axis. */
-export interface BenchmarkPoint {
-  t: string
-  /** `null` where one account of the perimeter has no value that day. */
-  portfolio: number | null
-  reference: number
-}
-
-/**
- * The whole screen, in one read.
- *
- * `state` governs everything under it, and the page branches on **it** rather
- * than on the presence of `gap_gross`: a figure that is absent and a figure
- * that is withheld are different facts, and this screen renders them
- * differently on purpose.
- *
- * `splits_unknown` is the second withheld state and it looks like `rebuilding`
- * to the reader on purpose: the fund's history is there but its split ratios
- * were never established, and the next fetch is what repairs both.
- */
-export interface BenchmarkResponse {
-  base_currency: string | null
-  state: 'no_reference' | 'rebuilding' | 'splits_unknown' | 'nothing_to_compare' | 'ready'
-  /**
-   * Why there is nothing to compare, on `nothing_to_compare` only (#1207).
-   * Only `no_events` is an empty ledger; absent or unknown reads as it.
-   */
-  reason?: 'no_events' | 'not_computed' | 'nothing_held' | 'no_rate_on_seed'
-  reference: string | null
-  index?: string | null
-  inception?: string | null
-  offered: OfferedBenchmark[]
-  /**
-   * The references this install already holds a series for — the *déjà
-   * téléchargé* column, and the only thing that makes #760's promise visible:
-   * the series of an offered reference already consulted is kept alive so
-   * switching back is instant. Offered ones only (#1034): a reference this
-   * list can no longer propose is one nothing will ever switch back to.
-   */
-  consulted: string[]
-  rebuild?: BenchmarkRebuild
-  covered_from?: string
-  covered_to?: string
-  /** The first day the perimeter was written, before any seeding. */
-  portfolio_from?: string
-  /**
-   * Whether the **fund** is what shortened the period. `false` when the
-   * accounts simply start later than it does: same date, different cause, and
-   * naming the wrong one sends the reader looking for a history that is
-   * already there.
-   */
-  truncated_by_fund?: boolean
-  /** Why the period ended early, or `null` — `exhausted`, `awaiting_rate`. */
-  ended?: string | null
-  /** The perimeter, and the two terms the head figure is the difference of. */
-  accounts?: string[]
-  portfolio_value?: number | null
-  reference_value?: number
-  /** The head figure, in euros. `null` when the portfolio is unvalued. */
-  gap_gross?: number | null
-  portfolio_return?: number | null
-  reference_return?: number | null
-  /** The same comparison per account, each over its own window (#1014). */
-  per_account?: BenchmarkAccountRow[]
-  series?: BenchmarkPoint[]
-}
-
-// ------------------------------------------------------------------------- //
-// The hot read of the portfolio (#712 §11)
-// ------------------------------------------------------------------------- //
-
-export type { Converted, Fundamentals, Position } from './api.gen'
-export type { Positions as PositionsResponse, Price as Quote } from './api.gen'
-
-// ------------------------------------------------------------------------- //
-// The perf cache at the global level (#745, announced there before written
-// here). Named after the store's table — `portfolio_totals` — and never after
-// the page, the same rule that makes the hot read `positions` and not `shares`.
-// ------------------------------------------------------------------------- //
-
-/**
- * One day of the global series. Every money member is nullable **by field**,
- * which is what lets the head *shrink* instead of filling with dashes: a figure
- * that does not exist for this installation is not a missing value.
- */
-export interface PortfolioTotals {
-  /** The calendar day the figures describe — a day, never an instant. */
-  day: string
-  total_value: number | null
-  holdings_value: number | null
-  cash_balance: number | null
-  net_contributed: number | null
-  /** Money-weighted, annualised, since the origin. `null` with no external flow. */
-  xirr: number | null
-  /** Time-weighted, **base 100** since `twr_since`. */
-  twr_index: number | null
-  /** The day the index counts from. It moves while the rebuild runs. */
-  twr_since: string | null
-  /**
-   * It belongs to no position, which is why it is here and not on
-   * `/api/positions`.
-   */
-  transfer_fees: number | null
-  /**
-   * The same number written down elsewhere. **The head never reads it** — it
-   * computes the total from the four terms, and a divergent value
-   * here changes nothing on screen. Carried so a report can quote both.
-   */
-  gain_absolu: number | null
-  /**
-   * The year-to-date delta, `null` while the series does not reach 1 January.
-   * That is the **one** figure the rebuild degrades: everything above is exact
-   * from the first cycle.
-   */
-  ytd: { gain: number | null; twr: number | null } | null
-}
-
-export interface PortfolioTotalsResponse {
-  /** The single currency everything is reported in. */
-  base_currency: string | null
-  /** `null` — no figures at all: no ledger, or no answered currency. */
-  totals: PortfolioTotals | null
-}
-
-/**
- * What the store actually served, **announced rather than guessed**.
- *
- * A price point's resolution is a function of its age — as written
- * under a year, hourly to two, daily beyond — so a five-year window comes back
- * sparse at its far end. Announced, that is a property of the archive; guessed
- * by the reader, it is an outage. And it is announced **once**: the chart's
- * *aggregated by X* caption reads this field instead of stating a second
- * bucketing of its own, two announcers on one graph being the defect the map
- * found on four pages.
- */
-export type Resolution = 'raw' | 'hour' | 'day'
-
-export interface SeriesPoint {
-  /** `t` like every other series this API serves, and not a second word. */
-  t: string
-  /** In the reporting currency. `null` — quoted, and the rate never resolved. */
-  price: number | null
-}
-
-export interface PriceSeriesResponse {
-  symbol: string
-  /** The single currency everything is reported in. */
-  base_currency: string | null
-  resolution: Resolution
-  points: SeriesPoint[]
-}
-
-/**
- * **One close, and the day it belongs to** — the same resource asked `?at=`
- * (#1007).
- *
- * The two members are `null` together: a symbol nobody scraped, or a day
- * before the first point, has no close to suggest. And `day` is not the day
- * that was asked for — a Friday the market did not quote is answered by the
- * Thursday, which is exactly why the form has to be able to name it.
- */
-export interface PriceAtResponse {
-  symbol: string
-  base_currency: string | null
-  day: string | null
-  price: number | null
 }
 
 // ------------------------------------------------------------------------- //
@@ -1013,7 +459,7 @@ export interface RuntimeAccount {
  * either of the other two. The data page's *store* block (#724) is what renders
  * the three; nothing else on the front branches on it.
  */
-type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
+export type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
 
 export interface RuntimeStore {
   persistence: StorePersistence
@@ -1183,274 +629,6 @@ export interface HealthState {
   error?: string
 }
 
-// ------------------------------------------------------------------------- //
-// The ledger (#723)
-//
-// **The shape below is the one `GET /api/events` already serves**, field for
-// field, and that is deliberate: #718 mounted a head over two routes nobody had
-// written and turned a page from *not built yet* into *the app is not
-// answering*, which took #763 to repair. Here the read exists, so the page is
-// written on it rather than on a nicer shape somebody would have to catch up
-// with — a client that had renamed the members would render an **empty ledger**
-// on a full install, which is worse than a 404 because it reads as a fact.
-//
-// Two members are **additions**, both optional in the type so that today's
-// server renders the page whole, and each is what one criterion of #723 rests
-// on:
-//
-//  - **`id`** — every row is editable and editing needs an address. That
-//    address is a **primary key**, which is the whole of what killed #662's
-//    apparatus: the opaque token over `(file, sheet, row)`, the content
-//    fingerprint as an `ETag` and its `409` existed because the *file* was the
-//    address, and a file was re-read. A key is not safe because keys cannot go
-//    stale — this one went stale for a whole release, `max(id) + 1` handing a
-//    deleted row's key to the next writer. It is safe because the server's
-//    allocator only climbs (#785), for the life of its process, and refuses a
-//    write aimed at a row that has gone instead of landing it on the row that
-//    took the key. Absent, the editor is not offered on that row — a shape
-//    today's server never sends, and one the type has to allow all the same.
-//
-// **And the provenance is gone** (#816): the three columns and the sentence
-// composed from them described a row a *mounted* file had provisioned, and they
-// existed because that file was re-read. A file is a payload now, so there is
-// one population of rows and nothing on the wire that could tell two apart.
-//
-// And one route is genuinely new: **`POST /api/events`**, without which the
-// create form has nowhere to write. `PATCH` is its sibling, and since #816 it
-// is bounded by nothing: the `409` that refused a row a file had laid down went
-// with the mount that justified it.
-// ------------------------------------------------------------------------- //
-
-/**
- * The six, in the order the form offers them — the two acquisitions, the
- * disposal, the income, then the two cash movements. The catalogue names them by
- * their **effect** (`Free shares`, `Cash in`, `Cash out`) rather than by their
- * code: six codes are a decoding exercise at the exact moment a first-time owner
- * has nothing yet to decode them against.
- */
-export const EVENT_TYPES = ['BUY', 'SELL', 'GRANT', 'DIVIDEND', 'DEPOSIT', 'WITHDRAWAL'] as const
-
-export type LedgerEventType = (typeof EVENT_TYPES)[number]
-
-export interface LedgerEvent {
-  /** A calendar day, `YYYY-MM-DD` — never an instant (the store's own rule). */
-  date: string | null
-  event_type: LedgerEventType
-  /** `null` on a cash movement, which names no security at all. */
-  symbol: string | null
-  /** The security's name. Read by no column of the ledger — see #723. */
-  name: string | null
-  quantity: number | null
-  /** In the reporting currency — an event amount is a debit. */
-  unit_price: number | null
-  fee: number | null
-  amount: number | null
-  /** The row's free text. On a cash movement it is the whole identity. */
-  notes: string | null
-  /** Blank means `default`, which is the aggregator's own rule. */
-  account: string
-  /** #723: the key a row is addressed by. Optional, never absent in practice. */
-  id?: string | null
-}
-
-/** A bare collection, as served: `200` + `[]` on an install that has nothing. */
-export type EventsResponse = LedgerEvent[]
-
-/**
- * What the form sends. Deliberately **not** a `LedgerEvent` minus a few fields:
- * the row's key is the store's to write, and a client that could name one would
- * be a client that could forge one.
- *
- * `name` is not a member either. It is an attribute of the *security*, not of
- * each of its events — the reason `Nom` left the table is the reason it never
- * enters here — and the symbol is what identifies the line.
- */
-export interface EventDraft {
-  date: string
-  event_type: LedgerEventType
-  account: string
-  symbol: string | null
-  notes: string | null
-  quantity: number | null
-  unit_price: number | null
-  fee: number | null
-  amount: number | null
-}
-
-/**
- * What a bulk removal answers (#814): how many rows the reduction took with it.
- *
- * The **server's** count and not the table's. The front knows what the
- * reduction retained before the click — that is what the confirmation is made
- * of — and this is what actually left, read off the store: the two are two, and
- * the second is the only one that is a fact.
- *
- * It is spelled `events_removed`, the word the revocation this gesture replaces
- * already answered under: the unit did not change road, only the subject did.
- */
-interface BulkRemoval {
-  events_removed: number
-}
-
-// ------------------------------------------------------------------------- //
-// The installation (#724)
-//
-// That line is why the two halves render as two sections of **one** surface,
-// the second a description rather than a form.
-// ------------------------------------------------------------------------- //
-
-/**
- * One dial, as the registry describes it — `settings_registry.py` is the single
- * list, and this is that list crossing HTTP.
- */
-export interface SettingDescription {
-  key: string
-  /** The effective value: the row if there is one, the code's default otherwise. */
-  value: string | number | null
-  default: string | number | null
-  type: 'integer' | 'string' | 'currency' | 'symbol'
-  minimum: number | null
-  maximum: number | null
-  /** What changing it triggers, as a token the catalogue turns into a sentence. */
-  effect: string
-  /** The registry's own English note. Diagnostic, like `problem.detail`. */
-  doc: string
-  /**
-   * Whether the app must be told before it can do its work. The
-   * first run is a predicate over **this mark and `stored`** — *a required dial
-   * nobody has answered* — which is why the front carries no key of its own:
-   * `base_currency` wears it today, and the second one to wear it will not need
-   * this decision reopened.
-   */
-  required: boolean
-  /**
-   * Whether the store holds an answer. Published rather than derived from
-   * `value !== default`: a dial answered *at* its default is answered, and a
-   * required one with nothing stored is the question itself.
-   */
-  stored: boolean
-}
-
-/**
- * One boot variable — what the process had to know before it could open the
- * store. **Four and no fifth** (#740).
- *
- * It is a *description*: rendered as greyed-out fields it invites the click and
- * reads as a form that refused, when the honest statement is that nothing here
- * is answerable from in here at all. The section says *changes when the
- * container is recreated* **once**, for all of them.
- */
-export interface EnvironmentVariable {
-  name: string
-  /** What the app is running on — the variable's, or the app's own default. */
-  value: string | null
-  /** Whether the environment named it at all. */
-  set: boolean
-  /**
-   * Where the value came from, and it is **factual rather than helpful**:
-   * reporting a variable as *unset, using the default* because it happens to
-   * equal the default would be a guess (#654 trap 2).
-   */
-  source: 'environment' | 'default'
-}
-
-/** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
-export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
-
-/** `GET /api/agent/config`: the key is never on the wire, only its end. */
-export interface AgentConfig {
-  enabled: boolean
-  provider: AgentProvider | null
-  model: string | null
-  base_url: string | null
-  key: { set: boolean; last4: string | null; set_at: string | null }
-  /** Present, and `true`, on the one write that switched the agent off. */
-  disabled?: boolean
-}
-
-/** What `PUT /api/agent/config` takes: any subset of the four fields. */
-export interface AgentConfigDraft {
-  enabled?: boolean
-  provider?: AgentProvider
-  model?: string
-  base_url?: string | null
-}
-
-/** One line of `GET /api/agent/threads`. */
-export interface AgentThreadSummary {
-  id: string
-  /** The first 80 characters of the first question. */
-  title: string | null
-  created_at: string | null
-  updated_at: string | null
-}
-
-/** `GET /api/agent/threads/<id>`: the messages as `useChat` holds them. */
-export interface AgentThread {
-  id: string
-  title: string | null
-  messages: UIMessage[]
-}
-
-export function agentThreadPath(id: string): string {
-  return ROUTES.agentThread.replace(':id', encodeURIComponent(id))
-}
-
-/**
- * The agent's routes answer `{error}` rather than `problem+json`: they are
- * Starlette's, under `/api/agent/{chat,threads}`, not Flask's. A refusal is
- * thrown as the server's sentence.
- */
-async function agentRead<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: 'application/json' } })
-  if (!response.ok) throw new Error(await agentError(response))
-  return (await response.json()) as T
-}
-
-async function agentForget(path: string): Promise<void> {
-  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
-  if (!response.ok) throw new Error(await agentError(response))
-}
-
-async function agentError(response: Response): Promise<string> {
-  const text = await response.text()
-  try {
-    const said = (JSON.parse(text) as { error?: unknown }).error
-    if (typeof said === 'string') return said
-  } catch {
-    // Not the agent's shape: a proxy's page, say. Its status is all there is.
-  }
-  return `HTTP ${response.status}`
-}
-
-/** `POST /api/agent/test`: the provider's own list, newest first. */
-export interface AgentTestResult {
-  provider: AgentProvider
-  models: { id: string; name: string }[]
-  /** The stored model while the provider still serves it, else its newest. */
-  preselected: string | null
-}
-
-export interface ConfigResponse {
-  log_level: string
-  settings: SettingDescription[]
-  environment: EnvironmentVariable[]
-  /** Set in the environment and obeyed by nothing. Computed, so it cannot drift. */
-  unread_environment: string[]
-}
-
-/** What `PUT /api/settings` answers: the new list, what moved, and what it reached. */
-export interface SettingsWriteResponse {
-  settings: SettingDescription[]
-  changed: string[]
-  /**
-   * The effect, **quantified**. A portfolio-wide cadence that reaches 3 symbols
-   * out of 12 has to say so — the other nine are not misconfigured, they read
-   * the new value when their market opens.
-   */
-  effect: Record<string, unknown>
-}
-
 /**
  * One standing installation fact (#709).
  *
@@ -1535,224 +713,13 @@ interface AcknowledgedAdvisory extends Advisory {
   acknowledged_until: string
 }
 
-/** One orphan symbol: nothing declares it, and this is the series it holds. */
-export interface OrphanSymbol {
-  symbol: string
-  points: number
-}
-
-/**
- * The store's own figures. The path and the persistence are **not** here — they
- * are process memory and ride on `/api/runtime`, which opens nothing and is
- * therefore still answering when this resource is not.
- */
-export interface StoreState {
-  /** The file and its write-ahead log. `null` — nothing written yet. */
-  size_bytes: number | null
-  /**
-   * The newest import, and never the newest observed price: that second one is
-   * liveness, which the bell answers (#829), and here it would make a
-   * store whose last import was a year ago read as freshly written.
-   */
-  ledger_last_write: string | null
-  orphans: OrphanSymbol[]
-  /** Repeated from the runtime so a report quoting this resource is whole. */
-  persistence: StorePersistence
-}
-
-/** What the purge answers: rows, and never bytes. */
-interface PurgeResult {
-  symbols: string[]
-  points_removed: number
-}
-
-// ------------------------------------------------------------------------- //
-// The import — a gesture, and no resource behind it (#811, #813)
-//
-// There was a `GET /api/imports` and a `DELETE /api/imports/<id>` here, with a
-// record type and a revocation to go with them. They left with the population
-// they existed for (#816): nothing persists that could be listed, and undoing an
-// import is `deleteEvents` over its ticked rows. What is left is the
-// receipt, which describes a gesture and outlives nothing.
-// ------------------------------------------------------------------------- //
-
-/** The period an import covered — its two days, or nothing at all. */
-interface ImportPeriod {
-  from: string
-  to: string
-}
-
-/**
- * **What the gesture produced** (#811) — the receipt, in the units the owner
- * counts in: lines written, the period they cover, the accounts and the
- * securities they touched.
- *
- * `period` is an object or `null` and never two nullable members: the two days
- * are absent **together**, on a file with no row in it, and half a period is a
- * figure nobody's file carries.
- *
- * The same shape answers the preview of #813 before anything is written — one
- * object, two moments — so the forecast and the fact are one thing read twice.
- *
- * **Three numbers, and they close**: `rows === written + duplicates`. `rows` is
- * what the file holds, `duplicates` what of it the ledger already has, `written`
- * what was — or will be — added. The period, the accounts and the securities
- * describe the **file**, not the subset that landed, which is what lets the
- * forecast and the fact say the same thing about a file that is half already
- * imported.
- */
-export interface ImportReceipt {
-  filename: string
-  rows: number
-  written: number
-  duplicates: number
-  period: ImportPeriod | null
-  accounts: string[]
-  symbols: string[]
-  /**
-   * **The accounts the file names, with their volumes** (#835) — the census the
-   * modal's lines are made of, read off the file *before* any correspondence is
-   * applied, so the question does not move under the reader as they answer it.
-   *
-   * `name` is the label as the file writes it, `''` for the blank column, which
-   * is a line like any other: it means `default` only while nothing is declared
-   * and is an error afterwards.
-   */
-  file_accounts: FileAccount[]
-  /**
-   * **The one thing that details, rather than summarises** (#835). The rest of
-   * this object answers *which*, not *how many times*; a skipped line is argued
-   * with one at a time, and a count cannot be argued with.
-   *
-   * `duplicate_of` is the id of the stored row this line repeats, or `null`
-   * where what it repeats is another line of the file itself. Empty under
-   * `writeDuplicates`: the flag moves those rows into `written`, so there is
-   * nothing skipped left to name.
-   */
-  duplicate_rows: DuplicateRow[]
-  /** What the file declares as its reporting currency, and what is done with it. */
-  currency: DeclaredCurrency | null
-}
-
-/** One account the file names, and how many of its rows carry it (#835). */
-export interface FileAccount {
-  name: string
-  rows: number
-}
-
-/** One line of the file the ledger already holds, and the line it repeats. */
-export interface DuplicateRow extends LedgerEvent {
-  duplicate_of: string | null
-}
-
-/**
- * The reporting currency a file declares (#710) and what this import
- * would do with it: `adopting` is true when the install has never answered the
- * question and this gesture writes the file's answer into the dial. A file that
- * **contradicts** the dial never reaches here — that is a refusal in prose.
- */
-interface DeclaredCurrency {
-  declared: string
-  adopting: boolean
-}
-
-/** How the file is to be read — the gesture's parameters (#813, #835). */
-export interface ImportOptions {
-  /** Judge and count, and **write nothing**: the forecast the owner may refuse. */
-  dryRun?: boolean
-  /** *These are real orders, write them* — the rows the ledger already has. */
-  writeDuplicates?: boolean
-  /**
-   * **Where each account the file names is to go** (#835) — file label to the id
-   * of a declared account. Sent as one JSON object, on the query string with the
-   * rest of *how the file is to be read*.
-   *
-   * Its **presence** is itself an answer: it says the modal is collecting the
-   * correspondence, so the preview reports the account column rather than
-   * refusing a file over the very question it is being asked to put. That is why
-   * it is sent from the first preview on, empty object and all.
-   */
-  mapping?: Record<string, string>
-  /** The labels to declare as accounts with the import — repeated `declare=`. */
-  declaring?: readonly string[]
-  /** Decline the reporting currency the file offers. Absent means *take it up*. */
-  declineCurrency?: boolean
-}
-
 export const api = {
-  accounts: () => get<AccountsResponse>(ROUTES.accounts),
-  // The declaration's three gestures (#698, served since that ticket; read by a
-  // client since #729). They are the accounts half of the pair
-  // `POST`/`PATCH`/`DELETE /api/events` is the ledger half of.
-  createAccount: (draft: AccountDraft) => send<Account>(ROUTES.accounts, 'POST', draft),
-  updateAccount: (id: string, draft: AccountDraft) =>
-    send<Account>(accountPath(id), 'PATCH', draft),
-  removeAccount: (id: string) => remove<{ id: string; removed: boolean }>(accountPath(id)),
-  // The taxation models (#752). Four gestures on one resource — the catalogue
-  // rides on the read, the three writes are the account's own three.
-  taxationModels: () => get<TaxationModelsResponse>(ROUTES.taxationModels),
-  createTaxationModel: (draft: TaxationModelDraft) =>
-    send<TaxationModel>(ROUTES.taxationModels, 'POST', draft),
-  updateTaxationModel: (id: string, draft: TaxationModelDraft) =>
-    send<TaxationModel>(taxationModelPath(id), 'PATCH', draft),
-  removeTaxationModel: (id: string) =>
-    remove<{ id: string; removed: boolean }>(taxationModelPath(id)),
-  reassignEvents: (id: string) =>
-    send<{ account: string; reassigned: number }>(accountReassignmentPath(id), 'POST', {}),
-  events: () => get<EventsResponse>(ROUTES.events),
-  createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
-  updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
-  /**
-   * **One row, removed** (#834).
-   *
-   * The pair of the edit above, and the gesture the bulk one is not: an event
-   * recorded twice, or on the wrong day, is removed rather than corrected — and
-   * a reduction that would retain it retains its neighbours too. The server
-   * refuses nothing here that `PATCH` does not, the population being one since
-   * #816; a ledger that would not replay without the row is the `409` both
-   * meet.
-   */
-  removeEvent: (id: string) => remove<{ id: string; removed: boolean }>(eventPath(id)),
-  /**
-   * The ticked rows, deleted whole (#1113).
-   *
-   * The ids travel in a JSON body and never in the query string: a few
-   * thousand of them overflow a proxy's URL limit. An id already gone is
-   * skipped by the server, and the answer counts what actually left.
-   */
-  deleteEvents: (ids: readonly string[]) => send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
-  accountHistory: (account: string) => get<AccountHistoryResponse>(accountHistoryPath(account)),
-  positions: () => get<PositionsResponse>(ROUTES.positions),
-  portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
-  portfolioTotalsHistory: () => get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
-  positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
-  movers: () => get<MoversResponse>(ROUTES.movers),
-  investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
-  dashboardLayout: () => get<unknown>(ROUTES.dashboardLayout),
-  saveDashboardLayout: (layout: DashboardLayout) =>
-    send<DashboardLayout>(ROUTES.dashboardLayout, 'PUT', layout),
-  forgetDashboardLayout: () => forget(ROUTES.dashboardLayout),
-  benchmark: () => get<BenchmarkResponse>(ROUTES.benchmark),
-  prices: (symbol: string, window: ChartWindow) =>
-    get<PriceSeriesResponse>(pricesPath(symbol, window)),
-  /** The close a grant is **suggested** at, and the day it came from (#1007). */
-  priceAt: (symbol: string, day: string) => get<PriceAtResponse>(priceAtPath(symbol, day)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
   // Typed for the caller, and **narrowed all the same** where it is read
   // (`lib/status.ts`): this is the one payload whose shape the dot has to
   // survive losing, a proxy or a stale image being able to answer `200` with
   // something that is not this object at all.
   health: () => get<HealthState>(ROUTES.health),
-  config: () => get<ConfigResponse>(ROUTES.config),
-  saveSettings: (values: Record<string, string | number>) =>
-    send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
-  agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
-  saveAgentConfig: (draft: AgentConfigDraft) => send<AgentConfig>(ROUTES.agentConfig, 'PUT', draft),
-  saveAgentKey: (key: string) => send<AgentConfig>(ROUTES.agentKey, 'PUT', { key }),
-  testAgent: () => send<AgentTestResult>(ROUTES.agentTest, 'POST', {}),
-  agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),
-  agentThread: (id: string) => agentRead<AgentThread>(agentThreadPath(id)),
-  forgetAgentThread: (id: string) => agentForget(agentThreadPath(id)),
   installationFacts: () => get<InstallationFactsResponse>(ROUTES.installationFacts),
   acknowledgeInstallationFact: (key: string) =>
     send<InstallationFact>(installationFactAcknowledgementPath(key), 'POST', {}),
@@ -1776,26 +743,4 @@ export const api = {
   standingAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
   acknowledgeAdvisory: (key: string) =>
     send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
-  // The way in (#811), and since #813 it is made twice on purpose: once with
-  // `dryRun` for the forecast, once without it to commit — **the same file**,
-  // re-sent. There is no pending-import id to hold instead, because holding one
-  // would be the table this lot deleted under another name.
-  importEvents: (file: File, options: ImportOptions = {}) =>
-    upload<ImportReceipt>(ROUTES.eventsImport, file, [
-      ...(options.dryRun ? ['dry_run=1'] : []),
-      ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
-      // The correspondence and its two companions (#835). `mapping` is sent
-      // whenever there is one to send, empty object included: the parameter's
-      // presence is what tells the preview it is being asked a question rather
-      // than being asked to judge.
-      ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
-      ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
-      ...(options.declineCurrency ? ['adopt_currency=0'] : []),
-    ]),
-  store: () => get<StoreState>(ROUTES.store),
-  purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
-  // The way back out (#710, #796). It answers bytes and a name rather than a
-  // payload, and it is the one call whose result no cache holds: a file is
-  // handed to the reader, not rendered.
-  download: (path: string) => download(path),
 }

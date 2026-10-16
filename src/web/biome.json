@@ -44,7 +44,7 @@
         "!**/src/test/**",
         "!**/*.test.{ts,tsx}",
         "!**/components/ShareBar.tsx",
-        "!**/accounts/AccountsRail.tsx"
+        "!**/features/accounts/components/AccountsRail.tsx"
       ]
     },
     {
@@ -81,7 +81,7 @@
     },
     {
       "path": "./lint/no-runtime-error-on-surfaces.grit",
-      "includes": ["**/src/pages/*Page.tsx", "**/components/data/Ledger.tsx"]
+      "includes": ["**/src/pages/*Page.tsx", "**/features/data/components/Ledger.tsx"]
     }
   ]
 }

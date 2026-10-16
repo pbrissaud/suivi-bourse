@@ -43,8 +43,8 @@ const GROUNDS: readonly Ground[] = ['light', 'dark']
 /** The two surfaces a block of this product is ever drawn on. */
 const SURFACES = ['--background', '--card'] as const
 
-const PRICE_CHART = path.join(SOURCE, 'components', 'shares', 'PriceChart.tsx')
-const PORTFOLIO_CHART = path.join(SOURCE, 'components', 'dashboard', 'PortfolioChart.tsx')
+const PRICE_CHART = path.join(SOURCE, 'features/shares/components/PriceChart.tsx')
+const PORTFOLIO_CHART = path.join(SOURCE, 'features/dashboard/components/PortfolioChart.tsx')
 
 /**
  * The file with its comments taken out.

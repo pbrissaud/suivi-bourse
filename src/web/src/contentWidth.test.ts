@@ -33,7 +33,10 @@ const SOURCE = path.resolve(import.meta.dirname)
 
 const SHELL = fs.readFileSync(path.join(SOURCE, 'components', 'Shell.tsx'), 'utf8')
 const TABLE = fs.readFileSync(path.join(SOURCE, 'components', 'ui', 'table.tsx'), 'utf8')
-const FACETS = fs.readFileSync(path.join(SOURCE, 'components', 'data', 'LedgerFacets.tsx'), 'utf8')
+const FACETS = fs.readFileSync(
+  path.join(SOURCE, 'features/data/components/LedgerFacets.tsx'),
+  'utf8',
+)
 
 /** The opening tag of the content column, whatever else is on it. */
 const INSET = /<SidebarInset\b[^>]*>/

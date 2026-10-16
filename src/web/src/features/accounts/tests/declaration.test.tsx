@@ -1,0 +1,475 @@
+/**
+ * The declaration of the accounts (#729, #793), at the one seam: the whole app
+ * in jsdom, HTTP the only faked edge.
+ *
+ * Every case below names the reading it prevents, and two of them are the
+ * measurements the ticket rests on:
+ *
+ *  - **a removal present and refused** — the interface's obligation is the
+ *    opposite of the API's, so it is absent and names its reason;
+ */
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { HttpResponse, http } from 'msw'
+import { describe, expect, it } from 'vitest'
+
+import { DEFAULT_ACCOUNT_ID } from '@/features/accounts/lib/accounts'
+import { accountPath } from '@/features/accounts/lib/api'
+import type { LedgerEvent } from '@/features/data/lib/api'
+import { ROUTES } from '@/lib/api'
+import { PROBLEM_TYPES } from '@/lib/problem'
+import {
+  aLedgerPayload,
+  anAccount,
+  anAccountsPayload,
+  anEvent,
+  ledgerEvents,
+  noAccountsDeclared,
+  theSeededAccount,
+} from '@/test/factories'
+import { renderApp } from '@/test/render'
+import { server } from '@/test/server'
+
+function renderAccounts(
+  accounts = anAccountsPayload(),
+  events: LedgerEvent[] = ledgerEvents(),
+  url = '/accounts',
+) {
+  server.use(
+    http.get(ROUTES.accounts, () => HttpResponse.json(accounts)),
+    http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(events))),
+  )
+  return renderApp({ url })
+}
+
+function rail() {
+  return screen.getByRole('list', { name: 'Vos comptes' })
+}
+
+/** The detail of one account — a landmark named by the account it is about. */
+function detail(name: string) {
+  return screen.findByRole('region', { name })
+}
+
+/**
+ * Open one account's panel: its detail, then the **pencil** beside its name,
+ * which is the affordance since #838. It was the name itself; the drawing gives
+ * the editor an icon, and one gesture gets one control — a heading that is also
+ * a button reads as a link to somewhere else.
+ */
+async function openPanel(user: ReturnType<typeof renderApp>['user'], name: string) {
+  await user.click(
+    within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole('link', {
+      name: new RegExp(name),
+    }),
+  )
+  const opened = await detail(name)
+  await user.click(within(opened).getByRole('button', { name: 'Modifier le compte' }))
+  return screen.findByRole('dialog')
+}
+
+describe('the same form as the ledger, not a second one', () => {
+  it('gives the editor one control, beside the name and nothing else', async () => {
+    const { user } = renderAccounts()
+    await detail('Alpha')
+
+    // The ledger's rule to the letter: read-only per row rendered 285 identical
+    // locks on 285 rows, and nothing replaces it.
+    for (const absent of ['Lecture seule', 'Verrou', 'Devise', 'Modifier']) {
+      expect(screen.queryByRole('button', { name: absent })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByText('🔒')).not.toBeInTheDocument()
+
+    // The control is the pencil beside the name (#838), and the name itself is
+    // a heading and not a button — one gesture, one control.
+    await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
+    const beta = await detail('Beta')
+    expect(within(beta).getByRole('button', { name: 'Modifier le compte' })).toBeInTheDocument()
+    expect(within(beta).queryByRole('button', { name: 'Beta' })).not.toBeInTheDocument()
+
+    // `Gamma` was declared here too: its pencil opens the panel.
+    const panel = await openPanel(user, 'Gamma')
+    expect(panel).toHaveAttribute('data-slot', 'sheet-content')
+    expect(within(panel).getByLabelText('Nom')).toHaveValue('Gamma')
+  })
+
+  it('does not offer the identifier for editing: it is what the events name', async () => {
+    const { user } = renderAccounts()
+    const panel = await openPanel(user, 'Gamma')
+
+    expect(within(panel).queryByLabelText('Identifiant')).not.toBeInTheDocument()
+    expect(panel).toHaveTextContent(/ne peut donc pas changer/)
+  })
+})
+
+describe('the form loses `currency`', () => {
+  it('offers an identifier and a name, and no currency and no type', async () => {
+    const { user } = renderAccounts()
+    await detail('Alpha')
+    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+
+    const panel = await screen.findByRole('dialog')
+    expect(within(panel).getByLabelText('Identifiant')).toBeInTheDocument()
+    expect(within(panel).getByLabelText('Nom')).toBeInTheDocument()
+    // **And no type** (#916): the column was read by nothing, so the
+    // declaration is two fields — what the events name, and what it is called.
+    expect(within(panel).queryByLabelText('Type')).not.toBeInTheDocument()
+
+    // The page built during the prototype still carried the field.
+    for (const absent of ['Devise', 'Currency', 'Devise du compte']) {
+      expect(within(panel).queryByLabelText(absent)).not.toBeInTheDocument()
+    }
+    expect(panel).toHaveTextContent(/n’a pas de devise propre/)
+  })
+
+  it('declares the account and takes the panel away', async () => {
+    const { user } = renderAccounts()
+    await detail('Alpha')
+    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+
+    const panel = await screen.findByRole('dialog')
+    await user.type(within(panel).getByLabelText('Identifiant'), 'delta')
+    await user.type(within(panel).getByLabelText('Nom'), 'Delta')
+
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload([
+            ...anAccountsPayload().accounts,
+            anAccount({ id: 'delta', label: 'Delta' }),
+          ]),
+        ),
+      ),
+    )
+
+    await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
+    expect(await within(rail()).findByRole('link', { name: /Delta/ })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+describe('a removal that cannot happen is absent and names its reason', () => {
+  it('gives each of the two refusals the room a table cell never gave it', async () => {
+    const { user } = renderAccounts(
+      anAccountsPayload([...anAccountsPayload().accounts, theSeededAccount()]),
+    )
+
+    // The four events of the fixture all name `alpha`.
+    const alpha = await openPanel(user, 'Alpha')
+    const removal = within(alpha).getByRole('region', { name: 'Supprimer ce compte' })
+    expect(removal).toHaveTextContent('4 événements nomment ce compte')
+    expect(removal).toHaveTextContent(/ne pointeraient plus sur rien/)
+    expect(within(removal).queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument()
+    await user.click(within(alpha).getByRole('button', { name: 'Annuler' }))
+
+    // The seeded row: renamed, never removed.
+    const seeded = await openPanel(user, 'Non affecté')
+    expect(within(seeded).getByRole('region', { name: 'Supprimer ce compte' })).toHaveTextContent(
+      /le compte que toute installation possède/,
+    )
+  })
+
+  it('offers the panel on every account, a file declaring none of them', async () => {
+    // `Beta` had no panel at all — a file declared it, and what a file declared
+    // was corrected in the file — so the refusal was the absence of the
+    // affordance. No file declares an account now, so the row that could not be
+    // edited has stopped existing.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user, 'Beta')
+
+    expect(within(panel).getByRole('region', { name: 'Supprimer ce compte' })).toHaveTextContent(
+      /Aucun événement ne nomme ce compte/,
+    )
+    // And no refusal names a file: none of them can any more.
+    expect(panel).not.toHaveTextContent(/oubliez/)
+  })
+
+  it('offers it on an account declared here that nothing names', async () => {
+    const { user } = renderAccounts()
+    const panel = await openPanel(user, 'Gamma')
+
+    const removal = within(panel).getByRole('region', { name: 'Supprimer ce compte' })
+    expect(removal).toHaveTextContent(/Aucun événement ne nomme ce compte/)
+
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload([
+            anAccount({ id: 'alpha', label: 'Alpha' }),
+            anAccount({ id: 'beta', label: 'Beta' }),
+          ]),
+        ),
+      ),
+    )
+
+    await user.click(within(removal).getByRole('button', { name: 'Supprimer' }))
+    await waitFor(() =>
+      expect(within(rail()).queryByRole('link', { name: /Gamma/ })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('still says `conflict`’s own sentence on a refusal of declaration (#824)', async () => {
+    // What the oversell's new type does **not** take with it. *What this names
+    // is already there, or something still rests on it* was written for exactly
+    // this refusal — an account an event names — and is true of it. Only the
+    // case it described badly left.
+    server.use(
+      http.delete(accountPath('gamma'), () =>
+        HttpResponse.json(
+          { status: 409, type: PROBLEM_TYPES.conflict, title: 'Conflict' },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderAccounts()
+    const panel = await openPanel(user, 'Gamma')
+
+    const removal = within(panel).getByRole('region', { name: 'Supprimer ce compte' })
+    await user.click(within(removal).getByRole('button', { name: 'Supprimer' }))
+
+    expect(
+      await within(panel).findByText(
+        'Refusé : ce nom existe déjà, ou quelque chose en dépend encore.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('offers nothing at all while the ledger has not landed', async () => {
+    // The count a refusal is made of comes off the ledger, so a removal offered
+    // before it lands offers a gesture the server is about to refuse.
+    server.use(http.get(ROUTES.events, () => new Promise<never>(() => {})))
+    const { user } = renderApp({ url: '/accounts' })
+    const panel = await openPanel(user, 'Alpha')
+
+    expect(
+      within(panel).queryByRole('region', { name: 'Supprimer ce compte' }),
+    ).not.toBeInTheDocument()
+    // And the rest of the panel is there: the account is renameable whatever the
+    // ledger says.
+    expect(within(panel).getByLabelText('Nom')).toBeInTheDocument()
+  })
+})
+
+describe('`default` on this page, under the name the catalogue gives it', () => {
+  it('appears as soon as it carries events, on an install that declared nothing', async () => {
+    renderAccounts(noAccountsDeclared(), [
+      anEvent({ account: DEFAULT_ACCOUNT_ID }),
+      anEvent({ account: DEFAULT_ACCOUNT_ID, date: '2026-01-12' }),
+    ])
+
+    // `Non affecté` — one `features/accounts/lib/accounts.ts` function, read by the rail and by
+    // the detail, so two surfaces cannot name one thing two ways. The label the
+    // seed wrote never crosses the screen: it is the server's own English about
+    // a row nobody declared.
+    const opened = await detail('Non affecté')
+    expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
+    // **The id is back on this page** (#916), and this reverses #838
+    // deliberately. That ticket took it off saying the line heads an account
+    // with *what the owner called it and what kind it is* — and the type is
+    // gone, so only one of the two is left. The id is the half that does
+    // concrete work: it is what the owner writes in the `account` column of an
+    // import file, and what the ledger's own `Compte` column shows them.
+    expect(opened).toHaveTextContent(DEFAULT_ACCOUNT_ID)
+    // What is still refused is the **seed's own English**, on either column.
+    expect(screen.queryByText('Default account')).not.toBeInTheDocument()
+    expect(screen.queryByText('OTHER')).not.toBeInTheDocument()
+  })
+
+  it('can be renamed here, which is the only place it can', async () => {
+    const { user } = renderAccounts(noAccountsDeclared(), [
+      anEvent({ account: DEFAULT_ACCOUNT_ID }),
+    ])
+
+    let patched: unknown = null
+    const panel = await openPanel(user, 'Non affecté')
+    // Both seeded columns open **empty**: neither `Default account` nor `OTHER`
+    // is a value the reader typed, and handing one back had them typing `PEA`
+    // into `OTHER` and saving `OTHERPEA`.
+    expect(within(panel).getByLabelText('Nom')).toHaveValue('')
+    await user.type(within(panel).getByLabelText('Nom'), 'Mon PEA')
+
+    // **The body the server can actually produce**: `declared` stays `false` —
+    // renaming the row every install owns declares nothing beyond it — and the
+    // renamed row is *in* the list, because `/api/accounts` serves it there.
+    server.use(
+      http.patch(accountPath(DEFAULT_ACCOUNT_ID), async ({ request }) => {
+        patched = await request.json()
+        return HttpResponse.json(theSeededAccount({ label: 'Mon PEA' }))
+      }),
+      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA' }))),
+    )
+
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+    // The name given wins, and the id it is addressed by does not move.
+    expect(await within(rail()).findByRole('link', { name: /Mon PEA/ })).toBeInTheDocument()
+    expect(within(rail()).queryByRole('link', { name: /Non affecté/ })).not.toBeInTheDocument()
+    // Renamed, and the row is still `default` underneath — which this page no
+    // longer writes down (#838); what proves it is the request the form sent.
+    await detail('Mon PEA')
+    expect(patched).toEqual({ label: 'Mon PEA' })
+  })
+
+  it('renames it with the one field a rename needs, and sends nothing else', async () => {
+    // Renaming the seeded row is the gesture this panel exists for at N = 1, and
+    // since #916 it is the whole of what the panel can change: there is no
+    // second column left, so nothing can make the rename conditional on
+    // answering a second question.
+    const { user } = renderAccounts(noAccountsDeclared(), [])
+    const panel = await openPanel(user, 'Non affecté')
+
+    let patched: unknown = null
+    server.use(
+      http.patch(accountPath(DEFAULT_ACCOUNT_ID), async ({ request }) => {
+        patched = await request.json()
+        return HttpResponse.json(theSeededAccount({ label: 'Mon PEA' }))
+      }),
+      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA' }))),
+    )
+
+    await user.type(within(panel).getByLabelText('Nom'), 'Mon PEA')
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+
+    expect(await within(rail()).findByRole('link', { name: /Mon PEA/ })).toBeInTheDocument()
+    expect(patched).toEqual({ label: 'Mon PEA' })
+  })
+
+  it('is named the same way in the ledger’s create form, one page over', async () => {
+    // The resource puts the seeded row in the list whenever an event names it, so
+    // the event form is a second surface rendering that row — and two surfaces
+    // naming one account two ways is what the shared function forbids.
+    const { user } = renderAccounts(
+      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha' }), theSeededAccount()]),
+      [anEvent({ account: DEFAULT_ACCOUNT_ID })],
+      '/ledger',
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
+    await user.click(await screen.findByRole('radio', { name: 'Versement' }))
+
+    const options = within(screen.getByRole('dialog'))
+      .getByLabelText('Compte')
+      .querySelectorAll('option')
+    expect([...options].map((option) => option.textContent)).toContain('Non affecté')
+    expect([...options].map((option) => option.textContent)).not.toContain('Default account')
+  })
+})
+
+describe('the declaration is reachable at every N', () => {
+  it('is there at N = 1, which is what the true first run is', async () => {
+    // Absent, it left the install with a page and no file unable to declare a
+    // first account at all.
+    renderAccounts(noAccountsDeclared(), [])
+
+    expect(await detail('Non affecté')).toBeInTheDocument()
+    expect(within(rail()).getAllByRole('link')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
+  })
+
+  it('is there with a declaration and no event recorded under it yet', async () => {
+    renderAccounts(anAccountsPayload(), [])
+
+    await detail('Alpha')
+    expect(within(rail()).getAllByRole('link')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
+  })
+
+  it('is absent while the accounts read has not landed, and claims nothing', async () => {
+    // `/api/accounts` never serves an empty list, so *no rail* is *nothing has
+    // arrived* and never a state of the declaration.
+    server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
+    renderApp({ url: '/accounts' })
+
+    await screen.findByRole('heading', { level: 1, name: 'Comptes' })
+    expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Déclarer un compte' })).not.toBeInTheDocument()
+  })
+})
+
+describe('the create form on an install that has declared nothing', () => {
+  it('records without asking for a choice there is nothing to make', async () => {
+    // The state #764 measured and deferred here: the form used to refuse before
+    // a request left. The rule is #698's — a blank account means `default` until
+    // something is declared — and the front reflects it.
+    const { user } = renderAccounts(
+      noAccountsDeclared(),
+      [anEvent({ account: DEFAULT_ACCOUNT_ID })],
+      '/ledger',
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
+    await user.click(await screen.findByRole('radio', { name: 'Versement' }))
+    fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
+    await user.type(screen.getByLabelText('Montant'), '250')
+    await user.type(screen.getByLabelText('Libellé'), 'Virement de février')
+
+    const panel = screen.getByRole('dialog')
+    // No empty list to choose from: the account is stated, not asked.
+    expect(within(panel).queryByLabelText('Compte')).not.toBeInTheDocument()
+    expect(panel).toHaveTextContent('Non affecté')
+
+    let sent: unknown = null
+    server.use(
+      http.post(ROUTES.events, async ({ request }) => {
+        sent = await request.json()
+        return HttpResponse.json(
+          { ...anEvent({ account: DEFAULT_ACCOUNT_ID }), id: 'typed-9' },
+          { status: 201 },
+        )
+      }),
+      http.get(ROUTES.events, () =>
+        HttpResponse.json(
+          aLedgerPayload([
+            anEvent({ account: DEFAULT_ACCOUNT_ID }),
+            anEvent({
+              account: DEFAULT_ACCOUNT_ID,
+              date: '2026-02-20',
+              event_type: 'DEPOSIT',
+              symbol: null,
+              notes: 'Virement de février',
+              quantity: null,
+              unit_price: null,
+              fee: null,
+              amount: 250,
+            }),
+          ]),
+        ),
+      ),
+    )
+
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer cet événement' }))
+    expect(await screen.findByText('Virement de février')).toBeInTheDocument()
+    // The blank travels as a blank: the server resolves it at the write, where
+    // the file road resolves its own empty cell (#698).
+    expect((sent as { account: string }).account).toBe('')
+  })
+
+  it('does not render a read in flight, or one that failed, as a missing answer', async () => {
+    // Three states, three repairs, and only one of them is the reader's. A
+    // required-field refusal over an empty control says the reader forgot
+    // something, which is false in both of the other two.
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          { status: 503, type: '/problems/storage-unavailable', title: 'storage unavailable' },
+          { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderApp({ url: '/ledger' })
+
+    // **The ledger is still there.** Its own read answered (`GET /api/events`
+    // comes off process memory and has no `503`), so masking it would take the
+    // events, the filters and the only button that opens the form away for a
+    // fault they read no ledger about.
+    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+    // And nothing is said above the journal about it (#829): there is
+    // no band, and the one surface this failure costs anything is the account
+    // field — which names it itself, in its own three-state sentence.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Saisir un événement' }))
+    const panel = await screen.findByRole('dialog')
+    await user.click(within(panel).getByRole('radio', { name: 'Achat' }))
+    expect(within(panel).getByText(/Vos comptes n’ont pas pu être lus/)).toBeInTheDocument()
+  })
+})

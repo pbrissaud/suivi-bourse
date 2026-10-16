@@ -68,11 +68,13 @@ import { Unreadable } from '@/components/Unreadable'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
-import { Allocation } from '@/components/shares/Allocation'
-import { ClosedShares } from '@/components/shares/ClosedShares'
-import { SharesHead } from '@/components/shares/SharesHead'
-import { SharesTable } from '@/components/shares/SharesTable'
-import { ShareSheet } from '@/components/shares/ShareSheet'
+import { Allocation } from '@/features/shares/components/Allocation'
+import { ClosedShares } from '@/features/shares/components/ClosedShares'
+import { SharesHead } from '@/features/shares/components/SharesHead'
+import { SharesTable } from '@/features/shares/components/SharesTable'
+import { ShareSheet } from '@/features/shares/components/ShareSheet'
+import { settingsApi } from '@/features/settings/lib/api'
+import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { currencyUnanswered } from '@/lib/firstRun'
@@ -89,7 +91,7 @@ import {
   type ShareGroup,
   type ShareSort,
   type SortColumn,
-} from '@/lib/shares'
+} from '@/features/shares/lib/shares'
 import { oneFailure, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -127,11 +129,11 @@ export default function SharesPage() {
       replace: true,
     })
 
-  const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
+  const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
 
   // The counter of fruitless readings is what separates *asked and got nothing*
   // from *not asked yet*, and it lives on the app's own state — never in the
@@ -148,7 +150,7 @@ export default function SharesPage() {
   )
 
   // The reduction is applied to the **positions**, before the folding: a row of
-  // this page is a symbol across its accounts (`lib/shares.ts`), so reducing
+  // this page is a symbol across its accounts (`features/shares/lib/shares.ts`), so reducing
   // afterwards would keep a line held on two accounts whole and state the other
   // account's quantity under a bar naming this one.
   const reduced = useMemo(() => {

@@ -72,44 +72,47 @@
  * with invented values.
  */
 import type {
-  BenchmarkResponse,
-  OfferedBenchmark,
   Account,
   AccountHistoryResponse,
   AccountsResponse,
-  Advisory,
-  ChartWindow,
-  AgentConfig,
-  ConfigResponse,
-  EnvironmentVariable,
-  EventsResponse,
-  Fundamentals,
-  HealthJobs,
-  HealthState,
-  DuplicateRow,
-  ImportReceipt,
-  InstallationFact,
+  PerfPoint,
+  TaxationModel,
+  TaxationModelsResponse,
+} from '@/features/accounts/lib/api'
+import type { AgentConfig } from '@/features/agent/lib/api'
+import type { BenchmarkResponse, OfferedBenchmark } from '@/features/benchmark/lib/api'
+import type {
   InvestmentRhythmResponse,
-  LedgerEvent,
   Mover,
   MoversResponse,
-  PerfPoint,
   PortfolioTotals,
   PortfolioTotalsHistoryResponse,
   PortfolioTotalsResponse,
-  Position,
   PositionsHistoryResponse,
+  ValuationPoint,
+} from '@/features/dashboard/lib/api'
+import type {
+  DuplicateRow,
+  EventsResponse,
+  ImportReceipt,
+  LedgerEvent,
+} from '@/features/data/lib/api'
+import type {
+  ConfigResponse,
+  EnvironmentVariable,
+  SettingDescription,
+  StoreState,
+} from '@/features/settings/lib/api'
+import type {
+  ChartWindow,
+  Fundamentals,
+  Position,
   PositionsResponse,
   PriceAtResponse,
   PriceSeriesResponse,
   Resolution,
-  RuntimeState,
-  SettingDescription,
-  StoreState,
-  TaxationModel,
-  TaxationModelsResponse,
-  ValuationPoint,
-} from '@/lib/api'
+} from '@/features/shares/lib/api'
+import type { Advisory, HealthJobs, HealthState, InstallationFact, RuntimeState } from '@/lib/api'
 
 /** The instant every fixture is written against. Tests freeze the clock to it. */
 export const NOW = '2026-03-02T12:00:00.000Z'

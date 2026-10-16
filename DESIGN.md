@@ -180,8 +180,9 @@ shipped face would cost every screen for no reader benefit.
 
 - **Desktop ≥ 1440 px:** sidebar 200 px, content up to 1040 px.
 - **< 768 px:** single column.
-- The agent is a page, `/agent`: a 240 px thread column from 1 024 px, the conversation
-  at most 720 px.
+- The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
+  flush with the navigation, and the conversation centred in the rest at most 768 px;
+  below 1 024 px, the conversation alone, centred at most 720 px.
 - **Rhythm:** 20 px between sections, 24 px around the content, 12 px between a section
   title and its content. Large gaps (40, 64) only separate the hero from the first
   section and the page from its footer.
@@ -261,7 +262,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 
 ## Shapes
 
-- `rounded.lg` (18 px): sections and the agent page's thread column.
+- `rounded.lg` (18 px): sections.
 - `rounded.md` (14 px): cards. A card sits on a section, so 18 − 4 keeps the curves
   concentric.
 - `rounded.sm` (8 px): buttons, inputs, menus.
@@ -282,7 +283,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 - **Chips (agent profile facts):** outlined, Label size; each opens a popover with
   the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
 - **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
-  "Nouveau fil" and "Fils récents" head the `tint` thread column from 1 024 px, and are
+  "Nouveau fil" and "Fils récents" head the `tint` thread rail (a `rule` on its right, no radius) from 1 024 px, and are
   the header's buttons below. Tool calls are one muted line in plain words
   with a "détail" disclosure (2A). The CIF line "Simulations à partir de vos données
   déclarées, pas un conseil en investissement." stays fixed under the input (3A).
@@ -338,3 +339,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-12 | Colour only the terms that can change sign | Dividends and transfer fees have a fixed sign, so colouring it carries no information and steals the signal from a realised loss; the bar follows the same rule (#1144). |
 | 2026-10-12 | Gain breakdown is a statement (#1175) | Reverses the cascade (#1143/#1161) and the in-card window (#1156/#1173): with four terms the figures are the content, the bars read as progress bars, and the year-to-date gain has its own pill. |
 | 2026-10-14 | The agent is a page, `/agent`, not a side panel (#1196) | Docked at 380 px the panel left a 13" laptop about 840 px of the 1 040 the content is designed for, and charts and tables broke; it bought one line of context (the route) that the agent reads through its tools anyway. Its user-facing name becomes "Agent", the same word in both languages. |
+| 2026-10-15 | The agent's threads are a full-height rail, the conversation centred at 768 px | The staging audit of /agent: the 720 px conversation pinned beside a floating column left about 170 px empty on the right of a 1 440 px screen, and filling that width ran lines past 110 characters. Chosen by the owner over a full-width conversation and over a centred floating column, after the pattern of the chat apps. |

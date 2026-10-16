@@ -51,7 +51,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar'
-import { useAgentChat } from '@/lib/agentChatProvider'
+import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
 import { useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {

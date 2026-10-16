@@ -40,7 +40,7 @@ import { AppSidebar } from '@/components/AppSidebar'
 import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
 import { SIDEBAR_COOKIE_NAME, SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
-import { AgentChatProvider } from '@/lib/agentChatProvider'
+import { AgentChatProvider } from '@/features/agent/lib/agentChatProvider'
 
 /**
  * **Reading back what the registry component already writes.**
