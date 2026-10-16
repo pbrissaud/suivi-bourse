@@ -1,7 +1,9 @@
-"""A tweakcn theme over the bundled Atelier (#1130): what is let through, and from where."""
+"""A theme over the bundled Atelier (#1130, #1248): what is let through, and from where."""
 import json
 import re
 from pathlib import Path
+
+import pytest
 
 from application import tweakcn
 
@@ -31,9 +33,10 @@ def test_sanitize_keeps_numbers_and_plain_strings_and_drops_the_rest():
     assert tweakcn.sanitize(0) == '0'
     assert tweakcn.sanitize(0.5) == '0.5'
     assert tweakcn.sanitize('oklch(0.5 0.1 160)') == 'oklch(0.5 0.1 160)'
+    assert tweakcn.sanitize("'Open Sans', calc(var(--x) * 2)") == "'Open Sans', calc(var(--x) * 2)"
     for bad in (None, True, [], {}, float('nan'), float('inf'), 'red;}body{display:none',
                 'a<b', 'a\\b', 'url(https://x)', 'URL(https://x)', 'image-set("x" 1x)',
-                'red /*', 'a\nb', 'x' * 301):
+                'red /*', 'a\nb', 'x' * 301, 'calc(1px', 'var(--x))', '"Open Sans', "a'b"):
         assert tweakcn.sanitize(bad) is None, bad
 
 
@@ -93,30 +96,6 @@ def test_font_imports_names_only_a_family_the_bundle_lacks():
         'dark': {}}) == imports('Lora')
 
 
-def test_load_refuses_a_bad_id_before_any_fetch(tmp_path):
-    for bad in ('../x', 'a' * 65, 'Claude', ''):
-        assert tweakcn.load(bad, tmp_path, _never) == (None, 'invalid id')
-
-
-def test_load_fetches_and_caches_then_falls_back_to_the_cache(tmp_path):
-    raw = json.dumps(CLAUDE).encode()
-    cache = tmp_path / 'theme'
-
-    assert tweakcn.load('claude', cache, lambda url: raw) == (CLAUDE, None)
-    assert (cache / 'tweakcn-claude.json').read_bytes() == raw
-
-    assert tweakcn.load('claude', cache, _raises) == (
-        CLAUDE, 'fetch failed: ConnectionError; served from cache')
-    assert tweakcn.load('claude', cache, lambda url: b'<html>') == (
-        CLAUDE, 'invalid theme JSON; served from cache')
-
-
-def test_load_survives_a_cache_it_cannot_write(tmp_path):
-    raw = json.dumps(CLAUDE).encode()
-    (tmp_path / 'file').write_text('')
-    assert tweakcn.load('claude', tmp_path / 'file' / 'theme', lambda url: raw) == (CLAUDE, None)
-
-
 class _Response:
     def __init__(self, status, body):
         self.status, self.body = status, body
@@ -144,9 +123,84 @@ def test_http_fetch_raises_on_a_refusal_and_on_an_oversized_body(monkeypatch):
         raise AssertionError('no exception')
 
 
-def test_load_with_neither_a_theme_nor_a_cache_says_why(tmp_path):
-    assert tweakcn.load('claude', tmp_path, _raises) == (None, 'fetch failed: ConnectionError')
-    assert tweakcn.load('claude', tmp_path, lambda url: b'{"cssVars": {"light": {}}}') == (
-        None, 'invalid theme JSON')
-    (tmp_path / 'tweakcn-claude.json').write_text('[]')
-    assert tweakcn.load('claude', tmp_path, _raises) == (None, 'fetch failed: ConnectionError')
+def _theme(theme=None, light=None, dark=None):
+    body = {'light': light or {}, 'dark': dark or {}}
+    if theme is not None:
+        body['theme'] = theme
+    return body
+
+
+def test_normalize_drops_what_a_theme_may_not_say():
+    kept = tweakcn.normalize(_theme(
+        theme={'radius': '1rem', 'spacing': '1rem', 'gain': 'red'},
+        light={'primary': 'red;}body{display:none', 'background': 'white', 'ring': 'blue'},
+        dark={'primary': 'blue', 'background': 'black'}))
+    # `primary` is unsafe in light, so dark loses it too; `ring` is light-only.
+    assert kept == {'theme': {'radius': '1rem'},
+                    'light': {'background': 'white'}, 'dark': {'background': 'black'}}
+
+
+def test_normalize_keeps_a_one_sided_key_the_theme_covers():
+    kept = tweakcn.normalize(_theme(theme={'radius': '1rem'}, light={'radius': '0'}))
+    assert kept == {'theme': {'radius': '1rem'}, 'light': {'radius': '0'}, 'dark': {}}
+
+
+def test_normalize_moves_a_light_only_tracking_normal_into_theme():
+    kept = tweakcn.normalize(CLAUDE['cssVars'])
+    assert kept['theme']['tracking-normal'] == CLAUDE['cssVars']['light']['tracking-normal']
+    assert 'tracking-normal' not in kept['light']
+    assert kept['light'].keys() == kept['dark'].keys()
+
+
+@pytest.mark.parametrize('bad', [[], {'light': {}}, {'light': {}, 'dark': []},
+                                 {'light': {}, 'dark': {}, 'theme': 'nope'}])
+def test_normalize_refuses_what_is_not_a_theme(bad):
+    with pytest.raises(tweakcn.InvalidTheme):
+        tweakcn.normalize(bad)
+
+
+def test_normalize_is_what_validate_keeps():
+    kept = tweakcn.normalize(CLAUDE['cssVars'])
+    assert tweakcn.validate(kept) == kept
+
+
+@pytest.mark.parametrize('body, key', [
+    (_theme(light={'background': 'red; } body { display:none'}, dark={'background': 'x'}),
+     'background'),
+    (_theme(light={'gain': 'red'}, dark={'gain': 'red'}), 'gain'),
+    (_theme(light={'tracking-normal': '0em'}), 'tracking-normal'),
+    ({**_theme(), 'name': 'x'}, 'name'),
+])
+def test_validate_names_the_first_key_it_would_drop(body, key):
+    with pytest.raises(tweakcn.InvalidTheme) as refused:
+        tweakcn.validate(body)
+    assert refused.value.key == key
+
+
+def test_validate_bounds_the_size(monkeypatch):
+    monkeypatch.setattr(tweakcn, 'MAX_BYTES', 10)
+    with pytest.raises(tweakcn.InvalidTheme) as refused:
+        tweakcn.validate(_theme(theme={'radius': '1rem'}))
+    assert refused.value.key is None
+
+
+def test_fetch_refuses_a_bad_id_before_any_fetch():
+    for bad in ('../x', 'a' * 65, 'Claude', '', None):
+        with pytest.raises(tweakcn.InvalidId):
+            tweakcn.fetch(bad, _never)
+
+
+def test_fetch_returns_the_css_vars():
+    raw = json.dumps(CLAUDE).encode()
+    assert tweakcn.fetch('claude', lambda url: raw) == CLAUDE['cssVars']
+
+
+@pytest.mark.parametrize('fetcher, reason', [
+    (_raises, 'ConnectionError'),
+    (lambda url: b'<html>', 'invalid theme JSON'),
+    (lambda url: b'{"cssVars": {"light": {}}}', 'invalid theme JSON'),
+])
+def test_fetch_says_why_it_failed(fetcher, reason):
+    with pytest.raises(tweakcn.FetchFailed) as failed:
+        tweakcn.fetch('claude', fetcher)
+    assert reason in failed.value.reason

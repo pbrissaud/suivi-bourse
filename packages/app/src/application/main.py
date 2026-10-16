@@ -44,7 +44,7 @@ getLogger("yfinance", level=LOG_LEVEL)
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
     'quotes', 'perf_series', 'ledger', 'positions',
-    'installation_facts', 'api.api',
+    'installation_facts', 'api.api', 'api.settings',
     'fx', 'accounts', 'entries', 'reassignment',
     'uploads',
     'advisories',

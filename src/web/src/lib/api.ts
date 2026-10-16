@@ -224,6 +224,10 @@ export const ROUTES = {
    * its cards not: the registry of cards is the front's (`features/dashboard/lib/dashboardBlocks`).
    */
   dashboardLayout: '/api/dashboard/layout',
+  /** The theme over the bundled Atelier — one row of the store, tweakcn's `cssVars` (#1248). */
+  theme: '/api/theme',
+  /** Fetch a tweakcn theme by id and keep it: the only call to tweakcn.com. */
+  themeImport: '/api/theme/import',
   /**
    * The comparison of #760 — the gap, the period it covers, and the right to
    * display either.

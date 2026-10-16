@@ -6,6 +6,7 @@ import { AccessBlock } from '@/features/settings/components/AccessBlock'
 import { AgentBlock } from '@/features/settings/components/AgentBlock'
 import { DialsBlock } from '@/features/settings/components/DialsBlock'
 import { TaxationBlock } from '@/features/settings/components/TaxationBlock'
+import { ThemeBlock } from '@/features/settings/components/ThemeBlock'
 import { settingsApi } from '@/features/settings/lib/api'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -20,9 +21,11 @@ export default function SettingsPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   const agent = useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig })
+  const theme = useQuery({ queryKey: ['theme'], queryFn: settingsApi.theme })
 
   const settingsFailure = oneFailure(readConditions({ queries: [config] }))
   const agentFailure = oneFailure(readConditions({ queries: [agent] }))
+  const themeFailure = oneFailure(readConditions({ queries: [theme] }))
 
   return (
     <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
@@ -37,6 +40,11 @@ export default function SettingsPage() {
         <Unreadable failure={agentFailure} />
       ) : agent.data ? (
         <AgentBlock config={agent.data} />
+      ) : null}
+      {themeFailure !== null ? (
+        <Unreadable failure={themeFailure} />
+      ) : theme.isSuccess ? (
+        <ThemeBlock stored={theme.data} />
       ) : null}
       <AccessBlock />
       <TaxationBlock />

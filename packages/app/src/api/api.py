@@ -1,14 +1,11 @@
 """The ``/api`` blueprint — the disposable half (issue #659, design #655)."""
-import threading
-from typing import Optional
 from urllib.parse import urlsplit
 
 import duckdb
-from flask import Blueprint, Response, current_app, request
+from flask import Blueprint, request
 from werkzeug.exceptions import HTTPException
 from logfmt_logger import getLogger
 
-from application import tweakcn
 from application import store as store_module
 from application import uploads
 from api.problem import (
@@ -119,41 +116,6 @@ def refused(exc: HTTPException):
     if exc.code == 413 and request.endpoint == 'api.events.import_events':
         return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
     return problem(exc.code, exc.name, exc.description, TYPE_REFUSED)
-
-
-#: The theme stylesheet, computed on the first request. Per process, not per
-#: theme id: ``SB_TWEAKCN_THEME`` cannot change without a restart, so a process
-#: fetches at most once.
-_served: Optional[str] = None
-_serving = threading.Lock()
-
-
-@api_bp.get('/theme.css')
-def get_theme_css():
-    """The tweakcn theme ``SB_TWEAKCN_THEME`` names, over the bundled Atelier (#1130)."""
-    global _served
-    # ponytail: the first request waits on tweakcn (5 s per socket operation);
-    # a background warm-up at boot if a slow first paint ever shows.
-    with _serving:
-        if _served is None:
-            _served = _theme_css()
-    response = Response(_served, mimetype='text/css')
-    response.headers['Cache-Control'] = 'no-cache'
-    return response
-
-
-def _theme_css() -> str:
-    """The stylesheet body, logging once why the theme fell back."""
-    theme_id = current_app.config.get('TWEAKCN_THEME')
-    if not theme_id:
-        return '/* default theme */'
-    entry, reason = tweakcn.load(theme_id, current_app.config['TWEAKCN_CACHE_DIR'],
-                                 current_app.config['TWEAKCN_FETCH'])
-    if reason:
-        logger.warning("tweakcn theme %s: %s", theme_id, reason)
-    if entry is None:
-        return '/* default theme */'
-    return '\n'.join(tweakcn.font_imports(entry) + [tweakcn.render_css(entry)])
 
 
 __all__ = ['api_bp']

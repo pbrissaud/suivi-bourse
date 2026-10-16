@@ -1,4 +1,4 @@
-"""What the environment still says (store, port, log level, theme, the PIN's two), and the names it no longer says."""
+"""What the environment still says (store, port, log level, the PIN's two), and the names it no longer says."""
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
@@ -9,9 +9,6 @@ STORE_DIR = 'SB_STORE_DIR'
 WEB_PORT = 'SB_WEB_PORT'
 
 LOG_LEVEL = 'LOG_LEVEL'
-
-#: A tweakcn theme id laid over the bundled Atelier (#1130). Unset by default.
-THEME = 'SB_TWEAKCN_THEME'
 
 #: ``1`` clears the PIN, the session secret and the MCP token at boot (#1203).
 RESET_AUTH = 'SB_RESET_AUTH'
@@ -27,7 +24,6 @@ INVENTORY: Tuple[Tuple[str, str], ...] = (
     (LOG_LEVEL, DEFAULT_LOG_LEVEL),
     (STORE_DIR, DEFAULT_STORE_DIR),
     (WEB_PORT, str(DEFAULT_WEB_PORT)),
-    (THEME, ''),
     (RESET_AUTH, ''),
     (FORWARDED_ALLOW_IPS, ''),
 )
@@ -109,7 +105,7 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
 
 
 __all__ = [
-    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'THEME', 'RESET_AUTH',
+    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'RESET_AUTH',
     'FORWARDED_ALLOW_IPS',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',

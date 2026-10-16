@@ -129,6 +129,7 @@ export function defaultHandlers() {
       HttpResponse.json(await request.json()),
     ),
     http.delete(ROUTES.dashboardLayout, () => new HttpResponse(null, { status: 204 })),
+    http.get(ROUTES.theme, () => HttpResponse.json(null)),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window: a
     // handler serving one frozen payload would make the presets look like four

@@ -78,6 +78,7 @@ describe('the page', () => {
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
         'Général',
         'L’agent',
+        'Thème',
         'Accès',
         'Fiscalité',
       ]),
@@ -217,7 +218,9 @@ describe('the settings form', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
 
     await waitFor(() => expect(sent).toEqual({ regular_interval: '300' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('1 réglage enregistré.')
+    expect(await within(block('Général')).findByRole('status')).toHaveTextContent(
+      '1 réglage enregistré.',
+    )
   })
 })
 

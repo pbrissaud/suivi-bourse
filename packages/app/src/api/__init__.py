@@ -1,12 +1,10 @@
 """Flask application for SuiviBourse — the web half of a single process (#651)."""
-import os
 from pathlib import Path
 from typing import Optional
 
 from flask import Flask, abort, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 
-from application import boot_env
 from application import main
 from application import tweakcn
 from application import update_check
@@ -25,9 +23,6 @@ def create_app(runtime: main.Runtime) -> Flask:
 
     flask_app = Flask(__name__, static_folder=None)
     flask_app.config['MAX_CONTENT_LENGTH'] = uploads.MAX_BODY_BYTES
-    flask_app.config['TWEAKCN_THEME'] = boot_env.text(os.environ, boot_env.THEME)
-    flask_app.config['TWEAKCN_CACHE_DIR'] = boot_env.directory(
-        os.environ, boot_env.STORE_DIR, boot_env.DEFAULT_STORE_DIR) / 'theme'
     flask_app.config['TWEAKCN_FETCH'] = tweakcn.http_fetch
     flask_app.config['RELEASE_CHECKER'] = update_check.Checker(update_check.http_fetch)
     flask_app.register_blueprint(health_bp)

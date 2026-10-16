@@ -1,7 +1,7 @@
 /**
  * **What `index.css` holds, read off the file** (#1130).
  *
- * The theme is replaceable (`SB_TWEAKCN_THEME`), so nothing here asserts a
+ * The theme is replaceable (Settings › Thème, #1248), so nothing here asserts a
  * colour Atelier happens to carry. What stays is what holds whatever the theme:
  * the controls the browser paints are drawn from the tokens, DESIGN.md's type
  * ladder is the one stated, the build's entry loads nothing from a third party,
@@ -129,7 +129,7 @@ describe('what the theme must not bring with it', () => {
     // stylesheet already carries.
     const entry = fs.readFileSync(path.join(WEB_ROOT, 'index.html'), 'utf8')
     expect(entry).not.toMatch(/tweakcn/i)
-    // The theme `SB_TWEAKCN_THEME` names comes in same-origin, served by the app.
+    // The stored theme comes in same-origin, served by the app.
     expect(entry).toMatch(/<link rel="stylesheet" href="\/api\/theme\.css"/)
     for (const source of entry.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)) {
       expect(source[1], 'the entry loads only its own module').toMatch(/^\//)

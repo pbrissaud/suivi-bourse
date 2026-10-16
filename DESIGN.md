@@ -157,8 +157,10 @@ contrast.
 - A semantic token (`--gain`, `--loss`, `--price`, `--attention`, `--alloc-*`…) is
   always an alias of a standard shadcn token, never a value of its own
   (`lint/semantic-token-alias.grit`, #1130).
-- The theme is replaceable: `SB_TWEAKCN_THEME` names a tweakcn theme whose colours,
-  fonts, radius and shadows the server lays over Atelier. Unset, Atelier is served.
+- The theme is replaceable: its tokens are a JSON kept in the store and edited in
+  Settings › Thème, imported from tweakcn by id or pasted from
+  `tweakcn.com/r/themes/<id>`. The server lays its colours, fonts, radius and shadows
+  over Atelier; with nothing stored, Atelier is served.
 
 ## Typography
 
@@ -365,3 +367,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-16 | Tool calls are shadcn Trace lines, the raw call a Code Block | Chosen by the owner when shadcn shipped Trace and Code Block for agentic interfaces (October 2026): the chevron replaces the word "détail", a running call shimmers (not under `prefers-reduced-motion`), the panel opens with the collapsible's short slide, and the JSON is coloured by shiki (github-light/dark, loaded on the first opening). |
 | 2026-10-16 | An optional PIN behind one screen, off by default (#1203) | The app is reached on a local network by anyone who can reach the port; the PIN closes that door without a login page of accounts and passwords. One centred column rather than a card on a card, and the in-app 401 is a dialog over the page so a typed form survives it. |
 | 2026-10-16 | A job's failed pass colours its history bar (#1236) | The System page draws each job's last 24 hours, one bar an hour; telling a job that failed once from one failing since yesterday is the whole point, so the error owns `destructive` there, always doubled by a glyph. |
+| 2026-10-16 | The theme is a JSON in the store, edited in Settings (#1248) | Replaces `SB_TWEAKCN_THEME`: no restart to change it, tweakcn reached only on an explicit import, and pasting the JSON serves an instance with no way out. |
