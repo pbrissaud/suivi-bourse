@@ -1,19 +1,17 @@
-"""A tweakcn theme, laid over the bundled Atelier (#1130).
+"""A theme laid over the bundled Atelier (#1130, #1248).
 
-``SB_TWEAKCN_THEME`` names a theme on tweakcn; the server fetches its registry
-entry once, keeps the last good copy under the store, and serves its standard
-shadcn tokens as a stylesheet that outranks the bundle's ``:root`` and
-``.dark``. The app's semantic tokens are aliases of those standard ones, so the
-whole page follows.
+The theme is tweakcn's ``cssVars`` (``{theme?, light, dark}``), kept in the
+store and edited in Settings; tweakcn is reached only when the owner imports
+an id. Its standard shadcn tokens are served as a stylesheet that outranks the
+bundle's ``:root`` and ``.dark``. The app's semantic tokens are aliases of
+those standard ones, so the whole page follows.
 
-Pure but for the cache file: the fetcher is injected, ``http_fetch`` is the one
-the app passes.
+Pure: the fetcher is injected, ``http_fetch`` is the one the app passes.
 """
 import json
 import math
 import re
 import urllib.request
-from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
 
@@ -117,6 +115,68 @@ def font_imports(entry: dict) -> List[str]:
             f':wght@400;500;600;700&display=swap");' for name in families]
 
 
+class InvalidTheme(ValueError):
+    """A theme body the store will not keep; ``key`` names what is refused."""
+
+    def __init__(self, key: Optional[str], message: str):
+        super().__init__(message)
+        self.key = key
+
+
+class InvalidId(ValueError):
+    """A tweakcn id outside ``^[a-z0-9-]{1,64}$``: never sent anywhere."""
+
+
+class FetchFailed(Exception):
+    """tweakcn did not hand back a theme; ``reason`` says what happened."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+_GROUNDS = ('theme', 'light', 'dark')
+
+
+def normalize(css_vars: object) -> Dict[str, Dict[str, str]]:
+    """Keep what a theme may say, drop the rest, refuse what is not a theme.
+
+    Dropped: a key outside ``ALLOWED``, a value ``sanitize`` refuses, and a key
+    on one ground only and not in ``theme`` (``render_css`` would never emit
+    it). The exception is a light-only ``tracking-normal``, which tweakcn
+    writes there and nowhere else: it moves into ``theme``.
+    """
+    if not isinstance(css_vars, dict):
+        raise InvalidTheme(None, 'a theme is a JSON object')
+    for ground in ('light', 'dark'):
+        if not isinstance(css_vars.get(ground), dict):
+            raise InvalidTheme(ground, f"a theme has a {ground!r} object")
+    if not isinstance(css_vars.get('theme', {}), dict):
+        raise InvalidTheme('theme', "a theme's 'theme' is an object")
+    theme, light, dark = (_declarations(css_vars.get(ground) or {}) for ground in _GROUNDS)
+    if 'tracking-normal' in light.keys() - dark.keys() - theme.keys():
+        theme['tracking-normal'] = light.pop('tracking-normal')
+    shared = (light.keys() & dark.keys()) | theme.keys()
+    return {'theme': theme,
+            'light': {key: value for key, value in light.items() if key in shared},
+            'dark': {key: value for key, value in dark.items() if key in shared}}
+
+
+def validate(body: object) -> Dict[str, Dict[str, str]]:
+    """``normalize``, refusing by name the first key it would have dropped."""
+    kept = normalize(body)
+    if len(json.dumps(body)) > MAX_BYTES:
+        raise InvalidTheme(None, f'a theme is at most {MAX_BYTES} bytes')
+    for key in body:
+        if key not in kept:
+            raise InvalidTheme(key, f'a theme has no {key!r}')
+    for ground in _GROUNDS:
+        for key in body.get(ground) or {}:
+            if key not in kept[ground]:
+                raise InvalidTheme(key, f'{ground}: {key!r} is not a value a theme may set')
+    return kept
+
+
 def _valid(raw: bytes) -> Optional[dict]:
     try:
         entry = json.loads(raw)
@@ -132,35 +192,18 @@ def _valid(raw: bytes) -> Optional[dict]:
     return entry
 
 
-def load(theme_id: str, cache_dir: Path,
-         fetch: Callable[[str], bytes]) -> Tuple[Optional[dict], Optional[str]]:
-    """The theme entry and, when something went wrong, why. Never raises."""
+def fetch(theme_id: object, fetcher: Callable[[str], bytes]) -> dict:
+    """The ``cssVars`` of a tweakcn registry entry: the one outbound call, on click."""
     if not isinstance(theme_id, str) or not _ID.match(theme_id):
-        return None, 'invalid id'
-    cache = Path(cache_dir) / f'tweakcn-{theme_id}.json'
+        raise InvalidId(theme_id)
     try:
-        raw = fetch(URL.format(theme_id))
+        raw = fetcher(URL.format(theme_id))
     except Exception as exc:  # the fetcher is injected; anything it raises is a failed fetch
-        reason = f'fetch failed: {type(exc).__name__}'
-    else:
-        entry = _valid(raw)
-        if entry is not None:
-            try:
-                cache.parent.mkdir(parents=True, exist_ok=True)
-                tmp = cache.with_suffix('.tmp')
-                tmp.write_bytes(raw)
-                tmp.replace(cache)
-            except OSError:
-                pass
-            return entry, None
-        reason = 'invalid theme JSON'
-    try:
-        cached = _valid(cache.read_bytes())
-    except OSError:
-        cached = None
-    if cached is not None:
-        return cached, f'{reason}; served from cache'
-    return None, reason
+        raise FetchFailed(f'{type(exc).__name__}: {exc}') from exc
+    entry = _valid(raw)
+    if entry is None:
+        raise FetchFailed('invalid theme JSON')
+    return entry['cssVars']
 
 
 def http_fetch(url: str) -> bytes:
@@ -174,4 +217,6 @@ def http_fetch(url: str) -> bytes:
     return raw
 
 
-__all__ = ['STANDARD', 'ALLOWED', 'sanitize', 'render_css', 'font_imports', 'load', 'http_fetch']
+__all__ = ['STANDARD', 'ALLOWED', 'MAX_BYTES', 'sanitize', 'render_css', 'font_imports',
+           'InvalidTheme', 'InvalidId', 'FetchFailed', 'normalize', 'validate', 'fetch',
+           'http_fetch']

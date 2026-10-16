@@ -7,7 +7,7 @@
  * no page test.
  */
 
-import { get, ROUTES, remove, send } from '@/lib/api'
+import { forget, get, ROUTES, remove, send } from '@/lib/api'
 
 // ------------------------------------------------------------------------- //
 // The installation (#724)
@@ -156,6 +156,13 @@ interface PurgeResult {
   points_removed: number
 }
 
+/** A stored theme: tweakcn's `cssVars`, cleaned by the server (#1248). */
+export interface ThemeVars {
+  theme: Record<string, string>
+  light: Record<string, string>
+  dark: Record<string, string>
+}
+
 export const settingsApi = {
   config: () => get<ConfigResponse>(ROUTES.config),
   saveSettings: (values: Record<string, string | number | boolean>) =>
@@ -163,4 +170,9 @@ export const settingsApi = {
   store: () => get<StoreState>(ROUTES.store),
   jobsHistory: () => get<JobsHistory>(ROUTES.jobsHistory),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
+  theme: () => get<ThemeVars | null>(ROUTES.theme),
+  /** A bare theme is checked strictly; a pasted registry entry (`cssVars`) is cleaned. */
+  saveTheme: (body: unknown) => send<ThemeVars>(ROUTES.theme, 'PUT', body),
+  importTheme: (id: string) => send<ThemeVars>(ROUTES.themeImport, 'POST', { id }),
+  resetTheme: () => forget(ROUTES.theme),
 }

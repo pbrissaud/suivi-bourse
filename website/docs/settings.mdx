@@ -90,6 +90,22 @@ lengthens it. No interface can hide that, because the number in the form is the
 number in the formula. [How prices are collected](./how-prices-are-collected.mdx)
 has the rest of the back-off.
 
+## The theme
+
+The **Thème** card replaces the bundled theme (Atelier) with your own: colours,
+fonts, radius and shadows. Two ways to fill it from [tweakcn](https://tweakcn.com):
+
+- **Import** a theme by its id. This is the only moment the app contacts
+  tweakcn.com, and only when you press the button.
+- **Paste** the JSON served at `https://tweakcn.com/r/themes/<id>` under
+  *Modifier le JSON*, for an installation that cannot reach the internet. It
+  stores the same theme an import would.
+
+A key you leave out keeps Atelier's value; a key the app does not take is
+dropped from a pasted tweakcn entry and refused by name in JSON you wrote
+yourself. *Revenir à Atelier* forgets the stored theme. The page repaints on
+every change, without a reload.
+
 ## The agent {#agent}
 
 The agent is off until you turn it on. Pick a provider, give it a key (or
@@ -114,7 +130,7 @@ With Ollama on your own machine, nothing leaves it.
 
 ## What the container imposes
 
-Six names. This is the complete list of what the app reads from its
+Five names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
 | Variable | Default | What it decides |
@@ -122,7 +138,6 @@ environment; nothing else in it is consulted.
 | `SB_STORE_DIR` | `/data` | the directory the store lives in |
 | `SB_WEB_PORT` | `8080` | the socket the app is bound to |
 | `LOG_LEVEL` | `INFO` | how loudly the app logs |
-| `SB_TWEAKCN_THEME` | unset | a [tweakcn](https://tweakcn.com) theme id whose colours, fonts, radius and shadows replace the bundled theme; read once at start-up |
 | `SB_RESET_AUTH` | unset | `1` clears the access code, its sessions and the MCP token at start-up, and says so in the log at every start while it is set — remove it once you are back in |
 | `SB_FORWARDED_ALLOW_IPS` | unset | the reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed, comma-separated; none by default |
 

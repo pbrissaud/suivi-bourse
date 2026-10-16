@@ -75,6 +75,9 @@ const WRITE_ONLY_ROUTES = [
   // test answers the reader's own press, and its answer is a receipt (#1115).
   'agentKey',
   'agentTest',
+  // A tweakcn import answers the reader's own press; the stored theme is read
+  // through `theme` (#1248).
+  'themeImport',
   // A turn is the reader's question, and its answer streams into the thread
   // that asked it (#1117): a gesture, never a read a surface is drawn from.
   'agentChat',
