@@ -101,7 +101,15 @@ import type {
   ImportReceipt,
   LedgerEvent,
 } from '@/features/data/lib/api'
-import type { ConfigResponse, SettingDescription, StoreState } from '@/features/settings/lib/api'
+import type {
+  ConfigResponse,
+  JobPass,
+  JobSlot,
+  JobsHistory,
+  JobTrack,
+  SettingDescription,
+  StoreState,
+} from '@/features/settings/lib/api'
 import type {
   ChartWindow,
   Fundamentals,
@@ -1421,6 +1429,55 @@ export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
       total_value: 5766.22,
     },
     observed_at: '2026-03-02T11:00:00.000Z',
+    ...overrides,
+  }
+}
+
+/** The 24 hours ending at {@link NOW}'s hour, the oldest first, all empty. */
+export function someSlots(overrides: Record<number, Partial<JobSlot>> = {}): JobSlot[] {
+  const current = Date.parse(NOW)
+  return Array.from({ length: 24 }, (_, i) => ({
+    hour: new Date(current - (23 - i) * 3_600_000).toISOString(),
+    passes: 0,
+    errors: 0,
+    attentions: 0,
+    idles: 0,
+    duration: 0,
+    last_error: null,
+    last_error_at: null,
+    ...overrides[i],
+  }))
+}
+
+export function aJobPass(overrides: Partial<JobPass> = {}): JobPass {
+  return {
+    at: NOW,
+    duration: 1.2,
+    outcome: 'ok',
+    error: null,
+    lines: [],
+    overflow: 0,
+    ...overrides,
+  }
+}
+
+/** One job whose current hour has one good pass. */
+export function aJobTrack(overrides: Partial<JobTrack> = {}): JobTrack {
+  return {
+    slots: someSlots({ 23: { passes: 1, duration: 1.2 } }),
+    passes: [aJobPass()],
+    last: aJobPass(),
+    ...overrides,
+  }
+}
+
+export function aJobsHistory(overrides: Partial<JobsHistory> = {}): JobsHistory {
+  return {
+    now: NOW,
+    started: '2026-03-02T08:00:00.000Z',
+    jobs: { backfill: aJobTrack(), performance: aJobTrack(), ingestion: aJobTrack() },
+    scrape: { AAPL: aJobTrack() },
+    scrape_recent: [aJobPass({ symbol: 'AAPL' })],
     ...overrides,
   }
 }

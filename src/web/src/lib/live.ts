@@ -23,6 +23,9 @@ export const LIVE_REFRESH_MS = 60_000
 
 export const LIVE_KEYS = [
   'health',
+  // Beside the health it explains (#1236): a strip that stood still under a
+  // dot that moved would contradict it.
+  'jobs-history',
   'runtime',
   'positions',
   'portfolio-totals',
