@@ -5,10 +5,11 @@
 never shows up on the settings page as a value to type in.
 
 **The server knows the shape, not the cards.** The registry of cards is the
-front's (``src/web/src/lib/dashboardBlocks.ts``): the Docker build keeps the
-two halves apart, and a card the front does not know is dropped by its
-``normalizeLayout`` on the way back in. So an unknown id is stored as sent,
-and what is refused here is a body that is not a layout at all.
+front's (``src/web/src/features/dashboard/lib/dashboardBlocks.ts``): the
+Docker build keeps the two halves apart, and a card the front does not know
+is dropped by its ``normalizeLayout`` on the way back in. So an unknown id is
+stored as sent, and what is refused here is a body that is not a layout at
+all.
 """
 import json
 from typing import Any, Optional

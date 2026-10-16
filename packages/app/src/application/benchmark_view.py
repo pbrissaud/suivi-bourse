@@ -72,9 +72,25 @@ NO_REFERENCE = 'no_reference'
 #: A reference is named but its history is still being fetched. **No figure.**
 REBUILDING = 'rebuilding'
 
-#: Named, terminal, and still nothing to compare — no events, no account with a
-#: written day inside the fund's own history.
+#: Named, terminal, and still nothing to compare. The payload says why in
+#: `reason`, because the four causes call for four different sentences and only
+#: one of them is an empty ledger (#1207).
 NOTHING_TO_COMPARE = 'nothing_to_compare'
+
+#: No event at all: there is no window to compare over.
+NO_EVENTS = 'no_events'
+
+#: Events, and no account of the perimeter has a written day yet — the perf
+#: pass has not run since they were recorded.
+NOT_COMPUTED = 'not_computed'
+
+#: Written days, and none on which an account held securities while the fund
+#: was quoted: the comparison is about invested money, not cash.
+NOTHING_HELD = 'nothing_held'
+
+#: A seed day — one account's, or the whole portfolio's — carries a close with
+#: no exchange rate yet.
+NO_RATE_ON_SEED = 'no_rate_on_seed'
 
 #: Named and quoted, but this install has never established the reference's
 #: split history — a store written before #760 that had already fetched it.
@@ -118,7 +134,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     # than an empty state that names what is missing.
     window = snapshot.tracked_windows(symbol).get(symbol)
     if not window:
-        return {**head, 'state': NOTHING_TO_COMPARE}
+        return {**head, 'state': NOTHING_TO_COMPARE, 'reason': NO_EVENTS}
 
     if symbol not in quotes.terminal_symbols(store, {symbol: window}, now):
         return {**head, 'state': REBUILDING,
@@ -141,9 +157,9 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': SPLITS_UNKNOWN,
                 'rebuild': _rebuild(store, symbol, offered, now)}
 
-    replayed, opened, merged = _by_account(store, snapshot, prices, symbol)
+    replayed, opened, merged, why = _by_account(store, snapshot, prices, symbol)
     if not replayed:
-        return {**head, 'state': NOTHING_TO_COMPARE}
+        return {**head, 'state': NOTHING_TO_COMPARE, 'reason': why}
 
     rows = _rows(replayed)
     aggregate = _aggregate(replayed, merged, opened, min(prices))
@@ -151,7 +167,8 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         # The accounts replayed one by one and the whole portfolio did not —
         # its seed fell on a day with no rate. No headline figure can be
         # stated; the rows travel with the state, because each of them can.
-        return {**head, 'state': NOTHING_TO_COMPARE, 'per_account': rows}
+        return {**head, 'state': NOTHING_TO_COMPARE,
+                'reason': NO_RATE_ON_SEED, 'per_account': rows}
 
     return {**head, 'state': READY, 'per_account': rows, **aggregate}
 
@@ -198,12 +215,14 @@ def _rebuild(store, symbol: str, offered, now: datetime) -> Dict[str, Any]:
 
 
 def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
-        Tuple[Dict[str, Any], Dict[str, date], Any]):
+        Tuple[Dict[str, Any], Dict[str, date], Any, str]):
     """One replay per account over its own window, and one of them all.
 
     The per-account replays are #1014's: each account from its **own** first
     day, which is what :func:`_rows` publishes. The third value is the whole
-    portfolio's replay, which is what the head states.
+    portfolio's replay, which is what the head states. The fourth is why
+    nothing replayed, read only when nothing did: no account written yet, a
+    seed day waiting on its rate, or no day with securities held (#1207).
     """
     written = _written_days(store)
     quoted_from = min(prices)
@@ -217,10 +236,12 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
 
     replayed: Dict[str, Any] = {}
     materials: Dict[str, Any] = {}
+    computed = awaiting_rate = False
     for account in _perimeter(store, snapshot):
         days = written.get(account)
         if not days:
             continue
+        computed = True
 
         # **A grant nobody priced is the owner's edge, not a gap to close.** It
         # enters `invested_flows` at `0.0` — nothing was paid for it, which is
@@ -249,8 +270,7 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
                        if day >= quoted_from and (value or 0) > 0), None)
         # No day at all the account held securities while the fund was quoted:
         # there is no comparison to make, not a short one. It leaves the
-        # perimeter unnamed, because it never had a comparison to lose. Naming the causes the empty state currently lumps together is
-        # #1025's own third point and its own ticket.
+        # perimeter unnamed, because it never had a comparison to lose.
         if seeded is None:
             continue
         seed_day, seed = seeded
@@ -267,16 +287,20 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
         result = counterfactual.replay(
             window, prices, splits, flows, seed, unconverted)
         if result.first_day is None:
+            awaiting_rate = awaiting_rate or result.ended == counterfactual.AWAITING_RATE
             continue
         replayed[account] = (result, dict(days))
         materials[account] = (seed_day, seed, window[1], flows)
 
-    # The third value is the first day each replayed account was **written**,
+    # The second value is the first day each replayed account was **written**,
     # before any seeding: it is what tells who truncated the period, and the
     # wrong answer there names a cause the reader can go and check.
     merged = _merged(materials, prices, splits, unconverted)
+    why = (NOT_COMPUTED if not computed
+           else NO_RATE_ON_SEED if awaiting_rate else NOTHING_HELD)
     return (replayed,
-            {account: written[account][0][0] for account in replayed}, merged)
+            {account: written[account][0][0] for account in replayed}, merged,
+            why)
 
 
 def _perimeter(store, snapshot) -> List[str]:
@@ -500,4 +524,5 @@ def _series(result, accounts: Dict[str, Tuple[Dict[date, Any], date]]
 
 
 __all__ = ['comparison', 'NO_REFERENCE', 'REBUILDING', 'NOTHING_TO_COMPARE',
-           'SPLITS_UNKNOWN', 'READY']
+           'SPLITS_UNKNOWN', 'READY', 'NO_EVENTS', 'NOT_COMPUTED',
+           'NOTHING_HELD', 'NO_RATE_ON_SEED']

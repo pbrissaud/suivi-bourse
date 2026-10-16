@@ -36,7 +36,6 @@
  *    has a complete, correct answer over a shorter window; nothing is missing,
  *    so neither the em dash nor an empty state applies.
  */
-import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { EmptyState } from '@/components/EmptyState'
@@ -46,9 +45,10 @@ import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
-import { BenchmarkChart } from '@/components/benchmark/BenchmarkChart'
-import { ReferenceRebuild } from '@/components/benchmark/ReferenceRebuild'
-import { ReferenceSelect } from '@/components/benchmark/ReferenceSelect'
+import { BenchmarkChart } from '@/features/benchmark/components/BenchmarkChart'
+import { NothingToCompare } from '@/features/benchmark/components/NothingToCompare'
+import { ReferenceRebuild } from '@/features/benchmark/components/ReferenceRebuild'
+import { ReferenceSelect } from '@/features/benchmark/components/ReferenceSelect'
 import { Card } from '@/components/ui/card'
 import {
   Table,
@@ -58,7 +58,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { api, type BenchmarkResponse } from '@/lib/api'
+import { benchmarkApi, type BenchmarkResponse } from '@/features/benchmark/lib/api'
+import { settingsApi } from '@/features/settings/lib/api'
+import { api } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -69,8 +71,8 @@ import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 export default function BenchmarkPage() {
   const { t } = useI18n()
 
-  const comparison = useQuery({ queryKey: ['benchmark'], queryFn: api.benchmark })
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const comparison = useQuery({ queryKey: ['benchmark'], queryFn: benchmarkApi.benchmark })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   // The comparison's own curve **is** `account_metrics` (`benchmark_view`,
   // #1018), so this page serves the perf job's figures like the two others —
   // and it is the one read that says whether the last pass wrote them. Same
@@ -146,15 +148,7 @@ export default function BenchmarkPage() {
   if (data.state === 'nothing_to_compare') {
     return (
       <div className="space-y-6">
-        <EmptyState
-          title={t('benchmark.empty.noEvents.title')}
-          description={t('benchmark.empty.noEvents.body')}
-          action={
-            <Link to="/ledger" className="font-medium underline underline-offset-4">
-              {t('benchmark.empty.noEvents.link')}
-            </Link>
-          }
-        />
+        <NothingToCompare reason={data.reason} />
         <PerAccount data={data} currency={currency} />
         {controls}
       </div>

@@ -34,12 +34,14 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { TYPE_LABEL } from '@/components/data/LedgerTable'
-import { api } from '@/lib/api'
-import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/lib/accounts'
+import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
+import { accountsApi } from '@/features/accounts/lib/api'
+import { dataApi } from '@/features/data/lib/api'
+import { sharesApi } from '@/features/shares/lib/api'
+import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/features/accounts/lib/accounts'
 import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { identityOf, ledgerSearchOf, matchesQuery } from '@/lib/ledger'
+import { identityOf, ledgerSearchOf, matchesQuery } from '@/features/data/lib/ledger'
 import { oneFailure, readConditions } from '@/lib/status'
 import {
   accountsMatching,
@@ -90,9 +92,17 @@ export function Palette() {
   // **The three reads, armed by the opening.** The query keys are the pages'
   // own, so opening on a page that has already read the positions costs nothing
   // at all — and closing leaves the answers in the cache for the next opening.
-  const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions, enabled: open })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled: open })
-  const events = useQuery({ queryKey: ['events'], queryFn: api.events, enabled: open })
+  const positions = useQuery({
+    queryKey: ['positions'],
+    queryFn: sharesApi.positions,
+    enabled: open,
+  })
+  const accounts = useQuery({
+    queryKey: ['accounts'],
+    queryFn: accountsApi.accounts,
+    enabled: open,
+  })
+  const events = useQuery({ queryKey: ['events'], queryFn: dataApi.events, enabled: open })
 
   function leave(run: () => void) {
     setOpen(false)

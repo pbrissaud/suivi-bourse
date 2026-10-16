@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 import csv
 import io
 import json
+import re
 
 import openpyxl
 import pytest
@@ -438,7 +439,7 @@ FEE_EVENTS = (
 
 
 def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
-    """The whole portfolio in one query, spelled as `lib/api.ts` reads it.
+    """The whole portfolio in one query, spelled as the front reads it.
 
     The two market objects are the shape that carries a distinction a single
     nullable number cannot: `price` is the quote **in its own currency**, and
@@ -3273,7 +3274,7 @@ def test_a_type_is_read_however_it_is_spelled(tmp_path):
     """``?type=buy`` is the same question as ``?type=BUY``.
 
     The write path already reads a type case-insensitively
-    (``api.api._event_from_body``), and two spellings of one rule eventually
+    (``api.events._event_from_body``), and two spellings of one rule eventually
     disagree — here the disagreement would be a ``422`` on a ``curl`` that works
     against every other route.
     """
@@ -5439,6 +5440,48 @@ def test_the_guard_is_the_blueprint_s_and_not_the_upload_s(tmp_path):
     # And nothing moved: the ledger it was handed still holds its one line.
     assert opened.query('SELECT symbol FROM event') == [('AAPL',)]
     assert opened.setting('base_currency') is None
+
+
+_WRITES = sorted(
+    (rule.rule, method)
+    for rule in create_app(None).url_map.iter_rules()
+    if rule.rule.startswith('/api/')
+    for method in rule.methods - {'GET', 'HEAD', 'OPTIONS'})
+
+
+@pytest.mark.parametrize('path, method', _WRITES,
+                         ids=[f'{method} {path}' for path, method in _WRITES])
+def test_every_mounted_write_refuses_a_foreign_origin(path, method):
+    """The list above, read off the URL map instead of remembered (#1200).
+
+    The domains are blueprints nested under ``api_bp``, and nesting is what
+    hands each of them the guard: a blueprint registered beside it instead
+    would mount its routes under ``/api`` with no guard at all, and this test
+    is where that shows.
+    """
+    url = re.sub(r'<(?:[^:>]+:)?[^>]+>', 'x', path)
+
+    response = create_app(None).test_client().open(
+        url, method=method, headers={'Origin': FOREIGN})
+
+    assert response.status_code == 403
+    assert response.get_json()['type'] == '/problems/foreign-origin'
+
+
+def test_every_api_route_hangs_under_api_bp():
+    """What the test above cannot see: a read-only domain mounted beside ``api_bp``.
+
+    It has no write to refuse, so only its lost problem+json handler would
+    tell, and that only on the day it fails. The endpoint name says it now. And
+    an empty ``_WRITES`` would make the test above a skip, not a failure.
+    """
+    endpoints = {rule.rule: rule.endpoint
+                 for rule in create_app(None).url_map.iter_rules()
+                 if rule.rule.startswith('/api/')}
+
+    assert ('/api/events', 'POST') in _WRITES
+    assert [rule for rule, endpoint in endpoints.items()
+            if not endpoint.startswith('api.')] == []
 
 
 def test_a_foreign_origin_may_still_read(tmp_path):
