@@ -19,7 +19,7 @@
  * its merits. A ledger emptied after six months reopens nothing, because
  * nothing about this screen is derived from the data it is about to collect.
  */
-import type { SettingDescription } from '@/lib/api'
+import type { SettingDescription } from '@/features/settings/lib/api'
 import { browserStorage, rememberPreference } from '@/lib/storage'
 
 /** Same shape as the theme and language keys, deliberately. */

@@ -102,8 +102,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { api, type AccountDraft, type ConfigResponse } from '@/lib/api'
-import { DEFAULT_ACCOUNT_LABEL, declaredLabel } from '@/lib/accounts'
+import { type AccountDraft, accountsApi } from '@/features/accounts/lib/api'
+import { type ConfigResponse, settingsApi } from '@/features/settings/lib/api'
+import { api } from '@/lib/api'
+import { DEFAULT_ACCOUNT_LABEL, declaredLabel } from '@/features/accounts/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
@@ -144,7 +146,7 @@ export function FirstRun() {
   const [mark, setMark] = useState<FirstRunMark | null>(() => readFirstRunMark())
   const [passage, setPassage] = useState<Passage>(PASSAGES[0])
 
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   const stands = firstRunStands({ settings: config.data?.settings, mark })
 
   // **The walk is latched, and it has to be.** The predicate is what *arms* the
@@ -161,7 +163,11 @@ export function FirstRun() {
   // read from the top of the walk rather than on arrival at their own passage,
   // which is what makes them there to be named when the reader gets to them.
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime, enabled: open })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled: open })
+  const accounts = useQuery({
+    queryKey: ['accounts'],
+    queryFn: accountsApi.accounts,
+    enabled: open,
+  })
 
   // A suggestion, never a default: the field opens on it, the question is still
   // unanswered, and what it buys is one click instead of a scroll. The
@@ -197,7 +203,7 @@ export function FirstRun() {
   }
 
   const save = useMutation({
-    mutationFn: (currency: string) => api.saveSettings({ [CURRENCY_KEY]: currency }),
+    mutationFn: (currency: string) => settingsApi.saveSettings({ [CURRENCY_KEY]: currency }),
     onSuccess: (answer, currency) => {
       const { message, values } = receiptMessage({ kind: 'currency.saved', currency })
       toast.success(t(message, values))
@@ -555,7 +561,7 @@ function DeclareAccount() {
   const [errors, setErrors] = useState<Partial<Record<'id', MessageKey>>>({})
 
   const write = useMutation({
-    mutationFn: (body: AccountDraft) => api.createAccount(body),
+    mutationFn: (body: AccountDraft) => accountsApi.createAccount(body),
     onSuccess: () => {
       // A declaration moves what an event file is allowed to say and what every
       // page groups by, so the whole cache goes rather than a list of keys that

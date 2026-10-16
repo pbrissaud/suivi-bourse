@@ -85,7 +85,7 @@ export function ShareBar({ share, fill, size = 'line', scale = 1, className }: S
   if (share === null) return null
   // Floored and capped **here**, so that no call site has to know why: a
   // browser drops `width: -12.5%` without a word, and the bars beside it then
-  // read as a whole they no longer divide (`lib/accounts.ts` met the same edge
+  // read as a whole they no longer divide (`features/accounts/lib/accounts.ts` met the same edge
   // on the stacked bar and answers it by refusing the share outright).
   const percent = Math.min(Math.max((share / (scale || 1)) * 100, 0), 100)
   return (

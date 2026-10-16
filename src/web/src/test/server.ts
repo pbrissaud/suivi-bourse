@@ -15,14 +15,10 @@
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 
-import {
-  ROUTES,
-  type Account,
-  type AccountDraft,
-  type ChartWindow,
-  type EventDraft,
-  type TaxationModelDraft,
-} from '@/lib/api'
+import type { Account, AccountDraft, TaxationModelDraft } from '@/features/accounts/lib/api'
+import type { EventDraft } from '@/features/data/lib/api'
+import type { ChartWindow } from '@/features/shares/lib/api'
+import { ROUTES } from '@/lib/api'
 import {
   anAccount,
   anAccountHistory,

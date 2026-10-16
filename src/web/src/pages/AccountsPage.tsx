@@ -35,9 +35,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
-import { AccountDetail } from '@/components/accounts/AccountDetail'
-import { AccountForm } from '@/components/accounts/AccountForm'
-import { AccountsChips, AccountsRail } from '@/components/accounts/AccountsRail'
+import { AccountDetail } from '@/features/accounts/components/AccountDetail'
+import { AccountForm } from '@/features/accounts/components/AccountForm'
+import { AccountsChips, AccountsRail } from '@/features/accounts/components/AccountsRail'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
@@ -49,9 +49,14 @@ import {
   reassignmentOf,
   removalOf,
   DEFAULT_ACCOUNT_ID,
-} from '@/lib/accounts'
-import { accountOf } from '@/lib/ledger'
-import { api, type Account, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
+} from '@/features/accounts/lib/accounts'
+import { accountOf } from '@/features/data/lib/ledger'
+import { type Account, accountsApi, type PerfPoint } from '@/features/accounts/lib/api'
+import { dashboardApi } from '@/features/dashboard/lib/api'
+import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
+import { settingsApi } from '@/features/settings/lib/api'
+import { type Position, sharesApi } from '@/features/shares/lib/api'
+import { api } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
@@ -76,14 +81,14 @@ export default function AccountsPage() {
     void navigate({ to: '/accounts', search: { account }, replace: true })
   }, [open, account, navigate])
 
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
+  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: dashboardApi.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
-  const events = useQuery({ queryKey: ['events'], queryFn: api.events })
+  const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
+  const events = useQuery({ queryKey: ['events'], queryFn: dataApi.events })
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   // **The reading, and not the inventory** (#829). The panel asks
   // what is left to act on and drops an advisory the owner has put to sleep;
   // the chip beside the figure asks what is *true of this account*, and thirty
@@ -107,7 +112,7 @@ export default function AccountsPage() {
   // account's own opening and only the series says when that was.
   const history = useQuery({
     queryKey: ['account-history', opened?.id],
-    queryFn: () => api.accountHistory(opened!.id),
+    queryFn: () => accountsApi.accountHistory(opened!.id),
     enabled: opened !== null,
   })
 

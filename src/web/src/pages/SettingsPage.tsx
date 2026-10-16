@@ -48,14 +48,18 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
-import { AgentBlock } from '@/components/settings/AgentBlock'
-import { BuildBlock } from '@/components/settings/BuildBlock'
-import { DialsBlock } from '@/components/settings/DialsBlock'
-import { EnvironmentBlock } from '@/components/settings/EnvironmentBlock'
-import { JobsBlock } from '@/components/settings/JobsBlock'
-import { OrphansBlock } from '@/components/settings/OrphansBlock'
-import { RebuildBlock } from '@/components/settings/RebuildBlock'
-import { StoreBlock } from '@/components/settings/StoreBlock'
+import { AgentBlock } from '@/features/settings/components/AgentBlock'
+import { BuildBlock } from '@/features/settings/components/BuildBlock'
+import { DialsBlock } from '@/features/settings/components/DialsBlock'
+import { EnvironmentBlock } from '@/features/settings/components/EnvironmentBlock'
+import { JobsBlock } from '@/features/settings/components/JobsBlock'
+import { OrphansBlock } from '@/features/settings/components/OrphansBlock'
+import { RebuildBlock } from '@/features/settings/components/RebuildBlock'
+import { StoreBlock } from '@/features/settings/components/StoreBlock'
+import { accountsApi } from '@/features/accounts/lib/api'
+import { agentApi } from '@/features/agent/lib/api'
+import { dataApi } from '@/features/data/lib/api'
+import { settingsApi } from '@/features/settings/lib/api'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
@@ -79,10 +83,10 @@ export default function SettingsPage() {
   usePageHeading(t('page.settings'))
 
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
-  const store = useQuery({ queryKey: ['store'], queryFn: api.store })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
+  const store = useQuery({ queryKey: ['store'], queryFn: settingsApi.store })
   // The agent's provider and model, and of its key only the end (#1115).
-  const agent = useQuery({ queryKey: ['agent-config'], queryFn: api.agentConfig })
+  const agent = useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig })
   // **The same read the bell makes**, under the same key: the panel's health
   // card is one word and this page is that word developed, so a second query
   // would be a second observation of one installation — and the two would
@@ -92,8 +96,8 @@ export default function SettingsPage() {
   // the ledger gives the bar its denominator and the declaration gives the
   // lagging account its name, and an absent one removes a bar or a name rather
   // than falsifying the sentence — so neither is waited for.
-  const events = useQuery({ queryKey: ['events'], queryFn: api.events })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  const events = useQuery({ queryKey: ['events'], queryFn: dataApi.events })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
   const firstEvent = (events.data ?? []).reduce<string | null>(
     (oldest, event) =>
       event.date !== null && (oldest === null || event.date < oldest) ? event.date : oldest,

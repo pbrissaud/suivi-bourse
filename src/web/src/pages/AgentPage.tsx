@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { AgentChat, useThreadParam } from '@/components/agent/AgentChat'
-import { useAgentChat } from '@/lib/agentChatProvider'
+import { AgentChat, useThreadParam } from '@/features/agent/components/AgentChat'
+import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
 import { useT } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 
@@ -51,8 +51,12 @@ export default function AgentPage() {
 
   // The content area's height, less the header (56 px) and the gutter above
   // and below: the conversation scrolls inside, the composer stays in view.
+  // From 1 024 px the gutter is given back, so the threads' rail meets the
+  // navigation and runs the page's height: `lg:-m-7` undoes the shell's
+  // `lg:p-7` (Shell.tsx) and 3.5rem is the header's `h-14`. Change either
+  // there and this line with it.
   return (
-    <div className="h-[calc(100svh-5.25rem)] md:h-[calc(100svh-6rem)] lg:h-[calc(100svh-7rem)]">
+    <div className="h-[calc(100svh-5.25rem)] md:h-[calc(100svh-6rem)] lg:-m-7 lg:h-[calc(100svh-3.5rem)]">
       <AgentChat wide={wide} />
     </div>
   )

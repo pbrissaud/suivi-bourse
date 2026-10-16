@@ -17,7 +17,7 @@
  *  - **`/` is the dashboard unconditionally**, zero events included: a bookmark
  *    valid yesterday is valid tomorrow, and a redirection conditioned on data
  *    is how an app takes its reader somewhere they did not ask for.
- *  - **The four states are one decision** (`lib/dashboard.ts`), not a
+ *  - **The four states are one decision** (`features/dashboard/lib/dashboard.ts`), not a
  *    `?.length` per block: *no events* is a sentence and a link, while *events
  *    and nothing held* is an ordinary page whose blocks each say why they are
  *    empty.
@@ -62,29 +62,35 @@ import { useQuery } from '@tanstack/react-query'
 
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
-import { AllocationCard, allocationRenderState } from '@/components/dashboard/Allocation'
-import { DashboardGrid, type GridBlock } from '@/components/dashboard/DashboardGrid'
-import { GainBreakdown, gainBreakdownRenderState } from '@/components/dashboard/GainBreakdown'
-import { DashboardHead } from '@/components/dashboard/Head'
-import { HeroChart } from '@/components/dashboard/HeroChart'
+import { AllocationCard, allocationRenderState } from '@/features/dashboard/components/Allocation'
+import { DashboardGrid, type GridBlock } from '@/features/dashboard/components/DashboardGrid'
+import {
+  GainBreakdown,
+  gainBreakdownRenderState,
+} from '@/features/dashboard/components/GainBreakdown'
+import { DashboardHead } from '@/features/dashboard/components/Head'
+import { HeroChart } from '@/features/dashboard/components/HeroChart'
 import {
   InvestmentRhythm,
   investmentRhythmRenderState,
-} from '@/components/dashboard/InvestmentRhythm'
-import { Movers, moversRenderState } from '@/components/dashboard/Movers'
+} from '@/features/dashboard/components/InvestmentRhythm'
+import { Movers, moversRenderState } from '@/features/dashboard/components/Movers'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
+import { dashboardApi } from '@/features/dashboard/lib/api'
+import { settingsApi } from '@/features/settings/lib/api'
+import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
-import type { BlockId } from '@/lib/dashboardBlocks'
+import type { BlockId } from '@/features/dashboard/lib/dashboardBlocks'
 import {
   DEFAULT_DASHBOARD_RANGE,
   dashboardState,
   hasCashLedger,
   type DashboardRange,
-} from '@/lib/dashboard'
+} from '@/features/dashboard/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
-import { buildShareRows } from '@/lib/shares'
+import { buildShareRows } from '@/features/shares/lib/shares'
 import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 import { usePageHeading } from '@/lib/pageHeading'
 
@@ -94,12 +100,12 @@ export default function DashboardPage() {
 
   const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
 
-  const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
-  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
+  const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
+  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: dashboardApi.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
-  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
 
   // **The two reads the page is made of, and them alone.** A block's own read
   // failing removes that block and is named **by that block**, in the slot the
@@ -119,12 +125,12 @@ export default function DashboardPage() {
   const ledger = hasCashLedger(totals.data?.totals ?? null)
   const perf = useQuery({
     queryKey: ['portfolio-totals-history'],
-    queryFn: api.portfolioTotalsHistory,
+    queryFn: dashboardApi.portfolioTotalsHistory,
     enabled: state === 'portfolio' && ledger,
   })
   const valuation = useQuery({
     queryKey: ['positions-history'],
-    queryFn: api.positionsHistory,
+    queryFn: dashboardApi.positionsHistory,
     enabled: state === 'portfolio' && !ledger,
   })
 
@@ -144,7 +150,7 @@ export default function DashboardPage() {
   // page, which does not want the second read, does not pay for it.
   const movers = useQuery({
     queryKey: ['movers'],
-    queryFn: api.movers,
+    queryFn: dashboardApi.movers,
     enabled: state === 'portfolio',
   })
 
@@ -155,14 +161,14 @@ export default function DashboardPage() {
   // and a read nothing renders is a request nobody asked for.
   const rhythm = useQuery({
     queryKey: ['investment-rhythm'],
-    queryFn: api.investmentRhythm,
+    queryFn: dashboardApi.investmentRhythm,
     enabled: state === 'portfolio',
   })
 
   // The grid's own read, started here with the page's others so it does not
   // wait for the page to reach `portfolio` before leaving: same key as
   // `DashboardGrid`'s, so it is one request.
-  useQuery({ queryKey: ['dashboard-layout'], queryFn: api.dashboardLayout })
+  useQuery({ queryKey: ['dashboard-layout'], queryFn: dashboardApi.dashboardLayout })
   // While the grid is being arranged, the hero is frozen too (12B).
   const [arranging, setArranging] = useState(false)
 

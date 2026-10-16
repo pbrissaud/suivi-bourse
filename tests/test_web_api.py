@@ -439,7 +439,7 @@ FEE_EVENTS = (
 
 
 def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
-    """The whole portfolio in one query, spelled as `lib/api.ts` reads it.
+    """The whole portfolio in one query, spelled as the front reads it.
 
     The two market objects are the shape that carries a distinction a single
     nullable number cannot: `price` is the quote **in its own currency**, and

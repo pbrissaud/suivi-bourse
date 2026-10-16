@@ -15,9 +15,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 
-import { Ledger, type LedgerFocus } from '@/components/data/Ledger'
+import { Ledger, type LedgerFocus } from '@/features/data/components/Ledger'
 import { useI18n } from '@/lib/i18n'
-import { filtersFromSearch } from '@/lib/ledger'
+import { filtersFromSearch } from '@/features/data/lib/ledger'
 import { usePageHeading } from '@/lib/pageHeading'
 
 export default function DataPage() {
