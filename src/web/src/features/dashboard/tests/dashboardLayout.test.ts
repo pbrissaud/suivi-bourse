@@ -47,12 +47,13 @@ const ids = (placements: readonly Placement<string>[] | null) =>
 const p = (id: Id, width: 'half' | 'full', hidden = false): Placement<Id> => ({ id, width, hidden })
 
 describe('the registry', () => {
-  it('lays the gain and the rhythm side by side, then the movers across the full width', () => {
+  it('lays the gain and the rhythm side by side, then the movers across the full width, the comparison hidden', () => {
     expect(defaultLayout()).toEqual([
       { id: 'gain-breakdown', width: 'half', hidden: false },
       { id: 'rhythm', width: 'half', hidden: false },
       { id: 'movers', width: 'full', hidden: false },
       { id: 'allocation', width: 'half', hidden: true },
+      { id: 'benchmark', width: 'half', hidden: true },
     ])
   })
 
@@ -120,8 +121,8 @@ describe('newBlocks', () => {
     expect(newBlocks({ version: 1, blocks: [{ id: 'n', hidden: true }] }, REGISTRY)).toEqual([])
   })
 
-  it('names the allocation in the shipped registry, the first card to arrive later (#1206)', () => {
-    expect(newBlocks(null)).toEqual(['allocation'])
+  it('names the two cards that arrived later in the shipped registry (#1206, #1205)', () => {
+    expect(newBlocks(null)).toEqual(['allocation', 'benchmark'])
   })
 })
 

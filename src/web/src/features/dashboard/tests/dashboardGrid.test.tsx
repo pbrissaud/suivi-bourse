@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DashboardLayout } from '@/features/dashboard/lib/api'
 import { ROUTES } from '@/lib/api'
-import { aMover, aMoversPayload, aPosition, aPositionsPayload } from '@/test/factories'
+import { aBenchmark, aMover, aMoversPayload, aPosition, aPositionsPayload } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -60,15 +60,16 @@ async function openMenu(user: ReturnType<typeof renderApp>['user'], card: string
 afterEach(() => setViewportWidth(1024))
 
 /**
- * The default layout once saved: the allocation (#1206) arrived hidden and a
- * save wrote it in, so nothing is *Nouveau* and a « Terminé » with no change
- * has nothing to write.
+ * The default layout once saved: the allocation (#1206) and the comparison
+ * (#1205) arrived hidden and a save wrote them in, so nothing is *Nouveau* and
+ * a « Terminé » with no change has nothing to write.
  */
 const SEEN = [
   { id: 'gain-breakdown', width: 'half', hidden: false },
   { id: 'rhythm', width: 'half', hidden: false },
   { id: 'movers', width: 'full', hidden: false },
   { id: 'allocation', width: 'half', hidden: true },
+  { id: 'benchmark', width: 'half', hidden: true },
 ] as const satisfies DashboardLayout['blocks']
 
 describe('reading mode', () => {
@@ -243,7 +244,8 @@ describe('edit mode', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Masquer' }))
 
     const hidden = screen.getByRole('region', { name: 'Cartes masquées' })
-    expect(within(hidden).getByText('Rythme d’investissement')).toBeInTheDocument()
+    const row = () => within(hidden).queryByText('Rythme d’investissement')?.closest('li')
+    expect(row()).toBeInTheDocument()
     expect(await screen.findByText('Rythme d’investissement masquée')).toBeInTheDocument()
     // The gain is alone on its row now and half-only: the other half is free.
     expect(screen.getByText('Place libre')).toBeInTheDocument()
@@ -271,8 +273,9 @@ describe('edit mode', () => {
           { id: 'movers', width: 'full', hidden: false },
           { id: 'gain-breakdown', width: 'half', hidden: false },
           { id: 'rhythm', width: 'half', hidden: false },
-          // Written in hidden: saving is what ends its *Nouveau* (18A).
+          // Written in hidden: saving is what ends their *Nouveau* (18A).
           { id: 'allocation', width: 'half', hidden: true },
+          { id: 'benchmark', width: 'half', hidden: true },
         ],
       },
     })
@@ -536,6 +539,7 @@ describe('dragging a card', () => {
         { id: 'gain-breakdown', width: 'half', hidden: false },
         { id: 'rhythm', width: 'half', hidden: false },
         { id: 'allocation', width: 'half', hidden: true },
+        { id: 'benchmark', width: 'half', hidden: true },
       ],
     })
   })
@@ -566,5 +570,80 @@ describe('dragging a card', () => {
     await user.click(await landed())
     expect(screen.getByRole('button', { name: 'Options : Mouvements' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Déplacer :/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('the comparison card (#1205)', () => {
+  /** Every `/api/benchmark` request, counted. */
+  function countBenchmarkReads() {
+    const reads = { count: 0 }
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname === ROUTES.benchmark) reads.count += 1
+    })
+    return reads
+  }
+
+  it('lands under « Nouveau », and is not read until it is shown in the draft', async () => {
+    server.use(layoutOf(SEEN.slice(0, 4)))
+    const reads = countBenchmarkReads()
+    const { user } = renderApp()
+    await screen.findByRole('region', { name: 'Mouvements' })
+    expect(screen.getByText('1 nouvelle carte disponible')).toBeInTheDocument()
+
+    await user.click(await landed())
+    const hidden = screen.getByRole('region', { name: 'Cartes masquées' })
+    const row = within(hidden).getByText('Face à l’indice').closest('li') as HTMLElement
+    expect(within(row).getByText('Nouveau')).toBeInTheDocument()
+    expect(reads.count).toBe(0)
+
+    // Shown in the draft, before « Terminé »: it fills at once.
+    await user.click(within(row).getByRole('button', { name: 'Afficher' }))
+    await waitFor(() => expect(reads.count).toBe(1))
+    expect(await screen.findByRole('region', { name: 'Face à l’indice' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['saved hidden', layoutOf([...SEEN])],
+    ['never saved', http.get(ROUTES.dashboardLayout, () => HttpResponse.json(null))],
+  ])('is not read while hidden, layout %s', async (_, layout) => {
+    server.use(layout)
+    const reads = countBenchmarkReads()
+    renderApp()
+    await screen.findByRole('region', { name: 'Mouvements' })
+
+    expect(screen.queryByRole('region', { name: /^Face/ })).not.toBeInTheDocument()
+    expect(reads.count).toBe(0)
+  })
+
+  it.each([
+    ['full', 1024, true],
+    ['full', 390, true],
+    ['half', 1024, false],
+    ['half', 390, false],
+  ] as const)('set %s, at %i px, draws the curves: %s', async (width, viewport, curves) => {
+    setViewportWidth(viewport)
+    server.use(
+      layoutOf([...SEEN.slice(0, 4), { id: 'benchmark', width, hidden: false }]),
+      http.get(ROUTES.benchmark, () =>
+        HttpResponse.json(
+          aBenchmark({
+            state: 'ready',
+            reference: 'CW8.PA',
+            index: 'MSCI World',
+            covered_from: '2019-03-04',
+            covered_to: '2026-09-17',
+            gap_gross: 10,
+            series: [
+              { t: '2019-03-04', portfolio: 100, reference: 100 },
+              { t: '2026-09-17', portfolio: 110, reference: 100 },
+            ],
+          }),
+        ),
+      ),
+    )
+    renderApp()
+    const region = await screen.findByRole('region', { name: 'Face au MSCI World' })
+
+    expect(Boolean(within(region).queryByText('Même argent investi, jour après jour'))).toBe(curves)
   })
 })

@@ -84,8 +84,11 @@ export interface GridBlock {
    * `Unreadable` is not a section), so the frame draws a reduced title row.
    */
   bare: boolean
-  /** The card at the width the grid draws it. */
-  render: (width: Width) => ReactNode
+  /**
+   * The card at the width the grid draws it, and at the one its placement
+   * asks for — the two part under 768 px, where every card is drawn half.
+   */
+  render: (width: Width, configured: Width) => ReactNode
 }
 
 const LAYOUT_KEY = ['dashboard-layout'] as const
@@ -141,10 +144,16 @@ interface Drag {
 export function DashboardGrid({
   blocks,
   onEditingChange,
+  onShownChange,
 }: {
   blocks: Record<BlockId, GridBlock>
   /** Edit mode began or ended — the page freezes the hero while it lasts (12B). */
   onEditingChange?: (editing: boolean) => void
+  /**
+   * The cards the grid draws — the draft's while editing, the saved layout's
+   * otherwise — so the page arms a card's read only once it is shown (#1205).
+   */
+  onShownChange?: (shown: readonly BlockId[]) => void
 }) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
@@ -231,6 +240,23 @@ export function DashboardGrid({
   useLayoutEffect(() => {
     latest.current = placements
   })
+
+  // Nothing is shown before the layout is read: a card hidden in it must not
+  // be asked for in the meantime. Sorted and joined, so a drag that only
+  // reorders the same cards reports nothing.
+  const shown = unread
+    ? ''
+    : placements
+        .filter((one) => !one.hidden)
+        .map((one) => one.id)
+        .sort()
+        .join(' ')
+  useLayoutEffect(() => {
+    onShownChange?.(shown === '' ? [] : (shown.split(' ') as BlockId[]))
+    // The grid can leave the page mid-edit: a card shown only in the draft
+    // must not stay armed behind it.
+    return () => onShownChange?.([])
+  }, [shown, onShownChange])
 
   // Under 768 px the menu is the way to move a card (15A); a coarse pointer
   // hides the handle in CSS. A save in flight ends the session: nothing more
@@ -602,6 +628,7 @@ export function DashboardGrid({
                     name={name(cell.id)}
                     block={block}
                     width={cell.width}
+                    configured={placement.width}
                     editing={editing}
                     handle={handle}
                     menu={menu}
@@ -676,6 +703,7 @@ function Cell({
   name,
   block,
   width,
+  configured,
   editing,
   handle,
   menu,
@@ -685,6 +713,7 @@ function Cell({
   name: string
   block: GridBlock
   width: Width
+  configured: Width
   editing: boolean
   handle: ReactNode
   menu: ReactNode
@@ -723,7 +752,7 @@ function Cell({
     return (
       <div className="flex flex-1 flex-col gap-3">
         <div className="px-1">{bareRow}</div>
-        <div inert>{block.render(width)}</div>
+        <div inert>{block.render(width, configured)}</div>
       </div>
     )
   }
@@ -731,7 +760,7 @@ function Cell({
     <SectionControlsContext.Provider
       value={{ controls: menu, leading: handle, fill: true, inert: editing }}
     >
-      {block.render(width)}
+      {block.render(width, configured)}
     </SectionControlsContext.Provider>
   )
 }

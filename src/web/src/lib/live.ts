@@ -17,6 +17,8 @@
  */
 import type { QueryClient } from '@tanstack/react-query'
 
+import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
+
 export const LIVE_REFRESH_MS = 60_000
 
 export const LIVE_KEYS = [
@@ -41,4 +43,13 @@ export function pollLiveReads(client: QueryClient) {
       ...(key === 'health' && { networkMode: 'always' as const }),
     })
   }
+  // The comparison does not follow the market (#1205): only a reference being
+  // rebuilt moves under it, so it is asked again while that lasts, and then
+  // never. The dashboard card and the page share the key.
+  client.setQueryDefaults(['benchmark'], {
+    refetchInterval: (query) => {
+      const state = (query.state.data as BenchmarkResponse | undefined)?.state
+      return state === 'rebuilding' || state === 'splits_unknown' ? LIVE_REFRESH_MS : false
+    },
+  })
 }

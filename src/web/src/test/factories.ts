@@ -80,7 +80,11 @@ import type {
   TaxationModelsResponse,
 } from '@/features/accounts/lib/api'
 import type { AgentConfig } from '@/features/agent/lib/api'
-import type { BenchmarkResponse, OfferedBenchmark } from '@/features/benchmark/lib/api'
+import type {
+  BenchmarkAccountRow,
+  BenchmarkResponse,
+  OfferedBenchmark,
+} from '@/features/benchmark/lib/api'
 import type {
   InvestmentRhythmResponse,
   Mover,
@@ -1278,6 +1282,24 @@ export function offeredBenchmarks(): OfferedBenchmark[] {
  * state a fresh installation is actually in and the one every other page test
  * meets when the shell walks this route.
  */
+/** One account's row of the comparison, over the whole default period. */
+export function aBenchmarkAccountRow(
+  overrides: Partial<BenchmarkAccountRow> = {},
+): BenchmarkAccountRow {
+  return {
+    account: 'PEA',
+    covered_from: '2019-03-04',
+    covered_to: '2026-09-17',
+    ended: null,
+    portfolio_value: null,
+    reference_value: null,
+    gap_gross: null,
+    portfolio_return: null,
+    reference_return: null,
+    ...overrides,
+  }
+}
+
 export function aBenchmark(overrides: Partial<BenchmarkResponse> = {}): BenchmarkResponse {
   return {
     base_currency: 'EUR',
