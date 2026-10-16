@@ -16,9 +16,12 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, delay, http } from 'msw'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
+import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
+  aBenchmark,
+  aBenchmarkAccountRow,
   aClosedPosition,
   anAccount,
   anAccountsPayload,
@@ -2191,5 +2194,245 @@ describe('the head in English', () => {
     expect(figure('Portfolio value')).toHaveTextContent(/2,800\.00/)
     expect(figure('Portfolio value')).toHaveTextContent(/\+€370\.00 total P&L/)
     expect(screen.getByRole('heading', { name: 'Where the P&L comes from' })).toBeInTheDocument()
+  })
+})
+
+describe('the comparison card (#1205)', () => {
+  /** A saved layout with the card shown, at the width asked. */
+  function shown(width: 'half' | 'full' = 'half') {
+    return http.get(ROUTES.dashboardLayout, () =>
+      HttpResponse.json({
+        version: 1,
+        blocks: [
+          { id: 'gain-breakdown', width: 'half', hidden: false },
+          { id: 'rhythm', width: 'half', hidden: false },
+          { id: 'movers', width: 'full', hidden: false },
+          { id: 'benchmark', width, hidden: false },
+        ],
+      }),
+    )
+  }
+
+  function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkResponse> {
+    return {
+      state: 'ready',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      covered_from: '2019-03-04',
+      covered_to: '2026-09-17',
+      ended: null,
+      portfolio_value: 98_765.43,
+      reference_value: 94_552.63,
+      gap_gross: 4212.8,
+      ...overrides,
+    }
+  }
+
+  function renderCard(payload: Partial<BenchmarkResponse>, width: 'half' | 'full' = 'half') {
+    server.use(
+      shown(width),
+      http.get(ROUTES.benchmark, () => HttpResponse.json(aBenchmark(payload))),
+    )
+    return renderApp()
+  }
+
+  const card = (name: string | RegExp = /^Face au/) => screen.findByRole('region', { name })
+
+  it('states the gap, signed, with the period — and neither of the two values', async () => {
+    renderCard(ready())
+    const region = await card('Face au MSCI World')
+
+    expect(within(region).getByText('+4 212,80 €')).toHaveClass('text-gain', 'text-2xl')
+    expect(region).toHaveTextContent(
+      'd’avance, avec les mêmes versements · 4 mars 2019 → 17 sept. 2026',
+    )
+    expect(region).not.toHaveTextContent(/98\D?765/)
+    expect(region).not.toHaveTextContent(/94\D?552/)
+    expect(within(region).getByRole('link', { name: 'Voir la comparaison →' })).toHaveAttribute(
+      'href',
+      '/benchmark',
+    )
+  })
+
+  // To the cent: `−0,004 €` is a zero, not a loss printed as `−0,00 €`.
+  it.each([
+    [-12.5, /^[-−]12,50 €$/, 'de retard', 'text-loss'],
+    [0.004, /^0,00 €$/, 'à égalité', 'text-foreground'],
+    [-0.004, /^0,00 €$/, 'à égalité', 'text-foreground'],
+    // Half a cent is a cent on either side, as `Intl` would round it.
+    [0.005, /^\+0,01 €$/, 'd’avance', 'text-gain'],
+    [-0.005, /^[-−]0,01 €$/, 'de retard', 'text-loss'],
+    // `1.005 * 100` is 100.4999… in binary: the cent is the decimal's.
+    [1.005, /^\+1,01 €$/, 'd’avance', 'text-gain'],
+  ])('reads %s as %s, %s', async (gap, figure, verdict, tone) => {
+    renderCard(ready({ gap_gross: gap }))
+    const region = await card()
+
+    expect(within(region).getByText(figure)).toHaveClass(tone)
+    expect(region).toHaveTextContent(verdict)
+  })
+
+  it('says nothing of a gap it does not have, and keeps the em dash', async () => {
+    renderCard(ready({ gap_gross: null }))
+    const region = await card()
+
+    expect(within(region).getByText('—')).toBeInTheDocument()
+    expect(region).not.toHaveTextContent(/d’avance|de retard|à égalité/)
+    // The period stays: the em dash is about the figure, not the window.
+    expect(region).toHaveTextContent('4 mars 2019 → 17 sept. 2026')
+  })
+
+  it('breaks the gap down by account, only with two of them', async () => {
+    const row = (account: string, gap_gross: number | null) =>
+      aBenchmarkAccountRow({ account, gap_gross })
+    renderCard(ready({ per_account: [row('PEA', 5000), row('CTO', -787.2), row('AV', null)] }))
+    const list = within(await card()).getByRole('list', { name: 'Compte par compte' })
+
+    const [pea, cto, av] = within(list).getAllByRole('listitem')
+    expect(pea).toHaveTextContent(/^PEA\+5\D?000,00 €$/)
+    expect(cto).toHaveTextContent(/^CTO[-−]787,20 €$/)
+    // A null gap keeps its row, with the em dash.
+    expect(av).toHaveTextContent(/^AV—$/)
+  })
+
+  it('draws no row for a single account', async () => {
+    renderCard(
+      ready({
+        per_account: [aBenchmarkAccountRow({ gap_gross: 4212.8 })],
+      }),
+    )
+    expect(within(await card()).queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('invites to choose an index when none is', async () => {
+    renderCard({ state: 'no_reference' })
+    const region = await card('Face à l’indice')
+
+    expect(within(region).getByText('Aucune référence choisie')).toBeInTheDocument()
+    expect(within(region).getByRole('link', { name: 'Choisir un indice' })).toHaveAttribute(
+      'href',
+      '/benchmark',
+    )
+  })
+
+  it.each(['rebuilding', 'splits_unknown'] as const)(
+    'shows the rebuild and no figure while %s',
+    async (state) => {
+      renderCard(
+        ready({
+          state,
+          rebuild: { symbol: 'CW8.PA', reached: '2015-01-02', target: '2009-06-16', ratio: 0.4 },
+        } as Partial<BenchmarkResponse>),
+      )
+      const region = await card('Face au MSCI World')
+
+      expect(region).toHaveTextContent('Reconstitution de l’historique')
+      expect(region).not.toHaveTextContent(/4\D?212/)
+    },
+  )
+
+  it('keeps its title and no figure while a rebuild has no progress to show yet', async () => {
+    renderCard(ready({ state: 'splits_unknown' }))
+    const region = await card('Face au MSCI World')
+
+    expect(region).not.toHaveTextContent(/4\D?212/)
+  })
+
+  // The page's sentence for each `reason` (#1207), and the ledger only where
+  // the cause lives there.
+  it.each([
+    ['no_events', /Enregistrez vos premiers événements/, true],
+    [undefined, /Enregistrez vos premiers événements/, true],
+    ['not_computed', /pas encore calculées/, false],
+    ['nothing_held', /pas sur les liquidités/, true],
+    ['no_rate_on_seed', /un taux de change manque/, false],
+  ] as const)('says why there is nothing to compare: %s', async (reason, body, ledger) => {
+    renderCard({ state: 'nothing_to_compare', reason, reference: 'CW8.PA', index: 'MSCI World' })
+    const region = await card('Face au MSCI World')
+
+    expect(region).toHaveTextContent(body)
+    expect(Boolean(within(region).queryByRole('link', { name: 'Ouvrir le grand livre' }))).toBe(
+      ledger,
+    )
+  })
+
+  it('says why the total is missing when the accounts have theirs', async () => {
+    renderCard({
+      state: 'nothing_to_compare',
+      reason: 'no_rate_on_seed',
+      reference: 'CW8.PA',
+      per_account: [
+        aBenchmarkAccountRow({ account: 'PEA', gap_gross: 100 }),
+        aBenchmarkAccountRow({ account: 'CTO', gap_gross: -50 }),
+      ],
+    })
+    const region = await card('Face au CW8.PA')
+
+    expect(region).toHaveTextContent(
+      'Le total ne peut pas être comparé : un taux de change manque au premier jour.',
+    )
+    expect(within(region).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('shows no amount without a base currency', async () => {
+    renderCard(ready({ base_currency: null }))
+    const region = await card('Face à l’indice')
+
+    expect(region).not.toHaveTextContent('€')
+  })
+
+  it('names a failed read in its slot', async () => {
+    server.use(
+      shown(),
+      problemHandler(ROUTES.benchmark, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+  })
+
+  it('asks again every minute while the reference is rebuilt, and stops once ready', async () => {
+    let calls = 0
+    let payload: Partial<BenchmarkResponse> = ready({ state: 'rebuilding' })
+    server.use(
+      shown(),
+      http.get(ROUTES.benchmark, () => {
+        calls += 1
+        return HttpResponse.json(aBenchmark(payload))
+      }),
+    )
+    renderApp({ fakeTimers: true })
+    expect(await card('Face au MSCI World')).not.toHaveTextContent('d’avance')
+    expect(calls).toBe(1)
+
+    payload = ready()
+    await vi.advanceTimersByTimeAsync(60_000)
+    await screen.findByText(/d’avance/)
+    expect(calls).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(calls).toBe(2)
+  })
+
+  it('refreshes after an event write', async () => {
+    let calls = 0
+    server.use(
+      shown(),
+      http.get(ROUTES.benchmark, () => {
+        calls += 1
+        return HttpResponse.json(aBenchmark(ready()))
+      }),
+    )
+    const { queryClient } = renderApp()
+    await card()
+
+    // What every event write does on success.
+    await queryClient.invalidateQueries()
+    await waitFor(() => expect(calls).toBe(2))
   })
 })

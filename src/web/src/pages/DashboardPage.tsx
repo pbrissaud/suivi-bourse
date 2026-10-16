@@ -62,7 +62,9 @@ import { useQuery } from '@tanstack/react-query'
 
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
+import { benchmarkApi } from '@/features/benchmark/lib/api'
 import { AllocationCard, allocationRenderState } from '@/features/dashboard/components/Allocation'
+import { Benchmark, benchmarkRenderState } from '@/features/dashboard/components/Benchmark'
 import { DashboardGrid, type GridBlock } from '@/features/dashboard/components/DashboardGrid'
 import {
   GainBreakdown,
@@ -165,6 +167,16 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
+  // The cards the grid draws, reported by it. The comparison is armed only
+  // once its card is shown — in the edit draft as soon as it is pulled out of
+  // « Nouveau » — so an owner who never shows it pays nothing (#1205).
+  const [shown, setShown] = useState<readonly BlockId[]>([])
+  const benchmark = useQuery({
+    queryKey: ['benchmark'],
+    queryFn: benchmarkApi.benchmark,
+    enabled: state === 'portfolio' && shown.includes('benchmark'),
+  })
+
   // The grid's own read, started here with the page's others so it does not
   // wait for the page to reach `portfolio` before leaving: same key as
   // `DashboardGrid`'s, so it is one request.
@@ -184,6 +196,7 @@ export default function DashboardPage() {
   const chartFailure = oneFailure(readConditions({ queries: [perf, valuation] }))
   const moversFailure = oneFailure(readConditions({ queries: [movers] }))
   const rhythmFailure = oneFailure(readConditions({ queries: [rhythm] }))
+  const benchmarkFailure = oneFailure(readConditions({ queries: [benchmark] }))
 
   // The freshest quote the page holds — one instant for the whole screen, and
   // nothing at all when nothing has ever been quoted: an invented *now* is
@@ -214,6 +227,7 @@ export default function DashboardPage() {
     const moversRead = { movers: movers.data?.movers ?? null, failure: moversFailure }
     const rhythmRead = { rhythm: rhythm.data ?? null, failure: rhythmFailure }
     const allocationRead = { positions: positions.data ?? null }
+    const benchmarkRead = { benchmark: benchmark.data ?? null, failure: benchmarkFailure }
     return {
       'gain-breakdown': {
         state: gainBreakdownRenderState(breakdown),
@@ -241,6 +255,11 @@ export default function DashboardPage() {
         state: allocationRenderState(allocationRead),
         bare: false,
         render: (width) => <AllocationCard {...allocationRead} rows={rows} width={width} />,
+      },
+      benchmark: {
+        state: benchmarkRenderState(benchmarkRead),
+        bare: benchmarkRead.benchmark === null,
+        render: (_, configured) => <Benchmark {...benchmarkRead} width={configured} />,
       },
     }
   }
@@ -293,7 +312,11 @@ export default function DashboardPage() {
       </div>
 
       {state !== 'portfolio' ? null : (
-        <DashboardGrid blocks={gridBlocks()} onEditingChange={setArranging} />
+        <DashboardGrid
+          blocks={gridBlocks()}
+          onEditingChange={setArranging}
+          onShownChange={setShown}
+        />
       )}
     </div>
   )

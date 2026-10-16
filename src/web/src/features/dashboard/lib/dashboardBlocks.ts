@@ -62,6 +62,14 @@ export const DASHBOARD_BLOCKS = {
     minHeight: 300,
     arrivesHidden: true,
   },
+  // The full width adds the two curves (#1205).
+  benchmark: {
+    label: 'dashboard.benchmark.title',
+    widths: ['half', 'full'],
+    width: 'half',
+    minHeight: 160,
+    arrivesHidden: true,
+  },
 } as const satisfies Record<string, BlockSpec>
 
 export type BlockId = keyof typeof DASHBOARD_BLOCKS
