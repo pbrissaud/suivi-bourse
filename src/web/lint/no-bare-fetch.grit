@@ -1,0 +1,9 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// #1203: every request goes through authFetch (src/lib/api.ts), so a 401 opens
+// the code dialog wherever it comes from.
+JsCallExpression(callee = $callee) as $hit where {
+  $callee <: r"(?:window\.|globalThis\.|self\.)?fetch",
+  register_diagnostic(span = $hit, message = "[no-bare-fetch] Call authFetch from @/lib/api, not fetch: a 401 must open the code dialog (#1203)")
+}

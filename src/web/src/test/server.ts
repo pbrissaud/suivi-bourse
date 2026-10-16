@@ -63,6 +63,10 @@ function echoed(draft: AccountDraft): Partial<Account> {
 
 export function defaultHandlers() {
   return [
+    // The PIN is off by default (#1203): every page test boots straight into the app.
+    http.get(ROUTES.authStatus, () =>
+      HttpResponse.json({ enabled: false, authenticated: false, token_created_at: null }),
+    ),
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     // The declaration's three gestures (#698, read by a client since #729). They
     // echo the row back the way the two event writes do — three members and no

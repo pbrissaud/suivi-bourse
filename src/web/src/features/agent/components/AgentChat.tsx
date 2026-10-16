@@ -87,6 +87,7 @@ import { agentApi, type AgentConfig } from '@/features/agent/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { isSessionEnded } from '@/lib/session'
 
 /** At most this many threads under *Fils récents*. */
 const RECENT = 20
@@ -415,7 +416,20 @@ function AgentConversation() {
     ask(text)
   }
 
-  const failed = error !== undefined && !threadNotWritable(error)
+  // A session that ended (#1203): the question goes back into the input, to be
+  // sent again once the code is typed, and the turn it opened is taken away.
+  const [returned, setReturned] = useState<{ text: string } | null>(null)
+  useEffect(() => {
+    if (!isSessionEnded(error)) return
+    const last = messages.map((m) => m.role).lastIndexOf('user')
+    if (last !== -1) {
+      setReturned({ text: textOf(messages[last]) })
+      setMessages(messages.slice(0, last))
+    }
+    clearError()
+  }, [error, messages, setMessages, clearError])
+
+  const failed = error !== undefined && !threadNotWritable(error) && !isSessionEnded(error)
   const waiting = busy && waitingOnTools(status, messages)
 
   return (
@@ -472,7 +486,7 @@ function AgentConversation() {
         {/* Drawn like the answer, or a screen reader reads its asterisks. */}
         <AnswerMarkdown>{announcement}</AnswerMarkdown>
       </div>
-      <Composer busy={busy} onAsk={ask} onStop={() => void stop()} />
+      <Composer busy={busy} onAsk={ask} onStop={() => void stop()} returned={returned} />
     </>
   )
 }
@@ -744,10 +758,13 @@ function Composer({
   busy,
   onAsk,
   onStop,
+  returned,
 }: {
   busy: boolean
   onAsk: (text: string) => void
   onStop: () => void
+  /** A question the server refused for want of a session, handed back. */
+  returned: { text: string } | null
 }) {
   const { t } = useI18n()
   const [text, setText] = useState('')
@@ -760,6 +777,10 @@ function Composer({
   useEffect(() => {
     input.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (returned !== null) setText(returned.text)
+  }, [returned])
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault()

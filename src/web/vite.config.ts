@@ -52,6 +52,12 @@ export default defineConfig({
         target: process.env.SB_API_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
+      // The PIN's gate (#1203): the front asks `/auth/status` before it draws
+      // anything, and `index.html` in its place would read as an unreadable app.
+      '/auth': {
+        target: process.env.SB_API_URL || 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
 })

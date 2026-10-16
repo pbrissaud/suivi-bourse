@@ -13,7 +13,8 @@ import { DefaultChatTransport, getToolName, isToolUIPart } from 'ai'
 import type { ChatTransport, DynamicToolUIPart, ToolUIPart, UIMessage } from 'ai'
 
 import type { Position } from '@/features/shares/lib/api'
-import { ROUTES } from '@/lib/api'
+import { authFetch, ROUTES } from '@/lib/api'
+import { SessionEnded } from '@/lib/session'
 import type { MessageKey } from '@/lib/i18n'
 
 /**
@@ -25,6 +26,13 @@ import type { MessageKey } from '@/lib/i18n'
 export function httpTransport(): ChatTransport<UIMessage> {
   return new DefaultChatTransport<UIMessage>({
     api: ROUTES.agentChat,
+    // A 401 opens the code dialog (`authFetch`) and is thrown by name, so the
+    // page can hand the refused question back to the input.
+    fetch: async (input, init) => {
+      const response = await authFetch(input, init)
+      if (response.status === 401) throw new SessionEnded()
+      return response
+    },
     // No `page` (#1196): the agent is a page of its own now, and reads the
     // portfolio through its tools rather than off the reader's location.
     prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => ({

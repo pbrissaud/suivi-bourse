@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
 import { agentApi } from '@/features/agent/lib/api'
+import { AccessBlock } from '@/features/settings/components/AccessBlock'
 import { AgentBlock } from '@/features/settings/components/AgentBlock'
 import { DialsBlock } from '@/features/settings/components/DialsBlock'
 import { TaxationBlock } from '@/features/settings/components/TaxationBlock'
@@ -37,6 +38,7 @@ export default function SettingsPage() {
       ) : agent.data ? (
         <AgentBlock config={agent.data} />
       ) : null}
+      <AccessBlock />
       <TaxationBlock />
     </div>
   )

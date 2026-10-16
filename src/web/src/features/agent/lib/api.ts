@@ -9,7 +9,7 @@
 
 import type { UIMessage } from 'ai'
 
-import { get, ROUTES, send } from '@/lib/api'
+import { authFetch, get, ROUTES, send } from '@/lib/api'
 
 /** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
@@ -59,13 +59,16 @@ export function agentThreadPath(id: string): string {
  * thrown as the server's sentence.
  */
 async function agentRead<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: 'application/json' } })
+  const response = await authFetch(path, { headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error(await agentError(response))
   return (await response.json()) as T
 }
 
 async function agentForget(path: string): Promise<void> {
-  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
+  const response = await authFetch(path, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  })
   if (!response.ok) throw new Error(await agentError(response))
 }
 
