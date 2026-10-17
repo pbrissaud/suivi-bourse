@@ -277,3 +277,17 @@ describe('every plot the product mounts', () => {
 })
 
 // `is composed in ChartReading and nowhere else` is a Biome rule now: lint/chart-reading-one-author.grit
+
+describe('the dashboard’s performance ticks', () => {
+  it('writes the performance ticks with the tooltip’s own formatter (#1263)', () => {
+    const source = code(path.join(SOURCE, 'features/dashboard/components/PortfolioChart.tsx'))
+    const tag = (name: string) => {
+      const start = source.indexOf(`<${name}`)
+      // A tag ends at the first `/>` that is not inside the formatter's arrow.
+      return source.slice(start, source.indexOf('/>', source.indexOf('=>', start)) + 2)
+    }
+    expect(tag('YAxis')).toContain('f.percent(')
+    expect(tag('YAxis')).toContain('f.compact(')
+    expect(tag('ChartTooltip')).toContain('f.percent(')
+  })
+})

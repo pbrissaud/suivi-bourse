@@ -45,6 +45,8 @@ const SURFACES = ['--background', '--card'] as const
 
 const PRICE_CHART = path.join(SOURCE, 'features/shares/components/PriceChart.tsx')
 const PORTFOLIO_CHART = path.join(SOURCE, 'features/dashboard/components/PortfolioChart.tsx')
+const ACCOUNT_CURVE = path.join(SOURCE, 'features/accounts/components/AccountCurve.tsx')
+const BENCHMARK_CHART = path.join(SOURCE, 'features/benchmark/components/BenchmarkChart.tsx')
 
 /**
  * The file with its comments taken out.
@@ -241,6 +243,60 @@ describe('a grid is not more legible for being elsewhere', () => {
         Math.abs(sheet - card),
         `the two grids part company on the ${ground} ground`,
       ).toBeLessThan(0.25)
+    }
+  })
+})
+
+describe('every time-series chart draws its scale (#1265)', () => {
+  const CHARTS = [PORTFOLIO_CHART, ACCOUNT_CURVE, BENCHMARK_CHART]
+  const axes = (file: string, element: 'XAxis' | 'YAxis') => openingTags(code(file), element)
+
+  it('draws both axes on the dashboard, account and benchmark charts', () => {
+    for (const file of CHARTS) {
+      for (const element of ['XAxis', 'YAxis'] as const) {
+        const tags = axes(file, element)
+        expect(tags.length, `${path.basename(file)} mounts no ${element}`).toBeGreaterThan(0)
+        for (const tag of tags) {
+          expect(prop(tag, 'hide'), `${path.basename(file)} hides its ${element}`).toBeNull()
+        }
+      }
+    }
+  })
+
+  it('writes their gradations in the price chart’s token', () => {
+    for (const file of CHARTS) {
+      expect(tickToken(file), path.basename(file)).toBe(tickToken(PRICE_CHART))
+    }
+  })
+
+  it('draws no axis line and no tick mark', () => {
+    for (const file of CHARTS) {
+      for (const tag of [...axes(file, 'XAxis'), ...axes(file, 'YAxis')]) {
+        expect(prop(tag, 'axisLine'), path.basename(file)).toBe('{false}')
+        expect(prop(tag, 'tickLine'), path.basename(file)).toBe('{false}')
+      }
+    }
+  })
+
+  it('takes its ticks from valueAxis and timeTicks, at a budget chosen by useIsMobile', () => {
+    for (const file of CHARTS) {
+      const source = code(file)
+      for (const tag of axes(file, 'YAxis')) {
+        expect(prop(tag, 'ticks'), path.basename(file)).not.toBeNull()
+        expect(prop(tag, 'domain'), path.basename(file)).not.toBeNull()
+      }
+      for (const tag of axes(file, 'XAxis')) {
+        expect(prop(tag, 'ticks'), path.basename(file)).not.toBeNull()
+      }
+      for (const call of ['valueAxis(', 'timeTicks(', 'useIsMobile()', 'AXIS_TICKS.time.phone']) {
+        expect(source, `${path.basename(file)} never calls ${call}`).toContain(call)
+      }
+    }
+  })
+
+  it('draws every chart’s grid from one token', () => {
+    for (const file of CHARTS) {
+      expect(gridToken(file), path.basename(file)).toBe(gridToken(PRICE_CHART))
     }
   })
 })
