@@ -100,6 +100,7 @@ import {
   tickDigits,
   timeTicks,
   valueAxis,
+  signSplitOffset,
   windowFloor,
   type AmountsRow,
   type DashboardRange,
@@ -109,6 +110,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { signOf } from '@/lib/sign'
 import type { ReadingCurve } from '@/lib/chartReading'
 import type { ReadFailure } from '@/lib/status'
 
@@ -177,6 +179,11 @@ export function PortfolioChart({
     ? amountsFromTotals(performance ?? [], floor)
     : amountsFromValuation(valuation ?? [], floor)
   const performanceSeries = performanceRows(performance ?? [], floor)
+  const performanceValues = performanceSeries.map((row) => row.performance)
+  const split = signSplitOffset(performanceValues)
+  const flatSign = signOf(performanceValues.find((value) => value !== null) ?? null)
+  const flatStroke =
+    flatSign === 'gain' ? 'var(--gain)' : flatSign === 'loss' ? 'var(--loss)' : 'var(--foreground)'
   const drawn: (AmountsRow | PerformanceRow)[] = reading === 'amounts' ? rows : performanceSeries
   // The scale (#1265): ticks are the chart's own, because Recharts' nice ticks
   // graduated `−35 %, 0, 35 %` and stretched the domain. Value ticks follow the
@@ -396,17 +403,27 @@ export function PortfolioChart({
                   ) : (
                     <>
                       <ReferenceLine y={0} stroke="var(--border)" />
+                      {/* **Coloured by its sign, split exactly at zero** (#1263):
+                            the one curve that crosses 0 %. Drawn in the mint it
+                            painted a loss as a gain, drawn in the foreground it
+                            fell outside the palette. The 0 % line and the
+                            sentence under the plot carry the sign without colour.
+                            A flat series has a zero-height box, which paints
+                            nothing with a bounding-box gradient: it is stroked
+                            solid instead. */}
+                      {split === null ? null : (
+                        <defs>
+                          <linearGradient id="performance-sign" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={split} stopColor="var(--gain)" />
+                            <stop offset={split} stopColor="var(--loss)" />
+                          </linearGradient>
+                        </defs>
+                      )}
                       <Line
                         type="monotone"
                         dataKey="performance"
                         name={t('dashboard.chart.performance')}
-                        // **Not `--color-price`**, which is the mint: this curve
-                        // crosses the zero line, and a portfolio down 8 % would
-                        // draw its whole descent in the colour the app uses for a
-                        // gain. It is the reason the Area above stays neutral,
-                        // one line further down. The foreground says nothing
-                        // about sign, and this is the only curve on the plot.
-                        stroke="var(--foreground)"
+                        stroke={split === null ? flatStroke : 'url(#performance-sign)'}
                         strokeWidth={1.75}
                         dot={false}
                         isAnimationActive={false}
@@ -471,7 +488,8 @@ export function PortfolioChart({
           // either. The date was already refused here — the curve is rebased
           // on the first day of the visible window, so it does not move as
           // the reconstruction reaches further back, and only the head's
-          // scalar carries a date, while it is still moving. The two marks
+          // scalar carries a date, which it always states (the IRR's bubble,
+          // #1263), since it moves while the reconstruction runs. The two marks
           // that state it without a sentence stay — the zero reference line
           // the curve crosses, and the range control that names the window it
           // is rebased on.

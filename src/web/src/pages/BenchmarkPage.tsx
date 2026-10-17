@@ -250,7 +250,12 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
 
         <div className="flex flex-col justify-center gap-5 border-t bg-muted/40 p-5 sm:p-8 md:border-t-0 md:border-l">
           <p className="text-xs font-medium text-muted-foreground">
-            {t('benchmark.returns.title')}
+            {data.covered_from && data.covered_to
+              ? t('benchmark.returns.title', {
+                  from: f.date(data.covered_from),
+                  to: f.date(data.covered_to),
+                })
+              : t('benchmark.returns.titleBare')}
           </p>
           <Stat
             size="term"

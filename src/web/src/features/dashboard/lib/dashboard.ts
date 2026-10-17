@@ -250,6 +250,22 @@ export function yFloor(values: readonly (number | null)[]): number | 'auto' {
   return Math.max(0, low - air)
 }
 
+/**
+ * Where a curve that crosses zero changes colour, as a fraction of its own
+ * height measured from the top (`objectBoundingBox`, so min → max): `max / (max
+ * − min)`, clamped to [0, 1]. `null` when nothing is drawn or the series is flat
+ * — a bounding-box gradient paints nothing on a zero-height path, so the caller
+ * falls back to a solid stroke in the sign's colour.
+ */
+export function signSplitOffset(values: readonly (number | null)[]): number | null {
+  const drawn = values.filter((value): value is number => value !== null)
+  if (drawn.length === 0) return null
+  const high = Math.max(...drawn)
+  const low = Math.min(...drawn)
+  if (high === low) return null
+  return Math.min(Math.max(high / (high - low), 0), 1)
+}
+
 /** Every number the *Amounts* reading draws — the argument {@link yFloor} takes. */
 export function amountsValues(rows: readonly AmountsRow[]): (number | null)[] {
   return rows.flatMap((row) => [row.value, row.contributed])
