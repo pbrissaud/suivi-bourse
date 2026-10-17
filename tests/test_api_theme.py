@@ -90,10 +90,10 @@ def test_an_import_stores_the_theme(http):
         return json.dumps(ENTRY).encode()
 
     http.application.config['TWEAKCN_FETCH'] = fetch
-    answer = http.post('/api/theme/import', json={'id': 'cmv2mytu0000004l29dhzfvtc'})
+    answer = http.post('/api/theme/import', json={'id': 'claude'})
 
     assert answer.status_code == 200 and answer.get_json() == STORED
-    assert calls == ['https://tweakcn.com/r/themes/cmv2mytu0000004l29dhzfvtc']
+    assert calls == ['https://tweakcn.com/r/themes/claude']
     http.application.config['TWEAKCN_FETCH'] = _never
     assert f"--primary: {ENTRY['cssVars']['light']['primary']};" in _css(http)
 

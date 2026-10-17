@@ -164,7 +164,9 @@ contrast.
 - The theme is replaceable: its tokens are a JSON kept in the store and edited in
   Settings › Thème, imported from tweakcn by id or pasted from
   `tweakcn.com/r/themes/<id>`. The server lays its colours, fonts, radius and shadows
-  over Atelier; with nothing stored, Atelier is served.
+  over Atelier; with nothing stored, Atelier is served. Atelier itself is
+  `src/web/src/theme/atelier.json`, the same JSON as a stored theme; block 1 of
+  `index.css` is generated from it by `scripts/sync_atelier.py`.
 
 ## Typography
 
@@ -387,3 +389,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | The charts draw their scale (#1265) | Without axes, the scale, the origin and the month of a step were a hover away (audit of 17/10). Ticks computed by the app rather than Recharts, whose nice ticks graduated −35 %, 35 %, 70 % or stretched the domain; compact euros so the axis stays narrow on a phone; no axis line, so `rule` stays the only line in a section. |
 | 2026-10-18 | Return figures reconciled (#1263) | Four figures audited against an independent recomputation: no calculation bug. One name per measure; windows stated rather than aligned; the TWR dated in the IRR's bubble; the agent says the same words. Percent replaces base 100 on the Performance curve (#1263, #1265). |
 | 2026-10-18 | The Performance curve is coloured by its sign (#1263) | The one curve that crosses zero: drawn in `foreground` it fell outside the palette, drawn in the mint it painted a loss as a gain. `gain` above zero, `loss` below, the 0 % line kept as the colour-free channel. |
+| 2026-10-18 | Atelier is a JSON in the repo, no longer a published tweakcn theme (#1295) | A colour change was a republish on tweakcn outside the repo, unreviewable; it is now a reviewed diff of `atelier.json`, rendered into `index.css` by the same function that renders a stored theme. |

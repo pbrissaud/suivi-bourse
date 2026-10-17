@@ -97,16 +97,18 @@ def _rule(selector: str, values: Dict[str, str], keys) -> str:
     return selector + '{\n' + '\n'.join(lines) + '\n}\n'
 
 
-def render_css(entry: dict) -> str:
+def render_css(entry: dict, selectors: Tuple[str, str] = ('html:root', 'html:root.dark')) -> str:
     """Both grounds, at a specificity the bundle's ``:root``/``.dark`` cannot beat.
 
     A key is emitted only when **both** grounds say it: ``html:root`` outranks
     the bundle's ``.dark``, so a light-only value would paint the dark ground.
+    ``scripts/sync_atelier.py`` passes ``(':root', '.dark')`` to write the
+    bundled theme itself (#1295) with the same rule.
     """
     light = _declarations(_ground(entry, 'light'))
     dark = _declarations(_ground(entry, 'dark'))
     keys = light.keys() & dark.keys()
-    return _rule('html:root', light, keys) + _rule('html:root.dark', dark, keys)
+    return _rule(selectors[0], light, keys) + _rule(selectors[1], dark, keys)
 
 
 def font_imports(entry: dict) -> List[str]:

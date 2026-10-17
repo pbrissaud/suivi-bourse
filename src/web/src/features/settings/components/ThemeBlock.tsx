@@ -1,5 +1,6 @@
 /**
  * *Thème* — the theme over the bundled Atelier, kept in the store (#1248).
+ * With none stored, the editor opens on Atelier's own JSON (`theme/atelier.json`).
  *
  * Two ways in from tweakcn: **import by id** (the server's one call to
  * tweakcn.com, on click) or **paste** the JSON of `tweakcn.com/r/themes/<id>`
@@ -20,8 +21,10 @@ import { settingsApi, type ThemeVars } from '@/features/settings/lib/api'
 import { ApiProblem } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey, providerRefusal } from '@/lib/problem'
+import atelier from '@/theme/atelier.json'
 
-const pretty = (theme: ThemeVars | null) => (theme ? JSON.stringify(theme, null, 2) : '')
+/** The editor shows Atelier's own JSON when nothing is stored (#1295). */
+const pretty = (theme: ThemeVars | null) => JSON.stringify(theme ?? atelier, null, 2)
 
 /** The stylesheet `index.html` links, fetched again. */
 function repaint() {
