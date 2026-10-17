@@ -667,7 +667,7 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
  * *has anybody declared this* can now be read off — server-side too
  * (`accounts.default_is_declared`).
  */
-function isSeededOnly(account: Account): boolean {
+export function isSeededOnly(account: Account): boolean {
   return isDefaultAccount(account.id) && declaredLabel(account) === null
 }
 

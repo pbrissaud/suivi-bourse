@@ -48,6 +48,10 @@ const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: DashboardPage,
+  // A gesture, spent on arrival (#1262): the empty dashboard's *Revoir la mise en
+  // route* reopens the first-run walk, which removes the parameter as it opens.
+  validateSearch: (search: Record<string, unknown>): { open?: 'first-run' } =>
+    search.open === 'first-run' ? { open: 'first-run' } : {},
 })
 
 /**

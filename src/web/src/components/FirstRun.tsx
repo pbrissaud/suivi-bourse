@@ -40,18 +40,28 @@
  *    to take that knowledge to another page and come back. The offer is an
  *    offer: the button opens a form, and the passage is satisfied without it.
  *
+ * **One more way in, and it is a gesture** (#1262): `/?open=first-run`, linked
+ * from the empty dashboard. The walk is otherwise lost on a reload once the
+ * question is answered — the predicate is false and the mark is not yet written
+ * — and storing the passage would add a third mark value for one click saved.
+ * The parameter is spent on arrival, so a reload does not open it twice.
+ *
  * Six things about it are decisions:
  *
  *  - **It closes without a button.** The cross, `Escape` and the click outside
  *    *are* the *later*. A `Later` button beside `Save` would give the way out
  *    the same visual weight as the answer, and the answer is the one thing this
- *    surface exists for. That is also why the control that walks the passages
- *    carries no colour and the answer does: continuing is the walk, never a
- *    second spelling of the escape hatch, and on the one passage that carries
- *    an answer it must not weigh what the answer weighs. It is `secondary` and
- *    not `ghost` since the drawing was read: a ghost control at the one corner
- *    every reader is looking for reads as nothing at all, and *quieter than the
- *    answer* is what the argument asks for — not *invisible*. Closing leaves an
+ *    surface exists for. `Passer` is not that button: it walks on without
+ *    answering, and the walk is still open behind it. That is also why the
+ *    control that walks the passages carries no colour and the answer does:
+ *    continuing is the walk, never a second spelling of the escape hatch, and
+ *    on the one passage that carries an answer it must not weigh what the
+ *    answer weighs. It is `secondary` and not `ghost` since the drawing was
+ *    read: a ghost control at the one corner every reader is looking for reads
+ *    as nothing at all, and *quieter than the answer* is what the argument asks
+ *    for — not *invisible*. (`Passer` is the exception, ghost beside the
+ *    answer: it is the lesser of two controls, not the walk's only one.)
+ *    Closing leaves an
  *    app that **works**: the scrape runs and stores the quote in its own
  *    currency, and the ledger is writable — what waits is the conversion and
  *    the performance series, which the notifications panel's pinned card and
@@ -61,10 +71,10 @@
  *  walk** rather than about the currency: the currency is now said where it is
  *  asked, one block down, and what a reader needs at the top is how long this
  *  is and that it releases them.
- *  - **The accounts passage demands nothing.** It is satisfied by the seeded
- *    row every install owns — a declaration the owner may decline to add to —
- *    and its whole job is that the notion exists *before* a file naming
- *    accounts is handed over. It reads them to name them, and while that read
+ *  - **The accounts passage demands nothing.** It lists only the accounts
+ *    somebody declared — the seeded row is an implementation detail, and a
+ *    sentence says where events go until one is — and its whole job is that
+ *    the notion exists *before* a file naming accounts is handed over. It reads them to name them, and while that read
  *    is in flight it says nothing at all about them: neither the rows, nor the
  *    offer to add one, a form opening onto a list nobody can see being a way of
  *    asking for a name against nothing.
@@ -80,9 +90,9 @@
  *    a **wiped volume ask again** in the browser that answered, rather than
  *    only in some other one. No `onboarding_done` row anywhere.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { Check, CreditCard, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -104,17 +114,20 @@ import {
   DEFAULT_ACCOUNT_LABEL,
   declaredLabel,
   isAddressableAccountId,
+  isSeededOnly,
 } from '@/features/accounts/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
   PASSAGES,
+  baseCurrency,
   currencyFixed,
   firstRunStands,
   nextPassage,
   passageNumber,
   previousPassage,
   readFirstRunMark,
+  reopenedPassage,
   rememberFirstRunWalked,
   requiredUnanswered,
   type FirstRunMark,
@@ -126,6 +139,7 @@ import { receiptMessage } from '@/lib/receipts'
 import { cn } from '@/lib/utils'
 
 const FIELD_ID = 'first-run-currency'
+const FORM_ID = 'first-run-currency-form'
 
 /**
  * What each passage is called **on the rail**, which is not what its heading
@@ -154,6 +168,18 @@ export function FirstRun() {
   // the two passages after it would be unreachable to anybody who answers.
   const [walking, setWalking] = useState(false)
   const open = stands || walking
+
+  // **The gesture waits for the settings read**: where the walk reopens depends
+  // on whether the question is answered, and a read in flight is not a fact.
+  const gesture = useSearch({ strict: false }).open === 'first-run'
+  const navigate = useNavigate()
+  const settings = config.data?.settings
+  useEffect(() => {
+    if (!gesture || !settings) return
+    setPassage(reopenedPassage(settings))
+    setWalking(true)
+    void navigate({ to: '/', search: {}, replace: true })
+  }, [gesture, settings, navigate])
 
   // Armed by the walk, and read from its top so the accounts are there to be
   // named when the reader reaches their passage.
@@ -222,6 +248,8 @@ export function FirstRun() {
   if (!walking) return null
 
   const last = nextPassage(passage) === null
+  const fixed = currencyFixed(settings) === true
+  const listed = accounts.data?.accounts.filter((account) => !isSeededOnly(account)) ?? []
 
   return (
     <Dialog open onOpenChange={(shown) => (shown ? undefined : leave())}>
@@ -265,6 +293,7 @@ export function FirstRun() {
                 {t('firstRun.pass.settings.body')}
               </p>
               <form
+                id={FORM_ID}
                 className="space-y-2"
                 onSubmit={(event) => {
                   event.preventDefault()
@@ -274,39 +303,38 @@ export function FirstRun() {
                 <label htmlFor={FIELD_ID} className="block text-xs font-semibold">
                   {t('settings.base_currency')}
                 </label>
-                {/* **The question is one row**: the field and the gesture that
-                    answers it, side by side. Stacked, the button sat under two
-                    lines of reservation and read as belonging to them. */}
-                <div className="flex flex-wrap items-start gap-2.5">
-                  <div className="min-w-50 flex-1">
-                    <CurrencyField
-                      id={FIELD_ID}
-                      value={choice}
-                      onChange={(value) => {
-                        // A refusal is about the value that was sent. Left
-                        // standing, it reads as this app having refused the code
-                        // just picked.
-                        if (save.isError) save.reset()
-                        setChoice(value)
-                      }}
-                      // The dial's rule, read off the dial. Here it settles
-                      // itself — the modal only stands on an unanswered one —
-                      // and it is passed rather than assumed, so the field
-                      // states one rule on both of its mounts.
-                      fixed={currencyFixed(config.data?.settings)}
-                      // The note is about **this value**: a reader who overrode
-                      // the suggestion is no longer reading a pre-filled field,
-                      // and the reservation would then be about a code the
-                      // browser never named.
-                      suggested={suggestion !== null && choice === suggestion}
-                    />
-                  </div>
-                  {currencyFixed(config.data?.settings) === true ? null : (
-                    <Button type="submit" disabled={!choice || save.isPending}>
-                      {t('firstRun.save')}
-                    </Button>
-                  )}
-                </div>
+                {/* The gesture that answers it is the footer's primary control
+                    (`form=`): two buttons that both advanced were two ways to
+                    ask the same question. */}
+                <CurrencyField
+                  id={FIELD_ID}
+                  // Once answered the field only *states* the dial, so it shows the
+                  // stored code and not the browser's suggestion (a reopened walk
+                  // lands here with `choice` still holding the suggestion).
+                  value={(fixed ? baseCurrency(settings) : null) ?? choice}
+                  onChange={(value) => {
+                    // A refusal is about the value that was sent. Left
+                    // standing, it reads as this app having refused the code
+                    // just picked.
+                    if (save.isError) save.reset()
+                    setChoice(value)
+                  }}
+                  // The dial's rule, read off the dial. Here it settles
+                  // itself — the modal only stands on an unanswered one —
+                  // and it is passed rather than assumed, so the field
+                  // states one rule on both of its mounts.
+                  fixed={currencyFixed(config.data?.settings)}
+                  // The note is about **this value**: a reader who overrode
+                  // the suggestion is no longer reading a pre-filled field,
+                  // and the reservation would then be about a code the
+                  // browser never named.
+                  suggested={suggestion !== null && choice === suggestion}
+                />
+                {!fixed && !choice ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t('firstRun.pass.settings.empty')}
+                  </p>
+                ) : null}
                 {save.isError ? (
                   <p role="alert" className="text-sm text-destructive">
                     {t('firstRun.refused')}
@@ -316,11 +344,10 @@ export function FirstRun() {
             </>
           ) : null}
 
-          {/* Passage two — **satisfied by the seeded row**, and demanding
-              nothing. The list is the install's own accounts, named through
-              `declaredLabel` so the seeded one reads its catalogue entry rather
-              than the words the schema wrote for whoever opens the file, and
-              carrying on its right the identifier **events actually name** —
+          {/* Passage two — demanding nothing. The list is the accounts somebody
+              declared (`isSeededOnly` leaves the seeded row out, a sentence
+              names it instead), each carrying on its right the identifier
+              **events actually name** —
               which is the whole reason this passage comes before the file.
               Nothing at all is rendered about them while the read is in flight:
               *this is what you own* is a claim about the reader's own
@@ -336,29 +363,37 @@ export function FirstRun() {
               </p>
               {accounts.data ? (
                 <div className="space-y-3">
-                  <div className="rounded-xl border bg-muted/30 px-4 py-3.5">
-                    <p className="text-xs font-semibold">{t('firstRun.pass.accounts.yours')}</p>
-                    <ul className="mt-2.5 space-y-1.5">
-                      {accounts.data.accounts.map((account) => (
-                        <li
-                          key={account.id}
-                          className="flex items-center gap-2.5 text-sm text-muted-foreground"
-                        >
-                          <CreditCard aria-hidden className="size-3.5 shrink-0" />
-                          <span className="truncate">
-                            {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
-                          </span>
-                          <span className="ml-auto shrink-0 font-mono text-2xs">
-                            {/* The id alone since #916, in the column it
+                  {listed.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('firstRun.pass.accounts.unassigned', {
+                        label: t(DEFAULT_ACCOUNT_LABEL),
+                      })}
+                    </p>
+                  ) : (
+                    <div className="rounded-xl border bg-muted/30 px-4 py-3.5">
+                      <p className="text-xs font-semibold">{t('firstRun.pass.accounts.yours')}</p>
+                      <ul className="mt-2.5 space-y-1.5">
+                        {listed.map((account) => (
+                          <li
+                            key={account.id}
+                            className="flex items-center gap-2.5 text-sm text-muted-foreground"
+                          >
+                            <CreditCard aria-hidden className="size-3.5 shrink-0" />
+                            <span className="truncate">
+                              {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                            </span>
+                            <span className="ml-auto shrink-0 font-mono text-2xs">
+                              {/* The id alone since #916, in the column it
                                 already shared with the type: it is what the
                                 owner's own files name, and the word it used to
                                 sit beside is gone. */}
-                            {account.id}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                              {account.id}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <DeclareAccount />
                 </div>
               ) : null}
@@ -412,11 +447,11 @@ export function FirstRun() {
           ) : null}
         </div>
 
-        {/* The way out is **written** beside it, on the passage where a reader is
-        still deciding whether to be here at all. */}
+        {/* The way out is **written** in the left corner of the first passage,
+            where *Revenir* sits on the later ones. */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
           {back === null ? (
-            <span />
+            <span className="text-xs text-muted-foreground">{t('firstRun.escape')}</span>
           ) : (
             <Button
               type="button"
@@ -427,14 +462,26 @@ export function FirstRun() {
               {t('firstRun.back')}
             </Button>
           )}
-          <div className="flex items-center gap-2.5">
-            {back === null ? (
-              <span className="text-xs text-muted-foreground">{t('firstRun.escape')}</span>
-            ) : null}
+          {passage === 'settings' && !fixed ? (
+            <div className="flex items-center gap-2.5">
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-muted-foreground"
+                disabled={save.isPending}
+                onClick={forward}
+              >
+                {t('firstRun.skip')}
+              </Button>
+              <Button type="submit" form={FORM_ID} disabled={!choice || save.isPending}>
+                {t('firstRun.saveAndContinue')}
+              </Button>
+            </div>
+          ) : (
             <Button type="button" variant="secondary" onClick={forward}>
               {last ? t('firstRun.finish') : t('firstRun.next')}
             </Button>
-          </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
