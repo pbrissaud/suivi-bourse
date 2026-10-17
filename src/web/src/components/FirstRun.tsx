@@ -100,7 +100,11 @@ import {
 import { Input } from '@/components/ui/input'
 import { type AccountDraft, accountsApi } from '@/features/accounts/lib/api'
 import { type ConfigResponse, settingsApi } from '@/features/settings/lib/api'
-import { DEFAULT_ACCOUNT_LABEL, declaredLabel } from '@/features/accounts/lib/accounts'
+import {
+  DEFAULT_ACCOUNT_LABEL,
+  declaredLabel,
+  isAddressableAccountId,
+} from '@/features/accounts/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
@@ -245,7 +249,9 @@ export function FirstRun() {
             below, and both of them moved under the cursor when the body was as
             tall as whichever passage happened to be showing. */}
         <div className="min-h-56 space-y-3">
-          <p className="label font-mono">
+          {/* Said, not drawn: the rail above already shows where the reader is,
+              and a mono kicker over the heading is what DESIGN.md rules out. */}
+          <p className="sr-only">
             {t('firstRun.step', { step: passageNumber(passage), total: PASSAGES.length })}
           </p>
 
@@ -570,6 +576,7 @@ function DeclareAccount() {
     const id = draft.id.trim()
     const found: Partial<Record<'id', MessageKey>> = {}
     if (id === '') found.id = 'accounts.form.required'
+    else if (!isAddressableAccountId(id)) found.id = 'accounts.form.id.shape'
 
     setErrors(found)
     if (Object.values(found).some(Boolean)) return

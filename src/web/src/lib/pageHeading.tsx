@@ -15,7 +15,7 @@
  * and a page with nothing to add declares a title alone — which clears the
  * previous page's subtitle rather than inheriting it.
  */
-import { createContext, useContext, useLayoutEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 
 interface PageHeading {
@@ -29,8 +29,16 @@ const NOTHING: PageHeading = { title: '', subtitle: null }
 const HeadingContext = createContext<PageHeading>(NOTHING)
 const DeclareContext = createContext<Dispatch<SetStateAction<PageHeading>> | null>(null)
 
+/** The tab's name when no page has declared one. */
+const PRODUCT = 'SuiviBourse'
+
 export function PageHeadingProvider({ children }: { children: ReactNode }) {
   const [heading, setHeading] = useState<PageHeading>(NOTHING)
+  // The tab says the page too: one name per route, so two open tabs and a
+  // screen reader's page change can tell `Titres` from `Comptes`.
+  useEffect(() => {
+    document.title = heading.title || PRODUCT
+  }, [heading.title])
   return (
     <DeclareContext.Provider value={setHeading}>
       <HeadingContext.Provider value={heading}>{children}</HeadingContext.Provider>

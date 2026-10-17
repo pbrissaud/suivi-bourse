@@ -47,6 +47,7 @@ import {
 import {
   declaredLabel,
   DEFAULT_ACCOUNT_LABEL,
+  isAddressableAccountId,
   type Reassignment,
   type Removal,
 } from '@/features/accounts/lib/accounts'
@@ -215,6 +216,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     const id = draft.id.trim()
 
     if (account === null && id === '') found.id = 'accounts.form.required'
+    else if (account === null && !isAddressableAccountId(id)) found.id = 'accounts.form.id.shape'
 
     setErrors(found)
     if (Object.values(found).some(Boolean)) return
@@ -278,7 +280,12 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
           }}
         >
           {account === null ? (
-            <Field name="id" label="accounts.form.id" error={errors.id}>
+            <Field
+              name="id"
+              label="accounts.form.id"
+              hint="accounts.form.id.hint"
+              error={errors.id}
+            >
               {(id, described) => (
                 <Input
                   id={id}
@@ -421,12 +428,14 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
 function Field({
   name,
   label,
+  hint,
   error,
   optional,
   children,
 }: {
   name: FieldName
   label: MessageKey
+  hint?: MessageKey
   error?: MessageKey
   optional?: boolean
   children: (id: string, describedBy: string | undefined) => ReactNode
@@ -434,6 +443,7 @@ function Field({
   const { t } = useI18n()
   const id = `account-${name}`
   const errorId = `${id}-error`
+  const hintId = `${id}-hint`
 
   return (
     <div className="space-y-1">
@@ -445,10 +455,14 @@ function Field({
           <span className="text-xs text-muted-foreground">{t('data.form.optional')}</span>
         ) : null}
       </div>
-      {children(id, error ? errorId : undefined)}
+      {children(id, error ? errorId : hint ? hintId : undefined)}
       {error ? (
         <p id={errorId} className="text-sm text-destructive">
           {t(error)}
+        </p>
+      ) : hint ? (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {t(hint)}
         </p>
       ) : null}
     </div>

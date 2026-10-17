@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useLocation } from '@tanstack/react-router'
 
 import { Unreadable } from '@/components/Unreadable'
 import { agentApi } from '@/features/agent/lib/api'
@@ -27,6 +29,14 @@ export default function SettingsPage() {
   const agentFailure = oneFailure(readConditions({ queries: [agent] }))
   const themeFailure = oneFailure(readConditions({ queries: [theme] }))
 
+  // `/settings#agent`, from the agent page's *Configure*: the block is drawn
+  // only once its read lands, so the router's own hash scroll finds nothing.
+  const hash = useLocation({ select: (location) => location.hash })
+  const agentDrawn = agent.data !== undefined || agentFailure !== null
+  useEffect(() => {
+    if (hash === 'agent' && agentDrawn) document.getElementById('agent')?.scrollIntoView()
+  }, [hash, agentDrawn])
+
   return (
     <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
       <div className="xl:col-span-2">
@@ -36,11 +46,13 @@ export default function SettingsPage() {
           <DialsBlock config={config.data} runtime={runtime.data} />
         ) : null}
       </div>
-      {agentFailure !== null ? (
-        <Unreadable failure={agentFailure} />
-      ) : agent.data ? (
-        <AgentBlock config={agent.data} />
-      ) : null}
+      <div id="agent" className="scroll-mt-20">
+        {agentFailure !== null ? (
+          <Unreadable failure={agentFailure} />
+        ) : agent.data ? (
+          <AgentBlock config={agent.data} />
+        ) : null}
+      </div>
       {themeFailure !== null ? (
         <Unreadable failure={themeFailure} />
       ) : theme.isSuccess ? (

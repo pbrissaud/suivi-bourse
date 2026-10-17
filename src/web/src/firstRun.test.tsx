@@ -701,6 +701,22 @@ describe('an account can be declared from inside the walk', () => {
     expect(writes).not.toContain('POST /api/accounts')
   })
 
+  it('says why an identifier the URLs cannot carry is refused, before the server does', async () => {
+    withAccounts()
+    const writes = writesMade()
+    const { user } = await firstRun()
+    await walk(user)
+
+    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.type(within(modal()).getByLabelText('Identifiant'), 'pea/lcl')
+    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+
+    // The server's `refuse_unaddressable_id` reaches the page as a generic
+    // refusal; the rule is said where the identifier is typed instead.
+    expect(within(modal()).getByText(/ne contient pas de « \/ »/)).toBeInTheDocument()
+    expect(writes).not.toContain('POST /api/accounts')
+  })
+
   it('carries the server’s refusal beside the button that earned it', async () => {
     server.use(
       http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
