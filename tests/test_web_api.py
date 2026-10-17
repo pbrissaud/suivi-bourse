@@ -3860,6 +3860,34 @@ def test_the_runtime_says_whether_the_reconstruction_still_has_windows(tmp_path)
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
 
+def test_the_runtime_carries_the_reconstruction_count_behind_rebuilding(tmp_path):
+    """The tuple `rebuilding` is read from rides beside it (issue #1260).
+
+    The dashboard's progress line says the bell's own count, so the two cannot
+    be two definitions.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = api_module.current_runtime()
+
+    for count, rebuilding in (((0, 0), False), ((1, 2), True), ((2, 2), False)):
+        runtime.workloads.reconstruction = count
+        payload = client.get('/api/runtime').get_json()
+        assert payload['reconstruction'] == {
+            'complete': count[0], 'total': count[1]}
+        assert payload['rebuilding'] is rebuilding
+
+
+def test_a_runtime_with_no_scheduler_counts_no_reconstruction(tmp_path):
+    """No scheduler, nothing to observe: `null`, never a count of zero."""
+    client = build_client(tmp_path, with_scheduler=False,
+                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    payload = client.get('/api/runtime').get_json()
+    assert payload['reconstruction'] is None
+    assert payload['rebuilding'] is False
+
+
 def test_a_runtime_with_no_scheduler_does_not_claim_a_rebuild(tmp_path):
     """A process that cannot see the scheduler asserts nothing about it.
 

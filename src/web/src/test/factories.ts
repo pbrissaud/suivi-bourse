@@ -1062,6 +1062,7 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     now: NOW,
     scheduler_running: true,
     rebuilding: false,
+    reconstruction: null,
     // The ordinary installation is the mounted one (#741), so the factory's
     // default is the state that says nothing on screen; the other two are what
     // a test asks for by name.
