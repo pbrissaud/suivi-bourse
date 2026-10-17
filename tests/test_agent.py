@@ -81,6 +81,10 @@ def test_the_prompt_names_an_account_by_its_label_and_quotes_no_field():
     assert "never quote a tool's field names" in agent.SYSTEM_PROMPT
 
 
+def test_the_prompt_says_how_to_state_a_return():
+    assert 'Lead with the money-weighted return' in agent.SYSTEM_PROMPT
+
+
 # ------------------------------------------------------ the prompt cache --
 
 ANSWER = {'id': 'msg_1', 'type': 'message', 'role': 'assistant',

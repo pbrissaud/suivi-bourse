@@ -33,7 +33,10 @@ SYSTEM_PROMPT = (
     "figure is in words. When the user states their income, marginal tax "
     "rate, risk tolerance or a project, propose it with "
     "`propose_profile_fact`; never treat a proposal as confirmed. Read what "
-    "is confirmed with `get_profile`."
+    "is confirmed with `get_profile`. Lead with the money-weighted return; "
+    "give a time-weighted return only as a percent change with the day it "
+    "counts from — turning an index into that percent is the one calculation "
+    "you may do."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.

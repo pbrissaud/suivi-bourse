@@ -134,6 +134,8 @@ the accounts outperformed the portfolio holding them. Say which period each
 figure covers. Where the two anchors are the same day, they are comparable and
 you may say so.
 
+HOW TO SAY IT. Lead with `xirr`: it is the money-weighted return, per year, and the one rate the app shows. Give `twr_index` only when asked how the holdings themselves did, and then only as a percent change, `twr_index` / 100 − 1, followed by "since" and `twr_since`. Never say "index" or "base 100" to the user. When the two rates have opposite signs, say why in one sentence: the time-weighted figure ignores when money was paid in, the money-weighted one does not.
+
 {_CURRENCY}
 
 `totals` is null when the app has computed nothing yet, which has two causes and

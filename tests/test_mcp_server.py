@@ -1458,3 +1458,10 @@ def test_a_refused_simulation_arrives_in_words(tmp_path, tool, arguments,
     assert result.is_error is True
     assert cause in _text(result)
     assert 'store could not answer' not in _text(result)
+
+
+def test_the_totals_description_says_which_return_to_lead_with():
+    description = mcp_server.GET_PORTFOLIO_TOTALS_DESCRIPTION
+    assert 'Lead with `xirr`' in description
+    assert 'only as a percent change' in description
+    assert 'Never say "index"' in description
