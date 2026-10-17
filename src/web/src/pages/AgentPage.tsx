@@ -34,14 +34,6 @@ export default function AgentPage() {
   usePageHeading(t('page.agent'))
 
   useEffect(() => {
-    const title = document.title
-    document.title = t('page.agent')
-    return () => {
-      document.title = title
-    }
-  }, [t])
-
-  useEffect(() => {
     if (threadId === undefined) {
       if (chat.messages.length > 0 || opening !== null) startThread()
     } else if (threadId !== (opening?.id ?? chat.id)) {

@@ -41,6 +41,7 @@ import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
 import { SIDEBAR_COOKIE_NAME, SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AgentChatProvider } from '@/features/agent/lib/agentChatProvider'
+import { useT } from '@/lib/i18n'
 
 /**
  * **Reading back what the registry component already writes.**
@@ -92,10 +93,19 @@ function navigationOpens(): boolean {
 }
 
 export function Shell() {
+  const t = useT()
   return (
     // Above the outlet (#1196): leaving `/agent` mid-answer keeps the stream,
     // and coming back shows it, finished or still running.
     <AgentChatProvider>
+      {/* The first stop of the tab order: eight links, the fold and the
+          header's controls stand between a keyboard and the page otherwise. */}
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:ring-2 focus:ring-ring"
+      >
+        {t('shell.skip')}
+      </a>
       <SidebarProvider defaultOpen={navigationOpens()}>
         <AppSidebar />
         {/* `min-w-0`, and it is not cosmetic — see the header comment: without it
@@ -109,7 +119,7 @@ export function Shell() {
             centred in was never the viewport. */}
           {/* The page's gutter is the header's, and it is the drawing's ladder:
             14 px on a phone, 20 from `md`, 28 from `lg`. */}
-          <div className="w-full p-3.5 md:p-5 lg:p-7">
+          <div id="content" tabIndex={-1} className="w-full p-3.5 outline-none md:p-5 lg:p-7">
             <Outlet />
           </div>
           {/* Mounted by the shell and not by a route: *first run* is a predicate,

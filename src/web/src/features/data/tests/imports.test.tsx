@@ -512,18 +512,12 @@ describe('the file handed over', () => {
     await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
-      await screen.findByText(
-        /2 lignes de ce fichier sont déjà dans votre grand livre et seront ignorées\./,
-      ),
+      await screen.findByText(/2 lignes de ce fichier sont des doublons et seront ignorées\./),
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Importer' }))
 
-    expect(
-      await screen.findByText(
-        /2 lignes étaient déjà dans votre grand livre et n’ont pas été réécrites\./,
-      ),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/2 doublons n’ont pas été réécrits\./)).toBeInTheDocument()
   })
 
   it('offers to write the duplicates anyway', async () => {
@@ -546,9 +540,7 @@ describe('the file handed over', () => {
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await user.upload(screen.getByLabelText('Parcourir…'), aFile())
-    await user.click(
-      await screen.findByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
-    )
+    await user.click(await screen.findByLabelText('Écrire quand même les doublons'))
     await user.click(screen.getByRole('button', { name: 'Importer' }))
 
     await waitFor(() => expect(asked).toEqual(['1']))
@@ -563,10 +555,8 @@ describe('the file handed over', () => {
     await user.upload(screen.getByLabelText('Parcourir…'), aFile())
     await screen.findByRole('button', { name: 'Importer' })
 
-    expect(
-      screen.queryByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText(/déjà dans votre grand livre/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Écrire quand même les doublons')).not.toBeInTheDocument()
+    expect(screen.queryByText(/sont des doublons|est un doublon/)).not.toBeInTheDocument()
   })
 
   it('sends the file to the gesture, and never to a resource', async () => {
@@ -972,7 +962,7 @@ describe('what this import would do', () => {
     await hand(user)
 
     expect(await screen.findByText(/10 févr\. 2026 · Achat · ZZA · 2 × 120,00/)).toBeInTheDocument()
-    expect(screen.getByText('déjà présente')).toBeInTheDocument()
+    expect(screen.getByText('déjà dans votre grand livre')).toBeInTheDocument()
     expect(screen.getByText('répétée dans le fichier')).toBeInTheDocument()
   })
 
@@ -989,9 +979,7 @@ describe('what this import would do', () => {
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
     expect(screen.getByText('2 doublons sautés')).toBeInTheDocument()
 
-    await user.click(
-      screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
-    )
+    await user.click(screen.getByLabelText('Écrire quand même les doublons'))
 
     expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
     expect(screen.getByText('aucun doublon sauté')).toBeInTheDocument()
@@ -1041,9 +1029,7 @@ describe('what this import would do', () => {
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await hand(user)
-    const box = await screen.findByLabelText(
-      'Écrire quand même les lignes déjà dans mon grand livre',
-    )
+    const box = await screen.findByLabelText('Écrire quand même les doublons')
     await user.click(box)
 
     expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
@@ -1058,9 +1044,7 @@ describe('what this import would do', () => {
     expect(seen.every((url) => url.searchParams.has('dry_run'))).toBe(true)
     // And the window is not a dead end: the census stands beside the refusal, so
     // the box that caused it is still there to untick.
-    await user.click(
-      screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
-    )
+    await user.click(screen.getByLabelText('Écrire quand même les doublons'))
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
     expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
@@ -1077,9 +1061,7 @@ describe('what this import would do', () => {
     await hand(user)
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
 
-    await user.click(
-      screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
-    )
+    await user.click(screen.getByLabelText('Écrire quand même les doublons'))
 
     expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
     await waitFor(() =>

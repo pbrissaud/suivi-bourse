@@ -347,14 +347,21 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
   )
 }
 
-/** Disabled (4A): the page says what is missing. */
+/**
+ * Disabled (4A): the page says what is missing, and what the agent would do.
+ * It sits where the conversation would, the page's gutter given back by
+ * `AgentPage` from 1 024 px, and the link lands on the agent's own block.
+ */
 function AgentOff() {
   const { t } = useI18n()
   return (
-    <div className="flex flex-col items-start gap-3 py-6">
-      <p className="text-prose">{t('agent.disabled')}</p>
+    <div className="mx-auto flex w-full max-w-180 flex-col items-start gap-3 px-4 py-6 lg:max-w-192 lg:pt-12">
+      <p className="text-prose font-medium">{t('agent.disabled')}</p>
+      <p className="max-w-prose text-prose text-muted-foreground">{t('agent.disabled.detail')}</p>
       <Button asChild className="min-h-11">
-        <Link to="/settings">{t('agent.configure')}</Link>
+        <Link to="/settings" hash="agent">
+          {t('agent.configure')}
+        </Link>
       </Button>
     </div>
   )

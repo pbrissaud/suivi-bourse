@@ -71,6 +71,15 @@ export function isDefaultAccount(id: string): boolean {
 }
 
 /**
+ * The server's `refuse_unaddressable_id`, said before the request: the id is
+ * the account's address in the app's URLs, so a `/`, `.` or `..` is refused
+ * there with a sentence the page can only render as a generic refusal.
+ */
+export function isAddressableAccountId(id: string): boolean {
+  return !id.includes('/') && id !== '.' && id !== '..'
+}
+
+/**
  * The one catalogue entry that names it, **wherever it is rendered** (#729).
  *
  * A key and not a string: the accounts page and the declaration block must not

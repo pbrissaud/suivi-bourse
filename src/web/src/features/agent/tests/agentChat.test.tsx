@@ -89,7 +89,7 @@ describe('the states (4A)', () => {
     ).toBeInTheDocument()
     expect(within(main).getByRole('link', { name: 'Configurer' })).toHaveAttribute(
       'href',
-      '/settings',
+      '/settings#agent',
     )
     expect(within(main).queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -131,7 +131,7 @@ describe('the states (4A)', () => {
     await ask(user, main, QUESTION)
 
     expect(await within(main).findByText('Simulation en cours…')).toBeInTheDocument()
-    expect(within(main).getByText('Simulation d’une vente, impôts et frais compris.'))
+    expect(within(main).getByText('Simulation d’une vente et de son impôt.'))
     expect(within(main).getByRole('button', { name: 'Arrêter' })).toBeInTheDocument()
     expect(within(main).queryByRole('button', { name: 'Envoyer' })).not.toBeInTheDocument()
 
@@ -152,9 +152,7 @@ describe('the states (4A)', () => {
     const { user, main } = await openPage()
     await ask(user, main, QUESTION)
 
-    const sentence = await within(main).findByText(
-      'Simulation d’une vente, impôts et frais compris.',
-    )
+    const sentence = await within(main).findByText('Simulation d’une vente et de son impôt.')
     const line = sentence.closest('[data-slot=trace-line]') as HTMLElement
     expect(line).toHaveAttribute('data-status', 'running')
     await user.click(within(main).getByRole('button', { name: 'Arrêter' }))
@@ -162,7 +160,7 @@ describe('the states (4A)', () => {
     await within(main).findByRole('button', { name: 'Envoyer' })
     expect(
       within(main)
-        .getByText('Simulation d’une vente, impôts et frais compris.')
+        .getByText('Simulation d’une vente et de son impôt.')
         .closest('[data-slot=trace-line]'),
     ).toHaveAttribute('data-status', 'error')
   })
@@ -284,7 +282,7 @@ describe('the tool lines (2A)', () => {
     await within(main).findAllByText('Fini.')
 
     const trigger = within(main).getByRole('button', {
-      name: 'Simulation d’une vente, impôts et frais compris.',
+      name: 'Simulation d’une vente et de son impôt.',
     })
     await user.click(trigger)
     const line = trigger.closest('[data-slot=trace-collapsible]') as HTMLElement
