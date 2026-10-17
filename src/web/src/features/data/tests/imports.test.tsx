@@ -1403,6 +1403,40 @@ describe('the currency of the amounts (#1261)', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('asks again when the refused answer is clicked a second time', async () => {
+    const seen = watching(
+      () => aReceipt({ foreign_lines: [AAPL] }),
+      (url) =>
+        url.searchParams.get('amounts_in') === 'quote'
+          ? HttpResponse.json(
+              {
+                type: PROBLEM_TYPES.currencyUnconvertible,
+                title: 'Currency not convertible',
+                status: 422,
+                symbol: 'AAPL',
+                currency: 'USD',
+                base: 'EUR',
+                date: '2026-01-05',
+              },
+              { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+            )
+          : undefined,
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    const quote = await screen.findByLabelText('En USD, la devise de chaque titre')
+    await user.click(quote)
+    await screen.findByRole('alert')
+    const before = seen.length
+
+    await user.click(quote)
+
+    await waitFor(() => expect(seen.length).toBe(before + 1))
+    expect(seen.at(-1)?.searchParams.get('amounts_in')).toBe('quote')
+  })
+
   it('names the unverified securities', async () => {
     await open(() => aReceipt({ foreign_lines: [AAPL], unverified: ['XYZ', 'ABC'] }))
 

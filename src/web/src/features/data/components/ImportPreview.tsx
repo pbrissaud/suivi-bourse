@@ -269,6 +269,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
                 currencies={currencies}
                 answer={amountsIn}
                 busy={upload.pending}
+                refused={Boolean(upload.error)}
                 onAnswer={decideCurrency}
               />
             ) : null}
@@ -541,6 +542,7 @@ function ForeignBlock({
   currencies,
   answer,
   busy,
+  refused,
   onAnswer,
 }: {
   lines: readonly ForeignLine[]
@@ -549,6 +551,8 @@ function ForeignBlock({
   currencies: string
   answer: AmountsIn | undefined
   busy: boolean
+  /** The standing answer was refused: clicking it again asks once more. */
+  refused: boolean
   onAnswer: (value: AmountsIn) => void
 }) {
   const { t } = useI18n()
@@ -612,6 +616,11 @@ function ForeignBlock({
                 checked={answer === choice.value}
                 disabled={busy}
                 onChange={() => onAnswer(choice.value)}
+                // A radio already checked fires no `onChange`: after a refusal
+                // ("try again later") the same click is how the reader retries.
+                onClick={() => {
+                  if (refused && answer === choice.value) onAnswer(choice.value)
+                }}
               />
               <span className="flex flex-col gap-0.5">
                 <label htmlFor={id} className="font-medium pointer-coarse:py-2">
