@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS event (
     unit_price    DOUBLE,      -- an amount in the reporting currency; optional on GRANT
     fee           DOUBLE,
     amount        DOUBLE,
-    notes         VARCHAR);
+    notes         VARCHAR,
+    amounts_currency VARCHAR);  -- NULL: nobody said (#1261); else the unit the amounts were written in
 """
 
 _DDL_DERIVED_FROM_EVENTS = """

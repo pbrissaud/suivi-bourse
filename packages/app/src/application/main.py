@@ -46,7 +46,7 @@ MANAGED_LOGGERS = (
     'quotes', 'perf_series', 'ledger', 'positions',
     'installation_facts', 'api.api', 'api.settings',
     'fx', 'accounts', 'entries', 'reassignment',
-    'uploads',
+    'uploads', 'import_currency',
     'advisories',
     'market',
     'agent', 'auth',

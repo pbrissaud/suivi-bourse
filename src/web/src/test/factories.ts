@@ -1038,6 +1038,10 @@ export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt 
     file_accounts: [{ name: 'beta', rows: 3 }],
     duplicate_rows: [],
     currency: null,
+    // **No foreign line by default** (#1261): nothing in the file is quoted
+    // outside the base currency, so the window asks nothing about it.
+    foreign_lines: [],
+    unverified: [],
     ...overrides,
   }
 }
@@ -1357,7 +1361,7 @@ export function anInstallationFact(overrides: Partial<InstallationFact> = {}): I
     acknowledged: false,
     acknowledged_at: null,
     message:
-      'Your amounts were read as EUR. 4 event(s) on 3 line(s) quoted in USD, GBP (ZZA, ZZB, ZZC) were imported before any price had been observed.',
+      '4 event(s) on 3 line(s) quoted in USD, GBP (ZZA, ZZB, ZZC) were recorded without anyone saying which currency their amounts were in, so they were read as EUR.',
     detail: {
       base_currency: BASE_CURRENCY,
       symbols: ['ZZA', 'ZZB', 'ZZC'],

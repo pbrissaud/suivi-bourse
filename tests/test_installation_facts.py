@@ -23,13 +23,14 @@ def _quote(opened, symbol: str, currency: str) -> None:
 
 
 def _event(opened, identifier: int, symbol: str, unit_price=150.0,
-           event_type='BUY', quantity=1.0, amount=None) -> None:
+           event_type='BUY', quantity=1.0, amount=None,
+           amounts_currency=None) -> None:
     opened.execute(
         'INSERT INTO event (id, date, event_type, account, symbol, quantity, '
-        '                   unit_price, amount) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        '                   unit_price, amount, amounts_currency) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [identifier, date(2024, 1, 15), event_type, 'default', symbol,
-         quantity, unit_price, amount])
+         quantity, unit_price, amount, amounts_currency])
 
 
 def _keys(found):
@@ -312,6 +313,52 @@ def test_the_assumed_currency_fact_names_the_events_it_covers(store):
     # Actionable rather than accusatory: it says what was assumed and what to do.
     assert 'EUR' in recorded.message and 'AAPL' in recorded.message
     assert 'acknowledge' in recorded.message
+
+
+def _in_euro(store) -> None:
+    store.execute("INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR') "
+                  "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+
+
+def test_answered_events_are_not_in_the_assumed_currency_fact(store):
+    _in_euro(store)
+    _quote(store, 'AAPL', 'USD')
+    _quote(store, 'TSLA', 'USD')
+    _event(store, 1, 'AAPL', amounts_currency='USD')
+    _event(store, 2, 'AAPL', amounts_currency='EUR')
+    _event(store, 3, 'TSLA')
+
+    recorded = facts.record(store, facts.ASSUMED_BASE_CURRENCY, facts.Context())
+
+    assert [event['id'] for event in recorded.detail['events']] == [3]
+    assert recorded.detail['symbols'] == ['TSLA']
+
+
+def test_the_fact_is_dropped_once_every_foreign_event_is_answered(store):
+    _in_euro(store)
+    _quote(store, 'AAPL', 'USD')
+    _event(store, 1, 'AAPL')
+    facts.record(store, facts.ASSUMED_BASE_CURRENCY, facts.Context())
+    assert _row_count(store) == 1
+
+    store.execute("UPDATE event SET amounts_currency = 'EUR'")
+    facts.refresh(store, facts.Context())
+
+    assert _row_count(store) == 0
+
+
+def test_legacy_events_without_a_stated_currency_keep_the_fact(store):
+    """The step writes no value: what was stored before stays *nobody said*."""
+    _in_euro(store)
+    _quote(store, 'AAPL', 'USD')
+    _event(store, 1, 'AAPL')
+    facts.record(store, facts.ASSUMED_BASE_CURRENCY, facts.Context())
+
+    facts.refresh(store, facts.Context())
+
+    assert _row_count(store) == 1
+    assert [fact.key for fact in facts.listing(store, facts.Context())] == [
+        facts.ASSUMED_BASE_CURRENCY]
 
 
 def test_the_assumed_currency_fact_is_produced_once(store):

@@ -50,6 +50,16 @@
  * the duplicates alike: a parameter the preview never carried is a parameter the
  * server judges for the first time under the button.
  *
+ * **The currency of the amounts is the fourth question** (#1261). No write path
+ * converts an amount, so a line quoted in USD in a EUR install was always read
+ * as EUR, and the reader learnt it afterwards from a notice. The server now
+ * names the foreign-quoted lines in the forecast and the window asks, once for
+ * the whole file, which currency their amounts are in. **Nothing is
+ * preselected**: *Importer* stays disabled, with the reason written beside it,
+ * until the reader answers — a default would be the old silence again. The
+ * answer is sent to every forecast, so a rate the server does not have is a
+ * refusal at the radio and never after the button.
+ *
  * **The simple case renders neither block.** Everything declared and nothing
  * duplicated: the accounts block is one line of affirmation, and the duplicates
  * block does not exist — a block with nothing in it does not exist (#724).
@@ -74,7 +84,7 @@ import {
 } from '@/components/ui/dialog'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
-import type { DuplicateRow, ImportReceipt } from '@/features/data/lib/api'
+import type { AmountsIn, DuplicateRow, ForeignLine, ImportReceipt } from '@/features/data/lib/api'
 import {
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
@@ -118,10 +128,14 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   const [chosen, setChosen] = useState<Record<string, AccountTarget>>({})
   const [writeDuplicates, setWriteDuplicates] = useState(false)
   const [adoptCurrency, setAdoptCurrency] = useState(true)
+  const [amountsIn, setAmountsIn] = useState<AmountsIn | undefined>(undefined)
   const forecast = upload.forecast
   const previewed = forecast?.file.filename
   const [lastFile, setLastFile] = useState<string | undefined>(previewed)
-  if (!upload.held && (lastFile !== undefined || Object.keys(chosen).length > 0)) {
+  if (
+    !upload.held &&
+    (lastFile !== undefined || Object.keys(chosen).length > 0 || amountsIn !== undefined)
+  ) {
     // The file was put down or written: nothing the reader said about it
     // survives into the next one, or a box ticked for one file would write
     // duplicates nobody looked at.
@@ -129,6 +143,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
     setChosen({})
     setWriteDuplicates(false)
     setAdoptCurrency(true)
+    setAmountsIn(undefined)
   } else if (upload.held && previewed !== undefined && lastFile === undefined) {
     setLastFile(previewed)
   }
@@ -145,12 +160,25 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   const missing = unanswered(lines)
   const ready = forecast !== undefined && declared !== undefined
 
+  // The question about the foreign-quoted amounts (#1261). It needs the base
+  // currency to be worded, and a reader who cannot be asked is not blocked: the
+  // write then keeps the behaviour of a caller that never heard of it.
+  const base = totals.data?.base_currency ?? null
+  const foreignLines = forecast?.file.foreign_lines ?? []
+  const asking = base !== null && foreignLines.length > 0
+  const currencies = [...new Set(foreignLines.map((line) => line.currency))].join(', ')
+  const currencyMissing = asking && amountsIn === undefined
+
   const answer = (name: string, target: AccountTarget) => {
     const next = { ...chosen, [name]: target }
     setChosen(next)
     // The forecast is re-read under the new correspondence: the duplicate key
     // carries the account, so what is skipped changes with the answer.
-    upload.reconsider({ correspondence: correspondenceOf(linesUnder(next)), writeDuplicates })
+    upload.reconsider({
+      correspondence: correspondenceOf(linesUnder(next)),
+      writeDuplicates,
+      amountsIn,
+    })
   }
 
   /**
@@ -166,7 +194,21 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
    */
   const decideDuplicates = (value: boolean) => {
     setWriteDuplicates(value)
-    upload.reconsider({ correspondence: correspondenceOf(lines), writeDuplicates: value })
+    upload.reconsider({
+      correspondence: correspondenceOf(lines),
+      writeDuplicates: value,
+      amountsIn,
+    })
+  }
+
+  /** The currency answer is re-read like the others: a missing rate is a refusal here. */
+  const decideCurrency = (value: AmountsIn) => {
+    setAmountsIn(value)
+    upload.reconsider({
+      correspondence: correspondenceOf(lines),
+      writeDuplicates,
+      amountsIn: value,
+    })
   }
 
   return (
@@ -197,7 +239,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             from — this is the reader's own act, and the app owes them its end. */}
         {upload.pending && !forecast ? (
           <p role="status" className="text-sm text-muted-foreground">
-            {running(t, upload.filename)}
+            {checking(t, upload.filename)}
           </p>
         ) : null}
 
@@ -218,6 +260,19 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
               busy={upload.pending}
               onAnswer={answer}
             />
+
+            {asking ? (
+              <ForeignBlock
+                lines={foreignLines}
+                unverified={forecast.file.unverified}
+                base={base}
+                currencies={currencies}
+                answer={amountsIn}
+                busy={upload.pending}
+                refused={Boolean(upload.error)}
+                onAnswer={decideCurrency}
+              />
+            ) : null}
 
             {/* Read off the **census** and never off the answer's own forecast:
                 under `?write_duplicates=1` the server moves those rows into
@@ -276,7 +331,11 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             <Button
               type="button"
               disabled={
-                !ready || forecast.writing === undefined || missing.length > 0 || upload.pending
+                !ready ||
+                forecast.writing === undefined ||
+                missing.length > 0 ||
+                currencyMissing ||
+                upload.pending
               }
               onClick={() => upload.commit({ declineCurrency: !adoptCurrency })}
             >
@@ -290,6 +349,11 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
                 {missing.length === 1
                   ? t('data.import.blocked.one', { count: missing[0].rows })
                   : t('data.import.blocked.many', { count: missing.length })}
+              </span>
+            ) : null}
+            {currencyMissing ? (
+              <span className="basis-full text-xs text-attention">
+                {t('data.import.blocked.currency', { currencies })}
               </span>
             ) : null}
           </div>
@@ -458,6 +522,132 @@ function why(
   })
 }
 
+/** Past this many securities, the list shows one fewer and counts the rest. */
+const MAX_FOREIGN_SHOWN = 6
+
+/**
+ * **Les montants en devise** — one question for the whole file (#1261).
+ *
+ * The group is a native `fieldset` named by its `legend`, which is the question
+ * itself, and each radio is described by its own clause. Neither is checked on
+ * arrival: an answer the reader did not give is the silence this block replaces.
+ * The radios are disabled while a forecast is pending and **stay enabled on a
+ * refusal**, so a rate the server does not have is taken back by picking the
+ * other answer.
+ */
+function ForeignBlock({
+  lines,
+  unverified,
+  base,
+  currencies,
+  answer,
+  busy,
+  refused,
+  onAnswer,
+}: {
+  lines: readonly ForeignLine[]
+  unverified: readonly string[]
+  base: string
+  currencies: string
+  answer: AmountsIn | undefined
+  busy: boolean
+  /** The standing answer was refused: clicking it again asks once more. */
+  refused: boolean
+  onAnswer: (value: AmountsIn) => void
+}) {
+  const { t } = useI18n()
+  const group = useId()
+  const crowded = lines.length > MAX_FOREIGN_SHOWN
+  const shown = crowded ? lines.slice(0, MAX_FOREIGN_SHOWN - 1) : lines
+
+  const choices: { value: AmountsIn; name: string; why: string }[] = [
+    {
+      value: 'base',
+      name: t('data.import.foreign.base', { base }),
+      why: t('data.import.foreign.base.why'),
+    },
+    {
+      value: 'quote',
+      name: t('data.import.foreign.quote', { currencies }),
+      why: t('data.import.foreign.quote.why', { base }),
+    },
+  ]
+
+  return (
+    <section aria-labelledby="import-foreign" className="space-y-3 rounded-lg border p-4">
+      <h3 id="import-foreign" className="label">
+        {t('data.import.foreign.title')}
+      </h3>
+
+      <fieldset className="space-y-3">
+        <legend className="text-sm">
+          {t('data.import.foreign.lead', { count: lines.length, base })}
+        </legend>
+
+        <ul className="divide-y">
+          {shown.map((line) => (
+            <li key={line.symbol} className="flex items-baseline justify-between gap-3 py-2">
+              <span className="font-mono text-xs">{line.symbol}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {t('data.import.foreign.rows', { currency: line.currency, count: line.rows })}
+              </span>
+            </li>
+          ))}
+          {crowded ? (
+            <li className="py-2 text-xs text-muted-foreground">
+              {t('data.import.foreign.more', { count: lines.length - shown.length })}
+            </li>
+          ) : null}
+        </ul>
+
+        {choices.map((choice) => {
+          const id = `${group}-${choice.value}`
+          return (
+            <div
+              key={choice.value}
+              className="flex items-start gap-2 text-sm pointer-coarse:min-h-11"
+            >
+              <input
+                id={id}
+                type="radio"
+                name={group}
+                className="mt-1"
+                aria-describedby={`${id}-why`}
+                checked={answer === choice.value}
+                disabled={busy}
+                onChange={() => onAnswer(choice.value)}
+                // A radio already checked fires no `onChange`: after a refusal
+                // ("try again later") the same click is how the reader retries.
+                onClick={() => {
+                  if (refused && answer === choice.value) onAnswer(choice.value)
+                }}
+              />
+              <span className="flex flex-col gap-0.5">
+                <label htmlFor={id} className="font-medium pointer-coarse:py-2">
+                  {choice.name}
+                </label>
+                <span id={`${id}-why`} className="text-xs text-muted-foreground italic">
+                  {choice.why}
+                </span>
+              </span>
+            </div>
+          )
+        })}
+      </fieldset>
+
+      {unverified.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {t('data.import.foreign.unverified', {
+            count: unverified.length,
+            symbols: unverified.join(', '),
+            base,
+          })}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 /**
  * **Les doublons** — named line by line, with what each of them repeats (#835).
  *
@@ -603,9 +793,9 @@ function CurrencyBlock({
   )
 }
 
-/** The file on its way in — the running sentence names it. */
-function running(t: ReturnType<typeof useI18n>['t'], filename: string | undefined): string {
-  const said = receiptMessage({ kind: 'import.running', filename: filename ?? '' })
+/** The file on its way in — the sentence names it, and says its currencies are checked too. */
+function checking(t: ReturnType<typeof useI18n>['t'], filename: string | undefined): string {
+  const said = receiptMessage({ kind: 'import.checking', filename: filename ?? '' })
   return t(said.message, said.values)
 }
 

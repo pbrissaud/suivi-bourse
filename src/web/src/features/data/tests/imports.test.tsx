@@ -1257,3 +1257,255 @@ describe('what this import would do', () => {
     expect(screen.queryByText(/3 événements écrits/)).not.toBeInTheDocument()
   })
 })
+
+describe('the currency of the amounts (#1261)', () => {
+  function aFile(name = 'zeta-events_2.csv') {
+    return new File(['date,event_type\n'], name, { type: 'text/csv' })
+  }
+
+  const AAPL = { symbol: 'AAPL', currency: 'USD', rows: 3 }
+  const VOD = { symbol: 'VOD.L', currency: 'GBP', rows: 2 }
+
+  /** Every request the route saw, answered with `receipt` unless `answer` says otherwise. */
+  function watching(receipt: () => ImportReceipt, answer?: (url: URL) => Response | undefined) {
+    const seen: URL[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const url = new URL(request.url)
+        seen.push(url)
+        return (
+          answer?.(url) ??
+          HttpResponse.json(receipt(), { status: url.searchParams.has('dry_run') ? 200 : 201 })
+        )
+      }),
+    )
+    return seen
+  }
+
+  async function hand(user: ReturnType<typeof renderImports>['user']) {
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+  }
+
+  async function open(receipt: () => ImportReceipt = () => aReceipt({ foreign_lines: [AAPL] })) {
+    const seen = watching(receipt)
+    const rendered = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(rendered.user)
+    return { ...rendered, seen }
+  }
+
+  it('renders no currency block when no line is foreign', async () => {
+    await open(() => aReceipt())
+
+    await screen.findByRole('button', { name: 'Importer' })
+    expect(screen.queryByText('Les montants en devise')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('radio')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled()
+  })
+
+  it('renders no currency block when the file declares its currency', async () => {
+    // The server lists nothing for a file that states its amounts' unit, and the
+    // window believes it: a file that declares one has answered.
+    await open(() => aReceipt({ currency: { declared: 'EUR', adopting: false } }))
+
+    await screen.findByRole('button', { name: 'Importer' })
+    expect(screen.queryByText('Les montants en devise')).not.toBeInTheDocument()
+  })
+
+  it('lists the foreign lines and leaves both radios unchecked', async () => {
+    await open(() => aReceipt({ foreign_lines: [AAPL, VOD] }))
+
+    const section = (await screen.findByText('Les montants en devise')).closest('section')!
+    expect(
+      within(section).getByText(/2 titres de ce fichier sont cotés hors EUR/),
+    ).toBeInTheDocument()
+    expect(within(section).getByText('AAPL')).toBeInTheDocument()
+    expect(within(section).getByText('USD · 3 événements')).toBeInTheDocument()
+    expect(within(section).getByText('VOD.L')).toBeInTheDocument()
+    expect(within(section).getByText('GBP · 2 événements')).toBeInTheDocument()
+    const radios = within(section).getAllByRole('radio')
+    expect(radios).toHaveLength(2)
+    for (const radio of radios) expect(radio).not.toBeChecked()
+  })
+
+  it('shows five lines and counts the rest past six', async () => {
+    const many = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((symbol) => ({
+      symbol,
+      currency: 'USD',
+      rows: 1,
+    }))
+    await open(() => aReceipt({ foreign_lines: many }))
+
+    const section = (await screen.findByText('Les montants en devise')).closest('section')!
+    expect(within(section).getAllByRole('listitem')).toHaveLength(6)
+    expect(within(section).getByText('et 2 autres')).toBeInTheDocument()
+    expect(within(section).queryByText('F')).not.toBeInTheDocument()
+  })
+
+  it('keeps Import disabled with the reason written while unanswered', async () => {
+    await open(() => aReceipt({ foreign_lines: [AAPL, VOD] }))
+
+    expect(await screen.findByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(
+      screen.getByText('Dites dans quelle devise sont les montants des titres cotés en USD, GBP.'),
+    ).toBeInTheDocument()
+  })
+
+  it('re-reads the forecast with amounts_in when a radio is chosen', async () => {
+    const { user, seen } = await open()
+
+    await user.click(await screen.findByLabelText('En USD, la devise de chaque titre'))
+
+    await waitFor(() => expect(seen).toHaveLength(2))
+    expect(seen[0].searchParams.has('amounts_in')).toBe(false)
+    expect(seen[1].searchParams.get('amounts_in')).toBe('quote')
+    expect(seen[1].searchParams.has('dry_run')).toBe(true)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    expect(screen.queryByText(/Dites dans quelle devise/)).not.toBeInTheDocument()
+  })
+
+  it('shows the unconvertible refusal and keeps the radios enabled', async () => {
+    const seen = watching(
+      () => aReceipt({ foreign_lines: [AAPL] }),
+      (url) =>
+        url.searchParams.get('amounts_in') === 'quote'
+          ? HttpResponse.json(
+              {
+                type: PROBLEM_TYPES.currencyUnconvertible,
+                title: 'Currency not convertible',
+                status: 422,
+                symbol: 'AAPL',
+                currency: 'USD',
+                base: 'EUR',
+                date: '2026-01-05',
+              },
+              { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+            )
+          : undefined,
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    await user.click(await screen.findByLabelText('En USD, la devise de chaque titre'))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      'Aucun cours USD/EUR n’est connu autour du 2026-01-05 (AAPL) : ces montants ne peuvent pas être convertis. Choisissez « En EUR » ou réessayez plus tard.',
+    )
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeEnabled()
+
+    // The other answer is one click away, and it is judged like any other.
+    await user.click(screen.getByLabelText('En EUR, déjà convertis'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    expect(seen.at(-1)?.searchParams.get('amounts_in')).toBe('base')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('asks again when the refused answer is clicked a second time', async () => {
+    const seen = watching(
+      () => aReceipt({ foreign_lines: [AAPL] }),
+      (url) =>
+        url.searchParams.get('amounts_in') === 'quote'
+          ? HttpResponse.json(
+              {
+                type: PROBLEM_TYPES.currencyUnconvertible,
+                title: 'Currency not convertible',
+                status: 422,
+                symbol: 'AAPL',
+                currency: 'USD',
+                base: 'EUR',
+                date: '2026-01-05',
+              },
+              { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+            )
+          : undefined,
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    const quote = await screen.findByLabelText('En USD, la devise de chaque titre')
+    await user.click(quote)
+    await screen.findByRole('alert')
+    const before = seen.length
+
+    await user.click(quote)
+
+    await waitFor(() => expect(seen.length).toBe(before + 1))
+    expect(seen.at(-1)?.searchParams.get('amounts_in')).toBe('quote')
+  })
+
+  it('names the unverified securities', async () => {
+    await open(() => aReceipt({ foreign_lines: [AAPL], unverified: ['XYZ', 'ABC'] }))
+
+    expect(
+      await screen.findByText(
+        'La devise de 2 titres n’a pas pu être vérifiée (XYZ, ABC) : leurs montants seront lus en EUR.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('says it is checking currencies while the first forecast is in flight', async () => {
+    let release: (() => void) | null = null
+    server.use(
+      http.post(ROUTES.eventsImport, async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(aReceipt())
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(
+      await screen.findByText('Lecture de zeta-events_2.csv et vérification des devises…'),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(release).not.toBeNull())
+    release!()
+    await screen.findByRole('button', { name: 'Importer' })
+  })
+
+  it('sends amounts_in and the foreign pairs with the commit', async () => {
+    const { user, seen } = await open(() => aReceipt({ foreign_lines: [AAPL, VOD] }))
+
+    await user.click(await screen.findByLabelText('En USD, GBP, la devise de chaque titre'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(seen.some((url) => !url.searchParams.has('dry_run'))).toBe(true))
+    const written = seen.find((url) => !url.searchParams.has('dry_run'))!
+    expect(written.searchParams.get('amounts_in')).toBe('quote')
+    expect(written.searchParams.getAll('foreign')).toEqual(['AAPL:USD', 'VOD.L:GBP'])
+  })
+
+  it('forgets the answer when another file is handed over', async () => {
+    const { user } = await open()
+    await user.click(await screen.findByLabelText('En EUR, déjà convertis'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'Annuler' }))
+    await hand(user)
+
+    await screen.findByText('Les montants en devise')
+    for (const radio of screen.getAllByRole('radio')) expect(radio).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+  })
+
+  it('gives the radio group an accessible name and each radio a description', async () => {
+    await open()
+
+    const group = await screen.findByRole('group', {
+      name: /Dans quelle devise votre courtier a-t-il écrit leurs montants/,
+    })
+    const inBase = within(group).getByRole('radio', { name: 'En EUR, déjà convertis' })
+    expect(inBase).toHaveAccessibleDescription('Ils sont écrits tels quels.')
+    expect(
+      within(group).getByRole('radio', { name: 'En USD, la devise de chaque titre' }),
+    ).toHaveAccessibleDescription(/Convertis en EUR au cours de clôture/)
+  })
+})
