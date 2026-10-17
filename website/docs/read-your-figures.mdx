@@ -186,13 +186,9 @@ adjustment here.
 
 ## Time-weighted return {#twr}
 
-**Time-weighted return: how the positions themselves performed, independent of
-your deposits.**
+**Performance of your holdings: what one euro invested at the start would have done, whatever the dates of your deposits.**
 
-It is an index on base 100 over the period shown: 100 at the start, and what a
-single unit of money left alone would have become by the end. Paying more money
-in — or taking it out — moves the index by nothing at all. That is the whole
-point of it: it measures what you hold, not when you happened to have cash.
+The app shows it as a percent change from the start of the period: on the *Performance* curve from the first day of the window you picked, and in the money-weighted return's information bubble from the day the series starts, which the bubble names. Paying money in, or taking it out, moves it by nothing at all. That is the whole point of it: it measures what you hold, not when you happened to have cash.
 
 **It depends on the window, and a ranking can reverse inside it.** Two accounts
 compared over one week and over two years can trade places, with every figure
@@ -210,6 +206,8 @@ percentage, alone among the figures on the page, can change without a price
 having changed. See
 [the base of the time-weighted return](./rebuild-and-resolution.mdx#the-base-of-the-time-weighted-return-moves-while-the-rebuild-runs).
 
+**Why it can disagree with the money-weighted return, even in sign.** The two answer different questions. If a small early amount rose a lot and most of your money arrived later and earned little, the performance of your holdings is high and the money-weighted return is low. The reverse can happen too. Neither is wrong; each states its own period.
+
 **Returns are computed from the dates of your events.** Nothing else dates
 them: no event, no date, no return.
 
@@ -221,8 +219,8 @@ It is the single annual rate that reconciles everything that entered and left �
 each deposit and each withdrawal on its own date — with what the account is
 worth today. Unlike the [time-weighted return](#twr), it counts *when* you
 paid in: money added before a rise weighs more than money added after it. It is
-the one rate the app shows; the time-weighted return is given inside its
-information bubble, with why the two differ.
+the one rate the app shows; the [performance of your holdings](#twr) is given inside its
+information bubble, with the day it counts from and why the two differ.
 
 It needs at least one movement of money in or out to mean anything. With nothing
 ever paid in there is no schedule to solve, and the app leaves the figure
@@ -391,6 +389,8 @@ shares of the fund with it instead. That is why the sentence under the figure
 says *with the same money invested*: two portfolios with the same percentage
 return end on different amounts when the money arrived on different days, and
 the euro is the number that answers what you have left.
+
+Beside the gap, the screen shows the **gain on the money invested** for both sides: the gain over the period divided by the money put into securities. It is not per year and it leaves cash out, so it is close to, but not the same as, your total gain over your total deposits on the dashboard.
 
 **The question is about your securities, so only your securities are in it.** A
 deposit that sat in cash never bought anything and never reaches the reference

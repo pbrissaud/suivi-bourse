@@ -145,6 +145,10 @@ contrast.
   neutral, `foreground` in its figure: colouring a sign known in advance tells nothing and
   dilutes the red of a real loss. The predicate is `termCarriesSign` in
   `src/web/src/lib/gain.ts`.
+- The dashboard's *Performance* curve is the one drawing coloured by its sign: `gain` above
+  the 0 % line, `loss` below it, split exactly at zero. The 0 % line and the axis carry the
+  same information without colour. Both colours stay the `--gain` and `--loss` aliases of
+  `primary` and `destructive`.
 - `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
 - `rule` separates rows inside a section and nothing else.
 - A job's history bar (System page, #1236) is the one place a status colours a mark: an
@@ -250,8 +254,9 @@ Ce qu'il vous resterait                            18 169,08 €
 
 The portfolio value (decision 1A, #1099), then one line "dont X de liquidités" (drawn
 only with a cash ledger), then the pills: total gain, gain since 1 January, today, IRR
-per year. No net-of-tax line on the dashboard. The TWR lives behind an `ⓘ`
-that explains why it differs from the IRR. One performance figure per screen.
+per year. No net-of-tax line on the dashboard. The time-weighted return, named *Performance*, lives
+behind the IRR's `ⓘ`, always with the day it counts from and the sentence that bridges the
+two. One performance figure per screen.
 
 Under them, the portfolio's chart across the hero's full width, with its readings and
 its range on one control bar: the real chart, never a decorative sparkline beside a
@@ -259,6 +264,16 @@ dialog holding the real one.
 
 No statistics row under the chart: net contributions are the chart's dashed curve, and
 the securities are the value less the cash.
+
+### Return figures
+
+Three measures, one name each, in the UI, the docs and the agent: *TRI* / *Money-weighted
+return* (per year, since the first deposit), *Performance* (time-weighted, of the
+holdings), and *Gain sur l'argent investi* / *Gain on the money invested* (the benchmark's
+ratio, not per year). "TWR", "index" and "base 100" are not words for the reader. A return
+that does not count from the first deposit states its period in words. Two returns of
+opposite signs on one screen carry the sentence that explains them. The *Performance* curve
+is in percent from the start of the visible window, never in base 100.
 
 ## Elevation & Depth
 
@@ -368,3 +383,5 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-16 | An optional PIN behind one screen, off by default (#1203) | The app is reached on a local network by anyone who can reach the port; the PIN closes that door without a login page of accounts and passwords. One centred column rather than a card on a card, and the in-app 401 is a dialog over the page so a typed form survives it. |
 | 2026-10-16 | A job's failed pass colours its history bar (#1236) | The System page draws each job's last 24 hours, one bar an hour; telling a job that failed once from one failing since yesterday is the whole point, so the error owns `destructive` there, always doubled by a glyph. |
 | 2026-10-16 | The theme is a JSON in the store, edited in Settings (#1248) | Replaces `SB_TWEAKCN_THEME`: no restart to change it, tweakcn reached only on an explicit import, and pasting the JSON serves an instance with no way out. |
+| 2026-10-18 | Return figures reconciled (#1263) | Four figures audited against an independent recomputation: no calculation bug. One name per measure; windows stated rather than aligned; the TWR dated in the IRR's bubble; the agent says the same words. Percent replaces base 100 on the Performance curve (#1263, #1265). |
+| 2026-10-18 | The Performance curve is coloured by its sign (#1263) | The one curve that crosses zero: drawn in `foreground` it fell outside the palette, drawn in the mint it painted a loss as a gain. `gain` above zero, `loss` below, the 0 % line kept as the colour-free channel. |
