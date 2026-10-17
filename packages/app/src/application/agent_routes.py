@@ -23,7 +23,6 @@ from starlette.routing import Route
 
 from application import agent
 from application import agent_threads
-from application.agent import masked
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter, VercelAIEventStream
 from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
@@ -55,16 +54,25 @@ class _EventStream(VercelAIEventStream):
     async def on_error(self, error: Exception):
         """``Anthropic: invalid x-api-key``, the key masked as ``…last4``.
 
-        Only a provider's failure is put in the provider's mouth; anything
-        else (a bug of ours, a usage limit) is said as the agent's.
+        Only a provider's failure is put in the provider's mouth, and carries
+        the ``reason`` the page translates (#1269); anything else (a bug of
+        ours, a usage limit) is said as the agent's, as plain text.
         """
-        said = masked(_said(error), self.secret)
-        speaker = (self.provider_label if isinstance(error, ModelAPIError)
-                   else 'The agent')
+        http = error if isinstance(error, ModelHTTPError) else None
+        said = agent.said(http.body if http else None, str(error), self.secret)
+        provider = isinstance(error, ModelAPIError)
+        speaker = self.provider_label if provider else 'The agent'
         logger.warning(f"agent turn failed: {speaker}: {said}")
+        text = f'{speaker}: {said}'
+        if provider:
+            text = json.dumps({
+                'error': text, 'provider': speaker,
+                'reason': agent.refusal(
+                    http.status_code if http else None,
+                    http.body if http else None, 'turn')})
         async for chunk in super().on_error(error):
             if isinstance(chunk, ErrorChunk):
-                chunk = ErrorChunk(error_text=f'{speaker}: {said}')
+                chunk = ErrorChunk(error_text=text)
             yield chunk
 
 
@@ -81,17 +89,6 @@ class _Adapter(VercelAIAdapter):
             self.run_input, accept=self.accept, sdk_version=self.sdk_version,
             server_message_id=self.server_message_id,
             provider_label=self.provider_label, secret=self.secret)
-
-
-def _said(error: Exception) -> str:
-    """The provider's own message, out of the HTTP body when there is one."""
-    body = error.body if isinstance(error, ModelHTTPError) else None
-    if isinstance(body, dict):
-        inner = body.get('error', body)
-        message = inner.get('message') if isinstance(inner, dict) else inner
-        if message:
-            return str(message)
-    return str(error)
 
 
 def _error(status: int, message: str) -> JSONResponse:

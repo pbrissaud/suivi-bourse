@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS agent_config (
     enabled     BOOLEAN NOT NULL DEFAULT FALSE,
     provider    VARCHAR,
     model       VARCHAR,
+    model_name  VARCHAR,
     base_url    VARCHAR,
     api_key     VARCHAR,
     key_set_at  TIMESTAMPTZ,

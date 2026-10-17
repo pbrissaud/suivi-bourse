@@ -1,9 +1,11 @@
-"""*Tester la connexion* (#1115): ask the stored provider which models it serves.
+"""*Tester la connexion* (#1115): ask a candidate provider which models it serves.
 
-One ``GET`` to the provider's own model listing, with the stored address and
-key, and nothing else: no prompt, no token spent. What comes back is the list
-the setup's third step offers, and the model it preselects; what fails is said
-in the provider's words, the key masked to ``…last4`` in the answer and in the
+One ``GET`` to the provider's own model listing, with the candidate's address
+and key (#1269), and nothing else: no prompt, no token spent. This module
+writes nothing: the route keeps the candidate once the provider has listed.
+What comes back is the list the setup's third step offers, and the model it
+preselects; what fails carries the ``reason`` :func:`agent.refusal` gives, and
+the provider's words, the key masked to ``…last4`` in the answer and in the
 log alike (:func:`agent.masked`).
 
 It runs on a Flask worker, one of four, for at most :data:`TIMEOUT` seconds:
@@ -40,16 +42,13 @@ _NOT_A_CHAT_MODEL = re.compile(
     r'embedding|tts|whisper|dall-e|moderation|davinci|babbage|transcribe'
     r'|image|realtime|audio|search')
 
-#: How long a provider's message may be, JSON or not (an HTML page).
-_SAID_MAX = 300
-
 
 class ProviderRefused(Exception):
     """The provider did not list its models; ``str()`` is the sentence, masked.
 
-    ``reason`` is ``unreachable`` (no HTTP answer at all), ``refused`` (an
-    HTTP error, in the provider's words) or ``unreadable`` (a ``200`` that is
-    not a model listing).
+    ``reason`` is :func:`agent.refusal`'s for an HTTP error, ``unreachable``
+    when nothing answered at all, or ``unreadable`` for a ``200`` that is not a
+    model listing.
     """
 
     def __init__(self, message: str, reason: str):
@@ -92,7 +91,13 @@ def models(config: dict, transport: Optional[httpx2.BaseTransport] = None) -> li
                               f'({str(exc) or type(exc).__name__})',
                        'unreachable', key) from None
     if answer.is_error:
-        raise _refused(label, _said(answer), 'refused', key)
+        try:
+            body = answer.json()
+        except ValueError:
+            body = None
+        said = agent.said(body, answer.text, key) or f'HTTP {answer.status_code}'
+        raise _refused(label, said, agent.refusal(
+            answer.status_code, body, 'test', provider), key)
     try:
         listed = _listed(provider, answer.json())
     except (ValueError, TypeError, KeyError, AttributeError):
@@ -170,21 +175,6 @@ def _listed(provider: str, body: Any) -> list:
     if len({type(row['at']) for row in rows}) == 1:
         rows.sort(key=lambda row: row['at'], reverse=True)
     return [{'id': row['id'], 'name': str(row['name'])} for row in rows]
-
-
-def _said(answer: httpx2.Response) -> str:
-    """The provider's own message, out of its JSON body when there is one."""
-    try:
-        body = answer.json()
-    except ValueError:
-        body = None
-    if isinstance(body, dict):
-        inner = body.get('error', body)
-        message = inner.get('message') if isinstance(inner, dict) else inner
-        if isinstance(message, str) and message:
-            return message[:_SAID_MAX]
-    text = ' '.join(answer.text.split())[:_SAID_MAX]
-    return text or f'HTTP {answer.status_code}'
 
 
 def _where(url: str) -> str:

@@ -6,6 +6,12 @@ configured from the app since v5, and an ``SB_`` name nobody reads is reported
 by ``boot_env.unread``. The key leaves this module as its last four characters
 and nothing else (:func:`describe`).
 
+**Only a configuration that passed a test is stored** (#1269): the connection
+test takes the candidate provider, address and key, and :func:`adopted` is what
+the route keeps once the provider listed its models. A key the provider refused
+is never written, and :func:`refusal` is how a failure becomes the ``reason`` the
+front translates.
+
 The provider SDKs are imported inside :func:`build_model`, so the Flask half,
 which only reads and writes the row, never loads them.
 """
@@ -56,13 +62,16 @@ BASE_URL_REFUSED = ('anthropic', 'openai')
 
 KEY_MIN, KEY_MAX = 8, 512
 MODEL_MAX = 200
+#: How long a provider's message may be, JSON or not (an HTML page).
+SAID_MAX = 300
 BASE_URL_MAX = 500
 
-_COLUMNS = ('enabled', 'provider', 'model', 'base_url', 'api_key',
-            'key_set_at', 'updated_at')
+_COLUMNS = ('enabled', 'provider', 'model', 'model_name', 'base_url',
+            'api_key', 'key_set_at', 'updated_at')
 
-EMPTY = {'enabled': False, 'provider': None, 'model': None, 'base_url': None,
-         'api_key': None, 'key_set_at': None, 'updated_at': None}
+EMPTY = {'enabled': False, 'provider': None, 'model': None, 'model_name': None,
+         'base_url': None, 'api_key': None, 'key_set_at': None,
+         'updated_at': None}
 
 _HTTP_URL = re.compile(r'https?://\S+')
 
@@ -89,6 +98,7 @@ def describe(config: dict, **extra: Any) -> dict:
         'enabled': config['enabled'],
         'provider': config['provider'],
         'model': config['model'],
+        'model_name': config['model_name'],
         'base_url': config['base_url'],
         'key': {'set': key is not None,
                 'last4': key[-4:] if key is not None else None,
@@ -98,17 +108,18 @@ def describe(config: dict, **extra: Any) -> dict:
 
 
 def change(config: dict, body: Any) -> tuple:
-    """``config`` with ``body`` (any subset of the four fields) applied, and
+    """``config`` with ``body`` (any subset of the fields) applied, and
     whether that turned the agent off.
 
     A key belongs to the provider and the address it was typed for: a
     different ``provider`` or ``base_url`` forgets it in the same write, as
     :func:`without_key` does, unless ``body`` says itself whether the agent
-    is on.
+    is on. A ``model`` without its ``model_name`` clears the name, which
+    belongs to its model.
     """
     if not isinstance(body, dict):
         raise InvalidAgentConfig('a JSON object is required', 'body')
-    allowed = ('enabled', 'provider', 'model', 'base_url')
+    allowed = ('enabled', 'provider', 'model', 'model_name', 'base_url')
     for name in body:
         if name not in allowed:
             raise InvalidAgentConfig(
@@ -124,6 +135,11 @@ def change(config: dict, body: Any) -> tuple:
     if model is not None and not _text(model, MODEL_MAX):
         raise InvalidAgentConfig(
             f"the model is a name of 1 to {MODEL_MAX} characters", 'model')
+    model_name = body.get('model_name')
+    if model_name is not None and not _text(model_name, MODEL_MAX):
+        raise InvalidAgentConfig(
+            f"the model name is a line of 1 to {MODEL_MAX} characters",
+            'model_name')
     base_url = body.get('base_url')
     if base_url is not None and not (_text(base_url, BASE_URL_MAX) and _HTTP_URL.fullmatch(base_url)):
         raise InvalidAgentConfig(
@@ -133,6 +149,10 @@ def change(config: dict, body: Any) -> tuple:
     changed.update(body)
     if isinstance(changed['model'], str):
         changed['model'] = changed['model'].strip()
+    if isinstance(changed['model_name'], str):
+        changed['model_name'] = changed['model_name'].strip()
+    if 'model' in body and 'model_name' not in body:
+        changed['model_name'] = None
     moved = any(name in body and body[name] != config[name]
                 for name in ('provider', 'base_url'))
     if moved and 'enabled' not in body:
@@ -151,6 +171,48 @@ def with_key(config: dict, key: Any, now: datetime) -> dict:
         raise InvalidAgentConfig(
             f"the key is {KEY_MIN} to {KEY_MAX} printable characters", 'key')
     return check({**config, 'api_key': key, 'key_set_at': now})
+
+
+def candidate(stored: dict, body: Any, at: datetime) -> dict:
+    """What a connection test tries: ``stored`` with ``body``'s provider,
+    address and key (#1269). Any other field is refused by name.
+
+    Built on :func:`change` and :func:`with_key`: a candidate naming another
+    provider or address must bring its own key, the stored one being used only
+    with what it was stored for. The agent is off in the result, which is only
+    ever tried, never written: :func:`adopted` is what is kept.
+    """
+    if not isinstance(body, dict):
+        raise InvalidAgentConfig('a JSON object is required', 'body')
+    for name in body:
+        if name not in ('provider', 'base_url', 'key'):
+            raise InvalidAgentConfig(
+                f"{name!r} is not a field of a connection test; the fields "
+                f"are provider, base_url, key", name)
+    tried, _ = change({**stored, 'enabled': False},
+                      {k: v for k, v in body.items() if k != 'key'})
+    return with_key(tried, body['key'], at) if 'key' in body else tried
+
+
+def adopted(stored: dict, tried: dict) -> dict:
+    """``stored`` holding the provider, address and key of ``tried``, which a
+    provider listed its models for (#1269).
+
+    A different provider or address clears the model and its name, and a
+    different provider, address or key switches the agent off: *Activer
+    l'agent* puts it back. The same key keeps its ``key_set_at``.
+    """
+    moved = any(tried[name] != stored[name] for name in ('provider', 'base_url'))
+    rekeyed = tried['api_key'] != stored['api_key']
+    kept = {**stored, 'provider': tried['provider'],
+            'base_url': tried['base_url'], 'api_key': tried['api_key']}
+    if rekeyed:
+        kept['key_set_at'] = tried['key_set_at']
+    if moved:
+        kept.update(model=None, model_name=None)
+    if moved or rekeyed:
+        kept['enabled'] = False
+    return check(kept)
 
 
 def without_key(config: dict) -> tuple:
@@ -197,14 +259,15 @@ def check(config: dict) -> dict:
 def write(store, config: dict, now: datetime) -> None:
     """Keep ``config``, which :func:`check` has passed. Under the write lock."""
     store.execute(
-        'INSERT INTO agent_config (id, enabled, provider, model, base_url, '
-        'api_key, key_set_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?) '
+        'INSERT INTO agent_config (id, enabled, provider, model, model_name, '
+        'base_url, api_key, key_set_at, updated_at) '
+        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) '
         'ON CONFLICT (id) DO UPDATE SET enabled = excluded.enabled, '
         'provider = excluded.provider, model = excluded.model, '
-        'base_url = excluded.base_url, api_key = excluded.api_key, '
+        'model_name = excluded.model_name, base_url = excluded.base_url, api_key = excluded.api_key, '
         'key_set_at = excluded.key_set_at, updated_at = excluded.updated_at',
         [config['enabled'], config['provider'], config['model'],
-         config['base_url'], config['api_key'], config['key_set_at'], now])
+         config['model_name'], config['base_url'], config['api_key'], config['key_set_at'], now])
     config['updated_at'] = now
 
 
@@ -216,6 +279,57 @@ def now() -> datetime:
 def masked(text: str, secret: Optional[str]) -> str:
     """``text`` with every occurrence of ``secret`` replaced by ``…last4``."""
     return text.replace(secret, '…' + secret[-4:]) if secret else text
+
+
+def said(body: Any, text: str = '', secret: Optional[str] = None) -> str:
+    """A provider's own message, out of its JSON ``body`` when there is one,
+    else ``text``: masked, in one line, at most :data:`SAID_MAX` characters.
+
+    Masked **before** it is cut, so a key straddling the cut is not left half
+    written.
+    """
+    message = None
+    if isinstance(body, dict):
+        inner = body.get('error', body)
+        message = inner.get('message') if isinstance(inner, dict) else inner
+    elif isinstance(body, str):
+        message = body
+    message = str(message) if message else text
+    return ' '.join(masked(message, secret).split())[:SAID_MAX]
+
+
+def refusal(status: Optional[int], body: Any, during: str,
+            provider: Optional[str] = None) -> str:
+    """Why a provider failed, as the ``reason`` the front translates (#1269).
+
+    ``status`` is the HTTP status, or ``None`` when nothing answered. It decides
+    first: the body is read only to tell ``quota`` from ``rate_limit``, and an
+    unknown body never moves a status out of its row. ``during`` is ``test`` or
+    ``turn``; a 404 is a missing model during a turn, and a wrong address during
+    a test, for a ``provider`` that takes one. 403 is ``refused``, not ``key``:
+    OpenAI answers it for an unsupported region, and a gateway for a policy.
+    """
+    if status is None:
+        return 'unreachable'
+    if status == 401:
+        return 'key'
+    inner = body.get('error', body) if isinstance(body, dict) else None
+    if not isinstance(inner, dict):
+        inner = {}
+    if (status == 402
+            or status == 429 and 'insufficient_quota' in (
+                inner.get('code'), inner.get('type'))
+            or status == 400 and 'credit balance' in said(body).lower()):
+        return 'quota'
+    if status == 429:
+        return 'rate_limit'
+    if status == 404:
+        if during == 'turn':
+            return 'model'
+        return 'refused' if provider in BASE_URL_REFUSED else 'address'
+    if status in (500, 502, 503, 504, 529):
+        return 'overloaded'
+    return 'refused'
 
 
 def _text(value: Any, most: int) -> bool:

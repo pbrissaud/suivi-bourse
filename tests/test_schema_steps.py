@@ -20,6 +20,7 @@ RELEASED = (
     'fold_symbol_case',
     'cap_dividend_fee_at_amount',
     'add_event_amounts_currency',
+    'add_agent_model_name',
 )
 
 

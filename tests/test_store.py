@@ -1139,3 +1139,28 @@ def test_the_cap_leaves_a_store_without_such_a_dividend_untouched(tmp_path):
         assert opened.query('SELECT count(*) FROM account_metrics') == [(1,)]
     finally:
         opened.close()
+
+
+def test_an_agent_config_from_before_gains_model_name(tmp_path):
+    """A store whose ``agent_config`` has no ``model_name`` opens, keeps its row
+    and its key, and holds NULL where the name will go (#1269)."""
+    path = tmp_path / 'old.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    connection.execute('ALTER TABLE agent_config DROP COLUMN model_name')
+    connection.execute(
+        "INSERT INTO agent_config (id, enabled, provider, model, api_key, "
+        "updated_at) VALUES (1, TRUE, 'anthropic', 'claude-x', 'test-key-0001', "
+        "TIMESTAMPTZ '2026-10-01 00:00:00+00')")
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'add_agent_model_name'")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query(
+            'SELECT enabled, provider, model, model_name, api_key '
+            'FROM agent_config') == [
+                (True, 'anthropic', 'claude-x', None, 'test-key-0001')]
+    finally:
+        opened.close()

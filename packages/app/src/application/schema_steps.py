@@ -40,6 +40,17 @@ def _cap_dividend_fee_at_amount(connection) -> None:
     logger.warning(f'Capped the fee of these dividends at their amount: {said}')
 
 
+def _add_agent_model_name(connection) -> None:
+    """Give ``agent_config`` the display name of its model (#1269).
+
+    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds. The column
+    stays NULL on a configuration stored before: the agent page shows the id
+    until a model is chosen again. A no-op on a new store.
+    """
+    connection.execute('ALTER TABLE agent_config '
+                       'ADD COLUMN IF NOT EXISTS model_name VARCHAR')
+
+
 #: Every step, oldest first, under the names stores in the wild already carry.
 #: The rules of :data:`store.STEPS` hold over this list as a whole: a name is an
 #: identity forever, and a new step — the store's own included — is appended
@@ -47,6 +58,7 @@ def _cap_dividend_fee_at_amount(connection) -> None:
 STEPS = store.STEPS + (
     ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
     ('add_event_amounts_currency', store._add_event_amounts_currency),
+    ('add_agent_model_name', _add_agent_model_name),
 )
 
 __all__ = ['STEPS']

@@ -80,8 +80,11 @@ so instead of guessing.
 The agent is **off** until you switch it on, in **Settings → The agent**:
 choose a provider (Anthropic, OpenAI, an OpenAI-compatible gateway, or Ollama on
 your own machine), give it its key or its address, press **Test the connection**,
-and pick one of the models the provider lists. The switch at the top of the
-section stays greyed out until that test has passed.
+and pick one of the models the provider lists. A configuration is kept only once
+**Test the connection** passes: a key the provider refuses is never stored, and a
+failed test leaves the previous configuration as it was. Then press **Turn the
+agent on**. A test that changes the provider, its address or its key switches the
+agent off, and the button puts it back.
 
 **The key lives in the store, so it lives in your `/data` volume.** It is kept
 there in clear, in the app's own table, and never sent back to the browser —

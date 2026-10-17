@@ -143,10 +143,11 @@ def too_large(detail: str, limit: int):
 def provider_refused(detail: str, provider: str, reason: str):
     """502 — the agent's provider did not answer the connection test (#1115).
 
-    The one type whose ``detail`` the front renders: it is the provider's own
-    sentence (``Anthropic: invalid x-api-key``), the key masked, and the
-    reader acts on it at the provider's, where it means something. ``reason``
-    is ``unreachable``, ``refused`` or ``unreadable``.
+    ``detail`` is the provider's own sentence (``Anthropic: invalid x-api-key``),
+    the key masked. The front renders ``reason`` in its own words and keeps
+    ``detail`` behind a disclosure (#1269). ``reason`` is ``key``, ``quota``,
+    ``rate_limit``, ``address``, ``overloaded``, ``unreachable``, ``unreadable``
+    or ``refused`` (``agent.refusal``).
     """
     return problem(502, 'Provider refused', detail, TYPE_PROVIDER_REFUSED,
                    provider=provider, reason=reason)
