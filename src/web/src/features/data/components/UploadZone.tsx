@@ -68,7 +68,7 @@ import { dataApi, type AmountsIn, type ImportReceipt } from '@/features/data/lib
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-import { NO_CORRESPONDENCE, type Correspondence } from '@/features/data/lib/imports'
+import { NO_CORRESPONDENCE, repeatGroups, type Correspondence } from '@/features/data/lib/imports'
 import { receiptMessage } from '@/lib/receipts'
 
 /**
@@ -93,6 +93,13 @@ interface Answer {
    * the write until the reader answers.
    */
   amountsIn: AmountsIn | undefined
+  /**
+   * The groups of identical lines the file repeats that the reader keeps **one
+   * copy** of, by the index of their first copy (#1267). Empty by default: every
+   * copy is written, since only the reader knows whether two identical lines are
+   * one order filled twice.
+   */
+  collapsed: ReadonlySet<number>
 }
 
 /** Nothing answered yet — the first preview's answer, and a reset. */
@@ -100,6 +107,18 @@ const NO_ANSWER: Answer = {
   correspondence: NO_CORRESPONDENCE,
   writeDuplicates: false,
   amountsIn: undefined,
+  collapsed: new Set(),
+}
+
+/**
+ * **The groups to write whole**: every group the census names, but the ones the
+ * reader collapsed. Computed from the census just read and never held, so an id
+ * a remapped account has dropped is never sent (#1267).
+ */
+function repeatsToWrite(census: ImportReceipt, collapsed: ReadonlySet<number>): number[] {
+  return repeatGroups(census.duplicate_rows)
+    .map((group) => group.first)
+    .filter((first) => !collapsed.has(first))
 }
 
 /**
@@ -193,6 +212,7 @@ interface Handed {
 interface Written extends Handed {
   declineCurrency?: boolean
   foreign: readonly string[]
+  writeRepeats: readonly number[]
 }
 
 export function useEventUpload(): EventUpload {
@@ -223,9 +243,15 @@ export function useEventUpload(): EventUpload {
         declaring: given.correspondence.declaring,
         amountsIn: given.amountsIn,
       })
+      // **The census read carries no `write_repeat` and no flag**, so it never
+      // refuses because of a repeat; what the answer would write is the second
+      // reading's business (#1267).
+      const writeRepeats = repeatsToWrite(seen, given.collapsed)
       // The census answers the whole window on its own while the duplicates are
-      // being skipped, which is the default and the common case: one read.
-      if (!given.writeDuplicates) return { file: seen, writing: seen, refused: undefined }
+      // being skipped and no repeat is written: one read.
+      if (!given.writeDuplicates && writeRepeats.length === 0) {
+        return { file: seen, writing: seen, refused: undefined }
+      }
       // **The second reading, and it is the criterion's** (#835). Under the flag
       // the server judges the file *whole* — the rows the ledger already holds
       // included — and that is a different ledger to replay. It is asked here,
@@ -237,7 +263,8 @@ export function useEventUpload(): EventUpload {
           file: seen,
           writing: await dataApi.importEvents(file, {
             dryRun: true,
-            writeDuplicates: true,
+            writeDuplicates: given.writeDuplicates,
+            writeRepeats,
             mapping: given.correspondence.mapping,
             declaring: given.correspondence.declaring,
             amountsIn: given.amountsIn,
@@ -271,9 +298,10 @@ export function useEventUpload(): EventUpload {
       ),
   })
   const write = useMutation({
-    mutationFn: ({ file, answer: given, declineCurrency, foreign }: Written) =>
+    mutationFn: ({ file, answer: given, declineCurrency, foreign, writeRepeats }: Written) =>
       dataApi.importEvents(file, {
         writeDuplicates: given.writeDuplicates,
+        writeRepeats,
         declineCurrency,
         mapping: given.correspondence.mapping,
         declaring: given.correspondence.declaring,
@@ -316,14 +344,20 @@ export function useEventUpload(): EventUpload {
       preview.mutate({ file: held, answer: next })
     },
     commit: (options) => {
-      if (!held || pending) return
+      if (!held || !standing || pending) return
       // The pairs the forecast on screen listed, sent back so the server converts
       // what was judged and looks nothing up (#1261). Only with an answer: a
       // pair without one has nothing to apply.
       const foreign = answer.amountsIn
-        ? (standing?.file.foreign_lines ?? []).map((line) => `${line.symbol}:${line.currency}`)
+        ? (standing.file.foreign_lines ?? []).map((line) => `${line.symbol}:${line.currency}`)
         : []
-      write.mutate({ file: held, answer, foreign, ...options })
+      write.mutate({
+        file: held,
+        answer,
+        foreign,
+        writeRepeats: repeatsToWrite(standing.file, answer.collapsed),
+        ...options,
+      })
     },
     discard: () => {
       setHeld(null)

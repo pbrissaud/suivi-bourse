@@ -501,9 +501,17 @@ describe('the file handed over', () => {
     server.use(
       http.post(ROUTES.eventsImport, ({ request }) => {
         const previewing = new URL(request.url).searchParams.has('dry_run')
-        return HttpResponse.json(aReceipt({ rows: 3, written: 1, duplicates: 2 }), {
-          status: previewing ? 200 : 201,
-        })
+        return HttpResponse.json(
+          aReceipt({
+            rows: 3,
+            written: 1,
+            duplicates: 2,
+            duplicate_rows: [aDuplicateRow(), aDuplicateRow()],
+          }),
+          {
+            status: previewing ? 200 : 201,
+          },
+        )
       }),
     )
     const { user } = renderImports()
@@ -512,12 +520,14 @@ describe('the file handed over', () => {
     await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
-      await screen.findByText(/2 lignes de ce fichier sont des doublons et seront ignorées\./),
+      await screen.findByText(
+        /2 lignes de ce fichier sont déjà dans votre grand livre et seront ignorées\./,
+      ),
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Importer' }))
 
-    expect(await screen.findByText(/2 doublons n’ont pas été réécrits\./)).toBeInTheDocument()
+    expect(await screen.findByText(/2 doublons ignorés\./)).toBeInTheDocument()
   })
 
   it('offers to write the duplicates anyway', async () => {
@@ -531,16 +541,26 @@ describe('the file handed over', () => {
         const params = new URL(request.url).searchParams
         const previewing = params.has('dry_run')
         if (!previewing) asked.push(params.get('write_duplicates') ?? 'no')
-        return HttpResponse.json(aReceipt({ rows: 3, written: 1, duplicates: 2 }), {
-          status: previewing ? 200 : 201,
-        })
+        return HttpResponse.json(
+          aReceipt({
+            rows: 3,
+            written: 1,
+            duplicates: 2,
+            duplicate_rows: [aDuplicateRow(), aDuplicateRow()],
+          }),
+          {
+            status: previewing ? 200 : 201,
+          },
+        )
       }),
     )
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await user.upload(screen.getByLabelText('Parcourir…'), aFile())
-    await user.click(await screen.findByLabelText('Écrire quand même les doublons'))
+    await user.click(
+      await screen.findByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    )
     await user.click(screen.getByRole('button', { name: 'Importer' }))
 
     await waitFor(() => expect(asked).toEqual(['1']))
@@ -555,8 +575,10 @@ describe('the file handed over', () => {
     await user.upload(screen.getByLabelText('Parcourir…'), aFile())
     await screen.findByRole('button', { name: 'Importer' })
 
-    expect(screen.queryByLabelText('Écrire quand même les doublons')).not.toBeInTheDocument()
-    expect(screen.queryByText(/sont des doublons|est un doublon/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/déjà dans votre grand livre/)).not.toBeInTheDocument()
   })
 
   it('sends the file to the gesture, and never to a resource', async () => {
@@ -937,14 +959,13 @@ describe('what this import would do', () => {
       within(window).getByText('Le compte que ce fichier nomme est déjà déclaré.'),
     ).toBeInTheDocument()
     expect(within(window).queryByRole('combobox')).not.toBeInTheDocument()
-    expect(within(window).queryByText('Les doublons')).not.toBeInTheDocument()
+    expect(within(window).queryByText('Déjà dans votre grand livre')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled()
   })
 
   it('names the duplicated lines and says what each of them repeats', async () => {
-    // A count cannot be argued with; a line can. The stored row is pointed at,
-    // and a line the **file** repeats is told apart from it, that being the one
-    // difference the reader can see and no count carries.
+    // A count cannot be argued with; a line can. The two kinds of duplicate are
+    // told apart by the block they stand in, and not by a tag on each row (#1267).
     watching(() =>
       aReceipt({
         rows: 3,
@@ -952,7 +973,7 @@ describe('what this import would do', () => {
         duplicates: 2,
         duplicate_rows: [
           aDuplicateRow({ date: '2026-02-10', symbol: 'ZZA', quantity: 2, unit_price: 120 }),
-          aDuplicateRow({ date: '2026-01-12', symbol: 'ZZA', duplicate_of: null }),
+          aDuplicateRow({ date: '2026-01-12', symbol: 'ZZB', duplicate_of: null, repeat_of: 0 }),
         ],
       }),
     )
@@ -961,16 +982,244 @@ describe('what this import would do', () => {
 
     await hand(user)
 
-    expect(await screen.findByText(/10 févr\. 2026 · Achat · ZZA · 2 × 120,00/)).toBeInTheDocument()
-    expect(screen.getByText('déjà dans votre grand livre')).toBeInTheDocument()
-    expect(screen.getByText('répétée dans le fichier')).toBeInTheDocument()
+    const held = (await screen.findByRole('heading', { name: 'Déjà dans votre grand livre' }))
+      .parentElement!
+    const repeats = screen.getByRole('heading', { name: 'Répétées dans le fichier' }).parentElement!
+    expect(within(held).getByText(/10 févr\. 2026 · Achat · ZZA · 2 × 120,00/)).toBeInTheDocument()
+    expect(within(repeats).getByText(/12 janv\. 2026 · Achat · ZZB/)).toBeInTheDocument()
+    expect(screen.queryByText('déjà dans votre grand livre')).not.toBeInTheDocument()
+    expect(screen.queryByText('répétée dans le fichier')).not.toBeInTheDocument()
+  })
+
+  /**
+   * The route as it answers `write_repeat` (#1267): a form field, read off the
+   * body, that writes the group whole and takes its copies out of the list.
+   */
+  function watchingRepeats(census: () => ImportReceipt, refuseWhenWritingAll = false) {
+    const seen: { url: URL; repeats: string[] }[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, async ({ request }) => {
+        const url = new URL(request.url)
+        // Read off the raw multipart body: jsdom's `File` and undici's disagree
+        // about what one is, so `formData()` cannot parse what jsdom sent.
+        const body = await request.text()
+        const repeats = [...body.matchAll(/name="write_repeat"\r\n\r\n(\d+)/g)].map(
+          (match) => match[1],
+        )
+        seen.push({ url, repeats })
+        const status = url.searchParams.has('dry_run') ? 200 : 201
+        const answered = census()
+        if (repeats.length === 0) return HttpResponse.json(answered, { status })
+        if (refuseWhenWritingAll) {
+          return HttpResponse.json(
+            {
+              type: PROBLEM_TYPES.unreplayableLedger,
+              title: 'Ledger does not replay',
+              status: 409,
+              detail: 'Cannot sell 4.0 shares of ZZA (only 2.0 owned) on 2026-02-10',
+              gesture: 'write',
+              symbol: 'ZZA',
+              wanted: 4,
+              owned: 2,
+              day: '2026-02-10',
+            },
+            { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+          )
+        }
+        return HttpResponse.json(
+          {
+            ...answered,
+            written:
+              answered.rows -
+              answered.duplicate_rows.filter((row) => row.repeat_of === null).length,
+            duplicates: answered.duplicate_rows.filter((row) => row.repeat_of === null).length,
+            duplicate_rows: answered.duplicate_rows.filter((row) => row.repeat_of === null),
+          },
+          { status },
+        )
+      }),
+    )
+    return seen
+  }
+
+  /** A dividend the file carries twice: the issue's own case. */
+  const twiceTheSameDividend = (first = 0, symbol = 'ZZA') =>
+    aDuplicateRow({
+      event_type: 'DIVIDEND',
+      symbol,
+      quantity: null,
+      unit_price: null,
+      amount: 8.5,
+      duplicate_of: null,
+      repeat_of: first,
+    })
+
+  it('writes a line repeated in the file by default', async () => {
+    const seen = watchingRepeats(() =>
+      aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [twiceTheSameDividend()] }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Répétées dans le fichier' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Écrire les deux' })).toBeChecked()
+    expect(await screen.findByText(/2 événements seront écrits/)).toBeInTheDocument()
+    expect(screen.getByText('aucun doublon sauté')).toBeInTheDocument()
+    // The census read carries nothing; the writing read carries the group.
+    expect(seen.map((read) => read.repeats)).toEqual([[], ['0']])
+
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(seen).toHaveLength(3))
+    expect(seen[2].repeats).toEqual(['0'])
+    expect(seen[2].url.searchParams.has('dry_run')).toBe(false)
+    expect(seen[2].url.searchParams.has('write_repeat')).toBe(false)
+  })
+
+  it('keeps one copy when the reader says so', async () => {
+    const seen = watchingRepeats(() =>
+      aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [twiceTheSameDividend()] }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    await user.click(await screen.findByRole('radio', { name: 'N’en écrire qu’une' }))
+
+    expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
+    expect(screen.getByText('1 doublon sauté')).toBeInTheDocument()
+    expect(seen[seen.length - 1].repeats).toEqual([])
+
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(seen[seen.length - 1].url.searchParams.has('dry_run')).toBe(false))
+    expect(seen[seen.length - 1].repeats).toEqual([])
+  })
+
+  it('keeps the lines already in the ledger in their own block, skipped by default', async () => {
+    watching(() =>
+      aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [aDuplicateRow()] }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    const held = (await screen.findByRole('heading', { name: 'Déjà dans votre grand livre' }))
+      .parentElement!
+    expect(within(held).getByText(/Achat · ZZA/)).toBeInTheDocument()
+    expect(
+      within(held).getByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    ).not.toBeChecked()
+    expect(screen.queryByText('déjà dans votre grand livre')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Répétées dans le fichier' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers the shortcuts from two groups on', async () => {
+    watchingRepeats(() =>
+      aReceipt({
+        rows: 4,
+        written: 2,
+        duplicates: 2,
+        duplicate_rows: [twiceTheSameDividend(1, 'ZZA'), twiceTheSameDividend(3, 'ZZB')],
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    const one = await screen.findByRole('button', { name: 'Une seule de chaque' })
+    expect(screen.getAllByRole('radio', { name: 'N’en écrire qu’une' })).toHaveLength(2)
+
+    await user.click(one)
+
+    await waitFor(() =>
+      screen.getAllByRole('radio', { name: 'N’en écrire qu’une' }).forEach((radio) => {
+        expect(radio).toBeChecked()
+      }),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Tout écrire' }))
+
+    await waitFor(() =>
+      screen.getAllByRole('radio', { name: 'Écrire les deux' }).forEach((radio) => {
+        expect(radio).toBeChecked()
+      }),
+    )
+  })
+
+  it('offers no shortcut for a single group', async () => {
+    watchingRepeats(() =>
+      aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [twiceTheSameDividend()] }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    await screen.findByRole('radio', { name: 'Écrire les deux' })
+
+    expect(screen.queryByRole('button', { name: 'Une seule de chaque' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Tout écrire' })).not.toBeInTheDocument()
+  })
+
+  it('leaves the choice usable when writing every copy is refused', async () => {
+    watchingRepeats(
+      () =>
+        aReceipt({
+          rows: 4,
+          written: 2,
+          duplicates: 2,
+          duplicate_rows: [twiceTheSameDividend(1, 'ZZA'), twiceTheSameDividend(3, 'ZZB')],
+        }),
+      true,
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Une seule de chaque' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
+  })
+
+  it('renders neither block on a clean file', async () => {
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    await hand(user)
+
+    await screen.findByRole('button', { name: 'Importer' })
+
+    expect(
+      screen.queryByRole('heading', { name: 'Répétées dans le fichier' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Déjà dans votre grand livre' }),
+    ).not.toBeInTheDocument()
   })
 
   it('makes the footer follow the reader’s answer about the duplicates', async () => {
     // The three numbers close — `rows === written + duplicates` — so the flag
     // moves the same rows from one column to the other and the footer is
     // arithmetic rather than a second question put to the server.
-    watching(() => aReceipt({ rows: 3, written: 1, duplicates: 2 }))
+    watching(() =>
+      aReceipt({
+        rows: 3,
+        written: 1,
+        duplicates: 2,
+        duplicate_rows: [aDuplicateRow(), aDuplicateRow()],
+      }),
+    )
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
@@ -979,7 +1228,9 @@ describe('what this import would do', () => {
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
     expect(screen.getByText('2 doublons sautés')).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('Écrire quand même les doublons'))
+    await user.click(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    )
 
     expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
     expect(screen.getByText('aucun doublon sauté')).toBeInTheDocument()
@@ -1029,7 +1280,9 @@ describe('what this import would do', () => {
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await hand(user)
-    const box = await screen.findByLabelText('Écrire quand même les doublons')
+    const box = await screen.findByLabelText(
+      'Écrire quand même les lignes déjà dans votre grand livre',
+    )
     await user.click(box)
 
     expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
@@ -1044,7 +1297,9 @@ describe('what this import would do', () => {
     expect(seen.every((url) => url.searchParams.has('dry_run'))).toBe(true)
     // And the window is not a dead end: the census stands beside the refusal, so
     // the box that caused it is still there to untick.
-    await user.click(screen.getByLabelText('Écrire quand même les doublons'))
+    await user.click(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    )
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
     expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
@@ -1054,14 +1309,23 @@ describe('what this import would do', () => {
     // The footer is not arithmetic done here: there is a real forecast of the
     // real answer to read it off, and a number the front computed beside it
     // would be a second authority on what the button does.
-    const seen = watching(() => aReceipt({ rows: 3, written: 1, duplicates: 2 }))
+    const seen = watching(() =>
+      aReceipt({
+        rows: 3,
+        written: 1,
+        duplicates: 2,
+        duplicate_rows: [aDuplicateRow(), aDuplicateRow()],
+      }),
+    )
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await hand(user)
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('Écrire quand même les doublons'))
+    await user.click(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    )
 
     expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
     await waitFor(() =>
