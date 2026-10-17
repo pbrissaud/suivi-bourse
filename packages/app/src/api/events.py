@@ -117,6 +117,7 @@ def import_events():
         parsed = uploads.read(upload.filename or '', upload.stream)
         correspondence = uploads.mapping(request.args.get('map'),
                                          request.args.getlist('declare'))
+        write_repeats = _write_repeats()
     except uploads.UploadTooLarge as exc:
         return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
     except uploads.UploadRefused as exc:
@@ -144,7 +145,9 @@ def import_events():
                 found = import_currency.survey(opened, rows, base)
                 foreign, unverified = found.lines, found.unverified
                 rows = _answered(rows, amounts_in, found.pairs, runtime, base)
-            fresh, duplicates = _to_write(opened, rows, write_duplicates)
+            fresh, duplicates = entries.split_duplicates(
+                opened, rows, write_held=write_duplicates,
+                write_repeats=write_repeats)
             entries.judge(opened, fresh, declaring=settled.declaring,
                           accounts_pending=settled.stated)
             written = len(fresh)
@@ -172,7 +175,9 @@ def import_events():
                             if amounts_in:
                                 says = {symbol: base if amounts_in == 'base' else code
                                         for symbol, code in sent.items()}
-                        fresh, duplicates = _to_write(opened, rows, write_duplicates)
+                        fresh, duplicates = entries.split_duplicates(
+                opened, rows, write_held=write_duplicates,
+                write_repeats=write_repeats)
                         written = len(entries.create_many(
                             opened, fresh,
                             base_currency=declared if adopt_currency else None,
@@ -283,11 +288,20 @@ def _settled_mapping(opened, correspondence, census):
                                    if label not in declared))
 
 
-def _to_write(opened, events, write_duplicates: bool):
-    """The file cut in two, or not cut at all because the owner said so."""
-    if write_duplicates:
-        return list(events), []
-    return entries.split_duplicates(opened, events)
+def _write_repeats() -> frozenset:
+    """The ``write_repeat`` form fields: first copies of the groups to write whole.
+
+    A form field and not a query parameter: a file pasted twice carries about a
+    thousand groups, past the 16 KiB h11 caps on the request line (see
+    :func:`delete_events`).
+    """
+    raw = request.form.getlist('write_repeat')
+    # Bounded: ``int()`` refuses past 4300 digits, and no file has that many rows.
+    if not all(_DIGITS.fullmatch(value) and len(value) <= 12 for value in raw):
+        raise uploads.UploadRefused(
+            "write_repeat is the index of the first copy of a repeated line, "
+            "an integer")
+    return frozenset(int(value) for value in raw)
 
 
 def _asked(name: str) -> bool:
@@ -325,7 +339,8 @@ def _receipt_to_dict(receipt: uploads.Receipt, *,
         'duplicate_rows': [
             dict(_event_to_dict(duplicate.event),
                  duplicate_of=(None if duplicate.held is None
-                               else str(duplicate.held.id)))
+                               else str(duplicate.held.id)),
+                 repeat_of=duplicate.repeat_of)
             for duplicate in duplicates],
         'currency': None if not declared_currency else {
             'declared': declared_currency,
