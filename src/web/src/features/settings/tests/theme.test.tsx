@@ -58,6 +58,16 @@ describe('the theme card', () => {
     expect(within(block).queryByRole('button', { name: 'Revenir à Atelier' })).toBeNull()
   })
 
+  it('offers nothing to apply once the JSON is cleared', async () => {
+    store()
+    const { user, block } = await openTheme()
+    await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
+
+    await user.clear(within(block).getByRole('textbox', { name: 'Modifier le JSON' }))
+
+    expect(within(block).getByRole('button', { name: 'Appliquer' })).toBeDisabled()
+  })
+
   it('opens the JSON on Atelier when nothing is stored, and saves it as any theme', async () => {
     const writes = store()
     const { user, block } = await openTheme()
@@ -84,6 +94,12 @@ describe('the theme card', () => {
     expect(await within(block).findByRole('status')).toHaveTextContent('Atelier rétabli')
     expect(writes).toEqual([['delete', null]])
     expect(within(block).queryByRole('button', { name: 'Revenir à Atelier' })).toBeNull()
+    expect(
+      JSON.parse(
+        (within(block).getByRole('textbox', { name: 'Modifier le JSON' }) as HTMLTextAreaElement)
+          .value,
+      ),
+    ).toEqual(atelier)
   })
 
   it('imports by id, opens the JSON on what was kept, and repaints', async () => {

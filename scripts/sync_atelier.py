@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ATELIER = ROOT / 'src' / 'web' / 'src' / 'theme' / 'atelier.json'
 INDEX_CSS = ROOT / 'src' / 'web' / 'src' / 'index.css'
 
+#: What the bundle's rules are called; the served stylesheet's are one notch stronger.
+SELECTORS = (':root', '.dark')
 BEGIN = '/* atelier:begin */\n'
 END = '/* atelier:end */\n'
 #: Both markers and everything between them.
@@ -25,8 +27,8 @@ SPAN = re.compile(re.escape(BEGIN) + r'.*?' + re.escape(END), re.S)
 
 def render() -> str:
     """Block 1's generated span, markers included."""
-    theme = tweakcn.normalize(json.loads(ATELIER.read_text()))
-    css = tweakcn.render_css({'cssVars': theme}, (':root', '.dark'))
+    theme = tweakcn.normalize(json.loads(ATELIER.read_text(encoding='utf-8')))
+    css = tweakcn.render_css({'cssVars': theme}, SELECTORS)
     # Biome formats a rule as `:root {`; render_css writes `:root{` (no `{` can occur in a value).
     return BEGIN + css.replace('{\n', ' {\n') + END
 
@@ -39,4 +41,4 @@ def sync(source: str) -> str:
 
 
 if __name__ == '__main__':
-    INDEX_CSS.write_text(sync(INDEX_CSS.read_text()))
+    INDEX_CSS.write_text(sync(INDEX_CSS.read_text(encoding='utf-8')), encoding='utf-8')
