@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ABSENT,
   currencyInput,
+  formatAxisDate,
   formatBytes,
   formatCompact,
   formatCurrency,
@@ -157,5 +158,25 @@ describe('a figure on its way into a money field (#1033)', () => {
     // the separator is the dot the field round-trips through `parseDecimal`.
     expect(currencyInput(126, 'EUR')).toBe('126')
     expect(currencyInput(49.271, null)).toBe('49.27')
+  })
+})
+
+describe('the chart axes (#1265)', () => {
+  it('percent trims a tick to its own precision', () => {
+    expect(formatPercent(FR, 0.2, 0)).toBe('+20\u00a0%')
+    expect(formatPercent(FR, 0.025, 0)).toBe('+2,5\u00a0%')
+    expect(formatPercent(FR, 0, 0)).toBe('0\u00a0%')
+    expect(formatPercent(FR, 0.2)).toBe('+20,00\u00a0%')
+  })
+
+  it('axisDate writes a day, a month, a January as its year, and a year', () => {
+    expect(formatAxisDate(FR, '2026-10-06', 'day')).toBe('6 oct.')
+    expect(formatAxisDate(EN, '2026-10-06', 'day')).toBe('6 Oct')
+    expect(formatAxisDate(FR, '2026-11-02', 'month')).toBe('nov.')
+    expect(formatAxisDate(EN, '2026-11-02', 'month')).toBe('Nov')
+    expect(formatAxisDate(FR, '2026-01-02', 'month')).toBe('2026')
+    expect(formatAxisDate(EN, '2026-01-02', 'month')).toBe('2026')
+    expect(formatAxisDate(FR, '2024-01-01', 'year')).toBe('2024')
+    expect(formatAxisDate(EN, '2024-01-01', 'year')).toBe('2024')
   })
 })

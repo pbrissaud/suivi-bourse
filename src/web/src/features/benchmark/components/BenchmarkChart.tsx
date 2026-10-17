@@ -34,7 +34,8 @@ import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
 import type { BenchmarkPoint } from '@/features/benchmark/lib/api'
-import { yFloor } from '@/features/dashboard/lib/dashboard'
+import { AXIS_TICKS, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 
@@ -54,6 +55,7 @@ interface BenchmarkChartProps {
 export function BenchmarkChart({ points, index, currency, action }: BenchmarkChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
+  const phone = useIsMobile()
 
   // **One return, two bodies** (#1003). The empty state used to be an early
   // return of its own, which put it and the drawing in two separate nodes — and
@@ -84,6 +86,16 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
       gapBehind: leading ? null : gap,
     }
   })
+
+  const x = timeTicks(
+    rows.map((row) => row.t),
+    phone ? AXIS_TICKS.time.phone : AXIS_TICKS.time.wide,
+  )
+  // Floored at zero whenever nothing drawn is negative, which is `yFloor`'s own
+  // rule (inside `valueAxis`): neither a portfolio value nor a replayed holding
+  // goes below zero, so the plot keeps its baseline and the two curves keep
+  // their proportion to each other.
+  const y = valueAxis(rows.flatMap((row) => [row.portfolio, row.reference]))
 
   return (
     <Card>
@@ -117,21 +129,29 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
             <EmptyState title={t('benchmark.chart.empty')} />
           ) : (
             <figure>
-              <div className="h-60 sm:h-75">
+              <div className="h-60 tabular sm:h-75">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={rows} aria-label={t('benchmark.chart.plot')}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
-                    <XAxis dataKey="t" hide />
-                    {/* Floored at zero whenever nothing drawn is negative, which is
-                        `yFloor`'s own rule: neither a portfolio value nor a replayed
-                        holding goes below zero, so the plot keeps its baseline and
-                        the two curves keep their proportion to each other. */}
+                    <XAxis
+                      dataKey="t"
+                      ticks={x.ticks}
+                      tickFormatter={(day: string) => f.axisDate(day, x.unit)}
+                      minTickGap={8}
+                      axisLine={false}
+                      tickLine={false}
+                      stroke="var(--border)"
+                      tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+                    />
                     <YAxis
-                      domain={[
-                        yFloor(rows.flatMap((row) => [row.portfolio, row.reference])),
-                        'auto',
-                      ]}
-                      hide
+                      domain={y.domain}
+                      ticks={y.ticks}
+                      tickFormatter={(value: number) => f.compact(value, currency)}
+                      width="auto"
+                      axisLine={false}
+                      tickLine={false}
+                      stroke="var(--border)"
+                      tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                     />
 
                     <ChartTooltip format={(value) => f.currency(value, currency)} />
