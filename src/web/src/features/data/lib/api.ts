@@ -201,7 +201,25 @@ export interface ImportReceipt {
   duplicate_rows: DuplicateRow[]
   /** What the file declares as its reporting currency, and what is done with it. */
   currency: DeclaredCurrency | null
+  /**
+   * **The lines quoted outside the base currency** (#1261), sorted by symbol,
+   * `currency` already folded to the main unit. Empty when the file declares its
+   * own currency or nothing in it is foreign — and then no question is asked.
+   */
+  foreign_lines: ForeignLine[]
+  /** The securities whose currency could not be checked in time. */
+  unverified: string[]
 }
+
+/** One security quoted outside the base currency, and how many events carry money. */
+export interface ForeignLine {
+  symbol: string
+  currency: string
+  rows: number
+}
+
+/** Which currency a file's foreign-quoted amounts are written in (#1261). */
+export type AmountsIn = 'base' | 'quote'
 
 /** One account the file names, and how many of its rows carry it (#835). */
 export interface FileAccount {
@@ -246,6 +264,18 @@ export interface ImportOptions {
   declaring?: readonly string[]
   /** Decline the reporting currency the file offers. Absent means *take it up*. */
   declineCurrency?: boolean
+  /**
+   * **The one question about the foreign-quoted lines** (#1261). Absent means
+   * unanswered: on a forecast it converts nothing, and on a write it keeps the
+   * behaviour of a caller that never heard of the question.
+   */
+  amountsIn?: AmountsIn
+  /**
+   * The `SYMBOL:CCY` pairs the last forecast listed — write only. The server
+   * applies the answer to exactly these, without a lookup, so it converts what
+   * the forecast judged.
+   */
+  foreign?: readonly string[]
 }
 
 export const dataApi = {
@@ -286,6 +316,8 @@ export const dataApi = {
       ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
       ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
       ...(options.declineCurrency ? ['adopt_currency=0'] : []),
+      ...(options.amountsIn ? [`amounts_in=${options.amountsIn}`] : []),
+      ...(options.foreign ?? []).map((pair) => `foreign=${encodeURIComponent(pair)}`),
     ]),
   // The way back out (#710, #796). It answers bytes and a name rather than a
   // payload, and it is the one call whose result no cache holds: a file is

@@ -95,6 +95,12 @@ export const PROBLEM_TYPES = {
    * `providerRefusal` below.
    */
   providerRefused: '/problems/provider-refused',
+  /**
+   * An import asked for its amounts to be converted, and no rate is known for
+   * one of the days (#1261). It carries `symbol`, `currency`, `base` and `date`,
+   * the first day without a rate; read it through `problemMessage` below.
+   */
+  currencyUnconvertible: '/problems/currency-unconvertible',
   internal: '/problems/internal-error',
 } as const
 
@@ -118,6 +124,10 @@ const MESSAGES: Record<string, MessageKey> = {
   // `problemMessage` below.
   [PROBLEM_TYPES.taxationModelInUse]: 'problem.taxationModelInUse',
   [PROBLEM_TYPES.providerRefused]: 'problem.providerRefused',
+  // Reached without its four members, what is left to say is that the request
+  // was refused; the sentence that names the pair and the day is
+  // `problemMessage`'s.
+  [PROBLEM_TYPES.currencyUnconvertible]: 'problem.badRequest',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 
@@ -220,6 +230,15 @@ export function problemMessage(error: unknown): {
         message: 'problem.taxationModelInUse.accounts',
         values: { count: accounts.length, accounts: accounts.join(', ') },
       }
+    }
+  }
+  if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.currencyUnconvertible) {
+    const symbol = text(error, 'symbol')
+    const currency = text(error, 'currency')
+    const base = text(error, 'base')
+    const date = text(error, 'date')
+    if (symbol !== null && currency !== null && base !== null && date !== null) {
+      return { message: 'problem.currencyUnconvertible', values: { symbol, currency, base, date } }
     }
   }
   return { message: problemMessageKey(error), values: {} }

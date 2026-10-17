@@ -111,6 +111,21 @@ instead of reconstructed, and it is why only *prices* are ever converted. If
 you have not answered [the base currency question](./settings.mdx#the-base-currency)
 yet, the amounts are still recorded; nothing is interpreted until you do.
 
+**When a line is quoted in another currency, the receipt asks.** Once you have
+answered the base currency, a file that does not declare one itself (the app's
+own export does) may hold lines on securities quoted elsewhere, a US share in a
+euro install, say. The preview names those lines and asks one question for the
+whole file: did your broker write their amounts in your base currency, or in
+each security's own currency? Nothing is preselected, and *Import* stays
+disabled until you answer. The second answer converts the amounts into your base
+currency on write, at the closing rate of each trade's day; if no rate is known
+for one of those days, the preview says so and nothing is written. A security
+whose currency could not be checked in time is listed as unverified and read in
+your base currency, and the notice that follows an import still covers it.
+Through `curl`, the same question is the `amounts_in=base|quote` parameter,
+with one `foreign=SYMBOL:CCY` per security on the write; leaving both out keeps
+the old behaviour.
+
 **A direction is carried by the event type, never by a sign.** Every amount and
 every quantity is positive: `WITHDRAWAL` is what makes money leave, not a
 negative `DEPOSIT`.

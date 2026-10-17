@@ -417,3 +417,29 @@ describe('the last perf pass, read where its figures are', () => {
     ).toBeNull()
   })
 })
+
+describe('the currency-unconvertible refusal (#1261)', () => {
+  it('renders currency-unconvertible with its symbol, pair and day', () => {
+    const refusal = new ApiProblem({
+      status: 422,
+      type: PROBLEM_TYPES.currencyUnconvertible,
+      symbol: 'AAPL',
+      currency: 'USD',
+      base: 'EUR',
+      date: '2024-01-15',
+    })
+
+    const said = problemMessage(refusal)
+
+    expect(said.message).toBe('problem.currencyUnconvertible')
+    expect(formatMessage('en', said.message, said.values)).toBe(
+      'No USD/EUR rate is known around 2024-01-15 (AAPL): these amounts cannot be converted. Choose "In EUR" or try again later.',
+    )
+  })
+
+  it('falls back to the generic refusal without its members', () => {
+    const bare = new ApiProblem({ status: 422, type: PROBLEM_TYPES.currencyUnconvertible })
+
+    expect(problemMessage(bare).message).toBe('problem.badRequest')
+  })
+})

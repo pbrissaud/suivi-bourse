@@ -64,7 +64,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, XIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { dataApi, type ImportReceipt } from '@/features/data/lib/api'
+import { dataApi, type AmountsIn, type ImportReceipt } from '@/features/data/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -87,12 +87,19 @@ interface Answer {
   correspondence: Correspondence
   /** *These are real orders, write them* — the rows the ledger already holds. */
   writeDuplicates: boolean
+  /**
+   * **Which currency the foreign-quoted amounts are written in** (#1261).
+   * `undefined` is *nobody said*, and nothing is preselected: the window blocks
+   * the write until the reader answers.
+   */
+  amountsIn: AmountsIn | undefined
 }
 
 /** Nothing answered yet — the first preview's answer, and a reset. */
 const NO_ANSWER: Answer = {
   correspondence: NO_CORRESPONDENCE,
   writeDuplicates: false,
+  amountsIn: undefined,
 }
 
 /**
@@ -179,9 +186,13 @@ interface Handed {
   answer: Answer
 }
 
-/** One handing-over that writes: the offer the reader may decline rides with it. */
+/**
+ * One handing-over that writes: the offer the reader may decline rides with it,
+ * and so do the foreign pairs the standing forecast judged (#1261).
+ */
 interface Written extends Handed {
   declineCurrency?: boolean
+  foreign: readonly string[]
 }
 
 export function useEventUpload(): EventUpload {
@@ -210,6 +221,7 @@ export function useEventUpload(): EventUpload {
         dryRun: true,
         mapping: given.correspondence.mapping,
         declaring: given.correspondence.declaring,
+        amountsIn: given.amountsIn,
       })
       // The census answers the whole window on its own while the duplicates are
       // being skipped, which is the default and the common case: one read.
@@ -228,6 +240,7 @@ export function useEventUpload(): EventUpload {
             writeDuplicates: true,
             mapping: given.correspondence.mapping,
             declaring: given.correspondence.declaring,
+            amountsIn: given.amountsIn,
           }),
           refused: undefined,
         }
@@ -258,12 +271,14 @@ export function useEventUpload(): EventUpload {
       ),
   })
   const write = useMutation({
-    mutationFn: ({ file, answer: given, declineCurrency }: Written) =>
+    mutationFn: ({ file, answer: given, declineCurrency, foreign }: Written) =>
       dataApi.importEvents(file, {
         writeDuplicates: given.writeDuplicates,
         declineCurrency,
         mapping: given.correspondence.mapping,
         declaring: given.correspondence.declaring,
+        amountsIn: given.amountsIn,
+        foreign,
       }),
     onSuccess: () => {
       // Every figure in the product is downstream of the ledger, and the server
@@ -302,7 +317,13 @@ export function useEventUpload(): EventUpload {
     },
     commit: (options) => {
       if (!held || pending) return
-      write.mutate({ file: held, answer, ...options })
+      // The pairs the forecast on screen listed, sent back so the server converts
+      // what was judged and looks nothing up (#1261). Only with an answer: a
+      // pair without one has nothing to apply.
+      const foreign = answer.amountsIn
+        ? (standing?.file.foreign_lines ?? []).map((line) => `${line.symbol}:${line.currency}`)
+        : []
+      write.mutate({ file: held, answer, foreign, ...options })
     },
     discard: () => {
       setHeld(null)
