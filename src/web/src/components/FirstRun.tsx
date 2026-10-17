@@ -56,10 +56,12 @@
  *    control that walks the passages carries no colour and the answer does:
  *    continuing is the walk, never a second spelling of the escape hatch, and
  *    on the one passage that carries an answer it must not weigh what the
- *    answer weighs. It is `secondary` and
- *    not `ghost` since the drawing was read: a ghost control at the one corner
- *    every reader is looking for reads as nothing at all, and *quieter than the
- *    answer* is what the argument asks for — not *invisible*. Closing leaves an
+ *    answer weighs. It is `secondary` and not `ghost` since the drawing was
+ *    read: a ghost control at the one corner every reader is looking for reads
+ *    as nothing at all, and *quieter than the answer* is what the argument asks
+ *    for — not *invisible*. (`Passer` is the exception, ghost beside the
+ *    answer: it is the lesser of two controls, not the walk's only one.)
+ *    Closing leaves an
  *    app that **works**: the scrape runs and stores the quote in its own
  *    currency, and the ledger is writable — what waits is the conversion and
  *    the performance series, which the notifications panel's pinned card and
@@ -71,8 +73,8 @@
  *  is and that it releases them.
  *  - **The accounts passage demands nothing.** It lists only the accounts
  *    somebody declared — the seeded row is an implementation detail, and a
- *    sentence says where events go until one is — and its whole job is that the notion exists *before* a file naming
- *    accounts is handed over. It reads them to name them, and while that read
+ *    sentence says where events go until one is — and its whole job is that
+ *    the notion exists *before* a file naming accounts is handed over. It reads them to name them, and while that read
  *    is in flight it says nothing at all about them: neither the rows, nor the
  *    offer to add one, a form opening onto a list nobody can see being a way of
  *    asking for a name against nothing.
@@ -156,10 +158,7 @@ export function FirstRun() {
   const [mark, setMark] = useState<FirstRunMark | null>(() => readFirstRunMark())
   const [passage, setPassage] = useState<Passage>(PASSAGES[0])
 
-  const config = useQuery({
-    queryKey: ['config'],
-    queryFn: settingsApi.config,
-  })
+  const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   const stands = firstRunStands({ settings: config.data?.settings, mark })
 
   // **The walk is latched, and it has to be.** The predicate is what *arms* the
@@ -225,10 +224,7 @@ export function FirstRun() {
   const save = useMutation({
     mutationFn: (currency: string) => settingsApi.saveSettings({ [CURRENCY_KEY]: currency }),
     onSuccess: (answer, currency) => {
-      const { message, values } = receiptMessage({
-        kind: 'currency.saved',
-        currency,
-      })
+      const { message, values } = receiptMessage({ kind: 'currency.saved', currency })
       toast.success(t(message, values))
       // Written into the cache here so what the rest of the app draws changes at
       // once rather than one round trip late. It no longer closes anything: the
@@ -283,10 +279,7 @@ export function FirstRun() {
           {/* Said, not drawn: the rail above already shows where the reader is,
               and a mono kicker over the heading is what DESIGN.md rules out. */}
           <p className="sr-only">
-            {t('firstRun.step', {
-              step: passageNumber(passage),
-              total: PASSAGES.length,
-            })}
+            {t('firstRun.step', { step: passageNumber(passage), total: PASSAGES.length })}
           </p>
 
           {/* Passage one — the one question, and a reader who may walk past it. */}
@@ -312,31 +305,27 @@ export function FirstRun() {
                 {/* The gesture that answers it is the footer's primary control
                     (`form=`): two buttons that both advanced were two ways to
                     ask the same question. */}
-                <div>
-                  <div>
-                    <CurrencyField
-                      id={FIELD_ID}
-                      value={choice}
-                      onChange={(value) => {
-                        // A refusal is about the value that was sent. Left
-                        // standing, it reads as this app having refused the code
-                        // just picked.
-                        if (save.isError) save.reset()
-                        setChoice(value)
-                      }}
-                      // The dial's rule, read off the dial. Here it settles
-                      // itself — the modal only stands on an unanswered one —
-                      // and it is passed rather than assumed, so the field
-                      // states one rule on both of its mounts.
-                      fixed={currencyFixed(config.data?.settings)}
-                      // The note is about **this value**: a reader who overrode
-                      // the suggestion is no longer reading a pre-filled field,
-                      // and the reservation would then be about a code the
-                      // browser never named.
-                      suggested={suggestion !== null && choice === suggestion}
-                    />
-                  </div>
-                </div>
+                <CurrencyField
+                  id={FIELD_ID}
+                  value={choice}
+                  onChange={(value) => {
+                    // A refusal is about the value that was sent. Left
+                    // standing, it reads as this app having refused the code
+                    // just picked.
+                    if (save.isError) save.reset()
+                    setChoice(value)
+                  }}
+                  // The dial's rule, read off the dial. Here it settles
+                  // itself — the modal only stands on an unanswered one —
+                  // and it is passed rather than assumed, so the field
+                  // states one rule on both of its mounts.
+                  fixed={currencyFixed(config.data?.settings)}
+                  // The note is about **this value**: a reader who overrode
+                  // the suggestion is no longer reading a pre-filled field,
+                  // and the reservation would then be about a code the
+                  // browser never named.
+                  suggested={suggestion !== null && choice === suggestion}
+                />
                 {!fixed && !choice ? (
                   <p className="text-xs text-muted-foreground">
                     {t('firstRun.pass.settings.empty')}
@@ -351,11 +340,10 @@ export function FirstRun() {
             </>
           ) : null}
 
-          {/* Passage two — **satisfied by the seeded row**, and demanding
-              nothing. The list is the install's own accounts, named through
-              `declaredLabel` so the seeded one reads its catalogue entry rather
-              than the words the schema wrote for whoever opens the file, and
-              carrying on its right the identifier **events actually name** —
+          {/* Passage two — demanding nothing. The list is the accounts somebody
+              declared (`isSeededOnly` leaves the seeded row out, a sentence
+              names it instead), each carrying on its right the identifier
+              **events actually name** —
               which is the whole reason this passage comes before the file.
               Nothing at all is rendered about them while the read is in flight:
               *this is what you own* is a claim about the reader's own

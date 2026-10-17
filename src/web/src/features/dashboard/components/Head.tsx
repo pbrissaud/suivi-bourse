@@ -301,9 +301,7 @@ export function DashboardHead({
               {totalsRow === null ? null : ytdGain !== null ? (
                 <Period
                   amount={ytdGain}
-                  text={t('dashboard.ytd.pill', {
-                    amount: f.signedCurrency(ytdGain, currency),
-                  })}
+                  text={t('dashboard.ytd.pill', { amount: f.signedCurrency(ytdGain, currency) })}
                 />
               ) : ytdAbsent ? (
                 <p className="text-sm text-muted-foreground">
@@ -314,9 +312,7 @@ export function DashboardHead({
               {totalsRow === null || today === null ? null : (
                 <Period
                   amount={today}
-                  text={t('dashboard.day.gain', {
-                    amount: f.signedCurrency(today, currency),
-                  })}
+                  text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
                 />
               )}
               {totalsRow?.xirr == null ? null : (
@@ -344,9 +340,7 @@ export function DashboardHead({
                         ytd:
                           ytdTwr === null
                             ? ''
-                            : t('dashboard.xirr.explainTwr.ytd', {
-                                percent: f.percent(ytdTwr),
-                              }),
+                            : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
                       }}
                       anchor="xirr"
                     />
