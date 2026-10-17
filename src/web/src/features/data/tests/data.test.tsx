@@ -2374,9 +2374,10 @@ describe('the ticker search', () => {
     const pending = new Promise<void>((resolve) => {
       answer = resolve
     })
-    const asked = yahooAnswers(null)
+    let asked = 0
     server.use(
       http.get(ROUTES.securities, async () => {
+        asked += 1
         await pending
         return HttpResponse.json({ query: 'zz', securities: null })
       }),
@@ -2386,9 +2387,9 @@ describe('the ticker search', () => {
     const field = await openOnABuy(user)
 
     await user.type(field, 'zz')
-    await new Promise((resolve) => setTimeout(resolve, 450))
 
-    expect(asked).toEqual([])
+    // The request is really out, and still unanswered.
+    await waitFor(() => expect(asked).toBe(1))
     expect(screen.queryByText(/Yahoo Finance ne répond pas/)).not.toBeInTheDocument()
     // The ledger's lines are there all along.
     expect(lines()).toHaveLength(2)

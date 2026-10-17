@@ -52,9 +52,10 @@
  *    the label because a reader searching *what do I own* recognises a name. The
  *    field this list serves is labelled `Ticker`, and the value it writes is a
  *    ticker — so the ticker is the label and the name is the hint. It also
- *    degrades correctly: every event this product's own create form writes
- *    carries `name: null` (`features/data/lib/api.ts`, `EventDraft`), so on a typed portfolio
- *    the palette's order would have printed the ticker twice and nothing else.
+ *    degrades correctly: a ticker typed or taken from the ledger is recorded with
+ *    `name: null` (`features/data/lib/api.ts`, `EventDraft`; only a Yahoo line
+ *    carries one), so on a typed portfolio the palette's order would have printed
+ *    the ticker twice and nothing else.
  *
  *  - **A taller row, and a different highlight.** `py-3` against the palette's
  *    `py-2` makes the line exactly 44px, the touch target a list you pick from
