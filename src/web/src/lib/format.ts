@@ -229,11 +229,35 @@ export function formatDate(
   locale: string,
   value: string | number | Date | null | undefined,
 ): string {
-  if (value === null || value === undefined) return ABSENT
+  const date = localDay(value)
+  if (date === null) return ABSENT
+  return formatted(locale, date, { dateStyle: 'medium' })
+}
+
+/** `value` as a local calendar day (see `formatDate`), or `null` if it is not one. */
+function localDay(value: string | number | Date | null | undefined): Date | null {
+  if (value === null || value === undefined) return null
   const day = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null
   const date = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(value)
-  if (Number.isNaN(date.getTime())) return ABSENT
-  return formatted(locale, date, { dateStyle: 'medium' })
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/**
+ * **A day in figures, `dd/mm/yyyy`** (#1264) — `fr-FR` and `en-GB` both write
+ * `02/07/2026`. For a table: ten mono characters that line up down the column
+ * and carry no `ᵉʳ`, which `formatDate` puts on the first of the month.
+ */
+export function formatDay(
+  locale: string,
+  value: string | number | Date | null | undefined,
+): string {
+  const date = localDay(value)
+  if (date === null) return ABSENT
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
 }
 
 /**
@@ -333,6 +357,7 @@ export function useFormatters() {
       bytes: (value: number | null | undefined) => formatBytes(locale, value),
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
+      day: (value: string | number | Date | null | undefined) => formatDay(locale, value),
       daySpan: (
         from: string | number | Date | null | undefined,
         to: string | number | Date | null | undefined,

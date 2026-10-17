@@ -93,10 +93,9 @@ describe('the columns of the ledger', () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // `Provenance` was the ninth and it left with its subject (#816): there is no source to name and no revocation to lead to. What
-    // closes the row since #834 is not a column of that family either — it is
-    // the row's **removal**, a control named for the reader who cannot see the
-    // icon in it.
+    // `Provenance` was the ninth and it left with its subject (#816): there is
+    // no source to name and no revocation to lead to. The row's removal that
+    // closed it since #834 left too (#1264): it lives in the edit sheet.
     expect(columnNames(ledger())).toEqual([
       // The checkbox ticking every filtered row (#1113): a control, no text.
       '',
@@ -108,7 +107,6 @@ describe('the columns of the ledger', () => {
       'Frais',
       'Montant',
       'Compte',
-      'Supprimer cet événement',
     ])
   })
 
@@ -162,10 +160,10 @@ describe('the columns of the ledger', () => {
     // A ledger is opened to check what has just happened.
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[1].textContent)).toEqual([
-      '10 févr. 2026',
-      '12 janv. 2026',
-      '5 janv. 2026',
-      '24 déc. 2025',
+      '10/02/2026',
+      '12/01/2026',
+      '05/01/2026',
+      '24/12/2025',
     ])
     expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
@@ -179,10 +177,68 @@ describe('the columns of the ledger', () => {
     // file; both halves went with the population they told apart (#816).
     const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
     const cells = within(row).getAllByRole('cell')
-    // The last cell is the removal since #834 — a gesture, not a fact about the
-    // row — so what closes what the row *says* is the one before it.
-    expect(cells[cells.length - 2]).toHaveTextContent('alpha')
-    expect(cells[cells.length - 2]).not.toHaveTextContent('—')
+    expect(cells[cells.length - 1]).toHaveTextContent('alpha')
+    expect(cells[cells.length - 1]).not.toHaveTextContent('—')
+  })
+
+  it('truncates a label without a ticker to two lines and keeps the whole text in its title', async () => {
+    const label = `Virement ${'x'.repeat(71)}`
+    expect(label).toHaveLength(80)
+    renderData([
+      anEvent({
+        id: '9',
+        event_type: 'DEPOSIT',
+        symbol: null,
+        name: null,
+        notes: label,
+        quantity: null,
+        unit_price: null,
+      }),
+    ])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const identity = within(ledger()).getByRole('button', { name: label })
+    expect(identity).toHaveTextContent(label)
+    expect(identity).toHaveAttribute('title', label)
+    expect(identity).toHaveClass('line-clamp-2')
+  })
+
+  it('clamps a label under a ticker to one line', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const label = within(ledger()).getByText('Ordre au marché, exécution partielle')
+    expect(label).toHaveClass('truncate')
+    expect(label).not.toHaveClass('line-clamp-2')
+    expect(label).toHaveAttribute('title', 'Ordre au marché, exécution partielle')
+  })
+
+  it('writes the date as dd/mm/yyyy in the table and in full in the checkbox name', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('24/12/2025')
+    expect(within(row).getByRole('checkbox')).toHaveAccessibleName(/24 déc\. 2025/)
+  })
+
+  it('caps a long account id and keeps it in its title', async () => {
+    const account = 'compte-courant-'.repeat(4)
+    renderData([anEvent({ account })])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const chip = within(ledger()).getByText(account)
+    expect(chip).toHaveAttribute('title', account)
+    expect(chip).toHaveClass('max-w-[12ch]', 'truncate')
+  })
+
+  it('draws no delete control in the rows', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    expect(
+      within(ledger()).queryByRole('button', { name: 'Supprimer cet événement' }),
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -965,24 +1021,26 @@ describe('the editor, and where it does not appear', () => {
   })
 })
 
+/** Opens the sheet on the row named `name`, asks for its removal, returns the box. */
+async function askToRemove(user: ReturnType<typeof renderApp>['user'], name = 'ZZC') {
+  await user.click(within(ledger()).getByRole('button', { name }))
+  const sheet = await screen.findByRole('dialog')
+  await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
+  return screen.findByRole('dialog', { name: 'Supprimer cet événement ?' })
+}
+
 describe('a row is removed at the unit', () => {
-  it('names the row in the box, and never asks *are you sure* on its own', async () => {
+  it('offers the deletion in the sheet of a row, and names the row in the box', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
-
-    const box = await screen.findByRole('dialog')
+    const box = await askToRemove(user)
     expect(
       within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
     ).toBeInTheDocument()
     // What names a row is what the row shows — its type, its identity, its day
     // — and never its key: a ledger row has no address.
     expect(within(box).getByText(/Attribution · ZZC · 24 déc\. 2025/)).toBeInTheDocument()
-    // The editor did not open underneath it: the gesture on the cell stops
-    // where it was made.
-    expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).not.toBeInTheDocument()
   })
 
   it('sends the row’s own key and says what left', async () => {
@@ -1003,17 +1061,58 @@ describe('a row is removed at the unit', () => {
       }),
     )
 
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', {
-        name: 'Supprimer cet événement',
-      }),
+      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
     )
 
     await waitFor(() => expect(asked).toBe('typed-1'))
     expect(await screen.findByText('1 événement supprimé.')).toBeInTheDocument()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+  })
+
+  it('closes the sheet once the row is deleted', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    server.use(
+      http.delete(`${ROUTES.events}/:id`, ({ params }) =>
+        HttpResponse.json({ id: String(params.id), removed: true }),
+      ),
+    )
+    await user.click(
+      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('goes back to the sheet when the box is dismissed', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Le garder' }))
+
+    expect(
+      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no deletion in the sheet of a new event', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Achat' }))
+
+    expect(screen.getByRole('button', { name: 'Annuler' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Supprimer cet événement' }),
+    ).not.toBeInTheDocument()
   })
 
   it('keeps the box open on a refusal and says it in the reader’s language', async () => {
@@ -1038,12 +1137,8 @@ describe('a row is removed at the unit', () => {
       ),
     )
 
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', {
-        name: 'Supprimer cet événement',
-      }),
+      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
     )
 
     const box = await screen.findByRole('dialog')
@@ -1076,12 +1171,8 @@ describe('a row is removed at the unit', () => {
       }),
     )
 
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', {
-        name: 'Supprimer cet événement',
-      }),
+      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
     )
 
     const box = await screen.findByRole('dialog')
@@ -1096,6 +1187,8 @@ describe('a row is removed at the unit', () => {
     // is read where the reader reads it: the box comes down on a ledger that
     // no longer shows the row it was about.
     await user.click(within(box).getByRole('button', { name: 'Le garder' }))
+    // The sheet the box was asked from is still up, and modal.
+    await user.click(await screen.findByRole('button', { name: 'Annuler' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
   })
 })
@@ -1560,7 +1653,6 @@ describe('the page in English', () => {
       'Fee',
       'Amount',
       'Account',
-      'Delete this event',
     ])
     // `Free shares`, `Cash in`, `Cash out` — the effect, not the six codes at a
     // difference of case.

@@ -211,7 +211,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // is only what the reduction still shows — ids hidden by it stay ticked here
   // and are never sent.
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
-  // An id the ledger no longer holds — deleted by its own row's button, or in
+  // An id the ledger no longer holds — deleted from its sheet, or in
   // another tab — leaves the selection with the re-read: the store may reissue
   // a freed key, and a new row must not arrive ticked. Adjusted during the
   // render, the budget's own pattern below.
@@ -423,7 +423,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 // table, and the sentence under it — *fin de la réduction*, or
                 // the count and the reveal — sits inside that frame, above the
                 // card's own edge, rather than floating under it.
-                <Card className="gap-0 overflow-hidden py-0">
+                <Card className="@container/ledger gap-0 overflow-hidden py-0">
                   <LedgerTable
                     events={shown}
                     budget={budget}
@@ -431,7 +431,6 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     rowSelection={rowSelection}
                     onRowSelectionChange={setRowSelection}
                     onEdit={setEditing}
-                    onRemove={setRemoving}
                   />
 
                   {/* **The reveal speaks, and the read did not**.
@@ -493,10 +492,15 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
         accountsFailed={accounts.isError}
         titles={titles}
         onClose={() => setEditing(undefined)}
+        onDelete={() => setRemoving(editing ?? null)}
       />
 
       {/* One box for all the rows, handed the one it is about (#834). */}
-      <RowDelete event={removing} onClose={() => setRemoving(null)} />
+      <RowDelete
+        event={removing}
+        onClose={() => setRemoving(null)}
+        onDeleted={() => setEditing(undefined)}
+      />
     </div>
   )
 }
