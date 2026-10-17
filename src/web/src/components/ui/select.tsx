@@ -1,9 +1,9 @@
 /**
  * A form select, over `radix-ui` — `combobox` semantics, not `menuitemradio`.
  *
- * `DropdownMenuRadioGroup` would carry the same content and `PreferenceMenu`
- * already uses it for three persisted preferences, so this is not a gap in the
- * kit. The difference is what the control *is*: a preference is a menu of
+ * `DropdownMenuRadioGroup` would carry the same content, and drew the three
+ * persisted preferences until #1276 set them as segmented controls, so this is
+ * not a gap in the kit. The difference is what the control *is*: that was a menu of
  * commands, and choosing a benchmark reference is a **form choice** about a
  * configuration fact the store keeps. A screen reader announcing *menu item,
  * checked* for a value that will still be there next month describes the wrong

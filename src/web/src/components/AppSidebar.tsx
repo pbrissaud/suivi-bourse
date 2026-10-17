@@ -25,9 +25,11 @@
  * to show was never health: it is a setting, and it is a field on the settings
  * page.
  *
- * The top is the **portfolio**, what the owner looks at; the foot is what they
- * *act on* — the ledger, where events are declared, corrected and deleted, and
- * the settings.
+ * **Two groups, no label** (#1276). The top is what the owner reads and
+ * records — the ledger, where events are declared, corrected and deleted,
+ * included; the foot is the administration, System and Settings. The column is
+ * 200 px, the width DESIGN.md always set, and its brand row is 56 px tall,
+ * level with the header bar.
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
@@ -63,24 +65,24 @@ interface Entry {
   icon: LucideIcon
 }
 
-/** What the owner looks at. */
+/**
+ * What the owner reads and records — and the ledger page is `Grand livre`,
+ * never *Registre*: the concept has a word in `CONTEXT.md` and every French
+ * record uses it, so a label inventing a second one puts two names on one
+ * thing. The source string is `Ledger`, English being decided first.
+ */
 const PORTFOLIO: Entry[] = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/shares', label: 'nav.shares', icon: CircleDollarSign },
   { to: '/accounts', label: 'nav.accounts', icon: Wallet },
+  { to: '/ledger', label: 'nav.ledger', icon: Database },
   { to: '/benchmark', label: 'nav.benchmark', icon: Scale },
   // Always there, the agent switched off included: the page says what to connect.
   { to: '/agent', label: 'nav.agent', icon: Sparkles },
 ]
 
-/**
- * What the owner acts on — and the page is `Grand livre`, never *Registre*:
- * the concept has a word in `CONTEXT.md` and every French record uses it, so a
- * label inventing a second one puts two names on one thing. The
- * source string is `Ledger`, English being decided first.
- */
-const WORKINGS: Entry[] = [
-  { to: '/ledger', label: 'nav.ledger', icon: Database },
+/** The administration, pinned to the foot of the column. */
+const ADMINISTRATION: Entry[] = [
   { to: '/system', label: 'nav.system', icon: Server },
   { to: '/settings', label: 'nav.settings', icon: Settings },
 ]
@@ -89,7 +91,7 @@ export function AppSidebar() {
   const t = useT()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
-  // **The seven entries are seven, at every N.** The accounts entry used to
+  // **The eight entries are eight, at every N.** The accounts entry used to
   // disappear at one account, and the argument was the page's own: comparing
   // one term is not comparing. The comparison entry follows the same rule for
   // a stronger reason — it is a page whose whole purpose is to be reached
@@ -98,11 +100,10 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      {/* The drawing's own measurements: the column is padded 20 px down and
-          12 px in, the wordmark row sits 8 px further in again, and 24 px
-          separate it from the first route. Folded to the rail the two
-          paddings meet in the middle, the badge being the only thing left. */}
-      <SidebarHeader className="h-auto gap-0 px-5 pt-5 pb-6 group-data-[collapsible=icon]:px-3">
+      {/* 56 px tall, level with the header bar, and the wordmark centred in it.
+          Folded to the rail the padding meets in the middle, the badge being
+          the only thing left. */}
+      <SidebarHeader className="h-14 justify-center gap-0 px-5 py-0 group-data-[collapsible=icon]:px-3">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
           {/* The mark, which the app had nowhere: a mint tile carrying the
               product's initial, and the one place the brand is stated rather
@@ -121,7 +122,7 @@ export function AppSidebar() {
       <SidebarContent className="gap-0">
         {/* `flex-1`, so the group is as tall as the scroll area and the foot
             of the list is the foot of the column. */}
-        <SidebarGroup className="flex-1 px-3 py-0 group-data-[collapsible=icon]:px-2">
+        <SidebarGroup className="flex-1 px-3 pt-2 pb-0 group-data-[collapsible=icon]:px-2">
           {/* The component ships divs; the landmark is the product's job, and
               it is what a screen reader — and a test — takes hold of. **One
               landmark over the two groups** and not one each: they are a
@@ -140,7 +141,7 @@ export function AppSidebar() {
                 There is nothing under them any more — the status card left with
                 #829. */}
             <SidebarMenu className="mt-auto pb-2.5">
-              {WORKINGS.map((entry) => (
+              {ADMINISTRATION.map((entry) => (
                 <NavEntry key={entry.to} entry={entry} pathname={pathname} />
               ))}
             </SidebarMenu>

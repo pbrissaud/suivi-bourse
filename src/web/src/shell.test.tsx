@@ -7,9 +7,9 @@
  *    for itself is one object of the shell now, so a reader reads the name of
  *    the page they are on without deducing it from the navigation, and a screen
  *    reader still finds a title on every route;
- *  - **the navigation opens to five, in three and two** — the
- *    portfolio at the top, what the owner acts on at the foot, and the fold
- *    survives a reload;
+ *  - **the navigation opens to eight, in six and two** — what the owner reads
+ *    and records at the top, the administration at the foot (#1276), and the
+ *    fold survives a reload;
  *  - **the bell is the one global indicator** (#829) — its icon
  *    carries the health colour, its badge the count, and it is in the content
  *    header because that is the one surface surviving all three sidebar states.
@@ -17,7 +17,7 @@
  *    and the one that vanished in the rail and in the drawer;
  *  - **the density is the reader's third preference** — same shape of key as
  *    the theme and the language, two states because a density has no `auto`,
- *    and nothing of it reaches the store.
+ *    set in Settings › On this device, and nothing of it reaches the store.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -44,13 +44,14 @@ function sidebar() {
   return document.querySelector('[data-slot="sidebar"][data-state]') as HTMLElement
 }
 
-async function chooseInMenu(
+/** One option of a preference's segmented control, on the settings page. */
+async function chooseInSettings(
   user: ReturnType<typeof renderApp>['user'],
   control: string,
   option: string,
 ) {
-  await user.click(screen.getByRole('button', { name: control }))
-  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+  const group = await screen.findByRole('radiogroup', { name: control })
+  await user.click(within(group).getByRole('radio', { name: option }))
 }
 
 describe('the page title, now the header’s', () => {
@@ -67,6 +68,12 @@ describe('the page title, now the header’s', () => {
       expect(await screen.findByRole('heading', { level: 1, name: entry })).toBeInTheDocument()
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     }
+  })
+
+  it('sets the title on the figure rung from md, the section-title rung under it', async () => {
+    renderApp()
+    const title = await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+    expect(title).toHaveClass('text-2xl', 'md:text-4xl')
   })
 
   it('carries the page’s own dated subtitle beside it', async () => {
@@ -101,35 +108,38 @@ describe('the page title, now the header’s', () => {
   })
 })
 
-describe('the navigation, seven entries in five and two', () => {
+describe('the navigation, eight entries in six and two', () => {
   /** The nav's links, in the order a reader — and a screen reader — meets them. */
   const entries = () =>
     within(nav())
       .getAllByRole('link')
       .map((link) => link.textContent)
 
-  it('says Grand livre and Réglages, and puts both at the foot of the list', async () => {
+  it('puts the ledger with what the owner reads, and only System and Settings at the foot', async () => {
     renderApp()
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
 
     // *Grand livre* and never *Registre*: the concept has a word, and a label
     // inventing a second one puts two names on one thing. The order is the
-    // decision — the four the owner **looks at**, then the two they **act
-    // on** — so it is asserted as an order and not as a set. *Référence* joins
-    // the first group and sits last in it (#760): it is read, never acted on,
-    // and it is the only one of the four that can be empty on an installation
-    // that is otherwise complete. *Agent* follows it (#1196): a page one asks
-    // questions on, about what the four above show.
+    // decision, so it is asserted as an order and not as a set. The ledger
+    // follows *Comptes* (#1276): the owner records there what the pages above
+    // show. *Référence* is read, never acted on, and *Agent* follows it
+    // (#1196): a page one asks questions on, about what the others show.
     expect(entries()).toEqual([
       'Tableau de bord',
       'Titres',
       'Comptes',
+      'Grand livre',
       'Référence',
       'Agent',
-      'Grand livre',
       'Système',
       'Réglages',
     ])
+
+    // Two groups under one landmark, and no label on either.
+    const groups = within(nav()).getAllByRole('list')
+    expect(groups.map((group) => within(group).getAllByRole('link').length)).toEqual([6, 2])
+    expect(groups[1]).toHaveTextContent(/^SystèmeRéglages$/)
   })
 
   it('leads to a settings page that is a page, with a title of its own', async () => {
@@ -308,9 +318,13 @@ describe('the density, the reader’s third preference', () => {
     const { user } = renderApp()
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
 
-    await user.click(screen.getByRole('button', { name: 'Densité des tableaux' }))
-    const options = await screen.findAllByRole('menuitemradio')
-    expect(options.map((option) => option.textContent)).toEqual(['Confortable', 'Compact'])
+    await user.click(within(nav()).getByRole('link', { name: 'Réglages' }))
+    const group = await screen.findByRole('radiogroup', { name: 'Densité des tableaux' })
+    expect(
+      within(group)
+        .getAllByRole('radio')
+        .map((option) => option.textContent),
+    ).toEqual(['Confortable', 'Compact'])
   })
 
   it('reaches the tables, and survives a remount without touching the store', async () => {
@@ -322,11 +336,9 @@ describe('the density, the reader’s third preference', () => {
       }),
     )
 
-    const { user, unmount } = renderApp({ url: '/shares' })
-    const table = await screen.findByRole('table')
-    expect(table).toHaveAttribute('data-density', 'comfortable')
-
-    await chooseInMenu(user, 'Densité des tableaux', 'Compact')
+    const { user, unmount } = renderApp({ url: '/settings' })
+    await chooseInSettings(user, 'Densité des tableaux', 'Compact')
+    await user.click(within(nav()).getByRole('link', { name: 'Titres' }))
     await waitFor(() =>
       expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),
     )

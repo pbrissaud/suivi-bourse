@@ -31,13 +31,14 @@ function nav() {
   return screen.getByRole('navigation', { name: 'Sections' })
 }
 
-async function chooseInMenu(
+/** One option of a preference's segmented control, on the settings page. */
+async function chooseInSettings(
   user: ReturnType<typeof renderApp>['user'],
   control: string,
   option: string,
 ) {
-  await user.click(screen.getByRole('button', { name: control }))
-  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+  const group = await screen.findByRole('radiogroup', { name: control })
+  await user.click(within(group).getByRole('radio', { name: option }))
 }
 
 describe('the walking skeleton', () => {
@@ -50,10 +51,13 @@ describe('the walking skeleton', () => {
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
     expect(within(nav()).getAllByRole('link')).toHaveLength(8)
 
-    await chooseInMenu(user, 'Thème', 'Sombre')
+    // The preferences are set on the settings page, and nowhere else.
+    await user.click(within(nav()).getByRole('link', { name: 'Réglages' }))
+    await chooseInSettings(user, 'Thème', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
 
-    await chooseInMenu(user, 'Langue', 'English')
+    await chooseInSettings(user, 'Langue', 'English')
+    await user.click(within(nav()).getByRole('link', { name: 'Dashboard' }))
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
 
     // **The six routes now answer with six pages.** `PendingPage` and its one
@@ -78,7 +82,7 @@ describe('the walking skeleton', () => {
     }
 
     // Back to French, on the page we happen to be standing on.
-    await chooseInMenu(user, 'Language', 'Français')
+    await chooseInSettings(user, 'Language', 'Français')
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
     // The ground did not move when the language did.
     expect(document.documentElement).toHaveClass('dark')
@@ -140,25 +144,25 @@ describe('a single account', () => {
 
 describe('the reader preferences', () => {
   it('render the whole app in either language', async () => {
-    const { user } = renderApp()
-    expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
+    const { user } = renderApp({ url: '/settings' })
+    expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
 
-    await chooseInMenu(user, 'Langue', 'English')
+    await chooseInSettings(user, 'Langue', 'English')
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
     expect(within(nav()).getByRole('link', { name: 'Shares' })).toBeInTheDocument()
     // The chrome follows too: the control that was `Langue` a moment ago is now
     // `Language`, so nothing is left in the other language on screen.
-    expect(screen.getByRole('button', { name: 'Language' })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Language' })).toBeInTheDocument()
     expect(document.documentElement).toHaveAttribute('lang', 'en')
   })
 
   it('put the ground on the document, and keep it across a remount', async () => {
-    const { user, unmount } = renderApp()
-    await screen.findByRole('heading', { name: 'Tableau de bord' })
+    const { user, unmount } = renderApp({ url: '/settings' })
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
     expect(document.documentElement).not.toHaveClass('dark')
 
-    await chooseInMenu(user, 'Thème', 'Sombre')
+    await chooseInSettings(user, 'Thème', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
 
     unmount()
@@ -176,6 +180,28 @@ describe('the reader preferences', () => {
 
     setPrefersDark(true)
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
+  })
+
+  it('stay reachable when every settings read fails', async () => {
+    // The block reads the browser and nothing else: the page it sits on may
+    // find every one of its own reads refused and still lets the reader
+    // change the language, the ground and the density.
+    server.use(
+      ...[ROUTES.config, ROUTES.agentConfig, ROUTES.theme].map((route) =>
+        problemHandler(route, {
+          status: 503,
+          type: PROBLEM_TYPES.storageUnavailable,
+          title: 'Storage unavailable',
+        }),
+      ),
+    )
+    const { user } = renderApp({ url: '/settings' })
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
+
+    await chooseInSettings(user, 'Thème', 'Sombre')
+    expect(document.documentElement).toHaveClass('dark')
+    await chooseInSettings(user, 'Langue', 'English')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
   })
 })
 
@@ -234,26 +260,34 @@ describe('when the app is not answering', () => {
 })
 
 describe('the content header', () => {
-  it('carries its six objects, on every page', async () => {
+  it('carries the fold, the title, the search and the bell, and nothing else', async () => {
     const { user } = renderApp()
     await screen.findByRole('heading', { name: 'Tableau de bord' })
 
+    const header = () => screen.getByRole('banner')
     const objects = () => [
-      screen.queryByRole('button', { name: 'Afficher ou masquer la navigation' }),
-      screen.queryByRole('heading', { level: 1 }),
-      screen.queryByRole('button', { name: /^Notifications/ }),
-      screen.queryByRole('button', { name: 'Densité des tableaux' }),
-      screen.queryByRole('button', { name: 'Langue' }),
-      screen.queryByRole('button', { name: 'Thème' }),
+      ...within(header()).getAllByRole('button'),
+      ...within(header()).getAllByRole('heading'),
     ]
+    const names = () =>
+      objects().map((object) => object.getAttribute('aria-label') ?? object.textContent)
 
-    expect(objects().every(Boolean)).toBe(true)
+    // Three controls and a title: the three preferences are Settings'.
+    expect(within(header()).getAllByRole('button')).toHaveLength(3)
+    expect(within(header()).getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(names()).toEqual(
+      expect.arrayContaining(['Afficher ou masquer la navigation', 'Tableau de bord']),
+    )
+    expect(within(header()).getByRole('button', { name: /^Notifications/ })).toBeInTheDocument()
+    for (const preference of ['Densité des tableaux', 'Langue', 'Thème']) {
+      expect(within(header()).queryByRole('button', { name: preference })).not.toBeInTheDocument()
+    }
 
     await user.click(within(nav()).getByRole('link', { name: 'Grand livre' }))
     await screen.findByRole('heading', { name: 'Grand livre' })
     // It is the one surface that survives the three sidebar states, so it is
     // the one that has to be on all five pages.
-    expect(objects().every(Boolean)).toBe(true)
+    expect(within(header()).getAllByRole('button')).toHaveLength(3)
   })
 })
 
@@ -265,14 +299,14 @@ describe('the chrome the component library ships', () => {
   // call site — so the strings were moved into the catalogues, and this is what
   // holds them there.
   it('names the rail in the reader’s language, tooltip included', async () => {
-    const { user } = renderApp()
-    await screen.findByRole('heading', { name: 'Tableau de bord' })
+    const { user } = renderApp({ url: '/settings' })
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
 
     const rail = screen.getByRole('button', { name: 'Replier ou déplier la navigation' })
     // `title` is the one string here a sighted reader actually sees.
     expect(rail).toHaveAttribute('title', 'Replier ou déplier la navigation')
 
-    await chooseInMenu(user, 'Langue', 'English')
+    await chooseInSettings(user, 'Langue', 'English')
     expect(
       await screen.findByRole('button', { name: 'Collapse or expand the navigation' }),
     ).toHaveAttribute('title', 'Collapse or expand the navigation')

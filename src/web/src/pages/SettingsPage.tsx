@@ -6,6 +6,7 @@ import { Unreadable } from '@/components/Unreadable'
 import { agentApi } from '@/features/agent/lib/api'
 import { AccessBlock } from '@/features/settings/components/AccessBlock'
 import { AgentBlock } from '@/features/settings/components/AgentBlock'
+import { DeviceBlock } from '@/features/settings/components/DeviceBlock'
 import { DialsBlock } from '@/features/settings/components/DialsBlock'
 import { TaxationBlock } from '@/features/settings/components/TaxationBlock'
 import { ThemeBlock } from '@/features/settings/components/ThemeBlock'
@@ -43,6 +44,11 @@ export default function SettingsPage() {
 
   return (
     <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
+      {/* The browser's own preferences: outside every `Unreadable` branch, the
+          block reads no query and renders when all of them fail. */}
+      <div id="device" className="scroll-mt-20 xl:col-span-2">
+        <DeviceBlock />
+      </div>
       <div className="xl:col-span-2">
         {settingsFailure !== null ? (
           <Unreadable failure={settingsFailure} />

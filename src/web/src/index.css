@@ -344,6 +344,15 @@
      off on the one width somebody chose to measure. */
   --breakpoint-wide: 61rem;
 
+  /* DESIGN.md's content widths, per kind of content (#1276). Literal on
+     purpose: inlined at build time, so no theme served by /api/theme.css can
+     reach them. Tables and charts take no token: they fill the column. */
+  --container-column: 45rem; /* 720: a form, the Settings page, the conversation under 1 024 px */
+  --container-reading: 48rem; /* 768: the conversation from 1 024 px */
+  /* From here the dashboard grid has three tracks: a statement gains a
+     neighbour instead of a longer row. */
+  --breakpoint-3xl: 100rem; /* 1 600 */
+
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);

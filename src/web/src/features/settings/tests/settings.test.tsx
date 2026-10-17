@@ -76,6 +76,7 @@ describe('the page', () => {
 
     await waitFor(() =>
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
+        'Sur cet appareil',
         'Général',
         'L’agent',
         'Thème',
