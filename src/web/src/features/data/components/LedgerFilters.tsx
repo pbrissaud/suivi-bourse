@@ -1,11 +1,11 @@
 /**
- * The reduction, said above the table — **the search, the count, and the
- * pastilles that name what is retained** (#723, #795, #834).
+ * The reduction, said above the table — **the search and the pastilles that
+ * name what is retained** (#723, #795, #834, #1278).
  *
  * The reduction is made in three places since #834 and they are three
  * questions, not three copies:
  *
- *  - the **panel** (`LedgerFacets.tsx`) is where an axis is *chosen*, and every
+ *  - the **menus** (`LedgerFacets.tsx`) are where an axis is *chosen*, and every
  *    option there carries the count it would leave;
  *  - the **search** is here, because it is the one dimension with no vocabulary
  *    at all to lay out. It is not a convenience either: on nineteen purchases
@@ -31,50 +31,63 @@ import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Input } from '@/components/ui/input'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { reduces, type LedgerFilters as Filters } from '@/features/data/lib/ledger'
+import type { LedgerFilters as Filters } from '@/features/data/lib/ledger'
 
 interface LedgerSearchProps {
   filters: Filters
   onChange: (filters: Filters) => void
-  /** How many rows survive the reduction, stated where the reduction is made. */
-  shown: number
 }
 
-/** The free-text field, and the count of what the reduction retains. */
-export function LedgerSearch({ filters, onChange, shown }: LedgerSearchProps) {
+/** The free-text field. The count it used to sit beside is the summary line's. */
+export function LedgerSearch({ filters, onChange }: LedgerSearchProps) {
   const { t } = useI18n()
 
+  // **The magnifier is inside the field** (#838): the drawing sets the search as
+  // a field with its own mark rather than as a bare box, which is what tells it
+  // apart from the form's inputs at a glance. The label stays screen-reader
+  // only — the icon is decoration and never a name.
   return (
-    <>
-      {/* **The magnifier is inside the field** (#838): the drawing sets the
-          search as a field with its own mark rather than as a bare box, which
-          is what tells it apart from the form's inputs at a glance. The label
-          stays screen-reader only — the icon is decoration and never a name. */}
-      <div className="relative min-w-0 grow basis-60 sm:max-w-md">
-        <label htmlFor="ledger-search" className="sr-only">
-          {t('data.search.label')}
-        </label>
-        <Search
-          aria-hidden
-          className="pointer-events-none absolute top-1/2 left-3.5 size-3.75 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          id="ledger-search"
-          type="search"
-          value={filters.query}
-          placeholder={t('data.search.placeholder')}
-          onChange={(event) => onChange({ ...filters, query: event.target.value })}
-          className="h-9.5 rounded-lg bg-card pl-9.5"
-        />
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {t('data.filter.count', {
-          count: shown,
-          reduced: reduces(filters) ? 'yes' : 'no',
-        })}
-      </p>
-    </>
+    <div className="relative min-w-0 grow basis-60 sm:max-w-80">
+      <label htmlFor="ledger-search" className="sr-only">
+        {t('data.search.label')}
+      </label>
+      <Search
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-3.5 size-3.75 -translate-y-1/2 text-muted-foreground"
+      />
+      <Input
+        id="ledger-search"
+        type="search"
+        value={filters.query}
+        placeholder={t('data.search.placeholder')}
+        onChange={(event) => onChange({ ...filters, query: event.target.value })}
+        className="h-8 rounded-lg bg-card pl-9.5"
+      />
+    </div>
   )
+}
+
+/**
+ * The three sentences a period reads out: the interval, and each bound typed
+ * alone — an interval open on the other side, which is a legitimate reduction
+ * and has to be readable as one. The chip says it, and so does the *Période*
+ * menu's trigger (#1278).
+ */
+export function periodSentence(
+  t: ReturnType<typeof useI18n>['t'],
+  f: ReturnType<typeof useFormatters>,
+  filters: Filters,
+): string {
+  return t('data.filter.period.chip', {
+    bounds:
+      filters.since !== null && filters.until !== null
+        ? 'both'
+        : filters.since !== null
+          ? 'since'
+          : 'until',
+    since: f.date(filters.since),
+    until: f.date(filters.until),
+  })
 }
 
 interface LedgerChipsProps {
@@ -128,19 +141,7 @@ export function LedgerChips({ filters, onChange }: LedgerChipsProps) {
   if (filters.since !== null || filters.until !== null) {
     chips.push({
       key: 'period',
-      // The three sentences a period reads out: the interval, and each bound
-      // typed alone — an interval open on the other side, which is a legitimate
-      // reduction and has to be readable as one.
-      label: t('data.filter.period.chip', {
-        bounds:
-          filters.since !== null && filters.until !== null
-            ? 'both'
-            : filters.since !== null
-              ? 'since'
-              : 'until',
-        since: f.date(filters.since),
-        until: f.date(filters.until),
-      }),
+      label: periodSentence(t, f, filters),
       clear: () => onChange({ ...filters, since: null, until: null }),
     })
   }

@@ -40,8 +40,8 @@
  *
  * The reason it is not held here is the **first import**, which is the gesture
  * this whole ticket exists for: an empty ledger renders the zone inside
- * `EntryPair`, the import fills the ledger, the pair unmounts and a second zone
- * mounts in the imports bar above the table. A receipt held by the component
+ * `EntryPair`, the import fills the ledger, the pair unmounts and the toolbar's
+ * *Importer* mounts above the table. A receipt held by the component
  * would be destroyed by the very write it is announcing — it would flash and
  * vanish for the one reader who has never seen this app work. So the mutation
  * is a hook (`useEventUpload`) held by `Ledger`, which survives that swap, and
@@ -59,7 +59,7 @@
  * v4 file for whoever reads a log or a `curl`; the front says, in the reader's
  * own language, that the file was refused and nothing was written.
  */
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type DragEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, XIcon } from 'lucide-react'
 
@@ -397,33 +397,60 @@ interface UploadZoneProps {
   /**
    * The rectangle, or the control alone.
    *
-   * `false` is the imports bar above the ledger, where the zone *is* the surface.
-   * `true` is the empty state's first entry (`EntryPair`), which is already a
-   * bordered box saying the same thing — a second rectangle inside it would be
-   * a border around a border and two instructions for one gesture.
+   * `false` is the band, the empty ledger's file entry (`EntryPair`), where the
+   * zone *is* the surface. `true` is the toolbar's *Importer* of a populated
+   * ledger (#1278): the picker alone, the drop being taken by the table card.
    */
   compact?: boolean
-  /**
-   * What rides at the right of the band beside the picker — the export menu.
-   * A prop rather than a sibling: the drawing puts the way in and the way out
-   * on one row, and a second flex container beside this one would break at
-   * every width the row wraps at.
-   */
-  trailing?: ReactNode
+  /** The picker's word: *Importer* in the toolbar, *Parcourir…* in the band. */
+  label?: string
+}
+
+/**
+ * **The drop half of the gesture**, shared by the band and by the table card
+ * (#1278). A drag that carries no file — a selected word, a link — is left
+ * alone, so the browser keeps its own behaviour for it.
+ */
+export function useFileDrop(hand: EventUpload['hand']) {
+  const [over, setOver] = useState(false)
+  const carriesFile = (event: DragEvent) => event.dataTransfer.types.includes('Files')
+  return {
+    over,
+    handlers: {
+      onDragOver: (event: DragEvent) => {
+        if (!carriesFile(event)) return
+        event.preventDefault()
+        setOver(true)
+      },
+      // Moving onto a child of the target also leaves the target: only a real
+      // exit puts the highlight down.
+      onDragLeave: (event: DragEvent) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOver(false)
+      },
+      onDrop: (event: DragEvent) => {
+        if (!carriesFile(event)) return
+        event.preventDefault()
+        setOver(false)
+        hand(event.dataTransfer.files?.[0])
+      },
+    },
+  }
 }
 
 /** The two formats, stated to the picker and to the reader alike. */
 const ACCEPTED = '.csv,.xlsx'
 
-export function UploadZone({ upload, compact = false, trailing = null }: UploadZoneProps) {
+export function UploadZone({ upload, compact = false, label }: UploadZoneProps) {
   const { t } = useI18n()
   const input = useRef<HTMLInputElement>(null)
   // The two mounts of this component are **not** mutually exclusive across a
   // gesture: the first import unmounts one and mounts the other, so the id is
   // generated rather than written down.
   const field = useId()
-  const [over, setOver] = useState(false)
   const hand = upload.hand
+  const { over, handlers } = useFileDrop(hand)
+
+  const name = label ?? t('data.drop.choose')
 
   const picker = (
     <>
@@ -442,44 +469,36 @@ export function UploadZone({ upload, compact = false, trailing = null }: UploadZ
       <Button
         type="button"
         variant="outline"
-        className="h-8.5 rounded-lg bg-transparent dark:bg-transparent"
+        size={compact ? 'sm' : 'default'}
+        className={cn('rounded-lg bg-transparent dark:bg-transparent', !compact && 'h-8.5')}
         disabled={upload.pending}
         onClick={() => input.current?.click()}
       >
-        {t('data.drop.choose')}
+        {compact ? <Upload aria-hidden /> : null}
+        {name}
       </Button>
       {/* The label the input is reached by. It is visually hidden and not
           absent: the button above is what a pointer presses, and this is what a
           screen reader and a test address the file field by. */}
       <label htmlFor={field} className="sr-only">
-        {t('data.drop.choose')}
+        {name}
       </label>
     </>
   )
 
-  if (compact) return <div className="space-y-3">{picker}</div>
+  if (compact) return picker
 
   return (
     // **A band and not a rectangle** (#838). The drawing gives the import one
     // row across the top of the ledger: the gesture's own icon, what the
-    // gesture does in one sentence with its qualification under it, and the two
-    // controls at the right — the picker, and the way back out, which is the
-    // export menu handed in as `trailing`. It was a 120 px dashed box with a
-    // paragraph in it, which is the shape of an empty state and not of a bar.
+    // gesture does in one sentence with its qualification under it, and the
+    // picker at the right. It was a 120 px dashed box with a paragraph in it,
+    // which is the shape of an empty state and not of a bar.
     // The dashed edge stays: it is what says *you may drop something here*.
     <div
       // The drop half. It is an alternative to the control below and never the
       // only way in — which is why it carries no role of its own.
-      onDragOver={(event) => {
-        event.preventDefault()
-        setOver(true)
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault()
-        setOver(false)
-        hand(event.dataTransfer.files?.[0])
-      }}
+      {...handlers}
       className={cn(
         'flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border-[1.5px] border-dashed border-primary/25 bg-primary/4 px-5.5 py-4.5 transition-colors',
         over && 'border-primary bg-primary/8',
@@ -490,10 +509,7 @@ export function UploadZone({ upload, compact = false, trailing = null }: UploadZ
         <p className="text-md font-medium">{t('data.drop.title')}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">{t('data.drop.body')}</p>
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2.5">
-        {picker}
-        {trailing}
-      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2.5">{picker}</div>
     </div>
   )
 }

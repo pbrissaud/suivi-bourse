@@ -805,7 +805,8 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     // Not merely `/ledger`: the target the file is actually handed to, which is
     // reached by its own label rather than by a rectangle a pointer must find.
-    expect(await screen.findByLabelText('Parcourir…')).toBeInTheDocument()
+    // The fixture's ledger has rows, so it is the toolbar's *Importer* (#1278).
+    expect(await screen.findByLabelText('Importer')).toBeInTheDocument()
     // The walk is over however it ended, and the browser holds that.
     expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
   })

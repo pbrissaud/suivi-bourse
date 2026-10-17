@@ -14,7 +14,7 @@
  * editable** — which is the ticket's own criterion, said on the accessible
  * rendering.
  */
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -133,15 +133,36 @@ describe('one population, and no source to act on', () => {
   })
 })
 
+/** A type, picked in the toolbar's *Type* menu (#1278): open it, press the option. */
+async function pickType(user: ReturnType<typeof renderApp>['user'], name: RegExp) {
+  await user.click(screen.getByRole('button', { name: 'Type' }))
+  await user.click(await screen.findByRole('button', { name }))
+}
+
 /** The export is a menu since #794: its entries exist once it is open. */
 async function openExport(user: ReturnType<typeof renderApp>['user']) {
   await user.click(await screen.findByRole('button', { name: 'Exporter' }))
   return screen.findByRole('menu')
 }
 
-/** The imports bar above the table: the drop zone and the export menu, and no more. */
-function block() {
-  return screen.getByRole('region', { name: 'Import et export' })
+/**
+ * The file field: the toolbar's *Importer* over a populated ledger (#1278), the
+ * band's *Parcourir…* over an empty one — the two mounts of one control.
+ */
+function fileField() {
+  return screen.queryByLabelText('Parcourir…') ?? screen.getByLabelText('Importer')
+}
+
+/**
+ * The *Importer* of the preview window. The toolbar's own button carries the
+ * same word, so the window — a modal, which hides the page behind it — is where
+ * the confirmation is looked for.
+ */
+async function windowImport() {
+  return within(await screen.findByRole('dialog')).getByRole('button', { name: 'Importer' })
+}
+function windowImportNow() {
+  return within(screen.getByRole('dialog')).getByRole('button', { name: 'Importer' })
 }
 
 describe('the export', () => {
@@ -150,7 +171,7 @@ describe('the export', () => {
     // own perimeter under it and its format beside it, which is what lets two
     // of them share a label without being the same gesture.
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     const menu = await openExport(user)
 
     expect(
@@ -201,7 +222,7 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: /^Achat/ }))
+    await pickType(user, /^Achat/)
     await user.click(
       within(await openExport(user)).getByRole('menuitem', { name: /Comptes et positions/ }),
     )
@@ -226,7 +247,7 @@ describe('the export', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await user.click(
       within(await openExport(user)).getByRole('menuitem', {
@@ -255,7 +276,7 @@ describe('the export', () => {
 
     // The reduction, made with the controls the reader has: a type facet and
     // the search field.
-    await user.click(screen.getByRole('button', { name: /^Achat/ }))
+    await pickType(user, /^Achat/)
     await user.type(screen.getByRole('searchbox'), 'zza')
 
     await user.click(
@@ -295,7 +316,7 @@ describe('the export', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await user.click(
       within(await openExport(user)).getByRole('menuitem', {
@@ -320,7 +341,7 @@ describe('the export', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await user.click(
       within(await openExport(user)).getByRole('menuitem', {
@@ -351,7 +372,7 @@ describe('the export', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await user.click(
       within(await openExport(user)).getByRole('menuitem', {
@@ -367,25 +388,97 @@ describe('the export', () => {
     expect(saved).toEqual([])
   })
 
-  it('lives in the bar, which holds the drop zone with it and nothing else', async () => {
-    renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
-
-    // One bar above the table (#794): the zone and the
-    // menu, and **no list of files** since #816. Getting one's data out is a
-    // question of files, not of the ledger.
-    const bar = block()
-    expect(within(bar).getByText(/Déposez un fichier \.csv ou \.xlsx/)).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
-    expect(within(bar).queryByRole('table')).toBeNull()
-  })
-
-  it('puts the bar above the ledger it describes', async () => {
+  it('keeps Exporter in the toolbar, with the search and the page’s other gestures', async () => {
     renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const bar = block()
-    expect(bar.compareDocumentPosition(ledger()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // One row above the table (#1278): the export rides at the right of the
+    // search, and **no list of files** since #816. Getting one's data out is a
+    // question of files, not of the ledger.
+    const exporter = screen.getByRole('button', { name: 'Exporter' })
+    expect(
+      exporter.compareDocumentPosition(ledger()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('searchbox').compareDocumentPosition(exporter) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+})
+
+describe('the import over a populated ledger (#1278)', () => {
+  function aFile(name = 'zeta-events_2.csv') {
+    return new File(['date,event_type\n'], name, { type: 'text/csv' })
+  }
+
+  /** What a browser hands a drop: `types` names `Files` only when a file is dragged. */
+  function dragOf(files: File[]) {
+    return { dataTransfer: { types: files.length > 0 ? ['Files'] : ['text/plain'], files } }
+  }
+
+  /** The dry-run requests the route saw. */
+  function watchingPreviews() {
+    const seen: string[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        seen.push(new URL(request.url).searchParams.has('dry_run') ? 'preview' : 'write')
+        return HttpResponse.json(aReceipt(), { status: 200 })
+      }),
+    )
+    return seen
+  }
+
+  it('draws no import band over a populated ledger', async () => {
+    renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    expect(screen.queryByText(/Déposez un fichier \.csv ou \.xlsx/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Parcourir…')).not.toBeInTheDocument()
+  })
+
+  it('imports from the toolbar’s Importer button', async () => {
+    const seen = watchingPreviews()
+    const { user } = renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    await user.upload(screen.getByLabelText('Importer'), aFile())
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(seen).toEqual(['preview'])
+  })
+
+  it('takes a file dropped on the table', async () => {
+    const seen = watchingPreviews()
+    renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const card = ledger().closest('[data-slot="card"]') as HTMLElement
+
+    fireEvent.dragOver(card, dragOf([aFile()]))
+    // While a file is over the card, the card says what dropping it does.
+    expect(
+      screen.getByText(/Déposez ici : vous verrez ce que le fichier ferait/),
+    ).toBeInTheDocument()
+
+    fireEvent.drop(card, dragOf([aFile()]))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(seen).toEqual(['preview'])
+  })
+
+  it('ignores a drag that carries no file', async () => {
+    const seen = watchingPreviews()
+    renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const card = ledger().closest('[data-slot="card"]') as HTMLElement
+
+    fireEvent.dragOver(card, dragOf([]))
+    expect(screen.queryByText(/Déposez ici/)).not.toBeInTheDocument()
+
+    fireEvent.drop(card, dragOf([]))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(seen).toEqual([])
   })
 })
 
@@ -398,6 +491,28 @@ describe('an install that has imported nothing', () => {
 
     expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
     expect(screen.getAllByLabelText('Parcourir…')).toHaveLength(1)
+  })
+
+  it('draws the band as the empty ledger’s file entry, and takes a drop there', async () => {
+    const seen: string[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        seen.push(new URL(request.url).searchParams.has('dry_run') ? 'preview' : 'write')
+        return HttpResponse.json(aReceipt(), { status: 200 })
+      }),
+    )
+    renderImports({ events: [] })
+    const band = (await screen.findByText(/Déposez un fichier \.csv ou \.xlsx/)).parentElement
+      ?.parentElement as HTMLElement
+    // No export beside it, and no toolbar: the band is the page.
+    expect(within(band).queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+
+    const file = new File(['date,event_type\n'], 'zeta-events_2.csv', { type: 'text/csv' })
+    fireEvent.drop(band, { dataTransfer: { types: ['Files'], files: [file] } })
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(seen).toEqual(['preview'])
   })
 
   it('renders no bar at all with nothing recorded and nothing declared', async () => {
@@ -428,8 +543,8 @@ describe('the file handed over', () => {
    * so in one line rather than spelling the confirmation out five times.
    */
   async function handOver(user: ReturnType<typeof renderImports>['user'], file = aFile()) {
-    await user.upload(screen.getByLabelText('Parcourir…'), file)
-    await user.click(await screen.findByRole('button', { name: 'Importer' }))
+    await user.upload(fileField(), file)
+    await user.click(await windowImport())
   }
 
   it('previews the file before writing it, and writes on the confirmation', async () => {
@@ -446,9 +561,9 @@ describe('the file handed over', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
 
     expect(
       await screen.findByText(
@@ -459,7 +574,7 @@ describe('the file handed over', () => {
     // forecast — which is the property the server side asserts on the table.
     expect(seen).toEqual(['preview'])
 
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     expect(
       await screen.findByText(
@@ -471,7 +586,7 @@ describe('the file handed over', () => {
     expect(seen).toEqual(['preview', 'write'])
     // And the forecast is gone: the fact replaces it rather than joining it.
     expect(screen.queryByText(/seront écrits/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Importer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('puts the file down without writing it when the reader refuses', async () => {
@@ -486,9 +601,9 @@ describe('the file handed over', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
     await user.click(await screen.findByRole('button', { name: 'Annuler' }))
 
     expect(screen.queryByText(/seront écrits/)).not.toBeInTheDocument()
@@ -515,9 +630,9 @@ describe('the file handed over', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
 
     expect(
       await screen.findByText(
@@ -525,7 +640,7 @@ describe('the file handed over', () => {
       ),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     expect(await screen.findByText(/2 doublons ignorés\./)).toBeInTheDocument()
   })
@@ -555,13 +670,13 @@ describe('the file handed over', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
     await user.click(
       await screen.findByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
     )
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(asked).toEqual(['1']))
   })
@@ -570,10 +685,10 @@ describe('the file handed over', () => {
     // A box about rows that do not exist is a question the reader cannot
     // answer — the default receipt carries no duplicate at all.
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
-    await screen.findByRole('button', { name: 'Importer' })
+    await user.upload(fileField(), aFile())
+    await windowImport()
 
     expect(
       screen.queryByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
@@ -597,7 +712,7 @@ describe('the file handed over', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await handOver(user, aFile('broker.csv'))
     await screen.findByText(/3 événements écrits/)
@@ -632,16 +747,16 @@ describe('the file handed over', () => {
       ),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile('vide.csv'))
+    await user.upload(fileField(), aFile('vide.csv'))
 
     // The forecast says it first, in its own tense — there is nothing to write.
     expect(
       await screen.findByText('vide.csv ne porte aucun événement : il n’y a rien à écrire.'),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     expect(
       await screen.findByText('vide.csv ne portait aucun événement : rien n’a été écrit.'),
@@ -663,9 +778,9 @@ describe('the file handed over', () => {
       ),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
 
     expect(
       await screen.findByText(/L’application a refusé ce fichier et n’a rien écrit/),
@@ -701,9 +816,9 @@ describe('the file handed over', () => {
       ),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
 
     expect(
       await screen.findByText(
@@ -727,16 +842,16 @@ describe('the file handed over', () => {
       ),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
 
     expect(
       await screen.findByText(/dépasse ce que l’application accepte en une fois/),
     ).toBeInTheDocument()
   })
 
-  it('keeps the receipt when the first import fills an empty ledger', async () => {
+  it('keeps the first import’s receipt once the ledger fills', async () => {
     // **The gesture this whole ticket exists for**, and the one place a receipt
     // held by the zone would be destroyed by the write it announces: an empty
     // ledger offers the file entrance inside the entry pair, the import fills
@@ -763,7 +878,7 @@ describe('the file handed over', () => {
     // corrected and handed back; an import whose sentence never appears is one
     // the reader has no way of reading at all.
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await handOver(user, aFile('operations.csv'))
     expect(await screen.findByText(/3 événements écrits/)).toBeInTheDocument()
@@ -781,7 +896,7 @@ describe('the file handed over', () => {
     // every figure downstream of the ledger is stale — and the table below is
     // the nearest of them.
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     // Armed **after** the first read has landed, so what it counts is the
     // reading the gesture caused and not the one the mount did.
     let reads = 0
@@ -842,7 +957,7 @@ describe('what this import would do', () => {
   }
 
   async function hand(user: ReturnType<typeof renderImports>['user'], file = aFile()) {
-    await user.upload(screen.getByLabelText('Parcourir…'), file)
+    await user.upload(fileField(), file)
   }
 
   it('puts one line per account the file names, with its volume', async () => {
@@ -858,7 +973,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -876,11 +991,11 @@ describe('what this import would do', () => {
     // button, and not by the server forgetting a rule.
     watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
-    expect(await screen.findByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(await windowImport()).toBeDisabled()
     expect(
       screen.getByText('Une correspondance manque : dites où vont les 47 événements de ce compte.'),
     ).toBeInTheDocument()
@@ -894,7 +1009,7 @@ describe('what this import would do', () => {
     // the account, so what is skipped changes with the answer.
     const seen = watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
     await user.selectOptions(await screen.findByLabelText('Cible pour TR'), 'beta')
@@ -903,7 +1018,7 @@ describe('what this import would do', () => {
     expect(JSON.parse(seen[1].searchParams.get('map') ?? '{}')).toEqual({ TR: 'beta' })
     expect(seen[1].searchParams.has('dry_run')).toBe(true)
 
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(seen).toHaveLength(3))
     expect(JSON.parse(seen[2].searchParams.get('map') ?? '{}')).toEqual({ TR: 'beta' })
@@ -915,7 +1030,7 @@ describe('what this import would do', () => {
     // the reader never leaves the window holding a file the app turned back.
     const seen = watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
     await user.selectOptions(
@@ -924,7 +1039,7 @@ describe('what this import would do', () => {
     )
 
     expect(await screen.findByText('« TR » sera déclaré avec le fichier')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(seen[seen.length - 1].searchParams.has('dry_run')).toBe(false))
     expect(seen[seen.length - 1].searchParams.getAll('declare')).toEqual(['TR'])
@@ -933,7 +1048,7 @@ describe('what this import would do', () => {
   it('says the correspondence is dropped with the gesture', async () => {
     watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -950,7 +1065,7 @@ describe('what this import would do', () => {
     // affirmation, no selector, and no block of duplicates at all — a block with
     // nothing in it does not exist.
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -960,7 +1075,7 @@ describe('what this import would do', () => {
     ).toBeInTheDocument()
     expect(within(window).queryByRole('combobox')).not.toBeInTheDocument()
     expect(within(window).queryByText('Déjà dans votre grand livre')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled()
+    expect(windowImportNow()).toBeEnabled()
   })
 
   it('names the duplicated lines and says what each of them repeats', async () => {
@@ -978,7 +1093,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1059,7 +1174,7 @@ describe('what this import would do', () => {
       aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [twiceTheSameDividend()] }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1072,7 +1187,7 @@ describe('what this import would do', () => {
     // The census read carries nothing; the writing read carries the group.
     expect(seen.map((read) => read.repeats)).toEqual([[], ['0']])
 
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(seen).toHaveLength(3))
     expect(seen[2].repeats).toEqual(['0'])
@@ -1085,7 +1200,7 @@ describe('what this import would do', () => {
       aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [twiceTheSameDividend()] }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
     await user.click(await screen.findByRole('radio', { name: 'N’en écrire qu’une' }))
@@ -1094,7 +1209,7 @@ describe('what this import would do', () => {
     expect(screen.getByText('1 doublon sauté')).toBeInTheDocument()
     expect(seen[seen.length - 1].repeats).toEqual([])
 
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(seen[seen.length - 1].url.searchParams.has('dry_run')).toBe(false))
     expect(seen[seen.length - 1].repeats).toEqual([])
@@ -1105,7 +1220,7 @@ describe('what this import would do', () => {
       aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [aDuplicateRow()] }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1131,7 +1246,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
     const one = await screen.findByRole('button', { name: 'Une seule de chaque' })
@@ -1159,7 +1274,7 @@ describe('what this import would do', () => {
       aReceipt({ rows: 2, written: 1, duplicates: 1, duplicate_rows: [twiceTheSameDividend()] }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
     await screen.findByRole('radio', { name: 'Écrire les deux' })
@@ -1180,25 +1295,25 @@ describe('what this import would do', () => {
       true,
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
     expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(windowImportNow()).toBeDisabled()
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: 'Une seule de chaque' }))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
     expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
   })
 
   it('renders neither block on a clean file', async () => {
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
-    await screen.findByRole('button', { name: 'Importer' })
+    await windowImport()
 
     expect(
       screen.queryByRole('heading', { name: 'Répétées dans le fichier' }),
@@ -1221,7 +1336,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1277,7 +1392,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
     const box = await screen.findByLabelText(
@@ -1286,7 +1401,7 @@ describe('what this import would do', () => {
     await user.click(box)
 
     expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(windowImportNow()).toBeDisabled()
     // The answer was judged on a **preview**: the flag reached the server on a
     // request that writes nothing, and no write was ever made.
     expect(
@@ -1301,7 +1416,7 @@ describe('what this import would do', () => {
       screen.getByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
     )
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
     expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
   })
 
@@ -1318,7 +1433,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
     expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
@@ -1359,7 +1474,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
     const select = await screen.findByLabelText('Cible pour TR')
@@ -1371,7 +1486,7 @@ describe('what this import would do', () => {
     expect(screen.getByLabelText('Cible pour TR')).toBe(select)
     expect(select.isConnected).toBe(true)
     expect(select).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    expect(windowImportNow()).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Annuler' })).toBeInTheDocument()
 
     hold!()
@@ -1417,7 +1532,7 @@ describe('what this import would do', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
     const select = await screen.findByLabelText('Cible pour TR')
@@ -1425,7 +1540,7 @@ describe('what this import would do', () => {
 
     // The refusal is read before the button, and the button cannot be pressed.
     expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled())
+    await waitFor(() => expect(windowImportNow()).toBeDisabled())
     // The window is not a dead end: the select the reader has just used is the
     // same node, still there to answer differently.
     expect(screen.getByLabelText('Cible pour TR')).toBe(select)
@@ -1441,7 +1556,7 @@ describe('what this import would do', () => {
     // because the answer cannot be taken back.
     const seen = watching(() => aReceipt({ currency: { declared: 'EUR', adopting: true } }))
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1451,7 +1566,7 @@ describe('what this import would do', () => {
       ),
     ).toBeInTheDocument()
     await user.click(screen.getByLabelText('Utiliser EUR comme devise de base'))
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(seen).toHaveLength(2))
     expect(seen[1].searchParams.get('adopt_currency')).toBe('0')
@@ -1462,11 +1577,11 @@ describe('what this import would do', () => {
     // put and no block to render.
     watching(() => aReceipt({ currency: { declared: 'EUR', adopting: false } }))
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
-    await screen.findByRole('button', { name: 'Importer' })
+    await windowImport()
     expect(screen.queryByText('La devise')).not.toBeInTheDocument()
   })
 
@@ -1488,7 +1603,7 @@ describe('what this import would do', () => {
       ),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1508,10 +1623,10 @@ describe('what this import would do', () => {
     // window is not where it lives: the write is done, and what is left is the
     // sentence the app owes the reader.
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
-    await user.click(await screen.findByRole('button', { name: 'Importer' }))
+    await user.click(await windowImport())
 
     expect(await screen.findByText(/3 événements écrits/)).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -1547,13 +1662,13 @@ describe('the currency of the amounts (#1261)', () => {
   }
 
   async function hand(user: ReturnType<typeof renderImports>['user']) {
-    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
+    await user.upload(fileField(), aFile())
   }
 
   async function open(receipt: () => ImportReceipt = () => aReceipt({ foreign_lines: [AAPL] })) {
     const seen = watching(receipt)
     const rendered = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(rendered.user)
     return { ...rendered, seen }
   }
@@ -1561,10 +1676,10 @@ describe('the currency of the amounts (#1261)', () => {
   it('renders no currency block when no line is foreign', async () => {
     await open(() => aReceipt())
 
-    await screen.findByRole('button', { name: 'Importer' })
+    await windowImport()
     expect(screen.queryByText('Les montants en devise')).not.toBeInTheDocument()
     expect(screen.queryAllByRole('radio')).toHaveLength(0)
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled()
+    expect(windowImportNow()).toBeEnabled()
   })
 
   it('renders no currency block when the file declares its currency', async () => {
@@ -1572,7 +1687,7 @@ describe('the currency of the amounts (#1261)', () => {
     // window believes it: a file that declares one has answered.
     await open(() => aReceipt({ currency: { declared: 'EUR', adopting: false } }))
 
-    await screen.findByRole('button', { name: 'Importer' })
+    await windowImport()
     expect(screen.queryByText('Les montants en devise')).not.toBeInTheDocument()
   })
 
@@ -1609,7 +1724,7 @@ describe('the currency of the amounts (#1261)', () => {
   it('keeps Import disabled with the reason written while unanswered', async () => {
     await open(() => aReceipt({ foreign_lines: [AAPL, VOD] }))
 
-    expect(await screen.findByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(await windowImport()).toBeDisabled()
     expect(
       screen.getByText('Dites dans quelle devise sont les montants des titres cotés en USD, GBP.'),
     ).toBeInTheDocument()
@@ -1624,7 +1739,7 @@ describe('the currency of the amounts (#1261)', () => {
     expect(seen[0].searchParams.has('amounts_in')).toBe(false)
     expect(seen[1].searchParams.get('amounts_in')).toBe('quote')
     expect(seen[1].searchParams.has('dry_run')).toBe(true)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
     expect(screen.queryByText(/Dites dans quelle devise/)).not.toBeInTheDocument()
   })
 
@@ -1648,7 +1763,7 @@ describe('the currency of the amounts (#1261)', () => {
           : undefined,
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
     await user.click(await screen.findByLabelText('En USD, la devise de chaque titre'))
@@ -1657,12 +1772,12 @@ describe('the currency of the amounts (#1261)', () => {
     expect(alert).toHaveTextContent(
       'Aucun cours USD/EUR n’est connu autour du 2026-01-05 (AAPL) : ces montants ne peuvent pas être convertis. Choisissez « En EUR » ou réessayez plus tard.',
     )
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(windowImportNow()).toBeDisabled()
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeEnabled()
 
     // The other answer is one click away, and it is judged like any other.
     await user.click(screen.getByLabelText('En EUR, déjà convertis'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
     expect(seen.at(-1)?.searchParams.get('amounts_in')).toBe('base')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -1687,7 +1802,7 @@ describe('the currency of the amounts (#1261)', () => {
           : undefined,
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
     await hand(user)
 
     const quote = await screen.findByLabelText('En USD, la devise de chaque titre')
@@ -1722,7 +1837,7 @@ describe('the currency of the amounts (#1261)', () => {
       }),
     )
     const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await hand(user)
 
@@ -1731,15 +1846,15 @@ describe('the currency of the amounts (#1261)', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(release).not.toBeNull())
     release!()
-    await screen.findByRole('button', { name: 'Importer' })
+    await windowImport()
   })
 
   it('sends amounts_in and the foreign pairs with the commit', async () => {
     const { user, seen } = await open(() => aReceipt({ foreign_lines: [AAPL, VOD] }))
 
     await user.click(await screen.findByLabelText('En USD, GBP, la devise de chaque titre'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: 'Importer' }))
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
+    await user.click(windowImportNow())
 
     await waitFor(() => expect(seen.some((url) => !url.searchParams.has('dry_run'))).toBe(true))
     const written = seen.find((url) => !url.searchParams.has('dry_run'))!
@@ -1750,14 +1865,14 @@ describe('the currency of the amounts (#1261)', () => {
   it('forgets the answer when another file is handed over', async () => {
     const { user } = await open()
     await user.click(await screen.findByLabelText('En EUR, déjà convertis'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
 
     await user.click(screen.getByRole('button', { name: 'Annuler' }))
     await hand(user)
 
     await screen.findByText('Les montants en devise')
     for (const radio of screen.getAllByRole('radio')) expect(radio).not.toBeChecked()
-    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(windowImportNow()).toBeDisabled()
   })
 
   it('gives the radio group an accessible name and each radio a description', async () => {

@@ -213,6 +213,8 @@ shipped face would cost every screen for no reader benefit.
 
   The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - **< 768 px:** single column.
+- A table page has no side panel: its filters are a toolbar above the table, its
+  selection's actions appear only with a selection.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
   flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
   below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).

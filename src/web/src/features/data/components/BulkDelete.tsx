@@ -3,10 +3,11 @@
  * the deletion on the reduction (#814, #834).
  *
  * The gesture every table app has: tick rows, delete the ticked rows. The
- * button is **always there while the ledger has events**, disabled with
- * nothing ticked, so it is discovered once rather than when a box is ticked.
- * Emptying the ledger is no gesture of its own any more: no filter, tick the
- * header, delete.
+ * button is **rendered only with a selection** (#1278), in the summary line under
+ * the ledger's toolbar: with nothing ticked no destructive control exists on
+ * the page, and the line itself is always there, so ticking a box moves nothing
+ * under the pointer. Emptying the ledger is no gesture of its own any more: no
+ * filter, tick the header, delete.
  *
  * **The confirmation is kept**, and it states the count. The count in the box
  * is the **table's** — what is ticked, said before the click. The count in the
@@ -75,7 +76,6 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
       <Button
         type="button"
         variant="outline"
-        disabled={selected.length === 0}
         className="h-8 rounded-lg border-loss/45 bg-transparent px-3 text-xs text-loss hover:bg-loss/10 hover:text-loss dark:bg-transparent dark:hover:bg-loss/10"
         onClick={() => {
           // A mutation error outlives its gesture, so reopening on another
@@ -84,7 +84,7 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
           setOpen(true)
         }}
       >
-        {t('data.bulk.title', { count: selected.length })}
+        {t('data.selection.delete')}
       </Button>
 
       <Dialog open={open} onOpenChange={(next) => (next ? null : close())}>
