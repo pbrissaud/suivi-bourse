@@ -44,15 +44,19 @@ def _yahoo(monkeypatch, answers):
 
 
 def _rates(per_day, calls=None):
-    """``fx.Rates`` over a literal: ``{currency: rate}`` on every day asked for."""
+    """``fx.Rates`` over a literal: ``{currency: rate}`` on every trading day.
+
+    Shaped like Yahoo: weekdays only, ``end`` exclusive, nothing when
+    ``start >= end``.
+    """
     def series(pair, start, end):
         if calls is not None:
             calls.append(pair)
         rate = per_day.get(pair[:3])
         if rate is None:
             return {}
-        return {start + timedelta(days=i): rate
-                for i in range((end - start).days + 1)}
+        days = (start + timedelta(days=i) for i in range((end - start).days))
+        return {day: rate for day in days if day.weekday() < 5}
     return fx.Rates(lambda pair: None, series)
 
 
@@ -199,3 +203,24 @@ def test_a_missing_rate_refuses_naming_symbol_and_day():
 
     assert (refused.value.symbol, refused.value.currency, refused.value.base,
             refused.value.day) == ('AAPL', 'USD', 'EUR', date(2024, 1, 15))
+
+
+def test_a_one_day_file_and_a_weekend_start_find_their_rate():
+    saturday = date(2026, 3, 7)
+    rows = [_buy('AAPL', saturday), _buy('AAPL', saturday)]
+
+    (first, _) = import_currency.convert(
+        rows, {'AAPL': 'USD'}, _rates({'USD': 0.5}), 'EUR')
+
+    assert first.unit_price == 50.0
+
+
+def test_the_last_day_is_priced_at_its_own_close():
+    closes = {date(2026, 3, 12): 1.12, date(2026, 3, 13): 1.13}
+    rates = fx.Rates(lambda pair: None, lambda pair, start, end: {
+        day: rate for day, rate in closes.items() if start <= day < end})
+    rows = [_buy('AAPL', date(2026, 3, 12)), _buy('AAPL', date(2026, 3, 13))]
+
+    done = import_currency.convert(rows, {'AAPL': 'USD'}, rates, 'EUR')
+
+    assert [event.unit_price for event in done] == [112.0, 113.0]

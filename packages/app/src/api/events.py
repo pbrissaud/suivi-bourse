@@ -128,6 +128,10 @@ def import_events():
     foreign: Sequence[import_currency.ForeignLine] = ()
     unverified: Sequence[str] = ()
     try:
+        if not dry_run and amounts_in == 'quote':
+            # The rates are fetched here, **before** the writer lock: a slow Yahoo
+            # must not hold every read behind it. The write below finds them cached.
+            _warm_rates(parsed, runtime)
         if dry_run:
             opened = _store()   # a dry run reads and nothing else (#967)
             settled = _settled_mapping(opened, correspondence, census)
@@ -206,6 +210,15 @@ def _question_base(opened, parsed) -> Optional[str]:
     if parsed.declared_currency:
         return None
     return opened.setting('base_currency') or None
+
+
+def _warm_rates(parsed, runtime) -> None:
+    """Fetch (and cache) the rates the write will convert with, outside the lock."""
+    base = _question_base(_store(), parsed)
+    if base:
+        sent = import_currency.pairs(
+            parsed.events, request.args.getlist('foreign'), base)
+        _answered(parsed.events, 'quote', sent, runtime, base)
 
 
 def _answered(rows, amounts_in: Optional[str], chosen, runtime, base: str):

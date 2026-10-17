@@ -11,7 +11,7 @@ import math
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
@@ -30,6 +30,10 @@ logger = getLogger("import_currency")
 LOOKUP_TIMEOUT_S = 4
 
 _WORKERS = 4
+
+#: How far before a day its rate may come from (``fx._DAILY_LOOKBACK_DAYS``): a
+#: file starting on a weekend still finds Friday's close.
+_LOOKBACK = timedelta(days=10)
 
 #: Shared by every request, so a slow Yahoo costs the process four threads and
 #: not four per upload.
@@ -200,7 +204,10 @@ def convert(rows: Sequence[Event], chosen: Mapping[str, str],
             days.setdefault(chosen[symbol], []).append(event.date)
     if rates is not None:
         for currency, held in days.items():
-            rates.series(currency, base, min(held), max(held))
+            # Padded like ``Rates._daily_rate`` pads its own fetch: Yahoo's ``end``
+            # is exclusive, and the first day may not be a trading one.
+            rates.series(currency, base, min(held) - _LOOKBACK,
+                         max(held) + timedelta(days=1))
 
     converted: List[Event] = []
     missing: List[Tuple[date, str, str]] = []
