@@ -66,6 +66,7 @@ import {
   accountOf,
   FIELDS,
   fold,
+  isEditable,
   parseDay,
   parseDecimal,
   titlesFor,
@@ -148,6 +149,8 @@ interface EventFormProps {
    */
   titles: readonly Title[] | null
   onClose: () => void
+  /** Asks for the row being edited to be removed — the confirmation is the caller's (#1264). */
+  onDelete: () => void
 }
 
 export function EventForm({
@@ -157,6 +160,7 @@ export function EventForm({
   accountsFailed,
   titles,
   onClose,
+  onDelete,
 }: EventFormProps) {
   const { t } = useI18n()
   const format = useFormatters()
@@ -186,6 +190,10 @@ export function EventForm({
   useEffect(() => {
     if (!open) return
     setErrors({})
+    // The refusal of an earlier gesture is not about this row. Closing by the
+    // cancel button resets it; the removal closes the panel from outside, so the
+    // reset is also made here, where *every* way in passes.
+    write.reset()
     setType(event?.event_type ?? null)
     setDraft(event === null ? EMPTY : draftOf(event))
     offered.current = ''
@@ -694,7 +702,7 @@ export function EventForm({
 
               {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {/* Withheld rather than offered and refused — the same rule the
                     accounts block applies to a removal it knows will fail.
                     Neither of the two states is repairable from inside this
@@ -706,6 +714,18 @@ export function EventForm({
                 <Button type="button" variant="outline" onClick={close}>
                   {t('data.form.cancel')}
                 </Button>
+                {/* The row's removal lives here and not in the table (#1264):
+                    a button on all 285 rows said the same thing 285 times. */}
+                {event !== null && isEditable(event) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="ml-auto text-destructive"
+                    onClick={onDelete}
+                  >
+                    {t('data.row.delete')}
+                  </Button>
+                ) : null}
               </div>
             </>
           )}
