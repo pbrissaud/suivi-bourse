@@ -120,6 +120,7 @@ import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
   PASSAGES,
+  baseCurrency,
   currencyFixed,
   firstRunStands,
   nextPassage,
@@ -307,7 +308,10 @@ export function FirstRun() {
                     ask the same question. */}
                 <CurrencyField
                   id={FIELD_ID}
-                  value={choice}
+                  // Once answered the field only *states* the dial, so it shows the
+                  // stored code and not the browser's suggestion (a reopened walk
+                  // lands here with `choice` still holding the suggestion).
+                  value={(fixed ? baseCurrency(settings) : null) ?? choice}
                   onChange={(value) => {
                     // A refusal is about the value that was sent. Left
                     // standing, it reads as this app having refused the code
@@ -464,6 +468,7 @@ export function FirstRun() {
                 type="button"
                 variant="ghost"
                 className="text-muted-foreground"
+                disabled={save.isPending}
                 onClick={forward}
               >
                 {t('firstRun.skip')}

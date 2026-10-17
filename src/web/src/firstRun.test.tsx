@@ -1046,4 +1046,26 @@ describe('the first passage carries one primary control', () => {
     ).not.toBeInTheDocument()
     expect(passage.queryByRole('button', { name: 'Passer' })).not.toBeInTheDocument()
   })
+
+  it('states the stored currency on a reopened question, not the browser’s suggestion', async () => {
+    const { user } = renderApp({ url: '/?open=first-run', browserLanguages: ['fr-CH'] })
+    await within(await screen.findByRole('dialog')).findByRole('heading', { name: 'Vos comptes' })
+
+    await user.click(within(modal()).getByRole('button', { name: 'Revenir' }))
+
+    // The default config answers EUR; the locale would have suggested CHF.
+    expect(await within(modal()).findByText('EUR')).toBeInTheDocument()
+    expect(within(modal()).queryByText('CHF')).not.toBeInTheDocument()
+  })
+
+  it('does not let Passer race a save in flight', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    server.use(http.put(ROUTES.settings, () => new Promise(() => {})))
+
+    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
+
+    await waitFor(() =>
+      expect(within(modal()).getByRole('button', { name: 'Passer' })).toBeDisabled(),
+    )
+  })
 })
