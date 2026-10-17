@@ -1006,7 +1006,10 @@ describe('the statistics shrink instead of filling with dashes', () => {
     renderApp()
 
     expect(await screen.findByText('Aucun événement')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toBeInTheDocument()
+    const ledger = screen.getByRole('link', { name: 'Aller au grand livre' })
+    const resume = screen.getByRole('link', { name: 'Revoir la mise en route' })
+    expect(resume).toHaveAttribute('href', '/?open=first-run')
+    expect(ledger.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
   })
 })

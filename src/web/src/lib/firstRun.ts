@@ -18,6 +18,10 @@
  * severed link — not the number of passages — that answers #726's refusal on
  * its merits. A ledger emptied after six months reopens nothing, because
  * nothing about this screen is derived from the data it is about to collect.
+ *
+ * The walk has **one other way in**, and it is a gesture and not a predicate:
+ * `/?open=first-run`, which the empty dashboard links to (#1262). It reads
+ * nothing and stores nothing.
  */
 import type { SettingDescription } from '@/features/settings/lib/api'
 import { browserStorage, rememberPreference } from '@/lib/storage'
@@ -168,6 +172,15 @@ export function baseCurrency(settings: readonly SettingDescription[] | undefined
 export function currencyFixed(settings: readonly SettingDescription[] | undefined) {
   const unanswered = currencyUnanswered(settings)
   return unanswered === undefined ? undefined : !unanswered
+}
+
+/**
+ * Where a **reopened** walk starts (#1262): on the accounts once every required
+ * dial is answered, on the question otherwise. *Revenir* still leads back to the
+ * first passage.
+ */
+export function reopenedPassage(settings: readonly SettingDescription[] | undefined): Passage {
+  return requiredUnanswered(settings) === false ? 'accounts' : 'settings'
 }
 
 /**

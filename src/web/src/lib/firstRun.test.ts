@@ -8,6 +8,7 @@ import {
   nextPassage,
   passageNumber,
   previousPassage,
+  reopenedPassage,
   requiredUnanswered,
 } from '@/lib/firstRun'
 import { aSetting, defaultSettings } from '@/test/factories'
@@ -125,5 +126,12 @@ describe('the currency is fixed the moment it is answered', () => {
     expect(currencyFixed(undefined)).toBeUndefined()
     // A registry that does not carry the dial is not an install that answered.
     expect(currencyFixed([aSetting()])).toBeUndefined()
+  })
+})
+
+describe('the gesture that reopens the walk', () => {
+  it('reopens on the accounts once every required dial is answered, and on the question otherwise', () => {
+    expect(reopenedPassage(defaultSettings())).toBe('accounts')
+    expect(reopenedPassage(unanswered())).toBe('settings')
   })
 })
