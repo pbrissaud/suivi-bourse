@@ -716,6 +716,105 @@ describe('during the reconstruction', () => {
   })
 })
 
+describe('the hero while the history is rebuilding (#1260)', () => {
+  // The newest row is a day of cash alone, the day before a line's acquisition.
+  const CASH_ONLY = { day: '2026-03-01', total_value: 500, cash_balance: 500, xirr: 0 }
+  const unpriced = aPosition({ symbol: 'ZZA', name: 'Zeta Alpha', price: null, terminal: false })
+  const rebuilding = (reconstruction: { complete: number; total: number } | null) =>
+    http.get(ROUTES.runtime, () =>
+      HttpResponse.json(aRuntime({ rebuilding: true, reconstruction })),
+    )
+
+  function pastDayWhileRebuilding(reconstruction = { complete: 9, total: 19 }) {
+    server.use(
+      totalsOf(CASH_ONLY),
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([unpriced]))),
+      rebuilding(reconstruction),
+    )
+  }
+
+  it('asserts no value, no cash line and no pill over a past-day row', async () => {
+    pastDayWhileRebuilding()
+    renderApp()
+
+    const head = await hero()
+    await screen.findByText(/Historique en reconstruction/)
+    expect(head).not.toHaveTextContent(/\d,\d\d/)
+    expect(screen.queryByText(/de liquidités/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/depuis le 1ᵉʳ janvier/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/aujourd’hui/)).not.toBeInTheDocument()
+  })
+
+  it('says how far the rebuild is with the bell’s own count', async () => {
+    pastDayWhileRebuilding({ complete: 9, total: 19 })
+    renderApp()
+
+    expect(await screen.findByText(/9 séries remontent au premier achat, sur 19/)).toBeVisible()
+  })
+
+  it('names the lines that still have no price', async () => {
+    pastDayWhileRebuilding()
+    renderApp()
+
+    expect(await screen.findByText('Toujours sans cours : Zeta Alpha.')).toBeVisible()
+  })
+
+  it('says the rebuild without numbers when the runtime carries no count', async () => {
+    server.use(
+      totalsOf(CASH_ONLY),
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([unpriced]))),
+      rebuilding(null),
+    )
+    renderApp()
+
+    expect(await screen.findByText(/^Historique en reconstruction\. La valeur/)).toBeVisible()
+  })
+
+  it('draws nothing in the hero while the runtime has not answered over a past-day row', async () => {
+    server.use(
+      totalsOf(CASH_ONLY),
+      problemHandler(ROUTES.runtime, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    const head = await hero()
+    expect(head).not.toHaveTextContent(/\d,\d\d/)
+    expect(screen.queryByText(/Historique en reconstruction/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
+  })
+
+  it('shows the value, at once, when the newest row becomes today’s', async () => {
+    pastDayWhileRebuilding()
+    const { queryClient } = renderApp({ fakeTimers: true })
+    await screen.findByText(/Historique en reconstruction/)
+
+    server.use(
+      totalsOf({ day: '2026-03-02' }),
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
+    )
+    await vi.advanceTimersByTimeAsync(60_000)
+    await waitFor(() => expect(queryClient.getQueryState(['portfolio-totals'])).toBeDefined())
+
+    await waitFor(() => expect(figure('Valeur du portefeuille')).toHaveTextContent(/2\D?800,00/))
+    expect(screen.queryByText(/Historique en reconstruction/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the value and its pills when the rebuild runs but the row is today’s', async () => {
+    server.use(rebuilding({ complete: 9, total: 19 }))
+    renderApp()
+
+    const head = await hero()
+    expect(head).toHaveTextContent(/2\D?800,00/)
+    expect(figure('TRI')).toHaveTextContent(/\+3,22/)
+    expect(screen.queryByText(/Historique en reconstruction/)).not.toBeInTheDocument()
+  })
+})
+
 describe('a perf pass that raised', () => {
   it('says the figures are the previous pass’s, and leaves every one of them standing', async () => {
     // #994: `perf_job` records the verdict on every cycle and nothing in the

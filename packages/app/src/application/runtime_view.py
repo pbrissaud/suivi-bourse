@@ -388,6 +388,9 @@ def build_runtime(
         'now': instants.iso(now),
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
+        'reconstruction': (
+            None if reconstruction is None
+            else {'complete': reconstruction[0], 'total': reconstruction[1]}),
         'store': {'path': store_path},
         'build': build.to_dict(),
         'symbols': [symbol.to_dict() for symbol in symbols],

@@ -575,6 +575,11 @@ export interface RuntimeState {
    */
   rebuilding: boolean
   /**
+   * The count `rebuilding` is read from — the bell's own, `complete` series out
+   * of `total` — or `null` when this process cannot observe it (#1260).
+   */
+  reconstruction: { complete: number; total: number } | null
+  /**
    * The last perf pass, or `null` — this process has run none.
    *
    * It rides here for the reason `rebuilding` does: it is a fact about *this
