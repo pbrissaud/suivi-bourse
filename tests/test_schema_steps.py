@@ -19,6 +19,7 @@ RELEASED = (
     'refetch_prices_bucketed_in_utc',
     'fold_symbol_case',
     'cap_dividend_fee_at_amount',
+    'add_event_amounts_currency',
 )
 
 
@@ -74,3 +75,26 @@ def test_the_store_imports_nothing_above_it():
     assert {name for name in imported if name.startswith('application')} == {
         'application.boot_env', 'application.settings_registry',
         'application.incoming', 'application.events.schemas'}
+
+
+def test_the_amounts_currency_step_adds_a_null_column_and_keeps_rows(tmp_path):
+    """A store from before #1261 keeps every event, and none of them is stated."""
+    path = tmp_path / 'old.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    connection.execute("INSERT INTO symbol VALUES ('AAPL')")
+    connection.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, quantity, "
+        "                   unit_price) "
+        "VALUES (1, DATE '2024-01-15', 'BUY', 'default', 'AAPL', 1, 150)")
+    connection.execute('ALTER TABLE event DROP COLUMN amounts_currency')
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'add_event_amounts_currency'")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query('SELECT id, unit_price, amounts_currency FROM event') \
+            == [(1, 150.0, None)]
+    finally:
+        opened.close()

@@ -234,6 +234,13 @@ def declare_ledger():
 
 
 @pytest.fixture(autouse=True)
+def _currency_lookups_start_cold():
+    """The import preview remembers a security's currency for the process (#1261)."""
+    from application import import_currency
+    import_currency._LOOKED_UP.clear()
+
+
+@pytest.fixture(autouse=True)
 def _market_is_faked_or_refused(request, monkeypatch):
     """yfinance is the suite's one faked edge — an unfaked call stays local.
 

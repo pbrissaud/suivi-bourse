@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 
 from application import accounts as accounts_module
 from application import entries
+from application import import_currency
 from application import ledger
 from application import main
 from application import settings_registry
@@ -19,6 +20,7 @@ from api.problem import (
     GESTURE_REMOVE,
     GESTURE_WRITE,
     bad_request,
+    currency_unconvertible,
     entry_gone,
     not_found,
     too_large,
@@ -107,6 +109,9 @@ def import_events():
     dry_run = _asked('dry_run')
     write_duplicates = _asked('write_duplicates')
     adopt_currency = _unless_declined('adopt_currency')
+    amounts_in = request.args.get('amounts_in')
+    if amounts_in not in (None, 'base', 'quote'):
+        return bad_request("amounts_in is either 'base' or 'quote'")
 
     try:
         parsed = uploads.read(upload.filename or '', upload.stream)
@@ -120,6 +125,8 @@ def import_events():
     census = uploads.census(parsed.events)
 
     runtime = current_runtime()
+    foreign: Sequence[import_currency.ForeignLine] = ()
+    unverified: Sequence[str] = ()
     try:
         if dry_run:
             opened = _store()   # a dry run reads and nothing else (#967)
@@ -128,6 +135,11 @@ def import_events():
                                                 parsed.declared_currency)
             stated = _stated_currency(parsed.declared_currency)
             rows = settled.applied(parsed.events)
+            base = _question_base(opened, parsed)
+            if base:
+                found = import_currency.survey(opened, rows, base)
+                foreign, unverified = found.lines, found.unverified
+                rows = _answered(rows, amounts_in, found.pairs, runtime, base)
             fresh, duplicates = _to_write(opened, rows, write_duplicates)
             entries.judge(opened, fresh, declaring=settled.declaring,
                           accounts_pending=settled.stated)
@@ -139,11 +151,27 @@ def import_events():
                                                     parsed.declared_currency)
                 stated = _stated_currency(parsed.declared_currency)
                 rows = settled.applied(parsed.events)
+                base = _question_base(opened, parsed)
+                says = {}
+                if base:
+                    sent = import_currency.pairs(
+                        rows, request.args.getlist('foreign'), base)
+                    foreign = import_currency.lines(rows, sent)
+                    rows = _answered(rows, amounts_in, sent, runtime, base)
+                    if amounts_in:
+                        says = {symbol: base if amounts_in == 'base' else code
+                                for symbol, code in sent.items()}
                 fresh, duplicates = _to_write(opened, rows, write_duplicates)
                 written = len(entries.create_many(
                     opened, fresh,
                     base_currency=declared if adopt_currency else None,
-                    declare_accounts=settled.declaring))
+                    declare_accounts=settled.declaring,
+                    stated=says))
+    except import_currency.BadPair as exc:
+        return bad_request(str(exc))
+    except import_currency.Unconvertible as exc:
+        return currency_unconvertible(
+            str(exc), exc.symbol, exc.currency, exc.base, exc.day.isoformat())
     except uploads.UploadRefused as exc:
         return unprocessable_file(str(exc))
     except accounts_module.AccountSourceError as exc:
@@ -164,7 +192,29 @@ def import_events():
         duplicates=duplicates,
         currency=declared if adopt_currency else None,
         declared_currency=stated,
+        foreign=foreign,
+        unverified=unverified,
     )), 200 if dry_run else 201
+
+
+def _question_base(opened, parsed) -> Optional[str]:
+    """The base currency when the file's amounts have no stated unit, else ``None``.
+
+    A file that declares a ``base_currency`` column has stated the unit of its
+    amounts (the app's own export does), so nothing is asked of it (#1261).
+    """
+    if parsed.declared_currency:
+        return None
+    return opened.setting('base_currency') or None
+
+
+def _answered(rows, amounts_in: Optional[str], chosen, runtime, base: str):
+    """``rows`` with the foreign securities' amounts in ``base`` if asked to."""
+    if amounts_in != 'quote' or not chosen:
+        return rows
+    running = getattr(runtime, 'workloads', None)
+    return import_currency.convert(
+        rows, chosen, getattr(running, 'rates', None), base)
 
 
 def _stated_currency(declared: Optional[str]) -> Optional[str]:
@@ -220,7 +270,9 @@ def _unless_declined(name: str) -> bool:
 def _receipt_to_dict(receipt: uploads.Receipt, *,
                      duplicates: Sequence[entries.Duplicate] = (),
                      currency: Optional[str] = None,
-                     declared_currency: Optional[str] = None) -> dict:
+                     declared_currency: Optional[str] = None,
+                     foreign: Sequence[import_currency.ForeignLine] = (),
+                     unverified: Sequence[str] = ()) -> dict:
     """One :class:`uploads.Receipt`, on the wire."""
     return {
         'filename': receipt.filename,
@@ -244,6 +296,9 @@ def _receipt_to_dict(receipt: uploads.Receipt, *,
             'declared': declared_currency,
             'adopting': currency is not None,
         },
+        'foreign_lines': [{'symbol': line.symbol, 'currency': line.currency,
+                           'rows': line.rows} for line in foreign],
+        'unverified': list(unverified),
     }
 
 
