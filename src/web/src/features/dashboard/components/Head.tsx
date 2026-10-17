@@ -75,10 +75,11 @@ import { Stat } from '@/components/Stat'
 import type { PerfPoint } from '@/features/accounts/lib/api'
 import type { PortfolioTotalsResponse } from '@/features/dashboard/lib/api'
 import type { PositionsResponse } from '@/features/shares/lib/api'
+import type { RuntimeState } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
 import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
-import { dayMove } from '@/features/dashboard/lib/dashboard'
+import { dayMove, heroReading, unpricedLines } from '@/features/dashboard/lib/dashboard'
 import { useI18n } from '@/lib/i18n'
 import { signClass, signOf } from '@/lib/sign'
 import { cn } from '@/lib/utils'
@@ -91,8 +92,11 @@ interface DashboardHeadProps {
    */
   positions: PositionsResponse | null
   totals: PortfolioTotalsResponse | null
-  /** Whether the reconstruction is running. `null` — nothing says yet. */
-  rebuilding: boolean | null
+  /**
+   * This process's own state. `null` — nothing says yet. It decides whether the
+   * newest row is today's, and whether the reconstruction is running (#1260).
+   */
+  runtime: RuntimeState | null
   /**
    * The portfolio's series — the chart's own read, shared rather than asked for
    * twice. `null` and never `[]`: a series that has not answered is not a day
@@ -110,7 +114,7 @@ interface DashboardHeadProps {
 export function DashboardHead({
   positions,
   totals,
-  rebuilding,
+  runtime,
   history,
   chart = null,
 }: DashboardHeadProps) {
@@ -160,6 +164,13 @@ export function DashboardHead({
       />
     )
   }
+
+  // **A row from a past day is not the value** (#1260). During the rebuild a
+  // held line with no close caps the series the day before its acquisition, so
+  // the newest row is a day of cash alone, and nothing here can move it to now.
+  const reading = totalsRow === null ? 'valued' : heroReading(totalsRow, runtime, new Date())
+  const valued = reading === 'valued'
+  const rebuilding = runtime?.rebuilding ?? null
 
   const terms = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
   const total = gainTotal(terms)
@@ -239,6 +250,7 @@ export function DashboardHead({
   // load-bearing: a series that has not answered is not a day on which nothing
   // moved.
   const today = dayMove(history, new Date())
+  const unpriced = reading === 'partial' ? unpricedLines(rows) : []
 
   return (
     // **The hero sits on the ground, not in a card** (DESIGN.md): the value,
@@ -251,103 +263,138 @@ export function DashboardHead({
         <div className="flex flex-wrap items-end justify-between gap-6">
           <Stat
             size="head"
-            label={t(heroIsHoldings ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
+            label={t(heroIsHoldings && valued ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
             // A value is not a direction: it is set in the colour of text, and
             // the sign lives on the pills under it. It recomposes when a poll
             // moves it (#1180); the pills under it change instantly. Keyed by
             // what it measures: the value and the securities are two figures,
             // and one never recomposes into the other.
             value={
-              <RecomposingFigure
-                key={heroIsHoldings ? 'holdings' : 'portfolio'}
-                value={heroValue}
-                currency={currency}
-              />
-            }
-          >
-            {/* What of the value is cash (#1174), right under it. It takes no
-                drift (#1151), and it is a balance, not a direction: no sign
-                colour, even below zero; `0` is a figure, not an absence. */}
-            {totalsRow?.cash_balance == null || heroIsHoldings ? null : (
-              <p className="text-sm text-muted-foreground">
-                {t('dashboard.cashLine', {
-                  amount: f.currency(totalsRow.cash_balance, currency),
-                })}
-              </p>
-            )}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              {/* The gain is the value's subtitle now, and it keeps its named
-                  absences (#775): a rate on its way is said, a fourth term
-                  nothing can bound is the em dash. */}
-              {total.known ? (
-                <Period
-                  amount={total.value}
-                  text={t('dashboard.gain.pill', {
-                    amount: f.signedCurrency(total.value, currency),
-                  })}
+              valued ? (
+                <RecomposingFigure
+                  key={heroIsHoldings ? 'holdings' : 'portfolio'}
+                  value={heroValue}
+                  currency={currency}
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  {t('dashboard.gain.pillAbsent', {
-                    reason: renderFigure(sumRendering(total), () => '', t),
-                  })}
+                // An empty plane of the figure's height (#795): no skeleton,
+                // no spinner. Another key, so the figure that replaces it
+                // mounts and shows at once instead of recomposing from nothing.
+                <span key="unvalued" aria-hidden className="invisible">
+                  &nbsp;
+                </span>
+              )
+            }
+          >
+            {reading === 'partial' ? (
+              <div className="max-w-prose space-y-1 text-sm text-muted-foreground">
+                <p>
+                  {runtime?.reconstruction
+                    ? t('dashboard.rebuilding.progress', runtime.reconstruction)
+                    : t('dashboard.rebuilding.progressUnobserved')}
                 </p>
-              )}
-              {/* The year's gain, in euros (#1174). Its percentage stays in the
+                {unpriced.length === 0 ? null : (
+                  <p>
+                    {t('dashboard.rebuilding.unpriced', {
+                      lines: f.list(unpriced),
+                    })}
+                  </p>
+                )}
+              </div>
+            ) : null}
+            {!valued ? null : (
+              <>
+                {/* What of the value is cash (#1174), right under it. It takes no
+                drift (#1151), and it is a balance, not a direction: no sign
+                colour, even below zero; `0` is a figure, not an absence. */}
+                {totalsRow?.cash_balance == null || heroIsHoldings ? null : (
+                  <p className="text-sm text-muted-foreground">
+                    {t('dashboard.cashLine', {
+                      amount: f.currency(totalsRow.cash_balance, currency),
+                    })}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {/* The gain is the value's subtitle now, and it keeps its named
+                  absences (#775): a rate on its way is said, a fourth term
+                  nothing can bound is the em dash. */}
+                  {total.known ? (
+                    <Period
+                      amount={total.value}
+                      text={t('dashboard.gain.pill', {
+                        amount: f.signedCurrency(total.value, currency),
+                      })}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {t('dashboard.gain.pillAbsent', {
+                        reason: renderFigure(sumRendering(total), () => '', t),
+                      })}
+                    </p>
+                  )}
+                  {/* The year's gain, in euros (#1174). Its percentage stays in the
                   IRR's bubble — a group apart. The one figure the rebuild
                   degrades, and it says why: a reason does not fit in a pill. A
                   `ytd` present with a null `gain` is not computable here and
                   draws nothing. */}
-              {totalsRow === null ? null : ytdGain !== null ? (
-                <Period
-                  amount={ytdGain}
-                  text={t('dashboard.ytd.pill', { amount: f.signedCurrency(ytdGain, currency) })}
-                />
-              ) : ytdAbsent ? (
-                <p className="text-sm text-muted-foreground">
-                  {t('dashboard.ytd.pillAbsent', { reason: ytdPending })}
-                </p>
-              ) : null}
-              {/* The day's **period of the total**, and it stays with it. */}
-              {totalsRow === null || today === null ? null : (
-                <Period
-                  amount={today}
-                  text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
-                />
-              )}
-              {totalsRow?.xirr == null ? null : (
-                <span role="group" aria-label={t('dashboard.xirr')} className={PILL}>
-                  <span className="text-muted-foreground">{t('dashboard.xirr')}</span>
-                  <SignedFigure amount={totalsRow.xirr} text={f.percent(totalsRow.xirr)} />
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {t('dashboard.xirr.unit')}
-                  </span>
-                  {/* The TWR lives here since #1112: one rate per screen, and the
-                      bubble is where the second one says why it differs. */}
-                  {twrMove === null ? (
-                    <Explain
-                      figure={t('dashboard.xirr')}
-                      body="dashboard.xirr.explain"
-                      anchor="xirr"
+                  {totalsRow === null ? null : ytdGain !== null ? (
+                    <Period
+                      amount={ytdGain}
+                      text={t('dashboard.ytd.pill', {
+                        amount: f.signedCurrency(ytdGain, currency),
+                      })}
                     />
-                  ) : (
-                    <Explain
-                      figure={t('dashboard.xirr')}
-                      body="dashboard.xirr.explainTwr"
-                      values={{
-                        explain: t('dashboard.xirr.explain'),
-                        twr: f.percent(twrMove),
-                        ytd:
-                          ytdTwr === null
-                            ? ''
-                            : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
-                      }}
-                      anchor="xirr"
+                  ) : ytdAbsent ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('dashboard.ytd.pillAbsent', { reason: ytdPending })}
+                    </p>
+                  ) : null}
+                  {/* The day's **period of the total**, and it stays with it. */}
+                  {totalsRow === null || today === null ? null : (
+                    <Period
+                      amount={today}
+                      text={t('dashboard.day.gain', {
+                        amount: f.signedCurrency(today, currency),
+                      })}
                     />
                   )}
-                </span>
-              )}
-            </div>
+                  {totalsRow?.xirr == null ? null : (
+                    <span role="group" aria-label={t('dashboard.xirr')} className={PILL}>
+                      <span className="text-muted-foreground">{t('dashboard.xirr')}</span>
+                      <SignedFigure amount={totalsRow.xirr} text={f.percent(totalsRow.xirr)} />
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {t('dashboard.xirr.unit')}
+                      </span>
+                      {/* The TWR lives here since #1112: one rate per screen, and the
+                      bubble is where the second one says why it differs. */}
+                      {twrMove === null ? (
+                        <Explain
+                          figure={t('dashboard.xirr')}
+                          body="dashboard.xirr.explain"
+                          anchor="xirr"
+                        />
+                      ) : (
+                        <Explain
+                          figure={t('dashboard.xirr')}
+                          body="dashboard.xirr.explainTwr"
+                          values={{
+                            explain: t('dashboard.xirr.explain'),
+                            twr: f.percent(twrMove),
+                            ytd:
+                              ytdTwr === null
+                                ? ''
+                                : t('dashboard.xirr.explainTwr.ytd', {
+                                    percent: f.percent(ytdTwr),
+                                  }),
+                          }}
+                          anchor="xirr"
+                        />
+                      )}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
           </Stat>
         </div>
 

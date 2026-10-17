@@ -293,7 +293,7 @@ export default function DashboardPage() {
         <DashboardHead
           positions={positions.data ?? null}
           totals={totals.data ?? null}
-          rebuilding={runtime.data?.rebuilding ?? null}
+          runtime={runtime.data ?? null}
           history={perf.data?.points ?? null}
           chart={
             state !== 'portfolio' ? null : (

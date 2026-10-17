@@ -43,7 +43,9 @@ import type {
   PortfolioTotalsResponse,
   ValuationPoint,
 } from '@/features/dashboard/lib/api'
-import type { PositionsResponse } from '@/features/shares/lib/api'
+import type { Position, PositionsResponse } from '@/features/shares/lib/api'
+import type { RuntimeState } from '@/lib/api'
+import { absenceCase } from '@/lib/absence'
 import { shifted } from '@/features/accounts/lib/accounts'
 import { isClosed, type ShareRow } from '@/features/shares/lib/shares'
 
@@ -335,4 +337,62 @@ export function dayMove(points: readonly PerfPoint[] | null, now: Date): number 
   const yesterday = gain(points[points.length - 2])
   if (today === null || yesterday === null) return null
   return today - yesterday
+}
+
+// ------------------------------------------------------------------------- //
+// The hero over a row from a past day (#1260)
+// ------------------------------------------------------------------------- //
+
+type HeroReading = 'valued' | 'partial' | 'pending'
+
+/**
+ * Is the newest `portfolio_totals` row **today's**? While the history is being
+ * rebuilt it is not: a held line with no close caps the series the day before
+ * its acquisition, so the row is a day when the portfolio held only cash — and
+ * moving it toward now with the live gain is impossible, that gain being
+ * unknown for the very lines that cap it.
+ *
+ * ```
+ * totals.day >= today                                  → valued
+ * totals.day <  today ∧ runtime not answered           → pending
+ * totals.day <  today ∧ runtime.rebuilding === true    → partial
+ * totals.day <  today ∧ otherwise                      → valued
+ * ```
+ *
+ * `today` is the **server's** UTC day (`runtime.now`), the one the perf pass
+ * uses; the browser's is only the fallback while the runtime has not answered.
+ * The last `valued` is a pass not yet run since 00:00 UTC, or a failed one —
+ * `StaleFigures` already speaks there. Only called where `totals.totals` is
+ * not `null`.
+ */
+export function heroReading(
+  totals: PortfolioTotals,
+  runtime: RuntimeState | undefined | null,
+  now: Date,
+): HeroReading {
+  const today = (runtime?.now ?? now.toISOString()).slice(0, 10)
+  if (totals.day >= today) return 'valued'
+  if (!runtime) return 'pending'
+  return runtime.rebuilding ? 'partial' : 'valued'
+}
+
+/**
+ * The held lines with no converted close — the ones a rebuild is waiting for —
+ * by `name ?? symbol`, once across accounts, in `localeCompare` order.
+ */
+export function unpricedLines(positions: readonly Position[]): string[] {
+  const names = new Set<string>()
+  for (const position of positions) {
+    const which = absenceCase({
+      quantity: position.quantity,
+      price: position.price,
+      converted: position.converted,
+      terminal: position.terminal,
+      consecutiveFailures: 0,
+    })
+    if (which === 'rebuilding' || which === 'awaitingRate') {
+      names.add(position.name ?? position.symbol)
+    }
+  }
+  return [...names].sort((left, right) => left.localeCompare(right))
 }

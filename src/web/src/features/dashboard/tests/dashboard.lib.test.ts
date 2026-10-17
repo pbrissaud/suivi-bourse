@@ -16,10 +16,12 @@ import {
   amountsValues,
   dashboardState,
   dayMove,
+  heroReading,
   hasCashLedger,
   MOVERS_ROWS,
   moversList,
   tickerBadge,
+  unpricedLines,
   performanceRows,
   windowFloor,
   yFloor,
@@ -33,6 +35,7 @@ import {
   aPosition,
   aPositionsHistory,
   aPositionsPayload,
+  aRuntime,
   aTotals,
   aTotalsPayload,
   NOW,
@@ -380,5 +383,75 @@ describe('tickerBadge', () => {
     ['.HIDDEN', '.HID'],
   ])('reads %s as %s', (symbol, badge) => {
     expect(tickerBadge(symbol)).toBe(badge)
+  })
+})
+
+describe('heroReading (#1260)', () => {
+  const past = aTotals({ day: '2026-03-01' })
+
+  it('is valued when the newest row is today’s', () => {
+    expect(heroReading(aTotals({ day: '2026-03-02' }), undefined, now)).toBe('valued')
+    expect(heroReading(aTotals({ day: '2026-03-02' }), aRuntime({ rebuilding: true }), now)).toBe(
+      'valued',
+    )
+  })
+
+  it('is pending over a past-day row while the runtime has not answered', () => {
+    expect(heroReading(past, undefined, now)).toBe('pending')
+  })
+
+  it('is partial over a past-day row while the history is rebuilding', () => {
+    expect(heroReading(past, aRuntime({ rebuilding: true }), now)).toBe('partial')
+  })
+
+  it('stays valued over a past-day row when nothing is rebuilding', () => {
+    expect(heroReading(past, aRuntime({ rebuilding: false }), now)).toBe('valued')
+  })
+
+  it('reads today off the server clock, not the browser’s', () => {
+    // The browser is a day ahead of the server: the row is the server's today.
+    const browser = new Date('2026-03-03T01:00:00.000Z')
+    expect(heroReading(past, aRuntime({ rebuilding: true, now: NOW }), browser)).toBe('partial')
+    expect(
+      heroReading(
+        aTotals({ day: '2026-03-02' }),
+        aRuntime({ rebuilding: true, now: NOW }),
+        browser,
+      ),
+    ).toBe('valued')
+  })
+})
+
+describe('unpricedLines (#1260)', () => {
+  it('names held lines with no quote or no rate, once across accounts, by name then symbol', () => {
+    const lines = unpricedLines([
+      aPosition({
+        account: 'alpha',
+        symbol: 'ZZB',
+        name: 'Zeta Beta',
+        price: null,
+        terminal: false,
+      }),
+      aPosition({
+        account: 'beta',
+        symbol: 'ZZB',
+        name: 'Zeta Beta',
+        price: null,
+        terminal: false,
+      }),
+      aPosition({ symbol: 'ZZC', name: null, price: 10, currency: 'USD', rate: null }),
+      aPosition({ symbol: 'ZZA', name: 'Alpha Zeta', price: null, terminal: false }),
+    ])
+    expect(lines).toEqual(['Alpha Zeta', 'Zeta Beta', 'ZZC'])
+  })
+
+  it('leaves out sold, quoted and terminal lines', () => {
+    expect(
+      unpricedLines([
+        aClosedPosition({ closed_at: '2026-01-05', symbol: 'ZZD' }),
+        aPosition({ symbol: 'ZZE' }),
+        aPosition({ symbol: 'ZZF', price: null, terminal: true }),
+      ]),
+    ).toEqual([])
   })
 })
