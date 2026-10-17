@@ -229,7 +229,7 @@ describe('the columns of the ledger', () => {
 
     const chip = within(ledger()).getByText(account)
     expect(chip).toHaveAttribute('title', account)
-    expect(chip).toHaveClass('max-w-[12ch]', 'truncate')
+    expect(chip).toHaveClass('max-w-[calc(12ch+1rem)]', 'truncate')
   })
 
   it('draws no delete control in the rows', async () => {
@@ -1502,6 +1502,43 @@ describe('the create form, which is the onboarding', () => {
     const alive = within(ledger()).getByText('Versement programmé mensuel').closest('tr')
     await user.click(within(alive as HTMLElement).getAllByRole('cell')[1])
     expect(await screen.findByLabelText('Quantité')).toHaveValue('3')
+    expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()
+  })
+
+  it('forgets a refused save once the row is deleted from the same panel', async () => {
+    // The removal closes the panel from outside, so it is a way out that never
+    // goes through the cancel button's reset (#1264).
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    server.use(
+      http.patch(`${ROUTES.events}/:id`, () =>
+        HttpResponse.json(
+          { status: 404, type: PROBLEM_TYPES.entryGone, title: 'Event no longer in the ledger' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+      http.delete(`${ROUTES.events}/:id`, ({ params }) =>
+        HttpResponse.json({ id: String(params.id), removed: true }),
+      ),
+    )
+
+    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+    await user.click(await screen.findByRole('button', { name: 'Enregistrer cet événement' }))
+    expect(await screen.findByText(/n’est plus dans le grand livre/)).toBeInTheDocument()
+
+    const sheet = screen.getByRole('dialog')
+    await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
+    const box = await screen.findByRole('dialog', { name: 'Supprimer cet événement ?' })
+    await user.click(within(box).getByRole('button', { name: 'Supprimer cet événement' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' }),
+      ).not.toBeInTheDocument(),
+    )
+
+    await user.click(within(ledger()).getAllByRole('button', { name: 'ZZA' })[0])
+    expect(await screen.findByLabelText('Quantité')).toBeInTheDocument()
     expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()
   })
 

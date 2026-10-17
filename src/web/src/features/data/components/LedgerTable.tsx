@@ -318,10 +318,11 @@ export function LedgerTable({
         // and it is the one the accounts page already sets an id in
         // (`AccountDetail`, `AccountsRail`).
         cell: ({ row }) => (
-          // Capped: account ids have no length bound on the server.
+          // Capped at 12 characters plus the chip's own padding: account ids have no
+          // length bound on the server.
           <span
             title={accountOf(row.original)}
-            className="inline-block max-w-[12ch] truncate rounded-md bg-accent px-2 py-0.5 align-middle font-mono text-2xs text-foreground/85"
+            className="inline-block max-w-[calc(12ch+1rem)] truncate rounded-md bg-accent px-2 py-0.5 align-middle font-mono text-2xs text-foreground/85"
           >
             {accountOf(row.original)}
           </span>

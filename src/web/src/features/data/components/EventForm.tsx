@@ -190,6 +190,10 @@ export function EventForm({
   useEffect(() => {
     if (!open) return
     setErrors({})
+    // The refusal of an earlier gesture is not about this row. Closing by the
+    // cancel button resets it; the removal closes the panel from outside, so the
+    // reset is also made here, where *every* way in passes.
+    write.reset()
     setType(event?.event_type ?? null)
     setDraft(event === null ? EMPTY : draftOf(event))
     offered.current = ''
@@ -698,7 +702,7 @@ export function EventForm({
 
               {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {/* Withheld rather than offered and refused — the same rule the
                     accounts block applies to a removal it knows will fail.
                     Neither of the two states is repairable from inside this
