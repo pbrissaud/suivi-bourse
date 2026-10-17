@@ -31,10 +31,14 @@ export default function SettingsPage() {
 
   // `/settings#agent`, from the agent page's *Configure*: the block is drawn
   // only once its read lands, so the router's own hash scroll finds nothing.
+  // Focus follows the scroll, so a keyboard lands where the eye does.
   const hash = useLocation({ select: (location) => location.hash })
   const agentDrawn = agent.data !== undefined || agentFailure !== null
   useEffect(() => {
-    if (hash === 'agent' && agentDrawn) document.getElementById('agent')?.scrollIntoView()
+    if (hash !== 'agent' || !agentDrawn) return
+    const target = document.getElementById('agent')
+    target?.scrollIntoView()
+    target?.focus({ preventScroll: true })
   }, [hash, agentDrawn])
 
   return (
@@ -46,7 +50,7 @@ export default function SettingsPage() {
           <DialsBlock config={config.data} runtime={runtime.data} />
         ) : null}
       </div>
-      <div id="agent" className="scroll-mt-20">
+      <div id="agent" tabIndex={-1} className="scroll-mt-20 outline-none">
         {agentFailure !== null ? (
           <Unreadable failure={agentFailure} />
         ) : agent.data ? (
