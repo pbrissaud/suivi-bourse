@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { exampleQuestions } from '@/features/agent/lib/agentChat'
+import { exampleQuestions, turnRefusal } from '@/features/agent/lib/agentChat'
 import { aPosition } from '@/test/factories'
 
 const label = (id: string) => id.toUpperCase()
@@ -40,5 +40,31 @@ describe('the questions an empty thread offers', () => {
       'agent.example.rhythm',
       'agent.example.events',
     ])
+  })
+})
+
+describe('a failed turn that is the provider’s', () => {
+  const chunk = (body: unknown) => new Error(JSON.stringify(body))
+
+  it('reads the provider, the reason and the message without its prefix', () => {
+    expect(
+      turnRefusal(
+        chunk({ error: 'Anthropic: invalid x-api-key', provider: 'Anthropic', reason: 'key' }),
+      ),
+    ).toEqual({ provider: 'Anthropic', reason: 'key', said: 'invalid x-api-key' })
+    expect(
+      turnRefusal(chunk({ error: 'no prefix', provider: 'Anthropic', reason: 'key' }))?.said,
+    ).toBe('no prefix')
+  })
+
+  it.each([
+    ['plain text', new Error("The agent: 'a bug'")],
+    ['an empty object', chunk({})],
+    ['a missing reason', chunk({ error: 'x', provider: 'A' })],
+    ['a non-string message', chunk({ error: 1, provider: 'A', reason: 'key' })],
+    ['null', new Error('null')],
+    ['a number', new Error('3')],
+  ])('is not one for %s', (_name, error) => {
+    expect(turnRefusal(error)).toBeNull()
   })
 })

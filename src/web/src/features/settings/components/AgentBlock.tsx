@@ -16,7 +16,7 @@
  * The key is typed here and never read back: the server answers its last four
  * characters and nothing else (#1114). The agent is off by default.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -48,7 +48,8 @@ import {
 } from '@/features/agent/lib/api'
 import { docsPageHref } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { problemMessageKey, providerRefusal } from '@/lib/problem'
+import { ApiProblem } from '@/lib/api'
+import { PROBLEM_TYPES, problemMessageKey, providerRefusal } from '@/lib/problem'
 
 /** The `<select>` skin the forms share (`TaxationModelField`, `EventForm`). */
 const SELECT =
@@ -80,8 +81,11 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   // Steps 1 and 2 edited since the last passed test: the stored model no longer
   // answers for them, even once a failed test has written them to the store.
   const [untested, setUntested] = useState(false)
+  // Counts the edits: a test that answers after one is about a form no longer on screen.
+  const edits = useRef(0)
 
   const edit = (change: Partial<AgentDraft>) => {
+    edits.current += 1
     setDraft((current) => ({ ...current, ...change }))
     setUntested(true)
     // What was tested is no longer what is on screen.
@@ -93,10 +97,11 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const stored = (answer: AgentConfig) => client.setQueryData(['agent-config'], answer)
 
   const test = useMutation({
-    mutationFn: () => agentApi.testAgent(candidateOf(draft)),
-    onSuccess: (answer) => {
+    mutationFn: (_started: number) => agentApi.testAgent(candidateOf(draft)),
+    onSuccess: (answer, started) => {
       // Stored by the pass, and only by it: a refusal changes nothing.
       stored(answer.config)
+      if (started !== edits.current) return
       setTested(answer)
       setUntested(false)
       setModel(answer.preselected ?? '')
@@ -281,7 +286,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
               type="button"
               variant="outline"
               disabled={!testable || test.isPending}
-              onClick={() => test.mutate()}
+              onClick={() => test.mutate(edits.current)}
             >
               {t('settings.agent.test')}
             </Button>
@@ -341,7 +346,9 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
               />
             ) : (
               <p role="alert" className="text-sm text-destructive">
-                {t(problemMessageKey(test.error))}
+                {test.error instanceof ApiProblem && test.error.type === PROBLEM_TYPES.conflict
+                  ? t('settings.agent.test.changed')
+                  : t(problemMessageKey(test.error))}
               </p>
             )
           ) : null}

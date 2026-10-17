@@ -146,7 +146,7 @@ def provider_refused(detail: str, provider: str, reason: str):
     ``detail`` is the provider's own sentence (``Anthropic: invalid x-api-key``),
     the key masked. The front renders ``reason`` in its own words and keeps
     ``detail`` behind a disclosure (#1269). ``reason`` is ``key``, ``quota``,
-    ``rate_limit``, ``address``, ``overloaded``, ``unreachable``, ``unreadable``
+    ``rate_limit``, ``model``, ``address``, ``overloaded``, ``unreachable``, ``unreadable``
     or ``refused`` (``agent.refusal``).
     """
     return problem(502, 'Provider refused', detail, TYPE_PROVIDER_REFUSED,

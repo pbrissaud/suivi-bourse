@@ -189,6 +189,18 @@ describe('the states (4A)', () => {
     expect(within(main).getAllByText(QUESTION)).toHaveLength(1)
   })
 
+  it('says a failure that is not the provider’s as it came, with Réessayer and no settings link', async () => {
+    switchedOn()
+    scripted(createChat().user(QUESTION).error("The agent: 'a bug'"))
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const alert = await within(main).findByRole('alert')
+    expect(alert).toHaveTextContent("The agent: 'a bug'")
+    expect(within(alert).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
+    expect(within(alert).queryByRole('link')).not.toBeInTheDocument()
+  })
+
   it('says a retired model in a sentence, with the raw message folded and a link to the agent settings', async () => {
     switchedOn()
     scripted(createChat().user(QUESTION).error(refusedTurn('model')))

@@ -688,6 +688,7 @@
   "settings.agent.test.why": "Choisissez d’abord un fournisseur, puis sa clé ou son adresse.",
   "settings.agent.test.passed": "{provider} répond : {count, plural, one {# modèle disponible} other {# modèles disponibles}}.",
   "settings.agent.test.empty": "{provider} répond, mais ne propose aucun modèle.",
+  "settings.agent.test.changed": "La configuration de l’agent a changé pendant le test : testez de nouveau.",
   "settings.agent.model": "Modèle",
   "settings.agent.activate.why": "Disponible une fois la connexion testée.",
   "installation.settings.save": "Enregistrer",

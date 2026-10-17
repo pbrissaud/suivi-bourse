@@ -356,3 +356,36 @@ def test_refusal_reads_the_status_before_the_body():
     assert agent.refusal(429, {'error': 'slow down'}, 'turn') == 'rate_limit'
     assert agent.refusal(404, None, 'turn') == 'model'
     assert agent.refusal(None, None, 'turn') == 'unreachable'
+
+
+def test_said_masks_the_key_before_it_cuts():
+    long = 'x' * (agent.SAID_MAX - 4) + KEY
+
+    said = agent.said({'error': {'message': long}}, secret=KEY)
+
+    assert len(said) <= agent.SAID_MAX
+    assert KEY[:6] not in said
+
+
+def test_said_is_one_line_and_falls_back_to_the_text():
+    assert agent.said(None, '<html>\n  Bad\n gateway </html>') == '<html> Bad gateway </html>'
+    assert agent.said({'error': {'message': ''}}, 'plain text') == 'plain text'
+    assert agent.said('overloaded', 'ignored') == 'overloaded'
+
+
+@pytest.mark.parametrize('status, body, reason', [
+    (429, {'error': {'type': 'insufficient_quota'}}, 'quota'),
+    (429, None, 'rate_limit'),
+    (402, 'pay up', 'quota'),
+    (400, {'error': {'message': 'Your credit balance is too low'}}, 'quota'),
+    (400, 'bad request', 'refused'),
+])
+def test_refusal_reads_quota_wherever_the_provider_puts_it(status, body, reason):
+    assert agent.refusal(status, body, 'turn') == reason
+
+
+def test_a_404_is_an_address_only_for_a_provider_that_takes_one():
+    assert agent.refusal(404, None, 'test') == 'address'
+    assert agent.refusal(404, None, 'test', 'openai_compatible') == 'address'
+    assert agent.refusal(404, None, 'test', 'anthropic') == 'refused'
+    assert agent.refusal(404, None, 'turn', 'openai_compatible') == 'model'

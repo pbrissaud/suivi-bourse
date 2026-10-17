@@ -86,7 +86,7 @@ def models(config: dict, transport: Optional[httpx2.BaseTransport] = None) -> li
     url, headers = _request(config)
     try:
         answer = _fetch(url, headers, transport)
-    except httpx2.HTTPError as exc:
+    except (httpx2.HTTPError, httpx2.InvalidURL) as exc:
         raise _refused(label, f'cannot be reached at {_where(url)} '
                               f'({str(exc) or type(exc).__name__})',
                        'unreachable', key) from None
@@ -174,12 +174,17 @@ def _listed(provider: str, body: Any) -> list:
     # sort is stable.
     if len({type(row['at']) for row in rows}) == 1:
         rows.sort(key=lambda row: row['at'], reverse=True)
-    return [{'id': row['id'], 'name': str(row['name'])} for row in rows]
+    # A name the provider gives is forwarded as `model_name`, which is one line
+    # of at most MODEL_MAX characters: one that is not would fail the activation.
+    return [{'id': row['id'],
+             'name': ' '.join(str(row['name']).split())[:agent.MODEL_MAX] or row['id']}
+            for row in rows]
 
 
 def _where(url: str) -> str:
-    """The URL without its query: what the user typed, or the provider's own."""
-    return url.split('?', 1)[0]
+    """The URL without its query or its credentials: what the user typed, or
+    the provider's own."""
+    return re.sub(r'//[^/@]*@', '//', url.split('?', 1)[0])
 
 
 def _refused(label: str, said: str, reason: str, key: Optional[str]) -> ProviderRefused:

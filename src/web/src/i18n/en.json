@@ -688,6 +688,7 @@
   "settings.agent.test.why": "Choose a provider first, then its key or its address.",
   "settings.agent.test.passed": "{provider} answers: {count, plural, one {# model available} other {# models available}}.",
   "settings.agent.test.empty": "{provider} answers, but offers no model.",
+  "settings.agent.test.changed": "The agent’s configuration changed during the test: test it again.",
   "settings.agent.model": "Model",
   "settings.agent.activate.why": "Available once the connection has been tested.",
   "installation.settings.save": "Save",

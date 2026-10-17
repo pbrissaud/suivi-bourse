@@ -29,9 +29,11 @@ def get_agent_config():
 
 @bp.put('/agent/config')
 def put_agent_config():
-    """Change any of ``enabled``, ``provider``, ``model``, ``base_url``.
+    """Change any of ``enabled``, ``provider``, ``model``, ``model_name``,
+    ``base_url``.
 
-    A different provider or address forgets the key (#1197).
+    A different provider or address forgets the key (#1197). A ``model``
+    without its ``model_name`` clears the name, which belongs to its model.
     """
     return _write_agent_config(
         lambda config: agent_module.change(config, _json_object()))
@@ -69,7 +71,10 @@ def probe_agent():
     same = ('provider', 'base_url', 'api_key')
     with current_runtime().config_manager.writing() as opened:
         current = agent_module.read(opened)
-        if any(current[name] != stored[name] for name in same):
+        # Changed meanwhile, and not to what was just tested (another tab
+        # that tested the same candidate has nothing to be told).
+        moved = any(current[name] != stored[name] for name in same)
+        if moved and any(current[name] != tried[name] for name in same):
             return conflict(
                 "The agent's configuration changed while the connection was "
                 "tested; test it again.")

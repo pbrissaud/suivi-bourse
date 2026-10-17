@@ -10,7 +10,7 @@ import logging
 import httpx2
 import pytest
 
-from api import create_app
+from api import create_app, current_runtime
 from application import agent
 from application import agent_probe
 from test_agent import KEY, configured
@@ -452,3 +452,117 @@ def test_a_gateway_404_is_an_address(client, monkeypatch):
         'base_url': 'https://openrouter.ai/api'}).get_json()
 
     assert body['reason'] == 'address'
+
+
+def test_a_move_of_the_address_alone_clears_the_model_and_the_agent(
+        client, monkeypatch):
+    configured(client, provider='openai_compatible', key=KEY, enabled=True,
+               model='m', model_name='M', base_url='http://litellm:4000')
+    before = stored(client)
+    provider(monkeypatch, lambda request: httpx2.Response(
+        200, json={'data': [{'id': 'm2'}]}))
+
+    body = client.post('/api/agent/test', json={
+        'provider': 'openai_compatible', 'base_url': 'http://other:4000',
+        'key': 'test-key-the-new-one-wxyz'}).get_json()
+
+    kept = body['config']
+    assert (kept['model'], kept['model_name'], kept['enabled']) == (None, None, False)
+    assert kept['key']['set_at'] != before['key']['set_at']
+
+
+def test_the_same_key_keeps_its_date(client, monkeypatch):
+    configured(client, provider='anthropic', key=KEY)
+    before = stored(client)
+    provider(monkeypatch, listing)
+
+    client.post('/api/agent/test', json={'provider': 'anthropic', 'key': KEY})
+
+    assert stored(client)['key']['set_at'] == before['key']['set_at']
+
+
+@pytest.mark.parametrize('change', [
+    {'provider': 'openai', 'base_url': None},
+    {'base_url': 'http://elsewhere:4000'}])
+def test_a_provider_or_address_changed_during_the_probe_is_not_overwritten(
+        client, monkeypatch, change):
+    configured(client, provider='openai_compatible', key=KEY,
+               base_url='http://litellm:4000')
+
+    def moves_the_row(request):
+        client.put('/api/agent/config', json=change)
+        return httpx2.Response(200, json={'data': [{'id': 'm'}]})
+    provider(monkeypatch, moves_the_row)
+
+    answer = client.post('/api/agent/test', json={
+        'provider': 'openai_compatible', 'base_url': 'http://litellm:4000',
+        'key': 'test-key-the-new-one-wxyz'})
+
+    assert answer.status_code == 409
+    assert stored(client)['key']['set'] is False
+
+
+def test_another_tab_that_tested_the_same_candidate_is_not_a_conflict(
+        client, monkeypatch):
+    configured(client, provider='anthropic', key=KEY)
+    candidate = 'test-key-the-new-one-wxyz'
+
+    def other_tab_stores_it_first(request):
+        with current_runtime().config_manager.writing() as opened:
+            row = agent.read(opened)
+            agent.write(opened, agent.with_key(row, candidate, agent.now()),
+                        agent.now())
+        return listing(request)
+    provider(monkeypatch, other_tab_stores_it_first)
+
+    answer = client.post('/api/agent/test', json={
+        'provider': 'anthropic', 'key': candidate})
+
+    assert answer.status_code == 200
+    assert answer.get_json()['config']['key']['last4'] == candidate[-4:]
+
+
+def test_a_null_key_is_no_key(client, monkeypatch):
+    configured(client, provider='anthropic', key=KEY)
+    seen = provider(monkeypatch, listing)
+
+    answer = client.post('/api/agent/test', json={
+        'provider': 'anthropic', 'key': None})
+
+    assert answer.status_code == 200
+    assert seen[0].headers['x-api-key'] == KEY
+
+
+def test_an_address_httpx_rejects_is_unreachable_not_a_crash(client, monkeypatch):
+    def invalid(request):
+        raise httpx2.InvalidURL('Invalid port')
+    provider(monkeypatch, invalid)
+
+    answer = client.post('/api/agent/test', json={
+        'provider': 'ollama', 'base_url': 'http://ollama:port'})
+
+    assert answer.status_code == 502
+    assert answer.get_json()['reason'] == 'unreachable'
+
+
+def test_an_address_is_said_without_its_credentials(client, monkeypatch):
+    def unreachable(request):
+        raise httpx2.ConnectError('refused', request=request)
+    provider(monkeypatch, unreachable)
+
+    detail = client.post('/api/agent/test', json={
+        'provider': 'ollama',
+        'base_url': 'http://' + 'me:hunter2' + '@ollama:11434'}).get_json()['detail']
+
+    assert 'hunter2' not in detail and 'http://ollama:11434/api/tags' in detail
+
+
+def test_a_model_name_is_one_short_line(client, monkeypatch):
+    provider(monkeypatch, lambda request: httpx2.Response(200, json={'data': [
+        {'id': 'long', 'display_name': 'x' * 500},
+        {'id': 'multi', 'display_name': 'two\nlines'}]}))
+
+    body = client.post('/api/agent/test', json={
+        'provider': 'openai_compatible', 'base_url': 'http://litellm:4000'}).get_json()
+
+    assert [m['name'] for m in body['models']] == ['x' * 200, 'two lines']

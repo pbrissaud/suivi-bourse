@@ -191,7 +191,8 @@ def candidate(stored: dict, body: Any, at: datetime) -> dict:
                 f"are provider, base_url, key", name)
     tried, _ = change({**stored, 'enabled': False},
                       {k: v for k, v in body.items() if k != 'key'})
-    return with_key(tried, body['key'], at) if 'key' in body else tried
+    # A null key is no key: the stored one stands, as when the field is left out.
+    return with_key(tried, body['key'], at) if body.get('key') is not None else tried
 
 
 def adopted(stored: dict, tried: dict) -> dict:
@@ -316,10 +317,9 @@ def refusal(status: Optional[int], body: Any, during: str,
     inner = body.get('error', body) if isinstance(body, dict) else None
     if not isinstance(inner, dict):
         inner = {}
-    if (status == 402
-            or status == 429 and 'insufficient_quota' in (
-                inner.get('code'), inner.get('type'))
-            or status == 400 and 'credit balance' in said(body).lower()):
+    exhausted = 'insufficient_quota' in (inner.get('code'), inner.get('type'))
+    broke = 'credit balance' in said(body).lower()
+    if status == 402 or (status == 429 and exhausted) or (status == 400 and broke):
         return 'quota'
     if status == 429:
         return 'rate_limit'

@@ -227,6 +227,46 @@ describe('switching the agent on', () => {
     expect(activate(block)).toBeDisabled()
   })
 
+  it('says a configuration changed during the test as such, and keeps what was typed', async () => {
+    provider(() =>
+      HttpResponse.json(
+        { type: PROBLEM_TYPES.conflict, title: 'Conflict', status: 409, detail: 'changed' },
+        { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    )
+    const { user, block } = await openAgent()
+    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(block))
+
+    expect(await within(block).findByRole('alert')).toHaveTextContent(
+      'La configuration de l’agent a changé pendant le test : testez de nouveau.',
+    )
+    expect(within(block).getByLabelText('Clé d’API')).toHaveValue(KEY)
+  })
+
+  it('drops the answer of a test the reader edited the form under', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    provider(async (candidate, row) => {
+      await gate
+      return passes(candidate, row)
+    })
+    const { user, block } = await openAgent()
+    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(block))
+    // Edited while the provider is still answering.
+    await user.type(within(block).getByLabelText('Clé d’API'), 'x')
+    release()
+
+    await waitFor(() => expect(within(block).getByLabelText('Clé d’API')).toHaveValue(`${KEY}x`))
+    expect(within(block).queryByLabelText('Modèle')).not.toBeInTheDocument()
+    expect(within(block).queryByRole('button', { name: 'Activer l’agent' })).not.toBeInTheDocument()
+  })
+
   it.each([
     ['key', 'Anthropic refuse cette clé'],
     ['quota', 'Anthropic refuse faute de crédit'],
