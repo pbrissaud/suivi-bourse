@@ -77,6 +77,10 @@ async function ask(user: ReturnType<typeof renderApp>['user'], main: HTMLElement
   await user.click(within(main).getByRole('button', { name: 'Envoyer' }))
 }
 
+/** The error chunk of a provider's failed turn, as the server writes it (#1269). */
+const refusedTurn = (reason: string) =>
+  JSON.stringify({ error: 'Anthropic: overloaded_error', provider: 'Anthropic', reason })
+
 // ------------------------------------------------------------------------ //
 
 describe('the states (4A)', () => {
@@ -167,12 +171,14 @@ describe('the states (4A)', () => {
 
   it('says a provider error in its words, keeps the message, and offers Réessayer', async () => {
     switchedOn()
-    const sent = scripted(createChat().user(QUESTION).error('Anthropic: invalid x-api-key'))
+    const sent = scripted(createChat().user(QUESTION).error(refusedTurn('overloaded')))
     const { user, main } = await openPage()
     await ask(user, main, QUESTION)
 
     const alert = await within(main).findByRole('alert')
-    expect(alert).toHaveTextContent('Anthropic: invalid x-api-key')
+    expect(alert).toHaveTextContent('Anthropic est momentanément indisponible')
+    await user.click(within(alert).getByRole('button', { name: 'Message de Anthropic' }))
+    expect(alert).toHaveTextContent('overloaded_error')
     expect(within(main).getByText(QUESTION)).toBeInTheDocument()
 
     await user.click(within(alert).getByRole('button', { name: 'Réessayer' }))
@@ -181,6 +187,59 @@ describe('the states (4A)', () => {
     expect(sent.mock.calls[1][0].parts).toEqual([{ type: 'text', text: QUESTION }])
     expect(await within(main).findByRole('alert')).toBeInTheDocument()
     expect(within(main).getAllByText(QUESTION)).toHaveLength(1)
+  })
+
+  it('says a retired model in a sentence, with the raw message folded and a link to the agent settings', async () => {
+    switchedOn()
+    scripted(createChat().user(QUESTION).error(refusedTurn('model')))
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const alert = await within(main).findByRole('alert')
+    expect(alert).toHaveTextContent(
+      'Anthropic ne propose plus ce modèle : testez la connexion pour en choisir un autre.',
+    )
+    expect(within(alert).queryByText('overloaded_error')).not.toBeInTheDocument()
+    expect(
+      within(alert).getByRole('link', { name: 'Ouvrir les réglages de l’agent' }),
+    ).toHaveAttribute('href', '/settings#agent')
+    expect(within(alert).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
+  })
+
+  it('says a quota refusal with a link to the agent settings', async () => {
+    switchedOn()
+    scripted(createChat().user(QUESTION).error(refusedTurn('quota')))
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const alert = await within(main).findByRole('alert')
+    expect(alert).toHaveTextContent('Anthropic refuse faute de crédit')
+    expect(
+      within(alert).getByRole('link', { name: 'Ouvrir les réglages de l’agent' }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no settings link for a refusal Settings cannot mend', async () => {
+    switchedOn()
+    scripted(createChat().user(QUESTION).error(refusedTurn('rate_limit')))
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const alert = await within(main).findByRole('alert')
+    expect(alert).toHaveTextContent('Anthropic limite le nombre de requêtes')
+    expect(within(alert).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('names the model by its display name, and by its id when it has none', async () => {
+    switchedOn({ model_name: 'Claude Sonnet 5.5' })
+    const { main } = await openPage()
+    expect(await within(main).findByText(/Anthropic · Claude Sonnet 5\.5/)).toBeInTheDocument()
+  })
+
+  it('names the model by its id when it has no display name', async () => {
+    switchedOn({ model_name: null })
+    const { main } = await openPage()
+    expect(await within(main).findByText(/Anthropic · claude-sonnet-5-5/)).toBeInTheDocument()
   })
 
   it('marks Ollama experimental next to the model', async () => {

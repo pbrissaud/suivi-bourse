@@ -4,18 +4,22 @@
  *
  * 1. **The provider**, each with the one sentence that tells them apart;
  * 2. **its key**, with where to find one, or Ollama's address;
- * 3. **Tester la connexion**: the form is written to the store, then the server
- *    lists the provider's models with what it stored, and preselects one. A
- *    failure is said in the provider's own words;
+ * 3. **Tester la connexion**: the form goes to the server as one candidate,
+ *    which lists the provider's models with it and preselects one, and keeps
+ *    the candidate only on a pass (#1269). A failure is said in a sentence of
+ *    ours, the provider's own words folded behind it;
  * 4. **the outbound contract** — what leaves for the provider and what never
- *    does — and *Activer*, which stays disabled until step 3 has passed **for
- *    what is on screen**: any edit to steps 1 and 2 takes the pass back.
+ *    does — and the *Activer l’agent* button, which stays absent until step 3
+ *    has passed **for what is on screen**: any edit to steps 1 and 2 takes the
+ *    pass back. The switch at the top is the state, and the way off.
  *
  * The key is typed here and never read back: the server answers its last four
  * characters and nothing else (#1114). The agent is off by default.
  */
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,16 +29,17 @@ import {
   AGENT_PROVIDERS,
   addressRequired,
   canActivate,
+  candidateOf,
   canTest,
   draftOf,
   KEY_PAGE,
   keyRefused,
   keyRequired,
   OLLAMA_ADDRESS,
-  setupWrites,
   storedKeyApplies,
   type AgentDraft,
 } from '@/features/settings/lib/agentSetup'
+import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
 import {
   agentApi,
   type AgentConfig,
@@ -63,15 +68,10 @@ const PROVIDER_HINT: Record<AgentProvider, MessageKey> = {
   ollama: 'settings.agent.provider.ollama.hint',
 }
 
-const FAILURE: Record<string, MessageKey> = {
-  refused: 'settings.agent.test.refused',
-  unreachable: 'settings.agent.test.unreachable',
-  unreadable: 'settings.agent.test.unreadable',
-}
-
 export function AgentBlock({ config }: { config: AgentConfig }) {
   const { t, language } = useI18n()
   const client = useQueryClient()
+  const navigate = useNavigate()
   // Seeded once from the store: a refetch after a write must not wipe what
   // the reader is typing, nor the test that just passed.
   const [draft, setDraft] = useState<AgentDraft>(() => draftOf(config))
@@ -93,14 +93,10 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const stored = (answer: AgentConfig) => client.setQueryData(['agent-config'], answer)
 
   const test = useMutation({
-    mutationFn: async () => {
-      for (const write of setupWrites(config, draft)) {
-        if (write.kind === 'config') stored(await agentApi.saveAgentConfig(write.body))
-        else stored(await agentApi.saveAgentKey(write.key))
-      }
-      return agentApi.testAgent()
-    },
+    mutationFn: () => agentApi.testAgent(candidateOf(draft)),
     onSuccess: (answer) => {
+      // Stored by the pass, and only by it: a refusal changes nothing.
+      stored(answer.config)
       setTested(answer)
       setUntested(false)
       setModel(answer.preselected ?? '')
@@ -111,11 +107,31 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   })
 
   const toggle = useMutation({
-    mutationFn: (enabled: boolean) =>
-      agentApi.saveAgentConfig(
-        enabled ? { model: model || (config.model ?? ''), enabled: true } : { enabled: false },
-      ),
-    onSuccess: stored,
+    mutationFn: (enabled: boolean) => {
+      if (!enabled) return agentApi.saveAgentConfig({ enabled: false })
+      // The name the listing gave the model travels with its id (#1269).
+      const chosen = model || (config.model ?? '')
+      const name =
+        tested?.models.find((one) => one.id === chosen)?.name ??
+        (chosen === config.model ? config.model_name : null)
+      return agentApi.saveAgentConfig({ model: chosen, model_name: name, enabled: true })
+    },
+    onSuccess: (answer) => {
+      stored(answer)
+      toast.success(
+        answer.enabled
+          ? t('settings.agent.receipt.on', { model: answer.model_name ?? answer.model ?? '' })
+          : t('settings.agent.receipt.off'),
+        answer.enabled
+          ? {
+              action: {
+                label: t('settings.agent.receipt.open'),
+                onClick: () => void navigate({ to: '/agent' }),
+              },
+            }
+          : undefined,
+      )
+    },
   })
 
   const provider = draft.provider
@@ -139,7 +155,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
             <span role="status" className="text-sm text-muted-foreground">
               {t('settings.agent.on', {
                 provider: t(PROVIDER_LABEL[config.provider]),
-                model: config.model,
+                model: config.model_name ?? config.model,
               })}
             </span>
           ) : null}
@@ -317,13 +333,12 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
             </div>
           ) : null}
           {test.isError ? (
-            refusal ? (
-              <div role="alert" className="space-y-1">
-                <p className="text-sm text-destructive">
-                  {t(FAILURE[refusal.reason] ?? FAILURE.refused, { provider: providerName })}
-                </p>
-                <p className="font-mono text-xs break-words">{refusal.said}</p>
-              </div>
+            refusal && provider ? (
+              <RefusalNotice
+                provider={t(`agent.provider.${provider}`)}
+                reason={refusal.reason}
+                said={refusal.said}
+              />
             ) : (
               <p role="alert" className="text-sm text-destructive">
                 {t(problemMessageKey(test.error))}
@@ -333,10 +348,12 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
         </section>
 
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {config.enabled ? null : (
-            <p>
-              {t(activatable ? 'settings.agent.activate.ready' : 'settings.agent.activate.why')}
-            </p>
+          {config.enabled ? null : activatable ? (
+            <Button type="button" disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
+              {t('settings.agent.switch')}
+            </Button>
+          ) : (
+            <p>{t('settings.agent.activate.why')}</p>
           )}
           <a
             href={docsPageHref(language, 'settings', 'agent')}

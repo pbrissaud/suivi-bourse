@@ -136,11 +136,11 @@ export const ROUTES = {
    * agent could not run on.
    */
   agentConfig: '/api/agent/config',
-  /** The provider's key: written and forgotten here, never read back. */
+  /** The provider's key: forgotten here (`DELETE`), never written (it is stored by a passed test) and never read back. */
   agentKey: '/api/agent/key',
   /**
-   * *Tester la connexion* (#1115): the stored provider's models, listed with
-   * the stored key. Writes nothing.
+   * *Tester la connexion* (#1115, #1269): the candidate's models, listed with
+   * its key; the candidate is stored only when the provider accepts it.
    */
   agentTest: '/api/agent/test',
   /**

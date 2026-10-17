@@ -6,11 +6,16 @@
  * disabled until Tester la connexion succeeds** — for what is on screen, so an
  * edit after a pass takes it back.
  */
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
-import type { AgentConfig, AgentConfigDraft } from '@/features/agent/lib/api'
+import type {
+  AgentCandidate,
+  AgentConfig,
+  AgentConfigDraft,
+  AgentTestResult,
+} from '@/features/agent/lib/api'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import { anAgentConfig } from '@/test/factories'
@@ -19,17 +24,41 @@ import { server } from '@/test/server'
 
 const KEY = 'test-key-0123456789abcd'
 
+/** The server's answer to a passed test: the models, and what it now stores. */
+const passes = (candidate: AgentCandidate, row: AgentConfig) =>
+  HttpResponse.json({
+    provider: candidate.provider,
+    models: [
+      { id: 'claude-new', name: 'Claude New' },
+      { id: 'claude-old', name: 'Claude Old' },
+    ],
+    preselected: 'claude-new',
+    config: {
+      ...row,
+      provider: candidate.provider ?? row.provider,
+      base_url: candidate.base_url ?? null,
+      enabled: false,
+      key: candidate.key ? { set: true, last4: candidate.key.slice(-4), set_at: null } : row.key,
+    },
+  })
+
+/** A refusal as the server answers it: 502, the provider's words in `detail`. */
+const refuses = (reason: string, detail = 'Anthropic: invalid x-api-key') =>
+  HttpResponse.json(
+    {
+      type: PROBLEM_TYPES.providerRefused,
+      title: 'Provider refused',
+      status: 502,
+      detail,
+      provider: 'Anthropic',
+      reason,
+    },
+    { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
+  )
+
 /** A provider and a store, faked together; every write is kept, in order. */
 function provider(
-  test: () => Response | Promise<Response> = () =>
-    HttpResponse.json({
-      provider: 'anthropic',
-      models: [
-        { id: 'claude-new', name: 'Claude New' },
-        { id: 'claude-old', name: 'Claude Old' },
-      ],
-      preselected: 'claude-new',
-    }),
+  test: (candidate: AgentCandidate, row: AgentConfig) => Response | Promise<Response> = passes,
   initial: AgentConfig = anAgentConfig(),
 ) {
   let row = initial
@@ -39,26 +68,16 @@ function provider(
     http.put(ROUTES.agentConfig, async ({ request }) => {
       const body = (await request.json()) as AgentConfigDraft
       writes.push(['config', body])
-      // A key belongs to its provider and its address (#1197).
-      const moved = (['provider', 'base_url'] as const).some(
-        (name) => name in body && body[name] !== row[name],
-      )
-      row = {
-        ...row,
-        ...body,
-        ...(moved ? { key: { set: false, last4: null, set_at: null } } : {}),
-      }
+      row = { ...row, ...body }
       return HttpResponse.json(row)
     }),
-    http.put(ROUTES.agentKey, async ({ request }) => {
-      const body = (await request.json()) as { key: string }
-      writes.push(['key', body.key])
-      row = { ...row, key: { set: true, last4: body.key.slice(-4), set_at: null } }
-      return HttpResponse.json(row)
-    }),
-    http.post(ROUTES.agentTest, () => {
-      writes.push(['test', null])
-      return test()
+    http.post(ROUTES.agentTest, async ({ request }) => {
+      const candidate = (await request.json()) as AgentCandidate
+      writes.push(['test', candidate])
+      const answer = await test(candidate, row)
+      // Only a pass is stored, as the server does.
+      if (answer.ok) row = ((await answer.clone().json()) as AgentTestResult).config
+      return answer
     }),
   )
   return writes
@@ -94,11 +113,21 @@ describe('switching the agent on', () => {
       await within(block).findByText('Anthropic répond : 2 modèles disponibles.'),
     ).toBeInTheDocument()
     expect(activate(block)).toBeEnabled()
-    // The provider, the key, then the test — and nothing switched on yet.
+    // One test carrying the candidate — and nothing switched on yet.
+    expect(writes).toEqual([['test', { provider: 'anthropic', base_url: null, key: KEY }]])
+  })
+
+  it('sends the provider, the key and the address in one test, and nothing else', async () => {
+    const writes = provider()
+    const { user, block } = await openAgent()
+    await user.click(within(block).getByRole('radio', { name: /passerelle/i }))
+    await user.type(within(block).getByLabelText('Adresse'), 'http://litellm:4000')
+    await user.type(within(block).getByLabelText(/Clé d’API/), KEY)
+    await user.click(testButton(block))
+    await within(block).findByLabelText('Modèle')
+
     expect(writes).toEqual([
-      ['config', { provider: 'anthropic' }],
-      ['key', KEY],
-      ['test', null],
+      ['test', { provider: 'openai_compatible', base_url: 'http://litellm:4000', key: KEY }],
     ])
   })
 
@@ -117,51 +146,109 @@ describe('switching the agent on', () => {
         .map((one) => one.textContent),
     ).toEqual(['Claude New (claude-new)', 'Claude Old (claude-old)'])
     await user.selectOptions(model, 'claude-old')
-    await user.click(activate(block))
+    await user.click(within(block).getByRole('button', { name: 'Activer l’agent' }))
 
-    expect(await within(block).findByText('Actif : Anthropic, claude-old.')).toBeInTheDocument()
-    expect(writes.at(-1)).toEqual(['config', { model: 'claude-old', enabled: true }])
+    expect(await within(block).findByText('Actif : Anthropic, Claude Old.')).toBeInTheDocument()
+    expect(writes.at(-1)).toEqual([
+      'config',
+      { model: 'claude-old', model_name: 'Claude Old', enabled: true },
+    ])
   })
 
-  it('says a failed test in the provider’s own words, and keeps the switch disabled', async () => {
-    provider(() =>
-      HttpResponse.json(
-        {
-          type: PROBLEM_TYPES.providerRefused,
-          title: 'Provider refused',
-          status: 502,
-          detail: 'Anthropic: invalid x-api-key',
-          provider: 'Anthropic',
-          reason: 'refused',
-        },
-        { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
-      ),
+  it('offers Activer l’agent where Prêt was said, and confirms with a receipt', async () => {
+    const writes = provider()
+    const { user, block, router } = await openAgent()
+    expect(within(block).queryByRole('button', { name: 'Activer l’agent' })).not.toBeInTheDocument()
+    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(block))
+
+    await user.click(await within(block).findByRole('button', { name: 'Activer l’agent' }))
+
+    expect(writes.at(-1)).toEqual([
+      'config',
+      { model: 'claude-new', model_name: 'Claude New', enabled: true },
+    ])
+    expect(await screen.findByText('Agent activé : Claude New')).toBeInTheDocument()
+    // Switched on: the button gives way to the state.
+    expect(within(block).queryByRole('button', { name: 'Activer l’agent' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Ouvrir l’agent' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/agent'))
+  })
+
+  it('confirms switching off with a receipt', async () => {
+    provider(
+      undefined,
+      anAgentConfig({
+        provider: 'anthropic',
+        model: 'claude-x',
+        enabled: true,
+        key: { set: true, last4: 'abcd', set_at: null },
+      }),
     )
+    const { user, block } = await openAgent()
+
+    await user.click(activate(block))
+
+    expect(await screen.findByText('Agent désactivé')).toBeInTheDocument()
+  })
+
+  it('shows the model’s name in the active line', async () => {
+    provider(
+      undefined,
+      anAgentConfig({
+        provider: 'anthropic',
+        model: 'claude-sonnet-5-5',
+        model_name: 'Claude Sonnet 5.5',
+        enabled: true,
+        key: { set: true, last4: 'abcd', set_at: null },
+      }),
+    )
+    const { block } = await openAgent()
+
+    expect(within(block).getByText('Actif : Anthropic, Claude Sonnet 5.5.')).toBeInTheDocument()
+  })
+
+  it('says a refused key in a sentence, keeps the raw message folded, and never says it is saved', async () => {
+    provider(() => refuses('key'))
     const { user, block } = await openAgent()
     await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
     await user.type(within(block).getByLabelText('Clé d’API'), KEY)
     await user.click(testButton(block))
 
     const alert = await within(block).findByRole('alert')
-    expect(alert).toHaveTextContent('Anthropic a refusé la connexion :')
-    expect(alert).toHaveTextContent('invalid x-api-key')
+    expect(alert).toHaveTextContent(
+      'Anthropic refuse cette clé : vérifiez qu’elle est complète et toujours active.',
+    )
+    expect(within(block).queryByText('invalid x-api-key')).not.toBeInTheDocument()
+    await user.click(within(block).getByRole('button', { name: 'Message de Anthropic' }))
+    expect(within(block).getByText('invalid x-api-key')).toBeVisible()
+    expect(within(block).queryByText(/est enregistrée/)).not.toBeInTheDocument()
     expect(activate(block)).toBeDisabled()
+  })
+
+  it.each([
+    ['key', 'Anthropic refuse cette clé'],
+    ['quota', 'Anthropic refuse faute de crédit'],
+    ['rate_limit', 'Anthropic limite le nombre de requêtes'],
+    ['address', 'Aucune liste de modèles à cette adresse'],
+    ['overloaded', 'Anthropic est momentanément indisponible'],
+    ['unreachable', 'Ce serveur ne joint pas Anthropic'],
+    ['unreadable', 'Anthropic a répondu, mais pas par une liste de modèles'],
+    ['refused', 'Anthropic a refusé la connexion.'],
+  ])('translates each refusal reason (%s)', async (reason, sentence) => {
+    provider(() => refuses(reason))
+    const { user, block } = await openAgent()
+    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(block))
+
+    expect(await within(block).findByRole('alert')).toHaveTextContent(sentence)
   })
 
   it('does not switch the stored model back on after a failed test on another provider', async () => {
     provider(
-      () =>
-        HttpResponse.json(
-          {
-            type: PROBLEM_TYPES.providerRefused,
-            title: 'Provider refused',
-            status: 502,
-            detail: 'OpenAI: invalid key',
-            provider: 'OpenAI',
-            reason: 'refused',
-          },
-          { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
+      () => refuses('key', 'OpenAI: invalid key'),
       anAgentConfig({
         provider: 'anthropic',
         model: 'claude-x',
@@ -196,7 +283,13 @@ describe('switching the agent on', () => {
 
   it('asks Ollama for an address and no key', async () => {
     const writes = provider(
-      () => HttpResponse.json({ provider: 'ollama', models: [], preselected: null }),
+      (candidate, row) =>
+        HttpResponse.json({
+          provider: 'ollama',
+          models: [],
+          preselected: null,
+          config: { ...row, provider: 'ollama', base_url: candidate.base_url ?? null },
+        }),
       anAgentConfig({
         provider: 'anthropic',
         model: 'claude-x',
@@ -216,10 +309,7 @@ describe('switching the agent on', () => {
       ),
     ).toBeInTheDocument()
     expect(activate(block)).toBeDisabled()
-    expect(writes).toEqual([
-      ['config', { provider: 'ollama', base_url: 'http://localhost:11434' }],
-      ['test', null],
-    ])
+    expect(writes).toEqual([['test', { provider: 'ollama', base_url: 'http://localhost:11434' }]])
   })
 
   it('never shows the stored key, only its last four', async () => {
