@@ -536,6 +536,18 @@ describe('the rows as the breakdown of the head', () => {
     expect(within(total).getByText('+39,5 %')).toBeInTheDocument()
   })
 
+  it('dates the returns it prints', async () => {
+    renderBenchmark(whole())
+    expect(
+      await screen.findByText('Gain sur l’argent investi, du 21 nov. 2019 au 13 oct. 2026'),
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to the bare label without dates', async () => {
+    renderBenchmark({ ...whole(), covered_from: undefined, covered_to: undefined })
+    expect(await screen.findByText('Gain sur l’argent investi')).toBeInTheDocument()
+  })
+
   it('carries one period per row and no second column of gaps', async () => {
     renderBenchmark(whole())
 

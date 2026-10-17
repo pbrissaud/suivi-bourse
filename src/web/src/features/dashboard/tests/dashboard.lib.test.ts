@@ -21,6 +21,7 @@ import {
   moversList,
   tickerBadge,
   performanceRows,
+  signSplitOffset,
   windowFloor,
   yFloor,
 } from '@/features/dashboard/lib/dashboard'
@@ -122,6 +123,18 @@ describe('the performance reading', () => {
     expect(rows[rows.length - 1].performance).toBeCloseTo(head, 10)
   })
 
+  it('ends, at MAX, on the figure the IRR’s bubble states', () => {
+    // The bubble writes `twr_index / 100 − 1` from `twr_since`; the MAX curve
+    // starts on that same day. They cannot disagree.
+    const points = [100, 104.5, 91.25, 137.5].map((index, i) =>
+      aPerfPoint(`2026-0${i + 1}-01`, index),
+    )
+    const rows = performanceRows(points, windowFloor('MAX', now))
+
+    expect(rows[0].performance).toBe(0)
+    expect(Math.abs(rows[rows.length - 1].performance! - (137.5 / 100 - 1))).toBeLessThan(1e-12)
+  })
+
   it('is invariant to the horizon receding, which is why it carries no base date', () => {
     // The head's scalar moves while the reconstruction reaches further back —
     // that is what `twr_since` says on it. A curve rebased on the first day of
@@ -169,6 +182,23 @@ describe('the performance reading', () => {
     expect(rows.map((row) => row.t)).toEqual(['2026-02-02', '2026-03-02'])
     expect(rows[0].performance).toBe(0)
     expect(rows[1].performance).toBeCloseTo(0.1, 10)
+  })
+})
+
+describe('where the performance curve changes colour', () => {
+  it('is all gain above zero and all loss below it', () => {
+    expect(signSplitOffset([0, 0.02, 0.1])).toBe(1)
+    expect(signSplitOffset([-0.1, -0.02, 0])).toBe(0)
+  })
+
+  it('splits a crossing curve at zero, from the top of its own height', () => {
+    expect(signSplitOffset([-0.1, 0.3, 0.05])).toBeCloseTo(0.3 / 0.4, 12)
+  })
+
+  it('has no split for a flat or an empty series', () => {
+    expect(signSplitOffset([0.2, 0.2])).toBeNull()
+    expect(signSplitOffset([])).toBeNull()
+    expect(signSplitOffset([null, null])).toBeNull()
   })
 })
 
