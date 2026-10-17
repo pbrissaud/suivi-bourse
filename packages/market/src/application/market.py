@@ -17,6 +17,12 @@ from application import scheduling
 
 logger = getLogger("market")
 
+# The bound of any Yahoo call made while a reader waits (#1268). #1261's
+# currency lookups use it too.
+INTERACTIVE_TIMEOUT_S = 4
+SEARCHED_TYPES = frozenset({'EQUITY', 'ETF', 'MUTUALFUND', 'CRYPTOCURRENCY'})
+SEARCH_LINES = 8
+
 
 def latest_quote(symbol: str,
                  max_retries: int = 3) -> Tuple[Optional[float], Optional[dict]]:
@@ -235,3 +241,31 @@ def symbol_attributes(symbol: str) -> Optional[dict]:
         logger.warning(f"Could not fetch the attributes of {symbol}: {e}")
         return None
     return market_info.quote_attributes(raw)
+
+
+def search_securities(query: str) -> Optional[List[dict]]:
+    """Yahoo's securities for what was typed, or ``None`` when it did not answer.
+
+    ``[]`` and ``None`` are two answers (#1268): *nothing matches* and *Yahoo
+    could not be asked*. A rate limit is the second, with no retry and no sleep
+    -- a reader is waiting, and the scraper's backoff is not theirs to pay.
+    """
+    try:
+        quotes = yf.Search(query, max_results=10, news_count=0, lists_count=0,
+                           recommended=0, timeout=INTERACTIVE_TIMEOUT_S,
+                           raise_errors=True).quotes
+        found = []
+        for quote in quotes:
+            if quote.get('quoteType') not in SEARCHED_TYPES or not quote.get('symbol'):
+                continue
+            raw = quote.get('longname') or quote.get('shortname') or ''
+            name = ' '.join(raw.split())
+            found.append({
+                'symbol': quote['symbol'],
+                'name': name or None,
+                'exchange': quote.get('exchDisp') or quote.get('exchange') or None,
+            })
+        return found[:SEARCH_LINES]
+    except Exception as e:  # YFRateLimitError included
+        logger.warning(f"Could not search securities for {query!r}: {e}")
+        return None

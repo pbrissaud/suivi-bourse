@@ -258,6 +258,7 @@ def _market_is_faked_or_refused(request, monkeypatch):
         raise RuntimeError("yfinance was called by a test that did not fake it")
 
     monkeypatch.setattr(market.yf, "Ticker", refused)
+    monkeypatch.setattr(market.yf, "Search", refused)
 
 
 @pytest.fixture
