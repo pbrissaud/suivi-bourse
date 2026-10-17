@@ -39,9 +39,11 @@ interface RowDeleteProps {
   /** The row the reader asked to remove, or `null` while none is. */
   event: LedgerEvent | null
   onClose: () => void
+  /** The row is gone — as opposed to the box being dismissed (#1264). */
+  onDeleted?: () => void
 }
 
-export function RowDelete({ event, onClose }: RowDeleteProps) {
+export function RowDelete({ event, onClose, onDeleted }: RowDeleteProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const queryClient = useQueryClient()
@@ -50,6 +52,7 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
     mutationFn: (id: string) => dataApi.removeEvent(id),
     onSuccess: () => {
       onClose()
+      onDeleted?.()
       const receipt = receiptMessage({ kind: 'events.removed', count: 1 })
       toast.success(t(receipt.message, receipt.values))
       // Every figure in the product is downstream of the ledger, and the server
@@ -68,7 +71,7 @@ export function RowDelete({ event, onClose }: RowDeleteProps) {
   })
 
   const identity = event === null ? null : identityOf(event)
-  // The key the removal is addressed by. `isEditable` is what the table asked
+  // The key the removal is addressed by. `isEditable` is what the sheet asked
   // before offering the gesture, and this is that predicate read again — a row
   // with no key has nothing to name in the request.
   const key = typeof event?.id === 'string' ? event.id : null

@@ -66,6 +66,7 @@ import {
   accountOf,
   FIELDS,
   fold,
+  isEditable,
   parseDay,
   parseDecimal,
   titlesFor,
@@ -148,6 +149,8 @@ interface EventFormProps {
    */
   titles: readonly Title[] | null
   onClose: () => void
+  /** Asks for the row being edited to be removed — the confirmation is the caller's (#1264). */
+  onDelete: () => void
 }
 
 export function EventForm({
@@ -157,6 +160,7 @@ export function EventForm({
   accountsFailed,
   titles,
   onClose,
+  onDelete,
 }: EventFormProps) {
   const { t } = useI18n()
   const format = useFormatters()
@@ -706,6 +710,18 @@ export function EventForm({
                 <Button type="button" variant="outline" onClick={close}>
                   {t('data.form.cancel')}
                 </Button>
+                {/* The row's removal lives here and not in the table (#1264):
+                    a button on all 285 rows said the same thing 285 times. */}
+                {event !== null && isEditable(event) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="ml-auto text-destructive"
+                    onClick={onDelete}
+                  >
+                    {t('data.row.delete')}
+                  </Button>
+                ) : null}
               </div>
             </>
           )}
