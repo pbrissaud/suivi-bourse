@@ -120,3 +120,30 @@ describe('la ligne active du combobox', () => {
     expect(screen.getByLabelText('Ticker')).not.toHaveAttribute('aria-controls')
   })
 })
+
+describe('ce que le champ dit au parent', () => {
+  it('dit au parent qu’une ligne a été choisie, et pas une frappe', async () => {
+    const user = userEvent.setup()
+    const heard: [string, boolean][] = []
+    render(
+      <>
+        <label htmlFor="ticker">Ticker</label>
+        <Combobox
+          id="ticker"
+          value=""
+          onValueChange={(value, chosen) => heard.push([value, chosen])}
+          items={[ZZA]}
+          listLabel="Les titres"
+        />
+      </>,
+    )
+
+    await user.type(screen.getByLabelText('Ticker'), 'z')
+    await user.click(await screen.findByRole('option', { name: /ZZA/ }))
+
+    expect(heard).toEqual([
+      ['z', false],
+      ['ZZA', true],
+    ])
+  })
+})

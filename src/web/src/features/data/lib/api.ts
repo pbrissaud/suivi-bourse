@@ -104,20 +104,37 @@ export type EventsResponse = LedgerEvent[]
  * the row's key is the store's to write, and a client that could name one would
  * be a client that could forge one.
  *
- * `name` is not a member either. It is an attribute of the *security*, not of
- * each of its events — the reason `Nom` left the table is the reason it never
- * enters here — and the symbol is what identifies the line.
+ * `name` is the security's, and it travels only when the form knows it (#1268):
+ * the line picked from Yahoo, else the edited row's own. Absent, the server
+ * stores `NULL` — and an edit that sent none used to wipe an imported name.
  */
 export interface EventDraft {
   date: string
   event_type: LedgerEventType
   account: string
   symbol: string | null
+  name: string | null
   notes: string | null
   quantity: number | null
   unit_price: number | null
   fee: number | null
   amount: number | null
+}
+
+/** One line of Yahoo's answer (#1268). */
+export interface FoundSecurity {
+  symbol: string
+  name: string | null
+  exchange: string | null
+}
+
+/**
+ * `securities` has three states: a list, `[]` for *Yahoo answered nothing*, and
+ * `null` for *Yahoo did not answer* — the form works on without it.
+ */
+export interface SecuritiesResponse {
+  query: string
+  securities: FoundSecurity[] | null
 }
 
 /**
@@ -250,6 +267,8 @@ export interface ImportOptions {
 
 export const dataApi = {
   events: () => get<EventsResponse>(ROUTES.events),
+  searchSecurities: (q: string) =>
+    get<SecuritiesResponse>(`${ROUTES.securities}?q=${encodeURIComponent(q)}`),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
   /**

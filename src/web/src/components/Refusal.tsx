@@ -23,14 +23,34 @@
  * reader is already looking at the control they pressed, and an assertive live
  * region interrupts a screen reader mid-sentence to say what it is about to
  * read out anyway.
+ *
+ * **And it takes the focus when the form above it asks** (#1268): `ref` and
+ * `tabIndex={-1}` make it focusable by script and never by Tab. The native
+ * `focus()` scrolls it into view and a screen reader reads it, which a refusal
+ * drawn below the fold did neither of.
  */
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { cn } from '@/lib/utils'
 
-export function Refusal({ children, className }: { children: ReactNode; className?: string }) {
+export function Refusal({
+  children,
+  className,
+  ref,
+}: {
+  children: ReactNode
+  className?: string
+  ref?: Ref<HTMLDivElement>
+}) {
   return (
-    <Alert role="status" variant="destructive" className={className}>
+    <Alert
+      ref={ref}
+      role="status"
+      tabIndex={-1}
+      variant="destructive"
+      className={cn('outline-none', className)}
+    >
       <AlertDescription>{children}</AlertDescription>
     </Alert>
   )

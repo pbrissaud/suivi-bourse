@@ -39,6 +39,8 @@ returns — in one container, with nothing else to install.
   provision and nothing to compose: one image, one store, one process.
 - **Not a market terminal.** Prices come from Yahoo! Finance on a polite
   cadence; the further back a point is, the coarser it is kept.
+  The ticker search of the event form asks Yahoo! Finance too: the server sends
+  it what you type, your browser never does.
 - **Not an upgrade from version 4.** A version 5 install is a new install whose
   import folder happens to be full — see [Coming from v4](./coming-from-v4.mdx).
 

@@ -4,7 +4,9 @@
  * The control is an `<input>` with a list underneath, and the distinction that
  * governs every decision below is that **the input is the value**. A reader who
  * types a ticker nobody has ever held is doing the normal thing, so nothing here
- * may refuse, rewrite, or require a gesture on what was typed.
+ * may refuse, rewrite, or require a gesture on what was typed. The form above
+ * it may ask to confirm one (#1268), and `onValueChange` says whether the value
+ * was chosen from a line, which is what that form needs to know.
  *
  * ```
  *   ┌─────────────────────────────┐
@@ -99,7 +101,12 @@ type InputProps = Omit<ComponentProps<typeof Input>, 'value' | 'onChange' | 'onK
 
 export interface ComboboxProps extends InputProps {
   value: string
-  onValueChange: (value: string) => void
+  /**
+   * `chosen` is `true` only when the value comes from a line of the list (#1268),
+   * and `false` for a keystroke: a caller that tells a pick from a typing needs
+   * the two apart.
+   */
+  onValueChange: (value: string, chosen: boolean) => void
   /**
    * What the list offers, already filtered and ordered by the caller. Empty is
    * *nothing to show* and the list never opens — which is also how a read that
@@ -153,7 +160,7 @@ export function Combobox({
   function choose(index: number) {
     const item = items[index]
     if (item === undefined) return
-    onValueChange(item.value)
+    onValueChange(item.value, true)
     close()
     field.current?.focus()
   }
@@ -245,7 +252,7 @@ export function Combobox({
           value={value}
           className={className}
           onChange={(changed) => {
-            onValueChange(changed.target.value)
+            onValueChange(changed.target.value, false)
             setOpen(true)
             // What was typed is not what was chosen: the active line goes back
             // to nothing, so `Entrée` keeps belonging to the form.

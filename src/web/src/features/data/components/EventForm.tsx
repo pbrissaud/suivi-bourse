@@ -36,6 +36,7 @@ import { Refusal } from '@/components/Refusal'
 import { Explain } from '@/components/Explain'
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import {
@@ -68,6 +69,7 @@ import {
   fold,
   parseDay,
   parseDecimal,
+  startsWithQuery,
   titlesFor,
   type Title,
 } from '@/features/data/lib/ledger'
@@ -87,6 +89,30 @@ interface Draft {
 }
 
 type FieldName = keyof Draft
+
+/**
+ * The fields in the order they are drawn, which is the order a refused submit
+ * walks to find the one that takes the focus (#1268).
+ */
+const DISPLAY_ORDER = [
+  'date',
+  'account',
+  'symbol',
+  'quantity',
+  'unitPrice',
+  'amount',
+  'fee',
+] as const satisfies readonly FieldName[]
+
+/** The sentence under Ticker for a free ticker nobody has confirmed (#1268). */
+const UNKNOWN_SYMBOL = 'data.form.symbol.unknown' satisfies MessageKey
+
+/** Yahoo answers once the reader pauses, and from two characters (#1268). */
+const SEARCH_PAUSE_MS = 300
+const SEARCH_MIN = 2
+/** The server refuses a longer query; no ticker is longer. */
+const SEARCH_MAX = 64
+const SEARCH_STALE_MS = 5 * 60_000
 
 /**
  * The sentence each state of the account field says for itself. Three states
@@ -180,6 +206,14 @@ export function EventForm({
    * this that is correct rather than accidentally correct.
    */
   const [panel, setPanel] = useState<HTMLDivElement | null>(null)
+  /** The refusal the server last gave, which takes the focus when it lands (#1268). */
+  const refusal = useRef<HTMLDivElement>(null)
+  /** The Yahoo line the reader picked. Typing forgets it; "Use «typed»" is not one. */
+  const [picked, setPicked] = useState<{ symbol: string; name: string | null } | null>(null)
+  /** The free ticker the reader agreed to record with no known quote. */
+  const [confirmed, setConfirmed] = useState<string | null>(null)
+  /** What the field held when the reader last paused. */
+  const [asked, setAsked] = useState('')
 
   // Opening on a row fills the form; opening on nothing empties it. Keyed on the
   // row's own id so reopening on another row does not inherit the last one.
@@ -189,6 +223,8 @@ export function EventForm({
     setType(event?.event_type ?? null)
     setDraft(event === null ? EMPTY : draftOf(event))
     offered.current = ''
+    setPicked(null)
+    setConfirmed(null)
   }, [open, event])
 
   const write = useMutation({
@@ -210,6 +246,13 @@ export function EventForm({
       if (entryGone(error)) void queryClient.invalidateQueries({ queryKey: ['events'] })
     },
   })
+
+  // Keyed on the error object, so a second refusal with the same text focuses
+  // again. The native `focus()` scrolls the panel to it and a screen reader
+  // reads it (#1268).
+  useEffect(() => {
+    if (write.error) refusal.current?.focus()
+  }, [write.error])
 
   /**
    * **Every way out of the panel, and there are three**: the cancel button, the
@@ -304,16 +347,34 @@ export function EventForm({
    * is silence.
    */
   const typed = draft.symbol.trim()
-  const suggestions = titles === null ? [] : titlesFor(titles, draft.symbol)
-  const creating = titles !== null && typed !== '' && suggestions.length === 0
-  const items: ComboboxItem[] = creating
-    ? [{ value: typed, label: t('data.form.symbol.use', { typed }), hint: null }]
-    : suggestions.map((title) => ({
-        value: title.symbol,
-        label: title.symbol,
-        hint: title.name,
-        mono: true,
-      }))
+
+  useEffect(() => {
+    const pause = setTimeout(() => setAsked(typed), SEARCH_PAUSE_MS)
+    return () => clearTimeout(pause)
+  }, [typed])
+
+  /**
+   * **Yahoo's lines, after the ledger's** (#1268). The ledger read has to have
+   * landed first: while `titles` is `null` the field says nothing, and a search
+   * would be offering titles the ledger may already name.
+   *
+   * `securities` is a list, `[]` or `null` (Yahoo did not answer). `data` stays
+   * `undefined` while the request is in flight, which is why the offline
+   * sentence below cannot be said early.
+   */
+  const searching =
+    titles !== null &&
+    typed.length >= SEARCH_MIN &&
+    typed.length <= SEARCH_MAX &&
+    asked.length >= SEARCH_MIN
+  const { data: searched } = useQuery({
+    queryKey: ['securities', asked],
+    queryFn: () => dataApi.searchSecurities(asked),
+    enabled: searching,
+    staleTime: SEARCH_STALE_MS,
+    retry: false,
+  })
+  const yahooAnswered = searching ? searched?.securities : undefined
 
   /**
    * The ticker the save will fold what was typed into.
@@ -337,11 +398,60 @@ export function EventForm({
    */
   const near = (value: string) =>
     fold(value.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}]/gu, ''))
+  const ledgerNames = (symbol: string) =>
+    titles?.some((title) => near(title.symbol) === near(symbol)) ?? false
   const collision =
     typed === ''
       ? null
       : (titles?.find((title) => title.symbol !== typed && near(title.symbol) === near(typed))
           ?.symbol ?? null)
+
+  const suggestions = titles === null ? [] : titlesFor(titles, draft.symbol)
+  const yahooLines = (yahooAnswered ?? []).filter((line) => !ledgerNames(line.symbol))
+  // "Use «typed»" is the line of last resort: it re-states what was typed and
+  // never counts as a pick.
+  const creating =
+    titles !== null && typed !== '' && suggestions.length === 0 && yahooLines.length === 0
+  const items: ComboboxItem[] = creating
+    ? [{ value: typed, label: t('data.form.symbol.use', { typed }), hint: null }]
+    : [
+        ...suggestions.map((title) => ({
+          value: title.symbol,
+          label: title.symbol,
+          hint: title.name,
+          mono: true,
+        })),
+        ...yahooLines.map((line) => ({
+          value: line.symbol,
+          label: line.symbol,
+          hint: [line.name, line.exchange].filter(Boolean).join(' · ') || null,
+          mono: true,
+        })),
+      ]
+  const offline = yahooAnswered === null
+
+  /**
+   * **A free ticker is confirmed, never refused** (#1268). A security with no
+   * quote is a legitimate entry — unlisted ISINs exist in real ledgers — so the
+   * submit stops once and asks. A ticker is *known* when the ledger names it or
+   * the reader picked it from a Yahoo line: Yahoo knowing `SAN` does not mean
+   * the reader meant Santander, so a lookup at submit would not catch it.
+   *
+   * While `titles` is `null` the gate does not fire, which keeps the #775
+   * silence. That is a known ceiling: a free ticker typed while the ledger read
+   * is still in flight is saved as before.
+   */
+  const free =
+    fields?.security === true &&
+    typed !== '' &&
+    titles !== null &&
+    !ledgerNames(typed) &&
+    picked?.symbol !== typed
+  const gated = free && (errors.symbol === UNKNOWN_SYMBOL || confirmed === typed)
+  const didYouMean =
+    titles === null
+      ? undefined
+      : titlesFor(titles, typed).find((title) => startsWithQuery(typed, [title.symbol]))
 
   const choice = accountChoice(accounts, accountsFailed)
   // The two states nothing in this panel can repair: the declaration is not
@@ -375,6 +485,7 @@ export function EventForm({
 
     const symbol = draft.symbol.trim()
     if (fields.security && symbol === '') found.symbol = 'data.form.required'
+    else if (free && confirmed !== symbol) found.symbol = UNKNOWN_SYMBOL
 
     /** A required number, an optional one, or a field this type does not have. */
     function number(field: FieldName, required: boolean, present: boolean): number | null {
@@ -399,13 +510,29 @@ export function EventForm({
     const amount = number('amount', true, fields.amount)
 
     setErrors(found)
-    if (Object.values(found).some(Boolean)) return
+    if (Object.values(found).some(Boolean)) {
+      // The first field that could not be read, in the order they are drawn.
+      const first = DISPLAY_ORDER.find((name) => found[name])
+      document.getElementById(`event-${first}`)?.focus()
+      return
+    }
+
+    // The security's name: the picked Yahoo line's, else the edited row's own
+    // while its ticker is unchanged (a save used to wipe it), else none.
+    const name = !fields.security
+      ? null
+      : picked?.symbol === symbol
+        ? picked.name
+        : event?.symbol != null && near(event.symbol) === near(symbol)
+          ? event.name
+          : null
 
     write.mutate({
       date: day as string,
       event_type: type,
       account: 'account' in submitted ? submitted.account : '',
       symbol: fields.security ? symbol : null,
+      name,
       notes: draft.notes.trim() === '' ? null : draft.notes.trim(),
       quantity,
       unit_price: unitPrice,
@@ -557,7 +684,50 @@ export function EventForm({
               )}
 
               {fields.security ? (
-                <Field name="symbol" label="data.form.symbol" error={errors.symbol}>
+                <Field
+                  name="symbol"
+                  label="data.form.symbol"
+                  error={errors.symbol}
+                  below={
+                    gated ? (
+                      <div className="space-y-2">
+                        {errors.symbol === UNKNOWN_SYMBOL && didYouMean ? (
+                          <p className="text-sm">
+                            <Button
+                              type="button"
+                              variant="link"
+                              className="h-auto p-0"
+                              onClick={() => {
+                                set('symbol', didYouMean.symbol)
+                                setPicked(null)
+                                setConfirmed(null)
+                                document.getElementById('event-symbol')?.focus()
+                              }}
+                            >
+                              {t('data.form.symbol.didYouMean', { symbol: didYouMean.symbol })}
+                            </Button>{' '}
+                            {didYouMean.name === null ? null : (
+                              <bdi className="text-muted-foreground">{didYouMean.name}</bdi>
+                            )}
+                          </p>
+                        ) : null}
+                        <label className="flex min-h-8 items-center gap-2 text-sm pointer-coarse:min-h-11">
+                          <Checkbox
+                            checked={confirmed === typed}
+                            onCheckedChange={(on) => {
+                              setConfirmed(on === true ? typed : null)
+                              setErrors((previous) => ({
+                                ...previous,
+                                symbol: on === true ? undefined : UNKNOWN_SYMBOL,
+                              }))
+                            }}
+                          />
+                          {t('data.form.symbol.confirm', { symbol: typed })}
+                        </label>
+                      </div>
+                    ) : undefined
+                  }
+                >
                   {(id, described) => (
                     <>
                       <Combobox
@@ -570,12 +740,28 @@ export function EventForm({
                         listLabel={t('data.form.symbol.suggestions')}
                         aria-invalid={errors.symbol !== undefined}
                         aria-describedby={
-                          [described, collision === null ? null : `${id}-collision`]
+                          [
+                            described,
+                            collision === null ? null : `${id}-collision`,
+                            offline ? `${id}-offline` : null,
+                          ]
                             .filter(Boolean)
                             .join(' ') || undefined
                         }
-                        onValueChange={(next) => set('symbol', next)}
+                        onValueChange={(next, chosen) => {
+                          set('symbol', next)
+                          setConfirmed(null)
+                          const line = chosen
+                            ? yahooLines.find((candidate) => candidate.symbol === next)
+                            : undefined
+                          setPicked(line ? { symbol: line.symbol, name: line.name } : null)
+                        }}
                       />
+                      {offline ? (
+                        <p id={`${id}-offline`} className="text-xs text-muted-foreground">
+                          {t('data.form.symbol.offline')}
+                        </p>
+                      ) : null}
                       {collision === null ? null : (
                         <p id={`${id}-collision`} className="text-xs text-muted-foreground">
                           {t('data.form.symbol.collision', { symbol: collision })}
@@ -692,7 +878,9 @@ export function EventForm({
                 )}
               </Field>
 
-              {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+              {write.error ? (
+                <Refusal ref={refusal}>{problemSentence(t, write.error)}</Refusal>
+              ) : null}
 
               <div className="flex gap-2">
                 {/* Withheld rather than offered and refused — the same rule the
@@ -727,6 +915,7 @@ function Field({
   error,
   optional,
   explain,
+  below,
   children,
 }: {
   name: FieldName
@@ -734,6 +923,8 @@ function Field({
   error?: MessageKey
   optional?: boolean
   explain?: ReactNode
+  /** What goes under the sentence — the controls that repair it. */
+  below?: ReactNode
   children: (id: string, describedBy: string | undefined) => ReactNode
 }) {
   const { t } = useI18n()
@@ -759,6 +950,7 @@ function Field({
           {t(error)}
         </p>
       ) : null}
+      {below}
     </div>
   )
 }
