@@ -7,24 +7,22 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ==========================================================================
- * 1. The primitives — our `Suivi Bourse` preset. **Never hand-edited.**
+ * 1. The primitives — our `Atelier` theme. **Never hand-edited.**
  *
- * Regenerate with, and only with:
+ * **Atelier is `src/web/src/theme/atelier.json`**, the same JSON a stored theme
+ * is (what `GET /api/theme` returns, what Settings › Thème edits). Change a
+ * colour there, then run
  *
- *     pnpm dlx shadcn@latest add
- *     https://tweakcn.com/r/themes/cmv2mytu0000004l29dhzfvtc
+ *     uv run python scripts/sync_atelier.py
  *
- * The cut between this block and the next *is* the decision: the preset owns
- * the chrome and regenerates; the domain layer owns the meaning and does not.
+ * and never edit the rules below by hand: `tests/test_atelier.py` fails the
+ * build on a hand edit, or on a JSON change without the script.
+ *
+ * The cut between this block and the next *is* the decision: the theme owns the
+ * chrome and is regenerated; the domain layer owns the meaning and does not.
  * Editing a value here is how the two halves stopped being tellable apart in
  * the prototype — a `radix-nova` style nobody chose, with a hand-written layer
  * piled on top and nothing saying which won.
- *
- * The registry held forty-two and none of them said this — so this one is ours,
- * published at the URL above, which is the order that ADR wrote: look first,
- * publish only if nothing approaches. A theme pasted in as JSON would be the
- * same values and a dead file: it stops regenerating, and the three blocks
- * collapse into two.
  *
  * What it keeps from `Vercel`, which it replaces, is not a hue but a property:
  * **the primitives leave the colour to the domain**. Only `--primary`/`--ring`
@@ -39,122 +37,122 @@
  *    to 2,4:1. It is a muted raise of the ground here, and the mint lives in
  *    `--primary`.
  *  - **The fonts name the variable families.** `@fontsource-variable/geist`
- *    registers `Geist Variable`, not `Geist`; the preset says both, so the
+ *    registers `Geist Variable`, not `Geist`; the theme says both, so the
  *    bridge below has nothing to catch up. It used to say them itself, and
  *    every regeneration overwrote it.
  *    ==========================================================================
  *    */
 
+/* atelier:begin */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.9741 0.0074 80.7212);
-  --foreground: oklch(0.2193 0.0208 56.376);
-  --card: oklch(0.9947 0.0045 78.2986);
-  --card-foreground: oklch(0.2193 0.0208 56.376);
-  --popover: oklch(0.9947 0.0045 78.2986);
-  --popover-foreground: oklch(0.2193 0.0208 56.376);
-  --primary: oklch(0.4825 0.1032 163.7504);
-  --primary-foreground: oklch(0.9947 0.0045 78.2986);
-  --secondary: oklch(0.9445 0.0132 82.4018);
-  --secondary-foreground: oklch(0.2193 0.0208 56.376);
-  --muted: oklch(0.9445 0.0132 82.4018);
-  --muted-foreground: oklch(0.5003 0.0199 61.6482);
   --accent: oklch(0.92 0.0145 84.5845);
   --accent-foreground: oklch(0.2193 0.0208 56.376);
-  --destructive: oklch(0.5498 0.2096 25.1372);
+  --background: oklch(0.9741 0.0074 80.7212);
   --border: oklch(0.9012 0.0129 86.8337);
-  --input: oklch(0.8207 0.0145 88.7);
-  --ring: oklch(0.4825 0.1032 163.7504);
+  --card: oklch(0.9947 0.0045 78.2986);
+  --card-foreground: oklch(0.2193 0.0208 56.376);
   --chart-1: oklch(0.4991 0.1609 284.9747);
   --chart-2: oklch(0.5001 0.0851 210.0599);
   --chart-3: oklch(0.5993 0.0096 67.642);
   --chart-4: oklch(0.4805 0.0094 73.6557);
   --chart-5: oklch(0.3603 0.0131 67.3915);
+  --destructive: oklch(0.5498 0.2096 25.1372);
+  --destructive-foreground: oklch(0.9947 0.0045 78.2986);
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+  --font-sans: "Geist Variable", Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --foreground: oklch(0.2193 0.0208 56.376);
+  --input: oklch(0.8207 0.0145 88.7);
+  --letter-spacing: 0em;
+  --muted: oklch(0.9445 0.0132 82.4018);
+  --muted-foreground: oklch(0.5003 0.0199 61.6482);
+  --popover: oklch(0.9947 0.0045 78.2986);
+  --popover-foreground: oklch(0.2193 0.0208 56.376);
+  --primary: oklch(0.4825 0.1032 163.7504);
+  --primary-foreground: oklch(0.9947 0.0045 78.2986);
+  --radius: 0.625rem;
+  --ring: oklch(0.4825 0.1032 163.7504);
+  --secondary: oklch(0.9445 0.0132 82.4018);
+  --secondary-foreground: oklch(0.2193 0.0208 56.376);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-blur: 2px;
+  --shadow-color: #000000;
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 4px 6px -1px hsl(0 0% 0% / 0);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 2px 4px -1px hsl(0 0% 0% / 0);
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --shadow-opacity: 0;
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow-spread: 0px;
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 8px 10px -1px hsl(0 0% 0% / 0);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
   --sidebar: oklch(0.9741 0.0074 80.7212);
-  --sidebar-foreground: oklch(0.2193 0.0208 56.376);
-  --sidebar-primary: oklch(0.4825 0.1032 163.7504);
-  --sidebar-primary-foreground: oklch(0.9947 0.0045 78.2986);
   --sidebar-accent: oklch(0.92 0.0145 84.5845);
   --sidebar-accent-foreground: oklch(0.2193 0.0208 56.376);
   --sidebar-border: oklch(0.9012 0.0129 86.8337);
+  --sidebar-foreground: oklch(0.2193 0.0208 56.376);
+  --sidebar-primary: oklch(0.4825 0.1032 163.7504);
+  --sidebar-primary-foreground: oklch(0.9947 0.0045 78.2986);
   --sidebar-ring: oklch(0.4825 0.1032 163.7504);
-  --destructive-foreground: oklch(0.9947 0.0045 78.2986);
-  --font-sans: "Geist Variable", Geist, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
-  --shadow-color: #000000;
-  --shadow-opacity: 0;
-  --shadow-blur: 2px;
-  --shadow-spread: 0px;
-  --shadow-offset-x: 0px;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
-  --spacing: 0.25rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 2px 4px -1px hsl(0 0% 0% / 0);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 4px 6px -1px hsl(0 0% 0% / 0);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 8px 10px -1px hsl(0 0% 0% / 0);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0);
   --tracking-normal: 0em;
 }
-
 .dark {
-  --background: oklch(0.1687 0.0117 60.5255);
-  --foreground: oklch(0.95 0.0074 80.7208);
-  --card: oklch(0.2047 0.0112 60.7853);
-  --card-foreground: oklch(0.95 0.0074 80.7208);
-  --popover: oklch(0.2047 0.0112 60.7853);
-  --popover-foreground: oklch(0.95 0.0074 80.7208);
-  --primary: oklch(0.8001 0.1297 165.0822);
-  --primary-foreground: oklch(0.1687 0.0117 60.5255);
-  --secondary: oklch(0.2287 0.0145 57.4561);
-  --secondary-foreground: oklch(0.95 0.0074 80.7208);
-  --muted: oklch(0.2287 0.0145 57.4561);
-  --muted-foreground: oklch(0.68 0.0142 71.2595);
   --accent: oklch(0.265 0.0141 67.1532);
   --accent-foreground: oklch(0.95 0.0074 80.7208);
-  --destructive: oklch(0.7008 0.1902 25.1101);
+  --background: oklch(0.1687 0.0117 60.5255);
   --border: oklch(0.2982 0.0113 55.9114);
-  --input: oklch(0.3614 0.0141 62.9858);
-  --ring: oklch(0.8001 0.1297 165.0822);
+  --card: oklch(0.2047 0.0112 60.7853);
+  --card-foreground: oklch(0.95 0.0074 80.7208);
   --chart-1: oklch(0.7197 0.1209 285.1072);
   --chart-2: oklch(0.72 0.11 200.3052);
   --chart-3: oklch(0.5614 0.0207 70.0393);
   --chart-4: oklch(0.7005 0.0148 67.5823);
   --chart-5: oklch(0.8413 0.01 72.6466);
+  --destructive: oklch(0.7008 0.1902 25.1101);
+  --destructive-foreground: oklch(0.1687 0.0117 60.5255);
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+  --font-sans: "Geist Variable", Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --foreground: oklch(0.95 0.0074 80.7208);
+  --input: oklch(0.3614 0.0141 62.9858);
+  --letter-spacing: 0em;
+  --muted: oklch(0.2287 0.0145 57.4561);
+  --muted-foreground: oklch(0.68 0.0142 71.2595);
+  --popover: oklch(0.2047 0.0112 60.7853);
+  --popover-foreground: oklch(0.95 0.0074 80.7208);
+  --primary: oklch(0.8001 0.1297 165.0822);
+  --primary-foreground: oklch(0.1687 0.0117 60.5255);
+  --radius: 0.625rem;
+  --ring: oklch(0.8001 0.1297 165.0822);
+  --secondary: oklch(0.2287 0.0145 57.4561);
+  --secondary-foreground: oklch(0.95 0.0074 80.7208);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --shadow-blur: 2px;
+  --shadow-color: #000000;
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 4px 6px -1px hsl(0 0% 0% / 0);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 2px 4px -1px hsl(0 0% 0% / 0);
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --shadow-opacity: 0;
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
+  --shadow-spread: 0px;
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 8px 10px -1px hsl(0 0% 0% / 0);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
   --sidebar: oklch(0.1687 0.0117 60.5255);
-  --sidebar-foreground: oklch(0.95 0.0074 80.7208);
-  --sidebar-primary: oklch(0.8001 0.1297 165.0822);
-  --sidebar-primary-foreground: oklch(0.1687 0.0117 60.5255);
   --sidebar-accent: oklch(0.265 0.0141 67.1532);
   --sidebar-accent-foreground: oklch(0.95 0.0074 80.7208);
   --sidebar-border: oklch(0.2982 0.0113 55.9114);
+  --sidebar-foreground: oklch(0.95 0.0074 80.7208);
+  --sidebar-primary: oklch(0.8001 0.1297 165.0822);
+  --sidebar-primary-foreground: oklch(0.1687 0.0117 60.5255);
   --sidebar-ring: oklch(0.8001 0.1297 165.0822);
-  --destructive-foreground: oklch(0.1687 0.0117 60.5255);
-  --radius: 0.625rem;
-  --font-sans: "Geist Variable", Geist, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
-  --shadow-color: #000000;
-  --shadow-opacity: 0;
-  --shadow-blur: 2px;
-  --shadow-spread: 0px;
-  --shadow-offset-x: 0px;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
-  --spacing: 0.25rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 2px 4px -1px hsl(0 0% 0% / 0);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 4px 6px -1px hsl(0 0% 0% / 0);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 8px 10px -1px hsl(0 0% 0% / 0);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0);
+  --tracking-normal: 0em;
 }
+/* atelier:end */
 
 /* ==========================================================================
  * 2. The domain — meanings, each one pointing at a standard token.
@@ -360,7 +358,6 @@
   --shadow-sm: var(--shadow-sm);
   --shadow-xs: var(--shadow-xs);
   --shadow-2xs: var(--shadow-2xs);
-  --spacing: var(--spacing);
   --letter-spacing: var(--letter-spacing);
   --shadow-offset-y: var(--shadow-offset-y);
   --shadow-offset-x: var(--shadow-offset-x);

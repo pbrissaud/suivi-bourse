@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { ThemeVars } from '@/features/settings/lib/api'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
+import atelier from '@/theme/atelier.json'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -55,7 +56,31 @@ describe('the theme card', () => {
     expect(within(block).getByRole('status')).toHaveTextContent('Thème livré (Atelier)')
     await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
     expect(within(block).queryByRole('button', { name: 'Revenir à Atelier' })).toBeNull()
+  })
+
+  it('offers nothing to apply once the JSON is cleared', async () => {
+    store()
+    const { user, block } = await openTheme()
+    await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
+
+    await user.clear(within(block).getByRole('textbox', { name: 'Modifier le JSON' }))
+
     expect(within(block).getByRole('button', { name: 'Appliquer' })).toBeDisabled()
+  })
+
+  it('opens the JSON on Atelier when nothing is stored, and saves it as any theme', async () => {
+    const writes = store()
+    const { user, block } = await openTheme()
+    await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
+
+    const field = within(block).getByRole('textbox', { name: 'Modifier le JSON' })
+    expect(JSON.parse((field as HTMLTextAreaElement).value)).toEqual(atelier)
+    await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
+
+    expect(await within(block).findByRole('status')).toHaveTextContent(
+      'Thème personnalisé · appliqué',
+    )
+    expect(writes).toEqual([['put', atelier]])
   })
 
   it('says a custom theme is stored, and resets it', async () => {
@@ -69,6 +94,12 @@ describe('the theme card', () => {
     expect(await within(block).findByRole('status')).toHaveTextContent('Atelier rétabli')
     expect(writes).toEqual([['delete', null]])
     expect(within(block).queryByRole('button', { name: 'Revenir à Atelier' })).toBeNull()
+    expect(
+      JSON.parse(
+        (within(block).getByRole('textbox', { name: 'Modifier le JSON' }) as HTMLTextAreaElement)
+          .value,
+      ),
+    ).toEqual(atelier)
   })
 
   it('imports by id, opens the JSON on what was kept, and repaints', async () => {
@@ -116,7 +147,7 @@ describe('the theme card', () => {
     await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
     const field = within(block).getByRole('textbox', { name: 'Modifier le JSON' })
 
-    await user.click(field)
+    await user.clear(field)
     await user.paste('{ nope')
     await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
 
@@ -140,7 +171,7 @@ describe('the theme card', () => {
     await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
     const field = within(block).getByRole('textbox', { name: 'Modifier le JSON' })
 
-    await user.click(field)
+    await user.clear(field)
     await user.paste('{"light": {"gain": "red"}, "dark": {}}')
     await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
 
@@ -212,7 +243,7 @@ describe('the theme card', () => {
     await user.click(within(block).getByRole('button', { name: 'Modifier le JSON' }))
     const field = within(block).getByRole('textbox', { name: 'Modifier le JSON' })
 
-    await user.click(field)
+    await user.clear(field)
     await user.paste('{"light": {"primary": "red"}, "dark": {"primary": "blue"}}')
     await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
 
