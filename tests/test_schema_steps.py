@@ -100,7 +100,8 @@ def test_the_amounts_currency_step_adds_a_null_column_and_keeps_rows(tmp_path):
     connection.executemany(
         "INSERT INTO schema_step (step, applied_at) "
         "VALUES (?, TIMESTAMPTZ '2026-10-01 00:00:00+00')",
-        [[name] for name in RELEASED[:-1]])
+        [[name] for name in RELEASED
+         if name != 'add_event_amounts_currency'])
     connection.close()
 
     opened = store_module.open_store(path, schema_steps.STEPS)
