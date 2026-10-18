@@ -4,7 +4,6 @@
 refuses any call a test did not fake.
 """
 import pytest
-from yfinance.exceptions import YFRateLimitError
 
 from application import market
 from test_web_api import build_client
@@ -96,7 +95,7 @@ def test_a_provider_that_fails_answers_null_not_an_error(tmp_path, search):
 
 
 def test_a_rate_limited_provider_answers_null_and_is_never_retried(tmp_path, search):
-    search.error = YFRateLimitError()
+    search.error = market.YFRateLimitError()
 
     response = _get(tmp_path)
 

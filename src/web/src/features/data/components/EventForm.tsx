@@ -363,6 +363,7 @@ export function EventForm({
    * sentence below cannot be said early.
    */
   const searching =
+    open &&
     fields?.security === true &&
     titles !== null &&
     typed.length >= SEARCH_MIN &&

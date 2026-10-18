@@ -254,18 +254,7 @@ def search_securities(query: str) -> Optional[List[dict]]:
         quotes = yf.Search(query, max_results=10, news_count=0, lists_count=0,
                            recommended=0, timeout=INTERACTIVE_TIMEOUT_S,
                            raise_errors=True).quotes
-        found = []
-        for quote in quotes:
-            if quote.get('quoteType') not in SEARCHED_TYPES or not quote.get('symbol'):
-                continue
-            raw = quote.get('longname') or quote.get('shortname') or ''
-            name = ' '.join(raw.split())
-            found.append({
-                'symbol': quote['symbol'],
-                'name': name or None,
-                'exchange': quote.get('exchDisp') or quote.get('exchange') or None,
-            })
-        return found[:SEARCH_LINES]
+        return market_info.security_lines(quotes, SEARCHED_TYPES, SEARCH_LINES)
     except Exception as e:  # YFRateLimitError included
         logger.warning(f"Could not search securities for {query!r}: {e}")
         return None
