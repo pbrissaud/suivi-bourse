@@ -1051,12 +1051,14 @@ export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt 
  *
  * `duplicate_of` is the id of the stored row; `null` says the line repeats
  * another line **of the file itself**, which is the one difference the reader
- * can see and the one no count carries.
+ * can see and the one no count carries. Then `repeat_of` is the index of its
+ * first copy (#1267): `aDuplicateRow({ duplicate_of: null, repeat_of: 0 })`.
  */
 export function aDuplicateRow(overrides: Partial<DuplicateRow> = {}): DuplicateRow {
   return {
     ...anEvent(),
     duplicate_of: '1',
+    repeat_of: null,
     ...overrides,
   }
 }

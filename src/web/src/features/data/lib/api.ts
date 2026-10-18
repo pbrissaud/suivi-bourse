@@ -246,7 +246,10 @@ export interface FileAccount {
 
 /** One line of the file the ledger already holds, and the line it repeats. */
 export interface DuplicateRow extends LedgerEvent {
+  /** The ledger row this line repeats, or `null` where it repeats the file itself. */
   duplicate_of: string | null
+  /** The index of the first copy, for a line the file repeats; `null` for a ledger duplicate. */
+  repeat_of: number | null
 }
 
 /**
@@ -266,6 +269,12 @@ export interface ImportOptions {
   dryRun?: boolean
   /** *These are real orders, write them* — the rows the ledger already has. */
   writeDuplicates?: boolean
+  /**
+   * The groups of identical lines in the file to write **whole** (#1267): the
+   * index of each group's first copy. Sent as form fields, not on the query
+   * string — see `upload`.
+   */
+  writeRepeats?: readonly number[]
   /**
    * **Where each account the file names is to go** (#835) — file label to the id
    * of a declared account. Sent as one JSON object, on the query string with the
@@ -325,19 +334,24 @@ export const dataApi = {
   // re-sent. There is no pending-import id to hold instead, because holding one
   // would be the table this lot deleted under another name.
   importEvents: (file: File, options: ImportOptions = {}) =>
-    upload<ImportReceipt>(ROUTES.eventsImport, file, [
-      ...(options.dryRun ? ['dry_run=1'] : []),
-      ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
-      // The correspondence and its two companions (#835). `mapping` is sent
-      // whenever there is one to send, empty object included: the parameter's
-      // presence is what tells the preview it is being asked a question rather
-      // than being asked to judge.
-      ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
-      ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
-      ...(options.declineCurrency ? ['adopt_currency=0'] : []),
-      ...(options.amountsIn ? [`amounts_in=${options.amountsIn}`] : []),
-      ...(options.foreign ?? []).map((pair) => `foreign=${encodeURIComponent(pair)}`),
-    ]),
+    upload<ImportReceipt>(
+      ROUTES.eventsImport,
+      file,
+      [
+        ...(options.dryRun ? ['dry_run=1'] : []),
+        ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
+        // The correspondence and its two companions (#835). `mapping` is sent
+        // whenever there is one to send, empty object included: the parameter's
+        // presence is what tells the preview it is being asked a question rather
+        // than being asked to judge.
+        ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
+        ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
+        ...(options.declineCurrency ? ['adopt_currency=0'] : []),
+        ...(options.amountsIn ? [`amounts_in=${options.amountsIn}`] : []),
+        ...(options.foreign ?? []).map((pair) => `foreign=${encodeURIComponent(pair)}`),
+      ],
+      { write_repeat: (options.writeRepeats ?? []).map(String) },
+    ),
   // The way back out (#710, #796). It answers bytes and a name rather than a
   // payload, and it is the one call whose result no cache holds: a file is
   // handed to the reader, not rendered.

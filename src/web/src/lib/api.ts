@@ -377,7 +377,12 @@ export async function send<T>(
  * refusal is read exactly as every other refusal is — `problem+json`, and a
  * `type` the caller branches on — so an upload has no second error contract.
  */
-export async function upload<T>(path: string, file: File, params: string[] = []): Promise<T> {
+export async function upload<T>(
+  path: string,
+  file: File,
+  params: string[] = [],
+  fields: Record<string, readonly string[]> = {},
+): Promise<T> {
   const body = new FormData()
   // The **third argument is the filename**, and it is not optional in practice:
   // the receipt is named after the file, and an implementation that reads the
@@ -387,6 +392,14 @@ export async function upload<T>(path: string, file: File, params: string[] = [])
   // form (#813): they are *how* the file is to be read, not part of it, and a
   // second part in the body would make the route parse the reader's intention
   // out of the same multipart payload it parses their ledger out of.
+  //
+  // The one exception is `fields` (#1267): a list that grows with the file, one
+  // entry per group of identical lines. A file pasted twice carries about a
+  // thousand of them, and uvicorn's h11 caps the request line plus headers at
+  // 16 KiB — the reason `DELETE /api/events` takes its ids in a body (#1113).
+  for (const [name, values] of Object.entries(fields)) {
+    for (const value of values) body.append(name, value)
+  }
   const target = params.length === 0 ? path : `${path}?${params.join('&')}`
   return unwrap<T>(
     await authFetch(target, { method: 'POST', headers: { Accept: 'application/json' }, body }),

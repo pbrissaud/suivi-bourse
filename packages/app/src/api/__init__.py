@@ -23,6 +23,11 @@ def create_app(runtime: main.Runtime) -> Flask:
 
     flask_app = Flask(__name__, static_folder=None)
     flask_app.config['MAX_CONTENT_LENGTH'] = uploads.MAX_BODY_BYTES
+    # The import's ``write_repeat`` is one form field per group of identical
+    # lines (#1267), and werkzeug refuses past 1000 parts / 500 kB of fields.
+    # The body bound above already caps both, so the form limits follow it.
+    flask_app.config['MAX_FORM_PARTS'] = uploads.MAX_BODY_BYTES // 64
+    flask_app.config['MAX_FORM_MEMORY_SIZE'] = uploads.MAX_BODY_BYTES
     flask_app.config['TWEAKCN_FETCH'] = tweakcn.http_fetch
     flask_app.config['RELEASE_CHECKER'] = update_check.Checker(update_check.http_fetch)
     flask_app.register_blueprint(health_bp)

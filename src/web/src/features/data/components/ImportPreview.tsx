@@ -95,6 +95,7 @@ import { useI18n } from '@/lib/i18n'
 import {
   accountLines,
   correspondenceOf,
+  repeatGroups,
   unanswered,
   type AccountLine,
   type AccountTarget,
@@ -127,6 +128,9 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   // *consumed at the import and dropped*.
   const [chosen, setChosen] = useState<Record<string, AccountTarget>>({})
   const [writeDuplicates, setWriteDuplicates] = useState(false)
+  // The groups of identical lines the reader keeps one copy of (#1267). Empty:
+  // every copy is written until they say otherwise.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set())
   const [adoptCurrency, setAdoptCurrency] = useState(true)
   const [amountsIn, setAmountsIn] = useState<AmountsIn | undefined>(undefined)
   const forecast = upload.forecast
@@ -142,6 +146,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
     setLastFile(undefined)
     setChosen({})
     setWriteDuplicates(false)
+    setCollapsed(new Set())
     setAdoptCurrency(true)
     setAmountsIn(undefined)
   } else if (upload.held && previewed !== undefined && lastFile === undefined) {
@@ -178,6 +183,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
       correspondence: correspondenceOf(linesUnder(next)),
       writeDuplicates,
       amountsIn,
+      collapsed,
     })
   }
 
@@ -198,6 +204,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
       correspondence: correspondenceOf(lines),
       writeDuplicates: value,
       amountsIn,
+      collapsed,
     })
   }
 
@@ -208,6 +215,22 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
       correspondence: correspondenceOf(lines),
       writeDuplicates,
       amountsIn: value,
+      collapsed,
+    })
+  }
+
+  /**
+   * **A repeated group answered** (#1267): re-read like the box is, since writing
+   * every copy is a different ledger to replay — a file pasted twice oversells
+   * under *write all*, and that `409` has to land here and not under the button.
+   */
+  const decideRepeats = (next: ReadonlySet<number>) => {
+    setCollapsed(next)
+    upload.reconsider({
+      correspondence: correspondenceOf(lines),
+      writeDuplicates,
+      amountsIn,
+      collapsed: next,
     })
   }
 
@@ -274,20 +297,27 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
               />
             ) : null}
 
-            {/* Read off the **census** and never off the answer's own forecast:
-                under `?write_duplicates=1` the server moves those rows into
-                `written` and leaves none to name, so a block mounted on that
+            {/* Both read off the **census** and never off the answer's own
+                forecast: under `?write_duplicates=1` the server moves those rows
+                into `written` and leaves none to name, so a block mounted on that
                 reading would take itself away — box and all — the moment the
-                reader ticked it. */}
-            {forecast.file.duplicates > 0 ? (
-              <DuplicatesBlock
-                forecast={forecast.file}
-                currency={totals.data?.base_currency ?? null}
-                writeDuplicates={writeDuplicates}
-                busy={upload.pending}
-                onToggle={decideDuplicates}
-              />
-            ) : null}
+                reader ticked it. The repeats come first (#1267): they are written
+                by default, and the reader is more likely to answer them. */}
+            <RepeatsBlock
+              rows={forecast.file.duplicate_rows}
+              currency={totals.data?.base_currency ?? null}
+              collapsed={collapsed}
+              busy={upload.pending}
+              onChange={decideRepeats}
+            />
+
+            <HeldBlock
+              rows={forecast.file.duplicate_rows}
+              currency={totals.data?.base_currency ?? null}
+              writeDuplicates={writeDuplicates}
+              busy={upload.pending}
+              onToggle={decideDuplicates}
+            />
 
             {forecast.file.currency?.adopting ? (
               <CurrencyBlock
@@ -649,22 +679,145 @@ function ForeignBlock({
 }
 
 /**
- * **Les doublons** — named line by line, with what each of them repeats (#835).
+ * **Répétées dans le fichier** — the lines the file carries more than once, one
+ * choice per group of identical lines (#1267).
  *
- * A count is not a sentence the owner can act on; *this 12 August purchase,
- * which you already have* is. They are skipped by default, so the common case —
- * the owner re-uploading their own export — needs no vigilance at all, and the
- * box is the one story #813 wrote for the owner who really did place the same
- * order twice. Nobody else has to be asked.
+ * Written by default, every copy: two identical dividends on one day are as
+ * likely two payments as one pasted twice, and a default that drops one drops a
+ * real event in silence. Only the reader knows, so each group asks — and from two
+ * groups on, two shortcuts answer them all at once. No "write 2 of 3": a group is
+ * written whole or kept once.
  */
-function DuplicatesBlock({
-  forecast,
+function RepeatsBlock({
+  rows,
+  currency,
+  collapsed,
+  busy,
+  onChange,
+}: {
+  rows: readonly DuplicateRow[]
+  currency: string | null
+  collapsed: ReadonlySet<number>
+  busy: boolean
+  onChange: (collapsed: ReadonlySet<number>) => void
+}) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const groups = repeatGroups(rows)
+
+  if (groups.length === 0) return null
+
+  const set = (first: number, one: boolean) => {
+    const next = new Set(collapsed)
+    if (one) next.add(first)
+    else next.delete(first)
+    onChange(next)
+  }
+
+  return (
+    <section aria-labelledby="import-repeats" className="space-y-3 rounded-lg border p-4">
+      <h3 id="import-repeats" className="label">
+        {t('data.import.repeats.title')}
+      </h3>
+      <p className="text-sm">{t('data.import.repeats.body')}</p>
+      <p className="text-xs text-muted-foreground italic">{t('data.import.repeats.why')}</p>
+
+      {groups.length >= 2 ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onChange(new Set())}
+          >
+            {t('data.import.repeats.bulk.all')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onChange(new Set(groups.map((group) => group.first)))}
+          >
+            {t('data.import.repeats.bulk.one')}
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="max-h-60 divide-y overflow-y-auto">
+        {groups.map((group) => (
+          <RepeatGroup
+            key={group.first}
+            line={names(t, f, group.row, currency)}
+            copies={group.copies}
+            one={collapsed.has(group.first)}
+            busy={busy}
+            onChange={(one) => set(group.first, one)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** One group of identical lines: the line, how often, and the pair of radios. */
+function RepeatGroup({
+  line,
+  copies,
+  one,
+  busy,
+  onChange,
+}: {
+  line: string
+  copies: number
+  one: boolean
+  busy: boolean
+  onChange: (one: boolean) => void
+}) {
+  const { t } = useI18n()
+  const name = useId()
+  // The label is the click target, and it is tall enough to hit under 768 px.
+  const label = 'flex min-h-11 items-center gap-2 text-sm md:min-h-0'
+
+  return (
+    <fieldset className="space-y-1 py-2" disabled={busy}>
+      <legend className="float-left w-full text-sm">
+        {line}
+        <span className="ml-2 text-xs text-muted-foreground">
+          {t('data.import.repeats.times', { count: copies })}
+        </span>
+      </legend>
+      <div className="clear-both flex flex-wrap gap-x-4">
+        <label className={label}>
+          <input type="radio" name={name} checked={!one} onChange={() => onChange(false)} />
+          {t('data.import.repeats.all', { count: copies })}
+        </label>
+        <label className={label}>
+          <input type="radio" name={name} checked={one} onChange={() => onChange(true)} />
+          {t('data.import.repeats.one')}
+        </label>
+      </div>
+    </fieldset>
+  )
+}
+
+/**
+ * **Déjà dans votre grand livre** — the lines the ledger already holds (#835).
+ *
+ * A count is not a sentence the owner can act on; *this 12 August purchase* is.
+ * They are skipped by default, so the common case — the owner re-uploading their
+ * own export — needs no vigilance at all, and the box repairs the rest.
+ * Every copy is held, including when the file repeats the line (#1267).
+ */
+function HeldBlock({
+  rows,
   currency,
   writeDuplicates,
   busy,
   onToggle,
 }: {
-  forecast: ImportReceipt
+  rows: readonly DuplicateRow[]
   currency: string | null
   writeDuplicates: boolean
   busy: boolean
@@ -673,59 +826,42 @@ function DuplicatesBlock({
   const { t } = useI18n()
   const f = useFormatters()
   const box = useId()
+  const held = rows.filter((row) => row.duplicate_of !== null)
   const said = receiptMessage(
     writeDuplicates
-      ? { kind: 'import.known.kept', count: forecast.duplicates }
-      : { kind: 'import.known.forecast', count: forecast.duplicates },
+      ? { kind: 'import.known.kept', count: held.length }
+      : { kind: 'import.known.forecast', count: held.length },
   )
 
+  if (held.length === 0) return null
+
   return (
-    <section aria-labelledby="import-duplicates" className="space-y-3 rounded-lg border p-4">
-      <h3 id="import-duplicates" className="label">
-        {t('data.import.duplicates.title')}
+    <section aria-labelledby="import-held" className="space-y-3 rounded-lg border p-4">
+      <h3 id="import-held" className="label">
+        {t('data.import.held.title')}
       </h3>
       <p className="text-sm">{t(said.message, said.values)}</p>
 
-      {forecast.duplicate_rows.length > 0 ? (
-        <ul className="divide-y">
-          {forecast.duplicate_rows.map((row, index) => (
-            <li
-              key={`${row.date}-${row.symbol ?? ''}-${index}`}
-              className="flex items-baseline justify-between gap-3 py-2 text-sm"
-            >
-              <span className="min-w-0 flex-1">{names(t, f, row, currency)}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {row.duplicate_of === null
-                  ? t('data.import.duplicates.repeated')
-                  : t('data.import.duplicates.held')}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <ul className="max-h-60 divide-y overflow-y-auto">
+        {held.map((row, index) => (
+          <li key={`${row.date}-${row.symbol ?? ''}-${index}`} className="py-2 text-sm">
+            {names(t, f, row, currency)}
+          </li>
+        ))}
+      </ul>
 
-      {/* The box is named by the **short** clause and *described* by the long
-          one: an accessible name carrying both would read the paragraph out at
-          every focus, and the italic sentence is the reason rather than the
-          question. */}
       <div className="flex items-start gap-2 text-sm">
         <input
           id={box}
           type="checkbox"
           className="mt-1"
-          aria-describedby={`${box}-why`}
           checked={writeDuplicates}
           disabled={busy}
           onChange={(event) => onToggle(event.target.checked)}
         />
-        <span className="flex flex-col gap-0.5">
-          <label htmlFor={box} className="font-medium">
-            {t('data.import.duplicates')}
-          </label>
-          <span id={`${box}-why`} className="text-xs text-muted-foreground italic">
-            {t('data.import.duplicates.why')}
-          </span>
-        </span>
+        <label htmlFor={box} className="font-medium">
+          {t('data.import.duplicates')}
+        </label>
       </div>
     </section>
   )

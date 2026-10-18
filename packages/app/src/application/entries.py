@@ -1,13 +1,14 @@
 """The one writer of the ledger, and the gestures a row earns (issues #764, #816)."""
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import AbstractSet, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
 from application import accounts as accounts_module
 from application import ledger
 from application import settings_registry
+from application import uploads
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
 from application.events.schemas import DEFAULT_ACCOUNT, Event, canonical_symbol
@@ -53,10 +54,15 @@ class InvalidEntry(Exception):
 
 @dataclass(frozen=True)
 class Duplicate:
-    """One line of the file the ledger already holds, and the line it repeats."""
+    """One skipped line of the file, and what it repeats.
+
+    ``held`` is the ledger row it repeats, or ``None`` when it repeats an earlier
+    line of the file itself — then ``repeat_of`` is that first copy's index.
+    """
 
     event: Event
     held: Optional[Event]
+    repeat_of: Optional[int] = None
 
 
 def create(store, draft: Event) -> Event:
@@ -226,20 +232,44 @@ def _amount(value: Optional[float]) -> Optional[float]:
     return float(AMOUNT_PRECISION % value)
 
 
-def split_duplicates(store, drafts: Sequence[Event]) -> Tuple[List[Event],
-                                                              List[Duplicate]]:
-    """One file, cut in two: what is new, and what the ledger already has."""
-    seen: Dict[Tuple, Optional[Event]] = {
-        content_key(event): event for event in ledger.read_events(store)}
+def split_duplicates(store, drafts: Sequence[Event], *,
+                     write_held: bool = False,
+                     write_repeats: AbstractSet[int] = frozenset()
+                     ) -> Tuple[List[Event], List[Duplicate]]:
+    """One file, cut in two: what is written, and what is skipped as a duplicate.
+
+    A line the ledger holds is skipped unless ``write_held``. A line the file
+    repeats is skipped unless the index of its **first copy** is in
+    ``write_repeats`` — then every copy is written. An index that names no such
+    first copy is refused: the reader answered for a group this reading lacks.
+    """
+    held = {content_key(event): event for event in ledger.read_events(store)}
+    first: Dict[Tuple, int] = {}
+    repeated = set()
     fresh: List[Event] = []
     duplicates: List[Duplicate] = []
-    for draft in drafts:
+    for index, draft in enumerate(drafts):
         key = content_key(draft)
-        if key in seen:
-            duplicates.append(Duplicate(event=draft, held=seen[key]))
+        if key in held:
+            if write_held:
+                fresh.append(draft)
+            else:
+                duplicates.append(Duplicate(draft, held=held[key]))
+        elif key in first:
+            repeated.add(first[key])
+            if first[key] in write_repeats:
+                fresh.append(draft)
+            else:
+                duplicates.append(
+                    Duplicate(draft, held=None, repeat_of=first[key]))
         else:
-            seen[key] = None
+            first[key] = index
             fresh.append(draft)
+    unknown = sorted(set(write_repeats) - repeated)
+    if unknown:
+        raise uploads.UploadRefused(
+            f"write_repeat {', '.join(map(str, unknown))} is not the first copy "
+            f"of a line this file repeats")
     return fresh, duplicates
 
 

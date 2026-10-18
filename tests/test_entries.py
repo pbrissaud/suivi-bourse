@@ -17,6 +17,7 @@ from application import accounts as accounts_module
 from application import entries
 from application import ledger
 from application import store as store_module
+from application import uploads
 from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.aggregator import AggregationError
@@ -470,6 +471,51 @@ def test_the_split_reads_the_ledger_and_the_file_and_writes_nothing(store):
     assert len(fresh) == 1 and len(duplicates) == 2
     assert fresh[0].symbol == 'MSFT'
     assert store.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_an_in_file_repeat_points_at_its_first_copy(store):
+    fresh, duplicates = entries.split_duplicates(store, [_draft(), _draft()])
+
+    assert len(fresh) == 1
+    (repeat,) = duplicates
+    assert repeat.held is None and repeat.repeat_of == 0
+
+
+def test_a_repeat_asked_for_is_written_whole(store):
+    fresh, duplicates = entries.split_duplicates(
+        store, [_draft(), _draft()], write_repeats={0})
+
+    assert len(fresh) == 2 and duplicates == []
+
+
+def test_a_line_the_ledger_holds_stays_held_when_the_file_repeats_it(store):
+    entries.create(store, _draft())
+
+    fresh, duplicates = entries.split_duplicates(store, [_draft(), _draft()])
+
+    assert fresh == []
+    assert [d.repeat_of for d in duplicates] == [None, None]
+    assert all(d.held is not None for d in duplicates)
+
+
+def test_writing_the_held_lines_does_not_write_an_unasked_repeat(store):
+    entries.create(store, _draft())
+    repeated = _draft(symbol='MSFT')
+
+    fresh, duplicates = entries.split_duplicates(
+        store, [_draft(), repeated, repeated], write_held=True)
+
+    assert [e.symbol for e in fresh] == ['AAPL', 'MSFT']
+    assert [d.repeat_of for d in duplicates] == [1]
+
+
+def test_a_write_repeat_that_is_not_a_first_copy_is_refused(store):
+    entries.create(store, _draft(symbol='HELD'))
+    drafts = [_draft(), _draft(), _draft(symbol='ONE'), _draft(symbol='HELD')]
+
+    for index in (1, 2, 3, 99):
+        with pytest.raises(uploads.UploadRefused):
+            entries.split_duplicates(store, drafts, write_repeats={index})
 
 
 def test_the_workbook_the_app_exports_re_imports_as_duplicates(store,

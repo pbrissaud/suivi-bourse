@@ -14,7 +14,7 @@
  * anything to export**.
  */
 import { DEFAULT_ACCOUNT_ID } from '@/features/accounts/lib/accounts'
-import type { FileAccount, LedgerEvent } from '@/features/data/lib/api'
+import type { DuplicateRow, FileAccount, LedgerEvent } from '@/features/data/lib/api'
 
 /**
  * **Where one account of the file is to go** (#835).
@@ -121,4 +121,23 @@ export function correspondenceOf(lines: readonly AccountLine[]): Correspondence 
  */
 export function exportable(events: readonly LedgerEvent[]): { events: boolean } {
   return { events: events.length > 0 }
+}
+
+/**
+ * **The groups of identical lines the file repeats** (#1267): the index of each
+ * group's first copy, in the order the file has them, with how many lines the
+ * group holds. Read off the census, whose `duplicate_rows` name every copy after
+ * the first.
+ */
+export function repeatGroups(
+  rows: readonly DuplicateRow[],
+): { first: number; row: DuplicateRow; copies: number }[] {
+  const groups = new Map<number, { first: number; row: DuplicateRow; copies: number }>()
+  for (const row of rows) {
+    if (row.repeat_of === null) continue
+    const group = groups.get(row.repeat_of)
+    if (group) group.copies += 1
+    else groups.set(row.repeat_of, { first: row.repeat_of, row, copies: 2 })
+  }
+  return [...groups.values()]
 }

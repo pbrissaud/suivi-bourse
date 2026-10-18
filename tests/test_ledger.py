@@ -211,16 +211,17 @@ def test_validation_lives_in_the_ddl_and_in_validator_py_and_nowhere_else():
 # files exercise one wiring.
 # --------------------------------------------------------------------------- #
 
-def _upload(client, body, filename="2024.csv", query=""):
+def _upload(client, body, filename="2024.csv", query="", fields=None):
     """Hand one file to the route, as a browser's own form would.
 
     ``query`` is the gesture's two parameters (#813) spelled as a client sends
     them: ``?dry_run=1`` previews, ``?write_duplicates=1`` writes what the ledger
-    already has.
+    already has. ``fields`` are the form fields beside the file (``write_repeat``,
+    #1267).
     """
     return client.post(
         f'/api/events/import{query}',
-        data={'file': (io.BytesIO(body), filename)},
+        data={'file': (io.BytesIO(body), filename), **(fields or {})},
         content_type='multipart/form-data')
 
 
@@ -554,6 +555,89 @@ def test_a_line_the_file_repeats_is_a_duplicate_of_itself(tmp_path):
     assert receipt['written'] == 1
     assert receipt['duplicates'] == 1
     assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+TWICE_THE_SAME_DIVIDEND = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+    "2024-03-15,DIVIDEND,ZZA,Zed A,,,,8.50,\n"
+    "2024-03-15,DIVIDEND,ZZA,Zed A,,,,8.50,\n"
+).encode('utf-8')
+
+
+def test_two_identical_dividends_are_both_written_when_asked(tmp_path):
+    """#1267: the copy is skipped by default, and kept when the reader says so."""
+    client, opened = build_client_and_store(tmp_path)
+
+    receipt = _upload(client, TWICE_THE_SAME_DIVIDEND,
+                      fields={'write_repeat': ['0']}).get_json()
+
+    assert receipt['written'] == 2
+    assert receipt['duplicates'] == 0
+    assert receipt['duplicate_rows'] == []
+    assert opened.query('SELECT count(*) FROM event') == [(2,)]
+
+
+def test_the_repeats_are_named_with_their_first_copy(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    body = ONE_BUY.encode('utf-8') + TWICE_THE_SAME_DIVIDEND.split(b"\n", 1)[1]
+
+    named = _upload(client, body,
+                    query="?dry_run=1").get_json()['duplicate_rows']
+
+    assert [(row['duplicate_of'] is None, row['repeat_of']) for row in named] == [
+        (False, None), (True, 1)]
+
+
+def test_an_unknown_write_repeat_is_refused_at_the_preview_and_the_write(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    for value in ('1', '5', 'x', '-1', '0.0'):
+        for query in ("?dry_run=1", ""):
+            response = _upload(client, TWICE_THE_SAME_DIVIDEND, query=query,
+                               fields={'write_repeat': [value]})
+            assert response.status_code == 422, (value, query)
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_file_pasted_twice_can_answer_for_all_its_groups(tmp_path):
+    """One form field per group: werkzeug's 1000-part default must not apply."""
+    client, opened = build_client_and_store(tmp_path)
+    lines = [f"2024-01-15,BUY,S{i},Name,10,150.00,2.50,,\n" for i in range(1200)]
+    body = ("date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+            + "".join(line * 2 for line in lines)).encode('utf-8')
+
+    receipt = _upload(client, body, query="?dry_run=1", fields={
+        'write_repeat': [str(2 * i) for i in range(1200)]}).get_json()
+
+    assert receipt['written'] == 2400 and receipt['duplicates'] == 0
+
+
+def test_an_absurdly_long_write_repeat_is_refused_not_crashed(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload(client, TWICE_THE_SAME_DIVIDEND,
+                       fields={'write_repeat': ['9' * 5000]})
+
+    assert response.status_code == 422
+
+
+def test_write_repeat_on_the_query_string_is_ignored(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    receipt = _upload(client, TWICE_THE_SAME_DIVIDEND,
+                      query="?write_repeat=0").get_json()
+
+    assert receipt['written'] == 1 and receipt['duplicates'] == 1
+
+
+def test_a_dry_run_with_write_repeat_writes_nothing(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    receipt = _upload(client, TWICE_THE_SAME_DIVIDEND, query="?dry_run=1",
+                      fields={'write_repeat': ['0']}).get_json()
+
+    assert receipt['written'] == 2
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
 
 
 def test_the_explicit_flag_writes_the_duplicates_anyway(tmp_path):
