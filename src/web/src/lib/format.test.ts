@@ -21,6 +21,7 @@ import {
   formatCurrency,
   formatDate,
   formatDateTime,
+  formatDay,
   formatNumber,
   formatPercent,
   formatPercentPoints,
@@ -94,6 +95,16 @@ describe('the format follows the language, not the currency', () => {
     expect(formatDate(EN, '2024-04-01')).toBe('1 Apr 2024')
 
     expect(formatDateTime(FR, '2024-04-01T12:00:00Z')).toContain('1ᵉʳ avr. 2024')
+  })
+
+  it('writes a day as dd/mm/yyyy in both languages, without the first-of-month superscript', () => {
+    // `fr-FR` and `en-GB` agree, so a table column of dates is ten characters
+    // wide and lines up in both (#1264).
+    expect(formatDay(FR, '2026-07-02')).toBe('02/07/2026')
+    expect(formatDay(EN, '2026-07-02')).toBe('02/07/2026')
+    expect(formatDay(FR, '2026-08-01')).toBe('01/08/2026')
+    expect(formatDay(FR, null)).toBe(ABSENT)
+    expect(formatDay(FR, 'not a date')).toBe(ABSENT)
   })
 
   it('reads a bare day as a calendar day and never as an instant', () => {

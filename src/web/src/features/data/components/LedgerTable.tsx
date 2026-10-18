@@ -1,14 +1,12 @@
 /**
- * The ledger — **eight columns and one gesture** (#723, #834).
+ * The ledger — **eight columns, and a ninth that ticks** (#723, #834, #1264).
  *
  *     Date · Type · De quoi il s'agit · Quantité · Prix unitaire · Frais ·
  *     Montant · Compte
  *
- * Plus a ninth cell holding the row's **removal**, which is a control and not a
- * column: it says the same thing on all 285 rows, and that is exactly what the
- * padlock was refused for — except that a gesture repeating is a gesture
- * offered where it applies, where a *marker* repeating is noise. The row itself
- * opens the editor.
+ * The row itself opens the editor, and the editor holds the row's removal: a
+ * button repeating on all 285 rows is what the padlock was refused for, and
+ * deleting several rows is the selection's job.
  *
  * Two decisions were taken here **against** the interview, both in front of a
  * board mounted on the 285 real events:
@@ -47,6 +45,13 @@
  * **Zero explanation icons.** The page's two live on the create form, where the
  * sentence can still change a behaviour (#684 D7).
  *
+ * **One column gives, the others keep their width** (#1264). The label column
+ * absorbs what the rest leave and truncates; the figure columns are as wide as
+ * their widest figure. What does not fit goes by the **table's own width** — a
+ * container query on the card, not the viewport's, since the sidebar can be
+ * open or folded at any width. `LEDGER_COLUMNS` is the budget the classes and
+ * the tests both read.
+ *
  * **A first column of checkboxes** (#1113), and the table is drawn by TanStack
  * Table for it: the data is every row the reduction retains, and the reveal is
  * a slice of the row model, so the header box ticks the rows not drawn yet too.
@@ -63,9 +68,7 @@ import {
   type OnChangeFn,
   type RowSelectionState,
 } from '@tanstack/react-table'
-import { Trash2 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
@@ -140,19 +143,61 @@ interface LedgerTableProps {
   onRowSelectionChange: OnChangeFn<RowSelectionState>
   /** Opens the panel on a row. Offered for every row that has a key. */
   onEdit: (event: LedgerEvent) => void
-  /** Asks for a row to be removed — the confirmation is the caller's. */
-  onRemove: (event: LedgerEvent) => void
+}
+
+type LedgerColumnId =
+  | 'select'
+  | 'date'
+  | 'type'
+  | 'what'
+  | 'quantity'
+  | 'unitPrice'
+  | 'fee'
+  | 'amount'
+  | 'account'
+
+interface LedgerColumn {
+  /** Worst-case width in px, at the `xl` cell padding (16 px each side). */
+  min: number
+  /** The container width in px the column appears from; absent = always shown. */
+  from?: number
+  /** The classes that show it from there — written out whole, for Tailwind's scan. */
+  show?: string
+}
+
+/**
+ * **The ledger's column budget** (#1264). A figure is 7.8 px per mono character
+ * at 13 px; each threshold is the first `rem` step at or above the worst-case
+ * sum of the columns shown there. What hides first as the table narrows: fee,
+ * then unit price, then quantity, then account. `ledgerColumns.test.ts` checks
+ * the arithmetic and that `from` and `show` say the same width.
+ */
+export const LEDGER_COLUMNS: Record<LedgerColumnId, LedgerColumn> = {
+  select: { min: 36 },
+  date: { min: 110 },
+  type: { min: 104 },
+  what: { min: 240 },
+  amount: { min: 149 },
+  account: { min: 128, from: 768, show: 'hidden @min-[48rem]/ledger:table-cell' },
+  quantity: { min: 110, from: 896, show: 'hidden @min-[56rem]/ledger:table-cell' },
+  unitPrice: { min: 126, from: 1024, show: 'hidden @min-[64rem]/ledger:table-cell' },
+  fee: { min: 110, from: 1120, show: 'hidden @min-[70rem]/ledger:table-cell' },
 }
 
 /** The classes a column's heading and cells share, by column id. */
-const ALIGN: Partial<Record<string, string>> = {
+const ALIGN: Partial<Record<LedgerColumnId, string>> = {
   select: 'w-9 pr-0',
+  // The only flexible column: with `table-layout: auto` it takes what the others
+  // leave, and `max-w-0` is what lets its content truncate instead of widening it.
+  what: 'w-full max-w-0',
   quantity: 'text-right',
   unitPrice: 'text-right',
   fee: 'text-right',
   amount: 'text-right',
-  remove: 'w-11',
 }
+
+const columnClass = (id: string) =>
+  cn(ALIGN[id as LedgerColumnId], LEDGER_COLUMNS[id as LedgerColumnId]?.show)
 
 export function LedgerTable({
   events,
@@ -161,7 +206,6 @@ export function LedgerTable({
   rowSelection,
   onRowSelectionChange,
   onEdit,
-  onRemove,
 }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -222,7 +266,7 @@ export function LedgerTable({
         id: 'date',
         header: () => t('data.column.date'),
         cell: ({ row }) => (
-          <span className="tabular whitespace-nowrap">{f.date(row.original.date)}</span>
+          <span className="tabular whitespace-nowrap">{f.day(row.original.date)}</span>
         ),
       },
       {
@@ -250,7 +294,12 @@ export function LedgerTable({
             <>
               <Identity event={row.original} onEdit={onEdit} />
               {identity.ticker !== null && identity.label !== null ? (
-                <span className="block text-2xs text-muted-foreground">{identity.label}</span>
+                <span
+                  title={identity.label}
+                  className="block truncate text-2xs text-muted-foreground"
+                >
+                  {identity.label}
+                </span>
               ) : null}
             </>
           )
@@ -269,41 +318,18 @@ export function LedgerTable({
         // and it is the one the accounts page already sets an id in
         // (`AccountDetail`, `AccountsRail`).
         cell: ({ row }) => (
-          <span className="inline-block rounded-md bg-accent px-2 py-0.5 font-mono text-2xs text-foreground/85">
+          // Capped at 12 characters plus the chip's own padding: account ids have no
+          // length bound on the server.
+          <span
+            title={accountOf(row.original)}
+            className="inline-block max-w-[calc(12ch+1rem)] truncate rounded-md bg-accent px-2 py-0.5 align-middle font-mono text-2xs text-foreground/85"
+          >
             {accountOf(row.original)}
           </span>
         ),
       },
-      {
-        id: 'remove',
-        // The last heading is the row's own gesture, and it is named for a
-        // reader who cannot see the icon under it. It is not the provenance
-        // column coming back: what it carries discriminates on every row,
-        // which is the exact test the padlock failed.
-        header: () => <span className="sr-only">{t('data.row.delete')}</span>,
-        // The removal, at the unit. It stops the click from reaching the row:
-        // the two gestures live on one line, and a reader who asks to delete
-        // must not be handed the editor underneath the box that asks them to
-        // confirm.
-        cell: ({ row }) =>
-          isEditable(row.original) ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t('data.row.delete')}
-              className="size-7 text-muted-foreground hover:text-destructive"
-              onClick={(click) => {
-                click.stopPropagation()
-                onRemove(row.original)
-              }}
-            >
-              <Trash2 className="size-3.5" aria-hidden />
-            </Button>
-          ) : null,
-      },
     ]
-  }, [t, f, currency, onEdit, onRemove])
+  }, [t, f, currency, onEdit])
 
   const table = useTable({
     features,
@@ -332,7 +358,7 @@ export function LedgerTable({
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id}>
             {group.headers.map((header) => (
-              <TableHead key={header.id} className={cn(head, ALIGN[header.column.id])}>
+              <TableHead key={header.id} className={cn(head, columnClass(header.column.id))}>
                 {flexRender(header.column.columnDef.header, header.getContext())}
               </TableHead>
             ))}
@@ -359,10 +385,7 @@ export function LedgerTable({
               {row.getAllCells().map((cell) => (
                 <TableCell
                   key={cell.id}
-                  className={cn(
-                    ALIGN[cell.column.id],
-                    cell.column.id === 'remove' && 'p-0 pr-2 text-right',
-                  )}
+                  className={columnClass(cell.column.id)}
                   // A click that misses the box by a few pixels is still a
                   // tick, never the editor.
                   onClick={
@@ -390,11 +413,25 @@ function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: Ledge
   const name = identity.ticker ?? identity.label
 
   if (name === null) return <span className="text-muted-foreground">{ABSENT}</span>
-  if (!isEditable(event)) return <span className="font-medium">{name}</span>
+  // A ticker is short and takes one line; with none, the label is the identity
+  // and may take two — never more, so the row is no taller than a ticker row.
+  // The whole text stays in the DOM and in the `title`.
+  const shape =
+    identity.ticker !== null
+      ? 'block max-w-full truncate text-left font-medium'
+      : 'line-clamp-2 whitespace-normal break-words text-left font-medium'
+  const title = identity.ticker !== null ? undefined : name
+  if (!isEditable(event))
+    return (
+      <span title={title} className={shape}>
+        {name}
+      </span>
+    )
   return (
     <button
       type="button"
-      className="font-medium underline-offset-4 hover:underline"
+      title={title}
+      className={cn(shape, 'underline-offset-4 hover:underline')}
       onClick={() => onEdit(event)}
     >
       {name}
