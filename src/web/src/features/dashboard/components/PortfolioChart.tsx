@@ -180,10 +180,18 @@ export function PortfolioChart({
     : amountsFromValuation(valuation ?? [], floor)
   const performanceSeries = performanceRows(performance ?? [], floor)
   const performanceValues = performanceSeries.map((row) => row.performance)
-  const split = signSplitOffset(performanceValues)
-  const flatSign = signOf(performanceValues.find((value) => value !== null) ?? null)
-  const flatStroke =
-    flatSign === 'gain' ? 'var(--gain)' : flatSign === 'loss' ? 'var(--loss)' : 'var(--foreground)'
+  const offset = signSplitOffset(performanceValues)
+  // The gradient only where the curve really crosses zero. At 0 or 1 one colour
+  // covers the whole path, and the series always opens on 0 % (rebased), so the
+  // solid colour is read off the first value that is not zero.
+  const split = offset !== null && offset > 0 && offset < 1 ? offset : null
+  const solidSign = signOf(performanceValues.find((value) => value !== null && value !== 0) ?? null)
+  const solidStroke =
+    solidSign === 'gain'
+      ? 'var(--gain)'
+      : solidSign === 'loss'
+        ? 'var(--loss)'
+        : 'var(--foreground)'
   const drawn: (AmountsRow | PerformanceRow)[] = reading === 'amounts' ? rows : performanceSeries
   // The scale (#1265): ticks are the chart's own, because Recharts' nice ticks
   // graduated `−35 %, 0, 35 %` and stretched the domain. Value ticks follow the
@@ -409,8 +417,9 @@ export function PortfolioChart({
                             fell outside the palette. The 0 % line and the
                             sentence under the plot carry the sign without colour.
                             A flat series has a zero-height box, which paints
-                            nothing with a bounding-box gradient: it is stroked
-                            solid instead. */}
+                            nothing with a bounding-box gradient, and a curve that
+                            never crosses zero needs one colour only: both are
+                            stroked solid instead. */}
                       {split === null ? null : (
                         <defs>
                           <linearGradient id="performance-sign" x1="0" y1="0" x2="0" y2="1">
@@ -423,7 +432,7 @@ export function PortfolioChart({
                         type="monotone"
                         dataKey="performance"
                         name={t('dashboard.chart.performance')}
-                        stroke={split === null ? flatStroke : 'url(#performance-sign)'}
+                        stroke={split === null ? solidStroke : 'url(#performance-sign)'}
                         strokeWidth={1.75}
                         dot={false}
                         isAnimationActive={false}
