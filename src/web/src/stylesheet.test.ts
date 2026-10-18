@@ -106,9 +106,9 @@ describe('index.css says what DESIGN.md says', () => {
     expect(said('--text-2xl--line-height')).toBe(rem(designType('section-title', 'lineHeight')))
     expect(said('--text-4xl')).toBe(rem(designType('figure', 'fontSize')))
     expect(said('--text-4xl--line-height')).toBe(rem(designType('figure', 'lineHeight')))
-    // The page title rides the figure's rung: one size, two names in DESIGN.md.
-    expect(said('--text-4xl')).toBe(rem(designType('page-title', 'fontSize')))
-    expect(said('--text-4xl--line-height')).toBe(rem(designType('page-title', 'lineHeight')))
+    // The page title rides the prose rung: one size, two names in DESIGN.md.
+    expect(said('--text-prose')).toBe(rem(designType('page-title', 'fontSize')))
+    expect(said('--text-prose--line-height')).toBe(rem(designType('page-title', 'lineHeight')))
     // The hero is fluid, and DESIGN.md's 60 px is its ceiling.
     expect(said('--text-hero')).toBe(
       `clamp(2.25rem, 1rem + 4.5vw, ${rem(designType('hero', 'fontSize'))})`,

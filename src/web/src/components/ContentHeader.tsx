@@ -41,10 +41,8 @@ export function ContentHeader() {
 
       **But the title does not pay for it** (#787). The name is short and fixed,
       so it takes the room it needs and the sentence takes what is left. */}
-      <div className="flex min-w-0 items-baseline gap-3">
-        {title === '' ? null : (
-          <h1 className="shrink-0 text-2xl font-semibold md:text-4xl">{title}</h1>
-        )}
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        {title === '' ? null : <h1 className="shrink-0 text-prose font-medium">{title}</h1>}
         {/* **Hidden under `md`, and it is the drawing that decides** (#838):
             the redesign's header carries the page's name and nothing else, and
             #787's clause — *narrow degrades the sentence, it does not remove
@@ -53,7 +51,10 @@ export function ContentHeader() {
             sentence is `C.` — removed by attrition rather than by decision.
             From `md` it stands in full. */}
         {subtitle === null ? null : (
-          <p className="hidden truncate text-xs text-muted-foreground md:block">{subtitle}</p>
+          <p className="hidden truncate text-xs text-muted-foreground md:block">
+            <span aria-hidden="true">· </span>
+            {subtitle}
+          </p>
         )}
       </div>
       <div className="ml-auto flex items-center gap-1.5">

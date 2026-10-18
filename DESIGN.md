@@ -33,9 +33,9 @@ typography:
     lineHeight: 32px
   page-title:
     fontFamily: Geist
-    fontWeight: 600
-    fontSize: 28px
-    lineHeight: 32px
+    fontWeight: 500
+    fontSize: 15px
+    lineHeight: 22px
   section-title:
     fontFamily: Geist
     fontWeight: 600
@@ -188,7 +188,7 @@ shipped face would cost every screen for no reader benefit.
 
 - **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen.
 - **Figure (28/32, 600):** a secondary figure that stands alone (an account's value).
-- **Page title (28/32, 600):** the page's `<h1>`, in the header bar beside its dated subtitle; 20/28 under 768 px. Larger than every section title, smaller than the hero.
+- **Page title (15/22, 500):** the page's `<h1>`, in the header bar, followed by its dated subtitle in Label-muted after a `·`. The same size at every width. Quiet on purpose: the bar is chrome and the navigation already says where the reader is; the page leads with its hero, not its name.
 - **Section title (20/28, 600):** sentence case. No uppercase, letter-spaced overlines,
   no kicker above a heading.
 - **Prose (15/22):** the agent's answers and any explanatory paragraph.
@@ -414,3 +414,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | The Performance curve is coloured by its sign (#1263) | The one curve that crosses zero: drawn in `foreground` it fell outside the palette, drawn in the mint it painted a loss as a gain. `gain` above zero, `loss` below, the 0 % line kept as the colour-free channel. |
 | 2026-10-18 | Atelier is a JSON in the repo, no longer a published tweakcn theme (#1295) | A colour change was a republish on tweakcn outside the repo, unreviewable; it is now a reviewed diff of `atelier.json`, rendered into `index.css` by the same function that renders a stored theme. |
 | 2026-10-18 | One layout system for the shell (#1276) | Three choices made by the owner: the page title stays in the header bar on the Figure rung (over moving it into the content or keeping it at 20 px); language, theme and density move to Settings › On this device (over a header menu or table toolbars); a statement gains a third grid track from 1 600 px (over a page bounded at 1 280 px). Also: the sidebar goes back to the 200 px this file always said; the ledger joins the pages the owner reads, and the foot keeps the administration; one 1 040 px cap gives way to a width per kind of content, because a cap starves tables while a statement stretched to 800 px stops reading as a statement. |
+| 2026-10-18 | The page title goes quiet (supersedes the title rung of #1276) | Seen on screen, a 28 px title in a 56 px bar filled the bar, stacked a second display size 60 px above the hero, and stranded its 12 px subtitle. The owner chose the quiet bar: 15/22 at 500, the subtitle after a `·`. |
