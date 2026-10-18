@@ -827,6 +827,9 @@ describe('deleting the ticked rows (#1113)', () => {
     expect(rowBox(ledger(), 1)).not.toBeChecked()
     expect(screen.queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument()
     expect(screen.queryByText(/sélectionnés?$/)).not.toBeInTheDocument()
+    // The button that was pressed is gone: the summary line takes the focus.
+    expect(document.activeElement).toHaveAttribute('role', 'status')
+    expect(document.activeElement).toHaveTextContent('4 événements')
   })
 
   it('sends the ticked ids in a body, says what left, and clears the selection', async () => {
@@ -856,6 +859,7 @@ describe('deleting the ticked rows (#1113)', () => {
     // The selection is spent, and the control that consumed it leaves with it.
     expect(screen.queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument()
     expect(screen.queryByText(/sélectionnés/)).not.toBeInTheDocument()
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('role', 'status'))
   })
 
   it('keeps the selection and deletes nothing when the box is cancelled', async () => {

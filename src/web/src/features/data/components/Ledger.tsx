@@ -249,6 +249,25 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     [shown, rowSelection],
   )
 
+  // **The selection's actions take the focus they were pressed with** (#1278).
+  // *Désélectionner* and *Supprimer* sit in a group that unmounts the moment the
+  // selection is spent, so a keyboard reader would be dropped on `<body>`; the
+  // summary line, which is always there, takes the focus instead. It is done
+  // after the commit, because the confirmation box still traps focus while the
+  // delete resolves, and only for these two gestures: a filter that hides the
+  // ticked rows empties the selection too, and must not move the reader's focus.
+  const summary = useRef<HTMLDivElement>(null)
+  const refocusSummary = useRef(false)
+  const clearSelection = () => {
+    refocusSummary.current = true
+    setRowSelection({})
+  }
+  useEffect(() => {
+    if (selected.length > 0 || !refocusSummary.current) return
+    refocusSummary.current = false
+    summary.current?.focus()
+  }, [selected.length])
+
   // **The rendering budget**. It is a number of rows and not a page
   // index, and the difference is the whole record: `GET /api/events` answered
   // once, from the published snapshot in process memory, and handed back the
@@ -425,9 +444,11 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 under the pointer. It is what the reader hears when a filter
                 moves. */}
             <div
+              ref={summary}
+              tabIndex={-1}
               role="status"
               aria-live="polite"
-              className="flex min-h-8 flex-wrap items-center gap-2 text-sm"
+              className="flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none"
             >
               <p className="text-muted-foreground">
                 {t('data.filter.count', {
@@ -453,13 +474,8 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                   {/* **The destructive gesture sits beside the table it
                       consumes** (#814, #1113), and exists only while there is
                       something to consume. */}
-                  <BulkDelete selected={selected} onDeleted={() => setRowSelection({})} />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setRowSelection({})}
-                  >
+                  <BulkDelete selected={selected} onDeleted={clearSelection} />
+                  <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
                     {t('data.selection.clear')}
                   </Button>
                 </div>
