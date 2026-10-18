@@ -1147,7 +1147,14 @@ def test_an_agent_config_from_before_gains_model_name(tmp_path):
     path = tmp_path / 'old.duckdb'
     store_module.open_store(path, schema_steps.STEPS).close()
     connection = duckdb.connect(str(path))
-    connection.execute('ALTER TABLE agent_config DROP COLUMN model_name')
+    # The shape shipped before #1269: no `model_name`.
+    connection.execute('DROP TABLE agent_config')
+    connection.execute(
+        'CREATE TABLE agent_config ('
+        'id INTEGER PRIMARY KEY CHECK (id = 1), '
+        'enabled BOOLEAN NOT NULL DEFAULT FALSE, provider VARCHAR, '
+        'model VARCHAR, base_url VARCHAR, api_key VARCHAR, '
+        'key_set_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL)')
     connection.execute(
         "INSERT INTO agent_config (id, enabled, provider, model, api_key, "
         "updated_at) VALUES (1, TRUE, 'anthropic', 'claude-x', 'test-key-0001', "

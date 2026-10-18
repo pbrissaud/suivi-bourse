@@ -557,6 +557,18 @@ def file_size(path: Path) -> Optional[int]:
 # The steps: how this store moves from one generation to the next
 # --------------------------------------------------------------------------- #
 
+def add_column(connection, table: str, column: str, kind: str) -> None:
+    """Give ``table`` ``column`` if it has none: the step an added DDL column needs.
+
+    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds, so a column
+    added to the DDL reaches a new file and no other. No :func:`rebuilding`: an
+    added column has none of the dependency cost a dropped one has. The names are
+    the caller's constants, never a user's.
+    """
+    connection.execute(
+        f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {kind}')
+
+
 @contextmanager
 def rebuilding(connection, table: str):
     """Make ``table`` alterable, run the caller's ``ALTER``, put it back.
@@ -1032,5 +1044,5 @@ __all__ = [
     'Store', 'ReadView', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
     'file_size', 'finite',
     'DDL', 'TABLES', 'KEYED_TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
-    'DEFAULT_ACCOUNT_ROW', 'STEPS', 'apply_steps', 'rebuilding',
+    'DEFAULT_ACCOUNT_ROW', 'STEPS', 'apply_steps', 'rebuilding', 'add_column',
 ]

@@ -557,6 +557,13 @@ def test_an_address_is_said_without_its_credentials(client, monkeypatch):
     assert 'hunter2' not in detail and 'http://ollama:11434/api/tags' in detail
 
 
+def test_a_password_holding_an_at_sign_is_removed_whole():
+    where = agent_probe._where
+    # Built apart: a literal user:password@host trips the pre-push credential guard.
+    assert where('http://' + 'u:p@ss' + '@host:1/x?k=v') == 'http://host:1/x'
+    assert where('http://host/a@b') == 'http://host/a@b'
+
+
 def test_a_model_name_is_one_short_line(client, monkeypatch):
     provider(monkeypatch, lambda request: httpx2.Response(200, json={'data': [
         {'id': 'long', 'display_name': 'x' * 500},

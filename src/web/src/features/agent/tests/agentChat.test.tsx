@@ -177,7 +177,7 @@ describe('the states (4A)', () => {
 
     const alert = await within(main).findByRole('alert')
     expect(alert).toHaveTextContent('Anthropic est momentanément indisponible')
-    await user.click(within(alert).getByRole('button', { name: 'Message de Anthropic' }))
+    await user.click(within(alert).getByRole('button', { name: 'Message brut (Anthropic)' }))
     expect(alert).toHaveTextContent('overloaded_error')
     expect(within(main).getByText(QUESTION)).toBeInTheDocument()
 

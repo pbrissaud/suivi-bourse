@@ -183,8 +183,13 @@ def _listed(provider: str, body: Any) -> list:
 
 def _where(url: str) -> str:
     """The URL without its query or its credentials: what the user typed, or
-    the provider's own."""
-    return re.sub(r'//[^/@]*@', '//', url.split('?', 1)[0])
+    the provider's own.
+
+    The credentials are whatever precedes the **last** ``@`` of the authority
+    (up to the first ``/``, ``?`` or ``#``): a password holding an ``@`` is
+    removed whole.
+    """
+    return re.sub(r'(?<=//)[^/?#]*@', '', url.split('?', 1)[0])
 
 
 def _refused(label: str, said: str, reason: str, key: Optional[str]) -> ProviderRefused:

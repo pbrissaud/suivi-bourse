@@ -45,10 +45,11 @@ def _add_agent_model_name(connection) -> None:
 
     ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds. The column
     stays NULL on a configuration stored before: the agent page shows the id
-    until a model is chosen again. A no-op on a new store.
+    until a model is chosen again. A no-op on a new store. The write is
+    :func:`store.add_column`, the store's own, as the step has no need of a
+    module above it.
     """
-    connection.execute('ALTER TABLE agent_config '
-                       'ADD COLUMN IF NOT EXISTS model_name VARCHAR')
+    store.add_column(connection, 'agent_config', 'model_name', 'VARCHAR')
 
 
 #: Every step, oldest first, under the names stores in the wild already carry.

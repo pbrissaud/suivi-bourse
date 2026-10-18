@@ -221,7 +221,7 @@ describe('switching the agent on', () => {
       'Anthropic refuse cette clé : vérifiez qu’elle est complète et toujours active.',
     )
     expect(within(block).queryByText('invalid x-api-key')).not.toBeInTheDocument()
-    await user.click(within(block).getByRole('button', { name: 'Message de Anthropic' }))
+    await user.click(within(block).getByRole('button', { name: 'Message brut (Anthropic)' }))
     expect(within(block).getByText('invalid x-api-key')).toBeVisible()
     expect(within(block).queryByText(/est enregistrée/)).not.toBeInTheDocument()
     expect(activate(block)).toBeDisabled()

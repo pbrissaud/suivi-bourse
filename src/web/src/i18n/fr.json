@@ -895,7 +895,7 @@
   "agent.refusal.unreachable": "Ce serveur ne joint pas {provider} : vérifiez l’adresse, et son accès au réseau.",
   "agent.refusal.unreadable": "{provider} a répondu, mais pas par une liste de modèles : vérifiez l’adresse.",
   "agent.refusal.refused": "{provider} a refusé la connexion.",
-  "agent.refusal.raw": "Message de {provider}",
+  "agent.refusal.raw": "Message brut ({provider})",
   "agent.refusal.settings": "Ouvrir les réglages de l’agent",
   "agent.files.refused": "Ce modèle ne lit pas les images. Collez le texte ou un CSV.",
   "agent.notKept": "Cette conversation ne sera pas gardée.",
