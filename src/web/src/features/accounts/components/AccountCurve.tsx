@@ -30,7 +30,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } fro
 
 import { ChartReading } from '@/components/ChartReading'
 import { ChartTooltip } from '@/components/ChartTooltip'
-import { AXIS_TICKS, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
+import { AXIS_TICKS, tickDigits, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -50,6 +50,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
     phone ? AXIS_TICKS.time.phone : AXIS_TICKS.time.wide,
   )
   const y = valueAxis(points.flatMap((point) => [point.value, point.contributed]))
+  const digits = tickDigits(y.ticks, (value, d) => f.compact(value, currency, d))
 
   return (
     // **No heading of its own** (#838): the curve is drawn inside the head card
@@ -90,7 +91,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
               <YAxis
                 domain={y.domain}
                 ticks={y.ticks}
-                tickFormatter={(value: number) => f.compact(value, currency)}
+                tickFormatter={(value: number) => f.compact(value, currency, digits)}
                 width="auto"
                 axisLine={false}
                 tickLine={false}

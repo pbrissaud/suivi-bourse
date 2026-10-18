@@ -293,6 +293,25 @@ export function valueAxis(values: readonly (number | null)[]): {
   }
 }
 
+/**
+ * The fewest fraction digits (2 at least, the formatters' own ceiling) that
+ * write two adjacent ticks differently. A tight domain puts ticks 1 000 apart
+ * around 1 M€, and `compact` at 2 digits writes every one of them `1 M€`.
+ * `label` is the axis formatter taking its precision; unequal neighbours are
+ * all that is asked, never a globally unique set.
+ */
+export function tickDigits(
+  ticks: readonly number[],
+  label: (value: number, digits: number) => string,
+): number {
+  for (let digits = 2; digits < 10; digits += 1) {
+    if (ticks.every((tick, i) => i === 0 || label(tick, digits) !== label(ticks[i - 1], digits))) {
+      return digits
+    }
+  }
+  return 10
+}
+
 /** Days since 1970-01-01 (a Thursday) of a `YYYY-MM-DD`, with no time zone in it. */
 function dayNumber(day: string): number {
   const [year, month, date] = day.split('-').map(Number)

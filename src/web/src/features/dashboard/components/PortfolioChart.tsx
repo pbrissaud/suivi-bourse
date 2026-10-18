@@ -97,6 +97,7 @@ import {
   DASHBOARD_RANGES,
   performanceRows,
   READINGS,
+  tickDigits,
   timeTicks,
   valueAxis,
   windowFloor,
@@ -187,6 +188,9 @@ export function PortfolioChart({
   )
   const y = valueAxis(
     reading === 'amounts' ? amountsValues(rows) : performanceSeries.map((row) => row.performance),
+  )
+  const digits = tickDigits(y.ticks, (value, d) =>
+    reading === 'amounts' ? f.compact(value, currency, d) : f.percent(value, 0, d),
   )
   // What the reading announces, named exactly as the legend names it and keyed
   // exactly as the `<Line>` below draws it (#1003). The pair is the sentence's
@@ -306,7 +310,9 @@ export function PortfolioChart({
                     domain={y.domain}
                     ticks={y.ticks}
                     tickFormatter={(value: number) =>
-                      reading === 'amounts' ? f.compact(value, currency) : f.percent(value, 0)
+                      reading === 'amounts'
+                        ? f.compact(value, currency, digits)
+                        : f.percent(value, 0, digits)
                     }
                     width="auto"
                     axisLine={false}

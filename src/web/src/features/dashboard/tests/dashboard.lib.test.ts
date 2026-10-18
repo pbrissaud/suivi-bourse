@@ -22,11 +22,13 @@ import {
   moversList,
   tickerBadge,
   performanceRows,
+  tickDigits,
   timeTicks,
   valueAxis,
   windowFloor,
   yFloor,
 } from '@/features/dashboard/lib/dashboard'
+import { formatCompact } from '@/lib/format'
 import { buildShareRows } from '@/features/shares/lib/shares'
 import {
   aClosedPosition,
@@ -208,6 +210,18 @@ describe('the axes (#1265)', () => {
     expect(unit).toBe('month')
     expect(ticks[0]).toBe('2026-11-01')
     expect(ticks.some((tick) => tick.startsWith('2026-10'))).toBe(false)
+  })
+
+  it('tickDigits adds digits until neighbouring ticks read differently', () => {
+    const compact = (value: number, digits: number) => formatCompact('fr-FR', value, 'EUR', digits)
+    // Tight around 1 M€: two digits write every one of these `1 M€`.
+    const tight = [1_000_000, 1_001_000, 1_002_000, 1_003_000]
+    expect(new Set(tight.map((tick) => compact(tick, 2))).size).toBe(1)
+    const digits = tickDigits(tight, compact)
+    expect(digits).toBeGreaterThan(2)
+    expect(new Set(tight.map((tick) => compact(tick, digits))).size).toBe(tight.length)
+    // And a roomy axis keeps the formatter's own two.
+    expect(tickDigits([0, 5000, 10_000], compact)).toBe(2)
   })
 
   it('timeTicks on fewer than two days is empty', () => {

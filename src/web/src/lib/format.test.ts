@@ -169,6 +169,12 @@ describe('the chart axes (#1265)', () => {
     expect(formatPercent(FR, 0.2)).toBe('+20,00\u00a0%')
   })
 
+  it('takes a wider precision when the ticks are close', () => {
+    expect(formatCompact(FR, 1_002_500, 'EUR')).not.toContain(',')
+    expect(formatCompact(FR, 1_002_500, 'EUR', 4)).toContain('1,0025')
+    expect(formatPercent(FR, 0.00125, 0, 3)).toBe('+0,125\u00a0%')
+  })
+
   it('axisDate writes a day, a month, a January as its year, and a year', () => {
     expect(formatAxisDate(FR, '2026-10-06', 'day')).toBe('6 oct.')
     expect(formatAxisDate(EN, '2026-10-06', 'day')).toBe('6 Oct')

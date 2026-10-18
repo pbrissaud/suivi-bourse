@@ -34,7 +34,7 @@ import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
 import type { BenchmarkPoint } from '@/features/benchmark/lib/api'
-import { AXIS_TICKS, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
+import { AXIS_TICKS, tickDigits, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -96,6 +96,7 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
   // goes below zero, so the plot keeps its baseline and the two curves keep
   // their proportion to each other.
   const y = valueAxis(rows.flatMap((row) => [row.portfolio, row.reference]))
+  const digits = tickDigits(y.ticks, (value, d) => f.compact(value, currency, d))
 
   return (
     <Card>
@@ -146,7 +147,7 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
                     <YAxis
                       domain={y.domain}
                       ticks={y.ticks}
-                      tickFormatter={(value: number) => f.compact(value, currency)}
+                      tickFormatter={(value: number) => f.compact(value, currency, digits)}
                       width="auto"
                       axisLine={false}
                       tickLine={false}
