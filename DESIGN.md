@@ -285,6 +285,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   A decided proposal loses its buttons and shows one status line (decision 5A).
 - **Weight bar:** a 6 px `primary` bar with its percentage in Label, inside holding rows
   and in a legend drawn without a ring (the dashboard's allocation at half width).
+- **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `text-muted`, tabular numerals; no axis line, no tick mark; the dashed `rule` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
 - **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
   opacity, no pointer events, the reason given in text next to it.
@@ -368,3 +369,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-16 | An optional PIN behind one screen, off by default (#1203) | The app is reached on a local network by anyone who can reach the port; the PIN closes that door without a login page of accounts and passwords. One centred column rather than a card on a card, and the in-app 401 is a dialog over the page so a typed form survives it. |
 | 2026-10-16 | A job's failed pass colours its history bar (#1236) | The System page draws each job's last 24 hours, one bar an hour; telling a job that failed once from one failing since yesterday is the whole point, so the error owns `destructive` there, always doubled by a glyph. |
 | 2026-10-16 | The theme is a JSON in the store, edited in Settings (#1248) | Replaces `SB_TWEAKCN_THEME`: no restart to change it, tweakcn reached only on an explicit import, and pasting the JSON serves an instance with no way out. |
+| 2026-10-18 | The charts draw their scale (#1265) | Without axes, the scale, the origin and the month of a step were a hover away (audit of 17/10). Ticks computed by the app rather than Recharts, whose nice ticks graduated −35 %, 35 %, 70 % or stretched the domain; compact euros so the axis stays narrow on a phone; no axis line, so `rule` stays the only line in a section. |

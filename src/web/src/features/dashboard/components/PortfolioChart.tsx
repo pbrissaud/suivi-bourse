@@ -35,6 +35,9 @@
  *  - **The value axis is floored at zero when nothing drawn is negative.** Left
  *    to itself it fitted the data and graduated `−1 411 €` under a series that
  *    has never been negative.
+ *  - **The axes draw their scale** (#1265): three to five value ticks and time
+ *    ticks on calendar boundaries, both computed by `valueAxis` / `timeTicks`
+ *    rather than by Recharts. Time ticks thin out under 768 px, never to none.
  *  - **It answers the pointer, and the arrow keys** (#790, then #1003), and the
  *    answer is the page's own formatting: one day, and the curves' values on it,
  *    in the reader's language and the reporting currency. Recharts made the plot
@@ -89,17 +92,21 @@ import type { ValuationPoint } from '@/features/dashboard/lib/api'
 import {
   amountsFromTotals,
   amountsFromValuation,
+  AXIS_TICKS,
   amountsValues,
   DASHBOARD_RANGES,
   performanceRows,
   READINGS,
+  tickDigits,
+  timeTicks,
+  valueAxis,
   windowFloor,
-  yFloor,
   type AmountsRow,
   type DashboardRange,
   type PerformanceRow,
   type Reading,
 } from '@/features/dashboard/lib/dashboard'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadingCurve } from '@/lib/chartReading'
@@ -146,6 +153,7 @@ export function PortfolioChart({
   const { t } = useI18n()
   const f = useFormatters()
   const [chosen, setChosen] = useState<Reading>('amounts')
+  const phone = useIsMobile()
 
   // **Nothing at all, title included**: the block's one series is
   // in flight, and a frame carrying two reading buttons and a range control
@@ -170,6 +178,20 @@ export function PortfolioChart({
     : amountsFromValuation(valuation ?? [], floor)
   const performanceSeries = performanceRows(performance ?? [], floor)
   const drawn: (AmountsRow | PerformanceRow)[] = reading === 'amounts' ? rows : performanceSeries
+  // The scale (#1265): ticks are the chart's own, because Recharts' nice ticks
+  // graduated `−35 %, 0, 35 %` and stretched the domain. Value ticks follow the
+  // plot's height, which a phone keeps; time ticks follow its width, which it
+  // does not.
+  const x = timeTicks(
+    drawn.map((row) => row.t),
+    phone ? AXIS_TICKS.time.phone : AXIS_TICKS.time.wide,
+  )
+  const y = valueAxis(
+    reading === 'amounts' ? amountsValues(rows) : performanceSeries.map((row) => row.performance),
+  )
+  const digits = tickDigits(y.ticks, (value, d) =>
+    reading === 'amounts' ? f.compact(value, currency, d) : f.percent(value, 0, d),
+  )
   // What the reading announces, named exactly as the legend names it and keyed
   // exactly as the `<Line>` below draws it (#1003). The pair is the sentence's
   // own order: the value first, the reference it is read against second.
@@ -252,7 +274,7 @@ export function PortfolioChart({
           <EmptyState title={t('dashboard.chart.empty')} />
         ) : (
           <figure>
-            <div className="h-75">
+            <div className="h-75 tabular">
               <ResponsiveContainer width="100%" height="100%">
                 {/* **Named, and not hidden** (#1003). Recharts turns its own
                       `accessibilityLayer` on by default, so this `<svg>` is
@@ -265,30 +287,43 @@ export function PortfolioChart({
                   {/* The grid the maquette **does** draw: horizontal only, and
                         a hair rather than a rule — `2 4` on the border colour,
                         where Recharts' own default is a `3 3` in a grey it picked
-                        itself. It is a ground for the eye to rest a level on, not
-                        a scale: the scale left with the gradations. */}
+                        itself. It is a ground for the eye to rest a level on, and
+                        since #1265 it falls on the value ticks below. */}
                   <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
 
-                  {/* What they *decide* stays, and is the whole reason they are
-                    still mounted: the value scale's floor (`yFloor`) is what
-                    keeps the curve off the bottom sixth of the plot, and the
-                    category axis is what keeps the days the series holds from
-                    being interpolated. */}
-                  <XAxis dataKey="t" hide />
+                  {/* The scale (#1265): `rule` and `text-muted` only, no axis line and
+                    no tick mark, so the dashed grid above stays the one line
+                    and now falls on the value ticks. The category axis is still
+                    what keeps the days the series holds from being interpolated,
+                    and its domain is the data's. */}
+                  <XAxis
+                    dataKey="t"
+                    ticks={x.ticks}
+                    tickFormatter={(day: string) => f.axisDate(day, x.unit)}
+                    minTickGap={8}
+                    axisLine={false}
+                    tickLine={false}
+                    stroke="var(--border)"
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+                  />
                   <YAxis
-                    domain={[
+                    domain={y.domain}
+                    ticks={y.ticks}
+                    tickFormatter={(value: number) =>
                       reading === 'amounts'
-                        ? yFloor(amountsValues(rows))
-                        : yFloor(performanceSeries.map((row) => row.performance)),
-                      'auto',
-                    ]}
-                    hide
+                        ? f.compact(value, currency, digits)
+                        : f.percent(value, 0, digits)
+                    }
+                    width="auto"
+                    axisLine={false}
+                    tickLine={false}
+                    stroke="var(--border)"
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                   />
 
-                  {/* What the pointer answers, and since #787 the **only**
-                        thing that does: the axes went with the grid, so the exact
-                        figure is a hover away and the magnitude at rest is the
-                        head's value above (#1174). */}
+                  {/* What the pointer answers: the exact figure, where the axes
+                        give the scale (#1265) and the reading sentence the
+                        shape. */}
                   <ChartTooltip
                     format={(value) =>
                       reading === 'amounts' ? f.currency(value, currency) : f.percent(value)

@@ -48,6 +48,7 @@ import type { RuntimeState } from '@/lib/api'
 import { absenceCase } from '@/lib/absence'
 import { shifted } from '@/features/accounts/lib/accounts'
 import { isClosed, type ShareRow } from '@/features/shares/lib/shares'
+import type { AxisUnit } from '@/lib/format'
 
 // ------------------------------------------------------------------------- //
 // The four states of the page
@@ -252,6 +253,116 @@ export function yFloor(values: readonly (number | null)[]): number | 'auto' {
 /** Every number the *Amounts* reading draws — the argument {@link yFloor} takes. */
 export function amountsValues(rows: readonly AmountsRow[]): (number | null)[] {
   return rows.flatMap((row) => [row.value, row.contributed])
+}
+
+/** Tick budgets. Value ticks depend on the plot's height, time ticks on its width. */
+export const AXIS_TICKS = { value: 5, time: { wide: 12, phone: 4 } } as const
+
+/**
+ * A tight domain (data ± 10 % air, floored at 0 by {@link yFloor} when nothing
+ * is negative) and the multiples of the finest 1 / 2 / 2.5 / 5 × 10ⁿ step that
+ * leave at most `AXIS_TICKS.value` of them inside it (#1265). Recharts' own nice
+ * ticks graduated `−35 %, 0, 35 %` and stretched `1,25 M€` to `2 M€`, so the
+ * chart computes its own. Nulls are skipped; nothing drawn gives `[0, 1]`.
+ */
+export function valueAxis(values: readonly (number | null)[]): {
+  domain: [number, number]
+  ticks: number[]
+} {
+  const drawn = values.filter((value): value is number => value !== null)
+  if (drawn.length === 0) return { domain: [0, 1], ticks: [] }
+  const low = Math.min(...drawn)
+  const high = Math.max(...drawn)
+  // The same air as `yFloor`'s, so the two rules cannot part company.
+  const air = (high - low) / 10 || Math.abs(low) / 10 || 1
+  const floor = yFloor(drawn)
+  const domain: [number, number] = [floor === 'auto' ? low - air : floor, high + air]
+
+  const [from, to] = domain
+  const magnitude = Math.floor(Math.log10((to - from) / AXIS_TICKS.value)) - 1
+  for (let power = magnitude; ; power += 1) {
+    for (const mantissa of [1, 2, 2.5, 5]) {
+      const step = mantissa * 10 ** power
+      const first = Math.ceil(from / step)
+      const last = Math.floor(to / step)
+      if (last - first + 1 > AXIS_TICKS.value) continue
+      // `toPrecision` so that `0.1 * 3` is drawn as `0.3`.
+      const ticks = Array.from({ length: last - first + 1 }, (_, i) =>
+        Number(((first + i) * step).toPrecision(12)),
+      ).filter((tick) => tick >= from && tick <= to)
+      return { domain, ticks }
+    }
+  }
+}
+
+/**
+ * The fewest fraction digits (2 at least, the formatters' own ceiling) that
+ * write two adjacent ticks differently. A tight domain puts ticks 1 000 apart
+ * around 1 M€, and `compact` at 2 digits writes every one of them `1 M€`.
+ * `label` is the axis formatter taking its precision; unequal neighbours are
+ * all that is asked, never a globally unique set.
+ */
+export function tickDigits(
+  ticks: readonly number[],
+  label: (value: number, digits: number) => string,
+): number {
+  for (let digits = 2; digits < 10; digits += 1) {
+    if (ticks.every((tick, i) => i === 0 || label(tick, digits) !== label(ticks[i - 1], digits))) {
+      return digits
+    }
+  }
+  return 10
+}
+
+/** Days since 1970-01-01 (a Thursday) of a `YYYY-MM-DD`, with no time zone in it. */
+function dayNumber(day: string): number {
+  const [year, month, date] = day.split('-').map(Number)
+  return Math.floor(Date.UTC(year, month - 1, date) / 86_400_000)
+}
+
+/** The calendar periods tried, finest first: which period a day falls in. */
+const TIME_PERIODS: readonly { unit: AxisUnit; period: (day: string) => number }[] = [
+  { unit: 'day', period: dayNumber },
+  // Weeks start on Monday, 1970-01-05 being day 4.
+  { unit: 'day', period: (day) => Math.floor((dayNumber(day) + 3) / 7) },
+  { unit: 'day', period: (day) => Math.floor((dayNumber(day) + 3) / 14) },
+  ...[1, 2, 3, 6].map((n) => ({
+    unit: 'month' as const,
+    period: (day: string) => {
+      const [year, month] = day.split('-').map(Number)
+      return year * (12 / n) + Math.floor((month - 1) / n)
+    },
+  })),
+  ...[1, 2, 5, 10].map((n) => ({
+    unit: 'year' as const,
+    period: (day: string) => Math.floor(Number(day.slice(0, 4)) / n),
+  })),
+]
+
+/**
+ * The first drawn day of each calendar period, the starting period excluded
+ * (labelling a series that starts on 18 Oct "oct." would be wrong), for the
+ * finest of day, week, fortnight, 1/2/3/6 months and 1/2/5/10 years that gives
+ * at most `max` ticks (#1265). Periods of n are aligned on the calendar: months
+ * from January, years on multiples of n. Fewer than two days: no tick.
+ */
+export function timeTicks(
+  days: readonly string[],
+  max: number,
+): { unit: AxisUnit; ticks: string[] } {
+  if (days.length < 2) return { unit: 'day', ticks: [] }
+  let result: { unit: AxisUnit; ticks: string[] } = { unit: 'day', ticks: [] }
+  for (const { unit, period } of TIME_PERIODS) {
+    const starts = new Map<number, string>()
+    for (const day of days) {
+      const key = period(day)
+      if (!starts.has(key)) starts.set(key, day)
+    }
+    result = { unit, ticks: [...starts.values()].slice(1) }
+    if (result.ticks.length <= max) return result
+  }
+  // ponytail: past ten-year periods (a 50-year series) the budget is cut, not honoured evenly
+  return { ...result, ticks: result.ticks.slice(0, max) }
 }
 
 // ------------------------------------------------------------------------- //

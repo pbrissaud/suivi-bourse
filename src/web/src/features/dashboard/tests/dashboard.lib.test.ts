@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AXIS_TICKS,
   DASHBOARD_RANGES,
   amountsFromTotals,
   amountsFromValuation,
@@ -23,9 +24,13 @@ import {
   tickerBadge,
   unpricedLines,
   performanceRows,
+  tickDigits,
+  timeTicks,
+  valueAxis,
   windowFloor,
   yFloor,
 } from '@/features/dashboard/lib/dashboard'
+import { formatCompact } from '@/lib/format'
 import { buildShareRows } from '@/features/shares/lib/shares'
 import {
   aClosedPosition,
@@ -110,6 +115,121 @@ describe('the value axis', () => {
     expect(yFloor([1000, 1000])).toBe(900)
     expect(yFloor([0, 0])).toBe(0)
     expect(yFloor([null, null])).toBe(0)
+  })
+})
+
+describe('the axes (#1265)', () => {
+  /** `count` consecutive days from `from`. */
+  function daysFrom(from: string, count: number): string[] {
+    const start = new Date(`${from}T00:00:00Z`)
+    return Array.from({ length: count }, (_, i) =>
+      new Date(start.getTime() + i * 86_400_000).toISOString().slice(0, 10),
+    )
+  }
+
+  it('valueAxis gives three to five ticks on a 1, 2, 2.5 or 5 step', () => {
+    for (let power = -4; power <= 7; power += 1) {
+      for (const [low, high] of [
+        [1, 1.3],
+        [1, 2],
+        [1, 7],
+        [3, 4.2],
+        [-5, -1],
+        [-3, 4],
+        [-1, 1],
+      ]) {
+        const { ticks } = valueAxis([low * 10 ** power, high * 10 ** power])
+        const label = `${low}..${high} e${power}`
+        expect(ticks.length, label).toBeGreaterThanOrEqual(3)
+        expect(ticks.length, label).toBeLessThanOrEqual(5)
+        const gap = ticks[1] - ticks[0]
+        const mantissa = gap / 10 ** Math.floor(Math.log10(gap) + 1e-9)
+        expect(
+          [1, 2, 2.5, 5].some((m) => Math.abs(m - mantissa) < 1e-6),
+          label,
+        ).toBe(true)
+        for (let i = 2; i < ticks.length; i += 1) {
+          expect(ticks[i] - ticks[i - 1], label).toBeCloseTo(gap, 10)
+        }
+      }
+    }
+  })
+
+  it('valueAxis keeps every drawn value and every tick inside its domain', () => {
+    const { domain, ticks } = valueAxis([null, 9000, 12000, 17000, null])
+    expect(domain[0]).toBeGreaterThanOrEqual(0)
+    for (const value of [9000, 12000, 17000, ...ticks]) {
+      expect(value).toBeGreaterThanOrEqual(domain[0])
+      expect(value).toBeLessThanOrEqual(domain[1])
+    }
+    expect(valueAxis([-40, 900]).domain[0]).toBeLessThan(-40)
+    expect(valueAxis([null, null])).toEqual({ domain: [0, 1], ticks: [] })
+  })
+
+  it('valueAxis always graduates 0 % on the performance reading', () => {
+    for (const range of DASHBOARD_RANGES) {
+      const rows = performanceRows(aPortfolioHistory().points, windowFloor(range, now))
+      expect(valueAxis(rows.map((row) => row.performance)).ticks, range).toContain(0)
+    }
+  })
+
+  it('timeTicks marks weeks on 1M, months on 1Y and years on MAX', () => {
+    const month = timeTicks(daysFrom('2026-09-18', 31), AXIS_TICKS.time.wide)
+    expect(month.unit).toBe('day')
+    for (const tick of month.ticks) expect(new Date(`${tick}T00:00:00Z`).getUTCDay()).toBe(1)
+
+    const year = timeTicks(daysFrom('2025-10-18', 366), AXIS_TICKS.time.wide)
+    expect(year.unit).toBe('month')
+    expect(year.ticks).toHaveLength(12)
+
+    const max = timeTicks(daysFrom('2019-10-30', 7 * 365), AXIS_TICKS.time.wide)
+    expect(max.unit).toBe('year')
+    expect(max.ticks).toHaveLength(7)
+  })
+
+  it('timeTicks never draws more than the budget, on a phone or not', () => {
+    const series = [
+      daysFrom('2026-10-13', 5),
+      daysFrom('2026-09-18', 31),
+      daysFrom('2026-01-01', 40),
+      daysFrom('2026-01-01', 291),
+      daysFrom('2025-10-18', 366),
+      daysFrom('2019-10-30', 7 * 365),
+      daysFrom('2009-10-30', 17 * 365),
+    ]
+    for (const days of series) {
+      for (const max of [AXIS_TICKS.time.phone, AXIS_TICKS.time.wide]) {
+        const { ticks } = timeTicks(days, max)
+        expect(ticks.length, `${days[0]} +${days.length} at ${max}`).toBeLessThanOrEqual(max)
+        expect(ticks.length, `${days[0]} +${days.length} at ${max}`).toBeGreaterThanOrEqual(1)
+        for (const tick of ticks) expect(days).toContain(tick)
+      }
+    }
+  })
+
+  it('timeTicks never marks the period a series starts in', () => {
+    // 18 Oct 2026 to 20 Dec: October is the starting month, so the first month tick is November.
+    const { unit, ticks } = timeTicks(daysFrom('2026-10-18', 64), AXIS_TICKS.time.phone)
+    expect(unit).toBe('month')
+    expect(ticks[0]).toBe('2026-11-01')
+    expect(ticks.some((tick) => tick.startsWith('2026-10'))).toBe(false)
+  })
+
+  it('tickDigits adds digits until neighbouring ticks read differently', () => {
+    const compact = (value: number, digits: number) => formatCompact('fr-FR', value, 'EUR', digits)
+    // Tight around 1 M€: two digits write every one of these `1 M€`.
+    const tight = [1_000_000, 1_001_000, 1_002_000, 1_003_000]
+    expect(new Set(tight.map((tick) => compact(tick, 2))).size).toBe(1)
+    const digits = tickDigits(tight, compact)
+    expect(digits).toBeGreaterThan(2)
+    expect(new Set(tight.map((tick) => compact(tick, digits))).size).toBe(tight.length)
+    // And a roomy axis keeps the formatter's own two.
+    expect(tickDigits([0, 5000, 10_000], compact)).toBe(2)
+  })
+
+  it('timeTicks on fewer than two days is empty', () => {
+    expect(timeTicks([], 12)).toEqual({ unit: 'day', ticks: [] })
+    expect(timeTicks(['2026-10-18'], 12)).toEqual({ unit: 'day', ticks: [] })
   })
 })
 

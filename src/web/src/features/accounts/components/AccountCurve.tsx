@@ -26,10 +26,12 @@
  *    and two dates would date a drawing whose whole subject is that it is not
  *    cut.
  */
-import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
 import { ChartReading } from '@/components/ChartReading'
 import { ChartTooltip } from '@/components/ChartTooltip'
+import { AXIS_TICKS, tickDigits, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ValuePoint } from '@/features/accounts/lib/accounts'
@@ -42,6 +44,13 @@ interface AccountCurveProps {
 export function AccountCurve({ points, currency }: AccountCurveProps) {
   const { t } = useI18n()
   const f = useFormatters()
+  const phone = useIsMobile()
+  const x = timeTicks(
+    points.map((point) => point.t),
+    phone ? AXIS_TICKS.time.phone : AXIS_TICKS.time.wide,
+  )
+  const y = valueAxis(points.flatMap((point) => [point.value, point.contributed]))
+  const digits = tickDigits(y.ticks, (value, d) => f.compact(value, currency, d))
 
   return (
     // **No heading of its own** (#838): the curve is drawn inside the head card
@@ -57,22 +66,39 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
           opening another account from the rail redraws this curve in place, and
           the sentence below is what says the new shape. */}
       <figure aria-live="polite">
-        <div className="h-26">
+        <div className="h-40 tabular">
           <ResponsiveContainer width="100%" height="100%">
             {/* **Named, and the name is not the section's** (#1003). The `<svg>`
                 is focusable and its arrows walk the series, so it needs a name of
                 its own — and it must differ from the section's `aria-label` one
                 line up, or a by-label query matches two nodes. */}
             <LineChart data={points as ValuePoint[]} aria-label={t('accounts.detail.curve.plot')}>
-              {/* **Hidden, not removed** — the dashboard's chart to the letter
-                  (#787): the grid and the gradations left, and what the axes
-                  *decide* stayed. The domain is on the data and never on a window
-                  asked for, so the two curves fill the plot they are drawn in. */}
-              <XAxis dataKey="t" hide />
-              <YAxis domain={['dataMin', 'dataMax']} hide />
-              {/* The exact figure is a hover away, which is what makes a chart
-                  with no gradations readable at all — and this one had no pointer
-                  to answer until the axes went. */}
+              {/* The dashboard's chart to the letter (#1265): the same dashed grid
+                  and the same axes, on the value ticks. The domain is on the data
+                  and never on a window asked for, so the two curves fill the plot
+                  they are drawn in. */}
+              <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+              <XAxis
+                dataKey="t"
+                ticks={x.ticks}
+                tickFormatter={(day: string) => f.axisDate(day, x.unit)}
+                minTickGap={8}
+                axisLine={false}
+                tickLine={false}
+                stroke="var(--border)"
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+              />
+              <YAxis
+                domain={y.domain}
+                ticks={y.ticks}
+                tickFormatter={(value: number) => f.compact(value, currency, digits)}
+                width="auto"
+                axisLine={false}
+                tickLine={false}
+                stroke="var(--border)"
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+              />
+              {/* The axes give the scale, the pointer gives the exact figure. */}
               <ChartTooltip format={(value) => f.currency(value, currency)} />
               <Line
                 type="monotone"

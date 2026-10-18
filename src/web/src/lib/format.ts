@@ -99,12 +99,17 @@ export function formatQuantity(locale: string, value: number | null | undefined)
 }
 
 /** A ratio (0.1234) rendered as a percentage. Signed, because it is a change. */
-export function formatPercent(locale: string, value: number | null | undefined): string {
+export function formatPercent(
+  locale: string,
+  value: number | null | undefined,
+  minimumFractionDigits = 2,
+  maximumFractionDigits = Math.max(2, minimumFractionDigits),
+): string {
   if (value === null || value === undefined) return ABSENT
   return new Intl.NumberFormat(locale, {
     style: 'percent',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits,
+    maximumFractionDigits,
     signDisplay: 'exceptZero',
   }).format(value)
 }
@@ -139,11 +144,12 @@ export function formatCompact(
   locale: string,
   value: number | null | undefined,
   currency: string | null | undefined,
+  maximumFractionDigits = 2,
 ): string {
   if (value === null || value === undefined) return ABSENT
   return new Intl.NumberFormat(locale, {
     notation: 'compact',
-    maximumFractionDigits: 2,
+    maximumFractionDigits,
     ...(currency ? { style: 'currency' as const, currency } : {}),
   }).format(value)
 }
@@ -236,6 +242,21 @@ export function formatDate(
   return formatted(locale, date, { dateStyle: 'medium' })
 }
 
+export type AxisUnit = 'day' | 'month' | 'year'
+
+/**
+ * A time tick (#1265): a day is `6 oct.`, a month is `nov.`, **a January is its
+ * year** (`2026`) so a year change can be read, and a year is `2026`. Parsed as
+ * a local day, like {@link formatDate}.
+ */
+export function formatAxisDate(locale: string, day: string, unit: AxisUnit): string {
+  const [year, month, date] = day.split('-').map(Number)
+  const value = new Date(year, month - 1, date)
+  if (unit === 'day') return formatted(locale, value, { day: 'numeric', month: 'short' })
+  if (unit === 'year' || month === 1) return formatted(locale, value, { year: 'numeric' })
+  return formatted(locale, value, { month: 'short' })
+}
+
 /**
  * **The extent a range covers, said once** (#838).
  *
@@ -325,14 +346,22 @@ export function useFormatters() {
       number: (value: number | null | undefined, digits?: number) =>
         formatNumber(locale, value, digits),
       quantity: (value: number | null | undefined) => formatQuantity(locale, value),
-      percent: (value: number | null | undefined) => formatPercent(locale, value),
+      percent: (
+        value: number | null | undefined,
+        minimumFractionDigits?: number,
+        maximumFractionDigits?: number,
+      ) => formatPercent(locale, value, minimumFractionDigits, maximumFractionDigits),
       percentPoints: (value: number | null | undefined, digits?: number) =>
         formatPercentPoints(locale, value, digits),
-      compact: (value: number | null | undefined, currency: string | null | undefined) =>
-        formatCompact(locale, value, currency),
+      compact: (
+        value: number | null | undefined,
+        currency: string | null | undefined,
+        maximumFractionDigits?: number,
+      ) => formatCompact(locale, value, currency, maximumFractionDigits),
       bytes: (value: number | null | undefined) => formatBytes(locale, value),
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
+      axisDate: (day: string, unit: AxisUnit) => formatAxisDate(locale, day, unit),
       daySpan: (
         from: string | number | Date | null | undefined,
         to: string | number | Date | null | undefined,
