@@ -79,17 +79,27 @@ def test_the_store_imports_nothing_above_it():
 
 def test_the_amounts_currency_step_adds_a_null_column_and_keeps_rows(tmp_path):
     """A store from before #1261 keeps every event, and none of them is stated."""
+    # The table as the released DDL spelled it, before the column existed.
+    column = "    notes         VARCHAR,\n    amounts_currency VARCHAR);"
+    assert column in store_module.DDL
+    legacy = store_module.DDL.replace(column, "    notes         VARCHAR);")
+
     path = tmp_path / 'old.duckdb'
-    store_module.open_store(path, schema_steps.STEPS).close()
     connection = duckdb.connect(str(path))
+    connection.execute(legacy)
+    connection.execute("INSERT INTO account (id, label) VALUES ('default', 'Default')")
     connection.execute("INSERT INTO symbol VALUES ('AAPL')")
     connection.execute(
         "INSERT INTO event (id, date, event_type, account, symbol, quantity, "
         "                   unit_price) "
         "VALUES (1, DATE '2024-01-15', 'BUY', 'default', 'AAPL', 1, 150)")
-    connection.execute('ALTER TABLE event DROP COLUMN amounts_currency')
-    connection.execute(
-        "DELETE FROM schema_step WHERE step = 'add_event_amounts_currency'")
+    # Every earlier step already ran, as on a store in the wild: otherwise
+    # `fold_symbol_case` rebuilds `event` from today's DDL and adds the column
+    # by itself, and this test would not be testing the step.
+    connection.executemany(
+        "INSERT INTO schema_step (step, applied_at) "
+        "VALUES (?, TIMESTAMPTZ '2026-10-01 00:00:00+00')",
+        [[name] for name in RELEASED[:-1]])
     connection.close()
 
     opened = store_module.open_store(path, schema_steps.STEPS)

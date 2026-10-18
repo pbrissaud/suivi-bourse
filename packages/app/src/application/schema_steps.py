@@ -40,25 +40,13 @@ def _cap_dividend_fee_at_amount(connection) -> None:
     logger.warning(f'Capped the fee of these dividends at their amount: {said}')
 
 
-def _add_event_amounts_currency(connection) -> None:
-    """Give an already-created store the unit an event's amounts were stated in (#1261).
-
-    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds, so the column
-    added to the DDL reaches a **new** file and no other. The step writes no
-    value: every event already stored stays ``NULL``, *nobody said*, and the
-    installation notice treats it exactly as it did before.
-    """
-    connection.execute(
-        'ALTER TABLE event ADD COLUMN IF NOT EXISTS amounts_currency VARCHAR')
-
-
 #: Every step, oldest first, under the names stores in the wild already carry.
 #: The rules of :data:`store.STEPS` hold over this list as a whole: a name is an
 #: identity forever, and a new step — the store's own included — is appended
 #: **here**, after the last one released.
 STEPS = store.STEPS + (
     ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
-    ('add_event_amounts_currency', _add_event_amounts_currency),
+    ('add_event_amounts_currency', store._add_event_amounts_currency),
 )
 
 __all__ = ['STEPS']

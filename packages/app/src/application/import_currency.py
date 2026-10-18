@@ -29,6 +29,10 @@ logger = getLogger("import_currency")
 #: *unverified*: the preview goes on without it.
 LOOKUP_TIMEOUT_S = 4
 
+#: The most a whole preview waits for lookups, however many symbols a file
+#: names: ``LOOKUP_TIMEOUT_S`` per batch of four would otherwise grow with the file.
+LOOKUP_BUDGET_S = 20
+
 _WORKERS = 4
 
 #: How far before a day its rate may come from (``fx._DAILY_LOOKBACK_DAYS``): a
@@ -84,8 +88,8 @@ class Survey:
 
 
 def _carries_money(event: Event) -> bool:
-    return (event.unit_price is not None or event.fee is not None
-            or event.amount is not None)
+    return any(value is not None
+               for value in (event.unit_price, event.fee, event.amount))
 
 
 def _money_rows(rows: Sequence[Event]) -> Dict[str, int]:
@@ -133,7 +137,8 @@ def _ask(symbols: Sequence[str], found: Dict[str, str]) -> List[str]:
         return []
     started = time.monotonic()
     futures = {_POOL.submit(_look_up, symbol): symbol for symbol in symbols}
-    deadline = LOOKUP_TIMEOUT_S * math.ceil(len(symbols) / _WORKERS)
+    deadline = min(LOOKUP_TIMEOUT_S * math.ceil(len(symbols) / _WORKERS),
+                   max(LOOKUP_BUDGET_S, LOOKUP_TIMEOUT_S))
     done, _ = wait(futures, timeout=max(0.0, started + deadline - time.monotonic()))
 
     unverified = []
@@ -142,6 +147,9 @@ def _ask(symbols: Sequence[str], found: Dict[str, str]) -> List[str]:
         if currency:
             found[symbol] = currency
         else:
+            # Still queued: never start. Already running: left to finish, so a
+            # late answer still fills the cache.
+            future.cancel()
             unverified.append(symbol)
     return unverified
 
@@ -241,6 +249,6 @@ def _scaled(value: Optional[float], rate: float) -> Optional[float]:
 
 
 __all__ = [
-    'LOOKUP_TIMEOUT_S', 'Unconvertible', 'BadPair', 'ForeignLine', 'Survey',
+    'LOOKUP_TIMEOUT_S', 'LOOKUP_BUDGET_S', 'Unconvertible', 'BadPair', 'ForeignLine', 'Survey',
     'survey', 'pairs', 'lines', 'convert',
 ]

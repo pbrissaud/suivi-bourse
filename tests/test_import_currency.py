@@ -224,3 +224,33 @@ def test_the_last_day_is_priced_at_its_own_close():
     done = import_currency.convert(rows, {'AAPL': 'USD'}, rates, 'EUR')
 
     assert [event.unit_price for event in done] == [112.0, 113.0]
+
+
+def test_the_whole_preview_waits_for_lookups_no_longer_than_its_budget(
+        store, monkeypatch):
+    release = threading.Event()
+    asked = []
+
+    def slow(symbol):
+        asked.append(symbol)
+        release.wait(10)
+        return {'currency': 'USD'}
+
+    monkeypatch.setattr(market, 'symbol_attributes', slow)
+    monkeypatch.setattr(import_currency, 'LOOKUP_TIMEOUT_S', 1.0)
+    monkeypatch.setattr(import_currency, 'LOOKUP_BUDGET_S', 0.5)
+    symbols = [f'S{i}' for i in range(12)]
+    try:
+        started = time.monotonic()
+        found = import_currency.survey(
+            store, [_buy(symbol) for symbol in symbols], 'EUR')
+
+        # Three batches of four would be 3 s here; the budget is what bounds it.
+        assert time.monotonic() - started < 2
+        assert found.unverified == tuple(sorted(symbols))
+    finally:
+        release.set()
+
+    # The lookups still queued were cancelled, not started late.
+    time.sleep(0.3)
+    assert len(asked) <= 4

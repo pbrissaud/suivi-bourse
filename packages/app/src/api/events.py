@@ -128,10 +128,10 @@ def import_events():
     foreign: Sequence[import_currency.ForeignLine] = ()
     unverified: Sequence[str] = ()
     try:
-        if not dry_run and amounts_in == 'quote':
-            # The rates are fetched here, **before** the writer lock: a slow Yahoo
-            # must not hold every read behind it. The write below finds them cached.
-            _warm_rates(parsed, runtime)
+        # The rates are fetched **before** the writer lock: a slow Yahoo must
+        # not hold every read behind it. The write below finds them cached.
+        warmed = (_warm_rates(parsed, runtime, _question_base(_store(), parsed))
+                  if not dry_run and amounts_in == 'quote' else None)
         if dry_run:
             opened = _store()   # a dry run reads and nothing else (#967)
             settled = _settled_mapping(opened, correspondence, census)
@@ -149,28 +149,38 @@ def import_events():
                           accounts_pending=settled.stated)
             written = len(fresh)
         else:
-            with runtime.config_manager.writing() as opened:
-                settled = _settled_mapping(opened, correspondence, census)
-                declared = ledger.currency_to_adopt(opened,
-                                                    parsed.declared_currency)
-                stated = _stated_currency(parsed.declared_currency)
-                rows = settled.applied(parsed.events)
-                base = _question_base(opened, parsed)
-                says = {}
-                if base:
-                    sent = import_currency.pairs(
-                        rows, request.args.getlist('foreign'), base)
-                    foreign = import_currency.lines(rows, sent)
-                    rows = _answered(rows, amounts_in, sent, runtime, base)
-                    if amounts_in:
-                        says = {symbol: base if amounts_in == 'base' else code
-                                for symbol, code in sent.items()}
-                fresh, duplicates = _to_write(opened, rows, write_duplicates)
-                written = len(entries.create_many(
-                    opened, fresh,
-                    base_currency=declared if adopt_currency else None,
-                    declare_accounts=settled.declaring,
-                    stated=says))
+            while True:
+                try:
+                    with runtime.config_manager.writing() as opened:
+                        settled = _settled_mapping(opened, correspondence, census)
+                        declared = ledger.currency_to_adopt(
+                            opened, parsed.declared_currency)
+                        stated = _stated_currency(parsed.declared_currency)
+                        rows = settled.applied(parsed.events)
+                        base = _question_base(opened, parsed)
+                        if amounts_in == 'quote' and base != warmed:
+                            # The base moved between the warm-up and the lock:
+                            # the cached rates are for another pair. Leave the
+                            # lock, fetch the right ones, and come back.
+                            raise _RatesStale(base)
+                        says = {}
+                        if base:
+                            sent = import_currency.pairs(
+                                rows, request.args.getlist('foreign'), base)
+                            foreign = import_currency.lines(rows, sent)
+                            rows = _answered(rows, amounts_in, sent, runtime, base)
+                            if amounts_in:
+                                says = {symbol: base if amounts_in == 'base' else code
+                                        for symbol, code in sent.items()}
+                        fresh, duplicates = _to_write(opened, rows, write_duplicates)
+                        written = len(entries.create_many(
+                            opened, fresh,
+                            base_currency=declared if adopt_currency else None,
+                            declare_accounts=settled.declaring,
+                            stated=says))
+                    break
+                except _RatesStale as stale:
+                    warmed = _warm_rates(parsed, runtime, stale.base)
     except import_currency.BadPair as exc:
         return bad_request(str(exc))
     except import_currency.Unconvertible as exc:
@@ -212,13 +222,25 @@ def _question_base(opened, parsed) -> Optional[str]:
     return opened.setting('base_currency') or None
 
 
-def _warm_rates(parsed, runtime) -> None:
-    """Fetch (and cache) the rates the write will convert with, outside the lock."""
-    base = _question_base(_store(), parsed)
+class _RatesStale(Exception):
+    """The base currency changed after the rates were fetched for another one."""
+
+    def __init__(self, base: Optional[str]):
+        super().__init__(base)
+        self.base = base
+
+
+def _warm_rates(parsed, runtime, base: Optional[str]) -> Optional[str]:
+    """Fetch (and cache) the rates the write will convert with, outside the lock.
+
+    Answers the base currency they were fetched for, which the write checks again
+    once it holds the lock.
+    """
     if base:
         sent = import_currency.pairs(
             parsed.events, request.args.getlist('foreign'), base)
         _answered(parsed.events, 'quote', sent, runtime, base)
+    return base
 
 
 def _answered(rows, amounts_in: Optional[str], chosen, runtime, base: str):

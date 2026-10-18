@@ -1762,3 +1762,34 @@ def test_an_event_typed_in_the_form_is_stamped_with_the_base(euro_install):
         'date': '2024-01-15', 'event_type': 'BUY', 'symbol': 'AAPL',
         'quantity': 1, 'unit_price': 141.0}).status_code == 200
     assert opened.query('SELECT amounts_currency FROM event') == [('EUR',)]
+
+
+def test_import_write_warms_the_rates_again_when_the_base_moved_before_the_lock(
+        euro_install, monkeypatch):
+    """The rates fetched outside the lock are for the base read then; if it has
+    changed by the time the lock is held, they are fetched again outside it."""
+    from api import events as events_module
+    client, opened = euro_install
+    warmed = []
+    real_warm = events_module._warm_rates
+    real_base = events_module._question_base
+    calls = {'base': 0}
+
+    def spying_warm(parsed, runtime, base):
+        warmed.append(base)
+        return real_warm(parsed, runtime, base)
+
+    def moving_base(store, parsed):
+        calls['base'] += 1
+        return 'GBP' if calls['base'] == 1 else real_base(store, parsed)
+
+    monkeypatch.setattr(events_module, '_warm_rates', spying_warm)
+    monkeypatch.setattr(events_module, '_question_base', moving_base)
+
+    response = _upload(client, FOREIGN_FILE, query=_query(
+        amounts_in='quote', foreign=['AAPL:USD']))
+
+    assert response.status_code == 201
+    assert warmed == ['GBP', 'EUR']
+    assert opened.query(
+        "SELECT max(unit_price) FROM event WHERE symbol = 'AAPL'") == [(85.0,)]
