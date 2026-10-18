@@ -145,6 +145,13 @@ export function defaultHandlers() {
       const window = (query.get('window') ?? '1Y') as ChartWindow
       return HttpResponse.json(aPriceSeries({ symbol, window }))
     }),
+    // The ticker field's Yahoo lines (#1268): nothing found, by default.
+    http.get(ROUTES.securities, ({ request }) =>
+      HttpResponse.json({
+        query: new URL(request.url).searchParams.get('q') ?? '',
+        securities: [],
+      }),
+    ),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
     // Up to date: the footer's second line is drawn only when a test asks.
     http.get(ROUTES.release, () => HttpResponse.json({ latest: null })),

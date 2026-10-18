@@ -15,7 +15,7 @@
  */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { LedgerEvent } from '@/features/data/lib/api'
 import { ROUTES } from '@/lib/api'
@@ -1579,7 +1579,7 @@ describe('the page in English', () => {
 
 /** La liste des suggestions, une fois quelque chose tapé dans le champ Titre. */
 function suggestions() {
-  return screen.getByRole('listbox', { name: 'Titres que vous détenez ou avez détenus' })
+  return screen.getByRole('listbox', { name: 'Titres de votre grand livre, puis de Yahoo Finance' })
 }
 
 /** Ses entrées, dans l'ordre où elles sont dessinées. */
@@ -1639,11 +1639,13 @@ describe('le champ Titre suggère', () => {
     await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
     await user.type(screen.getByLabelText('Quantité'), '3')
     await user.type(screen.getByLabelText('Prix unitaire'), '120')
-    await user.type(field, 'ZZQ')
+    // A title the ledger names: a free ticker now stops at the confirmation
+    // (#1268), and this test is about the key, not about that stop.
+    await user.type(field, 'ZZA')
     await user.type(field, '{Enter}')
 
     await waitFor(() => expect(recorded).not.toBeNull())
-    expect(recorded).toMatchObject({ symbol: 'ZZQ', event_type: 'BUY' })
+    expect(recorded).toMatchObject({ symbol: 'ZZA', event_type: 'BUY' })
   })
 
   it('takes Entrée for itself once an arrow key has chosen a line', async () => {
@@ -2059,12 +2061,359 @@ describe('le champ Titre se conduit', () => {
 
     await user.type(field, 'zza')
     expect(
-      screen.getByRole('listbox', { name: 'Securities you hold or have held' }),
+      screen.getByRole('listbox', { name: 'Securities from your ledger, then from Yahoo Finance' }),
     ).toBeInTheDocument()
     expect(screen.getByText(/Your ledger already names ZZA/)).toBeInTheDocument()
 
     await user.clear(field)
     await user.type(field, 'NVDA')
     expect(screen.getByRole('option', { name: 'Use “NVDA”' })).toBeInTheDocument()
+  })
+})
+
+// --------------------------------------------------------------------------- //
+// The refusal is brought into view, and a free ticker is confirmed (#1268)
+// --------------------------------------------------------------------------- //
+
+const OVERSELL = {
+  status: 409,
+  type: PROBLEM_TYPES.unreplayableLedger,
+  title: 'Ledger does not replay',
+  detail: 'Cannot sell 5.0 shares of ZZA (only 0.0 owned) on 2026-02-20',
+  gesture: 'write',
+  symbol: 'ZZA',
+  wanted: 5,
+  owned: 0,
+  day: '2026-02-20',
+}
+
+/** The answer of `GET /api/securities`, whatever was asked. */
+function yahooAnswers(
+  securities: { symbol: string; name: string | null; exchange: string | null }[] | null,
+) {
+  const asked: string[] = []
+  server.use(
+    http.get(ROUTES.securities, ({ request }) => {
+      const query = new URL(request.url).searchParams.get('q') ?? ''
+      asked.push(query)
+      return HttpResponse.json({ query, securities })
+    }),
+  )
+  return asked
+}
+
+const ZZY = { symbol: 'ZZY', name: 'Zeta Yankee', exchange: 'Paris' }
+
+/** A purchase, filled but for the ticker — which each case types its own way. */
+async function fillABuy(user: ReturnType<typeof renderApp>['user']) {
+  await waitFor(() => expect(ledger()).toBeInTheDocument())
+  const field = await openOnABuy(user)
+  fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
+  await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
+  await user.type(screen.getByLabelText('Quantité'), '5')
+  await user.type(screen.getByLabelText('Prix unitaire'), '120')
+  return field
+}
+
+function save(user: ReturnType<typeof renderApp>['user']) {
+  return user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+}
+
+/** Every POST the form makes, as the body it sent. */
+function recordPosts() {
+  const posted: Record<string, unknown>[] = []
+  server.use(
+    http.post(ROUTES.events, async ({ request }) => {
+      const body = (await request.json()) as Record<string, unknown>
+      posted.push(body)
+      return HttpResponse.json(aTypedEvent({ id: 'created' }), { status: 201 })
+    }),
+  )
+  return posted
+}
+
+const UNKNOWN = /Ce ticker n’est pas dans votre grand livre/
+
+describe('a refusal brought into view', () => {
+  it('moves focus to the refusal when the server refuses the save', async () => {
+    server.use(
+      http.post(ROUTES.events, () =>
+        HttpResponse.json(OVERSELL, {
+          status: 409,
+          headers: { 'Content-Type': 'application/problem+json' },
+        }),
+      ),
+    )
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZA')
+
+    await save(user)
+
+    const refusal = await within(screen.getByRole('dialog')).findByRole('status')
+    expect(refusal).toHaveTextContent(/vend 5 parts de ZZA/)
+    await waitFor(() => expect(refusal).toHaveFocus())
+    // The native scroll is the point: nothing may ask the browser not to.
+    const onRefusal = focus.mock.calls.filter(
+      (_call, index) => focus.mock.contexts[index] === refusal,
+    )
+    expect(onRefusal.length).toBeGreaterThan(0)
+    expect(onRefusal.some(([options]) => options?.preventScroll)).toBe(false)
+    focus.mockRestore()
+  })
+
+  it('focuses the refusal again when a second save is refused', async () => {
+    let refused = 0
+    server.use(
+      http.post(ROUTES.events, () => {
+        refused += 1
+        return HttpResponse.json(OVERSELL, {
+          status: 409,
+          headers: { 'Content-Type': 'application/problem+json' },
+        })
+      }),
+    )
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZA')
+    await save(user)
+    const dialog = screen.getByRole('dialog')
+    await waitFor(async () => expect(await within(dialog).findByRole('status')).toHaveFocus())
+
+    // The reader goes back to the quantity, and presses save once more.
+    await user.click(screen.getByLabelText('Quantité'))
+    expect(within(dialog).queryByRole('status')).not.toHaveFocus()
+    await save(user)
+
+    await waitFor(() => expect(refused).toBe(2))
+    await waitFor(async () => expect(await within(dialog).findByRole('status')).toHaveFocus())
+  })
+
+  it('moves focus to the first field it could not read', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openOnABuy(user)
+
+    await save(user)
+    expect(await screen.findByLabelText('Date')).toHaveFocus()
+
+    // The date and the account answered: the next one in the order drawn.
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-02-20' } })
+    await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
+    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+    await save(user)
+    expect(screen.getByLabelText('Quantité')).toHaveFocus()
+  })
+})
+
+describe('a ticker the ledger does not name', () => {
+  it('asks to confirm a ticker the ledger does not name, and posts nothing', async () => {
+    const posted = recordPosts()
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZQ')
+
+    await save(user)
+
+    expect(await screen.findByText(UNKNOWN)).toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', { name: 'Enregistrer ZZQ sans cours connu' }),
+    ).not.toBeChecked()
+    expect(field).toHaveFocus()
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(posted).toEqual([])
+  })
+
+  it('saves a confirmed free ticker, and forgets the confirmation when the ticker changes', async () => {
+    const posted = recordPosts()
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZQ')
+    await save(user)
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Enregistrer ZZQ sans cours connu' }),
+    )
+    expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument()
+    // Ticked, the control stays: it is the reader's answer, and it is visible.
+    expect(screen.getByRole('checkbox', { name: 'Enregistrer ZZQ sans cours connu' })).toBeChecked()
+
+    // Another ticker is another question.
+    await user.type(field, 'R')
+    await save(user)
+    expect(await screen.findByText(UNKNOWN)).toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', { name: 'Enregistrer ZZQR sans cours connu' }),
+    ).not.toBeChecked()
+    expect(posted).toEqual([])
+
+    await user.click(screen.getByRole('checkbox', { name: 'Enregistrer ZZQR sans cours connu' }))
+    await save(user)
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ symbol: 'ZZQR', name: null })
+  })
+
+  it('offers the ledger title the typed ticker starts', async () => {
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZ')
+    await save(user)
+
+    await user.click(await screen.findByRole('button', { name: 'Vouliez-vous dire ZZA ?' }))
+
+    expect(field).toHaveValue('ZZA')
+    expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument()
+  })
+
+  it('does not count the use-what-I-typed line as a pick', async () => {
+    const posted = recordPosts()
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZQ')
+    await user.click(await screen.findByRole('option', { name: 'Utiliser « ZZQ »' }))
+    expect(field).toHaveValue('ZZQ')
+
+    await save(user)
+
+    expect(await screen.findByText(UNKNOWN)).toBeInTheDocument()
+    expect(posted).toEqual([])
+  })
+
+  it('still asks for a ticker typed to match a Yahoo line without picking it', async () => {
+    yahooAnswers([ZZY])
+    const posted = recordPosts()
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'ZZY')
+    // Yahoo knows it, and the reader did not take the line.
+    await screen.findByRole('option', { name: /ZZY/ })
+
+    await save(user)
+
+    expect(await screen.findByText(UNKNOWN)).toBeInTheDocument()
+    expect(posted).toEqual([])
+  })
+})
+
+describe('the ticker search', () => {
+  it('finds a ledger title by its name', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zeta alpha')
+
+    expect(lines().map((line) => line.textContent)).toEqual(['ZZAZeta Alpha'])
+  })
+
+  it('lists Yahoo lines after the ledger’s, without repeating a title the ledger names', async () => {
+    yahooAnswers([{ symbol: 'ZZA', name: 'Zeta Alpha Inc', exchange: 'NYSE' }, ZZY])
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zeta')
+
+    await screen.findByRole('option', { name: /ZZY/ })
+    expect(lines().map((line) => line.textContent)).toEqual([
+      'ZZAZeta Alpha',
+      'ZZCZeta Gamma',
+      'ZZYZeta Yankee · Paris',
+    ])
+  })
+
+  it('saves a ticker picked from a Yahoo line without asking, with its name', async () => {
+    yahooAnswers([ZZY])
+    const posted = recordPosts()
+    const { user } = renderData()
+    const field = await fillABuy(user)
+    await user.type(field, 'zeta')
+    await user.click(await screen.findByRole('option', { name: /ZZY/ }))
+    expect(field).toHaveValue('ZZY')
+
+    await save(user)
+
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ symbol: 'ZZY', name: 'Zeta Yankee' })
+    expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument()
+  })
+
+  it('asks Yahoo once per pause, and not before two characters', async () => {
+    const asked = yahooAnswers([])
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'z')
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    expect(asked).toEqual([])
+
+    await user.type(field, 'eta')
+    await waitFor(() => expect(asked).toEqual(['zeta']))
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    expect(asked).toEqual(['zeta'])
+  })
+
+  it('says Yahoo is not answering and still offers the ledger’s titles', async () => {
+    yahooAnswers(null)
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+
+    expect(await screen.findByText(/Yahoo Finance ne répond pas/)).toBeInTheDocument()
+    expect(field).toHaveAccessibleDescription(/Yahoo Finance ne répond pas/)
+    expect(lines().map((line) => line.textContent)).toEqual(['ZZAZeta Alpha', 'ZZCZeta Gamma'])
+  })
+
+  it('says nothing about Yahoo while its answer is in flight', async () => {
+    // The route is out of the in-flight net (#775 against #729), so this is
+    // where its silence is proven.
+    let answer: () => void = () => {}
+    const pending = new Promise<void>((resolve) => {
+      answer = resolve
+    })
+    let asked = 0
+    server.use(
+      http.get(ROUTES.securities, async () => {
+        asked += 1
+        await pending
+        return HttpResponse.json({ query: 'zz', securities: null })
+      }),
+    )
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    const field = await openOnABuy(user)
+
+    await user.type(field, 'zz')
+
+    // The request is really out, and still unanswered.
+    await waitFor(() => expect(asked).toBe(1))
+    expect(screen.queryByText(/Yahoo Finance ne répond pas/)).not.toBeInTheDocument()
+    // The ledger's lines are there all along.
+    expect(lines()).toHaveLength(2)
+
+    answer()
+    expect(await screen.findByText(/Yahoo Finance ne répond pas/)).toBeInTheDocument()
+  })
+
+  it('keeps the name of an imported row it edits', async () => {
+    let sent: Record<string, unknown> | null = null
+    server.use(
+      http.patch(`${ROUTES.events}/:id`, async ({ params, request }) => {
+        sent = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(aTypedEvent({ id: String(params.id) }))
+      }),
+    )
+    const { user } = renderData([anEvent({ id: 'imp', name: 'Zeta Alpha Imported' })])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await screen.findByLabelText('Quantité')
+    await save(user)
+
+    await waitFor(() => expect(sent).not.toBeNull())
+    expect(sent).toMatchObject({ symbol: 'ZZA', name: 'Zeta Alpha Imported' })
   })
 })

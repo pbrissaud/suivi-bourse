@@ -24,6 +24,28 @@ def quote_attributes(raw: Mapping) -> dict:
     }
 
 
+def security_lines(quotes: Sequence[Mapping], kinds: frozenset,
+                   limit: int) -> list:
+    """Yahoo's search hits as the lines a ticker field offers (#1268).
+
+    Only the ``kinds`` of instrument and only hits that carry a ``symbol``, in
+    Yahoo's order and capped at ``limit``. The name is the long one, else the
+    short one -- Yahoo pads the latter -- with its whitespace collapsed.
+    """
+    lines = []
+    for quote in quotes:
+        if quote.get('quoteType') not in kinds or not quote.get('symbol'):
+            continue
+        raw = quote.get('longname') or quote.get('shortname') or ''
+        name = ' '.join(raw.split())
+        lines.append({
+            'symbol': quote['symbol'],
+            'name': name or None,
+            'exchange': quote.get('exchDisp') or quote.get('exchange') or None,
+        })
+    return lines[:limit]
+
+
 def market_context(raw: Mapping, history_meta: Optional[Mapping]) -> dict:
     """The cadence fields, which ride on the same mapping as the attributes."""
     return {

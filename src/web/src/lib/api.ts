@@ -63,6 +63,12 @@ export const ROUTES = {
    * is what a caller builds.
    */
   prices: '/api/prices/:symbol',
+  /**
+   * Yahoo's securities for what the event form's ticker field holds (#1268).
+   * The server asks Yahoo; the browser never does. It answers the reader's own
+   * keystrokes, which is why `readsInFlight.test.tsx` subtracts it.
+   */
+  securities: '/api/securities',
   runtime: '/api/runtime',
   /** A newer published release, or `null`: the server asks GitHub, at most every 6 h (#1237). */
   release: '/api/system/release',

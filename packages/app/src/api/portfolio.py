@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 
 from application import benchmark_view
 from application import instants
+from application import market
 from application import portfolio_facts
 from application import portfolio_view
 from application import quotes
@@ -22,6 +23,7 @@ from api.common import (
     _carried,
     _store,
     _InvalidParameter,
+    _argument,
     _day_argument,
     _base_currency,
     _parse_window,
@@ -144,6 +146,23 @@ def get_prices(symbol: str):
         _reader().chart_series(symbol, bucket, start),
         resolution,
         _base_currency()))
+
+
+@bp.get('/securities')
+def search_securities():
+    """Yahoo's securities for what the event form's ticker field holds (#1268).
+
+    ``securities`` has three states, like ``/prices/<s>?at=``: a list, ``[]``
+    for *Yahoo answered nothing*, and ``null`` for *Yahoo did not answer* --
+    the form still works then. The browser never talks to Yahoo; the server
+    does, and keeps no cache (the front holds each query for five minutes).
+    """
+    query = _argument('q')
+    if query is None or not 2 <= len(query) <= 64:
+        return unprocessable_request(
+            'q must be 2 to 64 characters', key='q')
+    return jsonify({'query': query,
+                    'securities': market.search_securities(query)})
 
 
 @bp.get('/investment-rhythm')
