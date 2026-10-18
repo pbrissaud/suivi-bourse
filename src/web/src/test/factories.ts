@@ -1323,6 +1323,7 @@ export function anAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig
     enabled: false,
     provider: null,
     model: null,
+    model_name: null,
     base_url: null,
     key: { set: false, last4: null, set_at: null },
     ...overrides,

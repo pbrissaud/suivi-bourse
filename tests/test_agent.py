@@ -5,7 +5,7 @@ rest of ``/api`` is; no provider is ever called.
 """
 import pytest
 
-from api import create_app
+from api import create_app, current_runtime
 from application import agent
 from test_mcp_server import build_runtime
 
@@ -20,14 +20,17 @@ def client(tmp_path):
 
 def configured(client, **fields):
     """Write ``fields``, the key after the provider it belongs to and before
-    ``enabled``."""
+    ``enabled``. The key goes straight to the store: no route stores a key
+    that was not tested (#1269)."""
     key = fields.pop('key', None)
     enabled = fields.pop('enabled', None)
     answer = client.put('/api/agent/config', json=fields)
     assert answer.status_code == 200, answer.get_json()
     if key:
-        answer = client.put('/api/agent/key', json={'key': key})
-        assert answer.status_code == 200, answer.get_json()
+        with current_runtime().config_manager.writing() as opened:
+            agent.write(opened, agent.with_key(
+                agent.read(opened), key, agent.now()), agent.now())
+        answer = client.get('/api/agent/config')
     if enabled is not None:
         answer = client.put('/api/agent/config', json={'enabled': enabled})
         assert answer.status_code == 200, answer.get_json()
@@ -201,12 +204,12 @@ def test_ollama_and_an_older_gpt_get_no_breakpoint(tmp_path, provider, base_url)
 
 def test_the_agent_is_off_and_keyless_until_configured(client):
     assert client.get('/api/agent/config').get_json() == {
-        'enabled': False, 'provider': None, 'model': None, 'base_url': None,
-        'key': {'set': False, 'last4': None, 'set_at': None}}
+        'enabled': False, 'provider': None, 'model': None, 'model_name': None,
+        'base_url': None, 'key': {'set': False, 'last4': None, 'set_at': None}}
 
 
 def test_a_key_is_served_back_as_its_last_four_characters_only(client):
-    client.put('/api/agent/key', json={'key': KEY})
+    configured(client, provider='anthropic', key=KEY)
     shown = client.get('/api/agent/config')
 
     assert shown.get_json()['key']['set'] is True
@@ -312,17 +315,77 @@ def test_a_bad_value_is_refused_by_name(client, body, key):
     assert KEY not in answer.get_data(as_text=True)
 
 
-def test_a_pasted_key_loses_its_newline(client):
-    answer = client.put('/api/agent/key', json={'key': f'  {KEY}\n'})
+def test_the_key_route_takes_no_put(client):
+    configured(client, provider='anthropic', key=KEY)
 
-    assert answer.status_code == 200
-    assert answer.get_json()['key']['last4'] == 'abcd'
+    answer = client.put('/api/agent/key', json={'key': 'test-key-other-0000'})
+
+    assert answer.status_code == 405
+    assert answer.mimetype == 'application/problem+json'
+    assert client.get('/api/agent/config').get_json()['key']['last4'] == 'abcd'
+    assert client.delete('/api/agent/key').status_code == 200
 
 
-def test_a_key_too_short_or_for_ollama_is_refused(client):
-    assert client.put('/api/agent/key', json={'key': 'short'}).status_code == 422
-    configured(client, provider='ollama')
-    answer = client.put('/api/agent/key', json={'key': KEY})
+def test_a_model_name_is_kept_with_its_model_and_cleared_without_it(client):
+    named = client.put('/api/agent/config', json={
+        'provider': 'anthropic', 'model': 'claude-x',
+        'model_name': 'Claude X'}).get_json()
+    assert (named['model'], named['model_name']) == ('claude-x', 'Claude X')
 
-    assert answer.status_code == 422 and answer.get_json()['key'] == 'key'
-    assert KEY not in answer.get_data(as_text=True)
+    kept = client.put('/api/agent/config', json={'model_name': 'Claude Y'})
+    assert kept.get_json()['model_name'] == 'Claude Y'
+
+    moved = client.put('/api/agent/config', json={'model': 'claude-z'})
+    assert (moved.get_json()['model'], moved.get_json()['model_name']) == (
+        'claude-z', None)
+
+
+@pytest.mark.parametrize('name', ['', '   ', 'two\nlines', 'x' * 201, 3])
+def test_a_bad_model_name_is_refused_by_name(client, name):
+    answer = client.put('/api/agent/config', json={'model_name': name})
+
+    assert answer.status_code == 422
+    assert answer.get_json()['key'] == 'model_name'
+
+
+def test_refusal_reads_the_status_before_the_body():
+    body = {'error': {'type': 'insufficient_quota', 'message': 'no credit'}}
+    assert agent.refusal(401, body, 'turn') == 'key'
+    assert agent.refusal(403, body, 'test') == 'refused'
+    assert agent.refusal(429, body, 'turn') == 'quota'
+    assert agent.refusal(429, {'error': 'slow down'}, 'turn') == 'rate_limit'
+    assert agent.refusal(404, None, 'turn') == 'model'
+    assert agent.refusal(None, None, 'turn') == 'unreachable'
+
+
+def test_said_masks_the_key_before_it_cuts():
+    long = 'x' * (agent.SAID_MAX - 4) + KEY
+
+    said = agent.said({'error': {'message': long}}, secret=KEY)
+
+    assert len(said) <= agent.SAID_MAX
+    assert KEY[:6] not in said
+
+
+def test_said_is_one_line_and_falls_back_to_the_text():
+    assert agent.said(None, '<html>\n  Bad\n gateway </html>') == '<html> Bad gateway </html>'
+    assert agent.said({'error': {'message': ''}}, 'plain text') == 'plain text'
+    assert agent.said('overloaded', 'ignored') == 'overloaded'
+
+
+@pytest.mark.parametrize('status, body, reason', [
+    (429, {'error': {'type': 'insufficient_quota'}}, 'quota'),
+    (429, None, 'rate_limit'),
+    (402, 'pay up', 'quota'),
+    (400, {'error': {'message': 'Your credit balance is too low'}}, 'quota'),
+    (400, 'bad request', 'refused'),
+])
+def test_refusal_reads_quota_wherever_the_provider_puts_it(status, body, reason):
+    assert agent.refusal(status, body, 'turn') == reason
+
+
+def test_a_404_is_an_address_only_for_a_provider_that_takes_one():
+    assert agent.refusal(404, None, 'test') == 'address'
+    assert agent.refusal(404, None, 'test', 'openai_compatible') == 'address'
+    assert agent.refusal(404, None, 'test', 'anthropic') == 'refused'
+    assert agent.refusal(404, None, 'turn', 'openai_compatible') == 'model'

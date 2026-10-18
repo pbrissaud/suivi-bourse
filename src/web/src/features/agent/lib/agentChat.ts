@@ -103,6 +103,31 @@ export function errorSentence(error: Error): string {
 }
 
 /**
+ * A failed turn that is the provider's (#1269): the error chunk's text is then
+ * a JSON object holding the provider's label, the `reason` the page translates
+ * and the message as the provider said it (`Anthropic: …`, which is stripped of
+ * its prefix here). `null` for anything else, said as {@link errorSentence}.
+ */
+export function turnRefusal(
+  error: Error,
+): { provider: string; reason: string; said: string } | null {
+  try {
+    const body = JSON.parse(error.message) as Record<string, unknown>
+    const { error: said, provider, reason } = body
+    if (typeof said !== 'string' || typeof provider !== 'string' || typeof reason !== 'string') {
+      return null
+    }
+    return {
+      provider,
+      reason,
+      said: said.startsWith(`${provider}: `) ? said.slice(provider.length + 2) : said,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
  * The server's own words when a thread file cannot be written
  * (`agent_routes.NOT_SAVED`): the answer may stand, the conversation will not.
  */

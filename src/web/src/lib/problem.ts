@@ -91,8 +91,9 @@ export const PROBLEM_TYPES = {
    * point: the detail is the provider's own sentence (`Anthropic: invalid
    * x-api-key`), the key masked, and the reader acts on it at the provider's,
    * where those words mean something. It carries `provider` and `reason`
-   * (`unreachable`, `refused`, `unreadable`); read it through
-   * `providerRefusal` below.
+   * (`key`, `quota`, `rate_limit`, `address`, `overloaded`, `unreachable`, `unreadable`, `refused`); read it through
+   * `providerRefusal` below. Its `reason` is translated by `RefusalNotice`, and
+   * the detail stays behind a disclosure (#1269).
    */
   providerRefused: '/problems/provider-refused',
   /**

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   canActivate,
+  candidateOf,
   canTest,
-  setupWrites,
   storedKeyApplies,
 } from '@/features/settings/lib/agentSetup'
 import { anAgentConfig } from '@/test/factories'
@@ -15,41 +15,37 @@ const stored = anAgentConfig({
   key: { set: true, last4: 'abcd', set_at: null },
 })
 
-describe('the writes that put the form in the store', () => {
-  it('writes nothing when nothing changed, so a re-test leaves the agent on', () => {
-    expect(setupWrites(stored, { provider: 'anthropic', key: '', baseUrl: '' })).toEqual([])
+describe('the candidate a test sends', () => {
+  it('holds the provider and the address, and no key when none was typed', () => {
+    expect(candidateOf({ provider: 'anthropic', key: '', baseUrl: '' })).toEqual({
+      provider: 'anthropic',
+      base_url: null,
+    })
   })
 
-  it('switches the agent off before a new key is kept', () => {
+  it('carries the typed key, trimmed', () => {
+    expect(candidateOf({ provider: 'anthropic', key: ' new-key-1234 ', baseUrl: '' })).toEqual({
+      provider: 'anthropic',
+      base_url: null,
+      key: 'new-key-1234',
+    })
+  })
+
+  it('carries the address only for a provider that takes one', () => {
     expect(
-      setupWrites(stored, { provider: 'anthropic', key: ' new-key-1234 ', baseUrl: '' }),
-    ).toEqual([
-      { kind: 'config', body: { enabled: false } },
-      { kind: 'key', key: 'new-key-1234' },
-    ])
+      candidateOf({ provider: 'openai_compatible', key: '', baseUrl: ' http://litellm:4000 ' }),
+    ).toEqual({ provider: 'openai_compatible', base_url: 'http://litellm:4000' })
+    expect(candidateOf({ provider: 'openai', key: 'sk-key-1234', baseUrl: 'http://x' })).toEqual({
+      provider: 'openai',
+      base_url: null,
+      key: 'sk-key-1234',
+    })
   })
 
-  it('never carries a key across providers', () => {
+  it('never sends a key to a provider that takes none', () => {
     expect(
-      setupWrites(stored, {
-        provider: 'openai_compatible',
-        key: '',
-        baseUrl: 'http://litellm:4000',
-      }),
-    ).toEqual([
-      {
-        kind: 'config',
-        body: { provider: 'openai_compatible', base_url: 'http://litellm:4000', enabled: false },
-      },
-    ])
-  })
-
-  it('clears an address the new provider refuses', () => {
-    const ollama = anAgentConfig({ provider: 'ollama', base_url: 'http://ollama:11434' })
-    expect(setupWrites(ollama, { provider: 'openai', key: 'sk-key-1234', baseUrl: '' })).toEqual([
-      { kind: 'config', body: { provider: 'openai', base_url: null } },
-      { kind: 'key', key: 'sk-key-1234' },
-    ])
+      candidateOf({ provider: 'ollama', key: 'stray-key', baseUrl: 'http://ollama:11434' }),
+    ).toEqual({ provider: 'ollama', base_url: 'http://ollama:11434' })
   })
 })
 

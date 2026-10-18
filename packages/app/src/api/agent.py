@@ -1,10 +1,14 @@
-"""The agent's configuration under ``/api``: provider, model, key (#1197)."""
+"""The agent's configuration under ``/api``: provider, model, key (#1197).
+
+The key is stored by ``POST /api/agent/test`` alone, once the provider accepted
+it (#1269)."""
 
 from flask import Blueprint, jsonify
 
 from application import agent as agent_module
 from application import agent_probe
 from api.problem import (
+    conflict,
     provider_refused,
     unprocessable,
 )
@@ -25,21 +29,14 @@ def get_agent_config():
 
 @bp.put('/agent/config')
 def put_agent_config():
-    """Change any of ``enabled``, ``provider``, ``model``, ``base_url``.
+    """Change any of ``enabled``, ``provider``, ``model``, ``model_name``,
+    ``base_url``.
 
-    A different provider or address forgets the key (#1197).
+    A different provider or address forgets the key (#1197). A ``model``
+    without its ``model_name`` clears the name, which belongs to its model.
     """
     return _write_agent_config(
         lambda config: agent_module.change(config, _json_object()))
-
-
-@bp.put('/agent/key')
-def put_agent_key():
-    """Keep the provider's key. It is never served back, only its ``last4``."""
-    body = _json_object() or {}
-    return _write_agent_config(lambda config: (
-        agent_module.with_key(config, body.get('key'), agent_module.now()),
-        False))
 
 
 @bp.delete('/agent/key')
@@ -50,26 +47,45 @@ def delete_agent_key():
 
 @bp.post('/agent/test')
 def probe_agent():
-    """List the stored provider's models, with the stored address and key.
+    """Test a candidate provider, address and key; keep them if it passes.
 
-    The answer names the models and the one to preselect; a provider that
-    refuses answers 502 in its own words. The key is in neither, nor in the
-    log, but as ``…last4``. Nothing is written: choosing a model and switching
-    the agent on are ``PUT /api/agent/config``'s.
+    The body names any of ``provider``, ``base_url`` and ``key``, and what it
+    leaves out is the stored configuration's (an empty body tests that one);
+    the stored key is used only with the provider and address it was stored
+    for. The provider is asked **outside** the write lock, for up to
+    ``agent_probe.TIMEOUT`` seconds. Only a pass writes, under the lock, and
+    only if the stored provider, address and key are still the ones tested
+    (else ``409``). A refusal answers 502 in the provider's words and writes
+    nothing. The key is in no answer and no log line, but as ``…last4``.
     """
-    config = agent_module.read(_store())
+    stored = agent_module.read(_store())
     try:
-        agent_probe.ready(config)
-        listed = agent_probe.models(config)
+        tried = agent_probe.ready(
+            agent_module.candidate(stored, _json_object() or {}, agent_module.now()))
+        listed = agent_probe.models(tried)
     except agent_module.InvalidAgentConfig as exc:
         return unprocessable(str(exc), key=exc.key)
     except agent_probe.ProviderRefused as exc:
         return provider_refused(
-            str(exc), agent_module.PROVIDERS[config['provider']], exc.reason)
+            str(exc), agent_module.PROVIDERS[tried['provider']], exc.reason)
+    same = ('provider', 'base_url', 'api_key')
+    with current_runtime().config_manager.writing() as opened:
+        current = agent_module.read(opened)
+        # Changed meanwhile, and not to what was just tested (another tab
+        # that tested the same candidate has nothing to be told).
+        moved = any(current[name] != stored[name] for name in same)
+        if moved and any(current[name] != tried[name] for name in same):
+            return conflict(
+                "The agent's configuration changed while the connection was "
+                "tested; test it again.")
+        kept = agent_module.adopted(current, tried)
+        if kept != current:
+            agent_module.write(opened, kept, agent_module.now())
     return jsonify({
-        'provider': config['provider'],
+        'provider': kept['provider'],
         'models': listed,
-        'preselected': agent_probe.preselected(listed, config['model']),
+        'preselected': agent_probe.preselected(listed, kept['model']),
+        'config': agent_module.describe(kept),
     })
 
 

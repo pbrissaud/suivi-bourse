@@ -141,7 +141,7 @@ describe('a session that ends under the page', () => {
   it('keeps what was typed through a refused write, and does not send it again', async () => {
     let writes = 0
     server.use(
-      http.put(ROUTES.agentConfig, () => {
+      http.post(ROUTES.agentTest, () => {
         writes += 1
         return refused(401)
       }),

@@ -14,7 +14,7 @@ import time
 
 import httpx2
 import pytest
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -216,8 +216,9 @@ def test_a_provider_failure_is_said_by_name_and_never_with_the_key(
         answer = run(runtime, post('k1'))
 
     errors = [c for c in chunks(answer.text) if c['type'] == 'error']
-    assert [c['errorText'] for c in errors] == [
-        'Anthropic: invalid x-api-key …wxyz']
+    assert [json.loads(c['errorText']) for c in errors] == [{
+        'error': 'Anthropic: invalid x-api-key …wxyz',
+        'provider': 'Anthropic', 'reason': 'key'}]
     assert KEY not in answer.text
     assert KEY not in caplog.text
     assert 'Anthropic: invalid x-api-key …wxyz' in caplog.text
@@ -225,6 +226,30 @@ def test_a_provider_failure_is_said_by_name_and_never_with_the_key(
     assert KEY not in json.dumps(thread)
     assert thread['messages'][-1]['parts'][0]['content'] == \
         'Que se passe-t-il si je vends ?'
+
+
+@pytest.mark.parametrize('failure, reason', [
+    (ModelHTTPError(404, 'm', body={'error': {'message': 'gone'}}), 'model'),
+    (ModelHTTPError(429, 'm', body={'error': {'type': 'rate_limit_error'}}),
+     'rate_limit'),
+    (ModelHTTPError(529, 'm', body='overloaded'), 'overloaded'),
+    (ModelAPIError('m', 'Connection error.'), 'unreachable'),
+])
+def test_a_turn_refusal_is_classified(runtime, monkeypatch, failure, reason):
+    switched_on(runtime)
+
+    async def fails(messages, info):
+        raise failure
+        yield  # pragma: no cover
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=fails)))
+
+    answer = run(runtime, post('k1'))
+
+    errors = [json.loads(c['errorText']) for c in chunks(answer.text)
+              if c['type'] == 'error']
+    assert [(e['provider'], e['reason']) for e in errors] == [
+        ('Anthropic', reason)]
 
 
 def test_two_failed_turns_leave_one_trailing_question(runtime, monkeypatch):

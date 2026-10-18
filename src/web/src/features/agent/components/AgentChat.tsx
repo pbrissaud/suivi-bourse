@@ -79,8 +79,10 @@ import {
   threadNotWritable,
   toolRunning,
   toolSentence,
+  turnRefusal,
   unreadableFiles,
 } from '@/features/agent/lib/agentChat'
+import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
 import {
   FactCard,
@@ -147,7 +149,7 @@ function AgentHeader({ config, wide }: { config: AgentConfig; wide: boolean }) {
         {config.provider !== null ? (
           <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
             <span className="truncate">
-              {t(`agent.provider.${config.provider}`)} · {config.model}
+              {t(`agent.provider.${config.provider}`)} · {config.model_name ?? config.model}
             </span>
             {config.provider === 'ollama' ? (
               <span className="shrink-0 rounded-full border px-1.5 text-xs font-medium">
@@ -398,8 +400,14 @@ function AgentThread() {
   return <AgentConversation key={chat.id} />
 }
 
+/** The refusals the reader mends in Settings: another key, more credit, another model. */
+const SETTINGS_REASONS = ['key', 'quota', 'model']
+
 function AgentConversation() {
   const { t } = useI18n()
+  // The page's own read, already in the cache: it names the provider a refusal blames.
+  const provider =
+    useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig }).data?.provider ?? null
   const { chat } = useAgentChat()
   const threadId = useThreadParam()
   const navigate = useNavigate()
@@ -446,6 +454,23 @@ function AgentConversation() {
   }, [error, messages, setMessages, clearError])
 
   const failed = error !== undefined && !threadNotWritable(error) && !isSessionEnded(error)
+  const refusal = failed ? turnRefusal(error) : null
+  const retryButton = (
+    <div className="flex flex-wrap items-center gap-3 pt-1">
+      <Button variant="outline" className="min-h-11" onClick={retry}>
+        {t('agent.retry')}
+      </Button>
+      {refusal && SETTINGS_REASONS.includes(refusal.reason) ? (
+        <Link
+          to="/settings"
+          hash="agent"
+          className="text-sm text-primary underline-offset-4 hover:underline"
+        >
+          {t('agent.refusal.settings')}
+        </Link>
+      ) : null}
+    </div>
+  )
   const waiting = busy && waitingOnTools(status, messages)
 
   return (
@@ -487,11 +512,21 @@ function AgentConversation() {
                 ) : null}
                 {failed ? (
                   <MessageScrollerItem messageId="error">
-                    <div role="alert" className="flex flex-col items-start gap-2">
-                      <p className="text-sm text-destructive">{errorSentence(error)}</p>
-                      <Button variant="outline" className="min-h-11" onClick={retry}>
-                        {t('agent.retry')}
-                      </Button>
+                    <div role={refusal && provider ? undefined : 'alert'}>
+                      {refusal && provider ? (
+                        <RefusalNotice
+                          provider={t(`agent.provider.${provider}`)}
+                          reason={refusal.reason}
+                          said={refusal.said}
+                        >
+                          {retryButton}
+                        </RefusalNotice>
+                      ) : (
+                        <div className="flex flex-col items-start gap-2">
+                          <p className="text-sm text-destructive">{errorSentence(error)}</p>
+                          {retryButton}
+                        </div>
+                      )}
                     </div>
                   </MessageScrollerItem>
                 ) : null}
