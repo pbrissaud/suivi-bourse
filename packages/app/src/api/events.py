@@ -176,8 +176,8 @@ def import_events():
                                 says = {symbol: base if amounts_in == 'base' else code
                                         for symbol, code in sent.items()}
                         fresh, duplicates = entries.split_duplicates(
-                opened, rows, write_held=write_duplicates,
-                write_repeats=write_repeats)
+                            opened, rows, write_held=write_duplicates,
+                            write_repeats=write_repeats)
                         written = len(entries.create_many(
                             opened, fresh,
                             base_currency=declared if adopt_currency else None,
