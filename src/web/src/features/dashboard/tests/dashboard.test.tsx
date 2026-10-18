@@ -586,10 +586,35 @@ describe('one performance figure, and the TWR behind it (#1112)', () => {
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
     const bubble = await screen.findByRole('dialog')
     expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
-    expect(bubble).toHaveTextContent(/Le TWR, \+102,89\D?%/)
-    expect(bubble).toHaveTextContent(/c’est pourquoi il diffère du TRI/)
-    // The rebuild's base date went with the statistic.
-    expect(bubble).not.toHaveTextContent(/2019/)
+    // Dated with the payload's own `twr_since`: the day moves while a backfill
+    // runs, and an undated figure would change sign with nothing else changed.
+    expect(aTotals().twr_since).toBe('2019-10-30')
+    expect(bubble).toHaveTextContent(
+      /La performance de vos placements, \+102,89\D?% depuis le 30 oct\. 2019/,
+    )
+    expect(bubble).toHaveTextContent(/peuvent même être de signes opposés/)
+    expect(bubble).not.toHaveTextContent(/TWR/)
+  })
+
+  it('keeps the plain IRR text where the series has no start day', async () => {
+    server.use(totalsOf({ twr_since: null }))
+    const { user } = renderApp()
+    await hero()
+
+    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
+    const bubble = await screen.findByRole('dialog')
+    expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
+    expect(bubble).not.toHaveTextContent(/performance de vos placements/)
+  })
+
+  it('names one measure once in English: the bubble never says IRR', async () => {
+    const { user } = renderApp({ browserLanguages: ['en-GB'] })
+    await screen.findByRole('group', { name: 'Total P&L' })
+
+    await user.click(screen.getByRole('button', { name: 'What Money-weighted return means' }))
+    const bubble = await screen.findByRole('dialog')
+    expect(bubble).toHaveTextContent(/The performance of your holdings, \+102\.89\D?% since/)
+    expect(bubble).not.toHaveTextContent(/IRR/)
   })
 
   it('keeps the plain IRR text where there is no TWR', async () => {

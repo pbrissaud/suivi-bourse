@@ -238,7 +238,7 @@ export function DashboardHead({
   // two indices counted from different origins share a unit without being a
   // comparison. The index stays the store's own.
   const twrMove =
-    totalsRow?.twr_index === null || totalsRow?.twr_index === undefined
+    totalsRow?.twr_index == null || totalsRow.twr_since == null
       ? null
       : (totalsRow.twr_index - 100) / 100
 
@@ -380,6 +380,7 @@ export function DashboardHead({
                           values={{
                             explain: t('dashboard.xirr.explain'),
                             twr: f.percent(twrMove),
+                            since: f.date(totalsRow.twr_since),
                             ytd:
                               ytdTwr === null
                                 ? ''
