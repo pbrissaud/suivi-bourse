@@ -24,7 +24,8 @@ DUPLICATE_KEY_COLUMNS = ('date', 'event_type', 'account', 'symbol', 'quantity',
 #: ``_event_from_row``: sharing one tuple between the two would make a column
 #: reordered for the writer silently reorder what the reader unpacks.
 EVENT_COLUMNS = ('id', 'date', 'event_type', 'account', 'symbol', 'name',
-                 'quantity', 'unit_price', 'fee', 'amount', 'notes')
+                 'quantity', 'unit_price', 'fee', 'amount', 'notes',
+                 'amounts_currency')
 
 AMOUNT_PRECISION = '%.16g'
 
@@ -69,11 +70,13 @@ def create(store, draft: Event) -> Event:
         declare_symbol(store, event.symbol)
         store.execute(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
-            '                   quantity, unit_price, fee, amount, notes) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            '                   quantity, unit_price, fee, amount, notes, '
+            '                   amounts_currency) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [next_id, event.date, event.event_type.value, account,
              event.symbol, event.name, event.quantity, event.unit_price,
-             event.fee, event.amount, event.notes])
+             event.fee, event.amount, event.notes,
+             store.setting('base_currency')])
 
         _stamp_write(store)
         _replays(store)
@@ -84,8 +87,15 @@ def create(store, draft: Event) -> Event:
 
 def create_many(store, drafts: Sequence[Event], *,
                 base_currency: Optional[str] = None,
-                declare_accounts: Sequence[str] = ()) -> List[Event]:
-    """Record a whole file's worth of events. One transaction, one replay."""
+                declare_accounts: Sequence[str] = (),
+                stated: Optional[Mapping[str, str]] = None) -> List[Event]:
+    """Record a whole file's worth of events. One transaction, one replay.
+
+    ``stated`` is the unit the owner said a security's amounts were written in
+    (#1261), by symbol: stamped on its events' ``amounts_currency``. A symbol it
+    does not name is stamped with nothing.
+    """
+    stated = stated or {}
     if not drafts and base_currency is None and not declare_accounts:
         return []
 
@@ -130,7 +140,8 @@ def create_many(store, drafts: Sequence[Event], *,
             EVENT_COLUMNS,
             [[event.id, event.date, event.event_type.value, event.account,
               event.symbol, event.name, event.quantity, event.unit_price,
-              event.fee, event.amount, event.notes] for event in stored])
+              event.fee, event.amount, event.notes,
+              stated.get(event.symbol)] for event in stored])
 
         _stamp_write(store)
         _replays(store)
@@ -150,11 +161,13 @@ def update(store, event_id: int, draft: Event) -> Event:
         store.execute(
             'UPDATE event SET date = ?, event_type = ?, account = ?, '
             '                 symbol = ?, name = ?, quantity = ?, '
-            '                 unit_price = ?, fee = ?, amount = ?, notes = ? '
+            '                 unit_price = ?, fee = ?, amount = ?, notes = ?, '
+            '                 amounts_currency = ? '
             'WHERE id = ?',
             [event.date, event.event_type.value, account, event.symbol,
              event.name, event.quantity, event.unit_price, event.fee,
-             event.amount, event.notes, event_id])
+             event.amount, event.notes, store.setting('base_currency'),
+             event_id])
 
         _stamp_write(store)
         _replays(store)

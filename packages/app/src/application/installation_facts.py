@@ -121,7 +121,7 @@ def _observe_reconstruction(opened, context: Context):
 
 
 def _observe_assumed_base_currency(opened, context: Context):
-    """The events whose amounts were taken to be in the reporting currency."""
+    """The events whose amounts were read as the reporting currency, unasked (#1261)."""
     base = opened.setting('base_currency')
     if not base:
         return None
@@ -133,6 +133,7 @@ def _observe_assumed_base_currency(opened, context: Context):
         'WHERE q.currency IS NOT NULL '
         '  AND (e.unit_price IS NOT NULL OR e.fee IS NOT NULL '
         '       OR e.amount IS NOT NULL) '
+        '  AND e.amounts_currency IS NULL '
         'ORDER BY e.date, e.id')
 
     events: List[Dict[str, Any]] = []
@@ -180,14 +181,13 @@ def _say_reconstruction(detail: Mapping[str, Any]) -> str:
 def _say_assumed_base_currency(detail: Mapping[str, Any]) -> str:
     base = detail['base_currency']
     return (
-        f"Your amounts were read as {base}. {len(detail['events'])} event(s) on "
-        f"{len(detail['symbols'])} line(s) quoted in "
-        f"{', '.join(detail['currencies'])} ({', '.join(detail['symbols'])}) "
-        f"were imported before any price had been observed, so this version took "
-        f"the amounts in your files to be {base} already. If your broker "
-        f"exported them in the security's own currency, re-export those lines "
-        f"in {base} and drop the file again; if they were already in {base}, "
-        f"acknowledge this notice.")
+        f"{len(detail['events'])} event(s) on {len(detail['symbols'])} line(s) "
+        f"quoted in {', '.join(detail['currencies'])} "
+        f"({', '.join(detail['symbols'])}) were recorded without anyone saying "
+        f"which currency their amounts were in, so they were read as {base}. "
+        f"If your broker wrote them in the security's own currency, delete "
+        f"those events and import the file again: the preview will ask. If they "
+        f"were already in {base}, acknowledge this notice.")
 
 
 SPECS: Tuple[FactSpec, ...] = (
@@ -203,7 +203,8 @@ SPECS: Tuple[FactSpec, ...] = (
     FactSpec(
         ASSUMED_BASE_CURRENCY, RECORDED, _observe_assumed_base_currency,
         _say_assumed_base_currency,
-        'Amounts imported from files were taken to be in the reporting currency.'),
+        'Amounts were recorded without their currency being stated; they were '
+        'read in the base currency.'),
 )
 
 BY_KEY: Dict[str, FactSpec] = {spec.key: spec for spec in SPECS}

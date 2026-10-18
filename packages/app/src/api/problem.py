@@ -19,6 +19,7 @@ TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
 TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
 TYPE_REFUSED = '/problems/refused'
 TYPE_PROVIDER_REFUSED = '/problems/provider-refused'
+TYPE_CURRENCY_UNCONVERTIBLE = '/problems/currency-unconvertible'
 
 
 def problem(status: int, title: str, detail: Optional[str] = None,
@@ -119,6 +120,19 @@ def model_in_use(detail: str, accounts: Sequence[str]):
 def unprocessable_file(detail: str):
     """422 — the file parsed as far as it could, and it is not a ledger."""
     return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE)
+
+
+def currency_unconvertible(detail: str, symbol: str, currency: str, base: str,
+                           day: str):
+    """422 — amounts asked to be converted, and no rate is known for one day (#1261).
+
+    Its own identifier and its own members: the front branches on ``type`` and
+    writes the sentence from ``symbol``, ``currency``, ``base`` and ``date``, the
+    first day without a rate.
+    """
+    return problem(422, 'Currency not convertible', detail,
+                   TYPE_CURRENCY_UNCONVERTIBLE, symbol=symbol,
+                   currency=currency, base=base, date=day)
 
 
 def too_large(detail: str, limit: int):

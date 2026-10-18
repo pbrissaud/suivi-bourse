@@ -48,8 +48,8 @@ export type Receipt =
   | { kind: 'export.running'; file: ExportFile }
   /** It is on the reader's disk. */
   | { kind: 'export.saved'; file: ExportFile }
-  /** A file is on its way in, and this names it (#811). */
-  | { kind: 'import.running'; filename: string }
+  /** A file is on its way in and its currencies are being checked (#811, #1261). */
+  | { kind: 'import.checking'; filename: string }
   /**
    * **The same sentence, one moment earlier** (#813, `CONTEXT.md` § Receipt).
    *
@@ -134,8 +134,8 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
       return { message: 'receipt.export.running', values: { file: receipt.file } }
     case 'export.saved':
       return { message: 'receipt.export.saved', values: { file: receipt.file } }
-    case 'import.running':
-      return { message: 'receipt.import.running', values: { file: receipt.filename } }
+    case 'import.checking':
+      return { message: 'receipt.import.checking', values: { file: receipt.filename } }
     case 'import.written':
       return {
         message: 'receipt.import.written',

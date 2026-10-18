@@ -25,13 +25,16 @@ import openpyxl
 import pytest
 
 from application import entries
+from application import fx
 from application import ledger
+from application import market
 from application import store as store_module
 from application import uploads
 from application.events.loader import EventLoader
 from application.events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, EventType
 from test_web_api import (ACCOUNTS_EVENTS, ACCOUNTS_FILE, build_client,
                           build_client_and_store)
+import api as api_module
 from api import problem
 
 
@@ -1556,3 +1559,237 @@ def test_declining_does_not_reach_the_disagreement(tmp_path):
     assert response.status_code == 422
     assert 'USD' in response.get_json()['detail']
     assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+# --------------------------------------------------------------------------- #
+# The currency of the amounts, asked before the write (#1261)
+# --------------------------------------------------------------------------- #
+
+FOREIGN_FILE = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.00,,\n"
+    "2024-02-15,BUY,AAPL,Apple Inc,5,160.00,,,\n"
+    "2024-03-15,BUY,AAPL,Apple Inc,5,170.00,,,\n"
+    "2024-01-20,BUY,TSLA,Tesla,1,200.00,,,\n"
+    "2024-01-25,BUY,MC.PA,LVMH,1,700.00,,,\n"
+).encode('utf-8')
+
+
+def _in_euro(client, yahoo=None, rate=0.5):
+    """A EUR install, Yahoo answering from ``yahoo`` and a flat ``rate``."""
+    assert client.put('/api/settings',
+                      json={'base_currency': 'EUR'}).status_code == 200
+    answers = {'AAPL': 'USD', 'TSLA': 'USD', 'MC.PA': 'EUR'}
+    answers.update(yahoo or {})
+    monkeypatched = pytest.MonkeyPatch()
+    monkeypatched.setattr(
+        market, 'symbol_attributes',
+        lambda symbol: ({'currency': answers[symbol]}
+                        if answers.get(symbol) else None))
+    runtime = api_module.current_runtime()
+    runtime.workloads.rates = fx.Rates(
+        lambda pair: None,
+        lambda pair, start, end: ({} if rate is None else {
+            start + timedelta(days=i): rate
+            for i in range((end - start).days + 1)}))
+    return monkeypatched
+
+
+@pytest.fixture
+def euro_install(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    patched = _in_euro(client)
+    yield client, opened
+    patched.undo()
+
+
+def test_import_preview_lists_foreign_lines_and_unverified(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    patched = _in_euro(client, yahoo={'TSLA': None})
+    try:
+        receipt = _upload(client, FOREIGN_FILE, query="?dry_run=1").get_json()
+    finally:
+        patched.undo()
+
+    assert receipt['foreign_lines'] == [
+        {'symbol': 'AAPL', 'currency': 'USD', 'rows': 3}]
+    assert receipt['unverified'] == ['TSLA']
+
+
+def test_import_preview_asks_nothing_when_the_file_declares_its_currency(
+        euro_install):
+    client, _ = euro_install
+    declared = FOREIGN_FILE.replace(b'notes', b'notes,base_currency') \
+        .replace(b',\n', b',,EUR\n')
+
+    receipt = _upload(client, declared, query="?dry_run=1").get_json()
+
+    assert receipt['foreign_lines'] == [] and receipt['unverified'] == []
+
+
+def test_import_preview_in_quote_currency_converts_before_the_duplicate_split(
+        euro_install):
+    client, opened = euro_install
+    held = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,75.00\n").encode('utf-8')
+    assert _upload(client, held).status_code == 201
+    again = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n").encode('utf-8')
+
+    as_quoted = _upload(client, again, query=_query(
+        dry_run=1, amounts_in='quote')).get_json()
+    as_base = _upload(client, again, query=_query(
+        dry_run=1, amounts_in='base')).get_json()
+
+    assert (as_quoted['written'], as_quoted['duplicates']) == (0, 1)
+    assert (as_base['written'], as_base['duplicates']) == (1, 0)
+
+
+def test_import_preview_without_a_rate_is_currency_unconvertible(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    patched = _in_euro(client, rate=None)
+    try:
+        response = _upload(client, FOREIGN_FILE, query=_query(
+            dry_run=1, amounts_in='quote'))
+    finally:
+        patched.undo()
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body['type'] == '/problems/currency-unconvertible'
+    assert (body['symbol'], body['currency'], body['base'], body['date']) == (
+        'AAPL', 'USD', 'EUR', '2024-01-15')
+
+
+def test_import_write_without_a_rate_writes_nothing(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    patched = _in_euro(client, rate=None)
+    try:
+        response = _upload(client, FOREIGN_FILE, query=_query(
+            amounts_in='quote', foreign=['AAPL:USD']))
+    finally:
+        patched.undo()
+
+    assert response.status_code == 422
+    assert response.get_json()['type'] == '/problems/currency-unconvertible'
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_import_write_converts_only_the_foreign_pairs_sent_back(euro_install):
+    client, opened = euro_install
+
+    response = _upload(client, FOREIGN_FILE, query=_query(
+        amounts_in='quote', foreign=['AAPL:USD']))
+
+    assert response.status_code == 201
+    assert response.get_json()['foreign_lines'] == [
+        {'symbol': 'AAPL', 'currency': 'USD', 'rows': 3}]
+    prices = dict(opened.query(
+        'SELECT symbol, max(unit_price) FROM event GROUP BY symbol'))
+    assert prices == {'AAPL': 85.0, 'TSLA': 200.0, 'MC.PA': 700.0}
+    assert opened.query(
+        "SELECT fee FROM event WHERE symbol = 'AAPL' AND fee IS NOT NULL") == [(1.0,)]
+
+
+def test_import_write_refuses_a_foreign_pair_the_file_does_not_name(
+        euro_install):
+    client, opened = euro_install
+
+    for pair in ('NVDA:USD', 'AAPL:EUR', 'AAPL:dollars'):
+        response = _upload(client, FOREIGN_FILE, query=_query(
+            amounts_in='quote', foreign=[pair]))
+        assert response.status_code == 400, pair
+        assert response.get_json()['type'] == '/problems/bad-request'
+    assert _upload(client, FOREIGN_FILE, query=_query(
+        amounts_in='both')).status_code == 400
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_import_write_stamps_amounts_currency(euro_install):
+    client, opened = euro_install
+
+    assert _upload(client, FOREIGN_FILE, query=_query(
+        amounts_in='quote', foreign=['AAPL:USD'])).status_code == 201
+    stamped = dict(opened.query(
+        'SELECT symbol, any_value(amounts_currency) FROM event GROUP BY symbol'))
+    assert stamped == {'AAPL': 'USD', 'TSLA': None, 'MC.PA': None}
+
+    opened.execute('DELETE FROM event')
+    assert _upload(client, FOREIGN_FILE, query=_query(
+        amounts_in='base', foreign=['AAPL:USD', 'TSLA:USD'])).status_code == 201
+    stamped = dict(opened.query(
+        'SELECT symbol, any_value(amounts_currency) FROM event GROUP BY symbol'))
+    assert stamped == {'AAPL': 'EUR', 'TSLA': 'EUR', 'MC.PA': None}
+    assert opened.query(
+        "SELECT unit_price FROM event WHERE symbol = 'AAPL' ORDER BY date LIMIT 1"
+    ) == [(150.0,)]
+
+
+def test_import_write_without_an_answer_keeps_todays_behaviour(euro_install):
+    client, opened = euro_install
+
+    assert _upload(client, FOREIGN_FILE).status_code == 201
+
+    assert opened.query(
+        "SELECT unit_price, amounts_currency FROM event "
+        "WHERE symbol = 'AAPL' ORDER BY date LIMIT 1") == [(150.0, None)]
+
+
+def test_import_dry_run_still_writes_no_quote_row(euro_install):
+    client, opened = euro_install
+
+    receipt = _upload(client, FOREIGN_FILE, query="?dry_run=1").get_json()
+
+    assert receipt['foreign_lines']
+    assert opened.query('SELECT count(*) FROM symbol_quote') == [(0,)]
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_an_event_typed_in_the_form_is_stamped_with_the_base(euro_install):
+    client, opened = euro_install
+
+    created = client.post('/api/events', json={
+        'date': '2024-01-15', 'event_type': 'BUY', 'symbol': 'AAPL',
+        'quantity': 1, 'unit_price': 140.0})
+    assert created.status_code == 201
+    assert opened.query('SELECT amounts_currency FROM event') == [('EUR',)]
+
+    event_id = created.get_json()['id']
+    opened.execute('UPDATE event SET amounts_currency = NULL')
+    assert client.patch(f'/api/events/{event_id}', json={
+        'date': '2024-01-15', 'event_type': 'BUY', 'symbol': 'AAPL',
+        'quantity': 1, 'unit_price': 141.0}).status_code == 200
+    assert opened.query('SELECT amounts_currency FROM event') == [('EUR',)]
+
+
+def test_import_write_warms_the_rates_again_when_the_base_moved_before_the_lock(
+        euro_install, monkeypatch):
+    """The rates fetched outside the lock are for the base read then; if it has
+    changed by the time the lock is held, they are fetched again outside it."""
+    from api import events as events_module
+    client, opened = euro_install
+    warmed = []
+    real_warm = events_module._warm_rates
+    real_base = events_module._question_base
+    calls = {'base': 0}
+
+    def spying_warm(parsed, runtime, base):
+        warmed.append(base)
+        return real_warm(parsed, runtime, base)
+
+    def moving_base(store, parsed):
+        calls['base'] += 1
+        return 'GBP' if calls['base'] == 1 else real_base(store, parsed)
+
+    monkeypatch.setattr(events_module, '_warm_rates', spying_warm)
+    monkeypatch.setattr(events_module, '_question_base', moving_base)
+
+    response = _upload(client, FOREIGN_FILE, query=_query(
+        amounts_in='quote', foreign=['AAPL:USD']))
+
+    assert response.status_code == 201
+    assert warmed == ['GBP', 'EUR']
+    assert opened.query(
+        "SELECT max(unit_price) FROM event WHERE symbol = 'AAPL'") == [(85.0,)]

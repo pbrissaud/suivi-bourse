@@ -46,6 +46,7 @@ def _cap_dividend_fee_at_amount(connection) -> None:
 #: **here**, after the last one released.
 STEPS = store.STEPS + (
     ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
+    ('add_event_amounts_currency', store._add_event_amounts_currency),
 )
 
 __all__ = ['STEPS']

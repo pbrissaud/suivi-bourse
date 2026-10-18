@@ -230,7 +230,7 @@ describe('the sentence a notice is read in', () => {
     const partial = fact({ key: 'assumed_base_currency', detail: { base_currency: 'EUR' } })
     expect(say('fr', partial)).not.toContain('undefined')
     expect(say('en', partial)).toBe(
-      'Amounts imported from files were taken to be in the base currency.',
+      'Some amounts were recorded without their currency being stated; they were read in the base currency.',
     )
   })
 

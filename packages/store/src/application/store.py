@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS event (
     unit_price    DOUBLE,      -- an amount in the reporting currency; optional on GRANT
     fee           DOUBLE,
     amount        DOUBLE,
-    notes         VARCHAR);
+    notes         VARCHAR,
+    amounts_currency VARCHAR);  -- NULL: nobody said (#1261); else the unit the amounts were written in
 """
 
 _DDL_DERIVED_FROM_EVENTS = """
@@ -688,6 +689,22 @@ def _add_splits_read_at(connection) -> None:
     """
     connection.execute('ALTER TABLE symbol_quote '
                        'ADD COLUMN IF NOT EXISTS splits_read_at TIMESTAMPTZ')
+
+
+def _add_event_amounts_currency(connection) -> None:
+    """Give an already-created store the unit an event's amounts were stated in (#1261).
+
+    Same shape as :func:`_add_newest_window_tried` and for the same reason:
+    ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds, so the column
+    added to the DDL reaches a **new** file and no other. The step writes no
+    value: every event already stored stays ``NULL``, *nobody said*, and the
+    installation notice treats it exactly as it did before.
+
+    It is **not** in :data:`STEPS`: it is appended to
+    :data:`application.schema_steps.STEPS`, after the last step released.
+    """
+    connection.execute(
+        'ALTER TABLE event ADD COLUMN IF NOT EXISTS amounts_currency VARCHAR')
 
 
 def _drop_split_adjusted_prices(connection) -> None:
