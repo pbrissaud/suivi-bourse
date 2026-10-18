@@ -70,10 +70,10 @@ describe('the page title, now the header’s', () => {
     }
   })
 
-  it('sets the title on the figure rung from md, the section-title rung under it', async () => {
+  it('sets the title quiet, on the prose rung at every width', async () => {
     renderApp()
     const title = await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
-    expect(title).toHaveClass('text-2xl', 'md:text-4xl')
+    expect(title).toHaveClass('text-prose', 'font-medium')
   })
 
   it('carries the page’s own dated subtitle beside it', async () => {
