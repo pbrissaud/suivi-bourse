@@ -104,6 +104,13 @@ describe('the ledger’s column budget', () => {
 
   it('declares the container the thresholds are measured on', () => {
     const ledger = read('features/data/components/Ledger.tsx')
-    expect(ledger).toMatch(/<Card className="[^"]*@container\/ledger\b[^"]*">/)
+    // The card's classes go through `cn` since the drop outline (#1278).
+    expect(ledger).toMatch(/<Card\b[^>]*'[^']*@container\/ledger\b[^']*'/)
+  })
+
+  it('subtracts no facet panel from that container (#1278)', () => {
+    // 1 134 px is the whole content column: the filters are a toolbar above the
+    // table, so no 248 px track sits beside it.
+    expect(read('features/data/components/Ledger.tsx')).not.toMatch(/grid-cols-\[248px/)
   })
 })

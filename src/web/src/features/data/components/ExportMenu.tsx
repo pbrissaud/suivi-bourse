@@ -114,7 +114,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
         <Button
           type="button"
           variant="outline"
-          className="h-8.5 gap-2.5 rounded-lg bg-transparent pr-2 pl-3.5 dark:bg-transparent"
+          className="h-8 gap-2.5 rounded-lg bg-transparent pr-2 pl-3.5 dark:bg-transparent"
         >
           <Download aria-hidden className="size-3.5" />
           {t('data.export.title')}

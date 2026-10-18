@@ -318,7 +318,7 @@ function formatDaySpan(
  * A month, named short — `janv.`, `Jan` (#834).
  *
  * The tenth `Intl` site, and the first that names a *part* of a date rather
- * than a date: the ledger's facet panel lays the twelve out in a grid three
+ * than a date: the ledger's period menu lays the twelve out in a grid three
  * cells wide, where `1 janv. 2026` would not fit and would repeat the year
  * twelve times besides. A hand-written table of twelve French names would be
  * the bug this module exists to prevent — the reader chooses their language,

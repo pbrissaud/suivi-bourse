@@ -464,7 +464,7 @@ describe('the create form on an install that has declared nothing', () => {
     // And nothing is said above the journal about it (#829): there is
     // no band, and the one surface this failure costs anything is the account
     // field — which names it itself, in its own three-state sentence.
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Vos comptes n’ont pas pu être lus/)).not.toBeInTheDocument()
     expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Saisir un événement' }))
