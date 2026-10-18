@@ -30,6 +30,14 @@ function designType(rung: string, key: string): string {
   return value[1].trim()
 }
 
+/** One entry of the front matter's `components:` block — same shape as a rung. */
+const designComponent = designType
+
+/** What a custom property is declared as, anywhere in the file. */
+function declared(source: string, name: string): string | undefined {
+  return new RegExp(`^\\s*${name}:\\s*([^;]+);`, 'm').exec(source)?.[1].trim()
+}
+
 describe('the controls the browser paints itself', () => {
   /**
    * **The theme reaches the native controls too** (#837).
@@ -98,12 +106,43 @@ describe('index.css says what DESIGN.md says', () => {
     expect(said('--text-2xl--line-height')).toBe(rem(designType('section-title', 'lineHeight')))
     expect(said('--text-4xl')).toBe(rem(designType('figure', 'fontSize')))
     expect(said('--text-4xl--line-height')).toBe(rem(designType('figure', 'lineHeight')))
+    // The page title rides the figure's rung: one size, two names in DESIGN.md.
+    expect(said('--text-4xl')).toBe(rem(designType('page-title', 'fontSize')))
+    expect(said('--text-4xl--line-height')).toBe(rem(designType('page-title', 'lineHeight')))
     // The hero is fluid, and DESIGN.md's 60 px is its ceiling.
     expect(said('--text-hero')).toBe(
       `clamp(2.25rem, 1rem + 4.5vw, ${rem(designType('hero', 'fontSize'))})`,
     )
     expect(said('--text-hero--line-height')).toBe('calc(64 / 60)')
     expect(said('--tracking-hero')).toBe(designType('hero', 'letterSpacing'))
+  })
+})
+
+describe('index.css says what DESIGN.md says about the layout', () => {
+  const rem = (px: string) => `${Number.parseFloat(px) / 16}rem`
+
+  it('states the content widths DESIGN.md sets', () => {
+    const source = read()
+    expect(declared(source, '--container-column')).toBe(
+      rem(designComponent('content-column', 'maxWidth')),
+    )
+    expect(declared(source, '--container-reading')).toBe(
+      rem(designComponent('content-reading', 'maxWidth')),
+    )
+    expect(declared(source, '--breakpoint-3xl')).toBe('100rem')
+  })
+
+  it('keeps the layout widths out of a theme’s reach', () => {
+    // A theme replaces blocks 1 and 2, `:root` and `.dark`; the bridge is
+    // inlined at build time, so a width declared there is out of its way.
+    const source = read()
+    const inline = source.slice(source.indexOf('@theme inline'))
+    for (const name of ['--container-column', '--container-reading', '--breakpoint-3xl']) {
+      expect(declared(inline, name), name).toMatch(/^\d+(\.\d+)?rem$/)
+      // Declared once, and after `@theme inline` opens: never in a `:root` or `.dark`.
+      expect(source.match(new RegExp(`${name}:`, 'g'))).toHaveLength(1)
+      expect(source.indexOf(`${name}:`), name).toBeGreaterThan(source.indexOf('@theme inline'))
+    }
   })
 })
 

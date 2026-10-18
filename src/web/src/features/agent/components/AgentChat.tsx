@@ -130,7 +130,7 @@ export function AgentChat({ wide }: { wide: boolean }) {
       ) : null}
       {/* Centred in what the rail leaves, at 768 px: wider, a line ran past 110
           characters; pinned to the rail, the right of the screen stood empty. */}
-      <section className="mx-auto flex min-h-0 w-full max-w-180 min-w-0 flex-col lg:max-w-192 lg:pt-5">
+      <section className="mx-auto flex min-h-0 w-full max-w-column min-w-0 flex-col lg:max-w-reading lg:pt-5">
         <AgentHeader config={config.data} wide={wide} />
         <AgentThread />
       </section>
@@ -355,7 +355,7 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
 function AgentOff() {
   const { t } = useI18n()
   return (
-    <div className="mx-auto flex w-full max-w-180 flex-col items-start gap-3 px-4 py-6 lg:max-w-192 lg:pt-12">
+    <div className="mx-auto flex w-full max-w-column flex-col items-start gap-3 px-4 py-6 lg:max-w-reading lg:pt-12">
       <p className="text-prose font-medium">{t('agent.disabled')}</p>
       <p className="max-w-prose text-prose text-muted-foreground">{t('agent.disabled.detail')}</p>
       <Button asChild className="min-h-11">

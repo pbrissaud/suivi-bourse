@@ -36,7 +36,7 @@ const CONTAINER_AT_1440 = 1440 - SIDEBAR - 2 * GUTTER - 2
 
 describe('the ledger’s column budget', () => {
   it('fits every column at 1440 px with the sidebar open', () => {
-    expect(CONTAINER_AT_1440).toBe(1134)
+    expect(CONTAINER_AT_1440).toBe(1182)
     for (const [, column] of columns)
       expect(column.from ?? 0).toBeLessThanOrEqual(CONTAINER_AT_1440)
     expect(sum(Object.values(LEDGER_COLUMNS))).toBeLessThanOrEqual(CONTAINER_AT_1440)

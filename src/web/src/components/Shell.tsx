@@ -19,9 +19,9 @@
  * **off-centre** page — 472 px of margin on the left against 216 on the right,
  * `mx-auto` centring inside a `SidebarInset` already offset by the column.
  *
- * Width is answered by **tracks and not by longer rows**: the dashboard and the
- * accounts page gain a column where there is room for one. The bound a dense
- * table wants at 2 560 px is that table's subject and not the shell's.
+ * Width is answered **per kind of content** (#1276), in DESIGN.md's Layout: a
+ * table or a chart takes the whole column, a form 720 px, a statement a grid
+ * track and not a longer row. The shell sets no cap of its own.
  *
  * **And the column may be narrower than what is in it** (#832). `SidebarInset`
  * is a flex item beside the navigation, so its `min-width` is `auto` — *never

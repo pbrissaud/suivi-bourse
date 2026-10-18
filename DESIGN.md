@@ -31,6 +31,11 @@ typography:
     fontWeight: 600
     fontSize: 28px
     lineHeight: 32px
+  page-title:
+    fontFamily: Geist
+    fontWeight: 600
+    fontSize: 28px
+    lineHeight: 32px
   section-title:
     fontFamily: Geist
     fontWeight: 600
@@ -92,6 +97,12 @@ components:
   agent-thread-column:
     backgroundColor: "{colors.tint}"
     width: 240px
+  sidebar:
+    width: 200px
+  content-column:
+    maxWidth: 720px
+  content-reading:
+    maxWidth: 768px
 ---
 
 # SuiviBourse
@@ -177,6 +188,7 @@ shipped face would cost every screen for no reader benefit.
 
 - **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen.
 - **Figure (28/32, 600):** a secondary figure that stands alone (an account's value).
+- **Page title (28/32, 600):** the page's `<h1>`, in the header bar beside its dated subtitle; 20/28 under 768 px. Larger than every section title, smaller than the hero.
 - **Section title (20/28, 600):** sentence case. No uppercase, letter-spaced overlines,
   no kicker above a heading.
 - **Prose (15/22):** the agent's answers and any explanatory paragraph.
@@ -190,11 +202,20 @@ shipped face would cost every screen for no reader benefit.
 
 ## Layout
 
-- **Desktop ≥ 1440 px:** sidebar 200 px, content up to 1040 px.
+- **The shell:** a 200 px navigation (a 64 px rail when folded, a drawer under 768 px), then a 56 px header bar holding, in order, the fold, the page title with its dated subtitle, the search and the bell. Nothing else lives in the bar: language, light or dark, and table density are set in Settings › On this device.
+- **Navigation:** two groups and no group label. The top holds what the owner reads and records: Dashboard, Shares, Accounts, Ledger, Benchmark, Agent. The foot holds the administration: System, Settings.
+- **Content width is set per kind of content, never by one cap:**
+  - a table or a chart takes the full width of the content column;
+  - a form, and the Settings page, is one start-aligned column of 720 px (`max-w-column`);
+  - the agent's conversation is described below (`max-w-column`, `lg:max-w-reading`);
+  - a paragraph keeps its measure, 65 characters (`max-w-prose`), inside any of these;
+  - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. From 1 600 px the dashboard grid has three tracks.
+
+  The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - **< 768 px:** single column.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
-  flush with the navigation, and the conversation centred in the rest at most 768 px;
-  below 1 024 px, the conversation alone, centred at most 720 px.
+  flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
+  below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).
 - **Rhythm:** 20 px between sections, 24 px around the content, 12 px between a section
   title and its content. Large gaps (40, 64) only separate the hero from the first
   section and the page from its footer.
@@ -211,7 +232,7 @@ dashboard alone lays its sections out on a grid the owner arranges (below).
 ### The dashboard grid
 
 Under the hero, the dashboard's sections sit on a grid of **two widths**: half or full,
-20 px apart, one column under 768 px. It is an ordered list of sections, each with a
+20 px apart, one column under 768 px. From 1 600 px the grid has three tracks: a half section takes one track and a full section takes the whole row, so a statement gains a neighbour rather than a longer row. The packing and drag rules for three tracks are #1280's. It is an ordered list of sections, each with a
 width, never a free two-dimensional placement, so the reading order is the focus order.
 
 - A section takes the full width only if it **shows more** there (the movers: five
@@ -390,3 +411,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | Return figures reconciled (#1263) | Four figures audited against an independent recomputation: no calculation bug. One name per measure; windows stated rather than aligned; the TWR dated in the IRR's bubble; the agent says the same words. Percent replaces base 100 on the Performance curve (#1263, #1265). |
 | 2026-10-18 | The Performance curve is coloured by its sign (#1263) | The one curve that crosses zero: drawn in `foreground` it fell outside the palette, drawn in the mint it painted a loss as a gain. `gain` above zero, `loss` below, the 0 % line kept as the colour-free channel. |
 | 2026-10-18 | Atelier is a JSON in the repo, no longer a published tweakcn theme (#1295) | A colour change was a republish on tweakcn outside the repo, unreviewable; it is now a reviewed diff of `atelier.json`, rendered into `index.css` by the same function that renders a stored theme. |
+| 2026-10-18 | One layout system for the shell (#1276) | Three choices made by the owner: the page title stays in the header bar on the Figure rung (over moving it into the content or keeping it at 20 px); language, theme and density move to Settings › On this device (over a header menu or table toolbars); a statement gains a third grid track from 1 600 px (over a page bounded at 1 280 px). Also: the sidebar goes back to the 200 px this file always said; the ledger joins the pages the owner reads, and the foot keeps the administration; one 1 040 px cap gives way to a width per kind of content, because a cap starves tables while a statement stretched to 800 px stops reading as a statement. |

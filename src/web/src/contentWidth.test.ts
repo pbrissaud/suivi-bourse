@@ -38,6 +38,13 @@ const FACETS = fs.readFileSync(
   'utf8',
 )
 
+const SIDEBAR = fs.readFileSync(path.join(SOURCE, 'components', 'ui', 'sidebar.tsx'), 'utf8')
+const AGENT_CHAT = fs.readFileSync(
+  path.join(SOURCE, 'features/agent/components/AgentChat.tsx'),
+  'utf8',
+)
+const DESIGN = fs.readFileSync(path.join(SOURCE, '..', '..', '..', 'DESIGN.md'), 'utf8')
+
 /** The opening tag of the content column, whatever else is on it. */
 const INSET = /<SidebarInset\b[^>]*>/
 
@@ -99,5 +106,45 @@ describe('the facet panel folds where there is no room for it', () => {
     // The coverage half: a body that stopped being addressed by that id would
     // make both assertions above pass on a panel that had lost the fold.
     expect(FACETS).toMatch(/id="ledger-facets"/)
+  })
+})
+
+/**
+ * **The layout widths are DESIGN.md's, and a page names them** (#1276). The
+ * tokens live in `index.css` (`stylesheet.test.ts` holds them to DESIGN.md);
+ * what is held here is the code that draws with them.
+ */
+describe('the layout widths are the ones DESIGN.md sets', () => {
+  it('draws the navigation at the width DESIGN.md sets', () => {
+    const [, px] = DESIGN.match(/^ {2}sidebar:\n {4}width: (\d+)px$/m) ?? []
+    const [, rem] = SIDEBAR.match(/const SIDEBAR_WIDTH = '([\d.]+)rem'/) ?? []
+    expect(px).toBeDefined()
+    expect(Number(rem) * 16).toBe(Number(px))
+  })
+
+  it('sets the conversation on the column and reading widths', () => {
+    expect(AGENT_CHAT).toMatch(/\bmax-w-column\b/)
+    expect(AGENT_CHAT).toMatch(/\blg:max-w-reading\b/)
+  })
+
+  it('writes no width the tokens already name', () => {
+    const named = /max-w-(?:180|192|\[720px\]|\[768px\]|\[45rem\]|\[48rem\])/
+    const found: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const file = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (file !== path.join(SOURCE, 'components', 'ui')) walk(file)
+        } else if (
+          /\.(ts|tsx|css)$/.test(entry.name) &&
+          fs.readFileSync(file, 'utf8').match(named)
+        ) {
+          // This file names the classes it forbids.
+          if (file !== import.meta.filename) found.push(path.relative(SOURCE, file))
+        }
+      }
+    }
+    walk(SOURCE)
+    expect(found).toEqual([])
   })
 })
