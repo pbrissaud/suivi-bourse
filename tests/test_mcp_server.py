@@ -999,7 +999,7 @@ def test_the_benchmark_description_states_the_rules_a_model_gets_wrong(tmp_path)
                  for tool in listed(runtime)}['get_benchmark_comparison']
 
     assert 'A FIGURE EXISTS ONLY WHEN `state` IS "ready"' in described
-    assert 'NEVER GIVE A GAP' in described
+    assert 'NO GAP FOR THE PORTFOLIO' in described
     assert '`covered_from` to `covered_to`' in described
     assert 'NOT PER YEAR' in described
     assert 'never annualise' in described

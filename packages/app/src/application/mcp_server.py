@@ -423,7 +423,8 @@ list. Every purchase goes into the fund on the day it was made; every sale and
 every dividend comes out of it. `state` says whether there is an answer:
 
 A FIGURE EXISTS ONLY WHEN `state` IS "ready". On every other state say why in
-words, and NEVER GIVE A GAP:
+words, and give NO GAP FOR THE PORTFOLIO. The one exception is a row of
+`per_account` under "nothing_to_compare" (below):
 - "no_reference": the owner has chosen no fund to compare against yet. They
   choose one in the app; name no screen.
 - "rebuilding" and "splits_unknown": the fund's history is still being fetched
@@ -436,7 +437,9 @@ words, and NEVER GIVE A GAP:
   "not_computed" means the daily figures are not computed yet; "nothing_held"
   means no securities were held while the fund was quoted; "no_rate_on_seed"
   means an exchange rate is missing on the first day. `per_account` may still
-  carry rows, each with its own figures.
+  carry rows. Each is a real comparison of its own account: quote its
+  `per_account.gap_gross` only with that row's `per_account.covered_from` to
+  `per_account.covered_to`, never as the portfolio's.
 
 EVERY FIGURE IS QUOTED WITH ITS PERIOD, `covered_from` to `covered_to`, in the
 same sentence. `portfolio_from` is the first day the owner's daily figures
