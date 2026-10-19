@@ -89,6 +89,8 @@ export function pendingAnswer(status: string, last: UIMessage | undefined): bool
   if (status !== 'submitted' && status !== 'streaming') return false
   if (status === 'submitted' || last?.role !== 'assistant') return true
   if (toolParts(last).some(toolRunning)) return false
+  // The tail, not any earlier text: after « Je regarde. » and an answered tool
+  // the page stands still while the model reads the result, which is the gap.
   const tail = last.parts
     .filter((p) => p.type === 'text' || p.type === 'reasoning' || isToolUIPart(p))
     .at(-1)
