@@ -30,6 +30,7 @@ from application import profile
 from application import quotes
 from application import store as store_module
 from conftest import write_legacy_taxation_model
+from test_benchmark_view import _quote_the_reference, _write_curve
 from application.events.schemas import (
     AccountMetricPoint, Event, EventType, PortfolioTotalPoint,
 )
@@ -123,8 +124,8 @@ LEDGER = [
 # The surface itself
 # --------------------------------------------------------------------- #
 
-def test_the_surface_is_nine_tools_and_nothing_else(tmp_path):
-    """Nine, named, and no tenth arriving by accident.
+def test_the_surface_is_ten_tools_and_nothing_else(tmp_path):
+    """Ten, named, and no eleventh arriving by accident.
 
     Either should fail a test rather than a user's setup.
 
@@ -132,17 +133,20 @@ def test_the_surface_is_nine_tools_and_nothing_else(tmp_path):
     its own: this module's opening promise — *it computes nothing* — is kept at
     the word rather than gaining a second exception. The seventh is
     the sale simulator (#1109), with flat arguments. The eighth and ninth are
-    the profile (#1116): one read, and one proposal that no tool confirms.
+    the profile (#1116): one read, and one proposal that no tool confirms. The
+    tenth is the benchmark comparison (#1270), which takes no argument.
     """
     runtime, _ = build_runtime(tmp_path)
 
     names = sorted(tool.name for tool in listed(runtime))
-    assert names == ['get_investment_rhythm', 'get_portfolio_history',
+    assert names == ['get_benchmark_comparison', 'get_investment_rhythm',
+                     'get_portfolio_history',
                      'get_portfolio_totals', 'get_profile', 'list_accounts',
                      'list_events', 'list_positions', 'propose_profile_fact',
                      'simulate_sale']
     arguments = {tool.name: list(tool.input_schema['properties'])
                  for tool in listed(runtime)}
+    assert arguments['get_benchmark_comparison'] == []
     assert arguments['simulate_sale'] == ['account', 'symbol', 'quantity']
     assert arguments['propose_profile_fact'] == ['key', 'value']
 
@@ -717,12 +721,17 @@ def test_a_storage_fault_arrives_in_words_and_not_as_a_bare_failure(tmp_path):
 # --------------------------------------------------------------------- #
 
 @pytest.mark.parametrize('tool', ['list_positions', 'get_portfolio_totals',
-                                  'get_portfolio_history', 'list_accounts'])
+                                  'get_portfolio_history', 'list_accounts',
+                                  'get_benchmark_comparison'])
 def test_a_store_that_cannot_answer_is_an_error_and_never_an_empty_payload(tmp_path, tool):
     """An agent handed ``[]`` reports that the owner holds nothing. Every tool
     that opens the store therefore fails loudly when it cannot.
     """
-    runtime, _ = build_runtime(tmp_path, events=LEDGER, break_store=True)
+    runtime, opened = build_runtime(tmp_path, events=LEDGER, break_store=True)
+    # A reference named, or the benchmark answers "no reference" before it
+    # touches the tables that are gone and the fault is never reached (#1270).
+    opened.execute("INSERT INTO setting (key, value) "
+                   "VALUES ('benchmark_symbol', 'CW8.PA')")
 
     result = call(runtime, tool)
 
@@ -911,6 +920,94 @@ def test_a_broken_store_is_a_failed_read_and_not_an_absent_rhythm(tmp_path):
 
 
 # --------------------------------------------------------------------- #
+# The benchmark comparison (#1270)
+# --------------------------------------------------------------------- #
+
+def benchmark_runtime(tmp_path, state):
+    """One store per state of the comparison, the dates counted from today.
+
+    ``ready`` holds a flat reference and a portfolio that ends 200 above it;
+    ``rebuilding`` a reference fetched for one day only; ``no_reference`` names
+    none; ``empty`` names one over a ledger with no event.
+    """
+    today = datetime.now(timezone.utc).date()
+    bought = today - timedelta(days=60)
+    events = [] if state == 'empty' else [
+        Event(bought, EventType.BUY, 'AAPL', 'AAPL', quantity=1000,
+              unit_price=1.0)]
+    runtime, opened = build_runtime(tmp_path, events=events)
+    if state != 'no_reference':
+        opened.execute("INSERT INTO setting (key, value) "
+                       "VALUES ('benchmark_symbol', 'CW8.PA')")
+    if state == 'ready':
+        _quote_the_reference(opened, first=(today - timedelta(days=90)).isoformat(),
+                             last=today.isoformat())
+        _write_curve(opened, 'default', first=bought.isoformat(),
+                     last=(today - timedelta(days=1)).isoformat())
+        _write_curve(opened, 'default', first=today.isoformat(),
+                     last=today.isoformat(), value=1200.0)
+    elif state == 'rebuilding':
+        opened.execute("INSERT INTO symbol (symbol) VALUES ('CW8.PA')")
+        quotes.record_history(opened, 'CW8.PA', [
+            {'timestamp': datetime.combine(today - timedelta(days=30),
+                                           datetime.min.time(),
+                                           tzinfo=timezone.utc),
+             'price': 100.0, 'converted': 100.0, 'rate': 1.0}])
+        _write_curve(opened, 'default', first=bought.isoformat(),
+                     last=today.isoformat())
+    return runtime
+
+
+@pytest.mark.parametrize('state', ['ready', 'no_reference', 'rebuilding',
+                                   'empty'])
+def test_the_benchmark_tool_and_the_route_answer_the_same_figures(
+        tmp_path, state):
+    """One builder, two surfaces: the tool is the route minus what the agent
+    has no use for. A key `comparison()` gains tomorrow fails here, and in the
+    text-copy test, until it is declared or omitted."""
+    runtime = benchmark_runtime(tmp_path, state)
+
+    over_http = create_app(runtime).test_client() \
+        .get('/api/benchmark').get_json()
+    over_the_tool = payload(call(runtime, 'get_benchmark_comparison'))
+
+    assert over_the_tool == {key: value for key, value in over_http.items()
+                             if key not in mcp_server._COMPARISON_OMITS}
+    assert not set(mcp_server._COMPARISON_OMITS) & set(over_the_tool)
+    assert over_the_tool['state'] == {
+        'ready': 'ready', 'no_reference': 'no_reference',
+        'rebuilding': 'rebuilding', 'empty': 'nothing_to_compare'}[state]
+    if state == 'ready':
+        assert over_the_tool['gap_gross'] == pytest.approx(200.0)
+        assert over_the_tool['portfolio_return'] == pytest.approx(0.2)
+        assert over_the_tool['reference_return'] == pytest.approx(0.0)
+        assert over_the_tool['covered_from'] and over_the_tool['covered_to']
+        assert over_the_tool['per_account']
+    else:
+        assert 'gap_gross' not in over_the_tool
+    if state == 'empty':
+        assert over_the_tool['reason'] == 'no_events'
+    if state == 'rebuilding':
+        assert over_the_tool['rebuild']['ratio'] is not None
+
+
+def test_the_benchmark_description_states_the_rules_a_model_gets_wrong(tmp_path):
+    """The figure only on "ready", the period with it, and never per year."""
+    runtime, _ = build_runtime(tmp_path)
+
+    described = {tool.name: tool.description or ''
+                 for tool in listed(runtime)}['get_benchmark_comparison']
+
+    assert 'A FIGURE EXISTS ONLY WHEN `state` IS "ready"' in described
+    assert 'NO GAP FOR THE PORTFOLIO' in described
+    assert '`covered_from` to `covered_to`' in described
+    assert 'NOT PER YEAR' in described
+    assert 'never annualise' in described
+    assert '`get_portfolio_totals.xirr`' in described
+    assert 'never call `portfolio_from` the first purchase' in described
+
+
+# --------------------------------------------------------------------- #
 # The schema the tools publish (#958)
 # --------------------------------------------------------------------- #
 
@@ -925,6 +1022,11 @@ SERVED_WITH = {
     ],
     'propose_profile_fact': [{'key': 'marginal_rate', 'value': 0.3}],
 }
+
+
+#: Stores a tool is also read on: its `rebuild` and `reason` can never be
+#: observed beside a ready comparison.
+ALSO_SERVED_ON = {'get_benchmark_comparison': ('rebuilding', 'empty')}
 
 
 def served(runtime):
@@ -1054,6 +1156,19 @@ def rich_runtime(tmp_path):
                            net_contributed=1000.0, xirr=0.05,
                            gain_absolu=10.0, twr_index=index)
         for day, index in ((year_end, 100.0), (today, 105.0))])
+    # A reference named and quoted, for the benchmark to land on "ready": the
+    # pea's curve is written a day at a time, and the last close of the fund
+    # waits for its rate, so `ended` carries a value too (#1270).
+    opened.execute("INSERT INTO setting (key, value) "
+                   "VALUES ('benchmark_symbol', 'CW8.PA')")
+    _quote_the_reference(opened, first=(today - timedelta(days=420)).isoformat(),
+                         last=(today - timedelta(days=1)).isoformat())
+    quotes.record_history(opened, 'CW8.PA', [
+        {'timestamp': datetime.combine(today, datetime.min.time(),
+                                       tzinfo=timezone.utc),
+         'price': 100.0, 'converted': None, 'rate': None}])
+    _write_curve(opened, 'pea', first=(year_end + timedelta(days=1)).isoformat(),
+                 last=(today - timedelta(days=1)).isoformat())
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
@@ -1074,6 +1189,11 @@ def test_every_member_a_tool_publishes_is_served_with_a_value(tmp_path):
         for result in results:
             assert result.is_error is False, (name, _text(result))
             observed |= set(observed_paths(result.structured_content))
+        # A state-dependent member rides on a state `rich_runtime` is not in.
+        for state in ALSO_SERVED_ON.get(name, ()):
+            (tmp_path / state).mkdir()
+            other = benchmark_runtime(tmp_path / state, state)
+            observed |= set(observed_paths(payload(call(other, name))))
         unseen = schema_paths(tool.output_schema) - observed
         assert not unseen, (name, sorted(unseen))
 

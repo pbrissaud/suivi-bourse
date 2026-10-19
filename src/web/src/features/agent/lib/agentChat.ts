@@ -53,6 +53,7 @@ const TOOL_SENTENCES: Record<string, MessageKey> = {
   list_accounts: 'agent.tool.list_accounts',
   list_events: 'agent.tool.list_events',
   get_investment_rhythm: 'agent.tool.get_investment_rhythm',
+  get_benchmark_comparison: 'agent.tool.get_benchmark_comparison',
   simulate_sale: 'agent.tool.simulate_sale',
   get_profile: 'agent.tool.get_profile',
   propose_profile_fact: 'agent.tool.propose_profile_fact',

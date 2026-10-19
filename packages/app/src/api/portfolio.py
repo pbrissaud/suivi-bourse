@@ -185,10 +185,8 @@ def get_benchmark():
     fetched. A second read for terminality would be a second chance to be
     wrong.
 
-    No MCP tool beside it yet. The milestone orders #958 and the surface it
-    guards in that order, and this is the one screen of the product carrying a
-    tax figure — a description nothing checks is exactly the defect #958 exists
-    to catch.
+    The agent reads the same payload, minus the curve and the selector, through
+    ``get_benchmark_comparison`` (#1270).
     """
     return jsonify({
         'base_currency': _base_currency(),

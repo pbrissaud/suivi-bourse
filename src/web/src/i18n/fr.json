@@ -917,6 +917,7 @@
   "agent.tool.list_accounts": "Lecture de vos comptes.",
   "agent.tool.list_events": "Lecture de votre grand livre.",
   "agent.tool.get_investment_rhythm": "Lecture de votre rythme d’investissement.",
+  "agent.tool.get_benchmark_comparison": "Comparaison de votre portefeuille avec son fonds de référence.",
   "agent.tool.simulate_sale": "Simulation d’une vente et de son impôt.",
   "agent.tool.other": "Appel de l’outil {name}.",
   "agent.tool.get_profile": "Lecture de votre profil.",
