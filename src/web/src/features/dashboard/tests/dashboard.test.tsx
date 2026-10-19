@@ -49,8 +49,8 @@ function figure(name: string) {
 }
 
 /**
- * The hero: the portfolio's value, and the three pills under it — the gain
- * total, today, and the IRR (#1149). The gain's four terms are not in it; they
+ * The hero: the portfolio's value, the gain total under it, and a row of three
+ * figures — the year, today, and the IRR (#1149, #1280). The gain's four terms are not in it; they
  * are on the breakdown card, under the `Gain total` they add up to.
  */
 function hero() {
@@ -91,7 +91,7 @@ describe('the value is the hero (direction 1a)', () => {
     // The value at hero size, the gain as its subtitle — and no sign colour on
     // the value: a value is not a direction.
     expect(head).toHaveTextContent(/2\D?800,00/)
-    expect(head).toHaveTextContent(/\+370,00\D?€ de gain total/)
+    expect(head).toHaveTextContent(/\+370,00\D?€\s*de gain total/)
     const value = head.querySelector('.text-hero')
     expect(value).toHaveTextContent(/2\D?800,00/)
     expect(value?.className).not.toMatch(/text-(gain|loss)/)
@@ -422,7 +422,7 @@ describe('the breakdown is a statement, with no drawing and no window (#1175)', 
 })
 
 describe('the year-to-date is two figures that do not touch', () => {
-  it('puts the euro on a pill and the percentage inside the IRR’s bubble', async () => {
+  it('puts the euro in the row and the percentage inside the IRR’s bubble', async () => {
     const { user } = renderApp()
 
     const head = await hero()
@@ -430,9 +430,9 @@ describe('the year-to-date is two figures that do not touch', () => {
     // `+40,69 €` and `−1,25 %` are of opposite signs over the same period and
     // both correct: the portfolio grew by deposits while its holdings lost.
     // Side by side they read as a contradiction.
-    const ytd = within(head).getByText(/depuis le 1ᵉʳ janvier/)
-    expect(ytd).toHaveTextContent(/^\+40,69\D?€ depuis le 1ᵉʳ janvier$/)
-    expect(ytd).toHaveClass('text-gain')
+    const ytd = within(head).getByText('Depuis le 1ᵉʳ janvier').parentElement as HTMLElement
+    expect(ytd).toHaveTextContent(/^Depuis le 1ᵉʳ janvier\+40,69\D?€$/)
+    expect(within(ytd).getByText(/^\+40,69/)).toHaveClass('text-gain')
     expect(head).not.toHaveTextContent(/1,25/)
 
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
@@ -467,8 +467,8 @@ describe('the year-to-date is two figures that do not touch', () => {
   })
 })
 
-describe('the four pills: total gain, year-to-date, today, IRR (#1149, #1174)', () => {
-  it('puts them in that order, the IRR last with its unit', async () => {
+describe('the total gain, then the year, today and the IRR (#1149, #1174, #1280)', () => {
+  it('puts the gain first, then the row, the IRR last with its unit', async () => {
     renderApp()
     const head = await hero()
 
@@ -478,7 +478,7 @@ describe('the four pills: total gain, year-to-date, today, IRR (#1149, #1174)', 
     await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
     const text = head.textContent ?? ''
     const gain = text.indexOf('de gain total')
-    const ytd = text.indexOf('depuis le 1ᵉʳ janvier')
+    const ytd = text.indexOf('Depuis le 1ᵉʳ janvier')
     const today = text.indexOf('Aujourd’hui')
     expect(gain).toBeGreaterThan(-1)
     expect(ytd).toBeGreaterThan(gain)
@@ -486,7 +486,7 @@ describe('the four pills: total gain, year-to-date, today, IRR (#1149, #1174)', 
     expect(text.indexOf('TRI')).toBeGreaterThan(today)
   })
 
-  it('draws the pills on a neutral ground, with the sign on the figure', async () => {
+  it('draws the figures on the ground, with the sign on the figure', async () => {
     server.use(totalsOf({ xirr: -0.05 }))
     renderApp()
     const head = await hero()
@@ -494,14 +494,49 @@ describe('the four pills: total gain, year-to-date, today, IRR (#1149, #1174)', 
     await waitFor(() =>
       expect(within(head).getByRole('group', { name: 'TRI' })).toBeInTheDocument(),
     )
-    expect(head.querySelector('[class*="bg-gain"], [class*="bg-loss"]')).toBeNull()
-    expect(within(head).getByText(/de gain total/)).toHaveClass('text-gain')
+    expect(head.querySelector('[class*="bg-"], [class*="rounded-lg"]')).toBeNull()
+    expect(within(head).getByText(/^\+370,00/)).toHaveClass('text-gain')
     expect(within(within(head).getByRole('group', { name: 'TRI' })).getByText(/5,00/)).toHaveClass(
       'text-loss',
     )
   })
 
-  it('draws no IRR pill when there is no IRR', async () => {
+  it('sets the total gain on its own line, on the Section title rung', async () => {
+    renderApp()
+    const head = await hero()
+
+    const gain = (await within(head).findByText(/^\+370,00/)).closest('p') as HTMLElement
+    expect(gain).toHaveClass('text-2xl')
+    expect(gain).toHaveTextContent(/de gain total$/)
+    // Its words are not the Section title's: the line is a paragraph, not a heading.
+    expect(within(head).queryByRole('heading', { name: /gain total/ })).not.toBeInTheDocument()
+    for (const label of ['Depuis le 1ᵉʳ janvier', 'Aujourd’hui', 'TRI']) {
+      await waitFor(() => expect(within(head).getByText(label)).toBeInTheDocument())
+    }
+  })
+
+  it('draws no row at all when no figure of it exists', async () => {
+    server.use(
+      totalsOf({ xirr: null, ytd: { gain: null, twr: null } }),
+      http.get(ROUTES.portfolioTotalsHistory, () => HttpResponse.json(aPortfolioHistory([]))),
+    )
+    renderApp()
+    const head = await hero()
+
+    await within(head).findByText(/^\+370,00/)
+    expect(head.querySelector('.flex-wrap.gap-x-5')).toBeNull()
+  })
+
+  it('says an unknown total in a sentence, without the 20 px line', async () => {
+    server.use(totalsOf({ transfer_fees: null }))
+    renderApp()
+    const head = await hero()
+
+    expect(await within(head).findByText(/^Gain total :/)).toHaveClass('text-sm')
+    expect(head.querySelector('.text-2xl')).toBeNull()
+  })
+
+  it('draws no IRR figure when there is no IRR', async () => {
     server.use(totalsOf({ xirr: null }))
     renderApp()
     const head = await hero()
@@ -551,7 +586,7 @@ describe('the two periods of the total', () => {
     renderApp()
 
     const head = await hero()
-    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui : \+30,00\D?€/))
+    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui\+30,00\D?€/))
   })
 
   it('says nothing about today while the series has not reached today', async () => {
@@ -570,7 +605,7 @@ describe('the two periods of the total', () => {
     const head = await hero()
     expect(head).toHaveTextContent(/370,00/)
     await waitFor(() => expect(screen.queryByText(/Aujourd’hui/)).not.toBeInTheDocument())
-    expect(head).toHaveTextContent(/\+40,69\D?€ depuis le 1ᵉʳ janvier/)
+    expect(head).toHaveTextContent(/Depuis le 1ᵉʳ janvier\+40,69\D?€/)
   })
 })
 
@@ -707,7 +742,9 @@ describe('during the reconstruction', () => {
 
     await hero()
     await waitFor(() =>
-      expect(screen.getByText(/40,69\D?€ depuis le 1ᵉʳ janvier/)).toBeInTheDocument(),
+      expect(screen.getByText('Depuis le 1ᵉʳ janvier').parentElement).toHaveTextContent(
+        /\+40,69\D?€/,
+      ),
     )
     // Neither sentence, on either figure — both would be false here.
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
@@ -1359,8 +1396,27 @@ describe('one chart slot, two readings', () => {
       within(range)
         .getAllByRole('radio')
         .map((radio) => radio.textContent),
-    ).toEqual(['1M', 'Depuis le 1ᵉʳ janvier', '1A', 'MAX'])
+    ).toEqual(['1M', '1ᵉʳ janv.', '1A', 'MAX'])
     expect(screen.queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '1ᵉʳ janv.' })).toBeInTheDocument()
+  })
+
+  it('sets the reading, the legend and the range on one bar above the plot (#1280)', async () => {
+    const { user } = renderApp()
+    const card = await chartCard()
+    const range = within(card).getByRole('radiogroup', { name: 'Plage' })
+    const bar = range.parentElement as HTMLElement
+    const plot = card.querySelector('figure') as HTMLElement
+
+    const legend = within(bar).getByText('Versé net')
+    expect(within(bar).getByRole('group', { name: 'Lecture' })).toBeInTheDocument()
+    expect(bar.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(legend.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(range).toHaveClass('ml-auto')
+
+    // Under *Performance* the curves are not named, so the bar holds no legend.
+    await user.click(within(bar).getByRole('button', { name: 'Performance' }))
+    expect(within(bar).queryByText('Versé net')).not.toBeInTheDocument()
   })
 
   // One control bar (#1150): the reading on the left, the range on the right,
@@ -1588,7 +1644,7 @@ describe('the page shows figures and never explains itself (#831)', () => {
 })
 
 describe('the allocation is not on this page', () => {
-  it('draws no ring and no legend here since #831', async () => {
+  it('draws no ring and no legend in the chart slot since #831', async () => {
     // It sat on the wide track from #727 to #830, and the maquette draws it in
     // the `Titres` branch and nowhere in this one. The figure moved rather than
     // being duplicated: `shares.test.tsx` is where its three cases are now, on
@@ -1596,10 +1652,10 @@ describe('the allocation is not on this page', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // Nor in the chart's dialog.
-    await chartCard()
-    expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Répartition')).not.toBeInTheDocument()
+    // The card is on the grid (#1206), and the chart's slot holds none of it.
+    const chart = await chartCard()
+    expect(within(chart).queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
+    expect(within(chart).queryByText('Répartition')).not.toBeInTheDocument()
   })
 })
 
@@ -1615,13 +1671,41 @@ describe('the allocation card (#1206)', () => {
     )
   }
 
-  it('arrives under « Nouveau » and draws nothing until it is shown', async () => {
+  it('is shown on a fresh install, with nothing « Nouveau »', async () => {
+    renderApp()
+
+    expect(await screen.findByRole('region', { name: 'Répartition' })).toBeInTheDocument()
+    expect(screen.queryByText(/nouvelles? cartes?/)).not.toBeInTheDocument()
+  })
+
+  it('arrives under « Nouveau » on a saved layout without it, and draws nothing until it is shown', async () => {
+    server.use(
+      http.get(ROUTES.dashboardLayout, () =>
+        HttpResponse.json({
+          version: 1,
+          blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false }],
+        }),
+      ),
+    )
     renderApp()
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier le tableau de bord' }))
 
     const hidden = await screen.findByRole('region', { name: 'Cartes masquées' })
     expect(within(hidden).getByText('Répartition').closest('li')).toHaveTextContent('Nouveau')
     expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
+  })
+
+  it('links the account view to the accounts page, and the security view to nothing (#1280)', async () => {
+    showAllocation('half')
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+
+    expect(within(card).queryByRole('link', { name: 'Voir les comptes →' })).not.toBeInTheDocument()
+    fireEvent.click(within(card).getByRole('button', { name: 'Compte' }))
+    expect(within(card).getByRole('link', { name: 'Voir les comptes →' })).toHaveAttribute(
+      'href',
+      '/accounts',
+    )
   })
 
   it('at half width, sets the total on the title row and draws a legend with no ring', async () => {
@@ -1976,7 +2060,7 @@ describe('the movers', () => {
 })
 
 describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
-  it('draws its three blocks as sections and no card at all', async () => {
+  it('draws its four blocks as sections and no card at all', async () => {
     const { container } = renderApp()
     await screen.findByRole('list', { name: 'Mouvements' })
     await screen.findByRole('region', { name: 'Rythme d’investissement' })
@@ -1984,12 +2068,13 @@ describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
     // A card is for something the user decides; nothing on this page is.
     expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(0)
     const sections = container.querySelectorAll('[data-slot="section"]')
-    // The default layout of the dashboard grid: the gain and the rhythm side by
-    // side, then the movers across the full width (an intended change, D5).
+    // The default layout of the dashboard grid (#1280): the allocation and the
+    // gain, then the movers and the rhythm, two to a row.
     expect([...sections].map((one) => one.querySelector('h2')?.textContent)).toEqual([
+      'Répartition',
       'D’où vient le gain',
-      'Rythme d’investissement',
       'Mouvements',
+      'Rythme d’investissement',
     ])
     // And never one inside another.
     expect(container.querySelectorAll('[data-slot="section"] [data-slot="section"]')).toHaveLength(
@@ -2017,6 +2102,13 @@ describe('the investment rhythm', () => {
     const amount = await screen.findByRole('group', { name: 'Acheté par mois' })
     expect(amount).toHaveTextContent(/500,00/)
     expect(amount).toHaveTextContent('Sur 6 des 12 derniers mois')
+  })
+
+  it('lets its strip fill the height the row gives it, between 56 and 160 px (#1280)', async () => {
+    renderApp()
+    const strip = await screen.findByRole('list', { name: 'Acheté, mois par mois' })
+
+    expect(strip.parentElement).toHaveClass('flex-1', 'min-h-14', 'max-h-40')
   })
 
   it('draws the months and judges none of them', async () => {
@@ -2319,7 +2411,7 @@ describe('the head in English', () => {
     // Numbers follow the language, not the currency: the same euros, grouped
     // and pointed the English way.
     expect(figure('Portfolio value')).toHaveTextContent(/2,800\.00/)
-    expect(figure('Portfolio value')).toHaveTextContent(/\+€370\.00 total P&L/)
+    expect(figure('Portfolio value')).toHaveTextContent(/\+€370\.00\s*total P&L/)
     expect(screen.getByRole('heading', { name: 'Where the P&L comes from' })).toBeInTheDocument()
   })
 })

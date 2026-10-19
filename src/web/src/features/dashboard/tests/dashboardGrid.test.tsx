@@ -16,7 +16,9 @@ import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
-const TITLES = ['D’où vient le gain', 'Rythme d’investissement', 'Mouvements']
+/** What the old default, saved, draws: the arrangement the edit cases move cards through. */
+const SEEN_TITLES = ['D’où vient le gain', 'Rythme d’investissement', 'Mouvements']
+const TITLES = ['Répartition', 'D’où vient le gain', 'Mouvements', 'Rythme d’investissement']
 
 /** The cards' titles, in the order the grid draws them. */
 function order(container: HTMLElement) {
@@ -90,12 +92,29 @@ describe('reading mode', () => {
     }
   })
 
-  it('draws the default layout: the gain and the rhythm, then the movers', async () => {
+  it('draws the default layout: the allocation and the gain, then the movers and the rhythm', async () => {
     const { container } = renderApp()
     await landed()
     await screen.findByRole('region', { name: 'Mouvements' })
 
     expect(order(container)).toEqual(TITLES)
+  })
+
+  it('says nothing is new on a fresh install, and keeps the comparison out of the grid (#1280)', async () => {
+    renderApp()
+    await landed()
+
+    expect(await screen.findByRole('region', { name: 'Répartition' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Face à l’indice' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/nouvelles? cartes?/)).not.toBeInTheDocument()
+  })
+
+  it('closes the grid with the edit entry, and not above it (#1280)', async () => {
+    const { container } = renderApp()
+    const entry = await landed()
+    const grid = container.querySelector('[data-dashboard-grid]') as HTMLElement
+
+    expect(grid.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('draws the saved order, and leaves a hidden card out', async () => {
@@ -134,6 +153,11 @@ describe('reading mode', () => {
 })
 
 describe('the movers by width', () => {
+  // The old default, saved: the movers at the full width, which a fresh install no longer has.
+  beforeEach(() => {
+    server.use(layoutOf([...SEEN]))
+  })
+
   const ten = Array.from({ length: 12 }, (_, index) =>
     aMover({
       symbol: index === 0 ? 'MC.PA' : index === 1 ? 'BTC-EUR' : `Z${index}`,
@@ -189,6 +213,11 @@ describe('the movers by width', () => {
 })
 
 describe('edit mode', () => {
+  // The arrangement these cases move cards through: the old default, saved.
+  beforeEach(() => {
+    server.use(layoutOf([...SEEN]))
+  })
+
   it('opens on its title, puts a menu in each card’s title row, and freezes the content', async () => {
     const { user } = renderApp()
     await user.click(await landed())
@@ -252,7 +281,7 @@ describe('edit mode', () => {
 
     const rhythm = within(hidden).getByText('Rythme d’investissement').closest('li')!
     await user.click(within(rhythm).getByRole('button', { name: 'Afficher' }))
-    expect(order(container)).toEqual(TITLES)
+    expect(order(container)).toEqual(SEEN_TITLES)
     expect(within(hidden).queryByText('Rythme d’investissement')).not.toBeInTheDocument()
   })
 
@@ -304,7 +333,7 @@ describe('edit mode', () => {
     await user.click(screen.getByRole('button', { name: 'Annuler' }))
 
     await landed()
-    expect(order(container)).toEqual(TITLES)
+    expect(order(container)).toEqual(SEEN_TITLES)
     expect(writes).toEqual([])
   })
 
@@ -444,6 +473,7 @@ describe('dragging a card', () => {
   // their boxes, clipped by their ancestors': the grid's cells are stacked
   // here, one 280 px row each, inside a page large enough to hold them.
   beforeEach(() => {
+    server.use(layoutOf([...SEEN]))
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element,
     ) {
@@ -493,7 +523,7 @@ describe('dragging a card', () => {
     expect(
       await screen.findByText('Rythme d’investissement déposée, position 2 sur 3'),
     ).toBeInTheDocument()
-    expect(order(container)).toEqual(TITLES)
+    expect(order(container)).toEqual(SEEN_TITLES)
   })
 
   it('says a drop in place, and leaves nothing to write', async () => {
@@ -504,7 +534,7 @@ describe('dragging a card', () => {
     await dragWithKeys(user, 'Mouvements', '  ')
 
     expect(await screen.findByText('Mouvements déposée, position 3 sur 3')).toBeInTheDocument()
-    expect(order(container)).toEqual(TITLES)
+    expect(order(container)).toEqual(SEEN_TITLES)
     await user.click(screen.getByRole('button', { name: 'Terminé' }))
     await landed()
     expect(writes).toEqual([])
@@ -516,7 +546,7 @@ describe('dragging a card', () => {
     await dragWithKeys(user, 'Mouvements', ' {ArrowUp}{Escape}')
 
     expect(await screen.findByText('Déplacement annulé')).toBeInTheDocument()
-    expect(order(container)).toEqual(TITLES)
+    expect(order(container)).toEqual(SEEN_TITLES)
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Déplacer : Mouvements' })).toHaveFocus(),
     )

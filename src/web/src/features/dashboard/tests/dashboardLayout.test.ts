@@ -47,14 +47,29 @@ const ids = (placements: readonly Placement<string>[] | null) =>
 const p = (id: Id, width: 'half' | 'full', hidden = false): Placement<Id> => ({ id, width, hidden })
 
 describe('the registry', () => {
-  it('lays the gain and the rhythm side by side, then the movers across the full width, the comparison hidden', () => {
+  it('lays the allocation and the gain, then the movers and the rhythm, the comparison hidden', () => {
     expect(defaultLayout()).toEqual([
+      { id: 'allocation', width: 'half', hidden: false },
       { id: 'gain-breakdown', width: 'half', hidden: false },
+      { id: 'movers', width: 'half', hidden: false },
       { id: 'rhythm', width: 'half', hidden: false },
-      { id: 'movers', width: 'full', hidden: false },
-      { id: 'allocation', width: 'half', hidden: true },
       { id: 'benchmark', width: 'half', hidden: true },
     ])
+  })
+
+  it('leaves no free cell and no orphan on a fresh install', () => {
+    const cells = resolveLayout(
+      defaultLayout(),
+      Object.fromEntries(BLOCK_IDS.map((id) => [id, 'renders'])) as Record<
+        (typeof BLOCK_IDS)[number],
+        RenderState
+      >,
+      'read',
+      2,
+    )
+
+    expect(cells.some((cell) => cell.kind === 'free')).toBe(false)
+    expect(cells.some((cell) => cell.kind === 'block' && cell.orphan)).toBe(false)
   })
 
   it('gives every card its own default among the widths it accepts', () => {
@@ -107,22 +122,30 @@ describe('normalizeLayout', () => {
     expect(normalizeLayout(saved, REGISTRY)[0]).toEqual(p('a', 'half'))
   })
 
-  it('lands a card that arrived later hidden, and keeps the first three visible', () => {
-    const saved = toStored([p('a', 'half'), p('b', 'half'), p('m', 'full')] as never)
+  it('shows an arrivesHidden card on a fresh install, and lands it hidden on a saved layout (D7)', () => {
+    expect(defaultLayout(REGISTRY).find((one) => one.id === 'n')).toEqual(p('n', 'half'))
 
+    const saved = toStored([p('a', 'half'), p('b', 'half'), p('m', 'full')] as never)
     expect(normalizeLayout(saved, REGISTRY).at(-1)).toEqual(p('n', 'half', true))
   })
 })
 
 describe('newBlocks', () => {
   it('names a later card until a saved layout holds it, visible or not', () => {
-    expect(newBlocks(null, REGISTRY)).toEqual(['n'])
     expect(newBlocks({ version: 1, blocks: [{ id: 'a' }] }, REGISTRY)).toEqual(['n'])
     expect(newBlocks({ version: 1, blocks: [{ id: 'n', hidden: true }] }, REGISTRY)).toEqual([])
   })
 
+  it('names nothing on a fresh install: nothing is new to an owner who arranged nothing (#1280)', () => {
+    expect(newBlocks(null, REGISTRY)).toEqual([])
+    expect(newBlocks(null)).toEqual([])
+  })
+
   it('names the two cards that arrived later in the shipped registry (#1206, #1205)', () => {
-    expect(newBlocks(null)).toEqual(['allocation', 'benchmark'])
+    expect(newBlocks({ version: 1, blocks: [{ id: 'gain-breakdown' }] })).toEqual([
+      'allocation',
+      'benchmark',
+    ])
   })
 })
 
@@ -335,6 +358,10 @@ describe('mustWrite', () => {
 
   it('writes nothing when the draft is what was read and nothing is new', () => {
     expect(mustWrite(normalizeLayout(read, REGISTRY), read, REGISTRY)).toBe(false)
+  })
+
+  it('writes nothing for the default of an owner who never saved a layout (#1280)', () => {
+    expect(mustWrite(defaultLayout(), null)).toBe(false)
   })
 
   it('writes a changed draft', () => {

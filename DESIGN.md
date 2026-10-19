@@ -132,8 +132,8 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
 ("Le relevé", "Atelier", "Instrument"), see the Decisions Log.
 
 **Key characteristics:**
-- The value is the hero, with the cash it holds named under it, then its pills:
-  total gain, since 1 January, today, IRR.
+- The value is the hero, with the cash it holds named under it, then the total gain on
+  its own line, then one plain row: since 1 January, today, IRR.
 - Sections are warm tinted planes, never boxes; Atelier carries no shadow.
 - Cards exist only where you decide something.
 - Colour means something: ink for action, mint for money made, red for money lost, and the
@@ -256,13 +256,20 @@ dashboard alone lays its sections out on a grid the owner arranges (below).
 ### The dashboard grid
 
 Under the hero, the dashboard's sections sit on a grid of **two widths**: half or full,
-20 px apart, one column under 768 px. From 1 600 px the grid has three tracks: a half section takes one track and a full section takes the whole row, so a statement gains a neighbour rather than a longer row. The packing and drag rules for three tracks are #1280's. It is an ordered list of sections, each with a
+20 px apart, one column under 768 px. From 1 600 px the grid has three tracks: a half section takes one track and a full section takes the whole row, so a statement gains a neighbour rather than a longer row. The packing and drag rules for three tracks are #1325's. It is an ordered list of sections, each with a
 width, never a free two-dimensional placement, so the reading order is the focus order.
 
 - A section takes the full width only if it **shows more** there (the movers: five
   lines on half, ten across the full width; the allocation: a one-column legend on
   half, the ring and the amounts across the full width). A section that would only stretch is
   half-only: the gain breakdown and the investment rhythm.
+- The default sections, two to a row: the allocation and the gain breakdown, then the movers
+  (half) and the investment rhythm. The benchmark waits under "Cartes masquées" on a fresh
+  install, without "Nouveau": nothing is new to an owner who arranged nothing. A card that
+  arrives later is appended hidden, with "Nouveau", to a layout the owner saved only.
+- The investment rhythm's month strip fills the height its row gives it, between 56 and
+  160 px, so a section beside a taller one does not read as empty.
+- The allocation's account view ends on a link, "Voir les comptes →", to the accounts page.
 - The gain breakdown is a statement: four ruled rows and a ruled-off total, like an
   account section. No drawing, no window.
 - Two halves share a row and end on one line: the shorter one's last line (a total)
@@ -271,8 +278,9 @@ width, never a free two-dimensional placement, so the reading order is the focus
 - A section whose read is in flight holds its place as an empty plane, with nothing
   in it (#795).
 
-**Edit mode** ("Modifier le tableau de bord", a Label link on the grid's top edge): the
-link's line becomes a bar, the title "Modifier le tableau de bord" in Section title on
+**Edit mode** ("Modifier le tableau de bord", a Label link closing the grid, start-aligned,
+followed by "· N nouvelles cartes disponibles" when a card is new): the
+link's line gives way to a bar opening at the top of the grid, the title "Modifier le tableau de bord" in Section title on
 the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on the
 right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the end of
 its own title row, a 28 px ghost button (44 px on touch), `text-muted` turning
@@ -300,13 +308,18 @@ Ce qu'il vous resterait                            18 169,08 €
 ### The hero
 
 The portfolio value (decision 1A, #1099), then one line "dont X de liquidités" (drawn
-only with a cash ledger), then the pills: total gain, gain since 1 January, today, IRR
-per year. No net-of-tax line on the dashboard. The time-weighted return, named *Performance*, lives
+only with a cash ledger), then the total gain on its own line: the arrow and the signed
+amount on the Section title rung, coloured by sign, then "de gain total" in `text-sm`
+`muted-foreground`. Under it one row of three figures with no ground, no radius and no
+padding: gain since 1 January, today, IRR per year, each a muted label and its signed
+figure. An absent figure is left out, and with none the row is not drawn. No
+net-of-tax line on the dashboard. The time-weighted return, named *Performance*, lives
 behind the IRR's `ⓘ`, always with the day it counts from and the sentence that bridges the
 two. One performance figure per screen.
 
 Under them, the portfolio's chart across the hero's full width, with its readings and
-its range on one control bar: the real chart, never a decorative sparkline beside a
+its range on one control bar: the reading on the left, the legend between, the range on
+the right (the French range label is "1ᵉʳ janv."). The real chart, never a decorative sparkline beside a
 dialog holding the real one.
 
 No statistics row under the chart: net contributions are the chart's dashed curve, and
@@ -442,3 +455,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-19 | The Benchmark page states its period and its reference first; a shortfall is not a loss (#1282) | The period was an orphan line and the picker sat in the chart's corner while the whole page depends on it. The period joins the header subtitle like « Cours au … », and the picker becomes the first row, since the bar is closed to controls. A gap behind the reference drawn in 60 px red read as money lost; it is money not made, so the gap takes no sign colour anywhere, and the returns, which are gains or losses, keep theirs. |
 | 2026-10-19 | The accounts page reads like the dashboard's head (#1277) | The left rail was mostly empty while the detail scrolled, and the detail's rows were ragged (*Latest events* took half a row when no line paid a dividend). Three choices: the accounts become a sticky bar of chips over the detail at every width, chosen by the owner after comparing both mockups, and the rail is removed; the secondary figures are one row, *Dividends received · Fees paid · Projected tax* (the tax only with a declared model), *Composition* goes and the cash becomes a line under the hero, as on the dashboard (#1174); every row of the detail is shared equally by the blocks present, so an absent block gives its share to the others. The head leaves its card for the ground, and the detail keeps one card, the reassignment, because it asks for a decision. |
 | 2026-10-20 | Figures in tables are Geist with tabular numerals (#1281) | The owner's choice, reversing the table half of #838: a column of amounts reads as a column through tabular numerals, and Geist Mono set on every cell read like a terminal. Geist Mono stays for tickers and account ids. The Shares page also draws its allocation once (bars, in a section), moves its toggle into a toolbar above the table, and ends the table on a total row. |
+| 2026-10-20 | The dashboard's composition (#1280) | Seen on screen, four equal pills read as filter chips and the total gain weighed no more than today's move: it takes its own line, the other three become a plain row. The chart's reading, legend and range share one bar; the edit link closes the grid; the rhythm's strip fills its row. A fresh install now shows the allocation and keeps the benchmark hidden without "Nouveau" (a `hiddenByDefault` flag, apart from `arrivesHidden`, which concerns saved layouts only); the movers go half. Saved layouts are untouched. Three-track packing is #1325. |

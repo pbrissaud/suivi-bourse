@@ -234,7 +234,7 @@ export function PortfolioChart({
     // Bare, with no card of its own: it is drawn inside the hero, which sits
     // on the ground, and a card there would decorate nothing the user decides.
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
               this selector segmented exactly as the range beside it, and
               nothing here is a place to go: pressing one swaps what the slot
@@ -261,7 +261,55 @@ export function PortfolioChart({
         ) : (
           <h2 className="label">{t('dashboard.chart.amounts')}</h2>
         )}
+        {/* The legend is written here rather than left to the library: it is
+          what pairs a curve to its **name**, and since #831 that is all it
+          does. The maquette draws the two swatches and nothing else, which is
+          the same arrangement arrived at from the other end. It sits on the
+          control bar since #1280, between the reading and the range, and holds
+          nothing focusable.
+
+          Nothing is lost by the removal that the page does not go on saying:
+          the fallback's own reason — *this portfolio records no cash
+          movement* — is the head's `dashboard.withoutLedger`, said once,
+          where the figures it removes are; and which pair of curves is drawn
+          is said by the two names below, `Valorisation` / `Prix de revient`
+          against `Valeur totale` / `Versé net`.
+
+          Nothing under the performance reading, and no base **date**
+          either. The date was already refused here — the curve is rebased
+          on the first day of the visible window, so it does not move as
+          the reconstruction reaches further back, and only the head's
+          scalar carries a date, which it always states (the IRR's bubble,
+          #1263), since it moves while the reconstruction runs. The two marks
+          that state it without a sentence stay — the zero reference line
+          the curve crosses, and the range control that names the window it
+          is rebased on. */}
+        {drawn.length > 0 && reading === 'amounts' ? (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm max-md:order-last max-md:basis-full md:flex-1">
+            <span className="flex items-center gap-2">
+              <span
+                aria-hidden
+                className="inline-block h-0.75 w-3.5 rounded-xs"
+                style={{ backgroundColor: 'var(--color-price)' }}
+              />
+              <span className="text-muted-foreground">
+                {t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span
+                aria-hidden
+                className="inline-block h-0.5 w-4"
+                style={{ backgroundColor: 'var(--muted-foreground)' }}
+              />
+              <span className="text-muted-foreground">
+                {t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
+              </span>
+            </span>
+          </div>
+        ) : null}
         <Segmented
+          className="ml-auto"
           bordered
           mode="radio"
           size="compact"
@@ -456,55 +504,6 @@ export function PortfolioChart({
           </figure>
         )}
       </div>
-
-      {drawn.length === 0 ? null : (
-        <>
-          {/* The legend is written here rather than left to the library: it is
-            what pairs a curve to its **name**, and since #831 that is all it
-            does. The maquette draws the two swatches and nothing else, which is
-            the same arrangement arrived at from the other end.
-
-            Nothing is lost by the removal that the page does not go on saying:
-            the fallback's own reason — *this portfolio records no cash
-            movement* — is the head's `dashboard.withoutLedger`, said once,
-            where the figures it removes are; and which pair of curves is drawn
-            is said by the two names below, `Valorisation` / `Prix de revient`
-            against `Valeur totale` / `Versé net`. */}
-          {reading === 'amounts' ? (
-            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-              <span className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="inline-block h-0.75 w-3.5 rounded-xs"
-                  style={{ backgroundColor: 'var(--color-price)' }}
-                />
-                <span className="text-muted-foreground">
-                  {t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
-                </span>
-              </span>
-              <span className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="inline-block h-0.5 w-4"
-                  style={{ backgroundColor: 'var(--muted-foreground)' }}
-                />
-                <span className="text-muted-foreground">
-                  {t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
-                </span>
-              </span>
-            </div>
-          ) : // Nothing under the performance reading, and no base **date**
-          // either. The date was already refused here — the curve is rebased
-          // on the first day of the visible window, so it does not move as
-          // the reconstruction reaches further back, and only the head's
-          // scalar carries a date, which it always states (the IRR's bubble,
-          // #1263), since it moves while the reconstruction runs. The two marks
-          // that state it without a sentence stay — the zero reference line
-          // the curve crosses, and the range control that names the window it
-          // is rebased on.
-          null}
-        </>
-      )}
     </div>
   )
 }
