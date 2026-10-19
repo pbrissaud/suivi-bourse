@@ -7,7 +7,7 @@ import {
   JobHistogram,
   lastFaultyHour,
   mergeTracks,
-} from '@/features/settings/components/JobHistogram'
+} from '@/features/system/components/JobHistogram'
 import type { JobsHistory, JobTrack } from '@/features/settings/lib/api'
 import type { HealthJobs, HealthState, HealthStatus } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
