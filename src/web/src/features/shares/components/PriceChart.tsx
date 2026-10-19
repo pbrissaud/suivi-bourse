@@ -243,8 +243,8 @@ export function PriceChart({
                     <span
                       aria-hidden
                       className={cn(
-                        'block rounded-full bg-grant',
-                        selected ? 'size-3 ring-2 ring-grant/40' : 'size-2',
+                        'block rounded-full bg-foreground',
+                        selected ? 'size-3 ring-2 ring-ring/40' : 'size-2',
                       )}
                     />
                     {marker.count > 1 ? (

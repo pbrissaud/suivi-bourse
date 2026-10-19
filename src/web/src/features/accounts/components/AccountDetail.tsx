@@ -248,7 +248,7 @@ export function AccountDetail({
           is each half of what it holds — the figures on the positions, the
           curve on the series — which is #799's rule kept inside one frame: a
           read that has not answered costs its own half and never the other. */}
-      <Card className="gap-0 bg-linear-160 from-chart-2/8 to-card to-60% py-6">
+      <Card className="gap-0 py-6">
         <CardContent className="px-6">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div className="flex min-w-0 flex-col gap-1">
@@ -494,14 +494,13 @@ export function AccountDetail({
               </h3>
             </CardHeader>
             <CardContent className="flex h-full flex-col gap-3">
-              {/* **In the dividend's own colour** — the one mark of the three
-                  the preset gives a hue to, and the same one the ledger draws a
-                  dividend row in. A figure nobody signs, so the colour says
-                  *what kind of money* and never *which way it went*. */}
+              {/* **In the plain foreground** (#1283). A figure nobody signs carries
+                  no hue: a colour would say *which way it went*, and the sign
+                  of this one is fixed by its nature. */}
               <p
                 role="group"
                 aria-label={t('accounts.detail.dividends.encashed')}
-                className="tabular text-5xl font-heavy tracking-tight text-dividend"
+                className="tabular text-5xl font-heavy tracking-tight"
               >
                 {renderFigure(
                   termRendering(terms, 'dividends'),
@@ -792,7 +791,7 @@ export function AccountDetail({
             <Link
               to="/shares"
               search={{ account: row.id }}
-              className="inline-block text-xs text-primary hover:underline"
+              className="inline-block text-xs text-primary underline underline-offset-4"
             >
               {t('accounts.detail.lines.link', { count: symbols })}
             </Link>

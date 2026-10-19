@@ -88,7 +88,7 @@ interface AllocationProps {
   currency: string | null
 }
 
-/** The rank's own token, the primary mixed into the ground in `index.css`. */
+/** The rank's own token: a chart hue, or the muted foreground for the fold (`index.css`). */
 function stop(rank: number): string {
   return `var(--alloc-${rank + 1})`
 }

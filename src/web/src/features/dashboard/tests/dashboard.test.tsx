@@ -1664,7 +1664,7 @@ describe('the allocation card (#1206)', () => {
     )
   })
 
-  it('folds past eight lines into « Autres · N lignes » and says so', async () => {
+  it('folds past five lines into « Autres · N lignes » and says so', async () => {
     showAllocation('half')
     server.use(
       http.get(ROUTES.positions, () =>
@@ -1681,9 +1681,9 @@ describe('the allocation card (#1206)', () => {
     const card = await screen.findByRole('region', { name: 'Répartition' })
 
     const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(8)
-    expect(within(legend).getByText('Autres · 2 lignes')).toBeInTheDocument()
-    expect(card).toHaveTextContent('9 lignes · top 7 détaillé, 2 regroupées')
+    expect(within(legend).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(legend).getByText('Autres · 5 lignes')).toBeInTheDocument()
+    expect(card).toHaveTextContent('9 lignes · top 4 détaillé, 5 regroupées')
   })
 
   it('names the seeded account from the catalogue, not by its id', async () => {
@@ -1724,7 +1724,7 @@ describe('the allocation card (#1206)', () => {
     expect(within(card).getByText('gamma').closest('li')).toHaveTextContent(/600,00/)
   })
 
-  it('folds past eight accounts into « Autres · N comptes » and counts accounts', async () => {
+  it('folds past five accounts into « Autres · N comptes » and counts accounts', async () => {
     showAllocation('half')
     server.use(
       http.get(ROUTES.positions, () =>
@@ -1742,9 +1742,9 @@ describe('the allocation card (#1206)', () => {
     await user.click(within(card).getByRole('button', { name: 'Compte' }))
 
     const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(8)
-    expect(within(legend).getByText('Autres · 2 comptes')).toBeInTheDocument()
-    expect(card).toHaveTextContent('9 comptes · top 7 détaillé, 2 regroupés')
+    expect(within(legend).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(legend).getByText('Autres · 5 comptes')).toBeInTheDocument()
+    expect(card).toHaveTextContent('9 comptes · top 4 détaillé, 5 regroupés')
   })
 
   it('freezes the selector on the title row while the grid is arranged', async () => {

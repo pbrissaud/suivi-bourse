@@ -105,7 +105,7 @@ export function AppSidebar() {
           the only thing left. */}
       <SidebarHeader className="h-14 justify-center gap-0 px-5 py-0 group-data-[collapsible=icon]:px-3">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          {/* The mark, which the app had nowhere: a mint tile carrying the
+          {/* The mark, which the app had nowhere: an ink tile carrying the
               product's initial, and the one place the brand is stated rather
               than spelled. It survives the fold where the wordmark cannot. */}
           <span
@@ -186,7 +186,7 @@ function BuildLine() {
           target="_blank"
           rel="noreferrer"
           aria-label={t('nav.release.label', { version: latest.version })}
-          className="tabular block w-fit rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="tabular block w-fit rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>

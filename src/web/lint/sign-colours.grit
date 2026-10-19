@@ -1,0 +1,13 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// Mint is money made and red is money lost: a class that paints with them is
+// written in lib/sign.ts and nowhere else, and `chart-2`, which `--gain` points
+// at, is read by nothing but the gain itself (#1283).
+or { JsStringLiteralExpression(), JsxString(), JsTemplateChunkElement(), JsLiteralMemberName() } as $s where {
+  or {
+    $s <: r"[\s\S]*(?:^|[\s'\"`:!])(?:text|bg|border|fill|stroke|ring|outline|from|to)-(?:gain|loss)(?:[\s'\"`/]|$)[\s\S]*",
+    $s <: r"[\s\S]*\bchart-2\b[\s\S]*"
+  },
+  register_diagnostic(span = $s, message = "[sign-colours] Colour a sign through signClass (lib/sign.ts), and leave chart-2 to the gain (#1283)")
+}

@@ -6,6 +6,7 @@
  * rather than in `lib/` on purpose: the product never converts a colour, and a
  * module nothing imports at runtime does not belong in the bundle.
  */
+import type { Oklch } from '@/test/stylesheet'
 
 /** The linear-light sRGB triple, unclamped — negatives and >1 mean *outside*. */
 function linearSrgb(lightness: number, chroma: number, hue: number): [number, number, number] {
@@ -40,4 +41,17 @@ export function luminance(lightness: number, chroma: number, hue: number): numbe
 export function contrast(one: number, other: number): number {
   const [lighter, darker] = one >= other ? [one, other] : [other, one]
   return (lighter + 0.05) / (darker + 0.05)
+}
+
+/**
+ * How far apart two colours sit, as the Euclidean distance in OKLab (ΔE_ok):
+ * the figure a palette is held to when two neighbours must be told apart.
+ */
+export function distance(one: Oklch, other: Oklch): number {
+  const lab = ({ lightness, chroma, hue }: Oklch) => {
+    const radians = (hue * Math.PI) / 180
+    return [lightness, chroma * Math.cos(radians), chroma * Math.sin(radians)]
+  }
+  const [a, b] = [lab(one), lab(other)]
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 }

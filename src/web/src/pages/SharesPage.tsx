@@ -323,7 +323,7 @@ export default function SharesPage() {
                   className={cn(
                     'h-8 rounded-lg border px-3.5 text-xs font-medium',
                     grouped
-                      ? 'border-primary/50 bg-primary/12 text-gain'
+                      ? 'border-primary/50 bg-primary/12 text-foreground'
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >

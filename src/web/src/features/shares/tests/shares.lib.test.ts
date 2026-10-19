@@ -435,12 +435,13 @@ function allocationRows(positions: readonly Position[]) {
 // ------------------------------------------------------------------------- //
 
 describe('the allocation', () => {
-  it('names seven lines and folds the rest into one slice that counts itself', () => {
+  it('names four lines and folds the rest into one slice that counts itself', () => {
     // Twelve was the cap until #838, on a measurement: at eight, the tail
     // *Others (4)* was worth 10,1 %, more than four of the named slices put
-    // together. The drawing caps at seven arcs all the same, and it answers
-    // that by making the fold **say what it holds** — the count is in the slice
-    // — and by putting every line it hides in the table under the ring.
+    // together. The drawing caps at four arcs and the fold (#1283) all the same,
+    // and it answers that by making the fold **say what it holds** — the count
+    // is in the slice — and by putting every line it hides in the table under
+    // the ring.
     const positions = Array.from({ length: 15 }, (_, index) =>
       aPosition({
         symbol: `Z${index}`,
@@ -452,30 +453,30 @@ describe('the allocation', () => {
     )
     const { slices, total } = allocation(allocationRows(positions))
 
-    expect(slices).toHaveLength(8)
-    expect(slices.slice(0, 7).every((slice) => slice.count === 1)).toBe(true)
-    expect(slices[7]).toMatchObject({ symbol: null, count: 8 })
+    expect(slices).toHaveLength(5)
+    expect(slices.slice(0, 4).every((slice) => slice.count === 1)).toBe(true)
+    expect(slices[4]).toMatchObject({ symbol: null, count: 11 })
     // Nothing is lost in the fold: 15 + 14 + … + 1.
     expect(total).toBe(120)
     expect(slices.reduce((sum, slice) => sum + slice.share, 0)).toBeCloseTo(1, 10)
   })
 
-  it('folds only past eight lines, and draws all eight where there are eight', () => {
+  it('folds only past five lines, and draws all five where there are five', () => {
     // At exactly the cap there is nothing to gain by hiding one line behind a
     // word — the drawing's own rule, and the one place the fold is *not* the
     // simple `> cap - 1` it would be if the eighth slice were always the tail.
-    const eight = Array.from({ length: 8 }, (_, index) =>
+    const five = Array.from({ length: 5 }, (_, index) =>
       aPosition({
         symbol: `Z${index}`,
         name: `Zeta ${index}`,
         quantity: 1,
         cost_basis: 1,
-        price: 8 - index,
+        price: 5 - index,
       }),
     )
-    const { slices } = allocation(allocationRows(eight))
+    const { slices } = allocation(allocationRows(five))
 
-    expect(slices).toHaveLength(8)
+    expect(slices).toHaveLength(5)
     expect(slices.every((slice) => slice.symbol !== null)).toBe(true)
   })
 
@@ -532,25 +533,18 @@ const slice = (symbol: string, value: number) => ({
 })
 
 describe('foldSlices', () => {
-  it('names all eight at eight, and seven and a tail of two at nine', () => {
+  it('names all five at five, and four and a tail of five at nine', () => {
     const lines = (n: number) =>
       Array.from({ length: n }, (_, index) => slice(`Z${index}`, n - index))
 
-    const eight = foldSlices(lines(8)).slices
-    expect(eight.map((one) => one.symbol)).toEqual(['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'])
-    expect(eight.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
+    const five = foldSlices(lines(5)).slices
+    expect(five.map((one) => one.symbol)).toEqual(['Z0', 'Z1', 'Z2', 'Z3', 'Z4'])
+    expect(five.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
     const nine = foldSlices(lines(9)).slices
-    expect(nine.slice(0, 7).map((one) => one.symbol)).toEqual([
-      'Z0',
-      'Z1',
-      'Z2',
-      'Z3',
-      'Z4',
-      'Z5',
-      'Z6',
-    ])
+    expect(nine).toHaveLength(5)
+    expect(nine.slice(0, 4).map((one) => one.symbol)).toEqual(['Z0', 'Z1', 'Z2', 'Z3'])
     expect(nine.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
-    expect(nine[7]).toMatchObject({ symbol: null, count: 2, value: 2 + 1 })
+    expect(nine[4]).toMatchObject({ symbol: null, count: 5, value: 5 + 4 + 3 + 2 + 1 })
     expect(foldSlices(lines(9)).total).toBe(45)
   })
 })

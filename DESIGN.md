@@ -9,7 +9,8 @@ colors:
   text: "oklch(0.22 0.02 60)"
   text-muted: "oklch(0.5 0.02 60)"
   rule: "oklch(0.9 0.012 85)"
-  primary: "oklch(0.48 0.11 165)"
+  primary: "oklch(0.30 0.03 60)"
+  gain: "oklch(0.48 0.10 164)"
   on-primary: "oklch(0.995 0.004 85)"
   dark-background: "oklch(0.17 0.012 60)"
   dark-surface: "oklch(0.205 0.012 60)"
@@ -17,7 +18,8 @@ colors:
   dark-text: "oklch(0.95 0.008 85)"
   dark-text-muted: "oklch(0.68 0.015 70)"
   dark-rule: "oklch(0.3 0.012 60)"
-  dark-primary: "oklch(0.8 0.13 165)"
+  dark-primary: "oklch(0.92 0.012 80)"
+  dark-gain: "oklch(0.80 0.13 165)"
   dark-on-primary: "oklch(0.17 0.012 60)"
 typography:
   hero:
@@ -134,21 +136,25 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
   total gain, since 1 January, today, IRR.
 - Sections are warm tinted planes, never boxes; Atelier carries no shadow.
 - Cards exist only where you decide something.
-- Colour means something: accent for action, gain and loss for the sign of a figure.
+- Colour means something: ink for action, mint for money made, red for money lost, and the
+  chart hues to tell the parts of a drawing apart.
 
 ## Colors
 
-**Strategy:** restrained. Warm neutrals carry the page; one mint accent owns action;
-gain and loss colour only signs and figures.
+**Strategy:** restrained. Warm neutrals carry the page and a warm ink owns action. Mint is
+the colour of a gain and red the colour of a loss, and they colour only signs and figures.
+The chart hues tell categories apart inside a drawing.
 
 **Light or dark:** both ship. The use scene is a person checking their own money at a
 desk or on a phone, often in the evening: light is the default, dark follows the
 system setting. Dark keeps the hierarchy by stepping the same warm neutrals (background,
-surface, tint) rather than inverting lightness, and lifts the accent so it keeps its
-contrast.
+surface, tint) rather than inverting lightness, and lifts the ink and the mint so they
+keep their contrast.
 
-- `primary` is the only colour for interaction: primary buttons, the current nav item,
-  focus rings, weight bars.
+- `primary`, the ink, is the colour of interaction: primary buttons, focus rings, the caret,
+  the selection, a pressed control. The current navigation item is the `sidebar-accent`
+  surface with its foreground, a hover held down. A link is `primary` and underlined at
+  rest. A weight bar is `muted-foreground`.
 - `gain` and `loss` colour the sign and the digits of a figure, never a row background,
   a pill fill or a whole card.
 - Only a figure that can change sign takes `gain` or `loss`. A term whose sign is fixed by
@@ -158,8 +164,7 @@ contrast.
   `src/web/src/lib/gain.ts`.
 - The dashboard's *Performance* curve is the one drawing coloured by its sign: `gain` above
   the 0 % line, `loss` below it, split exactly at zero. The 0 % line and the axis carry the
-  same information without colour. Both colours stay the `--gain` and `--loss` aliases of
-  `primary` and `destructive`.
+  same information without colour. Both colours are the `--gain` and `--loss` tokens.
 - `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
 - `rule` separates rows inside a section and nothing else.
 - A job's history bar (System page, #1236) is the one place a status colours a mark: an
@@ -168,7 +173,20 @@ contrast.
   dashed `rule` outline. The glyph carries the meaning, the colour repeats it.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
   warm hue, never a neutral gray.
-- Gain is `primary` and loss is `destructive`: `--gain` and `--loss` point at them.
+- Gain is `chart-2` and loss is `destructive`: `--gain` and `--loss` point at them. Nothing
+  else reads `chart-2`, so on Atelier the colour of a gain is not the colour of an action
+  (#1283). On another theme this is best-effort: `chart-2` is the author's own choice and
+  may equal `primary` (stock modern-minimal, dark), which brings gain and action back
+  together. The +/− sign and the 0 % line carry the direction either way.
+- A category in a drawing (an allocation slice, an account's identity) takes a chart hue:
+  `chart-1`, `chart-3`, `chart-4`, `chart-5` in that order, and `muted-foreground` for a
+  fold. On Atelier, each clears 3:1 against `background`, `tint` and `surface` on both
+  grounds, and two neighbours on the ring are at least 0.12 ΔE_ok apart
+  (`src/web/src/palette.test.ts`). Slices are separated by a 2 px `background` gap and each
+  is named in its legend, so a theme with weaker chart hues still reads.
+- A status, an event's kind and a fixed-sign figure carry no hue: an event marker is
+  `foreground`, a ledger type is a `muted` pill, a job that ran well is `foreground` with
+  its glyph.
 - A semantic token (`--gain`, `--loss`, `--price`, `--attention`, `--alloc-*`…) is
   always an alias of a standard shadcn token, never a value of its own
   (`lint/semantic-token-alias.grit`, #1130).
@@ -323,8 +341,9 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   user decides (an agent proposal, a profile fact to confirm, a first-run step, a
   destructive confirmation) or selects (an account tile). Never a card inside a card.
   A decided proposal loses its buttons and shows one status line (decision 5A).
-- **Weight bar:** a 6 px `primary` bar with its percentage in Label, inside holding rows
-  and in a legend drawn without a ring (the dashboard's allocation at half width).
+- **Weight bar:** a 6 px `muted-foreground` bar with its percentage in Label, inside holding
+  rows and in a legend drawn without a ring (the dashboard's allocation at half width). In
+  an account's own rows it takes the account's identity hue.
 - **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `text-muted`, tabular numerals; no axis line, no tick mark; the dashed `rule` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
 - **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
@@ -415,3 +434,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | Atelier is a JSON in the repo, no longer a published tweakcn theme (#1295) | A colour change was a republish on tweakcn outside the repo, unreviewable; it is now a reviewed diff of `atelier.json`, rendered into `index.css` by the same function that renders a stored theme. |
 | 2026-10-18 | One layout system for the shell (#1276) | Three choices made by the owner: the page title stays in the header bar on the Figure rung (over moving it into the content or keeping it at 20 px); language, theme and density move to Settings › On this device (over a header menu or table toolbars); a statement gains a third grid track from 1 600 px (over a page bounded at 1 280 px). Also: the sidebar goes back to the 200 px this file always said; the ledger joins the pages the owner reads, and the foot keeps the administration; one 1 040 px cap gives way to a width per kind of content, because a cap starves tables while a statement stretched to 800 px stops reading as a statement. |
 | 2026-10-18 | The page title goes quiet (supersedes the title rung of #1276) | Seen on screen, a 28 px title in a 56 px bar filled the bar, stacked a second display size 60 px above the hero, and stranded its 12 px subtitle. The owner chose the quiet bar: 15/22 at 500, the subtitle after a `·`. |
+| 2026-10-18 | Gain leaves the primary; action becomes ink (#1283) | The 17/10 audit found the mint on buttons, the current nav item, links, the first account, the eight allocation stops and every gain: a green figure read as a link and a green button as a gain. `--gain` moves to `chart-2`, which nothing else reads and which differs from `primary` on 14 of 16 stock tweakcn theme/ground pairs, against 0 of 16 when it is `primary`. Atelier's `primary` becomes a warm ink. The allocation and the account identities take the other chart hues, measured in CI. Amends the 2026-10-10 row "Semantic tokens are aliases": its alias rule stands, its `gain → primary` does not. |

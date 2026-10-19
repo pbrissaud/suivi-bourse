@@ -59,16 +59,17 @@ import { type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/features/data/lib/ledger'
 
 /**
- * **Seven ranked slices and the fold, which is eight** (#838). The drawing caps
- * the ring at seven arcs and gives the rest one slice of its own — *Autres · 13
- * lignes* — and it folds only past **eight** lines: at exactly eight there is
- * nothing to gain by hiding one behind a word. It was twelve here, which drew a
- * ring nobody could read as a ranking and a legend two columns of six deep.
+ * **Four ranked slices and the fold, which is five** (#838, #1283). The drawing
+ * caps the ring at four arcs and gives the rest one slice of its own — *Autres ·
+ * 13 lignes* — and it folds only past **five** lines: at exactly five there is
+ * nothing to gain by hiding one behind a word. Five is the chart hues left once
+ * the gain's is reserved, and four of them tell neighbours apart where the
+ * eight mixes of the primary could not.
  *
- * The fold takes the ramp's **last** stop, `--alloc-8`, the least contrasted of
- * the eight, which is what a fold of the smallest lines should be.
+ * The fold takes the last stop, `--alloc-5`, the muted foreground, which is what
+ * a fold of the smallest lines should be.
  */
-export const ALLOCATION_SLICES = 8
+export const ALLOCATION_SLICES = 5
 
 /** One line of the page — one symbol, whatever the number of accounts on it. */
 export interface ShareRow extends PositionAbsenceInput {
@@ -470,7 +471,7 @@ export interface AllocationSlice {
 }
 
 export interface Allocation {
-  /** Descending by value, **at most eight**, the tail last if there is one. */
+  /** Descending by value, **at most five**, the tail last if there is one. */
   slices: AllocationSlice[]
   total: number
   /**
@@ -493,15 +494,15 @@ export interface Allocation {
  * **The cap is the drawing's, and it reverses a measurement** (#838). It was
  * twelve, and the reason is on the record: at eight, the tail *Autres (4)* was
  * worth **10,1 %** on the real portfolio, more than four of the named slices
- * put together — a fold that outweighs what it hides. The drawing caps at seven
- * arcs all the same, and it answers that objection rather than ignoring it: the
- * fold **names its own count** (*Autres · 13 lignes*), it carries the ramp's
- * last stop so it reads as a remainder and not as a holding, and every line it
+ * put together — a fold that outweighs what it hides. The drawing caps at four
+ * arcs all the same (#1283), and it answers that objection rather than ignoring it: the
+ * fold **names its own count** (*Autres · 13 lignes*), it carries the muted
+ * foreground so it reads as a remainder and not as a holding, and every line it
  * hides is in the table directly under it. What twelve bought in fidelity it
  * paid for in the reading — a ring of twelve arcs is not a ranking anybody can
  * see, and its legend is two columns six rows deep beside a 240 px circle.
  *
- * It folds only **past** eight lines: at exactly eight there is nothing to gain
+ * It folds only **past** five lines: at exactly five there is nothing to gain
  * by hiding one of them behind a word.
  *
  * A **closed** line is not a slice: it is worth exactly zero and a legend of
@@ -547,11 +548,11 @@ export function foldSlices(placed: readonly AllocationSlice[]): Omit<Allocation,
       : right.value - left.value,
   )
 
-  // **Seven ranked lines and the fold** (#838, the drawing's own cap). The tail
-  // is one slice like any other, so it takes the ramp's last stop — the least
-  // contrasted rank, which is what a fold of the smallest lines should be. It
-  // folds only past `ALLOCATION_SLICES` lines: at exactly eight there is
-  // nothing to gain by hiding one of them behind a word.
+  // **Four ranked lines and the fold** (#838, #1283, the drawing's own cap). The
+  // tail is one slice like any other, so it takes the last stop — the muted
+  // foreground, which is what a fold of the smallest lines should be. It folds
+  // only past `ALLOCATION_SLICES` lines: at exactly five there is nothing to
+  // gain by hiding one of them behind a word.
   let slices = sorted
   if (sorted.length > ALLOCATION_SLICES) {
     const named = sorted.slice(0, ALLOCATION_SLICES - 1)

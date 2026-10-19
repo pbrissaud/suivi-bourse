@@ -16,13 +16,13 @@ import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 const JOB_TONE: Record<HealthStatus, string> = {
-  ok: 'text-gain',
+  ok: 'text-foreground',
   attention: 'text-attention',
   unknown: 'text-muted-foreground',
 }
 
 const JOB_DOT: Record<HealthStatus, string> = {
-  ok: 'bg-gain',
+  ok: 'bg-foreground',
   attention: 'bg-attention',
   unknown: 'bg-muted-foreground',
 }

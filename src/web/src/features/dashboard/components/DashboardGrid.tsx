@@ -542,7 +542,7 @@ export function DashboardGrid({
       ) : null}
 
       {write.isError ? (
-        <p role="alert" className="flex flex-wrap items-center gap-3 text-sm text-loss">
+        <p role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
           {t('dashboard.edit.saveFailed')}
           <Button variant="outline" onClick={done}>
             {t('dashboard.edit.retry')}

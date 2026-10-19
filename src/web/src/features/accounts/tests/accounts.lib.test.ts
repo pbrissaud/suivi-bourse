@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   accountChoice,
+  accountColour,
   accountEvents,
   accountPositions,
   accountWeights,
@@ -591,5 +592,17 @@ describe('the projection rides on the row, and an absence stays one (#919)', () 
     ])
 
     expect(row.projected_tax).toBe(0)
+  })
+})
+
+describe('the identity wheel (#1283)', () => {
+  it('turns through the four category hues', () => {
+    expect([0, 1, 2, 3, 4].map(accountColour)).toEqual([
+      'var(--alloc-1)',
+      'var(--alloc-2)',
+      'var(--alloc-3)',
+      'var(--alloc-4)',
+      'var(--alloc-1)',
+    ])
   })
 })

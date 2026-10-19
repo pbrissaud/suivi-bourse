@@ -168,7 +168,7 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
                     <ShareBar
                       share={slice.share}
                       scale={largest}
-                      fill="var(--primary)"
+                      fill="var(--muted-foreground)"
                       size="weight"
                     />
                   </li>
