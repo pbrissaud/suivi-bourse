@@ -42,7 +42,7 @@ function renderAccounts(
 }
 
 function rail() {
-  return screen.getByRole('list', { name: 'Vos comptes' })
+  return screen.getByRole('group', { name: 'Vos comptes' })
 }
 
 /** The detail of one account — a landmark named by the account it is about. */
@@ -58,7 +58,7 @@ function detail(name: string) {
  */
 async function openPanel(user: ReturnType<typeof renderApp>['user'], name: string) {
   await user.click(
-    within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole('link', {
+    within(await screen.findByRole('group', { name: 'Vos comptes' })).getByRole('link', {
       name: new RegExp(name),
     }),
   )
@@ -379,7 +379,7 @@ describe('the declaration is reachable at every N', () => {
     renderApp({ url: '/accounts' })
 
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
-    expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Vos comptes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Déclarer un compte' })).not.toBeInTheDocument()
   })
 })

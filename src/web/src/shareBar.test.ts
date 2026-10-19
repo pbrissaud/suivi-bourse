@@ -16,13 +16,11 @@
  * *source*: a percentage width, computed and written into a `style`, is what a
  * hand-written share bar is made of, and there is one place it belongs.
  *
- * **The hand-written bars are the exemption, and it has a floor.** The rail draws
- * the accounts as adjacent segments closing a whole, which is a claim about the
- * total that no per-line bar makes (`AccountsRail.tsx` carries the argument for
- * keeping both). Its segments are therefore not `ShareBar`s and cannot be, and
- * `lint/share-width.grit` exempts that file by name in `biome.json`, and it is
- * the only one: the gain's breakdown drew a cascade here once (#1143) and is a
- * statement with no drawing since #1175.
+ * **There is no hand-written bar left.** The accounts rail drew its accounts
+ * as adjacent segments closing a whole, and was the one exemption of
+ * `lint/share-width.grit`; it went with the rail (#1277), the chips of the
+ * accounts bar carrying their share as a figure. The gain's breakdown drew a
+ * cascade here once (#1143) and is a statement with no drawing since #1175.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -36,22 +34,12 @@ const ROOT = path.resolve(import.meta.dirname, '..')
  * Refusing hand-written bars everywhere says nothing about there being a bar at
  * all: delete `<ShareBar />` from the allocation's legend and every other test
  * still passes, the drawing carrying no word for a rendering test to miss. The
- * rail's own bar is read in the DOM by `accounts.test.tsx`, which is the
- * stronger assertion of the two and is why this list is a *floor* rather than a
- * replacement for it. The shares table's `Poids` column joined the list at #791,
+ * shares table's `Poids` column joined the list at #791,
  * left when the column did, came back with it at #832 and has left with it again
  * (#831, the maquette read rendered): the weight of a line is drawn on that page
  * by the allocation's legend above the table now, and `AccountDetail` is where a
- * per-line share is still a cell — twice, since #838: the account's composition
- * split and the weight of each of its lines.
- *
- * **The rail left the list at #838**, and its stacked bar stayed. The drawing's
- * weights card is that bar and a legend under it — a colour, a name, a share —
- * and the per-line bars the block used to draw beneath each legend row were the
- * same figure said twice on one card, once as a segment of the whole and once
- * as a bar of its own. The exemption below is unchanged: the stacked bar is
- * still hand-written, still argued for on the file, and still asserted to be
- * the only hand-written bar in it.
+ * per-line share is still a cell: the weight of each of its lines, and the
+ * dividend payers' (the account's composition split went at #1277).
  */
 const MOUNTS = [
   'src/features/shares/components/Allocation.tsx',

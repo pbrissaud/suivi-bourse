@@ -1,13 +1,14 @@
 /**
- * The accounts page — **master-detail, in read only**.
+ * The accounts page — **a bar of accounts over one account's detail**.
  *
- * The eight-column table is gone.
+ * The eight-column table is gone, and so is the rail that followed it: it was
+ * mostly empty while the detail scrolled (#1277).
  *
  * Four page-level objects, and each is a decision:
  *
- *  - **The rail is the master, and it carries the weights.** It is sticky, so
+ *  - **The bar is the way in, and it carries the weights.** It is sticky, so
  *    the way into another account does not scroll off the top of a detail five
- *    blocks long.
+ *    blocks long, and it is the same bar at every width.
  *  - **Which account is open is a URL** (`?account=`), the same reduction the
  *    shares page carries and for the same three reasons: it survives a reload,
  *    it can be handed to somebody else, and the way out is the browser's own
@@ -21,13 +22,13 @@
  *    is no band and no strip at the top of the column: the declaration is what
  *    the page is *made of*, so a refusal on it empties the page and the page
  *    says why; the four other reads compose the **detail**, so a refusal on one
- *    of those leaves the rail standing and says why the detail is not there.
+ *    of those leaves the bar standing and says why the detail is not there.
  *    Rendering nothing would make *the store is unreadable* and *you own
  *    nothing yet* the same screen.
  *
- * **And the declaration lives here** (#793): declared from the rail, renamed
+ * **And the declaration lives here** (#793): declared from the bar, renamed
  * and removed from the panel the account's own name opens. The panel is the
- * page's, not the rail's and not the detail's, because both open it — and a
+ * page's, not the bar's and not the detail's, because both open it — and a
  * component mounted twice would be two panels, one of which the reader cannot
  * see closing.
  */
@@ -37,7 +38,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { AccountDetail } from '@/features/accounts/components/AccountDetail'
 import { AccountForm } from '@/features/accounts/components/AccountForm'
-import { AccountsChips, AccountsRail } from '@/features/accounts/components/AccountsRail'
+import { AccountsBar } from '@/features/accounts/components/AccountsBar'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
@@ -106,8 +107,8 @@ export default function AccountsPage() {
   const opened = chooseAccount(rows, account)
 
   // **One read per opened account, and only for the one that is open.** The
-  // series is some two and a half thousand days long, and the rail owes it
-  // nothing: what the rail draws is a share of a total on a stated day, not a
+  // series is some two and a half thousand days long, and the bar owes it
+  // nothing: what the bar draws is a share of a total on a stated day, not a
   // window. Read whole, because the longest range the detail offers is the
   // account's own opening and only the series says when that was.
   const history = useQuery({
@@ -117,10 +118,10 @@ export default function AccountsPage() {
   })
 
   // **What empties the page and what empties the detail are two lists.** The
-  // declaration is the page: without it there is no rail, no selection and no
+  // declaration is the page: without it there is no bar, no selection and no
   // detail, so a refusal there is the page's own sentence. The four others are
   // what the detail is composed of — a ledger that would not answer must not
-  // take the rail with it, which is the whole of why this is not one condition.
+  // take the bar with it, which is the whole of why this is not one condition.
   const pageFailure = oneFailure(readConditions({ queries: [accounts] }))
   const detailFailures = {
     positions: oneFailure(readConditions({ queries: [positions, totals] })),
@@ -186,7 +187,7 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-6">
-      {/* The rail's cards and the detail's head are the same pass's rows, so
+      {/* The bar's chips and the detail's head are the same pass's rows, so
           the claim is the page's and not a card's — one sentence over both,
           rather than one per account, which is one fact said N times. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
@@ -206,68 +207,53 @@ export default function AccountsPage() {
           }
         />
       ) : (
-        // `grid-cols-1` is not decoration: with a column named at `lg` alone,
-        // the implicit track below it is `auto` — `minmax(min-content,
-        // max-content)` — so one long event label took this column past the
-        // width of a phone and every card under it with it. `grid-cols-1` is
-        // `repeat(1, minmax(0, 1fr))`, and the `0` is what puts the truncations
-        // back in charge (`lint/grid-base-columns.grit`).
         <>
-          {/* **The stacked width's rail, and it is a bar** (#838). It is
-              mounted here rather than inside `AccountsRail` because a sticky
-              element sticks within its *containing block*: put in the rail's
-              own column it came unstuck where that column ends, which is a
-              third of the way down the page. Above the grid, its containing
-              block is the page's column and it holds all the way down. */}
-          <AccountsChips rows={rows} selected={opened.id} currency={currency} />
-
-          <div className="grid grid-cols-1 items-start gap-6 wide:grid-cols-[minmax(0,16.5rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-            <AccountsRail
-              rows={rows}
-              selected={opened.id}
-              rebuilding={runtime.data?.rebuilding ?? null}
-              onDeclare={() => setEditing(null)}
-              currency={currency}
-              // Whether there is anything to reassign — the module's own answer
-              // (#725), which is *events still naming a row nobody declared*
-              // and not *a row called `default` exists*: renamed, retyped or
-              // taken over by a file, that row is an ordinary account and the
-              // offer would be about nothing.
-              //
-              // `??
-              offer={offer}
-              // `?? null` and never `?? []`: a chip is a claim about the
-              // reader's own account, and a read in flight is not one.
-              advisories={advisories.data ?? null}
-            />
-            <AccountDetail
-              // Which of the wheel's hues this account wears — the rail's own,
-              // so the curve and the composition here are drawn in the colour the
-              // rail already gave it (#838).
-              hue={rows.findIndex((one) => one.id === opened.id)}
-              row={opened}
-              positions={heldPositions}
-              events={ledger}
-              points={series}
-              currency={currency}
-              rebuilding={runtime.data?.rebuilding ?? null}
-              // The standing offer belongs to the account carrying the events, so
-              // it is composed here — where both reads are — and handed to the
-              // detail that is about that account. Everywhere else it is `none`
-              // and the block does not exist.
-              reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
-              // **One entry per read, handed to the block it composes** (#829). There is no band above the column any more, and one
-              // condition for the three would have taken a detail that read two
-              // of them off the screen to report the third — the exact
-              // disappearance #799 repaired on the dashboard.
-              failures={detailFailures}
-              onEdit={() => setEditing(declared.find((one) => one.id === opened.id) ?? null)}
-            />
-          </div>
+          {/* **The bar is the way into the account, at every width** (#1277).
+              Mounted beside the detail rather than inside a column: a sticky
+              element sticks within its containing block, and the page's own
+              column is the one that lasts as long as the detail. */}
+          <AccountsBar
+            rows={rows}
+            selected={opened.id}
+            currency={currency}
+            // Whether there is anything to reassign — the module's own answer
+            // (#725), which is *events still naming a row nobody declared*
+            // and not *a row called `default` exists*: renamed, retyped or
+            // taken over by a file, that row is an ordinary account and the
+            // offer would be about nothing.
+            offer={offer}
+            onDeclare={() => setEditing(null)}
+          />
+          <AccountDetail
+            // Which of the wheel's hues this account wears — the bar's own,
+            // so the weights here are drawn in the colour the bar already gave
+            // it (#838).
+            hue={rows.findIndex((one) => one.id === opened.id)}
+            row={opened}
+            positions={heldPositions}
+            events={ledger}
+            points={series}
+            currency={currency}
+            rebuilding={runtime.data?.rebuilding ?? null}
+            // `?? null` and never `?? []`: a chip is a claim about the reader's
+            // own account, and a read in flight is not one.
+            advisories={advisories.data ?? null}
+            // The standing offer belongs to the account carrying the events, so
+            // it is composed here — where both reads are — and handed to the
+            // detail that is about that account. Everywhere else it is `none`
+            // and the block does not exist.
+            reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
+            // **One entry per read, handed to the block it composes** (#829). There is no band above the column any more, and one
+            // condition for the three would have taken a detail that read two
+            // of them off the screen to report the third — the exact
+            // disappearance #799 repaired on the dashboard.
+            failures={detailFailures}
+            onEdit={() => setEditing(declared.find((one) => one.id === opened.id) ?? null)}
+          />
         </>
       )}
 
-      {/* One panel for the page, opened from the rail and from the detail. It
+      {/* One panel for the page, opened from the bar and from the detail. It
           is mounted outside the branch above so that shutting it cannot depend
           on what is on screen behind it. */}
       <AccountForm

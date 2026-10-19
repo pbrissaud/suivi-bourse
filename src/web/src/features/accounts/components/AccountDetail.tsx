@@ -1,10 +1,11 @@
 /**
  * One account, read in depth.
  *
- * What eight columns could never hold: the gain over its four terms, the split
- * between securities and cash, the money-weighted rate, the dividends this
- * account has actually paid, the lines it holds and the last events that name
- * it.
+ * What eight columns could never hold: the value and the cash under it, the gain
+ * and the money-weighted rate as pills, the curve, the dividends and fees this
+ * account has paid, the lines it holds and the last events that name it. It
+ * reads like the dashboard's head (#1277): the value is the page's one hero, on
+ * the ground, and only the reassignment — a decision — is a card.
  *
  * Five things are decisions rather than layout:
  *
@@ -46,10 +47,13 @@ import { AccountCurve } from '@/features/accounts/components/AccountCurve'
 import { Refusal } from '@/components/Refusal'
 import { Unreadable } from '@/components/Unreadable'
 import { Explain } from '@/components/Explain'
+import { PILL, SignedFigure } from '@/components/FigurePill'
+import { Stat } from '@/components/Stat'
 import { ShareBar } from '@/components/ShareBar'
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import { renderFigure } from '@/lib/absence'
 import {
   accountColour,
@@ -69,6 +73,7 @@ import {
 import { accountsApi, type PerfPoint } from '@/features/accounts/lib/api'
 import type { LedgerEvent } from '@/features/data/lib/api'
 import type { Position } from '@/features/shares/lib/api'
+import type { Advisory } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { portfolioTerms, termAmount, termRendering } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
@@ -91,6 +96,40 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
   withoutCashLedger: 'accounts.reason.withoutCashLedger',
   rebuilding: 'accounts.reason.rebuilding',
   empty: 'accounts.reason.empty',
+}
+
+/**
+ * **Every row of the detail is full** (#1277). The members present share it
+ * equally and an absent one gives its share to the others, so a block that has
+ * nothing to say never leaves a hole. `grid-cols-1` is not decoration: with a
+ * column named at `lg` alone the implicit track below it is `auto`, so one long
+ * event label took the column past the width of a phone
+ * (`lint/grid-base-columns.grit`).
+ */
+const FULL_ROW = 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr'
+
+/**
+ * The advisory the open account wears beside its name, **as a chip and never as
+ * a gesture** (#829).
+ *
+ * An advisory is read twice: here, beside the figure it comments on, which is
+ * the **reading**; and in the notifications panel, which is the **inventory**.
+ * What the chip never offers is the acknowledgement — one fact cannot propose
+ * two different gestures depending on where it is met, so the gesture belongs
+ * to the panel and to the panel alone.
+ *
+ * `null` is *the read has not landed*, and it draws nothing: a chip is a claim
+ * about the reader's own account. An empty array is an answer — this
+ * portfolio has nothing to say about itself — and draws nothing either, which
+ * is the same rendering for two different truths and legitimately so: an
+ * absent chip asserts nothing at all.
+ */
+function cashShare(advisories: readonly Advisory[] | null, account: string): number | null {
+  const found = (advisories ?? []).find(
+    (advisory) => advisory.kind === 'cash_share' && advisory.detail.account === account,
+  )
+  const share = found === undefined ? null : Number(found.detail.share)
+  return share === null || !Number.isFinite(share) ? null : share
 }
 
 interface AccountDetailProps {
@@ -116,6 +155,11 @@ interface AccountDetailProps {
   /** Whether the reconstruction is still running. `null` — not observed yet. */
   rebuilding: boolean | null
   /**
+   * What this portfolio says about itself, or `null` while the read is in
+   * flight. The detail wears the one about **its** account, as a chip.
+   */
+  advisories: readonly Advisory[] | null
+  /**
    * The standing offer to move the events nobody assigned onto a declared
    * account (#725), or `none` where there is nothing to move — which is what
    * the detail of every account but the seeded one gets.
@@ -138,9 +182,9 @@ interface AccountDetailProps {
     events?: ReadFailure | null
   }
   /**
-   * The account's rank in the rail, which is the index of its hue on the
+   * The account's rank in the bar, which is the index of its hue on the
    * identity wheel (`accountColour`). Passed rather than derived: the wheel is
-   * the *rail's* order, and a block deriving its own would drift from it.
+   * the *bar's* order, and a block deriving its own would drift from it.
    */
   hue: number
   /** Renaming, and removing — the panel the pencil beside the name opens. */
@@ -154,6 +198,7 @@ export function AccountDetail({
   points,
   currency,
   rebuilding,
+  advisories,
   reassignment,
   failures = {},
   hue,
@@ -162,12 +207,13 @@ export function AccountDetail({
   const { t } = useI18n()
   const f = useFormatters()
   // The detail is a **landmark named by the account it is about**, which is what
-  // a reader jumping past the rail lands on and what says, without a colour,
-  // which of the rail's entries is open.
+  // a reader jumping past the bar lands on and what says, without a colour,
+  // which of the bar's chips is open.
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
   const reason = degradedReason(row, rebuilding)
+  const cash = cashShare(advisories, row.id)
 
   // **Every derivation below is memoised, and against the reads themselves.**
   // The series is some two and a half thousand days long and the ledger is the
@@ -225,493 +271,255 @@ export function AccountDetail({
     [events, row.id],
   )
 
+  // The row exists only if one of its two members does — an empty grid would
+  // still cost the 20 px between sections.
+  const hasPayers = payers !== null && payers.length > 0
+  const hasEvents = last === null ? Boolean(failures.events) : last.length > 0
+  const hasActivity = hasPayers || hasEvents
+
   return (
-    <section aria-labelledby={heading} className="space-y-6">
+    <section aria-labelledby={heading} className="space-y-5">
       {/* **Réaffecter, jamais refuser** (#725). It sits above the figures and
           not under them: an owner who ran a month before declaring anything has
           their whole ledger under this row, and what they came for is the way
-          out — not this account's composition. */}
+          out — not this account's composition. It is the one card left on the
+          page, because it asks for a decision. */}
       {reassignment.kind === 'standing' ? <Reassignment offer={reassignment} /> : null}
 
-      {/* **One card at the head, and the curve is in it** (#838). The drawing leads
-      an account with what it is worth, states underneath it the two figures
-      that total is the difference of and what the broker took out of the
-      transfers, puts the cumulative ratio at the right, and draws the value
-      against the contribution *inside the same frame* — because the curve is
-      that head's own reading over time and not a second block. What went with
-      the split is the four-term list: the drawing shows the terms where they
-      are read — the dividends have a card, the fees are the line under the
-      gain, and the latent gain is a column of the lines table below. */}
-      {/* The card itself is **not** conditional, and its name is why: it is
-          what `aria-labelledby` points at, so a detail whose figures are still
-          in flight would otherwise be a region with no name at all. What waits
-          is each half of what it holds — the figures on the positions, the
-          curve on the series — which is #799's rule kept inside one frame: a
-          read that has not answered costs its own half and never the other. */}
-      <Card className="gap-0 py-6">
-        <CardContent className="px-6">
-          <div className="flex flex-wrap items-start justify-between gap-5">
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex items-center gap-2">
-                {/* The heading is the **name alone**: it is the accessible name
-                    of the whole detail (`aria-labelledby`), and a region called
-                    *Alpha · CTO* names a thing nobody calls that. The kind
-                    identifier rides beside it as ordinary text, which is where
-                    the drawing puts it and where a screen reader reads it after
-                    the heading rather than inside it. */}
-                <h2 id={heading} className="label">
-                  {name}
-                </h2>
-                <span className="label">· {row.id}</span>
-                {/* **The gesture is a pencil beside the name**, where it was
-                    the name itself. One control for one gesture: a heading that
-                    is also a button reads as a link to somewhere, and the
-                    drawing gives the editor an icon that says *edit*. */}
-                <button
-                  type="button"
-                  aria-label={t('accounts.detail.edit')}
-                  onClick={onEdit}
-                  className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                >
-                  <Pencil aria-hidden className="size-3.25" />
-                </button>
-              </div>
-
-              {/* **The head waits on nothing any more** (#970). Its four
-                  figures — the value, the contribution, the gain and the fees —
-                  are four members of **one** `account_metrics` row, so there is
-                  no second read for them to be a scrape apart from, and no
-                  reason left to hold them back while the positions are in
-                  flight. The curve below still waits on its own read: one
-                  frame, one wait, and it costs the figures nothing. */}
-              <p
-                role="group"
-                aria-label={t('accounts.figure.totalValue')}
-                className="tabular text-5xl font-heavy tracking-tight"
-              >
-                {f.currency(row.total_value, currency)}
-              </p>
-              {/* The two figures the value is a change **of** and **by**, on
-                    one line and a rung down: neither is the subject. */}
-              <p className="text-sm text-muted-foreground">
-                <span role="group" aria-label={t('accounts.figure.netContributed')}>
-                  {t('accounts.figure.netContributed')}{' '}
-                  <span className="tabular text-foreground">
-                    {f.currency(row.net_contributed, currency)}
-                  </span>
-                </span>
-                {' · '}
-                <span
-                  role="group"
-                  aria-label={t('accounts.figure.gain')}
-                  className="inline-flex items-baseline gap-1"
-                >
-                  {t('accounts.figure.gain')}
-                  <Explain
-                    figure={t('accounts.figure.gain')}
-                    body="accounts.detail.gainTotal.explain"
-                    anchor="total-gain"
-                  />
-                  <span className={cn('tabular', signClass(row.gain_absolu))}>
-                    {f.currency(row.gain_absolu, currency)}
-                  </span>
-                </span>
-              </p>
-              {/* Dropped at **zero and only at zero**: an install whose
-                transfers are free reads no fourth term and never learns it
-                exists. `null` is a different sentence — the server has no day
-                to bound the fees by — and it renders, as a dash, because a
-                total that goes out incomplete owes the reader the cause under
-                it (#775). */}
-              {row.transfer_fees === 0 ? null : (
-                <p
-                  role="group"
-                  aria-label={t('accounts.figure.fees')}
-                  className="text-xs text-muted-foreground"
-                >
-                  {t('accounts.figure.fees')}{' '}
-                  <span className="tabular">{f.currency(row.transfer_fees ?? null, currency)}</span>
-                  {feesOnContributed === null ? null : (
-                    <>
-                      {' · '}
-                      <span className="tabular">
-                        {t('accounts.figure.feesOnContributed', {
-                          percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
-                        })}
-                      </span>
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-
-            {/* **The one rate on this screen, the annualised IRR** (#1112). It
-                took the slot `Performance totale` held, and the TWR it used to
-                sit beside went into its bubble, which says why the two differ:
-                three rates on one head read as three answers to one question. */}
-            <div
-              role="group"
-              aria-label={t('accounts.figure.xirr')}
-              className="flex min-w-0 flex-col gap-0.5"
-            >
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {t('accounts.figure.xirr')}
-                {twr === null ? (
-                  <Explain
-                    figure={t('accounts.figure.xirr')}
-                    body="accounts.xirr.explain"
-                    anchor="xirr"
-                  />
-                ) : (
-                  <Explain
-                    figure={t('accounts.figure.xirr')}
-                    body="accounts.xirr.explainTwr"
-                    values={{ explain: t('accounts.xirr.explain'), twr: f.percent(twr) }}
-                    anchor="xirr"
-                  />
-                )}
-              </span>
-              <span
-                className={cn('tabular text-4xl font-heavy tracking-tight', signClass(row.xirr))}
-              >
-                {f.percent(row.xirr)}
-                {row.xirr == null ? null : (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {' '}
-                    {t('accounts.xirr.unit')}
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* The curve, inside the head it is the history of. Nothing at all
-              while the series is in flight, and the reason in its
-              place where the read refused. The legend states the extent it was
-              drawn over, which is the account's whole history: a curve with no
-              stated span beside a total is the unbounded-window failure in
-              miniature. */}
-          {points === null ? (
-            failures.points ? (
-              <div className="mt-4.5">
-                <Unreadable failure={failures.points} />
-              </div>
-            ) : null
-          ) : curve.length === 0 ? null : (
-            <div className="mt-4.5">
-              <AccountCurve points={curve} currency={currency} />
-            </div>
+      {/* **The head sits on the ground, not in a card** (#1277, DESIGN.md): the
+          value, its pills and the curve are the page's first object without a
+          box to say so, exactly as on the dashboard. `mb-10` doubles the page's
+          20 px rhythm, so the first section stands 40 px off the figures row,
+          the one large gap the layout allows there. The section carries the
+          name through `aria-labelledby`, so a detail whose figures are still in
+          flight is not a region with no name at all. */}
+      <div className="mb-10">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The heading is the **name alone**: it is the accessible name of the
+              whole detail (`aria-labelledby`), and a region called *Alpha ·
+              CTO* names a thing nobody calls that. The kind identifier rides
+              beside it as ordinary text, which is where a screen reader reads
+              it after the heading rather than inside it. */}
+          <h2 id={heading} className="label">
+            {name}
+          </h2>
+          <span className="label">· {row.id}</span>
+          {/* **The gesture is a pencil beside the name**, where it was the name
+              itself. One control for one gesture: a heading that is also a
+              button reads as a link to somewhere. */}
+          <button
+            type="button"
+            aria-label={t('accounts.detail.edit')}
+            onClick={onEdit}
+            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Pencil aria-hidden className="size-3.25" />
+          </button>
+          {/* The advisory, **read beside its figure and offering nothing**
+              (#829). It says what the panel's card says in one line; what it
+              does not carry is the acknowledgement. */}
+          {cash === null ? null : (
+            <span className="shrink-0 rounded-md bg-attention/14 px-1.5 py-0.5 text-2xs font-medium text-attention">
+              {t('accounts.advisory.cash', { share: cash })}
+            </span>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* The reason a detail has no figures — a **reason**, never a progress
-          with a target date. */}
-      {reason === null ? null : (
-        <p className="text-sm text-attention">{t(REASON_LABELS[reason])}</p>
-      )}
-
-      {/* **Three cards, one figure each, and a footing under it** (#838). The
-          drawing gives them one shape — the label, the figure at 34 px, and
-          one subordinate row pinned to the foot — so what a card holds is
-          readable before any of it is read. `items-stretch` and the `mt-auto`
-          inside each footing are what put those three rows on one line
-          whatever the figures above them are. */}
-      <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="gap-3">
-          <CardHeader>
-            <h3 className="label">{t('accounts.detail.composition')}</h3>
-          </CardHeader>
-          <CardContent className="flex h-full flex-col gap-3">
-            {/* **The securities, and not the whole**: the drawing leads this
-                card with what the account holds *in shares* and lets the bar
-                and its two rows say the split. The account's total value is the
-                head's, one card up — said once. */}
-            <p
-              role="group"
-              aria-label={t('accounts.detail.composition')}
-              className="tabular text-5xl font-heavy tracking-tight"
-            >
-              {f.currency(row.holdings_value, currency)}
-            </p>
-            {/* Subordination is vertical and it is a **nesting**: the two rows
-                below are what the figure is made of, and mounted beside it at
-                equal weight nothing would say so. */}
-            <div className="mt-auto">
-              <Composition row={row} hue={hue} />
-            </div>
-            <ul className="flex flex-col gap-1.5 text-xs">
-              <li
-                role="group"
-                aria-label={t('accounts.figure.holdings')}
-                className="flex items-baseline gap-2 text-muted-foreground"
-              >
-                <span
-                  aria-hidden
-                  className="inline-block size-2 shrink-0 rounded-xs"
-                  style={{ backgroundColor: accountColour(hue) }}
+        {/* **The head waits on nothing** (#970). Its figures — the value, the
+            contribution, the gain and the IRR — are members of **one**
+            `account_metrics` row, so there is no second read for them to be a
+            scrape apart from. The curve below still waits on its own read: a
+            read that has not answered costs its own half and never the other. */}
+        <Stat
+          size="head"
+          label={t('accounts.figure.totalValue')}
+          // A value is not a direction: it is set in the colour of text, and the
+          // sign lives on the pills under it.
+          value={f.currency(row.total_value, currency)}
+        >
+          {/* What of the value is cash, and what was paid in: the two figures it
+              is a change of and made of, on one line and a rung down. The cash
+              is a balance, not a direction — no sign colour, `0` is a figure. */}
+          <p className="text-sm text-muted-foreground">
+            {/* The cash waits for the unit it is said in: the sentence names an
+                amount, and *dont 500,00 de liquidités* over a read that has not
+                landed would be a bare number in a sentence. */}
+            {row.cash_balance === null || currency === null
+              ? null
+              : t('accounts.cashLine', { amount: f.currency(row.cash_balance, currency) })}
+            {row.cash_balance === null || currency === null ? null : ' · '}
+            <span role="group" aria-label={t('accounts.figure.netContributed')}>
+              {t('accounts.figure.netContributed')}{' '}
+              <span className="tabular text-foreground">
+                {f.currency(row.net_contributed, currency)}
+              </span>
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span role="group" aria-label={t('accounts.figure.gain')} className={PILL}>
+              {/* The figure and its words are two nodes: the unit follows the
+                  totals read, and a sentence composed around a bare amount
+                  would be said, for a moment, about a figure with no unit. */}
+              <SignedFigure
+                amount={row.gain_absolu}
+                text={f.signedCurrency(row.gain_absolu, currency)}
+              />
+              <span className="text-muted-foreground">{t('accounts.gain.pill')}</span>
+              <Explain
+                figure={t('accounts.figure.gain')}
+                body="accounts.detail.gainTotal.explain"
+                anchor="total-gain"
+              />
+            </span>
+            {/* **The one rate on this screen, the annualised IRR** (#1112). The
+                TWR went into its bubble, which says why the two differ: three
+                rates on one head read as three answers to one question. A null
+                IRR keeps its pill, with the em dash. */}
+            <span role="group" aria-label={t('accounts.figure.xirr')} className={PILL}>
+              <span className="text-muted-foreground">{t('accounts.figure.xirr')}</span>
+              <SignedFigure amount={row.xirr} text={f.percent(row.xirr)} />
+              {row.xirr == null ? null : (
+                <span className="text-xs font-normal text-muted-foreground">
+                  {t('accounts.xirr.unit')}
+                </span>
+              )}
+              {twr === null ? (
+                <Explain
+                  figure={t('accounts.figure.xirr')}
+                  body="accounts.xirr.explain"
+                  anchor="xirr"
                 />
-                {t('accounts.figure.holdings')}
-                <span className="tabular ml-auto text-foreground">
-                  {f.currency(row.holdings_value, currency)}
-                </span>
-              </li>
-              <li
-                role="group"
-                aria-label={t('accounts.figure.cash')}
-                className="flex items-baseline gap-2 text-muted-foreground"
-              >
-                <span aria-hidden className="inline-block size-2 shrink-0 rounded-xs bg-input" />
-                {t('accounts.figure.cash')}
-                <span className="tabular ml-auto text-foreground">
-                  {f.currency(row.cash_balance, currency)}
-                </span>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
+              ) : (
+                <Explain
+                  figure={t('accounts.figure.xirr')}
+                  body="accounts.xirr.explainTwr"
+                  values={{ explain: t('accounts.xirr.explain'), twr: f.percent(twr) }}
+                  anchor="xirr"
+                />
+              )}
+            </span>
+          </div>
+        </Stat>
 
-        {/* The dividends this account has paid — one of the four terms, read
-            off the positions. Nothing at all while that read is in flight, and
-            **the reason in its place where it refused** (#829): since #970 the
-            head above is made of the account row alone, so this card is the
-            first thing on the page made of the positions and the sentence about
-            them belongs to it. */}
+        {/* The curve, full width under the pills. Nothing at all while the
+            series is in flight, and the reason in its place where the read
+            refused. The legend states the extent it was drawn over, which is the
+            account's whole history: a curve with no stated span beside a total
+            is the unbounded-window failure in miniature. */}
+        {points === null ? (
+          failures.points ? (
+            <div className="mt-6">
+              <Unreadable failure={failures.points} />
+            </div>
+          ) : null
+        ) : curve.length === 0 ? null : (
+          <div className="mt-6">
+            <AccountCurve points={curve} currency={currency} />
+          </div>
+        )}
+
+        {/* The reason a detail has no figures — a **reason**, never a progress
+            with a target date. */}
+        {reason === null ? null : (
+          <p className="mt-4 text-sm text-attention">{t(REASON_LABELS[reason])}</p>
+        )}
+
+        {/* **The secondary figures, one row on the Figure rung** (#1277):
+            dividends received, fees paid and the projected tax. **The whole row
+            waits on the positions** — the dividends and the tax are derived
+            from them, and a tax beside a gain the page is still refusing to
+            state would be a figure derived from nothing. In flight the row does
+            not exist (#724); refused, it says why, once, across the row. */}
         {terms === null ? (
           failures.positions ? (
-            <Unreadable failure={failures.positions} />
+            <div data-row="figures" className={cn(FULL_ROW, 'mt-6 border-t pt-5')}>
+              <Unreadable failure={failures.positions} />
+            </div>
           ) : null
         ) : (
-          <Card className="gap-3">
-            <CardHeader>
-              <h3 className="label flex items-center gap-1.5">
-                {t('accounts.detail.dividends')}
+          <div data-row="figures" className={cn(FULL_ROW, 'mt-6 border-t pt-5')}>
+            <Stat
+              size="figure"
+              label={t('accounts.detail.dividends')}
+              explain={
                 <Explain
                   figure={t('accounts.detail.dividends.encashed')}
                   body="accounts.detail.dividends.explain"
                   anchor="dividends"
                 />
-              </h3>
-            </CardHeader>
-            <CardContent className="flex h-full flex-col gap-3">
-              {/* **In the plain foreground** (#1283). A figure nobody signs carries
-                  no hue: a colour would say *which way it went*, and the sign
-                  of this one is fixed by its nature. */}
+              }
+              // **In the plain foreground** (#1283). A figure nobody signs
+              // carries no hue: a colour would say *which way it went*, and the
+              // sign of this one is fixed by its nature.
+              value={renderFigure(
+                termRendering(terms, 'dividends'),
+                () => f.currency(termAmount(terms, 'dividends'), currency),
+                t,
+              )}
+            >
+              {/* A **rate on the denominator this page already has**: the
+                  contribution at the head is what the ratio beside it divides,
+                  so the dividends divide it too rather than acquiring a base of
+                  their own. */}
               <p
                 role="group"
-                aria-label={t('accounts.detail.dividends.encashed')}
-                className="tabular text-5xl font-heavy tracking-tight"
-              >
-                {renderFigure(
-                  termRendering(terms, 'dividends'),
-                  () => f.currency(termAmount(terms, 'dividends'), currency),
-                  t,
-                )}
-              </p>
-              {/* What the drawing puts under the figure, and it is a **rate on the
-              denominator this page already has**: the contribution at the head
-              is what the ratio beside it divides, so the dividends divide it
-              too rather than acquiring a base of their own. */}
-              <div
-                role="group"
                 aria-label={t('accounts.detail.dividends.onContributed')}
-                className="mt-auto flex items-baseline justify-between gap-2.5 border-t pt-3"
+                className="flex items-baseline gap-1.5 text-xs text-muted-foreground"
               >
-                <span className="text-xs text-muted-foreground">
-                  {t('accounts.detail.dividends.onContributed')}
-                </span>
-                <span className="tabular text-lg font-semibold">
+                <span>{t('accounts.detail.dividends.onContributed')}</span>
+                <span className="tabular">
                   {dividendsOnContributed === null
                     ? ABSENT
                     : f.percentPoints(dividendsOnContributed * 100)}
                 </span>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-      {/* **The projection, in a card of its own and full width** (#919, D10).
-          Not a fourth member of the grid above: four cards in `lg:grid-cols-3`
-          orphan one on a second row, and 34 px would put a hypothetical
-          disposal at the altitude of three measured facts. A projection never
-          outranks a measurement, so the figure sits one rung down from the
-          head's — the rung this panel already reserves for `Performance
-          totale`.
+              </p>
+            </Stat>
 
-          **Every account carrying a model gets it; only an account carrying
-          none is silent** (D11). Sending `none`, `withholding_income` and a
-          dateless aged wrapper to the same blank as *never answered* would make
-          a declaration indistinguishable from its absence — and the sentence
-          that says why a modelless account is silent is raised once, as an
-          advisory, in the place built for saying it. */}
-      {row.taxation_kind === undefined || (terms === null && !failures.positions) ? null : (
-        <Card className="gap-3">
-          <CardHeader>
-            <h3 className="label">{t('accounts.detail.projectedTax')}</h3>
-          </CardHeader>
-          {/* `flex h-full flex-col gap-3` and not `space-y-2.5`: it is what makes
-              the footing's `mt-auto` mean anything, and it is the shape the two
-              cards this footing is borrowed from already use. */}
-          <CardContent className="flex h-full flex-col gap-3">
-            {/* **It waits on the positions, not on its own read** (D12).
-                `projected_tax` rides on the accounts payload and therefore
-                lands *before* the figures it is derived from; the head gates
-                even `total_value` behind this same read so that it cannot
-                contradict itself, and a tax rendered beside a `Gain` that is
-                still blank states a figure derived from a gain it is
-                simultaneously refusing to state.
-
-                **The whole card waits, footing included.** A rate under a
-                hairline with nothing above it is an orphan rule, and *Taux
-                appliqué 30 %* printed beneath `<Unreadable>` names the rate
-                that produced a figure the card is refusing to state in the same
-                breath. The card that has nothing to say does not exist at all
-                (#724), which is why the wait is in its own predicate above. */}
-            {terms === null && row.taxation_kind !== 'none' ? (
-              // `none` is the one kind whose figure rests on no read at all:
-              // the model *says* zero, and a refused positions read is not a
-              // reason to withhold an answer that was never derived from it.
-              <Unreadable failure={failures.positions!} />
-            ) : (
-              <>
-                {/* **No figure at all where the model taxes something else**
-                    (D11). An empty `role="group"` is a named region announcing
-                    nothing, which is worse than the absence it was standing in
-                    for: the card carries this model's own sentence instead. */}
-                {row.taxation_kind === 'withholding_income' ? null : (
-                  <p
-                    role="group"
-                    aria-label={t('accounts.detail.projectedTax')}
-                    className="tabular text-4xl font-heavy tracking-tight"
-                  >
-                    {row.taxation_kind === 'none'
-                      ? f.currency(0, currency)
-                      : row.projected_tax === undefined
-                        ? ABSENT
-                        : f.currency(row.projected_tax, currency)}
-                  </p>
-                )}
-                {/* **Visible body text, never an `Explain` bubble** (D13). A
-                    bubble opens on click and nothing else, and every bubble in
-                    this product explains a convention behind a number the
-                    reader can otherwise trust. Here, not clicking costs the
-                    entire epistemic status of the figure: `Impôt projeté
-                    4 168,95 €` reads as a fact. The panel has the precedent
-                    twice already, both plain `text-xs text-muted-foreground`.
-
-                    A model that taxes something else says what it taxes, in its
-                    own words — the catalogue already holds one sentence per
-                    kind, and a second copy here would drift. */}
-                <p className="text-xs text-muted-foreground">
-                  {row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income'
-                    ? t(`taxation.kind.${row.taxation_kind}.assessed`)
-                    : t('accounts.detail.projectedTax.caveat')}
-                </p>
-                {/* The kink, which is the most interesting thing the arithmetic
-                    knows and is otherwise invisible: an owner three months from
-                    their PEA's fifth anniversary would see one number with no
-                    hint it is about to fall.
-
-                    **And the sentence names the calendar it is on** (#952). The
-                    day is the server's, decided against the UTC day; `f.date`
-                    renders it in the reader's own locale, and the two disagree
-                    by the reader's offset once in a wrapper's life — on
-                    precisely the day its owner would look. East of Greenwich
-                    the figure above still shows `rate_before` while this line
-                    names a day that has already begun; west of it the rate has
-                    already turned while the reader's calendar still reads the
-                    eve. Naming the boundary is what makes both readings true
-                    rather than contradictory: the hours are the offset, and the
-                    reader can place them. The alternative was to teach the app
-                    the reader's timezone, which is out of proportion to a
-                    fourteen-hour window nobody crosses twice. */}
-                {row.projected_rate_changes_on === undefined ? null : (
-                  <p className="text-xs text-muted-foreground">
-                    {t('accounts.detail.projectedTax.changesOn', {
-                      day: f.date(row.projected_rate_changes_on),
+            {/* Dropped at **zero and only at zero**: an install whose transfers
+                are free reads no fee term and never learns it exists. `null` is
+                a different sentence — the server has no day to bound the fees
+                by — and it renders, as a dash, because a total that goes out
+                incomplete owes the reader the cause under it (#775). */}
+            {row.transfer_fees === 0 ? null : (
+              <Stat
+                size="figure"
+                label={t('accounts.figure.fees')}
+                value={f.currency(row.transfer_fees ?? null, currency)}
+              >
+                {feesOnContributed === null ? null : (
+                  <p className="tabular text-xs text-muted-foreground">
+                    {t('accounts.figure.feesOnContributed', {
+                      percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
                     })}
                   </p>
                 )}
-                {/* **The footing names the rate that produced the figure** (D14).
-                    The record ships no rate, so the reader learns which one theirs
-                    is; a ladder has no single rate to name and the footing names
-                    its rungs instead. The levy is folded in — it applies on both
-                    sides of an aged threshold, and naming the income rate alone
-                    would contradict the figure above on a mature PEA.
-
-                    `flex-wrap` and `text-right` because a ladder is the one case
-                    that puts N figures where the two cards beside this one put
-                    one: four rungs on a phone wrap, and without them they wrap
-                    ragged-left under a label that stays on the first line. */}
-                {row.projected_rates === undefined ? null : (
-                  <div className="mt-auto space-y-1.5 border-t pt-3">
-                    {/* **The base the rate was applied to** — because the head
-                        four paces up states a `Gain` that is a different
-                        quantity: latent *plus* realised, dividends and fees.
-                        Multiply the rate below by the gain above and you miss
-                        by a factor of three on a real account. Naming the base
-                        is what lets a reader get from what they can see to the
-                        figure. */}
-                    {row.projected_base === undefined ? null : (
-                      <div
-                        role="group"
-                        aria-label={t('accounts.detail.projectedTax.base')}
-                        className="flex flex-wrap items-baseline justify-between gap-2.5"
-                      >
-                        <span className="text-xs text-muted-foreground">
-                          {t('accounts.detail.projectedTax.base')}
-                        </span>
-                        <span className="tabular min-w-0 text-right text-sm">
-                          {f.currency(row.projected_base, currency)}
-                        </span>
-                      </div>
-                    )}
-                    <div
-                      role="group"
-                      aria-label={t(
-                        row.projected_rates.length > 1
-                          ? 'accounts.detail.projectedTax.rates'
-                          : 'accounts.detail.projectedTax.rate',
-                      )}
-                      className="flex flex-wrap items-baseline justify-between gap-2.5"
-                    >
-                      <span className="text-xs text-muted-foreground">
-                        {t(
-                          row.projected_rates.length > 1
-                            ? 'accounts.detail.projectedTax.rates'
-                            : 'accounts.detail.projectedTax.rate',
-                        )}
-                      </span>
-                      <span className="tabular min-w-0 text-right text-lg font-semibold">
-                        {row.projected_rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </>
+              </Stat>
             )}
-          </CardContent>
-        </Card>
-      )}
 
-      {/* **The lines take the whole track**, which is the maquette's own shape
-          for this block and not a preference: every other block on this page is
-          one figure and its terms, and this one is a table — the width it wants
-          is what a table wants. Held lines only: a sold position is worth
-          exactly zero, and a list ordered by value would put every one of them
-          in one block at the bottom saying nothing. The page they lead to folds
-          them instead. */}
+            <ProjectedTax row={row} currency={currency} />
+          </div>
+        )}
+      </div>
+
+      {/* Three sections, and the page's one rhythm between them: 20 px. A block
+          with nothing in it does not exist (#724). */}
       {lines === null || lines.length === 0 ? null : (
-        <Card>
-          <CardHeader>
-            <h3 className="label">{t('accounts.detail.lines')}</h3>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {/* **Four columns and a header row** (#838). The block was one line
-                per share with the weight wrapped under it, on the argument that
-                the detail is the narrow track — and it is not: the drawing lays
-                the four out in a row from `md`, and the weight's bar is what
-                makes the column readable at a glance rather than a fourth
+        <div data-row="holdings" className={FULL_ROW}>
+          <Section
+            level={3}
+            title={t('accounts.detail.lines')}
+            aside={
+              <span
+                role="group"
+                aria-label={t('accounts.figure.holdings')}
+                className="tabular text-2xl font-semibold"
+              >
+                {f.currency(row.holdings_value, currency)}
+              </span>
+            }
+          >
+            {/* **Four columns and a header row** (#838). The weight's bar is
+                what makes the column readable at a glance rather than a fourth
                 figure to compare by arithmetic. Under `md` the bar's column is
                 what goes, the two figures being the ones a phone came for. */}
             <div
@@ -791,27 +599,27 @@ export function AccountDetail({
             <Link
               to="/shares"
               search={{ account: row.id }}
-              className="inline-block text-xs text-primary underline underline-offset-4"
+              className="mt-2 inline-block text-xs text-primary underline underline-offset-4"
             >
               {t('accounts.detail.lines.link', { count: symbols })}
             </Link>
-          </CardContent>
-        </Card>
+          </Section>
+        </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* **Which lines pay the dividends** — the question the encashed figure
-        raises and cannot answer (#833). Nothing at all while the positions are
-        in flight, and no block where no line has ever paid. */}
-        {payers === null || payers.length === 0 ? null : (
-          <Card>
-            <CardHeader className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="label">{t('accounts.detail.payers')}</h3>
-              <span className="text-xs text-muted-foreground">
-                {t('accounts.detail.payers.period')}
-              </span>
-            </CardHeader>
-            <CardContent>
+      {/* The payers and the latest events share one row, and each takes the
+          whole row when the other is absent (`FULL_ROW`). */}
+      {!hasActivity ? null : (
+        <div data-row="activity" className={FULL_ROW}>
+          {/* **Which lines pay the dividends** — the question the encashed figure
+            raises and cannot answer (#833). Nothing at all while the positions
+            are in flight, and no block where no line has ever paid. */}
+          {payers === null || payers.length === 0 ? null : (
+            <Section
+              level={3}
+              title={t('accounts.detail.payers')}
+              aside={<span className="label">{t('accounts.detail.payers.period')}</span>}
+            >
               <ul aria-label={t('accounts.detail.payers')} className="divide-y divide-border/60">
                 {payers.map((payer) => (
                   <li key={payer.symbol} className="flex flex-col gap-1 py-2 text-sm">
@@ -829,43 +637,38 @@ export function AccountDetail({
                   </li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
-        )}
+            </Section>
+          )}
 
-        {last === null ? (
-          failures.events ? (
-            <Unreadable failure={failures.events} />
-          ) : null
-        ) : last.length === 0 ? null : (
-          <Card>
-            <CardHeader>
-              <h3 className="label">{t('accounts.detail.events')}</h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
+          {last === null ? (
+            failures.events ? (
+              <Unreadable failure={failures.events} />
+            ) : null
+          ) : last.length === 0 ? null : (
+            <Section level={3} title={t('accounts.detail.events')}>
               <ul aria-label={t('accounts.detail.events')} className="divide-y divide-border/60">
                 {last.map((event, index) => (
                   <li
                     key={event.id ?? `${event.date}-${index}`}
                     className="flex items-baseline justify-between gap-3 py-2 text-sm"
                   >
-                    {/* **What it is about, then what it is.** The type alone
-                        read as *Versement · Versement · Retrait* down the
-                        block, three rows saying nothing about which security or
-                        which transfer — the ledger's own identity column is
-                        what discriminates, here as there (`identityOf`). */}
+                    {/* **What it is about, then what it is.** The type alone read
+                      as *Versement · Versement · Retrait* down the block, three
+                      rows saying nothing about which security or which transfer
+                      — the ledger's own identity column is what discriminates,
+                      here as there (`identityOf`). */}
                     <span className="min-w-0">
                       <span className="block truncate">{eventName(event) ?? ABSENT}</span>
                       <span className="block truncate text-xs text-muted-foreground">
                         {t(TYPE_LABEL[event.event_type])} · {f.date(event.date)}
                       </span>
                     </span>
-                    {/* The field the **type** declares, and never a total
-                        composed out of the others: a purchase states a quantity
-                        and a transfer an amount, so the one that is a figure of
-                        the row is the one rendered — and the two do not share a
-                        rendering. `× 0,1661` beside `10,20 €` is a quantity; a
-                        bare `0,1661` in the same column is read as money. */}
+                    {/* The field the **type** declares, and never a total composed
+                      out of the others: a purchase states a quantity and a
+                      transfer an amount, so the one that is a figure of the row
+                      is the one rendered — and the two do not share a
+                      rendering. `× 0,1661` beside `10,20 €` is a quantity; a
+                      bare `0,1661` in the same column is read as money. */}
                     <span className="tabular shrink-0">
                       {FIELDS[event.event_type].amount ? (
                         f.currency(event.amount, currency)
@@ -878,23 +681,143 @@ export function AccountDetail({
                   </li>
                 ))}
               </ul>
-              {/* Reduced onto this account, exactly as the lines block above
-                  reduces onto it: a detail owes its reader *more of what this
-                  block is showing*, and the whole ledger is a different page
-                  about a different subject. The reduction is a URL, so it
-                  survives a reload and can be handed to somebody else. */}
+              {/* Reduced onto this account, exactly as the holdings reduce onto
+                it: a detail owes its reader *more of what this block is
+                showing*, and the whole ledger is a different page about a
+                different subject. The reduction is a URL, so it survives a
+                reload and can be handed to somebody else. */}
               <Link
                 to="/ledger"
                 search={{ account: row.id }}
-                className="text-sm font-medium underline underline-offset-4"
+                className="mt-3 inline-block text-sm font-medium underline underline-offset-4"
               >
                 {t('accounts.detail.events.link')}
               </Link>
-            </CardContent>
-          </Card>
+            </Section>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * What the account would owe if it were emptied today — the third term of the
+ * figures row (#919, #1277).
+ *
+ * **Every account carrying a model gets it; only an account carrying none is
+ * silent** (D11). Sending `none`, `withholding_income` and a dateless aged
+ * wrapper to the same blank as *never answered* would make a declaration
+ * indistinguishable from its absence — and the sentence that says why a
+ * modelless account is silent is raised once, as an advisory, in the place
+ * built for saying it.
+ *
+ * It sits on the Figure rung with the two measured facts beside it, and a
+ * projection never outranks a measurement: the caveat is the first thing under
+ * it, in body text.
+ */
+function ProjectedTax({ row, currency }: { row: AccountRow; currency: string | null }) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  if (row.taxation_kind === undefined) return null
+
+  const label = t('accounts.detail.projectedTax')
+  // **Visible body text, never an `Explain` bubble** (D13). A bubble opens on
+  // click and nothing else, and every bubble in this product explains a
+  // convention behind a number the reader can otherwise trust. Here, not
+  // clicking costs the entire epistemic status of the figure: `Impôt projeté
+  // 4 168,95 €` reads as a fact.
+  //
+  // A model that taxes something else says what it taxes, in its own words —
+  // the catalogue already holds one sentence per kind, and a second copy here
+  // would drift.
+  const sentence =
+    row.taxation_kind === 'none' || row.taxation_kind === 'withholding_income'
+      ? t(`taxation.kind.${row.taxation_kind}.assessed`)
+      : t('accounts.detail.projectedTax.caveat')
+
+  // **No figure at all where the model taxes something else** (D11). An empty
+  // `role="group"` is a named region announcing nothing, which is worse than the
+  // absence it was standing in for: the term carries this model's own sentence.
+  if (row.taxation_kind === 'withholding_income') {
+    return (
+      <div className="min-w-0 space-y-1">
+        <span className="label text-muted-foreground">{label}</span>
+        <p className="text-xs text-muted-foreground">{sentence}</p>
+      </div>
+    )
+  }
+
+  const rates = row.projected_rates
+  const ratesName = t(
+    rates !== undefined && rates.length > 1
+      ? 'accounts.detail.projectedTax.rates'
+      : 'accounts.detail.projectedTax.rate',
+  )
+  return (
+    <Stat
+      size="figure"
+      label={label}
+      value={
+        row.taxation_kind === 'none'
+          ? f.currency(0, currency)
+          : row.projected_tax === undefined
+            ? ABSENT
+            : f.currency(row.projected_tax, currency)
+      }
+    >
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>{sentence}</p>
+        {/* The kink, which is the most interesting thing the arithmetic knows
+            and is otherwise invisible: an owner three months from their PEA's
+            fifth anniversary would see one number with no hint it is about to
+            fall.
+
+            **And the sentence names the calendar it is on** (#952). The day is
+            the server's, decided against the UTC day; `f.date` renders it in the
+            reader's own locale, and the two disagree by the reader's offset once
+            in a wrapper's life — on precisely the day its owner would look.
+            Naming the boundary is what makes both readings true rather than
+            contradictory: the hours are the offset, and the reader can place
+            them. */}
+        {row.projected_rate_changes_on === undefined ? null : (
+          <p>
+            {t('accounts.detail.projectedTax.changesOn', {
+              day: f.date(row.projected_rate_changes_on),
+            })}
+          </p>
+        )}
+        {/* **The footing names the rate that produced the figure** (D14). The
+            record ships no rate, so the reader learns which one theirs is; a
+            ladder has no single rate to name and the footing names its rungs
+            instead. The levy is folded in — it applies on both sides of an aged
+            threshold, and naming the income rate alone would contradict the
+            figure above on a mature PEA.
+
+            **And the base the rate was applied to**, because the head states a
+            `Gain` that is a different quantity: latent *plus* realised,
+            dividends and fees. Multiply the rate by the gain above and you miss
+            by a factor of three on a real account. */}
+        {rates === undefined ? null : (
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            {row.projected_base === undefined ? null : (
+              <span role="group" aria-label={t('accounts.detail.projectedTax.base')}>
+                {t('accounts.detail.projectedTax.base')}{' '}
+                <span className="tabular text-foreground">
+                  {f.currency(row.projected_base, currency)}
+                </span>
+              </span>
+            )}
+            <span role="group" aria-label={ratesName}>
+              {ratesName}{' '}
+              <span className="tabular text-foreground">
+                {rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
+              </span>
+            </span>
+          </div>
         )}
       </div>
-    </section>
+    </Stat>
   )
 }
 
@@ -936,7 +859,7 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
 
   return (
     // A **named landmark**, like the removal block one file over: it is the
-    // thing the rail's link leads to, and a block a reader is sent to has to be
+    // thing the bar's link leads to, and a block a reader is sent to has to be
     // one they — and a test — can take hold of by its name. `Card` ships a
     // `div`, so the role is stated rather than inherited from a `<section>`.
     <Card role="region" aria-labelledby={heading}>
@@ -984,17 +907,4 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
       </CardContent>
     </Card>
   )
-}
-
-/**
- * The split of what an account holds — **the account's own hue against the
- * cash's** (#838). The drawing draws the two halves rather than one fill on a
- * neutral track: the securities in the colour the rail gave this account, the
- * cash in the neutral the theme keeps for the empty half of a control, so the
- * bar says *these two close this whole* the way the rail's stacked one does.
- */
-function Composition({ row, hue }: { row: AccountRow; hue: number }) {
-  const total = row.total_value
-  const share = total === null || total <= 0 ? null : (row.holdings_value ?? 0) / total
-  return <ShareBar share={share} size="block" fill={accountColour(hue)} />
 }

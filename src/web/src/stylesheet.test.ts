@@ -118,6 +118,15 @@ describe('index.css says what DESIGN.md says', () => {
   })
 })
 
+describe('the Figure rung is drawn by one size of Stat (#1277)', () => {
+  it('maps Stat’s figure size to the class --text-4xl names', () => {
+    const stat = fs.readFileSync(path.join(WEB_ROOT, 'src', 'components', 'Stat.tsx'), 'utf8')
+    expect(stat).toMatch(/figure: 'text-4xl'/)
+    // And that class is the 28/32 DESIGN.md calls Figure (asserted above).
+    expect(designType('figure', 'fontSize')).toBe('28px')
+  })
+})
+
 describe('index.css says what DESIGN.md says about the colours', () => {
   /** One entry of the front matter's `colors:` block, as its `oklch()` parts. */
   function designColour(name: string): Oklch {

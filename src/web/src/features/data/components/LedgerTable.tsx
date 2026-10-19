@@ -299,7 +299,7 @@ export function LedgerTable({
         header: () => t('data.column.account'),
         // An account id is typed, not written: the mono face is what says so,
         // and it is the one the accounts page already sets an id in
-        // (`AccountDetail`, `AccountsRail`).
+        // (`AccountDetail`, `AccountsBar`).
         cell: ({ row }) => (
           // Capped at 12 characters plus the chip's own padding: account ids have no
           // length bound on the server.

@@ -457,7 +457,7 @@ function magnitude(value: number | null | undefined): number | null {
  * screen and too much for three that sit under a euro: the row is read as a
  * shape — ahead, behind, by roughly how much — and a second decimal on each of
  * them is three digits of noise across it. `percentPoints` is the front's own
- * one-decimal path (`AccountDetail`, `AccountsRail`).
+ * one-decimal path (`AccountDetail`, `AccountsBar`).
  *
  * The sign is carried explicitly, because a gap of zero is a figure and an
  * unsigned `6,4 %` beside a signed euro reads as a different kind of number.
