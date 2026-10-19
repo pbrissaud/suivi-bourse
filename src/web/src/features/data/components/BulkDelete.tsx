@@ -68,11 +68,12 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
   return (
     <>
       {/* **The colour of what it does** (#838): the drawing gives this control
-          a loss-coloured outline where every other button on the row is
-          neutral or mint — it is the one gesture on the bar that removes
-          something, and the box behind it is what asks. The tone is `--loss`,
-          *money going away*, which is an alias of the theme's `--destructive`
-          (#1130): the name says the meaning, the theme says the hue. */}
+          a destructive outline where every other button on the row is
+          neutral or ink — it is the one gesture on the bar that removes
+          something, and the box behind it is what asks. The tone is
+          `destructive`, an action that cannot be undone, and not `--loss`,
+          which is money going away (#1283): a sign colour never paints an
+          action. */}
       <Button
         type="button"
         variant="outline"

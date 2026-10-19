@@ -35,7 +35,7 @@
  *  - **`--accent` is a surface, not the brand.** shadcn spends it on the hover
  *    and the selected row (`button`, `dropdown-menu`, `sidebar`), so an accent
  *    set to the mint paints every hovered menu entry green and drops that text
- *    to 2,4:1. It is a muted raise of the ground here, and the mint lives in
+ *    to 2,4:1. It is a muted raise of the ground here, and the ink lives in
  *    `--primary`.
  *  - **The fonts name the variable families.** `@fontsource-variable/geist`
  *    registers `Geist Variable`, not `Geist`; the theme says both, so the

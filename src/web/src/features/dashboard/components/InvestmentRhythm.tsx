@@ -122,7 +122,7 @@ const FLOOR_PERCENT = 15
  * The observed months as columns, oldest on the left, **right-aligned in
  * twelve slots**: a ledger four months old fills the last four and leaves the
  * rest empty, so the strip says *twelve is the window* on a young ledger too.
- * The **current month** is the one column in the mint (`--primary`), the
+ * The **current month** is the one column in the ink (`--primary`), the
  * others a quiet grey: the month still being bought in is the one the reader
  * compares against the eleven before it. An observed month with no purchase is a
  * tick on the baseline, which is a fact about the rhythm and not a gap in the

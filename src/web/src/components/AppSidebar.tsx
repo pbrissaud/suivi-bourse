@@ -105,7 +105,7 @@ export function AppSidebar() {
           the only thing left. */}
       <SidebarHeader className="h-14 justify-center gap-0 px-5 py-0 group-data-[collapsible=icon]:px-3">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          {/* The mark, which the app had nowhere: a mint tile carrying the
+          {/* The mark, which the app had nowhere: an ink tile carrying the
               product's initial, and the one place the brand is stated rather
               than spelled. It survives the fold where the wordmark cannot. */}
           <span
