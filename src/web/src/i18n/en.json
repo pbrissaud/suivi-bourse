@@ -917,6 +917,7 @@
   "agent.tool.list_accounts": "Reading your accounts.",
   "agent.tool.list_events": "Reading your ledger.",
   "agent.tool.get_investment_rhythm": "Reading your investment rhythm.",
+  "agent.tool.get_benchmark_comparison": "Comparing your portfolio with its reference fund.",
   "agent.tool.simulate_sale": "Simulating a sale and its tax.",
   "agent.tool.other": "Calling the tool {name}.",
   "agent.tool.get_profile": "Reading your profile.",
