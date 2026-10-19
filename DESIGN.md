@@ -174,8 +174,10 @@ keep their contrast.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
   warm hue, never a neutral gray.
 - Gain is `chart-2` and loss is `destructive`: `--gain` and `--loss` point at them. Nothing
-  else reads `chart-2`, so on any theme the colour of a gain is not the colour of an
-  action (#1283).
+  else reads `chart-2`, so on Atelier the colour of a gain is not the colour of an action
+  (#1283). On another theme this is best-effort: `chart-2` is the author's own choice and
+  may equal `primary` (stock modern-minimal, dark), which brings gain and action back
+  together. The +/− sign and the 0 % line carry the direction either way.
 - A category in a drawing (an allocation slice, an account's identity) takes a chart hue:
   `chart-1`, `chart-3`, `chart-4`, `chart-5` in that order, and `muted-foreground` for a
   fold. On Atelier, each clears 3:1 against `background`, `tint` and `surface` on both

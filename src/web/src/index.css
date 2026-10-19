@@ -164,11 +164,12 @@
  * the standard tokens of block 1, and every meaning below follows. The rule is
  * `lint/semantic-token-alias.grit` (#1130).
  *
- * Gain is the theme's `chart-2` and nothing else reads it, so a gain is never
- * the colour of an action; loss is its destructive (#1283). Attention takes the
- * foreground: the icon carries the meaning, not a hue. The five `--alloc-*` are
- * the other chart hues in order, and the fold is the muted foreground: a
- * category in a drawing, never a sign.
+ * Gain is the theme's `chart-2` and nothing else reads it, so on Atelier a gain
+ * is never the colour of an action; on another theme that holds only as far as
+ * its author kept `chart-2` apart from `primary`. Loss is its destructive
+ * (#1283). Attention takes the foreground: the icon carries the meaning, not a
+ * hue. The five `--alloc-*` are the other chart hues in order, and the fold is
+ * the muted foreground: a category in a drawing, never a sign.
  * ========================================================================== */
 
 :root {
