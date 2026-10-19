@@ -240,8 +240,8 @@ importers:
         specifier: 2.5.15
         version: 2.5.15
       '@shadcn/helpers':
-        specifier: ^0.2.0
-        version: 0.2.0(ai@7.0.142(zod@3.25.76))
+        specifier: ^0.3.0
+        version: 0.3.0(ai@7.0.142(zod@3.25.76))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0))
@@ -1540,8 +1540,8 @@ packages:
   '@sec-ant/readable-stream@0.4.1':
     resolution: {integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==}
 
-  '@shadcn/helpers@0.2.0':
-    resolution: {integrity: sha512-wpcZNuRgdW16jLwjvh4mbREKpVFrGY+nBM3Okgic8b04sijN5CHW1Nl/AEMajsP3INaCTNnqMCouOalZ7OHvEQ==}
+  '@shadcn/helpers@0.3.0':
+    resolution: {integrity: sha512-paltuTr6OGY8ss4SVbWkrZOfRGTi+JvBRgzjh1DCqjwpDOPRY7IWiCuOSNQpaVNaf3yAoWrmdvGjmJV62twqog==}
     peerDependencies:
       '@tanstack/ai': '>=0.40.0 <0.41.0'
       '@tanstack/ai-client': '>=0.20.0 <0.21.0'
@@ -5392,7 +5392,7 @@ snapshots:
 
   '@sec-ant/readable-stream@0.4.1': {}
 
-  '@shadcn/helpers@0.2.0(ai@7.0.142(zod@3.25.76))':
+  '@shadcn/helpers@0.3.0(ai@7.0.142(zod@3.25.76))':
     optionalDependencies:
       ai: 7.0.142(zod@3.25.76)
 
