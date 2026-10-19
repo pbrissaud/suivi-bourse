@@ -79,7 +79,7 @@ import { cn } from '@/lib/utils'
  */
 export const STATE_TONE: Record<InstallationState, string> = {
   unknown: 'text-muted-foreground',
-  ok: 'text-gain',
+  ok: 'text-foreground',
   attention: 'text-attention',
   rebuilding: 'text-attention',
   unreachable: 'text-destructive',
@@ -109,7 +109,7 @@ const SUBJECT_TONE: Record<Subject, string> = {
   health: 'bg-attention/14 text-attention',
   installation: 'bg-attention/14 text-attention',
   portfolio: 'bg-attention/14 text-attention',
-  accounts: 'bg-dividend/16 text-dividend',
+  accounts: 'bg-muted text-foreground',
 }
 
 /** One id, so an outage is one toast however many polls fail in a row. */

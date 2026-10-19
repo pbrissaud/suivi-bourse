@@ -97,37 +97,20 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
 }
 
 /**
- * The attribution and the dividend own a colour already — `--grant` and
- * `--dividend` are the two marks the share's chart draws its events with — so
- * they wear the same one here and a reader crossing from one surface to the
- * other reads the same mark twice. The purchase takes the quotation's own mint
- * and the sale the loss's red, which is the pair the redesign drew; the two
- * cash movements name no security at all and take an unhued pill, because the
- * product's colour vocabulary has nothing to say about a transfer.
+ * The six types wear one unhued `muted` pill, and the word in it says which (#1283).
  *
- * **The hue is the ground and the word is the foreground**, which is the one
- * thing here that was measured rather than chosen. The redesign draws these
- * badges as coloured *text* on a wash of its own hue, and that pairing cannot
- * clear 4,5:1 at 12 px on the light ground whatever the wash is set to — the
- * text and the wash share a hue, so raising the wash lowers the contrast and
- * lowering it converges on the token alone, which was 4,77:1 for `--primary`
- * on Atelier. Measured on the light ground, a hovered row
- * included: 4,06 for the purchase and 4,30 for the dividend. Put the hue under
- * the foreground instead and the same six pills read at **12:1 or better on
- * both grounds**, the wash carrying the whole of the colour — which is also the
- * more honest reading of *the badge is coloured*.
- *
- * The risk the other way round would have run — a green pill read as *this row
- * gained* — was never open here either: **no figure in this table is
- * coloured**. The amounts are the plain foreground (`f.currency`, never
- * `signClass`), so `lib/sign.ts` keeps its monopoly on colouring a *figure*,
- * which is the invariant `index.css` states.
+ * A type is a kind of event, and a hue would say more than the ledger knows: a
+ * tinted *Sell* read as a loss and a mint *Buy* as a gain, when the sign of a
+ * row is the amount's and **no figure in this table is coloured** (`f.currency`,
+ * never `signClass`). So `lib/sign.ts` keeps its monopoly on colouring a
+ * *figure*, which is the invariant `index.css` states. The foreground on the
+ * `muted` plane clears 4,5:1 on both grounds, a hovered row included.
  */
 const TYPE_BADGE: Record<LedgerEventType, string> = {
-  BUY: 'bg-price/20',
-  SELL: 'bg-loss/20',
-  GRANT: 'bg-grant/20',
-  DIVIDEND: 'bg-dividend/20',
+  BUY: 'bg-muted',
+  SELL: 'bg-muted',
+  GRANT: 'bg-muted',
+  DIVIDEND: 'bg-muted',
   DEPOSIT: 'bg-muted',
   WITHDRAWAL: 'bg-muted',
 }

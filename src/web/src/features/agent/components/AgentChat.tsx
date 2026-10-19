@@ -464,7 +464,7 @@ function AgentConversation() {
         <Link
           to="/settings"
           hash="agent"
-          className="text-sm text-primary underline-offset-4 hover:underline"
+          className="text-sm text-primary underline underline-offset-4"
         >
           {t('agent.refusal.settings')}
         </Link>

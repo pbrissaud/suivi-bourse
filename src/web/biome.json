@@ -63,7 +63,21 @@
     },
     {
       "path": "./lint/no-colour-literal.grit",
-      "includes": ["**/src/**/*.tsx", "!**/components/ui/**", "!**/src/test/**", "!**/*.test.tsx"]
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}"
+      ]
+    },
+    {
+      "path": "./lint/sign-colours.grit",
+      "includes": [
+        "**/src/**/*.{ts,tsx}",
+        "!**/src/test/**",
+        "!**/*.test.{ts,tsx}",
+        "!**/src/lib/sign.ts"
+      ]
     },
     {
       "path": "./lint/one-tone-table.grit",

@@ -186,7 +186,7 @@ function BuildLine() {
           target="_blank"
           rel="noreferrer"
           aria-label={t('nav.release.label', { version: latest.version })}
-          className="tabular block w-fit rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="tabular block w-fit rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>

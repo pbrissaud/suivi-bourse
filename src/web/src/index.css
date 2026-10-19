@@ -25,9 +25,10 @@
  * piled on top and nothing saying which won.
  *
  * What it keeps from `Vercel`, which it replaces, is not a hue but a property:
- * **the primitives leave the colour to the domain**. Only `--primary`/`--ring`
- * carry the mint, and only `--chart-1` and `--chart-2` carry a mark's hue — the
- * three remaining chart slots are grey, exactly as before.
+ * **the primitives leave the colour to the domain**. `--primary` and `--ring`
+ * are a warm ink, the colour of action, and `--chart-2` is the mint, reserved
+ * for a gain (#1283). The other four chart slots are the hues that tell the
+ * parts of a drawing apart.
  *
  * Two things about it are load-bearing and easy to undo by accident:
  *
@@ -51,11 +52,11 @@
   --border: oklch(0.9012 0.0129 86.8337);
   --card: oklch(0.9947 0.0045 78.2986);
   --card-foreground: oklch(0.2193 0.0208 56.376);
-  --chart-1: oklch(0.4991 0.1609 284.9747);
-  --chart-2: oklch(0.5001 0.0851 210.0599);
-  --chart-3: oklch(0.5993 0.0096 67.642);
-  --chart-4: oklch(0.4805 0.0094 73.6557);
-  --chart-5: oklch(0.3603 0.0131 67.3915);
+  --chart-1: oklch(0.5 0.14 255);
+  --chart-2: oklch(0.4825 0.1032 163.7504);
+  --chart-3: oklch(0.47 0.16 305);
+  --chart-4: oklch(0.58 0.09 215);
+  --chart-5: oklch(0.38 0.06 45);
   --destructive: oklch(0.5498 0.2096 25.1372);
   --destructive-foreground: oklch(0.9947 0.0045 78.2986);
   --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
@@ -68,10 +69,10 @@
   --muted-foreground: oklch(0.5003 0.0199 61.6482);
   --popover: oklch(0.9947 0.0045 78.2986);
   --popover-foreground: oklch(0.2193 0.0208 56.376);
-  --primary: oklch(0.4825 0.1032 163.7504);
+  --primary: oklch(0.3 0.03 60);
   --primary-foreground: oklch(0.9947 0.0045 78.2986);
   --radius: 0.625rem;
-  --ring: oklch(0.4825 0.1032 163.7504);
+  --ring: oklch(0.3 0.03 60);
   --secondary: oklch(0.9445 0.0132 82.4018);
   --secondary-foreground: oklch(0.2193 0.0208 56.376);
   --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
@@ -93,9 +94,9 @@
   --sidebar-accent-foreground: oklch(0.2193 0.0208 56.376);
   --sidebar-border: oklch(0.9012 0.0129 86.8337);
   --sidebar-foreground: oklch(0.2193 0.0208 56.376);
-  --sidebar-primary: oklch(0.4825 0.1032 163.7504);
+  --sidebar-primary: oklch(0.3 0.03 60);
   --sidebar-primary-foreground: oklch(0.9947 0.0045 78.2986);
-  --sidebar-ring: oklch(0.4825 0.1032 163.7504);
+  --sidebar-ring: oklch(0.3 0.03 60);
   --tracking-normal: 0em;
 }
 .dark {
@@ -105,11 +106,11 @@
   --border: oklch(0.2982 0.0113 55.9114);
   --card: oklch(0.2047 0.0112 60.7853);
   --card-foreground: oklch(0.95 0.0074 80.7208);
-  --chart-1: oklch(0.7197 0.1209 285.1072);
-  --chart-2: oklch(0.72 0.11 200.3052);
-  --chart-3: oklch(0.5614 0.0207 70.0393);
-  --chart-4: oklch(0.7005 0.0148 67.5823);
-  --chart-5: oklch(0.8413 0.01 72.6466);
+  --chart-1: oklch(0.7 0.12 255);
+  --chart-2: oklch(0.8001 0.1297 165.0822);
+  --chart-3: oklch(0.66 0.15 305);
+  --chart-4: oklch(0.82 0.06 220);
+  --chart-5: oklch(0.55 0.08 50);
   --destructive: oklch(0.7008 0.1902 25.1101);
   --destructive-foreground: oklch(0.1687 0.0117 60.5255);
   --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
@@ -122,10 +123,10 @@
   --muted-foreground: oklch(0.68 0.0142 71.2595);
   --popover: oklch(0.2047 0.0112 60.7853);
   --popover-foreground: oklch(0.95 0.0074 80.7208);
-  --primary: oklch(0.8001 0.1297 165.0822);
+  --primary: oklch(0.92 0.012 80);
   --primary-foreground: oklch(0.1687 0.0117 60.5255);
   --radius: 0.625rem;
-  --ring: oklch(0.8001 0.1297 165.0822);
+  --ring: oklch(0.92 0.012 80);
   --secondary: oklch(0.2287 0.0145 57.4561);
   --secondary-foreground: oklch(0.95 0.0074 80.7208);
   --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
@@ -147,9 +148,9 @@
   --sidebar-accent-foreground: oklch(0.95 0.0074 80.7208);
   --sidebar-border: oklch(0.2982 0.0113 55.9114);
   --sidebar-foreground: oklch(0.95 0.0074 80.7208);
-  --sidebar-primary: oklch(0.8001 0.1297 165.0822);
+  --sidebar-primary: oklch(0.92 0.012 80);
   --sidebar-primary-foreground: oklch(0.1687 0.0117 60.5255);
-  --sidebar-ring: oklch(0.8001 0.1297 165.0822);
+  --sidebar-ring: oklch(0.92 0.012 80);
   --tracking-normal: 0em;
 }
 /* atelier:end */
@@ -163,45 +164,35 @@
  * the standard tokens of block 1, and every meaning below follows. The rule is
  * `lint/semantic-token-alias.grit` (#1130).
  *
- * Gain is the theme's primary and loss its destructive. Attention takes the
- * foreground: the icon carries the meaning, not a hue. The eight `--alloc-*`
- * are the primary mixed into the ground, rank 1 the most contrasted on either
- * ground, so the allocation reads as the application on whatever theme is
- * loaded.
+ * Gain is the theme's `chart-2` and nothing else reads it, so a gain is never
+ * the colour of an action; loss is its destructive (#1283). Attention takes the
+ * foreground: the icon carries the meaning, not a hue. The five `--alloc-*` are
+ * the other chart hues in order, and the fold is the muted foreground: a
+ * category in a drawing, never a sign.
  * ========================================================================== */
 
 :root {
-  --gain: var(--primary);
+  --gain: var(--chart-2);
   --loss: var(--destructive);
   --price: var(--primary);
-  --grant: var(--chart-1);
-  --dividend: var(--chart-2);
   --attention: var(--foreground);
-  --alloc-1: color-mix(in oklch, var(--primary) 100%, var(--background));
-  --alloc-2: color-mix(in oklch, var(--primary) 88%, var(--background));
-  --alloc-3: color-mix(in oklch, var(--primary) 76%, var(--background));
-  --alloc-4: color-mix(in oklch, var(--primary) 64%, var(--background));
-  --alloc-5: color-mix(in oklch, var(--primary) 52%, var(--background));
-  --alloc-6: color-mix(in oklch, var(--primary) 40%, var(--background));
-  --alloc-7: color-mix(in oklch, var(--primary) 30%, var(--background));
-  --alloc-8: color-mix(in oklch, var(--primary) 20%, var(--background));
+  --alloc-1: var(--chart-1);
+  --alloc-2: var(--chart-3);
+  --alloc-3: var(--chart-4);
+  --alloc-4: var(--chart-5);
+  --alloc-5: var(--muted-foreground);
 }
 
 .dark {
-  --gain: var(--primary);
+  --gain: var(--chart-2);
   --loss: var(--destructive);
   --price: var(--primary);
-  --grant: var(--chart-1);
-  --dividend: var(--chart-2);
   --attention: var(--foreground);
-  --alloc-1: color-mix(in oklch, var(--primary) 100%, var(--background));
-  --alloc-2: color-mix(in oklch, var(--primary) 88%, var(--background));
-  --alloc-3: color-mix(in oklch, var(--primary) 76%, var(--background));
-  --alloc-4: color-mix(in oklch, var(--primary) 64%, var(--background));
-  --alloc-5: color-mix(in oklch, var(--primary) 52%, var(--background));
-  --alloc-6: color-mix(in oklch, var(--primary) 40%, var(--background));
-  --alloc-7: color-mix(in oklch, var(--primary) 30%, var(--background));
-  --alloc-8: color-mix(in oklch, var(--primary) 20%, var(--background));
+  --alloc-1: var(--chart-1);
+  --alloc-2: var(--chart-3);
+  --alloc-3: var(--chart-4);
+  --alloc-4: var(--chart-5);
+  --alloc-5: var(--muted-foreground);
 }
 
 /* ==========================================================================
@@ -248,17 +239,12 @@
   --color-gain: var(--gain);
   --color-loss: var(--loss);
   --color-price: var(--price);
-  --color-grant: var(--grant);
-  --color-dividend: var(--dividend);
   --color-attention: var(--attention);
   --color-alloc-1: var(--alloc-1);
   --color-alloc-2: var(--alloc-2);
   --color-alloc-3: var(--alloc-3);
   --color-alloc-4: var(--alloc-4);
   --color-alloc-5: var(--alloc-5);
-  --color-alloc-6: var(--alloc-6);
-  --color-alloc-7: var(--alloc-7);
-  --color-alloc-8: var(--alloc-8);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

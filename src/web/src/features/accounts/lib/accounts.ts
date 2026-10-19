@@ -836,19 +836,11 @@ export function submittedAccount(choice: AccountChoice, typed: string): Submitte
  *
  * It was `AccountsRail`'s and it is now shared, because the dashboard's
  * comparison draws the same accounts as the rail and two wheels would put one
- * account in two colours on two surfaces. The eight allocation stops are
- * deliberately not reused: those encode **rank** on a sorted, legended figure,
- * where this says *which account* — which is what a hue does and a lightness
- * does not.
- *
- * **It starts on the accent's own hue** (#787), `165`, and turns by sixty
- * degrees from there. An identity palette cannot be one colour — that is the
- * whole of what it is for — but it can start somewhere rather than nowhere: at
- * `264` the first account, which on most installs is the only one anybody looks
- * at, was drawn in a blue the product uses nowhere.
+ * account in two colours on two surfaces. It turns through the four category
+ * hues of the theme (`--alloc-1` to `--alloc-4`, #1283), so it follows the theme
+ * and never reaches the gain's `chart-2`; the fifth account wraps round to the
+ * first, and the name beside every mark says which one it is.
  */
-const ACCOUNT_HUES = [165, 225, 285, 345, 45, 105] as const
-
 export function accountColour(index: number): string {
-  return `oklch(0.62 0.15 ${ACCOUNT_HUES[index % ACCOUNT_HUES.length]})`
+  return `var(--alloc-${(index % 4) + 1})`
 }

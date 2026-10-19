@@ -37,24 +37,6 @@ def test_atelier_json_is_a_valid_stored_theme():
     assert tweakcn.normalize(ATELIER) == ATELIER
 
 
-def test_this_change_alters_no_colour():
-    """The migration guard: the first transcription equals the block it replaced.
-
-    It pins that first version, so the first intentional colour edit (#1283)
-    retires it, together with ``fixtures/atelier-before-1295.json``.
-    """
-    before = json.loads((ROOT / 'tests' / 'fixtures' / 'atelier-before-1295.json').read_text(encoding='utf-8'))
-    after = _tokens(sync_atelier.render())
-    for ground, values in before.items():
-        # ``spacing`` is layout density, which a theme may not set (``ALLOWED``).
-        for key, value in values.items():
-            if key != 'spacing':
-                assert after[ground][key] == value, f'{ground}: --{key}'
-    # The only token the dark ground gains is the one tweakcn wrote on light alone.
-    assert set(after['dark']) - set(before['dark']) == {'tracking-normal'}
-    assert set(after['light']) == set(before['light']) - {'spacing'}
-
-
 def test_sync_refuses_a_stylesheet_without_markers():
     with pytest.raises(SystemExit):
         sync_atelier.sync('body {}')

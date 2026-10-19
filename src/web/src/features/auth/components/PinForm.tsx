@@ -148,7 +148,7 @@ export function PinForm({
       </Button>
 
       <Collapsible>
-        <CollapsibleTrigger className="text-xs text-primary underline-offset-4 hover:underline">
+        <CollapsibleTrigger className="text-xs text-primary underline underline-offset-4">
           {t('auth.pin.forgotten')}
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2 text-xs leading-relaxed text-muted-foreground">

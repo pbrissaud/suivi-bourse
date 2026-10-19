@@ -5,8 +5,8 @@
  * colour Atelier happens to carry. What stays is what holds whatever the theme:
  * the controls the browser paints are drawn from the tokens, DESIGN.md's type
  * ladder is the one stated, the build's entry loads nothing from a third party,
- * and block 2 says the same meanings on both grounds — the allocation ramp
- * included, which is the one place block 2 mixes rather than names.
+ * and block 2 says the same meanings on both grounds, the allocation stops and
+ * the signs (#1283) included.
  *
  * That every block-2 value is an alias is `lint/semantic-token-alias.grit`'s
  * job; this file holds what a lint rule cannot, which is two rules compared.
@@ -16,7 +16,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { cn } from '@/lib/utils'
-import { blocks, declarations, read, WEB_ROOT } from '@/test/stylesheet'
+import { blocks, declarations, type Oklch, oklch, read, WEB_ROOT } from '@/test/stylesheet'
 
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
 const DESIGN_MD = path.join(REPO_ROOT, 'DESIGN.md')
@@ -118,6 +118,33 @@ describe('index.css says what DESIGN.md says', () => {
   })
 })
 
+describe('index.css says what DESIGN.md says about the colours', () => {
+  /** One entry of the front matter's `colors:` block, as its `oklch()` parts. */
+  function designColour(name: string): Oklch {
+    const front = fs.readFileSync(DESIGN_MD, 'utf8').split(/^---$/m)[1]
+    const value = new RegExp(`^ {2}${name}: "(.+)"$`, 'm').exec(front)
+    if (!value) throw new Error(`DESIGN.md says no ${name}`)
+    return oklch(value[1])
+  }
+
+  it('DESIGN.md states the preset’s primary and gain', () => {
+    const primitives = blocks()[0]
+    const cases = [
+      ['primary', 'light', '--primary'],
+      ['dark-primary', 'dark', '--primary'],
+      ['gain', 'light', '--chart-2'],
+      ['dark-gain', 'dark', '--chart-2'],
+    ] as const
+    for (const [name, ground, token] of cases) {
+      const said = oklch(declarations(primitives, ground).get(token) ?? '')
+      const stated = designColour(name)
+      expect(Math.abs(stated.lightness - said.lightness), `${name} L`).toBeLessThanOrEqual(0.01)
+      expect(Math.abs(stated.chroma - said.chroma), `${name} C`).toBeLessThanOrEqual(0.01)
+      expect(Math.abs(stated.hue - said.hue), `${name} H`).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
 describe('index.css says what DESIGN.md says about the layout', () => {
   const rem = (px: string) => `${Number.parseFloat(px) / 16}rem`
 
@@ -176,9 +203,6 @@ describe('what the theme must not bring with it', () => {
   })
 })
 
-/** Rank 1 is the primary itself, and each rank after it is mixed further into the ground. */
-const ALLOC_SHARES = [100, 88, 76, 64, 52, 40, 30, 20]
-
 describe('the domain block', () => {
   it('says the same names on both grounds', () => {
     const domain = blocks()[1]
@@ -188,18 +212,63 @@ describe('the domain block', () => {
     expect(dark).toEqual(light)
   })
 
-  it('mixes the eight allocation stops from the primary into the ground', () => {
+  it('takes the allocation stops from the chart hues, the fold from the muted foreground', () => {
     const domain = blocks()[1]
     for (const ground of ['light', 'dark'] as const) {
       const stops = [...declarations(domain, ground)].filter(([name]) =>
         name.startsWith('--alloc-'),
       )
-      expect(stops, `the ${ground} allocation ramp`).toEqual(
-        ALLOC_SHARES.map((share, index) => [
-          `--alloc-${index + 1}`,
-          `color-mix(in oklch, var(--primary) ${share}%, var(--background))`,
-        ]),
-      )
+      expect(stops, `the ${ground} allocation ring`).toEqual([
+        ['--alloc-1', 'var(--chart-1)'],
+        ['--alloc-2', 'var(--chart-3)'],
+        ['--alloc-3', 'var(--chart-4)'],
+        ['--alloc-4', 'var(--chart-5)'],
+        ['--alloc-5', 'var(--muted-foreground)'],
+      ])
+    }
+  })
+
+  it('aliases gain to chart-2 and loss to destructive', () => {
+    const domain = blocks()[1]
+    for (const ground of ['light', 'dark'] as const) {
+      const said = declarations(domain, ground)
+      expect(said.get('--gain'), ground).toBe('var(--chart-2)')
+      expect(said.get('--loss'), ground).toBe('var(--destructive)')
+    }
+  })
+
+  it('atelier.json carries the #1283 values', () => {
+    const ink = { light: 'oklch(0.3 0.03 60)', dark: 'oklch(0.92 0.012 80)' }
+    const hues = {
+      light: [
+        'oklch(0.5 0.14 255)',
+        'oklch(0.4825 0.1032 163.7504)',
+        'oklch(0.47 0.16 305)',
+        'oklch(0.58 0.09 215)',
+        'oklch(0.38 0.06 45)',
+      ],
+      dark: [
+        'oklch(0.7 0.12 255)',
+        'oklch(0.8001 0.1297 165.0822)',
+        'oklch(0.66 0.15 305)',
+        'oklch(0.82 0.06 220)',
+        'oklch(0.55 0.08 50)',
+      ],
+    }
+    const theme = JSON.parse(
+      fs.readFileSync(path.join(WEB_ROOT, 'src', 'theme', 'atelier.json'), 'utf8'),
+    )
+    const primitives = blocks()[0]
+    for (const ground of ['light', 'dark'] as const) {
+      const said = declarations(primitives, ground)
+      // The JSON and the generated block say the same thing, and it is the ticket's.
+      for (const name of ['primary', 'ring', 'sidebar-primary', 'sidebar-ring'])
+        for (const value of [theme[ground][name], said.get(`--${name}`)])
+          expect(oklch(value), `${name}, ${ground}`).toEqual(oklch(ink[ground]))
+      hues[ground].forEach((hue, at) => {
+        for (const value of [theme[ground][`chart-${at + 1}`], said.get(`--chart-${at + 1}`)])
+          expect(oklch(value), `chart-${at + 1}, ${ground}`).toEqual(oklch(hue))
+      })
     }
   })
 })

@@ -253,7 +253,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
                       href={keyPage}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-primary underline-offset-4 hover:underline"
+                      className="text-xs text-primary underline underline-offset-4"
                     >
                       {t('settings.agent.key.where')}
                     </a>
@@ -366,7 +366,7 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
             href={docsPageHref(language, 'settings', 'agent')}
             target="_blank"
             rel="noreferrer"
-            className="text-primary underline-offset-4 hover:underline"
+            className="text-primary underline underline-offset-4"
           >
             {t('settings.agent.contract')}
           </a>
