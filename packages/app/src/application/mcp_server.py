@@ -426,8 +426,9 @@ A FIGURE EXISTS ONLY WHEN `state` IS "ready". On every other state say why in
 words, and NEVER GIVE A GAP:
 - "no_reference": the owner has chosen no fund to compare against yet. They
   choose one in the app; name no screen.
-- "rebuilding" and "splits_unknown": the fund's history is still being fetched.
-  `rebuild` says how far: `rebuild.symbol` is the fund, `rebuild.reached` the
+- "rebuilding" and "splits_unknown": the fund's history is still being fetched
+  ("splits_unknown": its split history waits for the next fetch). `rebuild`
+  says how far: `rebuild.symbol` is the fund, `rebuild.reached` the
   oldest day fetched, `rebuild.target` the day it is heading for and
   `rebuild.ratio` the share done, from 0 to 1. Quote the ratio when it is not
   null; promise no duration.
@@ -438,8 +439,10 @@ words, and NEVER GIVE A GAP:
   carry rows, each with its own figures.
 
 EVERY FIGURE IS QUOTED WITH ITS PERIOD, `covered_from` to `covered_to`, in the
-same sentence. `truncated_by_fund` true means the period starts at the fund's
-first quote, after the owner's first purchase on `portfolio_from`. `ended`
+same sentence. `portfolio_from` is the first day the owner's daily figures
+exist, not the day of a purchase. `truncated_by_fund` true means the fund was
+first quoted after that day, so the period may start later than
+`portfolio_from`: never call `portfolio_from` the first purchase. `ended`
 "exhausted" means the fund could not have funded a withdrawal, so the period
 stops there; "awaiting_rate" means its next close has no exchange rate yet. Say
 that the period stopped early, and why.
@@ -453,7 +456,10 @@ over the period, the value minus what was put in, over what was put in. They are
 NOT PER YEAR, and they are not `get_portfolio_totals.xirr`: never annualise
 them, and never set them against `get_portfolio_totals.xirr` or
 `get_portfolio_totals.twr_index`, which cover other periods and count cash.
-Either is null on a perimeter that took out more than it put in.
+Either is null on a perimeter that put nothing in or took out more than it put
+in. `portfolio_value`, `gap_gross` and `portfolio_return` can also be null on a
+"ready" answer, when a day's value is missing: then give no gap, and say the
+app has no figure.
 
 `per_account` is the same measure account by account, each over its own period:
 `per_account.covered_from` to `per_account.covered_to`, and `per_account.ended`

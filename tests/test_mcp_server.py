@@ -1004,6 +1004,7 @@ def test_the_benchmark_description_states_the_rules_a_model_gets_wrong(tmp_path)
     assert 'NOT PER YEAR' in described
     assert 'never annualise' in described
     assert '`get_portfolio_totals.xirr`' in described
+    assert 'never call `portfolio_from` the first purchase' in described
 
 
 # --------------------------------------------------------------------- #
