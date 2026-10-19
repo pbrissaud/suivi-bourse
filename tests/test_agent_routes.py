@@ -64,6 +64,15 @@ async def two_tools_then_text(messages, info):
         yield 'Selling 4 would net the figure the simulator gave.'
 
 
+async def the_benchmark_then_text(messages, info):
+    """``get_benchmark_comparison``, then an answer."""
+    if not returns(messages):
+        yield {0: DeltaToolCall('get_benchmark_comparison', '{}',
+                                tool_call_id='b1')}
+    else:
+        yield 'Le portefeuille devance le fonds sur la période donnée.'
+
+
 def body(thread_id, text='Que se passe-t-il si je vends ?', earlier=(), **extra):
     return {'trigger': 'submit-message', 'id': thread_id, **extra,
             'messages': [*earlier, {'id': 'u', 'role': 'user',
@@ -197,6 +206,25 @@ def test_a_scripted_turn_streams_both_tools_and_keeps_them(runtime, monkeypatch)
     shown = run(runtime, get('/api/agent/threads/k1')).json()
     assert shown['messages'][0]['role'] == 'user'
     assert {m['role'] for m in shown['messages'][1:]} == {'assistant'}
+
+
+def test_a_scripted_turn_reads_the_benchmark_comparison(runtime, monkeypatch):
+    """#1270: the agent reaches the comparison the Benchmark page draws."""
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=the_benchmark_then_text)))
+
+    answer = run(runtime, post('b1', text='Est-ce que je fais mieux qu\'un ETF ?'))
+
+    assert answer.status_code == 200
+    outputs = [c for c in chunks(answer.text)
+               if c['type'] == 'tool-output-available']
+    assert [c['toolCallId'] for c in outputs] == ['b1']
+    reached = outputs[0]['output']
+    assert reached['state'] == 'ready'
+    for member in ('gap_gross', 'covered_from', 'covered_to'):
+        assert reached[member] is not None, member
+    assert 'series' not in reached
 
 
 def test_a_provider_failure_is_said_by_name_and_never_with_the_key(

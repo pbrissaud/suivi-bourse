@@ -1,8 +1,9 @@
-"""The agent's interface — six read tools, a sale simulator, the owner's
-profile and the one write, a proposal, on the one socket (#749, #1109, #1116)."""
+"""The agent's interface — seven read tools, a sale simulator, the owner's
+profile and the one write, a proposal, on the one socket (#749, #1109, #1116,
+#1270)."""
 from datetime import date, datetime, timedelta, timezone
 from functools import cache
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 import duckdb
 from pydantic import StrictFloat, TypeAdapter, ValidationError
@@ -12,6 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from application import account_facts
 from application.account_facts import AccountsPayload
+from application import benchmark_view
 from application import instants
 from application import portfolio_facts
 from application import profile
@@ -411,6 +413,66 @@ left.
 """
 
 
+GET_BENCHMARK_COMPARISON_DESCRIPTION = f"""\
+Does the owner do better than a market index? The same money, on the same days,
+put in a reference fund, set against what the owner actually did with it.
+
+The reference is `reference`, a ticker; `index` names the market it follows and
+`inception` is the fund's first day, both null for a ticker the app does not
+list. Every purchase goes into the fund on the day it was made; every sale and
+every dividend comes out of it. `state` says whether there is an answer:
+
+A FIGURE EXISTS ONLY WHEN `state` IS "ready". On every other state say why in
+words, and NEVER GIVE A GAP:
+- "no_reference": the owner has chosen no fund to compare against yet. They
+  choose one in the app; name no screen.
+- "rebuilding" and "splits_unknown": the fund's history is still being fetched.
+  `rebuild` says how far: `rebuild.symbol` is the fund, `rebuild.reached` the
+  oldest day fetched, `rebuild.target` the day it is heading for and
+  `rebuild.ratio` the share done, from 0 to 1. Quote the ratio when it is not
+  null; promise no duration.
+- "nothing_to_compare": `reason` says why. "no_events" is an empty ledger;
+  "not_computed" means the daily figures are not computed yet; "nothing_held"
+  means no securities were held while the fund was quoted; "no_rate_on_seed"
+  means an exchange rate is missing on the first day. `per_account` may still
+  carry rows, each with its own figures.
+
+EVERY FIGURE IS QUOTED WITH ITS PERIOD, `covered_from` to `covered_to`, in the
+same sentence. `truncated_by_fund` true means the period starts at the fund's
+first quote, after the owner's first purchase on `portfolio_from`. `ended`
+"exhausted" means the fund could not have funded a withdrawal, so the period
+stops there; "awaiting_rate" means its next close has no exchange rate yet. Say
+that the period stopped early, and why.
+
+`gap_gross` is `portfolio_value` minus `reference_value` on `covered_to`:
+positive means the owner is ahead of the fund. `accounts` is the perimeter those
+figures are summed over. THE GAP IS GROSS: no tax on either side.
+
+`portfolio_return` and `reference_return` are the GAIN ON THE MONEY INVESTED
+over the period, the value minus what was put in, over what was put in. They are
+NOT PER YEAR, and they are not `get_portfolio_totals.xirr`: never annualise
+them, and never set them against `get_portfolio_totals.xirr` or
+`get_portfolio_totals.twr_index`, which cover other periods and count cash.
+Either is null on a perimeter that took out more than it put in.
+
+`per_account` is the same measure account by account, each over its own period:
+`per_account.covered_from` to `per_account.covered_to`, and `per_account.ended`
+when it stopped early. Each `per_account.account` is a `list_accounts.id`: name
+it by its `list_accounts.label`. Its figures are `per_account.portfolio_value`,
+`per_account.reference_value`, `per_account.gap_gross`,
+`per_account.portfolio_return` and `per_account.reference_return`. The rows add
+up to the head only when every one of them runs to `covered_to`.
+
+HOW TO SAY IT. Lead with the gap and the period, then the two gains on the money
+invested. Never say "counterfactual", "replay" or "gross gap", and never name a
+field.
+
+{_CURRENCY}
+
+{_ABSENCE}
+"""
+
+
 # --------------------------------------------------------------------- #
 # What each tool serves — the schema a client is given (#958)
 # --------------------------------------------------------------------- #
@@ -593,6 +655,58 @@ class AccountRhythm(Figures):
 class Rhythm(Figures):
     base_currency: Optional[str]
     accounts: List[AccountRhythm]
+
+
+class BenchmarkRebuild(TypedDict):
+    """``benchmark_view._rebuild`` — the bar of a reference still being fetched."""
+    symbol: str
+    reached: Optional[str]
+    target: Optional[str]
+    ratio: Optional[float]
+
+
+class BenchmarkAccount(TypedDict):
+    """One row of ``benchmark_view._rows``, over the account's own period."""
+    account: str
+    covered_from: Optional[str]
+    covered_to: Optional[str]
+    ended: Optional[str]
+    portfolio_value: Optional[float]
+    reference_value: Optional[float]
+    gap_gross: Optional[float]
+    portfolio_return: Optional[float]
+    reference_return: Optional[float]
+
+
+class BenchmarkComparison(TypedDict):
+    """``/api/benchmark``' payload without ``_COMPARISON_OMITS``, state by state."""
+    base_currency: Optional[str]
+    state: str
+    reference: Optional[str]
+    index: NotRequired[Optional[str]]
+    inception: NotRequired[Optional[str]]
+    # Only on `nothing_to_compare`.
+    reason: NotRequired[str]
+    # Only on `rebuilding` and `splits_unknown`.
+    rebuild: NotRequired[BenchmarkRebuild]
+    # The figures and the period: only once the replay has run.
+    per_account: NotRequired[List[BenchmarkAccount]]
+    covered_from: NotRequired[Optional[str]]
+    covered_to: NotRequired[Optional[str]]
+    portfolio_from: NotRequired[Optional[str]]
+    truncated_by_fund: NotRequired[bool]
+    ended: NotRequired[Optional[str]]
+    accounts: NotRequired[List[str]]
+    portfolio_value: NotRequired[Optional[float]]
+    reference_value: NotRequired[Optional[float]]
+    gap_gross: NotRequired[Optional[float]]
+    portfolio_return: NotRequired[Optional[float]]
+    reference_return: NotRequired[Optional[float]]
+
+
+#: The selector's lists and the daily curve: screen furniture, and a year of
+#: curve is ~365 points — tokens with no answer in them (#1270).
+_COMPARISON_OMITS = ('series', 'offered', 'consulted')
 
 
 class PositionAfter(TypedDict):
@@ -903,6 +1017,18 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             **rhythm.measure(_snapshot().events,
                              datetime.now(timezone.utc)).to_dict(),
         }, Rhythm)
+
+    @mcp.tool(description=GET_BENCHMARK_COMPARISON_DESCRIPTION)
+    def get_benchmark_comparison() -> BenchmarkComparison:
+        """``/api/benchmark``' payload, minus the curve and the selector (#1270)."""
+        def _body():
+            """The read itself, so :func:`reading` can wrap a fault around it."""
+            payload = benchmark_view.comparison(
+                _store(), _snapshot(), datetime.now(timezone.utc))
+            return {'base_currency': _base_currency(),
+                    **{key: value for key, value in payload.items()
+                       if key not in _COMPARISON_OMITS}}
+        return reading(_body, BenchmarkComparison)
 
     @mcp.tool(description=SIMULATE_SALE_DESCRIPTION)
     def simulate_sale(account: str, symbol: str,

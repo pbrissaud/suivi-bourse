@@ -504,7 +504,10 @@ def _snapshot_at(result, day: date):
 
 def _return(value: Optional[float],
             contributed: float) -> Optional[float]:
-    """The money-weighted return, on the denominator both sides share.
+    """The gain on the money invested, on the denominator both sides share.
+
+    Simple and not annualised: ``(value − contributed) / contributed`` over the
+    period — neither the money-weighted return nor the time-weighted one.
 
     ``None`` on a perimeter that has taken more out than it put in: the ratio
     still divides, and it answers with the sign flipped.
