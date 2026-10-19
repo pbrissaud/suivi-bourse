@@ -344,7 +344,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 - **Card:** `surface`, `rounded.md`, 14 px padding. Allowed only for something the
   user decides (an agent proposal, a profile fact to confirm, a first-run step, a
   destructive confirmation) or selects (an account tile). Never a card inside a card.
-  A decided proposal loses its buttons and shows one status line (decision 5A).
+  A decided proposal loses its buttons **and its frame**: one status line (decision 5A).
 - **Weight bar:** a 6 px `muted-foreground` bar with its percentage in Label, inside holding
   rows and in a legend drawn without a ring (the dashboard's allocation at half width). In
   an account's own rows it takes the account's identity hue.
@@ -361,7 +361,11 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   coloured by shiki (2A). The CIF line "Simulations à partir de vos données
   déclarées, pas un conseil en investissement." stays fixed under the input (3A).
   States follow decision 4A. The conversation is the page's `<main>` content, its
-  `<h1>` and document title "Agent"; answers announced once complete (11A).
+  `<h1>` and document title "Agent"; answers announced once complete (11A), the
+  announcement ending on the facts to confirm when the turn proposed some. An assistant turn
+  reads trace lines, then the answer, then its proposal cards (a proposal call keeps its trace
+  line). While a turn streams, one thing moves at a time: a running tool line, the pending
+  line "Préparation de la réponse…" (a running trace line, no chevron), or the growing text.
 - **PIN screen and Accès block (#1203):** the PIN screen is a single 360 px column on a
   `tint` plane (`rounded.lg`, no border, no shadow) centred on `background`: the product
   name in Label `text-muted`, the heading "Entrez votre code" in Section title, six 44 px
@@ -441,4 +445,5 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | Gain leaves the primary; action becomes ink (#1283) | The 17/10 audit found the mint on buttons, the current nav item, links, the first account, the eight allocation stops and every gain: a green figure read as a link and a green button as a gain. `--gain` moves to `chart-2`, which nothing else reads and which differs from `primary` on 14 of 16 stock tweakcn theme/ground pairs, against 0 of 16 when it is `primary`. Atelier's `primary` becomes a warm ink. The allocation and the account identities take the other chart hues, measured in CI. Amends the 2026-10-10 row "Semantic tokens are aliases": its alias rule stands, its `gain → primary` does not. |
 | 2026-10-19 | The Benchmark page states its period and its reference first; a shortfall is not a loss (#1282) | The period was an orphan line and the picker sat in the chart's corner while the whole page depends on it. The period joins the header subtitle like « Cours au … », and the picker becomes the first row, since the bar is closed to controls. A gap behind the reference drawn in 60 px red read as money lost; it is money not made, so the gap takes no sign colour anywhere, and the returns, which are gains or losses, keep theirs. |
 | 2026-10-19 | The accounts page reads like the dashboard's head (#1277) | The left rail was mostly empty while the detail scrolled, and the detail's rows were ragged (*Latest events* took half a row when no line paid a dividend). Three choices: the accounts become a sticky bar of chips over the detail at every width, chosen by the owner after comparing both mockups, and the rail is removed; the secondary figures are one row, *Dividends received · Fees paid · Projected tax* (the tax only with a declared model), *Composition* goes and the cash becomes a line under the hero, as on the dashboard (#1174); every row of the detail is shared equally by the blocks present, so an absent block gives its share to the others. The head leaves its card for the ground, and the detail keeps one card, the reassignment, because it asks for a decision. |
+| 2026-10-19 | The agent's proposals come under the answer, and the wait is a line (#1271) | The server already streamed each word; the page drew nothing while the model read a tool result, thought or wrote its proposals (4 to 13 s), and drew each card where its call sat, above the answer that says nothing is saved until confirmed. Cards go after the text, the call keeps its trace line; a pending line fills the gap, so a single thing moves at a time; a decided proposal loses its frame (supersedes the card of 5A). |
 | 2026-10-20 | Figures in tables are Geist with tabular numerals (#1281) | The owner's choice, reversing the table half of #838: a column of amounts reads as a column through tabular numerals, and Geist Mono set on every cell read like a terminal. Geist Mono stays for tickers and account ids. The Shares page also draws its allocation once (bars, in a section), moves its toggle into a toolbar above the table, and ends the table on a total row. |
