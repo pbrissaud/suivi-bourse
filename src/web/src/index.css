@@ -400,17 +400,6 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
-  /* **And in a table it is set in the mono face** (#838). The drawing puts
-     every figure inside a table in `Geist Mono` and every figure outside one —
-     a statistic, the one figure a page leads with — in the sans: a column of
-     amounts is read as a column, where a headline figure is read as a word. It
-     is one rule scoped to the cell rather than a second class every numeric
-     cell in five tables has to remember, which is what `.tabular` itself is
-     for. */
-  :is(td, th) :is(.tabular),
-  :is(td, th).tabular {
-    font-family: var(--font-mono);
-  }
   html {
     @apply font-sans;
     /* **The native controls stop being the operating system's** (#837). A

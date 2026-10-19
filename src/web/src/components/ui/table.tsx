@@ -54,6 +54,20 @@ function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
   )
 }
 
+// The total row: the header strip's look, under the columns it sums (#1281).
+function TableFooter({ className, ...props }: React.ComponentProps<'tfoot'>) {
+  return (
+    <tfoot
+      data-slot="table-footer"
+      className={cn(
+        'border-t bg-background font-semibold [&_tr]:border-0 [&_tr]:hover:bg-background',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
 function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
   return (
     <tr
@@ -99,4 +113,4 @@ function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
   )
 }
 
-export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow }
+export { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow }

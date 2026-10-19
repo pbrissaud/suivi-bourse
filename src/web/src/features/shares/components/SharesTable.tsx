@@ -4,7 +4,7 @@
  *     Titre · Cours · Détenu · PRU · Valorisation · Latente · Réalisée ·
  *     Dividendes · Compte
  *
- * with the percentage on a **second line under the latent gain** rather than in
+ * with the percentage **after the latent gain, on its line** (#1281) rather than in
  * a column of its own. Three columns are absent on purpose and each for its own
  * reason:
  *
@@ -14,8 +14,8 @@
  *    nothing.
  *  - **`Investi` does not come in**: it is `Valorisation − latente`, and it
  *    stays on the sheet.
- *  - **There is no fourth `Gain total` column.** The header *is* their sum, and
- *    a total never shares a row with its terms: five numeric columns of equal
+ *  - **There is no fourth `Gain total` column.** The footer row *is* their
+ *    sum (#1281), under the columns it sums: five numeric columns of equal
  *    weight say nothing about the last four being *inside* the first.
  *
  * **And `Poids` is not a column either, on the maquette's own evidence**
@@ -39,9 +39,8 @@
  * pressing the column already in force turns it round.
  *
  * **Grouping by account is a partition and not a filter**: each group's
- * subtotal is in the **group header**, never in a footer row, because a total
- * and its terms do not share a row — here one level down, the terms being the
- * rows underneath.
+ * subtotal is in the **group header**, and the table's own total row (#1281)
+ * sums every group.
  *
  * **The market-state pill is not a column.** Eleven rows rendered ten identical
  * *Marché ouvert* and one *Cours figé*: a per-row marker that does not
@@ -58,6 +57,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -65,7 +65,15 @@ import {
 import { positionRenderings, renderFigure } from '@/lib/absence'
 import type { DocsAnchor } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
-import { sumRendering } from '@/lib/gain'
+import {
+  sumRendering,
+  termAmount,
+  termRendering,
+  termTone,
+  type GainTermName,
+  type GainTerms,
+  type Sum,
+} from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
   isAnomalous,
@@ -153,9 +161,21 @@ interface SharesTableProps {
   sort: ShareSort
   onSort: (column: SortColumn) => void
   onSelect: (symbol: string) => void
+  /** What the footer sums (`sharesTotals`) — every group, and the closed lines. */
+  totals: { valuation: Sum; terms: GainTerms }
+  /** How many closed lines the totals include, folded or not. */
+  closedCount: number
 }
 
-export function SharesTable({ groups, currency, sort, onSort, onSelect }: SharesTableProps) {
+export function SharesTable({
+  groups,
+  currency,
+  sort,
+  onSort,
+  onSelect,
+  totals,
+  closedCount,
+}: SharesTableProps) {
   const { t } = useI18n()
 
   return (
@@ -232,21 +252,78 @@ export function SharesTable({ groups, currency, sort, onSort, onSelect }: Shares
           ))}
         </TableBody>
       ))}
+      <TotalRow totals={totals} closedCount={closedCount} currency={currency} />
     </Table>
   )
 }
 
 /**
- * A group's own header — **the subtotal, and never a footer row**.
+ * **The totals are the table's last row, under the columns they sum** (#1281).
+ * It sums what is on screen — the live lines shown and every closed one, folded
+ * or not — so the fold never moves it. Cours, Détenu, PRU and Compte are never
+ * summed; a group's subtotal stays in its head, and this row sums every group.
+ */
+function TotalRow({
+  totals,
+  closedCount,
+  currency,
+}: {
+  totals: SharesTableProps['totals']
+  closedCount: number
+  currency: string | null
+}) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const { valuation, terms } = totals
+  const term = (name: Exclude<GainTermName, 'transferFees'>) => (
+    <TableCell className={`text-right tabular ${termTone(terms, name)}`}>
+      {renderFigure(
+        termRendering(terms, name),
+        () => f.currency(termAmount(terms, name), currency),
+        t,
+      )}
+    </TableCell>
+  )
+  return (
+    <TableFooter>
+      <TableRow>
+        <th
+          scope="row"
+          className="px-1.5 py-3 text-left whitespace-nowrap xl:px-4 [[data-density=compact]_&]:py-1.5"
+        >
+          {t('shares.total')}
+          {closedCount > 0 ? (
+            <span className="label">
+              {' · '}
+              {t('shares.total.closed', { count: closedCount })}
+            </span>
+          ) : null}
+        </th>
+        <TableCell />
+        <TableCell />
+        <TableCell />
+        <TableCell className="text-right tabular">
+          {renderFigure(
+            sumRendering(valuation),
+            () => f.currency(valuation.known ? valuation.value : null, currency),
+            t,
+          )}
+        </TableCell>
+        {term('unrealised')}
+        {term('realised')}
+        {term('dividends')}
+        <TableCell />
+      </TableRow>
+    </TableFooter>
+  )
+}
+
+/**
+ * A group's own header — **the subtotal**, above the lines it sums.
  *
- * A total and its terms are not read at equal weight; in a table subordination
- * is vertical, so the account's figures go *above* the lines they sum exactly
- * as the page's own header sits above the table. A pied de groupe would put the
- * same two figures at the same rank as the columns they are the sum of.
- *
- * The two figures are the page header's two, one level down: what this account
- * is worth, and what it has gained — computed by the same functions, so a group
- * cannot drift from the page it decomposes.
+ * It is the account's **valuation** and nothing else (#838): the four totals of
+ * the whole are read in the table's total row, computed by the same functions,
+ * so a group cannot drift from the page it decomposes.
  */
 function GroupHead({ group, currency }: { group: ShareGroup; currency: string | null }) {
   const { t } = useI18n()
@@ -300,7 +377,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
               figure of known length; a name is whatever the ledger says, and
               `whitespace-nowrap` on the cell turns a long one into width the
               eight columns beside it then have to be found somewhere else. The
-              ticker underneath is never truncated — it is what the reader
+              ticker beside it is never truncated — it is what the reader
               recognises the line by, and it is short by construction. */}
           <button
             type="button"
@@ -309,6 +386,10 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
           >
             {row.name ?? row.symbol}
           </button>
+          {/* The ticker follows the name on the same line (#1281): outside the
+              button, so the button's name is the name alone, and never
+              truncated — it is what the reader recognises the line by. */}
+          <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.symbol}</span>
           {isAnomalous(row) ? (
             <span className="inline-flex items-center text-attention">
               <TriangleAlert className="size-4" aria-hidden />
@@ -320,7 +401,6 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
             </span>
           ) : null}
         </span>
-        <span className="block font-mono text-2xs text-muted-foreground">{row.symbol}</span>
       </TableCell>
 
       {/* The native quote, deliberately: it is the price the reader's
@@ -353,9 +433,9 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
 
       <TableCell className={`text-right tabular ${toneOf(renderings.unrealised, gain)}`}>
         {renderFigure(renderings.unrealised, () => f.currency(gain, currency), t)}
-        {/* The percentage is a second line, never a tenth column. */}
+        {/* The percentage follows the amount, never a tenth column. */}
         {renderings.unrealised.kind === 'figure' && ratio !== null ? (
-          <span className="block text-xs text-muted-foreground">{f.percent(ratio)}</span>
+          <span className="label ml-1.5">{f.percent(ratio)}</span>
         ) : null}
       </TableCell>
 

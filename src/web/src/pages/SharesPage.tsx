@@ -23,16 +23,14 @@
  *    the header is the only place where the **absence** of an anomaly reads as
  *    information rather than as a void.
  *  - **No *hide the closed ones* switch, anywhere.** It is the whole point.
- *  - **The `Répartition`, above the table** (#831). It came off the dashboard,
- *    where it had sat since #727 and where the maquette never drew it: the ring
- *    and its legend are in the `Titres` branch of the drawing, and the reading
- *    holds on the arithmetic too — the whole it divides is the value of the
- *    lines that can be placed, which is what the header under it sums, so the
- *    figure in the ring's hole and that header's `Valorisation` are one number
- *    said twice. It is handed `onScreen`, the rows the header sums, which is
- *    what makes the reduction and the anomaly lens travel to it with no rule of
- *    its own. It is also what the maquette answers *the weight of a line* with,
- *    and the reason the table has nine columns again rather than ten.
+ *  - **The `Répartition`, above the table** (#831, #1281). Bars in a tinted
+ *    section, with no ring: it is handed `onScreen`, the rows the table's total
+ *    row sums, which is what makes the reduction and the anomaly lens travel to
+ *    it with no rule of its own. It is also what the maquette answers *the
+ *    weight of a line* with, and the reason the table has nine columns again
+ *    rather than ten.
+ *  - **The totals are the table's last row** (#1281), under the columns they
+ *    sum, and the toolbar of the table is directly above it.
  *
  * **Two gestures on the table itself** (#791), and neither of them removes a
  * line — which is what lets the header go on stating the sum of what is under
@@ -65,12 +63,12 @@ import { TriangleAlert } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Allocation } from '@/features/shares/components/Allocation'
 import { ClosedShares } from '@/features/shares/components/ClosedShares'
-import { SharesHead } from '@/features/shares/components/SharesHead'
 import { SharesTable } from '@/features/shares/components/SharesTable'
 import { ShareSheet } from '@/features/shares/components/ShareSheet'
 import { settingsApi } from '@/features/settings/lib/api'
@@ -88,6 +86,7 @@ import {
   heldRows,
   isAnomalous,
   nextSort,
+  sharesTotals,
   type ShareGroup,
   type ShareSort,
   type SortColumn,
@@ -290,85 +289,74 @@ export default function SharesPage() {
               not the ring (`Allocation.tsx` says why). Reduced by `?account=` it
               draws that account's split; under the anomaly lens it draws what
               is on screen. */}
-          <Allocation rows={onScreen} currency={currency} />
+          <Allocation rows={onScreen} />
 
-          {/* **The two controls of the table, between the ring and it** (#838).
-              The drawing sets them as chips on the page's ground rather than as
-              underlined words in a caption line: a partition of the rows and a
-              lens on them are gestures, and the anomaly one carries the
-              attention colour because what it names is something to repair.
+          {/* **The toolbar and the table are one object** (#1281): the controls
+              sit directly above the table they partition and filter, as the
+              ledger's row does. Not drawn while `runtime` has not answered —
+              *Aucun symbol en anomalie* is a claim, and positions or runtime in
+              flight (or in error) leave every counter at zero, so the page
+              would say nothing was wrong on the strength of a read that failed
+              (#775, #777, #778). */}
+          <div data-slot="shares-table" className="space-y-3">
+            {!runtime.isSuccess || (accountCount < 2 && anomalies.length === 0) ? null : (
+              <div className="flex flex-wrap items-center gap-2">
+                {/* **A partition, offered only where there is something to
+                    partition.** At one account the group header would repeat
+                    the total row line for line, and a control that cannot
+                    change anything is the per-row marker rule met at the level
+                    of a button. */}
+                {accountCount < 2 ? null : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-pressed={grouped}
+                    onClick={() => setGrouped((previous) => !previous)}
+                    className={cn(
+                      grouped &&
+                        'border-primary bg-primary/12 text-primary hover:bg-primary/20 hover:text-primary dark:border-primary dark:bg-primary/12 dark:hover:bg-primary/20',
+                    )}
+                  >
+                    {t('shares.group.toggle')}
+                  </Button>
+                )}
 
-              occurrence after #775, #777 and #778). *Aucun symbol en anomalie* is
-              a claim, and three chains used to make it on a silence: positions
-              in flight leaves `rows` empty, so the count is zero before
-              anything is known; runtime in flight leaves every counter at zero,
-              so `absenceCase` answers *carried at cost* where it owes *no
-              quote* and three mute symbols read as none; and runtime in **error**
-              used to hand `readConditions` a `shellError`, which short-circuited
-              the list to nothing — so the page said nothing was wrong on the
-              strength of a read that failed. */}
-          {!runtime.isSuccess ? null : (
-            <div className="flex flex-wrap items-center gap-2">
-              {/* **A partition, offered only where there is something to
-                  partition.** At one account the group header would repeat the
-                  strip line for line, which is the argument `accountBreakdown`
-                  already makes one file over — and a control that cannot change
-                  anything is the per-row marker rule met at the level of a
-                  button. */}
-              {accountCount < 2 ? null : (
-                <button
-                  type="button"
-                  aria-pressed={grouped}
-                  onClick={() => setGrouped((previous) => !previous)}
-                  className={cn(
-                    'h-8 rounded-lg border px-3.5 text-xs font-medium',
-                    grouped
-                      ? 'border-primary/50 bg-primary/12 text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {t('shares.group.toggle')}
-                </button>
-              )}
+                {/* At zero it is nothing at all: the drawing draws no chip where
+                    there is nothing to repair. */}
+                {anomalies.length === 0 ? null : (
+                  <button
+                    type="button"
+                    aria-pressed={onlyAnomalies}
+                    onClick={() => setOnlyAnomalies((previous) => !previous)}
+                    className={cn(
+                      'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention',
+                      onlyAnomalies && 'ring-1 ring-attention/60',
+                    )}
+                  >
+                    <TriangleAlert aria-hidden className="size-3.25" />
+                    {t('shares.anomaly.count', { count: anomalies.length })}
+                  </button>
+                )}
+              </div>
+            )}
 
-              {/* At zero it is nothing at all: the drawing draws no chip where
-                  there is nothing to repair, and *a block with nothing in it
-                  does not exist* is the same rule one object down. */}
-              {anomalies.length === 0 ? null : (
-                <button
-                  type="button"
-                  aria-pressed={onlyAnomalies}
-                  onClick={() => setOnlyAnomalies((previous) => !previous)}
-                  className={cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention',
-                    onlyAnomalies && 'ring-1 ring-attention/60',
-                  )}
-                >
-                  <TriangleAlert aria-hidden className="size-3.25" />
-                  {t('shares.anomaly.count', { count: anomalies.length })}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* **One card, and the totals are its header** (#838). The strip and
-              the nine columns are one object — a table and the sum of what it
-              shows — so they share a frame, and the frame clips the table's own
-              horizontal scroll to the card's rounded edge.
-
-              The rows the strip sums are the ones on screen, closed ones
-              included: the argument is the rule, and handing it the held lines
-              alone is what printed the other correct figure. */}
-          <Card className="gap-0 overflow-hidden py-0">
-            <SharesHead positions={summed} rows={onScreen} currency={currency} />
-            <SharesTable
-              groups={groups}
-              currency={currency}
-              sort={sort}
-              onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
-              onSelect={select}
-            />
-          </Card>
+            {/* **One card; the totals are its last row** (#1281). The rows the
+                total row sums are the ones on screen, closed ones included:
+                handing it the held lines alone is what printed the other
+                correct figure. */}
+            <Card className="gap-0 overflow-hidden py-0">
+              <SharesTable
+                groups={groups}
+                currency={currency}
+                sort={sort}
+                onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
+                onSelect={select}
+                totals={sharesTotals(summed, onScreen)}
+                closedCount={closed.length}
+              />
+            </Card>
+          </div>
           <ClosedShares rows={closed} currency={currency} onSelect={select} />
         </>
       )}

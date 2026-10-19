@@ -82,15 +82,11 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
         {/* The summary line — the information is legible folded. */}
         <span className="text-sm text-muted-foreground">
           {t('shares.column.realised')}{' '}
-          <span className={`tabular font-mono ${signClass(realised)}`}>
-            {f.currency(realised, currency)}
-          </span>
+          <span className={`tabular ${signClass(realised)}`}>{f.currency(realised, currency)}</span>
         </span>
         <span className="text-sm text-muted-foreground">
           {t('shares.column.dividends')}{' '}
-          <span className={`tabular font-mono ${signClass(0)}`}>
-            {f.currency(dividends, currency)}
-          </span>
+          <span className={`tabular ${signClass(0)}`}>{f.currency(dividends, currency)}</span>
         </span>
       </div>
 

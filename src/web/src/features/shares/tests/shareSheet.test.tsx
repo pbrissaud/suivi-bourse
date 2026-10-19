@@ -37,14 +37,19 @@ function renderShares(positions = sharesPortfolio(), events = shareLedger()) {
   return renderApp({ url: '/shares' })
 }
 
+/** The live table's total row (#1281). */
+function totalRow() {
+  return within(screen.getByRole('table', { name: 'Positions détenues' })).getByRole('row', {
+    name: /^Total/,
+  })
+}
+
 /** Open one share's sheet — the gesture the table offers, and the only one. */
 async function openSheet(user: ReturnType<typeof renderApp>['user'], name = 'Zeta Alpha') {
-  // The page has settled when its table's header strip states the valuation of
-  // the lines under it. The shares page carries no `Gain total` of its own
+  // The page has settled when its table's total row states the valuation of
+  // the lines above it. The shares page carries no `Gain total` of its own
   // since #838 — the sheet's own is the one below.
-  await waitFor(() =>
-    expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?300,00/),
-  )
+  await waitFor(() => expect(totalRow()).toHaveTextContent(/2\D?300,00/))
   await user.click(screen.getByRole('button', { name }))
   return screen.findByRole('dialog', { name })
 }
@@ -150,9 +155,7 @@ describe('the per-account breakdown', () => {
         price: 110,
       }),
     ])
-    await waitFor(() =>
-      expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?850,00/),
-    )
+    await waitFor(() => expect(totalRow()).toHaveTextContent(/2\D?850,00/))
     await user.click(screen.getByRole('button', { name: 'Zeta Phi' }))
     const sheet = await screen.findByRole('dialog', { name: 'Zeta Phi' })
 
@@ -194,9 +197,7 @@ describe('the same dash is the same grey (#860)', () => {
         closed_at: '2025-07-01',
       }),
     ])
-    await waitFor(() =>
-      expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?300,00/),
-    )
+    await waitFor(() => expect(totalRow()).toHaveTextContent(/2\D?300,00/))
     // A sold-out share is reached through the fold, which is where it lives.
     await user.click(screen.getByRole('button', { name: /position(s)? soldée(s)?/ }))
     await user.click(screen.getByRole('button', { name: 'Zeta Phi' }))

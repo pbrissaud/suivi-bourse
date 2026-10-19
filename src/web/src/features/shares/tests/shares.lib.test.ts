@@ -24,6 +24,7 @@ import {
   marketValue,
   placedValue,
   shareEvents,
+  sharesTotals,
   unitCost,
   unrealised,
   unrealisedRatio,
@@ -605,5 +606,60 @@ describe('accountAllocation', () => {
 
     expect(slices.map((one) => [one.symbol, one.label])).toEqual([['pea', 'PEA']])
     expect(unplaced).toEqual(['XYZ (CTO)'])
+  })
+})
+
+describe('the total row (#1281)', () => {
+  const totals = (positions: Position[]) => sharesTotals(positions, rowsOf(positions))
+
+  it('sums the live lines and the closed ones alike', () => {
+    const { valuation, terms } = totals(sharesPortfolio())
+    expect(valuation).toEqual({ known: true, value: 2300 })
+    expect(terms.unrealised).toEqual({ known: true, value: 300 })
+    expect(terms.realised).toBe(125)
+    expect(terms.dividends).toBe(35)
+  })
+
+  it('names the missing rate in valuation and latent, and still sums the rest', () => {
+    const { valuation, terms } = totals([
+      aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130, realised: 20 }),
+      aPosition({
+        symbol: 'ZZB',
+        price: 125,
+        currency: 'USD',
+        rate: null,
+        realised: 5,
+        dividends: 7,
+      }),
+    ])
+    expect(valuation).toEqual({ known: false, because: 'awaitingRate' })
+    expect(terms.unrealised).toEqual({ known: false, because: 'awaitingRate' })
+    expect(terms.realised).toBe(25)
+    expect(terms.dividends).toBe(7)
+  })
+
+  it('names the rebuild when a history is still being rebuilt', () => {
+    const { valuation, terms } = totals([
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null, terminal: false }),
+    ])
+    expect(valuation).toEqual({ known: false, because: 'rebuilding' })
+    expect(terms.unrealised).toEqual({ known: false, because: 'rebuilding' })
+  })
+
+  it('carries a line with no quote at its cost: its cost in valuation, exactly 0 latent', () => {
+    const { valuation, terms } = totals([
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null }),
+    ])
+    expect(valuation).toEqual({ known: true, value: 600 })
+    expect(terms.unrealised).toEqual({ known: true, value: 0 })
+  })
+
+  it('holds nothing but closed lines: valuation 0, no latent to state', () => {
+    const { valuation, terms } = totals([
+      aClosedPosition({ symbol: 'ZZD', realised: 120, closed_at: '2025-11-04' }),
+    ])
+    expect(valuation).toEqual({ known: true, value: 0 })
+    expect(terms.holdsPosition).toBe(false)
+    expect(terms.realised).toBe(120)
   })
 })

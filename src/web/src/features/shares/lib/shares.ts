@@ -55,7 +55,7 @@ import type {
   Quote,
   SeriesPoint,
 } from '@/features/shares/lib/api'
-import { type Sum } from '@/lib/gain'
+import { securityTerms, type GainTerms, type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/features/data/lib/ledger'
 
 /**
@@ -708,6 +708,22 @@ export function valuationTotal(rows: readonly ShareRow[]): Sum {
     total += value
   }
   return { known: true, value: total }
+}
+
+/**
+ * The total row of the live table (#1281): what the columns under it sum.
+ *
+ * `rows` are the lines on screen — the live ones shown and every closed one —
+ * and `positions` are the very positions behind them, so the valuation and the
+ * three gain terms are the strip's old figures, now read under their columns.
+ * Transfer fees belong to no security and are not in it. It is the seam #1272
+ * will read for a phone's list.
+ */
+export function sharesTotals(
+  positions: readonly Position[],
+  rows: readonly ShareRow[],
+): { valuation: Sum; terms: GainTerms } {
+  return { valuation: valuationTotal(rows), terms: securityTerms(positions) }
 }
 
 /**
