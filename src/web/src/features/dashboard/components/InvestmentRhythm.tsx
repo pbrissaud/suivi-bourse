@@ -163,8 +163,10 @@ function MonthStrip({
   }
 
   return (
-    <div className="mt-auto min-w-0">
-      <ol aria-label={t('dashboard.rhythm.months')} className="grid grid-cols-12 items-end gap-1.5">
+    // The bars fill the height the row gives the card, between 56 and 160 px
+    // (#1280): the neighbour sets the row, and a fixed strip left it looking empty.
+    <div className="flex min-h-14 max-h-40 min-w-0 flex-1 flex-col">
+      <ol aria-label={t('dashboard.rhythm.months')} className="grid flex-1 grid-cols-12 gap-1.5">
         {months.map((one, index) => {
           const said =
             one.amount === null
@@ -187,7 +189,7 @@ function MonthStrip({
               style={index === 0 ? { gridColumnStart: 13 - months.length } : undefined}
             >
               <span className="sr-only">{said}</span>
-              <span aria-hidden className="flex h-14 w-full max-w-10 items-end">
+              <span aria-hidden className="flex w-full max-w-10 flex-1 items-end">
                 {one.amount === null ? (
                   <span className="block h-0.5 w-full bg-muted-foreground/35" />
                 ) : (

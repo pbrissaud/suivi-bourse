@@ -17,6 +17,7 @@
  * placed line — a split by account of one account is a full circle.
  */
 import { useContext, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 
 import { EmptyState } from '@/components/EmptyState'
 import { Segmented } from '@/components/Segmented'
@@ -157,6 +158,14 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
             <AllocationUnplaced unplaced={split.unplaced} />
           </>
         )}
+        {view === 'account' ? (
+          <Link
+            to="/accounts"
+            className="label self-start rounded-sm underline underline-offset-4 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {t('dashboard.allocation.toAccounts')}
+          </Link>
+        ) : null}
       </div>
     </Section>
   )

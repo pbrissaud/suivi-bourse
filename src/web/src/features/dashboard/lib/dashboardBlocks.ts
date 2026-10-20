@@ -31,36 +31,43 @@ export interface BlockSpec {
   /**
    * A card that arrives with a release after the first three: it lands
    * hidden, under *Nouveau* in edit mode, until a layout is saved with it in
-   * (decisions D7 and 18A).
+   * (decisions D7 and 18A). Only a saved layout is concerned: it never gains a
+   * visible card on its own.
    */
   arrivesHidden?: boolean
+  /**
+   * A card a fresh install keeps under *Cartes masquées*, without *Nouveau*:
+   * nothing is new to an owner who never arranged a dashboard (#1280).
+   */
+  hiddenByDefault?: boolean
 }
 
 export const DASHBOARD_BLOCKS = {
-  'gain-breakdown': {
-    label: 'dashboard.breakdown.title',
-    widths: ['half'],
-    width: 'half',
-    minHeight: 260,
-  },
-  rhythm: {
-    label: 'dashboard.rhythm.title',
-    widths: ['half'],
-    width: 'half',
-    minHeight: 260,
-  },
-  movers: {
-    label: 'dashboard.movers.title',
-    widths: ['half', 'full'],
-    width: 'full',
-    minHeight: 300,
-  },
   allocation: {
     label: 'dashboard.allocation.title',
     widths: ['half', 'full'],
     width: 'half',
     minHeight: 300,
     arrivesHidden: true,
+  },
+  'gain-breakdown': {
+    label: 'dashboard.breakdown.title',
+    widths: ['half'],
+    width: 'half',
+    minHeight: 260,
+  },
+  // The full width shows ten lines instead of five.
+  movers: {
+    label: 'dashboard.movers.title',
+    widths: ['half', 'full'],
+    width: 'half',
+    minHeight: 300,
+  },
+  rhythm: {
+    label: 'dashboard.rhythm.title',
+    widths: ['half'],
+    width: 'half',
+    minHeight: 260,
   },
   // The full width adds the two curves (#1205).
   benchmark: {
@@ -69,6 +76,7 @@ export const DASHBOARD_BLOCKS = {
     width: 'half',
     minHeight: 160,
     arrivesHidden: true,
+    hiddenByDefault: true,
   },
 } as const satisfies Record<string, BlockSpec>
 

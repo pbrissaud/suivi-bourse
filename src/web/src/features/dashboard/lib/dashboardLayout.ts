@@ -49,14 +49,15 @@ type Registry<Id extends string> = Record<Id, BlockSpec>
 
 const LAYOUT_VERSION = 1
 
-/** The layout of an owner who never saved one: the registry's order and widths. */
+/** The layout of an owner who never saved one: the registry's order and widths,
+ * less the cards it keeps hidden. */
 export function defaultLayout<Id extends string = BlockId>(
   registry: Registry<Id> = DASHBOARD_BLOCKS as unknown as Registry<Id>,
 ): Placement<Id>[] {
   return (Object.keys(registry) as Id[]).map((id) => ({
     id,
     width: registry[id].width,
-    hidden: registry[id].arrivesHidden === true,
+    hidden: registry[id].hiddenByDefault === true,
   }))
 }
 
@@ -65,7 +66,8 @@ export function defaultLayout<Id extends string = BlockId>(
  * the default (a layout written by a later release included); an id the
  * registry does not know is dropped, a duplicate keeps its first occurrence, a
  * width the card refuses goes back to its default, and a card missing from the
- * layout is appended at its default width — hidden if it arrived later (D7).
+ * layout is appended at its default width — hidden if it arrived later (D7), so an arranged dashboard never gains a visible card
+ * on its own.
  */
 export function normalizeLayout<Id extends string = BlockId>(
   saved: unknown,
@@ -91,7 +93,9 @@ export function normalizeLayout<Id extends string = BlockId>(
     })
   }
   for (const placement of defaultLayout(registry)) {
-    if (!seen.has(placement.id)) placements.push(placement)
+    if (!seen.has(placement.id)) {
+      placements.push({ ...placement, hidden: registry[placement.id].arrivesHidden === true })
+    }
   }
   return placements
 }
@@ -111,16 +115,18 @@ export function toStored(placements: readonly Placement[]): DashboardLayout {
 }
 
 /**
- * The cards still *Nouveau*: arrived after the first three and absent from the
- * saved layout. The next save writes them in, visible or hidden, and that is
+ * The cards still *Nouveau*: arrived after the first four and absent from a
+ * saved layout; a fresh install has none (#1280). The next save writes them in, visible or hidden, and that is
  * what ends it (design review 18A).
  */
 export function newBlocks<Id extends string = BlockId>(
   saved: unknown,
   registry: Registry<Id> = DASHBOARD_BLOCKS as unknown as Registry<Id>,
 ): Id[] {
+  const blocks = storedBlocks(saved)
+  if (blocks === null) return []
   const stored = new Set(
-    (storedBlocks(saved) ?? []).map((block) =>
+    blocks.map((block) =>
       typeof block === 'object' && block !== null ? (block as { id?: unknown }).id : undefined,
     ),
   )

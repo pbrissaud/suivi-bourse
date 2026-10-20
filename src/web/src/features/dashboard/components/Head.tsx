@@ -24,9 +24,9 @@
  *
  * **The value is the hero, and the gain is its subtitle** (dashboard redesign,
  * direction 1a). The page answers *how much is my portfolio worth* first: the
- * value is the one figure at hero size, the gain total is a pill under it
- * beside the year's, the day's and the IRR's (#1149, #1174), and the four
- * terms the gain is the
+ * value is the one figure at hero size, the gain total is the line under it,
+ * on the Section title rung, and the year's, the day's and the IRR's follow as
+ * one plain row (#1149, #1174, #1280), and the four terms the gain is the
  * sum of left the head for a card of their own (`GainBreakdown.tsx`). That
  * reverses variant A, which kept the gain alone at the top — and it is the same
  * argument read the other way round: the terms were subordinated by size, and
@@ -39,12 +39,12 @@
  * right with the real chart in a dialog (#1099, direction 1a); the real chart
  * is now on the page, and the dialog is gone.
  *
- * **The IRR is the last pill** (#1149, DESIGN.md › The hero): the one
+ * **The IRR is the last figure of the row** (#1149, DESIGN.md › The hero): the one
  * performance figure (#1112) sits beside the value, not a screen below it on a
  * phone.
  *
  * **The year-to-date is two figures that do not touch**: the euro is the
- * second pill (#1174), the percentage inside the IRR's bubble, with the TWR it
+ * first of the row (#1174), the percentage inside the IRR's bubble, with the TWR it
  * belongs to — two groups apart.
  * Measured on the real portfolio, `+40,69 €` and `−1,25 %` over the same
  * period, of opposite signs and both correct — the portfolio grew by 6 673 € of
@@ -57,8 +57,8 @@
  *
  * That *the same figure* is load-bearing rather than decorative: the day's move
  * is the movement of `gain_absolu` over one day (`features/dashboard/lib/dashboard.ts`), which is
- * `_ytd`'s own definition over another window — so the day's pill and the
- * year's pill answer one question twice and never two questions once.
+ * `_ytd`'s own definition over another window — so the day's figure and the
+ * year's answer one question twice and never two questions once.
  *
  * The series it reduces is the chart's, read once by the page under the chart's
  * own condition and therefore costing no request of its own: one read, two
@@ -69,7 +69,7 @@ import { Link } from '@tanstack/react-router'
 
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
-import { PILL, Period, SignedFigure } from '@/components/FigurePill'
+import { SignedFigure } from '@/components/FigurePill'
 import { RecomposingFigure } from '@/components/RecomposingFigure'
 import { Stat } from '@/components/Stat'
 import type { PerfPoint } from '@/features/accounts/lib/api'
@@ -98,12 +98,12 @@ interface DashboardHeadProps {
   /**
    * The portfolio's series — the chart's own read, shared rather than asked for
    * twice. `null` and never `[]`: a series that has not answered is not a day
-   * on which nothing moved, and the pill it feeds is then simply not drawn.
+   * on which nothing moved, and the figure it feeds is then simply not drawn.
    */
   history: readonly PerfPoint[] | null
   /**
    * The portfolio's chart and its range control, under the value and its
-   * pills — composed by the page, which owns the range. `null` draws the value
+   * figures — composed by the page, which owns the range. `null` draws the value
    * alone.
    */
   chart?: ReactNode
@@ -250,9 +250,83 @@ export function DashboardHead({
   const today = dayMove(history, new Date())
   const unpriced = reading === 'partial' ? unpricedLines(rows) : []
 
+  // **Three figures in a row, no ground** (#1280). Each is omitted when it
+  // has none; the year's keeps its reason, a sentence, when the server says
+  // the figure is not computable yet. A `ytd` present with a null `gain` draws
+  // nothing.
+  const facts: ReactNode[] = []
+  if (totalsRow !== null && ytdGain !== null) {
+    facts.push(
+      <Fact key="ytd" label={t('dashboard.ytd.label')}>
+        <SignedFigure
+          amount={ytdGain}
+          text={f.signedCurrency(ytdGain, currency)}
+          className="font-medium"
+        />
+      </Fact>,
+    )
+  } else if (totalsRow !== null && ytdAbsent) {
+    facts.push(
+      <p key="ytd" className="text-muted-foreground">
+        {t('dashboard.ytd.pillAbsent', { reason: ytdPending })}
+      </p>,
+    )
+  }
+  if (totalsRow !== null && today !== null) {
+    facts.push(
+      <Fact key="day" label={t('dashboard.day.label')}>
+        <SignedFigure
+          amount={today}
+          text={f.signedCurrency(today, currency)}
+          className="font-medium"
+        />
+      </Fact>,
+    )
+  }
+  if (totalsRow?.xirr != null) {
+    facts.push(
+      <span
+        key="xirr"
+        role="group"
+        aria-label={t('dashboard.xirr')}
+        className="inline-flex items-center gap-1.5 whitespace-nowrap"
+      >
+        <span className="text-muted-foreground">{t('dashboard.xirr')}</span>
+        <SignedFigure
+          amount={totalsRow.xirr}
+          text={f.percent(totalsRow.xirr)}
+          className="font-medium"
+        />
+        <span className="text-xs font-normal text-muted-foreground">
+          {t('dashboard.xirr.unit')}
+        </span>
+        {/* The TWR lives here since #1112: one rate per screen, and the
+        bubble is where the second one says why it differs. */}
+        {twrMove === null ? (
+          <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
+        ) : (
+          <Explain
+            figure={t('dashboard.xirr')}
+            body="dashboard.xirr.explainTwr"
+            values={{
+              explain: t('dashboard.xirr.explain'),
+              twr: f.percent(twrMove),
+              since: f.date(totalsRow.twr_since),
+              ytd:
+                ytdTwr === null
+                  ? ''
+                  : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
+            }}
+            anchor="xirr"
+          />
+        )}
+      </span>,
+    )
+  }
+
   return (
     // **The hero sits on the ground, not in a card** (DESIGN.md): the value,
-    // its pills and the curve are the page's first object without a box to
+    // its figures and the curve are the page's first object without a box to
     // say so, and the gradient that used to say *start here* went with the
     // card. `mb-5` doubles the page's 20 px rhythm, so the hero stands 40 px
     // off the first section, the one large gap the layout allows there.
@@ -263,8 +337,8 @@ export function DashboardHead({
             size="head"
             label={t(heroIsHoldings && valued ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
             // A value is not a direction: it is set in the colour of text, and
-            // the sign lives on the pills under it. It recomposes when a poll
-            // moves it (#1180); the pills under it change instantly. Keyed by
+            // the sign lives on the figures under it. It recomposes when a poll
+            // moves it (#1180); the figures under it change instantly. Keyed by
             // what it measures: the value and the securities are two figures,
             // and one never recomposes into the other.
             value={
@@ -312,86 +386,32 @@ export function DashboardHead({
                     })}
                   </p>
                 )}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {/* The gain is the value's subtitle now, and it keeps its named
-                  absences (#775): a rate on its way is said, a fourth term
-                  nothing can bound is the em dash. */}
-                  {total.known ? (
-                    <Period
+                {/* **The total gain has a line of its own**, on the Section title
+                rung: it is the figure the reader came for, and today's move is
+                not its equal. It keeps its named absences (#775): a rate on its
+                way is said, a fourth term nothing can bound is the em dash. */}
+                {total.known ? (
+                  <p className="tabular flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold">
+                    <SignedFigure
                       amount={total.value}
-                      text={t('dashboard.gain.pill', {
-                        amount: f.signedCurrency(total.value, currency),
-                      })}
+                      text={f.signedCurrency(total.value, currency)}
+                      className="font-semibold"
+                      arrowClassName="size-5"
                     />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {t('dashboard.gain.pillAbsent', {
-                        reason: renderFigure(sumRendering(total), () => '', t),
-                      })}
-                    </p>
-                  )}
-                  {/* The year's gain, in euros (#1174). Its percentage stays in the
-                  IRR's bubble — a group apart. The one figure the rebuild
-                  degrades, and it says why: a reason does not fit in a pill. A
-                  `ytd` present with a null `gain` is not computable here and
-                  draws nothing. */}
-                  {totalsRow === null ? null : ytdGain !== null ? (
-                    <Period
-                      amount={ytdGain}
-                      text={t('dashboard.ytd.pill', {
-                        amount: f.signedCurrency(ytdGain, currency),
-                      })}
-                    />
-                  ) : ytdAbsent ? (
-                    <p className="text-sm text-muted-foreground">
-                      {t('dashboard.ytd.pillAbsent', { reason: ytdPending })}
-                    </p>
-                  ) : null}
-                  {/* The day's **period of the total**, and it stays with it. */}
-                  {totalsRow === null || today === null ? null : (
-                    <Period
-                      amount={today}
-                      text={t('dashboard.day.gain', {
-                        amount: f.signedCurrency(today, currency),
-                      })}
-                    />
-                  )}
-                  {totalsRow?.xirr == null ? null : (
-                    <span role="group" aria-label={t('dashboard.xirr')} className={PILL}>
-                      <span className="text-muted-foreground">{t('dashboard.xirr')}</span>
-                      <SignedFigure amount={totalsRow.xirr} text={f.percent(totalsRow.xirr)} />
-                      <span className="text-xs font-normal text-muted-foreground">
-                        {t('dashboard.xirr.unit')}
-                      </span>
-                      {/* The TWR lives here since #1112: one rate per screen, and the
-                      bubble is where the second one says why it differs. */}
-                      {twrMove === null ? (
-                        <Explain
-                          figure={t('dashboard.xirr')}
-                          body="dashboard.xirr.explain"
-                          anchor="xirr"
-                        />
-                      ) : (
-                        <Explain
-                          figure={t('dashboard.xirr')}
-                          body="dashboard.xirr.explainTwr"
-                          values={{
-                            explain: t('dashboard.xirr.explain'),
-                            twr: f.percent(twrMove),
-                            since: f.date(totalsRow.twr_since),
-                            ytd:
-                              ytdTwr === null
-                                ? ''
-                                : t('dashboard.xirr.explainTwr.ytd', {
-                                    percent: f.percent(ytdTwr),
-                                  }),
-                          }}
-                          anchor="xirr"
-                        />
-                      )}
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {t('dashboard.gain.words')}
                     </span>
-                  )}
-                </div>
+                  </p>
+                ) : (
+                  <p className="pt-1 text-sm text-muted-foreground">
+                    {t('dashboard.gain.pillAbsent', {
+                      reason: renderFigure(sumRendering(total), () => '', t),
+                    })}
+                  </p>
+                )}
+                {facts.length === 0 ? null : (
+                  <div className="tabular flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">{facts}</div>
+                )}
               </>
             )}
           </Stat>
@@ -413,5 +433,15 @@ export function DashboardHead({
         ) : null}
       </div>
     </div>
+  )
+}
+
+/** A label and its figure on the facts row, which never breaks between them. */
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className="text-muted-foreground">{label}</span>
+      {children}
+    </span>
   )
 }

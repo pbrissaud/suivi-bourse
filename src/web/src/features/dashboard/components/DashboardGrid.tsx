@@ -484,31 +484,7 @@ export function DashboardGrid({
             </Button>
           </div>
         </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-          {fresh.length > 0 ? (
-            <span className="label">{t('dashboard.edit.newCards', { count: fresh.length })}</span>
-          ) : null}
-          <button
-            type="button"
-            data-edit-entry
-            disabled={unread}
-            aria-describedby={unread ? 'dashboard-layout-unread' : undefined}
-            onClick={enter}
-            className={cn(
-              'label -my-1 inline-flex min-h-6 min-w-6 items-center justify-center rounded-sm underline underline-offset-4 hover:text-foreground pointer-coarse:-my-3.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:pointer-events-none disabled:opacity-50',
-              FOCUS_RING,
-            )}
-          >
-            {t('dashboard.edit.open')}
-          </button>
-          {unread ? (
-            <span id="dashboard-layout-unread" className="label font-normal">
-              {t('dashboard.edit.layoutUnreadable')}
-            </span>
-          ) : null}
-        </div>
-      )}
+      ) : null}
 
       {confirming ? (
         // A destructive confirmation is one of the few things DESIGN.md lets
@@ -640,6 +616,37 @@ export function DashboardGrid({
           })}
         </div>
       </DragDropProvider>
+
+      {editing ? null : (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <button
+            type="button"
+            data-edit-entry
+            disabled={unread}
+            aria-describedby={unread ? 'dashboard-layout-unread' : undefined}
+            onClick={enter}
+            className={cn(
+              'label -my-1 inline-flex min-h-6 min-w-6 items-center justify-center rounded-sm underline underline-offset-4 hover:text-foreground pointer-coarse:-my-3.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:pointer-events-none disabled:opacity-50',
+              FOCUS_RING,
+            )}
+          >
+            {t('dashboard.edit.open')}
+          </button>
+          {fresh.length > 0 ? (
+            <>
+              <span aria-hidden className="label">
+                ·
+              </span>
+              <span className="label">{t('dashboard.edit.newCards', { count: fresh.length })}</span>
+            </>
+          ) : null}
+          {unread ? (
+            <span id="dashboard-layout-unread" className="label font-normal">
+              {t('dashboard.edit.layoutUnreadable')}
+            </span>
+          ) : null}
+        </div>
+      )}
 
       {editing ? (
         <section
