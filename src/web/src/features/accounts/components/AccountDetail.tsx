@@ -311,7 +311,7 @@ export function AccountDetail({
             type="button"
             aria-label={t('accounts.detail.edit')}
             onClick={onEdit}
-            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:-m-2.5 pointer-coarse:size-11"
           >
             <Pencil aria-hidden className="size-3.25" />
           </button>
