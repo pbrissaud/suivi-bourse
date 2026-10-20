@@ -74,6 +74,21 @@ describe('the model an account carries', () => {
     expect(within(panel).getByRole('option', { name: 'Aucun modèle' })).toBeInTheDocument()
   })
 
+  it('points to the docs page that says what to enter for a wrapper', async () => {
+    // The page lists the regimes; the anchor is the `{#top}` written by hand on
+    // its heading, and the locale segment is `fr/` for a French reader.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+    await modelField(panel)
+
+    expect(
+      within(panel).getByRole('link', { name: 'Que saisir pour mon enveloppe' }),
+    ).toHaveAttribute(
+      'href',
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/taxation-models-in-europe#top',
+    )
+  })
+
   it('renders the model the account already carries', async () => {
     const { user } = renderAccounts(
       anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
