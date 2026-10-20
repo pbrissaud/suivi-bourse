@@ -321,7 +321,8 @@
   /* DESIGN.md's content widths, per kind of content (#1276). Literal on
      purpose: inlined at build time, so no theme served by /api/theme.css can
      reach them. Tables and charts take no token: they fill the column. */
-  --container-column: 45rem; /* 720: a form, the Settings page, the conversation under 1 024 px */
+  --container-column: 45rem; /* 720: a form, the conversation under 1 024 px */
+  --container-settings: 65rem; /* 1 040: the Settings page, a 220 px gutter and its rows */
   --container-reading: 48rem; /* 768: the conversation from 1 024 px */
   /* From here the dashboard grid has three tracks: a statement gains a
      neighbour instead of a longer row. */
