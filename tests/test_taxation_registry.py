@@ -57,6 +57,13 @@ def test_an_entry_that_is_not_an_item_is_skipped():
     assert taxation_registry.fetch(_serving([1, {'id': 3}, {**FLAT, 'name': '  '}])) == []
 
 
+def test_a_number_past_a_double_is_refused_and_the_rest_of_the_list_stays():
+    huge = {**FLAT, 'id': 'xx/huge', 'parameters': {'rate': 10 ** 400}}
+    items = taxation_registry.fetch(_serving(json.dumps([huge, FLAT]).encode()))
+    assert [i['id'] for i in items] == ['xx/huge', 'xx/flat']
+    assert items[0]['refused'] and items[1]['refused'] is None
+
+
 def test_the_first_of_two_items_sharing_an_id_wins():
     items = taxation_registry.fetch(_serving([FLAT, {**FLAT, 'name': 'Other'}]))
     assert [i['name'] for i in items] == ['Flat']

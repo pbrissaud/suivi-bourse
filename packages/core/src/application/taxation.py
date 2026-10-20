@@ -259,7 +259,8 @@ def _number(name: str, value: Any) -> float:
         raise ModelRejected(f"{name} is a number, and {value!r} is not one")
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # An int past a double's range (`10**400`) is a number no schedule holds.
         raise ModelRejected(f"{name} is a number, and {value!r} is not one")
     if number != number or number in (float('inf'), float('-inf')):
         raise ModelRejected(f"{name} is a number, and {value!r} is not one")
