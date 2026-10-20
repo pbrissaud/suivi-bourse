@@ -49,8 +49,10 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
 
 const head = () => screen.findByRole('group', { name: /MSCI World/ })
 
-/** The ticker as the reader meets it: without the venue suffix of the fetch. */
-const EYEBROW = /MSCI World\s*·\s*CW8$/
+/** The card the verdict, the figure and the caveats share. */
+const headCard = async () => (await head()).closest('[aria-live]') as HTMLElement
+
+const picker = () => screen.findByRole('combobox', { name: 'Référence de comparaison' })
 
 describe('the comparison', () => {
   it('leads with the euro and files the percentages one weight down', async () => {
@@ -95,21 +97,78 @@ describe('the comparison', () => {
     expect(screen.getByText(/avec le même argent investi/)).toBeInTheDocument()
   })
 
-  it('states the covered period, always', async () => {
+  it('says the covered period in the header, after the page’s name', async () => {
     renderBenchmark(ready())
 
-    expect(await screen.findByText(/Comparé du .* au /)).toBeInTheDocument()
+    await head()
+    const header = screen.getByRole('banner')
+    expect(within(header).getByRole('heading', { level: 1, name: 'Référence' })).toBeInTheDocument()
+    expect(within(header).getByText('Comparé du 16 juin 2009 au 17 sept. 2026')).toBeInTheDocument()
   })
 
-  it('names the fund by its index, with the ticker subordinate and unsuffixed', async () => {
+  it('writes no period line in the page itself', async () => {
     renderBenchmark(ready())
 
-    // `.PA` is where the fetch goes, not what the fund is called. The selector
-    // already drops it, and the eyebrow is the one place the reader meets it.
-    // Read off the head's own accessible name, which **is** the eyebrow: the
-    // selector renders the same string one row down, and asserting on the
-    // document would not say which of the two was checked.
-    expect((await head()).getAttribute('aria-label')).toMatch(EYEBROW)
+    await head()
+    const main = screen.getByRole('main')
+    const lines = Array.from(main.querySelectorAll('*')).filter((node) =>
+      node.textContent?.startsWith('Comparé du'),
+    )
+    expect(lines).toHaveLength(0)
+  })
+
+  it('declares no period while the fund is rebuilt, nor with nothing to compare', async () => {
+    const { unmount } = renderBenchmark({
+      state: 'rebuilding',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      covered_from: '2009-06-16',
+      covered_to: '2026-09-17',
+      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 },
+    })
+    await picker()
+    expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
+    unmount()
+
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reason: 'no_events',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      covered_from: '2009-06-16',
+      covered_to: '2026-09-17',
+    })
+    await picker()
+    expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
+  })
+
+  it('puts the reference picker before the head', async () => {
+    renderBenchmark(ready())
+
+    const group = await head()
+    const select = await picker()
+    expect(select.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // And it is the row's own label that the eye reads, not a second name.
+    expect(screen.getByText('Comparer à')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('names the gap, not the fund twice', async () => {
+    renderBenchmark(ready())
+
+    expect(await screen.findByRole('group', { name: 'Écart avec MSCI World' })).toBeInTheDocument()
+    expect(await picker()).toHaveTextContent('MSCI World · CW8')
+  })
+
+  it('writes a shortfall in the colour of text, not the colour of a loss', async () => {
+    for (const gap of [-1200, 4212.8]) {
+      const { unmount } = renderBenchmark(ready({ gap_gross: gap }))
+      const figure = within(await head()).getByText(/€/)
+      expect(figure).toHaveClass('text-foreground')
+      expect(figure).not.toHaveClass('text-loss')
+      expect(figure).not.toHaveClass('text-gain')
+      unmount()
+    }
   })
 
   it('renders no figure at all while the fund is still being rebuilt', async () => {
@@ -153,6 +212,33 @@ describe('the comparison', () => {
     // And the wait is announced before it is discovered.
     expect(screen.getByText(/la page se remplira toute seule/)).toBeInTheDocument()
   })
+
+  it('keeps the picker on the first row while the fund is rebuilt', async () => {
+    renderBenchmark({
+      state: 'rebuilding',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 },
+    })
+
+    const select = await picker()
+    const wait = await screen.findByText(/Reconstitution de l’historique de CW8.PA/)
+    expect(select.compareDocumentPosition(wait) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps the picker on the first row with nothing to compare', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reason: 'no_events',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+    })
+
+    const select = await picker()
+    const empty = await screen.findByText(/Enregistrez vos premiers événements/)
+    expect(select.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })
 
 describe('the two curves', () => {
@@ -181,6 +267,15 @@ describe('the two curves', () => {
     // A fact, not a wait: the payload answered `ready`, so the period exists
     // and holds no drawable day.
     expect(await screen.findByText('Rien à tracer sur cette période.')).toBeInTheDocument()
+  })
+
+  it('leaves the chart’s header to its title and legend', async () => {
+    renderBenchmark(ready({ series }))
+
+    const card = (await screen.findByText('Même argent investi, jour après jour')).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement
+    expect(within(card).queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
 
@@ -226,6 +321,19 @@ describe('what the period costs', () => {
     expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
   })
 
+  it('captions a truncated history under the verdict', async () => {
+    renderBenchmark(
+      ready({
+        covered_from: '2024-04-02',
+        portfolio_from: '2013-01-02',
+        truncated_by_fund: true,
+      }),
+    )
+
+    const card = await headCard()
+    expect(within(card).getByText(/premier cours de ce fonds/)).toBeInTheDocument()
+  })
+
   it('does not blame the fund for a period its own accounts shortened', async () => {
     renderBenchmark(
       ready({
@@ -239,7 +347,7 @@ describe('what the period costs', () => {
       }),
     )
 
-    expect(await screen.findByText(/Comparé du .* au /)).toBeInTheDocument()
+    await head()
     expect(screen.queryByText(/premier cours de ce fonds/)).not.toBeInTheDocument()
   })
 
@@ -250,6 +358,14 @@ describe('what the period costs', () => {
       await screen.findByText(
         /une sortie de titres à cette date, la référence n’aurait pas pu la financer/,
       ),
+    ).toBeInTheDocument()
+  })
+
+  it('says when the reference ran out, under the verdict', async () => {
+    renderBenchmark(ready({ ended: 'exhausted', covered_to: '2019-03-14' }))
+
+    expect(
+      within(await headCard()).getByText(/la référence n’aurait pas pu la financer/),
     ).toBeInTheDocument()
   })
 })
@@ -330,7 +446,7 @@ describe('what truncation is counted in', () => {
       }),
     )
 
-    expect(await screen.findByText(/Comparé du .* au /)).toBeInTheDocument()
+    await head()
     expect(screen.queryByText(/année.* antérieure/)).not.toBeInTheDocument()
   })
 
@@ -361,6 +477,8 @@ describe('the unit every figure is in', () => {
 
     expect(await screen.findByText('Aucune devise de base')).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
+    // And no period is claimed over a screen with no figure on it.
+    expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
   })
 })
 
@@ -431,6 +549,23 @@ describe('each account over its own period', () => {
     expect(within(row).getByText(/Arrêté là/)).toBeInTheDocument()
     const other = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
     expect(within(other).queryByText(/Arrêté là/)).toBeNull()
+  })
+
+  it('writes each account’s gap in the colour of text, and draws its bar in the weight colour', async () => {
+    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+
+    for (const [name, gap] of [
+      ['PEA.LCL', '+4 212,00 €'],
+      ['CTO.BD', '-700,00 €'],
+    ]) {
+      const row = (await screen.findByText(name)).closest('tr') as HTMLElement
+      const figure = within(row).getByText(gap)
+      expect(figure).toHaveClass('text-foreground')
+      expect(figure).not.toHaveClass('text-loss')
+      expect(row.querySelector('[data-share-bar] > span')?.getAttribute('style')).toContain(
+        'var(--muted-foreground)',
+      )
+    }
   })
 
   it('still sends an empty ledger to the ledger', async () => {

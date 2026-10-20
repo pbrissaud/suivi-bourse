@@ -10,8 +10,9 @@
  *    beside two is one more rate to tell apart. The euro leads because the head answers *how much is
  *    left*, which is a euro question, and because a percentage gap is ambiguous
  *    on its face — difference of two returns? in points? annualised?
- *  - **The controls come after the head in reading order**, in the corner of
- *    the chart they redraw. The page answers before it asks.
+ *  - **The reference comes first** (#1282): the whole page depends on this one
+ *    choice, and the header bar is closed to controls, so the picker is the
+ *    content's first row in every state that offers it.
  *  - **One reading, since #1018.** Both sides sit in the same wrapper under
  *    the same declared model, so the tax answered a question about the wrapper
  *    and not about the securities — and the account page already publishes
@@ -28,7 +29,11 @@
  *    which is the whole explanation: no sentence under the table repeats it.
  *  - **No range control.** A counterfactual replays the flows from the
  *    beginning: narrowing it to a year does not shorten the answer, it asks a
- *    different question. The page announces the period it covers instead.
+ *    different question. The header subtitle announces the period it covers
+ *    instead, on a ready comparison only; what shortens it is said under the
+ *    verdict.
+ *  - **A gap takes no sign colour** (#1282): it is money not made, not money
+ *    lost. Each side's own return is a gain or a loss and keeps its colour.
  *  - **While the reference's backfill is not terminal, no figure at all** —
  *    head included. The state governs the screen, not the presence of a
  *    number: a gap over a half-built series is a wrong figure, not a short one.
@@ -65,11 +70,12 @@ import { currencyUnanswered } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
-import { signClass, signOf } from '@/lib/sign'
+import { figureClass, signClass, signOf } from '@/lib/sign'
 import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function BenchmarkPage() {
   const { t } = useI18n()
+  const f = useFormatters()
 
   const comparison = useQuery({ queryKey: ['benchmark'], queryFn: benchmarkApi.benchmark })
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
@@ -79,7 +85,24 @@ export default function BenchmarkPage() {
   // query key as everywhere else: one request, no new API state.
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
 
-  usePageHeading(t('page.benchmark'))
+  // The period is declared on a ready comparison only: in flight, withheld or
+  // empty, there is no period to state — nor over the screen that says there is
+  // no currency, which the two guards below show.
+  const covered =
+    comparison.data?.state === 'ready' &&
+    comparison.data.base_currency !== null &&
+    currencyUnanswered(config.data?.settings) !== true
+      ? comparison.data
+      : null
+  usePageHeading(
+    t('page.benchmark'),
+    covered?.covered_from && covered.covered_to
+      ? t('benchmark.period', {
+          from: f.date(covered.covered_from),
+          to: f.date(covered.covered_to),
+        })
+      : null,
+  )
 
   // The band's sentence, one floor down (#829). With no reporting currency
   // nothing is converted and there is no curve on either side of the
@@ -123,10 +146,23 @@ export default function BenchmarkPage() {
     )
   }
 
-  // One control left since #1018 took the reading toggle out. On a ready page
-  // it sits in the chart's corner; the withheld states keep it on its own row.
+  // The content's first row in every state that offers it (#1282). The trigger's
+  // own `aria-label` names it; the visible word is for the eye.
   const controls = (
-    <ReferenceSelect value={data.reference} offered={data.offered} downloaded={data.consulted} />
+    <div className="flex items-center gap-2.5">
+      <span aria-hidden className="text-sm whitespace-nowrap text-muted-foreground">
+        {t('benchmark.select.compare')}
+      </span>
+      {/* The trigger takes the rest of the line under 640 px. */}
+      <div className="min-w-0 flex-1 sm:flex-none">
+        <ReferenceSelect
+          value={data.reference}
+          offered={data.offered}
+          downloaded={data.consulted}
+          triggerClassName="sm:w-auto sm:min-w-56"
+        />
+      </div>
+    </div>
   )
 
   // Two withheld states, one rendering. `splits_unknown` is a store that
@@ -139,8 +175,8 @@ export default function BenchmarkPage() {
   if (data.state === 'rebuilding' || data.state === 'splits_unknown') {
     return (
       <div className="space-y-6">
-        {data.rebuild ? <ReferenceRebuild rebuild={data.rebuild} /> : null}
         {controls}
+        {data.rebuild ? <ReferenceRebuild rebuild={data.rebuild} /> : null}
       </div>
     )
   }
@@ -148,40 +184,27 @@ export default function BenchmarkPage() {
   if (data.state === 'nothing_to_compare') {
     return (
       <div className="space-y-6">
+        {controls}
         <NothingToCompare reason={data.reason} />
         <PerAccount data={data} currency={currency} />
-        {controls}
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
+      {controls}
+
       {/* The only branch of this page that puts figures on screen — the five
           above are empty states, and a sentence about stale figures over a
           screen that has none is a sentence about nothing. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
-      <Period data={data} />
       <Head data={data} currency={currency} />
       <BenchmarkChart
         points={data.series ?? []}
         index={data.index ?? data.reference ?? ''}
         currency={currency}
-        action={
-          // The trigger's own `aria-label` names it; this word is for the eye.
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2.5">
-            <span aria-hidden className="text-sm whitespace-nowrap text-muted-foreground">
-              {t('benchmark.select.compare')}
-            </span>
-            <ReferenceSelect
-              value={data.reference}
-              offered={data.offered}
-              downloaded={data.consulted}
-              triggerClassName="sm:w-auto sm:min-w-56"
-            />
-          </div>
-        }
       />
       <PerAccount data={data} currency={currency} />
     </div>
@@ -216,16 +239,10 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
         <div className="space-y-4 p-5 sm:p-8">
           <Stat
             size="head"
-            // The ticker without its venue suffix, as the selector renders it:
-            // `CW8` and not `CW8.PA`. The exchange is an addressing detail of
-            // the fetch, and the label is the one place the reader meets the
-            // fund.
-            label={t('benchmark.head.label', {
-              index,
-              symbol: (data.reference ?? '').split('.')[0],
-            })}
+            // The picker right above already names the fund and its ticker.
+            label={t('benchmark.head.label', { index })}
             value={shown === null ? '—' : f.signedCurrency(shown, currency)}
-            valueClassName={signClass(shown)}
+            valueClassName={figureClass(shown)}
             explain={
               <Explain
                 figure={t('benchmark.term.gap')}
@@ -246,6 +263,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
                   )}
             </p>
           )}
+          <Caveats data={data} />
         </div>
 
         <div className="flex flex-col justify-center gap-5 border-t bg-muted/40 p-5 sm:p-8 md:border-t-0 md:border-l">
@@ -372,14 +390,15 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
                   <span className="text-xs text-muted-foreground sm:hidden">
                     {t('benchmark.accounts.column.gap')}
                   </span>
-                  <span className={`tabular ml-auto font-semibold ${signClass(row.gap_gross)}`}>
+                  <span className={`tabular ml-auto font-semibold ${figureClass(row.gap_gross)}`}>
                     {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
                   </span>
                 </div>
                 <ShareBar
                   share={magnitude(row.gap_gross)}
                   scale={scale}
-                  fill={signOf(row.gap_gross) === 'loss' ? 'var(--loss)' : 'var(--gain)'}
+                  // A gap is not a gain or a loss: the weight colour, whichever side it falls.
+                  fill="var(--muted-foreground)"
                   size="block"
                   className="mt-2"
                 />
@@ -400,7 +419,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
               <TableCell className={`xl:px-5 ${stack}`}>{t('benchmark.accounts.total')}</TableCell>
               <TableCell className={`max-sm:hidden ${stack}`} />
               <TableCell
-                className={`tabular text-right ${signClass(data.gap_gross ?? null)} ${stack}`}
+                className={`tabular text-right ${figureClass(data.gap_gross ?? null)} ${stack}`}
               >
                 {data.gap_gross === null || data.gap_gross === undefined
                   ? '—'
@@ -469,14 +488,16 @@ function points(f: ReturnType<typeof useFormatters>, value: number | null | unde
 }
 
 /**
- * The covered period, always — and what truncation cost, when it bit.
+ * What shortened the period, under the verdict — the period itself is the
+ * header's subtitle, which truncates and is hidden under 768 px, so a sentence
+ * about what the gap leaves out stays next to the gap.
  *
  * It reads the **computed** period and never the fund's inception alone: the
  * seed lands at the later of the fund's first close and the account's first
  * written day, and an exhausted reference or a missing rate can end it early.
  * A caption naming a period the arithmetic did not honour is worse than none.
  */
-function Period({ data }: { data: BenchmarkResponse }) {
+function Caveats({ data }: { data: BenchmarkResponse }) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -496,30 +517,28 @@ function Period({ data }: { data: BenchmarkResponse }) {
       ? elapsedYears(data.portfolio_from, data.covered_from)
       : 0
 
-  return (
-    <p className="max-w-prose text-sm text-muted-foreground">
-      {lost > 0
-        ? t('benchmark.period.truncated', { from: f.date(data.covered_from), years: lost })
-        : t('benchmark.period', {
-            from: f.date(data.covered_from),
-            to: f.date(data.covered_to),
-          })}
-      {data.ended === 'exhausted' ? (
-        <> {t('benchmark.period.exhausted', { to: f.date(data.covered_to) })}</>
-      ) : data.ended === 'awaiting_rate' ? (
-        <> {t('benchmark.period.awaitingRate', { to: f.date(data.covered_to) })}</>
-      ) : null}
-    </p>
-  )
+  const sentences = [
+    lost > 0
+      ? t('benchmark.period.truncated', { from: f.date(data.covered_from), years: lost })
+      : null,
+    data.ended === 'exhausted'
+      ? t('benchmark.period.exhausted', { to: f.date(data.covered_to) })
+      : data.ended === 'awaiting_rate'
+        ? t('benchmark.period.awaitingRate', { to: f.date(data.covered_to) })
+        : null,
+  ].filter((sentence) => sentence !== null)
+  if (sentences.length === 0) return null
+
+  return <p className="max-w-prose text-sm text-muted-foreground">{sentences.join(' ')}</p>
 }
 
 /**
  * Whole years between two `YYYY-MM-DD` days, never a difference of year parts.
  *
- * Under a year the caption falls back to stating the period, which is true and
- * says no less: *eleven months of your history are outside this gap* is not
- * what the sentence is for — it exists for the case where truncation actually
- * bites, and the period line already names both ends.
+ * Under a year the caption stays silent, which says no less: *eleven months of
+ * your history are outside this gap* is not what the sentence is for — it exists
+ * for the case where truncation actually bites, and the subtitle already names
+ * both ends.
  */
 function elapsedYears(from: string, to: string): number {
   const [fy, fm, fd] = from.split('-').map(Number)

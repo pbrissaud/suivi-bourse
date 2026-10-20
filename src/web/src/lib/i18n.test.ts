@@ -31,6 +31,20 @@ describe('the catalogues', () => {
   })
 })
 
+describe('the benchmark gap (#1282)', () => {
+  it('never calls a gap against the reference a loss', () => {
+    for (const [lang, catalogue] of [
+      ['fr', fr],
+      ['en', en],
+    ] as const) {
+      for (const [key, message] of Object.entries(catalogue)) {
+        if (!/^(dashboard\.)?benchmark\./.test(key)) continue
+        expect(message, `${lang}:${key}`).not.toMatch(/perte|perdu|\bloss\b|\blost\b/i)
+      }
+    }
+  })
+})
+
 describe('ICU is the format, and it is needed', () => {
   it('selects a branch, which is how a state and a gender agreement are written', () => {
     // The status dot is the first real `select` in the product: three states,

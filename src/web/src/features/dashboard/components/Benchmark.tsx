@@ -27,7 +27,7 @@ import type { Width } from '@/features/dashboard/lib/dashboardBlocks'
 import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { signClass, signOf } from '@/lib/sign'
+import { figureClass, signOf } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
 
 interface BenchmarkProps {
@@ -147,7 +147,7 @@ export function Benchmark({ benchmark, failure = null, width = 'half' }: Benchma
       }
       aside={
         ready ? (
-          <p className={`tabular text-2xl font-semibold ${signClass(gap)}`}>
+          <p className={`tabular text-2xl font-semibold ${figureClass(gap)}`}>
             {gap === null ? '—' : f.signedCurrency(gap, currency)}
           </p>
         ) : null
@@ -179,7 +179,7 @@ function Accounts({
             className="flex items-baseline justify-between gap-3 border-t py-2.25 text-sm first:border-t-0"
           >
             <span className="min-w-0 truncate">{row.account}</span>
-            <span className={`tabular shrink-0 font-semibold ${signClass(gap)}`}>
+            <span className={`tabular shrink-0 font-semibold ${figureClass(gap)}`}>
               {gap === null ? '—' : f.signedCurrency(gap, currency)}
             </span>
           </li>

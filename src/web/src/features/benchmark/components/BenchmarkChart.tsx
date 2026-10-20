@@ -1,14 +1,10 @@
 /**
  * The two curves, in euros — and **the area between them is the gap**.
  *
- * The same reading `PortfolioChart` gives *Montants*, arrived at from the other
- * end: there, the wash sits under the value curve because a fill *between* two
- * curves is a signed quantity that crosses zero inside a window and would be
- * the wrong colour half the time. Here the sign is the whole subject of the
- * screen, so the fill takes it — mint where the portfolio leads, the loss
- * colour where the reference does. **Per day**, because two curves over
- * seventeen years cross, and one colour for the window would paint the years
- * the owner was ahead in the colour of the years they were not.
+ * **One neutral band** (#1282): a gap against the reference is neither money made
+ * nor money lost, so it takes no sign colour. Who leads is read from the line
+ * order — the solid portfolio, the dashed reference — and from `ChartReading`'s
+ * crossings.
  *
  * **No base-100 normalisation.** #760 is the euro question, money-weighted:
  * both curves start at the same amount on the same day by construction, so
@@ -44,15 +40,9 @@ interface BenchmarkChartProps {
   /** The index both curves are named by — never the ticker. */
   index: string
   currency: string | null
-  /**
-   * The reference selector, in the card's corner. It comes after the head in
-   * reading order either way — the page still answers before it asks — and it
-   * sits beside the curves it changes rather than on a row of its own.
-   */
-  action?: ReactNode
 }
 
-export function BenchmarkChart({ points, index, currency, action }: BenchmarkChartProps) {
+export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const phone = useIsMobile()
@@ -66,26 +56,17 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
 
   // Recharts fills from a baseline and not between two series, so the band is
   // stacked: the lower curve is an invisible floor, and the gap rides on it.
-  // **Two gap bands, not one**, each carrying the days where its side leads and
-  // `null` on the others — that is what makes the colour switch at a crossing
-  // without computing the crossing itself. The switch lands on the day rather
-  // than on the exact intersection, which over 900 points is under a pixel.
-  //
-  // A day the portfolio has no value for is a hole in both bands, never a day
+  // A day the portfolio has no value for is a hole in the band, never a day
   // the reference won by default.
-  const rows = points.map((point) => {
-    if (point.portfolio === null) {
-      return { ...point, floor: null, gapAhead: null, gapBehind: null }
-    }
-    const gap = Math.abs(point.portfolio - point.reference)
-    const leading = point.portfolio >= point.reference
-    return {
-      ...point,
-      floor: Math.min(point.portfolio, point.reference),
-      gapAhead: leading ? gap : null,
-      gapBehind: leading ? null : gap,
-    }
-  })
+  const rows = points.map((point) =>
+    point.portfolio === null
+      ? { ...point, floor: null, gap: null }
+      : {
+          ...point,
+          floor: Math.min(point.portfolio, point.reference),
+          gap: Math.abs(point.portfolio - point.reference),
+        },
+  )
 
   const x = timeTicks(
     rows.map((row) => row.t),
@@ -101,7 +82,7 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
   return (
     <Card>
       <CardContent className="space-y-4 py-6">
-        <Header action={action}>{empty ? null : <Legend index={index} />}</Header>
+        <Header>{empty ? null : <Legend index={index} />}</Header>
 
         {/* **The plot is reachable, and it is named** (#1003). It used to carry
             `aria-hidden`, on the argument that the head says the whole answer in
@@ -157,10 +138,10 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
 
                     <ChartTooltip format={(value) => f.currency(value, currency)} />
 
-                    {/* All three bands answer the pointer with a figure the two
-                        lines already state, so they take function keys and drop out
-                        of the tooltip (`ChartTooltip`) — which is also why none of
-                        them carries a name: nothing renders it. */}
+                    {/* Both areas answer the pointer with a figure the two lines
+                        already state, so they take function keys and drop out of
+                        the tooltip (`ChartTooltip`) — which is also why neither
+                        carries a name: nothing renders it. */}
                     <Area
                       dataKey={(row: { floor: number | null }) => row.floor}
                       stackId="gap"
@@ -170,19 +151,10 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
                       connectNulls={false}
                     />
                     <Area
-                      dataKey={(row: { gapAhead: number | null }) => row.gapAhead}
+                      dataKey={(row: { gap: number | null }) => row.gap}
                       stackId="gap"
                       stroke="none"
-                      fill="var(--color-price)"
-                      fillOpacity={0.14}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                    <Area
-                      dataKey={(row: { gapBehind: number | null }) => row.gapBehind}
-                      stackId="gap"
-                      stroke="none"
-                      fill="var(--loss)"
+                      fill="var(--muted-foreground)"
                       fillOpacity={0.14}
                       isAnimationActive={false}
                       connectNulls={false}
@@ -238,17 +210,14 @@ export function BenchmarkChart({ points, index, currency, action }: BenchmarkCha
   )
 }
 
-/** The card's title and legend on one side, the selector on the other. */
-function Header({ action, children }: { action?: ReactNode; children?: ReactNode }) {
+/** The card's title and its legend. */
+function Header({ children }: { children?: ReactNode }) {
   const { t } = useI18n()
 
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="space-y-1.5">
-        <h2 className="text-base font-semibold">{t('benchmark.chart.title')}</h2>
-        {children}
-      </div>
-      {action}
+    <div className="space-y-1.5">
+      <h2 className="text-base font-semibold">{t('benchmark.chart.title')}</h2>
+      {children}
     </div>
   )
 }
