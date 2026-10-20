@@ -60,6 +60,14 @@
  * answer is sent to every forecast, so a rate the server does not have is a
  * refusal at the radio and never after the button.
  *
+ * **Several files are one import** (#1266). They are previewed in one request
+ * and written by one, so the window is the batch's: the same blocks, plus a
+ * first one that lists the files with a remove button each. One refused file
+ * refuses them all and is named; the reader removes it and the rest is read
+ * again. A repeated line found in two files starts on *write just one* — two
+ * overlapping exports are the usual cause — where one found inside a single
+ * file starts on *write all*.
+ *
  * **The simple case renders neither block.** Everything declared and nothing
  * duplicated: the accounts block is one line of affirmation, and the duplicates
  * block does not exist — a block with nothing in it does not exist (#724).
@@ -69,7 +77,8 @@
  * waits on both the forecast and the accounts rather than rendering a question
  * against a list nobody has heard from.
  */
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { XIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
@@ -84,7 +93,13 @@ import {
 } from '@/components/ui/dialog'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
-import type { AmountsIn, DuplicateRow, ForeignLine, ImportReceipt } from '@/features/data/lib/api'
+import type {
+  AmountsIn,
+  DuplicateRow,
+  ForeignLine,
+  ImportFile,
+  ImportReceipt,
+} from '@/features/data/lib/api'
 import {
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
@@ -95,12 +110,13 @@ import { useI18n } from '@/lib/i18n'
 import {
   accountLines,
   correspondenceOf,
+  keptAsOne,
   repeatGroups,
   unanswered,
   type AccountLine,
   type AccountTarget,
 } from '@/features/data/lib/imports'
-import { problemSentence } from '@/lib/problem'
+import { problemSentence, refusedFile } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
 /**
@@ -128,30 +144,55 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   // *consumed at the import and dropped*.
   const [chosen, setChosen] = useState<Record<string, AccountTarget>>({})
   const [writeDuplicates, setWriteDuplicates] = useState(false)
-  // The groups of identical lines the reader keeps one copy of (#1267). Empty:
-  // every copy is written until they say otherwise.
-  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set())
+  // The groups of identical lines the reader keeps one copy of (#1267).
+  // `undefined` is *not said yet*: a group inside one file writes every copy, a
+  // group across files keeps one (#1266) — see `acrossFiles`.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number> | undefined>(undefined)
   const [adoptCurrency, setAdoptCurrency] = useState(true)
   const [amountsIn, setAmountsIn] = useState<AmountsIn | undefined>(undefined)
   const forecast = upload.forecast
   const previewed = forecast?.file.filename
   const [lastFile, setLastFile] = useState<string | undefined>(previewed)
+  const forgetAnswers = () => {
+    setChosen({})
+    setWriteDuplicates(false)
+    setCollapsed(undefined)
+    setAdoptCurrency(true)
+    setAmountsIn(undefined)
+  }
   if (
     !upload.held &&
     (lastFile !== undefined || Object.keys(chosen).length > 0 || amountsIn !== undefined)
   ) {
-    // The file was put down or written: nothing the reader said about it
-    // survives into the next one, or a box ticked for one file would write
+    // The files were put down or written: nothing the reader said about them
+    // survives into the next batch, or a box ticked for one file would write
     // duplicates nobody looked at.
     setLastFile(undefined)
-    setChosen({})
-    setWriteDuplicates(false)
-    setCollapsed(new Set())
-    setAdoptCurrency(true)
-    setAmountsIn(undefined)
+    forgetAnswers()
   } else if (upload.held && previewed !== undefined && lastFile === undefined) {
     setLastFile(previewed)
   }
+
+  // Where focus goes once a removed file's re-read has landed: the next row's ×,
+  // else the dialog title (#1266). Not before — every × is disabled while the
+  // read is in flight, and a disabled button takes no focus.
+  const [refocus, setRefocus] = useState<number | null>(null)
+  const removers = useRef<(HTMLButtonElement | null)[]>([])
+  const title = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (refocus === null || upload.pending) return
+    const target = upload.filenames.length > 1 ? removers.current[refocus] : null
+    ;(target ?? title.current)?.focus()
+    setRefocus(null)
+  }, [refocus, upload.pending, upload.filenames.length])
+  const remove = (index: number) => {
+    // What the reader said was about files that are no longer all there.
+    forgetAnswers()
+    setRefocus(index)
+    upload.drop(index)
+  }
+  const several = upload.filenames.length > 1
+  const refused = refusedFile(upload.error)
 
   const declared = accounts.data
   const linesUnder = (picks: Readonly<Record<string, AccountTarget>>) =>
@@ -173,6 +214,9 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   const asking = base !== null && foreignLines.length > 0
   const currencies = [...new Set(foreignLines.map((line) => line.currency))].join(', ')
   const currencyMissing = asking && amountsIn === undefined
+
+  // What stands on screen: the reader's answer, else the default (#1266).
+  const kept = keptAsOne(collapsed, forecast?.file.duplicate_rows ?? [])
 
   const answer = (name: string, target: AccountTarget) => {
     const next = { ...chosen, [name]: target }
@@ -245,16 +289,24 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
     >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{t('data.import.preview.title')}</DialogTitle>
-          {upload.filename ? (
-            <span className="font-mono text-sm font-medium">{upload.filename}</span>
+          <DialogTitle ref={title} tabIndex={-1}>
+            {t('data.import.preview.title')}
+          </DialogTitle>
+          {several ? (
+            <span className="text-sm font-medium">
+              {t('data.import.files.count', { count: upload.filenames.length })}
+            </span>
+          ) : upload.filenames[0] ? (
+            <span className="font-mono text-sm font-medium">{upload.filenames[0]}</span>
           ) : null}
           {forecast ? (
             <span className="text-sm text-muted-foreground tabular-nums">
               {covers(t, f, forecast.file)}
             </span>
           ) : null}
-          <DialogDescription>{t('data.import.preview.body')}</DialogDescription>
+          <DialogDescription>
+            {t('data.import.preview.body', { files: upload.filenames.length })}
+          </DialogDescription>
         </DialogHeader>
 
         {/* **The wait is dressed**, and that is not the spinner rule's
@@ -262,7 +314,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             from — this is the reader's own act, and the app owes them its end. */}
         {upload.pending && !forecast ? (
           <p role="status" className="text-sm text-muted-foreground">
-            {checking(t, upload.filename)}
+            {checking(t, upload.filenames)}
           </p>
         ) : null}
 
@@ -275,57 +327,76 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
           </p>
         ) : null}
 
-        {ready ? (
+        {several || ready ? (
           <div className="space-y-4">
-            <AccountsBlock
-              lines={lines}
-              declared={declared}
-              busy={upload.pending}
-              onAnswer={answer}
-            />
-
-            {asking ? (
-              <ForeignBlock
-                lines={foreignLines}
-                unverified={forecast.file.unverified}
-                base={base}
-                currencies={currencies}
-                answer={amountsIn}
+            {/* **First, and built from the files held** (#1266), so it stands
+                when the census is refused: that is when the reader needs it, to
+                remove the file the alert names. */}
+            {several ? (
+              <FilesBlock
+                names={upload.filenames}
+                counts={forecast?.file.files}
+                refused={refused}
                 busy={upload.pending}
-                refused={Boolean(upload.error)}
-                onAnswer={decideCurrency}
+                buttons={removers}
+                onRemove={remove}
               />
             ) : null}
 
-            {/* Both read off the **census** and never off the answer's own
+            {ready ? (
+              <>
+                <AccountsBlock
+                  lines={lines}
+                  declared={declared}
+                  busy={upload.pending}
+                  onAnswer={answer}
+                />
+
+                {asking ? (
+                  <ForeignBlock
+                    lines={foreignLines}
+                    unverified={forecast.file.unverified}
+                    base={base}
+                    currencies={currencies}
+                    answer={amountsIn}
+                    busy={upload.pending}
+                    refused={Boolean(upload.error)}
+                    onAnswer={decideCurrency}
+                  />
+                ) : null}
+
+                {/* Both read off the **census** and never off the answer's own
                 forecast: under `?write_duplicates=1` the server moves those rows
                 into `written` and leaves none to name, so a block mounted on that
                 reading would take itself away — box and all — the moment the
                 reader ticked it. The repeats come first (#1267): they are written
                 by default, and the reader is more likely to answer them. */}
-            <RepeatsBlock
-              rows={forecast.file.duplicate_rows}
-              currency={totals.data?.base_currency ?? null}
-              collapsed={collapsed}
-              busy={upload.pending}
-              onChange={decideRepeats}
-            />
+                <RepeatsBlock
+                  rows={forecast.file.duplicate_rows}
+                  currency={totals.data?.base_currency ?? null}
+                  collapsed={kept}
+                  files={upload.filenames}
+                  busy={upload.pending}
+                  onChange={decideRepeats}
+                />
 
-            <HeldBlock
-              rows={forecast.file.duplicate_rows}
-              currency={totals.data?.base_currency ?? null}
-              writeDuplicates={writeDuplicates}
-              busy={upload.pending}
-              onToggle={decideDuplicates}
-            />
+                <HeldBlock
+                  rows={forecast.file.duplicate_rows}
+                  currency={totals.data?.base_currency ?? null}
+                  writeDuplicates={writeDuplicates}
+                  busy={upload.pending}
+                  onToggle={decideDuplicates}
+                />
 
-            {forecast.file.currency?.adopting ? (
-              <CurrencyBlock
-                currency={forecast.file.currency.declared}
-                adopt={adoptCurrency}
-                busy={upload.pending}
-                onToggle={setAdoptCurrency}
-              />
+                {forecast.file.currency?.adopting ? (
+                  <CurrencyBlock
+                    currency={forecast.file.currency.declared}
+                    adopt={adoptCurrency}
+                    busy={upload.pending}
+                    onToggle={setAdoptCurrency}
+                  />
+                ) : null}
+              </>
             ) : null}
           </div>
         ) : null}
@@ -692,20 +763,26 @@ function RepeatsBlock({
   rows,
   currency,
   collapsed,
+  files,
   busy,
   onChange,
 }: {
   rows: readonly DuplicateRow[]
   currency: string | null
   collapsed: ReadonlySet<number>
+  /** The names of the batch's files, in the order sent (#1266). */
+  files: readonly string[]
   busy: boolean
   onChange: (collapsed: ReadonlySet<number>) => void
 }) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const f = useFormatters()
   const groups = repeatGroups(rows)
 
   if (groups.length === 0) return null
+
+  const list = new Intl.ListFormat(language, { type: 'conjunction' })
+  const spanning = groups.some((group) => group.files.length > 1)
 
   const set = (first: number, one: boolean) => {
     const next = new Set(collapsed)
@@ -717,9 +794,9 @@ function RepeatsBlock({
   return (
     <section aria-labelledby="import-repeats" className="space-y-3 rounded-lg border p-4">
       <h3 id="import-repeats" className="label">
-        {t('data.import.repeats.title')}
+        {t('data.import.repeats.title', { files: files.length })}
       </h3>
-      <p className="text-sm">{t('data.import.repeats.body')}</p>
+      <p className="text-sm">{t('data.import.repeats.body', { files: files.length })}</p>
       <p className="text-xs text-muted-foreground italic">{t('data.import.repeats.why')}</p>
 
       {groups.length >= 2 ? (
@@ -751,12 +828,23 @@ function RepeatsBlock({
             key={group.first}
             line={names(t, f, group.row, currency)}
             copies={group.copies}
+            across={
+              files.length > 1 && group.files.length > 1
+                ? list.format(group.files.map((index) => files[index] ?? ''))
+                : null
+            }
             one={collapsed.has(group.first)}
             busy={busy}
             onChange={(one) => set(group.first, one)}
           />
         ))}
       </div>
+
+      {spanning ? (
+        <p className="text-xs text-muted-foreground italic">
+          {t('data.import.repeats.across.why')}
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -765,12 +853,15 @@ function RepeatsBlock({
 function RepeatGroup({
   line,
   copies,
+  across,
   one,
   busy,
   onChange,
 }: {
   line: string
   copies: number
+  /** The files holding the copies, said as a list, when they are more than one. */
+  across: string | null
   one: boolean
   busy: boolean
   onChange: (one: boolean) => void
@@ -785,7 +876,9 @@ function RepeatGroup({
       <legend className="float-left w-full text-sm">
         {line}
         <span className="ml-2 text-xs text-muted-foreground">
-          {t('data.import.repeats.times', { count: copies })}
+          {across === null
+            ? t('data.import.repeats.times', { count: copies })
+            : t('data.import.repeats.across', { count: copies, files: across })}
         </span>
       </legend>
       <div className="clear-both flex flex-wrap gap-x-4">
@@ -799,6 +892,87 @@ function RepeatGroup({
         </label>
       </div>
     </fieldset>
+  )
+}
+
+/**
+ * **Les fichiers** — the batch, one row per file, each with its own count and a
+ * button to take it out (#1266).
+ *
+ * Built from the files **held**, not from the forecast: it has to stand when the
+ * census is refused, and it is then that the reader needs the button. The counts
+ * come from `forecast.files` when there is one. Same shape as its siblings.
+ */
+function FilesBlock({
+  names,
+  counts,
+  refused,
+  busy,
+  buttons,
+  onRemove,
+}: {
+  names: readonly string[]
+  counts: readonly ImportFile[] | undefined
+  /** The file the server refused, by name. */
+  refused: string | null
+  busy: boolean
+  buttons: React.RefObject<(HTMLButtonElement | null)[]>
+  onRemove: (index: number) => void
+}) {
+  const { t } = useI18n()
+  const f = useFormatters()
+
+  return (
+    <section aria-labelledby="import-files" className="space-y-3 rounded-lg border p-4">
+      <h3 id="import-files" className="label">
+        {t('data.import.files.title')}
+      </h3>
+      <ul className="max-h-60 divide-y overflow-y-auto">
+        {names.map((name, index) => {
+          const own = counts?.[index]
+          return (
+            <li
+              // A batch may hold two files of one name: the position is the key.
+              key={index}
+              className="flex flex-col gap-1 py-2 md:flex-row md:items-center md:justify-between md:gap-3"
+            >
+              <span className="min-w-0 truncate font-mono text-xs" title={name}>
+                {name}
+              </span>
+              <span className="flex items-center justify-between gap-2 md:justify-end">
+                {refused === name && names.indexOf(name) === index ? (
+                  <span className="text-xs text-destructive">{t('data.import.files.refused')}</span>
+                ) : own === undefined ? null : (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {own.period === null
+                      ? t('data.import.files.none')
+                      : t('data.import.files.row', {
+                          count: own.rows,
+                          from: f.date(own.period.from),
+                          to: f.date(own.period.to),
+                        })}
+                  </span>
+                )}
+                <Button
+                  ref={(node) => {
+                    buttons.current[index] = node
+                  }}
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="pointer-coarse:size-11"
+                  aria-label={t('data.import.files.remove', { file: name })}
+                  disabled={busy}
+                  onClick={() => onRemove(index)}
+                >
+                  <XIcon aria-hidden />
+                </Button>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
@@ -930,8 +1104,15 @@ function CurrencyBlock({
 }
 
 /** The file on its way in — the sentence names it, and says its currencies are checked too. */
-function checking(t: ReturnType<typeof useI18n>['t'], filename: string | undefined): string {
-  const said = receiptMessage({ kind: 'import.checking', filename: filename ?? '' })
+function checking(t: ReturnType<typeof useI18n>['t'], filenames: readonly string[]): string {
+  // A batch is named by its count: a list of names is the files block's.
+  const said = receiptMessage({
+    kind: 'import.checking',
+    filename:
+      filenames.length > 1
+        ? t('data.import.files.count', { count: filenames.length })
+        : (filenames[0] ?? ''),
+  })
   return t(said.message, said.values)
 }
 
@@ -967,7 +1148,10 @@ function foreseen(
 ): string {
   const said =
     writing.period === null
-      ? receiptMessage({ kind: 'import.forecast.empty', filename: writing.filename })
+      ? receiptMessage({
+          kind: 'import.forecast.empty',
+          files: writing.files.map((file) => file.filename),
+        })
       : receiptMessage({
           kind: 'import.forecast',
           count: writing.written,

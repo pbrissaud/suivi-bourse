@@ -75,8 +75,9 @@ import { Button } from '@/components/ui/button'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
-import { exportable } from '@/features/data/lib/imports'
+import { EVENT_FILE_COLUMNS, exportable, templateHref } from '@/features/data/lib/imports'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { docsPageHref } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import {
   accountsNamed,
@@ -147,7 +148,7 @@ interface LedgerProps {
 }
 
 export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = {}) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   // **The gesture is held here and nowhere lower** (#811): the first import
@@ -366,7 +367,41 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               // missing.
               // The band, here and only here: it is the empty ledger's state,
               // and a populated one imports from the toolbar.
-              action: <UploadZone upload={upload} />,
+              //
+              // **It says what a file looks like** (#1266): the columns, from the
+              // constant the template is built from so the two cannot disagree,
+              // the one thing the header does not say about `account`, a
+              // header-only template and the docs page. The picker stays last,
+              // lined up with *Saisir un événement*.
+              action: (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t('data.empty.file.columns')}
+                    </p>
+                    <p className="font-mono text-xs break-words">{EVENT_FILE_COLUMNS.join(', ')}</p>
+                    <p className="text-xs text-muted-foreground">{t('data.empty.file.account')}</p>
+                  </div>
+                  <UploadZone upload={upload} />
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                    <a
+                      download="suivi-bourse-template.csv"
+                      href={templateHref()}
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      {t('data.empty.file.template')}
+                    </a>
+                    <a
+                      href={docsPageHref(language, 'import-your-events', 'format')}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      {t('data.empty.file.docs')}
+                    </a>
+                  </div>
+                </div>
+              ),
             },
             {
               title: t('data.empty.manual.title'),

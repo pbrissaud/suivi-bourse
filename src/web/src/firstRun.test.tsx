@@ -777,7 +777,9 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     // by a gesture, so there is no mount left whose absence could take an
     // entrance away — and the sentence names no folder, there being none left
     // to name.
-    expect(pair.getByText(/Remettez à l’application un .csv ou un .xlsx/)).toBeInTheDocument()
+    expect(
+      pair.getByText(/Remettez à l’application un ou plusieurs .csv ou .xlsx/),
+    ).toBeInTheDocument()
     expect(pair.queryByText(/\/import/)).not.toBeInTheDocument()
     // No primary action: a filled button beside an outlined one is a
     // recommendation, and it would be wrong for whichever reader it misses. Both
