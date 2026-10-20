@@ -43,6 +43,7 @@ import {
   aStore,
   aTaxationCatalogue,
   aBenchmark,
+  aRegistryItem,
   aTaxationModel,
   aTotalsPayload,
 } from '@/test/factories'
@@ -101,6 +102,28 @@ export function defaultHandlers() {
       const draft = (await request.json()) as TaxationModelDraft
       return HttpResponse.json(aTaxationModel({ ...draft, id: String(params.id) }))
     }),
+    // The docs site's wrappers (#1290), read on a click and stored nowhere. A
+    // test about another registry overrides it.
+    http.post(ROUTES.taxationRegistry, () =>
+      HttpResponse.json({
+        items: [
+          aRegistryItem({
+            id: 'fr/pea',
+            name: 'Plan d’épargne en actions (PEA)',
+            kind: 'aged_flat_realised',
+            parameters: {
+              rate_before: 0.128,
+              rate_after: 0,
+              threshold_years: 5,
+              age_basis: 'first_payment',
+              social_rate: 0.172,
+            },
+          }),
+          aRegistryItem(),
+          aRegistryItem({ id: 'de/depot', country: 'DE', name: 'Wertpapierdepot' }),
+        ],
+      }),
+    ),
     http.delete(ROUTES.taxationModel, ({ params }) =>
       HttpResponse.json({ id: String(params.id), removed: true }),
     ),

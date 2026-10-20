@@ -278,7 +278,7 @@ def read_taxation_registry():
     try:
         items = taxation_registry.fetch(current_app.config['TAXATION_REGISTRY_FETCH'])
     except taxation_registry.FetchFailed as exc:
-        return provider_refused(f'taxation registry: {exc.reason}', 'taxation-registry', 'unreachable')
+        return provider_refused(f'taxation-registry: {exc.reason}', 'taxation-registry', 'unreachable')
     return jsonify({'items': items})
 
 

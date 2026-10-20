@@ -18,18 +18,45 @@ back to it.
 ## Where you write it {#where}
 
 On the **accounts** page, on the account's own panel, in the same form that
-carries the account's name. There is no settings card for it and no page of its
-own: a model is written where it is attached, so declaring an account and
-answering the tax question are one gesture.
+carries the account's name. A model is written where it is attached, and **one
+button writes it all**: *Declare this account* saves the model first, then the
+account. If the account is then refused (an identifier already taken, say), the
+model is already saved, and pressing the button again corrects that same model
+rather than adding a second one.
 
 The field is a list, and it opens on **No model**. Below that sit the models you
 have already written — **a model is reusable across accounts**, so a household
 with two compte-titres writes one model and picks it twice — and last,
-*Write a model…*, which opens the editor.
+*Write a model…*, which opens the editor. When you correct a model that other
+accounts carry, the panel names them: the correction reaches all of them.
+
+Under the list, a link takes you to the import in **Settings › Taxation**.
 
 **Removing a model an account still carries is refused**, and the message names
 the accounts. Detach it there first. Removing it from an account is a separate
 gesture on that account's panel, and it leaves the model itself alone.
+
+## Importing a model {#import}
+
+**Settings › Taxation** lists every model you have written, and above them an
+**Import for my country** field. Reaching for it reads, once, the list of
+wrappers this documentation publishes ([Taxation models in
+Europe](./taxation-models-in-europe.mdx) is the same data, as a page), and
+nothing is read before that. The list is searchable and grouped by country, your
+own first; a wrapper keeps its native name.
+
+Picking one **copies it into a model of yours**, named as the wrapper is, and
+opens it so you can check it and change anything. The copy keeps no link to the
+documentation: nothing records where it came from or as of when, and it is never
+updated by itself.
+
+Importing a wrapper whose name matches a model you already have **replaces that
+model's rates**, after a confirmation that names the accounts carrying it. That
+is the one way to take up a correction, and it is always your decision.
+
+If the list cannot be read (you are offline, or the documentation site is down),
+the field says why, offers *Try again*, and *Write a model…* on the account's
+panel works as ever.
 
 ## The app ships no rates {#no-rates}
 
@@ -46,10 +73,11 @@ way to keep true.
 What does ship is **structure**, because structure is what does not move. For the
 values themselves, [Taxation models in Europe](./taxation-models-in-europe.mdx)
 lists a common wrapper per country with the shape that fits it, its parameters
-as of a stated date, and the official source to check them against. Importing
-one of those models into the app is a separate piece of work (#1290), and no
-release is promised for it. *None of these — I will enter it myself* stays the
-path for every other wrapper.
+as of a stated date, and the official source to check them against. [Importing
+one of those models](#import) copies it into a model of yours, and the rates
+come from this site rather than from the app, so a correction reaches you with
+the documentation and never with an upgrade. *Write a model…* stays the path for
+every other wrapper.
 
 **A rate is typed as a percentage.** `12,8` is what a tax schedule says, so
 `12,8` is what the form takes.

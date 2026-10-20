@@ -2,12 +2,13 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
-import { taxationModelPath } from '@/features/accounts/lib/api'
+import { taxationModelPath, type TaxationModelDraft } from '@/features/accounts/lib/api'
 import type { StoreState } from '@/features/settings/lib/api'
 import { type HealthState, type InstallationFact, ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aConfig,
+  aRegistryItem,
   anAccount,
   anAccountsPayload,
   anEnvironmentFact,
@@ -496,5 +497,209 @@ describe('taxation', () => {
 
     await waitFor(() => expect(taxation).toHaveTextContent('Utilisé par 1 compte'))
     expect(within(taxation).getByRole('button', { name: 'Supprimer A flat model' })).toBeDisabled()
+  })
+})
+
+describe('importing a taxation model', () => {
+  async function openImport() {
+    const view = await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+    await view.user.click(within(taxation).getByLabelText('Importer pour mon pays'))
+    return { ...view, taxation }
+  }
+
+  it('reads nothing until the owner reaches for the control', async () => {
+    let reads = 0
+    server.use(
+      http.post(ROUTES.taxationRegistry, () => {
+        reads += 1
+        return HttpResponse.json({ items: [] })
+      }),
+    )
+    const { user } = await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+    expect(reads).toBe(0)
+
+    await user.click(within(taxation).getByLabelText('Importer pour mon pays'))
+    await waitFor(() => expect(reads).toBe(1))
+  })
+
+  it('lists the wrappers grouped by country, searchable', async () => {
+    const { user, taxation } = await openImport()
+    await user.keyboard('pea')
+
+    const list = await screen.findByRole('listbox', { name: 'Enveloppes de la documentation' })
+    expect(
+      within(list)
+        .getAllByRole('group')
+        .map((group) => group.textContent),
+    ).toEqual([expect.stringContaining('France')])
+    expect(within(list).getByRole('option', { name: /PEA/ })).toBeInTheDocument()
+    expect(within(list).queryByRole('option', { name: /Wertpapierdepot/ })).toBeNull()
+    expect(taxation).toHaveTextContent('Les enveloppes gardent leur nom d’origine.')
+  })
+
+  it('stores a wrapper no model carries the name of, then opens it with its source', async () => {
+    let sent: TaxationModelDraft | null = null
+    server.use(
+      http.post(ROUTES.taxationModels, async ({ request }) => {
+        sent = (await request.json()) as TaxationModelDraft
+        return HttpResponse.json(aTaxationModel({ ...sent, id: 'written' }), { status: 201 })
+      }),
+    )
+    const { user } = await openImport()
+    await user.keyboard('cto')
+    await user.click(await screen.findByRole('option', { name: /CTO/ }))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(sent).toEqual({
+      name: 'Compte-titres ordinaire (CTO)',
+      kind: 'flat_realised',
+      parameters: { rate: 0.3 },
+    })
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getByLabelText('Le nom de ce modèle')).toHaveFocus()
+    expect(
+      within(sheet).getByRole('link', { name: /Vérifiez les taux à la source/ }),
+    ).toHaveAttribute(
+      'href',
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/taxation-models-in-europe#fr-cto',
+    )
+    // The sheet's own close button, and the editor's, which says Fermer until a field moves.
+    expect(within(sheet).getAllByRole('button', { name: 'Fermer' })).toHaveLength(2)
+  })
+
+  it('asks before replacing the rates of a name already stored, and names the carriers', async () => {
+    server.use(
+      http.get(ROUTES.taxationModels, () =>
+        HttpResponse.json(
+          aTaxationCatalogue({
+            models: [
+              aTaxationModel({
+                id: 'mine',
+                name: 'Compte-titres ordinaire (CTO)',
+                parameters: { rate: 0.25 },
+              }),
+            ],
+          }),
+        ),
+      ),
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'mine' })]),
+        ),
+      ),
+    )
+    let created = 0
+    const patched: unknown[] = []
+    server.use(
+      http.post(ROUTES.taxationModels, () => {
+        created += 1
+        return HttpResponse.json(aTaxationModel(), { status: 201 })
+      }),
+      http.patch(taxationModelPath('mine'), async ({ request }) => {
+        patched.push(await request.json())
+        return HttpResponse.json(aTaxationModel({ id: 'mine' }))
+      }),
+    )
+    const { user, taxation } = await openImport()
+    await user.keyboard('cto')
+    await user.click(await screen.findByRole('option', { name: /CTO/ }))
+
+    const card = await within(taxation).findByRole('region', {
+      name: /Remplacer les taux de « Compte-titres ordinaire \(CTO\) »/,
+    })
+    expect(card).toHaveTextContent('Porté par Alpha.')
+    expect(within(card).getByRole('button', { name: 'Annuler' })).toHaveFocus()
+    expect(patched).toEqual([])
+
+    await user.keyboard('{Escape}')
+    expect(within(taxation).queryByRole('region', { name: /Remplacer/ })).toBeNull()
+
+    await user.keyboard('cto')
+    await user.click(await screen.findByRole('option', { name: /CTO/ }))
+    await user.click(await within(taxation).findByRole('button', { name: 'Remplacer' }))
+
+    await waitFor(() =>
+      expect(patched).toEqual([
+        { name: 'Compte-titres ordinaire (CTO)', kind: 'flat_realised', parameters: { rate: 0.3 } },
+      ]),
+    )
+    expect(created).toBe(0)
+  })
+
+  it('says why the registry could not be read, and reads it again on request', async () => {
+    let answer = 0
+    server.use(
+      http.post(ROUTES.taxationRegistry, () => {
+        answer += 1
+        return answer === 1
+          ? HttpResponse.json(
+              {
+                type: PROBLEM_TYPES.providerRefused,
+                title: 'Provider refused',
+                status: 502,
+                detail: 'taxation-registry: OSError: HTTP 503',
+                provider: 'taxation-registry',
+                reason: 'unreachable',
+              },
+              { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
+            )
+          : HttpResponse.json({ items: [aRegistryItem()] })
+      }),
+    )
+    const { user, taxation } = await openImport()
+
+    expect(await within(taxation).findByRole('alert')).toHaveTextContent(
+      'Registre injoignable : OSError: HTTP 503.',
+    )
+    expect(taxation).toHaveTextContent('Vous pouvez aussi écrire un modèle.')
+    expect(within(taxation).getByRole('button', { name: 'Nouveau modèle' })).toBeEnabled()
+
+    await user.click(within(taxation).getByRole('button', { name: 'Réessayer' }))
+    await waitFor(() => expect(within(taxation).queryByRole('alert')).toBeNull())
+    expect(answer).toBe(2)
+  })
+
+  it('shows a wrapper this app refuses, disabled, with its reason', async () => {
+    server.use(
+      http.post(ROUTES.taxationRegistry, () =>
+        HttpResponse.json({
+          items: [
+            aRegistryItem({
+              id: 'xx/new',
+              country: 'FR',
+              name: 'Enveloppe future',
+              kind: 'a_kind_from_later',
+              refused: "'a_kind_from_later' is not a taxation model kind",
+            }),
+          ],
+        }),
+      ),
+    )
+    const { user } = await openImport()
+    await user.keyboard('future')
+
+    const line = await screen.findByRole('option', { name: /Enveloppe future/ })
+    expect(line).toHaveAttribute('aria-disabled', 'true')
+    expect(line).toHaveTextContent('nécessite une version plus récente de l’app')
+    await user.click(line)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the registry for the page: a second opening reads nothing', async () => {
+    let reads = 0
+    server.use(
+      http.post(ROUTES.taxationRegistry, () => {
+        reads += 1
+        return HttpResponse.json({ items: [aRegistryItem()] })
+      }),
+    )
+    const { user, taxation } = await openImport()
+    await waitFor(() => expect(reads).toBe(1))
+    await user.click(within(taxation).getByRole('button', { name: 'Nouveau modèle' }))
+    await user.keyboard('{Escape}')
+    await user.click(within(taxation).getByLabelText('Importer pour mon pays'))
+    expect(reads).toBe(1)
   })
 })

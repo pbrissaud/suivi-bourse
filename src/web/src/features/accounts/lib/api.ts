@@ -111,6 +111,22 @@ export interface TaxationModelsResponse {
   models: TaxationModel[]
 }
 
+/**
+ * One wrapper of the registry the docs site publishes (#1290). `refused` is the
+ * sentence of the server when this app cannot hold the model, `null` otherwise.
+ */
+export interface TaxationRegistryItem extends TaxationModelDraft {
+  /** `<cc>/<slug>`, the wrapper's id in `website/taxation/<cc>.json`. */
+  id: string
+  /** ISO 3166-1 alpha-2, upper case. */
+  country: string
+  refused: string | null
+}
+
+export interface TaxationRegistryResponse {
+  items: TaxationRegistryItem[]
+}
+
 /** What the model form sends. `kind` and `parameters` travel together. */
 export interface TaxationModelDraft {
   name: string
@@ -185,6 +201,7 @@ export const accountsApi = {
     send<TaxationModel>(ROUTES.taxationModels, 'POST', draft),
   updateTaxationModel: (id: string, draft: TaxationModelDraft) =>
     send<TaxationModel>(taxationModelPath(id), 'PATCH', draft),
+  taxationRegistry: () => send<TaxationRegistryResponse>(ROUTES.taxationRegistry, 'POST', {}),
   removeTaxationModel: (id: string) =>
     remove<{ id: string; removed: boolean }>(taxationModelPath(id)),
   reassignEvents: (id: string) =>

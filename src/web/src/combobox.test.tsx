@@ -147,3 +147,71 @@ describe('ce que le champ dit au parent', () => {
     ])
   })
 })
+
+describe('une liste groupée, dont une ligne est refusée', () => {
+  const FR = { value: 'fr/pea', label: 'PEA', hint: null, group: 'France' }
+  const OLD = {
+    value: 'fr/new',
+    label: 'Nouveau',
+    hint: null,
+    group: 'France',
+    disabledReason: 'nécessite une version plus récente',
+  }
+  const DE = { value: 'de/depot', label: 'Depot', hint: null, group: 'Allemagne' }
+
+  function renderGrouped(heard: [string, boolean][] = []) {
+    render(
+      <>
+        <label htmlFor="wrapper">Enveloppe</label>
+        <Combobox
+          id="wrapper"
+          value=""
+          onValueChange={(value, chosen) => heard.push([value, chosen])}
+          items={[FR, OLD, DE]}
+          listLabel="Les enveloppes"
+        />
+      </>,
+    )
+    return heard
+  }
+
+  it('range les lignes sous le titre de leur groupe', async () => {
+    const user = userEvent.setup()
+    renderGrouped()
+    await user.type(screen.getByLabelText('Enveloppe'), 'e')
+
+    const groups = screen.getAllByRole('group')
+    expect(groups.map((group) => group.textContent)).toEqual([
+      expect.stringContaining('France'),
+      expect.stringContaining('Allemagne'),
+    ])
+    expect(within(groups[0]).getAllByRole('option')).toHaveLength(2)
+    expect(groups[0]).toHaveAccessibleName('France')
+  })
+
+  it('dit la raison de la ligne refusée, et les flèches la sautent', async () => {
+    const user = userEvent.setup()
+    renderGrouped()
+    const field = screen.getByLabelText('Enveloppe')
+    await user.type(field, 'e')
+
+    const refused = screen.getByRole('option', { name: /Nouveau/ })
+    expect(refused).toHaveAttribute('aria-disabled', 'true')
+    expect(refused).toHaveTextContent('nécessite une version plus récente')
+
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(screen.getByRole('option', { name: /Depot/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('ne choisit pas la ligne refusée, ni au clic ni à Entrée', async () => {
+    const user = userEvent.setup()
+    const heard = renderGrouped()
+    await user.type(screen.getByLabelText('Enveloppe'), 'e')
+
+    await user.click(screen.getByRole('option', { name: /Nouveau/ }))
+    expect(heard.filter(([, chosen]) => chosen)).toEqual([])
+
+    await user.click(screen.getByRole('option', { name: /Depot/ }))
+    expect(heard.filter(([, chosen]) => chosen)).toEqual([['de/depot', true]])
+  })
+})

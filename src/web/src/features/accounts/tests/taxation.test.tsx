@@ -5,6 +5,10 @@
  * only faked edge, and every assertion on the **accessible rendering** or on
  * the request that actually left.
  *
+ * **The model has no Save of its own** (#1290): the account's single submit
+ * writes it, then the account. Every case that writes a model goes through
+ * *Enregistrer ce compte*.
+ *
  * Four of the cases below name a reading they prevent:
  *
  *  - **the abbreviation is expanded and the country is in the label**, because
@@ -167,7 +171,7 @@ describe('writing a model', () => {
       within(panel).getByRole('option', { name: 'Un taux unique sur la plus-value' }),
     )
     await user.type(within(panel).getByLabelText(/^Taux/), '30')
-    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce modèle' }))
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     await waitFor(() =>
       expect(sent).toEqual({
@@ -210,7 +214,7 @@ describe('writing a model', () => {
     await user.type(within(panel).getByLabelText(/^Taux avant le seuil/), '12.8')
     await user.type(within(panel).getByLabelText(/^Taux après le seuil/), '0')
     await user.type(within(panel).getByLabelText(/^Prélèvements sociaux/), '18.6')
-    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce modèle' }))
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     await waitFor(() =>
       expect(sent).toEqual({
@@ -248,7 +252,7 @@ describe('writing a model', () => {
 
     await user.clear(within(panel).getByLabelText(/^Taux/))
     await user.type(within(panel).getByLabelText(/^Taux/), '28')
-    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce modèle' }))
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     await waitFor(() =>
       expect(sent).toEqual({
@@ -303,23 +307,23 @@ describe('removing a model', () => {
   })
 })
 
-describe('the two hazards of a form inside a form', () => {
-  it('saves the model on Enter, and never the account', async () => {
-    // The editor sits inside `AccountForm`'s own `<form>` — a nested one is not
-    // HTML — so an unguarded Enter triggers that form's implicit submission: the
-    // account is declared, the panel shuts, and the half-typed model is lost.
+describe('the single submit', () => {
+  it('submits the account on Enter, and the model is written first', async () => {
+    // The editor sits inside `AccountForm`'s own `<form>`, so Enter is that
+    // form's implicit submission: one gesture, the model and then the account.
     const { user } = renderAccounts()
     const panel = await openPanel(user)
 
-    let declared = false
-    let written: TaxationModelDraft | null = null
+    const order: string[] = []
+    let declared: unknown = null
     server.use(
-      http.patch(accountPath('alpha'), () => {
-        declared = true
+      http.patch(accountPath('alpha'), async ({ request }) => {
+        order.push('account')
+        declared = await request.json()
         return HttpResponse.json(anAccount({ id: 'alpha', label: 'Alpha' }))
       }),
-      http.post(ROUTES.taxationModels, async ({ request }) => {
-        written = (await request.json()) as TaxationModelDraft
+      http.post(ROUTES.taxationModels, () => {
+        order.push('model')
         return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
       }),
     )
@@ -334,14 +338,11 @@ describe('the two hazards of a form inside a form', () => {
     )
     await user.type(within(panel).getByLabelText(/^Taux/), '30{Enter}')
 
-    await waitFor(() => expect(written).not.toBeNull())
-    expect(declared).toBe(false)
+    await waitFor(() => expect(order).toEqual(['model', 'account']))
+    expect(declared).toEqual({ label: 'Alpha', taxation_model: 'written' })
   })
 
-  it('leaves the buttons their own Enter, and Cancel writes nothing', async () => {
-    // The guard above sits on the block, so it also catches an Enter that
-    // bubbled from a button — and a button activates itself *on* that keydown.
-    // Swallowed, the reader who pressed Enter on Cancel would have saved.
+  it('writes nothing when the reader backs out of the model, or cancels the account', async () => {
     const { user } = renderAccounts()
     const panel = await openPanel(user)
 
@@ -358,14 +359,171 @@ describe('the two hazards of a form inside a form', () => {
     ])
     await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon CTO')
 
-    // The account's own footer carries an *Annuler* too — this is the editor's.
-    const buttons = within(panel).getByRole('button', { name: 'Enregistrer ce modèle' })
-      .parentElement as HTMLElement
-    within(buttons).getByRole('button', { name: 'Annuler' }).focus()
-    await user.keyboard('{Enter}')
+    // The ghost closes the editor and gives the select back its answer.
+    await user.click(within(panel).getByRole('button', { name: 'Ne pas écrire de modèle' }))
+    expect(within(panel).queryByLabelText('Le nom de ce modèle')).toBeNull()
+    expect(await modelField(panel)).toHaveValue('')
 
-    await waitFor(() => expect(within(panel).queryByLabelText('Le nom de ce modèle')).toBeNull())
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.click(within(panel).getByRole('button', { name: 'Annuler' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(writes).toBe(0)
+  })
+
+  it('does not rewrite a model it opened for correction and left as it was', async () => {
+    const { user } = renderAccounts(
+      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
+    )
+    const panel = await openPanel(user)
+    await modelField(panel)
+
+    let patched = 0
+    server.use(
+      http.patch(taxationModelPath('model-one'), () => {
+        patched += 1
+        return HttpResponse.json(aTaxationModel())
+      }),
+    )
+
+    await user.click(within(panel).getByRole('button', { name: 'Corriger ce modèle' }))
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(patched).toBe(0)
+  })
+
+  it('retries a model it already wrote with a PATCH, never a second POST', async () => {
+    // The account is refused after the model went through. The form remembers
+    // the model's id: the reader presses the same button again.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+
+    let posted = 0
+    const patched: unknown[] = []
+    let refuse = true
+    server.use(
+      http.post(ROUTES.taxationModels, () => {
+        posted += 1
+        return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
+      }),
+      http.patch(taxationModelPath('written'), async ({ request }) => {
+        patched.push(await request.json())
+        return HttpResponse.json(aTaxationModel({ id: 'written' }))
+      }),
+      http.patch(accountPath('alpha'), () =>
+        refuse
+          ? HttpResponse.json(
+              { type: PROBLEM_TYPES.conflict, title: 'Conflict', status: 409 },
+              { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+            )
+          : HttpResponse.json(anAccount({ id: 'alpha', label: 'Alpha' })),
+      ),
+    )
+
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon CTO')
+    await user.selectOptions(
+      within(panel).getByLabelText('Forme'),
+      within(panel).getByRole('option', { name: 'Un taux unique sur la plus-value' }),
+    )
+    await user.type(within(panel).getByLabelText(/^Taux/), '30')
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+    await waitFor(() => expect(posted).toBe(1))
+    await within(panel).findByRole('status')
+
+    refuse = false
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+
+    await waitFor(() => expect(patched).toHaveLength(1))
+    expect(posted).toBe(1)
+  })
+
+  it('shows what the server refused about the model at the editor, and stops there', async () => {
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+
+    let declared = false
+    server.use(
+      http.post(ROUTES.taxationModels, () =>
+        HttpResponse.json(
+          {
+            type: PROBLEM_TYPES.badRequest,
+            title: 'Unprocessable',
+            status: 422,
+            detail: 'rate is a rate between 0 and 1',
+          },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+      http.patch(accountPath('alpha'), () => {
+        declared = true
+        return HttpResponse.json(anAccount({ id: 'alpha' }))
+      }),
+    )
+
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.type(within(panel).getByLabelText('Le nom de ce modèle'), 'Mon CTO')
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
+
+    await waitFor(() => expect(within(panel).getByLabelText('Le nom de ce modèle')).toHaveFocus())
+    expect(within(panel).getByLabelText('Le nom de ce modèle')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    expect(declared).toBe(false)
+  })
+
+  it('asks for the opening day of a model that is only a draft', async () => {
+    // The model is not stored yet, so its `age_basis` is read off the draft.
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+    await user.selectOptions(await modelField(panel), [
+      within(panel).getByRole('option', { name: 'Écrire un modèle…' }),
+    ])
+    await user.selectOptions(
+      within(panel).getByLabelText('Forme'),
+      within(panel).getByRole('option', {
+        name: 'Un taux qui change avec l’âge de l’enveloppe',
+      }),
+    )
+    expect(within(panel).queryByLabelText(/^Ouvert le/)).toBeNull()
+
+    await user.selectOptions(within(panel).getByLabelText('Compté depuis'), 'opening')
+
+    expect(within(panel).getByLabelText(/^Ouvert le/)).toBeInTheDocument()
+  })
+
+  it('names the other accounts that carry the model being corrected', async () => {
+    const { user } = renderAccounts(
+      anAccountsPayload([
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' }),
+        anAccount({ id: 'beta', label: 'Beta', taxation_model: 'model-one' }),
+      ]),
+    )
+    const panel = await openPanel(user)
+    await modelField(panel)
+
+    await user.click(within(panel).getByRole('button', { name: 'Corriger ce modèle' }))
+
+    expect(within(panel).getByText(/Aussi utilisé par Beta/)).toBeInTheDocument()
+    expect(within(panel).getByText(/Aussi utilisé par Beta/)).not.toHaveTextContent('Alpha')
+  })
+
+  it('links to the import in Settings, which is not offered here', async () => {
+    const { user } = renderAccounts()
+    const panel = await openPanel(user)
+    await modelField(panel)
+
+    expect(
+      within(panel).getByRole('link', { name: /Importer un modèle pour mon pays/ }),
+    ).toHaveAttribute('href', '/settings#taxation')
   })
 
   it('sends a blank bracket bound as nothing, never as a zero', async () => {
@@ -396,7 +554,7 @@ describe('the two hazards of a form inside a form', () => {
     // The bound of the lower rung is left blank; only its rate is typed.
     await user.type(within(panel).getAllByLabelText('Taux de cette tranche')[0], '20')
     await user.type(within(panel).getAllByLabelText('Taux de cette tranche')[1], '30')
-    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce modèle' }))
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     await waitFor(() =>
       expect(written).toEqual({
