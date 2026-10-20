@@ -1,0 +1,49 @@
+{
+  "country": "ES",
+  "wrappers": [
+    {
+      "id": "es/cuenta-valores",
+      "name": "Cuenta de valores",
+      "tax_year": 2025,
+      "model": {
+        "kind": "bracketed_realised",
+        "parameters": {
+          "brackets": [
+            {
+              "upper_bound": 6000,
+              "rate": 0.19
+            },
+            {
+              "upper_bound": 50000,
+              "rate": 0.21
+            },
+            {
+              "upper_bound": 200000,
+              "rate": 0.23
+            },
+            {
+              "upper_bound": 300000,
+              "rate": 0.27
+            },
+            {
+              "upper_bound": null,
+              "rate": 0.3
+            }
+          ]
+        }
+      },
+      "sources": [
+        {
+          "url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2025/8-cumplimentacion-irpf/8_4-cuota-integra/8_4_4-gravamen-base-liquidable-ahorro.html",
+          "title": "8.4.4. Gravamen de la base liquidable del ahorro — Agencia Tributaria",
+          "consulted": "2026-10-20"
+        },
+        {
+          "url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2025/c15-calculo-impuesto-determinacion-cuotas-integras/gravamen-base-liquidable-ahorro/gravamen-estatal.html",
+          "title": "Gravamen estatal de la base liquidable del ahorro — Agencia Tributaria",
+          "consulted": "2026-10-20"
+        }
+      ]
+    }
+  ]
+}

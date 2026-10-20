@@ -325,5 +325,59 @@
   "theme.tags.tagsPageTitle": {
     "message": "Tags",
     "description": "The title of the tag list page"
+  },
+  "taxationRegime.kind.none": {
+    "message": "Not taxed"
+  },
+  "taxationRegime.kind.flat_realised": {
+    "message": "One rate on the gain"
+  },
+  "taxationRegime.kind.aged_flat_realised": {
+    "message": "A rate that changes with the wrapper’s age"
+  },
+  "taxationRegime.kind.bracketed_realised": {
+    "message": "Brackets on the gain"
+  },
+  "taxationRegime.kind.withholding_income": {
+    "message": "A withholding on income"
+  },
+  "taxationRegime.param.rate": {
+    "message": "Rate"
+  },
+  "taxationRegime.param.social_rate": {
+    "message": "Social charges or levies"
+  },
+  "taxationRegime.param.rate_before": {
+    "message": "Rate before the threshold"
+  },
+  "taxationRegime.param.rate_after": {
+    "message": "Rate after the threshold"
+  },
+  "taxationRegime.param.threshold_years": {
+    "message": "Threshold, in years"
+  },
+  "taxationRegime.param.age_basis": {
+    "message": "Counted from"
+  },
+  "taxationRegime.ageBasis.opening": {
+    "message": "The day the wrapper was opened"
+  },
+  "taxationRegime.ageBasis.first_payment": {
+    "message": "The first payment into it"
+  },
+  "taxationRegime.bracket.above": {
+    "message": "Above {bound}"
+  },
+  "taxationRegime.bracket.upTo": {
+    "message": "Up to {bound}"
+  },
+  "taxationRegime.noShape": {
+    "message": "No shape in the app represents this regime."
+  },
+  "taxationRegime.taxYear": {
+    "message": "tax year {year}"
+  },
+  "taxationRegime.asOf": {
+    "message": "As of {date}"
   }
 }

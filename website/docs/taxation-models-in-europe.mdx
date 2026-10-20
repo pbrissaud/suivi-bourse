@@ -1,0 +1,161 @@
+---
+title: Taxation models in Europe
+description: What to enter in the app for a French, German, Belgian, Spanish or Italian wrapper — the shape, the parameters, the source, and what the model leaves out
+---
+
+import TaxationRegime from '@site/src/components/TaxationRegime';
+
+# Taxation models in Europe {#top}
+
+[Your taxation model](./your-taxation-model.mdx) is typed by you, and the app
+ships no rates. This page is the other half: for a common wrapper, **which
+shape fits it and what its parameters were** on the day someone looked them up.
+
+**It is a starting point, not tax advice.** Every table below is "as of" the
+date beside its source, and a tax schedule changes: check each value at the
+source before you enter it. The app stores what you type and nothing else — it
+does not follow the law on your behalf, and it does not know your situation.
+
+Each wrapper has the same three parts: what it is and what it holds, the
+parameters to enter, and **what the model leaves out** — because a model is one
+shape, and a regime is usually more than one shape can say.
+
+## France {#fr}
+
+### Plan d’épargne en actions (PEA) {#fr-pea}
+
+A share-holding wrapper: listed European shares, and funds that hold them. The
+tax depends on the wrapper's age, and that age runs from its **first payment**,
+not from a contract date — which is why the shape asks what the age is counted
+from.
+
+<TaxationRegime id="fr/pea" />
+
+**What the model leaves out.** A withdrawal before the threshold usually closes
+the plan, which the app does not model. Social charges on a plan opened long ago
+can follow older rules for the gains of past years. The option to be taxed on
+the progressive scale instead is not modelled (#1106), and neither are the
+special cases for unlisted securities.
+
+### PEA-PME {#fr-pea-pme}
+
+The companion of the PEA for small and mid-sized companies. Its tax treatment is
+the PEA's, with its own payment ceiling and its own list of eligible securities.
+
+<TaxationRegime id="fr/pea-pme" />
+
+**What the model leaves out.** The same as the PEA. The ceiling on payments,
+which is a rule about what you may put in and not about what you owe, is not a
+tax parameter and the app does not check it.
+
+### Compte-titres ordinaire (CTO) {#fr-compte-titres}
+
+An ordinary securities account: no tax shelter, no limit on what it holds. The
+gain is taxed when realised, at the flat levy, which is an income-tax part plus
+social charges.
+
+<TaxationRegime id="fr/compte-titres" />
+
+**What the model leaves out.** The option for the progressive scale (#1106),
+which can be cheaper or dearer depending on your income. Losses carried over
+from earlier years, set against this year's gains. The tax on dividends, which
+is a withholding and a different shape — an account carries a single model, and
+this one is the gain's.
+
+### Assurance-vie {#fr-assurance-vie}
+
+A life-insurance contract used as a savings wrapper. The rate on a withdrawal
+changes once the contract passes a certain age, counted from the day it was
+**opened**. Social charges are not at the same level as on the other wrappers of
+this page.
+
+<TaxationRegime id="fr/assurance-vie" />
+
+**What the model leaves out.** The lower rate after the threshold applies only
+up to a ceiling of premiums paid, and the part above it is taxed at the higher
+rate. A yearly allowance on the gains after the threshold, shared by all your
+contracts. Contracts whose premiums were paid before the 2017 reform, which have
+their own schedule. Succession rules, which have nothing to do with a sale.
+
+### Plan d’épargne retraite (PER) {#fr-per}
+
+A retirement savings plan, locked until retirement in most cases. At exit, the
+tax is not on one thing: the capital that matches payments you deducted is
+treated as income, and the gains are taxed at the flat levy.
+
+<TaxationRegime id="fr/per" />
+
+**What the model leaves out.** Almost everything about the exit of the capital
+itself: the payments you deducted from your income are taxed on the progressive
+scale at exit, and the model only holds the **gains'** part. If you deducted your
+payments, the figure is far below what leaving the plan would cost. Early exits
+for a few listed reasons, which follow their own rules.
+
+## Germany {#de}
+
+### Wertpapierdepot {#de-depot}
+
+A securities account held with a bank in Germany. The bank withholds the tax on
+the gain when you sell, and for most people that withholding is the end of it.
+
+<TaxationRegime id="de/depot" />
+
+The levy row is the solidarity surcharge, which is a percentage of the tax and
+not of the gain: it is entered here as a part of the gain so that the two
+figures add up.
+
+**What the model leaves out.** The yearly allowance on investment income, which
+the bank applies against your gains before it withholds. Church tax, which is due
+if you belong to a church and depends on where you live. Loss offsetting between
+the bank's own pots (shares and other income are not netted together). Partial
+exemptions on some funds.
+
+## Belgium {#be}
+
+### Effectenrekening / compte-titres {#be-compte-titres}
+
+A securities account held with a bank or a broker in Belgium. Until 2026 a
+private investor managing their own savings normally owed nothing on a gain; a tax on gains on financial assets now
+applies to what is realised since the start of 2026.
+
+<TaxationRegime id="be/compte-titres" />
+
+**What the model leaves out.** The yearly exemption on the gains, and its
+carry-over. The reference value for assets bought before the tax existed, which
+fixes the gain to be taxed. The tax on securities accounts, due on the account
+and not on a sale. The stock-exchange tax on each trade. The withholding on
+dividends and interest, which is a different shape.
+
+## Spain {#es}
+
+### Cuenta de valores {#es-cuenta-valores}
+
+A securities account. The gain goes into the *base del ahorro*, taxed by
+bracket: each rate applies only to the part of the gain that falls inside its
+bracket, and the ceilings below are in euros.
+
+<TaxationRegime id="es/cuenta-valores" />
+
+The rates are the state's scale and the region's added together, as the tax
+office publishes them for a region that applies the default scale.
+
+**What the model leaves out.** Your other savings income, which fills the
+brackets before the gain does: the model sees this account's gains alone, so it
+starts every year from the bottom bracket. A region that sets its own scale.
+Losses carried over. The rules for shares bought and sold within a short window.
+
+## Italy {#it}
+
+### Regime amministrato {#it-regime-amministrato}
+
+A securities account under the *risparmio amministrato* option: the bank or
+broker computes the substitute tax on each sale and pays it for you, so you
+declare nothing for these gains.
+
+<TaxationRegime id="it/regime-amministrato" />
+
+**What the model leaves out.** The reduced rate on government bonds and
+equivalent securities, which this shape cannot split from the rest. The
+offsetting of losses against later gains inside the account, for a limited
+number of years. The stamp duty on the account. The other tax options, which
+change who computes the tax and not only how much is owed.

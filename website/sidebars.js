@@ -19,7 +19,8 @@
  * `your-taxation-model` sits after `read-your-figures` (#954) for the same
  * reason: it is not a twelfth subject, it is where the projected-tax rule sends
  * a reader who has just met the figure and wants to know where the rate it
- * names is recorded.
+ * names is recorded. `taxation-models-in-europe` follows it for the next
+ * question, what to enter for one's own wrapper.
  */
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
@@ -30,6 +31,7 @@ const sidebars = {
     'import-your-events',
     'read-your-figures',
     'your-taxation-model',
+    'taxation-models-in-europe',
     'settings',
     'install-without-docker',
     'rebuild-and-resolution',

@@ -1,0 +1,23 @@
+{
+  "country": "BE",
+  "wrappers": [
+    {
+      "id": "be/compte-titres",
+      "name": "Effectenrekening / compte-titres",
+      "tax_year": 2026,
+      "model": {
+        "kind": "flat_realised",
+        "parameters": {
+          "rate": 0.1
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.ejustice.just.fgov.be/cgi/article.pl?language=nl&sum_date=2026-06-19&pd_search=2026-04-21&numac_search=2026002780&page=3&lg_txt=N&caller=list&2026002780=74&pdd=2026-04-21&pdf=2026-04-21&choix1=en&choix2=en&fr=f&nl=n&du=d&trier=afkondiging",
+          "title": "Wet van 6 april 2026 tot invoering van een belasting op meerwaarden op financiële activa — Belgisch Staatsblad",
+          "consulted": "2026-10-20"
+        }
+      ]
+    }
+  ]
+}

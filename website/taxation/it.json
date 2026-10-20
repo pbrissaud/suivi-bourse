@@ -1,0 +1,23 @@
+{
+  "country": "IT",
+  "wrappers": [
+    {
+      "id": "it/regime-amministrato",
+      "name": "Regime amministrato (risparmio amministrato)",
+      "tax_year": 2026,
+      "model": {
+        "kind": "flat_realised",
+        "parameters": {
+          "rate": 0.26
+        }
+      },
+      "sources": [
+        {
+          "url": "https://infoprecompilata.agenziaentrate.gov.it/portale/quadro-rt",
+          "title": "Quadro RT — Plusvalenze di natura finanziaria — Agenzia delle Entrate",
+          "consulted": "2026-10-20"
+        }
+      ]
+    }
+  ]
+}
