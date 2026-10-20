@@ -113,6 +113,9 @@ export function useDial(key: string) {
       value = next
       sending.current = next
     }
+    // A commit during the cache write below compares with what the server holds
+    // now, not with the row the page last rendered.
+    if (answered) latest.current = from
     sending.current = null
     if (answered) {
       // Only this row, and only after a read that was already on its way is
