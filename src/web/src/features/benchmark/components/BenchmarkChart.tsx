@@ -14,7 +14,6 @@
  * **The legend names the index, never the ticker.** `CW8.PA` is an address; the
  * MSCI World is what the owner is being compared against.
  */
-import type { ReactNode } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -28,7 +27,7 @@ import {
 import { ChartReading } from '@/components/ChartReading'
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
-import { Card, CardContent } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import type { BenchmarkPoint } from '@/features/benchmark/lib/api'
 import { AXIS_TICKS, tickDigits, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -80,11 +79,11 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
   const digits = tickDigits(y.ticks, (value, d) => f.compact(value, currency, d))
 
   return (
-    <Card>
-      <CardContent className="space-y-4 py-6">
-        <Header>{empty ? null : <Legend index={index} />}</Header>
-
-        {/* **The plot is reachable, and it is named** (#1003). It used to carry
+    <Section
+      title={t('benchmark.chart.title')}
+      aside={empty ? undefined : <Legend index={index} />}
+    >
+      {/* **The plot is reachable, and it is named** (#1003). It used to carry
             `aria-hidden`, on the argument that the head says the whole answer in
             prose and in figures, so a non-visual reader lost the shape and
             nothing else. That argument was half right and the mechanism was
@@ -103,122 +102,109 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
             Kept at 390 px, shorter. Seventeen years on 350 px does not read to
             the day, but *the gap is widening* and *the gap is closing* read
             perfectly well, and no other screen here removes content by width. */}
-        <div aria-live="polite">
-          {empty ? (
-            // A fact and not a wait: the payload answered `ready`, so there is a
-            // period and it holds no drawable day. *Not answered* never reaches
-            // here — the page returns before this mounts.
-            <EmptyState title={t('benchmark.chart.empty')} />
-          ) : (
-            <figure>
-              <div className="h-60 tabular sm:h-75">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={rows} aria-label={t('benchmark.chart.plot')}>
-                    <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
-                    <XAxis
-                      dataKey="t"
-                      ticks={x.ticks}
-                      tickFormatter={(day: string) => f.axisDate(day, x.unit)}
-                      minTickGap={8}
-                      axisLine={false}
-                      tickLine={false}
-                      stroke="var(--border)"
-                      tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
-                    />
-                    <YAxis
-                      domain={y.domain}
-                      ticks={y.ticks}
-                      tickFormatter={(value: number) => f.compact(value, currency, digits)}
-                      width="auto"
-                      axisLine={false}
-                      tickLine={false}
-                      stroke="var(--border)"
-                      tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
-                    />
+      <div aria-live="polite">
+        {empty ? (
+          // A fact and not a wait: the payload answered `ready`, so there is a
+          // period and it holds no drawable day. *Not answered* never reaches
+          // here — the page returns before this mounts.
+          <EmptyState title={t('benchmark.chart.empty')} />
+        ) : (
+          <figure>
+            <div className="h-60 tabular sm:h-75">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={rows} aria-label={t('benchmark.chart.plot')}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+                  <XAxis
+                    dataKey="t"
+                    ticks={x.ticks}
+                    tickFormatter={(day: string) => f.axisDate(day, x.unit)}
+                    minTickGap={8}
+                    axisLine={false}
+                    tickLine={false}
+                    stroke="var(--border)"
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+                  />
+                  <YAxis
+                    domain={y.domain}
+                    ticks={y.ticks}
+                    tickFormatter={(value: number) => f.compact(value, currency, digits)}
+                    width="auto"
+                    axisLine={false}
+                    tickLine={false}
+                    stroke="var(--border)"
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+                  />
 
-                    <ChartTooltip format={(value) => f.currency(value, currency)} />
+                  <ChartTooltip format={(value) => f.currency(value, currency)} />
 
-                    {/* Both areas answer the pointer with a figure the two lines
+                  {/* Both areas answer the pointer with a figure the two lines
                         already state, so they take function keys and drop out of
                         the tooltip (`ChartTooltip`) — which is also why neither
                         carries a name: nothing renders it. */}
-                    <Area
-                      dataKey={(row: { floor: number | null }) => row.floor}
-                      stackId="gap"
-                      stroke="none"
-                      fill="none"
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                    <Area
-                      dataKey={(row: { gap: number | null }) => row.gap}
-                      stackId="gap"
-                      stroke="none"
-                      fill="var(--muted-foreground)"
-                      fillOpacity={0.14}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
+                  <Area
+                    dataKey={(row: { floor: number | null }) => row.floor}
+                    stackId="gap"
+                    stroke="none"
+                    fill="none"
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
+                  <Area
+                    dataKey={(row: { gap: number | null }) => row.gap}
+                    stackId="gap"
+                    stroke="none"
+                    fill="var(--muted-foreground)"
+                    fillOpacity={0.14}
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
 
-                    <Line
-                      type="monotone"
-                      dataKey="portfolio"
-                      name={t('benchmark.chart.yours')}
-                      stroke="var(--color-price)"
-                      strokeWidth={2}
-                      dot={false}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="reference"
-                      name={t('benchmark.chart.theirs', { index })}
-                      stroke="var(--muted-foreground)"
-                      strokeWidth={1.25}
-                      strokeDasharray="4 4"
-                      dot={false}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-              {/* The crossings are this screen's subject and nothing stated them:
+                  <Line
+                    type="monotone"
+                    dataKey="portfolio"
+                    name={t('benchmark.chart.yours')}
+                    stroke="var(--color-price)"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="reference"
+                    name={t('benchmark.chart.theirs', { index })}
+                    stroke="var(--muted-foreground)"
+                    strokeWidth={1.25}
+                    strokeDasharray="4 4"
+                    dot={false}
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            {/* The crossings are this screen's subject and nothing stated them:
                   the head says the gap of today, the legend says which curve is
                   which, and until now the day the two changed places was in the
                   drawing alone. */}
-              <ChartReading
-                rows={rows}
-                curves={[
-                  { name: t('benchmark.chart.yours'), key: 'portfolio' },
-                  // **The index, and not the legend's own string.** The legend
-                  // reads `MSCI World, même argent investi` because it has a
-                  // swatch beside it and one line to make its claim; inside a
-                  // spoken sentence that clause comes back three times and
-                  // buries the figures. *Same money invested* is already said
-                  // once, by the card's heading above.
-                  { name: index, key: 'reference' },
-                ]}
-                format={currency === null ? null : (value) => f.currency(value, currency)}
-              />
-            </figure>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-/** The card's title and its legend. */
-function Header({ children }: { children?: ReactNode }) {
-  const { t } = useI18n()
-
-  return (
-    <div className="space-y-1.5">
-      <h2 className="text-base font-semibold">{t('benchmark.chart.title')}</h2>
-      {children}
-    </div>
+            <ChartReading
+              rows={rows}
+              curves={[
+                { name: t('benchmark.chart.yours'), key: 'portfolio' },
+                // **The index, and not the legend's own string.** The legend
+                // reads `MSCI World, même argent investi` because it has a
+                // swatch beside it and one line to make its claim; inside a
+                // spoken sentence that clause comes back three times and
+                // buries the figures. *Same money invested* is already said
+                // once, by the card's heading above.
+                { name: index, key: 'reference' },
+              ]}
+              format={currency === null ? null : (value) => f.currency(value, currency)}
+            />
+          </figure>
+        )}
+      </div>
+    </Section>
   )
 }
 

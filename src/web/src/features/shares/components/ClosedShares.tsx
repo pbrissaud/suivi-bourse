@@ -63,9 +63,9 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
   const dividends = rows.reduce((sum, row) => sum + row.dividends, 0)
 
   return (
-    <section className="rounded-xl border bg-card">
+    <section className="border-t">
       <h2 className="sr-only">{t('shares.closed.label')}</h2>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3.5">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3.5">
         <button
           type="button"
           aria-expanded={open}
@@ -91,48 +91,46 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
       </div>
 
       {open ? (
-        <div className="border-t">
-          <Table>
-            <caption className="sr-only">{t('shares.closed.label')}</caption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('shares.column.symbol')}</TableHead>
-                <TableHead>{t('shares.column.closedOn')}</TableHead>
-                <TableHead className="text-right">{t('shares.column.realised')}</TableHead>
-                <TableHead className="text-right">{t('shares.column.dividends')}</TableHead>
-                <TableHead>{t('shares.column.account')}</TableHead>
+        <Table containerClassName="border-t">
+          <caption className="sr-only">{t('shares.closed.label')}</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('shares.column.symbol')}</TableHead>
+              <TableHead>{t('shares.column.closedOn')}</TableHead>
+              <TableHead className="text-right">{t('shares.column.realised')}</TableHead>
+              <TableHead className="text-right">{t('shares.column.dividends')}</TableHead>
+              <TableHead>{t('shares.column.account')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.symbol}>
+                <TableCell>
+                  <button
+                    type="button"
+                    className="text-md font-medium underline-offset-4 hover:underline"
+                    onClick={() => onSelect(row.symbol)}
+                  >
+                    {row.name ?? row.symbol}
+                  </button>
+                  <span className="block font-mono text-2xs text-muted-foreground">
+                    {row.symbol}
+                  </span>
+                </TableCell>
+                {/* The one column that discriminates these rows. An em dash
+                    where the store has no date: there is nothing to compute. */}
+                <TableCell>{row.closedAt === null ? ABSENT : f.date(row.closedAt)}</TableCell>
+                <TableCell className={`text-right tabular ${signClass(row.realised)}`}>
+                  {f.currency(row.realised, currency)}
+                </TableCell>
+                <TableCell className={`text-right tabular ${signClass(0)}`}>
+                  {f.currency(row.dividends, currency)}
+                </TableCell>
+                <TableCell>{renderAccounts(row.accounts)}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.symbol}>
-                  <TableCell>
-                    <button
-                      type="button"
-                      className="text-md font-medium underline-offset-4 hover:underline"
-                      onClick={() => onSelect(row.symbol)}
-                    >
-                      {row.name ?? row.symbol}
-                    </button>
-                    <span className="block font-mono text-2xs text-muted-foreground">
-                      {row.symbol}
-                    </span>
-                  </TableCell>
-                  {/* The one column that discriminates these rows. An em dash
-                      where the store has no date: there is nothing to compute. */}
-                  <TableCell>{row.closedAt === null ? ABSENT : f.date(row.closedAt)}</TableCell>
-                  <TableCell className={`text-right tabular ${signClass(row.realised)}`}>
-                    {f.currency(row.realised, currency)}
-                  </TableCell>
-                  <TableCell className={`text-right tabular ${signClass(0)}`}>
-                    {f.currency(row.dividends, currency)}
-                  </TableCell>
-                  <TableCell>{renderAccounts(row.accounts)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       ) : null}
     </section>
   )

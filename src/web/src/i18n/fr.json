@@ -381,6 +381,7 @@
   "shares.events.empty": "Aucun événement enregistré pour ce titre.",
   "shares.events.markers": "Jours portant un événement",
   "shares.events.marker": "{count, plural, one {# événement le {date}} other {# événements le {date}}}",
+  "shares.events.markerRange": "{count, plural, one {# opération} other {# opérations}}, du {from} au {to}",
   "shares.events.count": "×{count}",
   "shares.events.quantity": "{quantity} titres",
   "shares.breakdown.title": "Par compte",

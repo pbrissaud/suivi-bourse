@@ -64,7 +64,6 @@ import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Allocation } from '@/features/shares/components/Allocation'
@@ -341,11 +340,12 @@ export default function SharesPage() {
               </div>
             )}
 
-            {/* **One card; the totals are its last row** (#1281). The rows the
-                total row sums are the ones on screen, closed ones included:
-                handing it the held lines alone is what printed the other
-                correct figure. */}
-            <Card className="gap-0 overflow-hidden py-0">
+            {/* **The totals are the table's last row** (#1281), and the table
+                sits on the page's background (#1273). The rows the total row
+                sums are the ones on screen, closed ones included: handing it
+                the held lines alone is what printed the other correct figure.
+                The closed ones fold into a row under that total. */}
+            <div>
               <SharesTable
                 groups={groups}
                 currency={currency}
@@ -355,9 +355,9 @@ export default function SharesPage() {
                 totals={sharesTotals(summed, onScreen)}
                 closedCount={closed.length}
               />
-            </Card>
+              <ClosedShares rows={closed} currency={currency} onSelect={select} />
+            </div>
           </div>
-          <ClosedShares rows={closed} currency={currency} onSelect={select} />
         </>
       )}
 

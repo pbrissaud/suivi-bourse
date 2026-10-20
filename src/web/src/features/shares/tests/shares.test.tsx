@@ -28,6 +28,7 @@ import {
   defaultPositions,
   sharesPortfolio,
 } from '@/test/factories'
+import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -247,7 +248,9 @@ describe('the table’s toolbar (#1281)', () => {
 
     const block = document.querySelector('[data-slot="shares-table"]') as HTMLElement
     expect(block.children).toHaveLength(1)
-    expect(block.firstElementChild).toHaveAttribute('data-slot', 'card')
+    // The table alone, on the page's background.
+    expect(within(block.firstElementChild as HTMLElement).getByRole('table')).toBeInTheDocument()
+    expectNoBox(block)
   })
 })
 
@@ -261,6 +264,27 @@ describe('one line per row (#1281)', () => {
     // The ticker is beside the name, outside its button.
     expect(within(row).getByText('ZZA')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Zeta Alpha' })).not.toHaveTextContent('ZZA')
+  })
+})
+
+describe('the table sits on the page’s background (#1273)', () => {
+  it('draws no box, with the closed shares folded under the total', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+
+    expectNoBox()
+    // The disclosure row follows the table, ruled off above and not framed.
+    const section = fold().closest('section') as HTMLElement
+    expect(section.className).toMatch(/\bborder-t\b/)
+    expect(section.className).not.toMatch(/\b(rounded\S*|bg-card)\b/)
+    expect(liveTable().closest('[data-slot="shares-table"]')).toContainElement(section)
+  })
+
+  it('draws no box with no closed share', async () => {
+    renderShares(defaultPositions())
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+
+    expectNoBox()
   })
 })
 

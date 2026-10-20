@@ -102,6 +102,16 @@
       ]
     },
     {
+      "path": "./lint/card-for-decisions.grit",
+      "includes": [
+        "**/src/**/*.tsx",
+        "!**/components/ui/**",
+        "!**/src/test/**",
+        "!**/*.test.tsx",
+        "!**/features/accounts/components/AccountDetail.tsx"
+      ]
+    },
+    {
       "path": "./lint/no-runtime-error-on-surfaces.grit",
       "includes": ["**/src/pages/*Page.tsx", "**/features/data/components/Ledger.tsx"]
     }

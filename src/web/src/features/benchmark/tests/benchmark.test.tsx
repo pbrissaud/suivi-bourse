@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest'
 import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
 import { ROUTES } from '@/lib/api'
 import { aBenchmark } from '@/test/factories'
+import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -272,10 +273,10 @@ describe('the two curves', () => {
   it('leaves the chart’s header to its title and legend', async () => {
     renderBenchmark(ready({ series }))
 
-    const card = (await screen.findByText('Même argent investi, jour après jour')).closest(
-      '[data-slot="card"]',
-    ) as HTMLElement
-    expect(within(card).queryByRole('combobox')).not.toBeInTheDocument()
+    const chart = await screen.findByRole('region', {
+      name: 'Même argent investi, jour après jour',
+    })
+    expect(within(chart).queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
 
@@ -706,5 +707,76 @@ describe('the rows as the breakdown of the head', () => {
     expect(within(row).getByText('-3 691,65 €')).toBeInTheDocument()
     expect(screen.queryByText('Ensemble des comptes')).not.toBeInTheDocument()
     expect(screen.getByText('Total non comparable')).toBeInTheDocument()
+  })
+})
+
+describe('the page sits on the ground (#1273)', () => {
+  const series = [
+    { t: '2024-01-01', portfolio: 1000, reference: 1000 },
+    { t: '2024-01-02', portfolio: 1100, reference: 1050 },
+  ]
+  const per_account = ['PEA.LCL', 'CTO.BD'].map((account) => ({
+    account,
+    covered_from: '2019-10-30',
+    covered_to: '2026-09-17',
+    ended: null,
+    portfolio_value: 48_200,
+    reference_value: 43_988,
+    gap_gross: 4212,
+    portfolio_return: 0.181,
+    reference_return: 0.078,
+  }))
+  const rebuild = { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 }
+
+  it('draws the chart and the per-account table as sections, under one hero', async () => {
+    renderBenchmark(ready({ series, per_account }))
+
+    const chart = await screen.findByRole('region', {
+      name: 'Même argent investi, jour après jour',
+    })
+    const accounts = screen.getByRole('region', { name: 'Compte par compte' })
+    expect(chart.closest('[data-slot="section"]')).toBe(chart)
+    expect(accounts.closest('[data-slot="section"]')).toBe(accounts)
+    expect(document.querySelectorAll('.text-hero')).toHaveLength(1)
+    expectNoBox()
+  })
+
+  it('reads the gap, the verdict, then the two returns on one row', async () => {
+    renderBenchmark(ready({ series }))
+
+    const card = await headCard()
+    const returns = within(card).getByRole('group', { name: 'Votre portefeuille' }).parentElement
+      ?.parentElement
+    expect(returns?.className).toMatch(/flex-wrap/)
+    // The gap leads, the period line comes before the two returns.
+    const text = card.textContent ?? ''
+    expect(text.indexOf('+4 212,80')).toBeLessThan(text.indexOf('Gain sur l’argent investi, du'))
+    expect(text.indexOf('Gain sur l’argent investi, du')).toBeLessThan(
+      text.indexOf('Votre portefeuille'),
+    )
+  })
+
+  it('draws no box while the fund is rebuilt, and states it in a section', async () => {
+    renderBenchmark({ state: 'rebuilding', reference: 'CW8.PA', index: 'MSCI World', rebuild })
+
+    const section = await screen.findByRole('region', {
+      name: /Reconstitution de l’historique de CW8.PA/,
+    })
+    expect(within(section).getByRole('progressbar')).toBeInTheDocument()
+    expectNoBox()
+  })
+
+  it('draws no box with nothing to compare', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reason: 'no_events',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      consulted: ['CW8.PA'],
+      per_account,
+    })
+
+    await screen.findByText(/Enregistrez vos premiers événements/)
+    expectNoBox()
   })
 })

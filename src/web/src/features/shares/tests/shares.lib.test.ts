@@ -262,13 +262,13 @@ describe('the per-account breakdown', () => {
 describe('the chart’s event markers', () => {
   const POINTS = aPriceSeries().points
 
-  it('is one marker per day, announcing its count', () => {
+  it('is one marker per point, announcing its count', () => {
     // `×2, ×2, ×3, ×3` over four days on one real symbol: drawn per event those
     // points overlap and three purchases read as one, in silence.
     const markers = eventMarkers(shareLedger(), 'ZZA', POINTS)
-    expect(markers.map((marker) => [marker.day, marker.count])).toEqual([
-      ['2026-02-28', 1],
-      ['2026-03-01', 3],
+    expect(markers.map((marker) => [marker.days, marker.count])).toEqual([
+      [['2026-02-28'], 1],
+      [['2026-03-01'], 3],
     ])
   })
 
@@ -276,7 +276,7 @@ describe('the chart’s event markers', () => {
     // 2025-01-05 is in the ledger and not on the chart: the window bounds the
     // markers, so changing the range genuinely changes what is announced. And
     // the `ZZC` event of 2026-03-01 never joins `ZZA`'s count of three.
-    const days = eventMarkers(shareLedger(), 'ZZA', POINTS).map((marker) => marker.day)
+    const days = eventMarkers(shareLedger(), 'ZZA', POINTS).flatMap((marker) => marker.days)
     expect(days).not.toContain('2025-01-05')
     expect(eventMarkers(shareLedger(), 'ZZC', POINTS)).toHaveLength(1)
   })
@@ -289,7 +289,7 @@ describe('the chart’s event markers', () => {
       { t: '2026-02-28T17:30:00.000Z', price: 126 },
       { t: '2026-03-02T12:00:00.000Z', price: 130 },
     ])
-    expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-02-28', 0]])
+    expect(markers.map((marker) => [marker.days, marker.offset])).toEqual([[['2026-02-28'], 0]])
   })
 
   it('sits on the rank of its point, never on a fraction of the elapsed span', () => {
@@ -309,7 +309,7 @@ describe('the chart’s event markers', () => {
     // fraction of the span the same day lands at 0,97 — under the curve of the
     // last two minutes, which is the wrong place on the one liaison this sheet
     // exists to make.
-    expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-03-01', 0.5]])
+    expect(markers.map((marker) => [marker.days, marker.offset])).toEqual([[['2026-03-01'], 0.5]])
   })
 
   it('names the nearest point when the day itself carries none', () => {
@@ -322,6 +322,48 @@ describe('the chart’s event markers', () => {
     ]
     const markers = eventMarkers([anEvent({ date: '2026-03-07' })], 'ZZA', points)
     expect(markers.map((marker) => marker.offset)).toEqual([0.5])
+  })
+
+  // A hundred daily closes, so that one step of the axis is 0,01 of the plot.
+  const DAILY = Array.from({ length: 101 }, (_, index) => ({
+    t: new Date(Date.UTC(2026, 0, 1 + index, 17, 30)).toISOString(),
+    price: 100 + index,
+  }))
+  const onDay = (index: number) => anEvent({ date: DAILY[index].t.slice(0, 10) })
+
+  it('merges two days that land on one plotted point', () => {
+    // The 7th and the 9th both name the 10th's close: the only point between
+    // them, so drawn apart their labels would read "×1×1" on one spot.
+    const points = [
+      { t: '2026-02-28T17:30:00.000Z', price: 100 },
+      { t: '2026-03-10T17:30:00.000Z', price: 110 },
+      { t: '2026-03-20T17:30:00.000Z', price: 120 },
+    ]
+    const markers = eventMarkers(
+      [anEvent({ date: '2026-03-07' }), anEvent({ date: '2026-03-09' })],
+      'ZZA',
+      points,
+    )
+    expect(markers).toEqual([{ days: ['2026-03-07', '2026-03-09'], count: 2, offset: 0.5 }])
+  })
+
+  it('merges two days 0,03 of the plot apart', () => {
+    const markers = eventMarkers([onDay(10), onDay(13)], 'ZZA', DAILY)
+    expect(markers).toHaveLength(1)
+    expect(markers[0].days).toHaveLength(2)
+    expect(markers[0].offset).toBeCloseTo(0.115)
+  })
+
+  it('keeps two days 0,05 of the plot apart separate', () => {
+    expect(eventMarkers([onDay(10), onDay(15)], 'ZZA', DAILY)).toHaveLength(2)
+  })
+
+  it('sums the counts and keeps the days in date order', () => {
+    // Handed in the wrong order, with two events on the later day.
+    const markers = eventMarkers([onDay(12), onDay(10), onDay(12)], 'ZZA', DAILY)
+    expect(markers).toEqual([
+      { days: [DAILY[10].t.slice(0, 10), DAILY[12].t.slice(0, 10)], count: 3, offset: 0.11 },
+    ])
   })
 
   it('places nothing at all on a span of one point', () => {

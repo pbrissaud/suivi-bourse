@@ -764,22 +764,24 @@ export function shareEvents(events: readonly LedgerEvent[], symbol: string): Led
 }
 
 /**
- * A day of the ledger, as the chart announces it (#720).
+ * What the chart announces at one place of its plot (#720, #1273).
  *
- * **One marker per day, carrying its count**, never one point per event: a
- * single symbol of the real portfolio carries `×2`, `×2`, `×3`, `×3` over four
- * days, so points drawn per event overlap and the reader is shown three
- * purchases as one with nothing saying so. The collision is measured, not
- * hypothetical.
+ * **One marker per plotted point, carrying its count**, never one point per
+ * event: a single symbol of the real portfolio carries `×2`, `×2`, `×3`, `×3`
+ * over four days, so points drawn per event overlap and the reader is shown
+ * three purchases as one with nothing saying so. Days that land on one point,
+ * or closer than {@link MERGE_GAP} of the plot, are **one** marker: drawn apart
+ * their `×N` labels overlap into "×2×3".
  */
 interface EventMarker {
-  /** The calendar day, `YYYY-MM-DD` — it is what the selection is keyed on. */
-  day: string
-  /** How many events fall on it. Above one it is announced as `×N`. */
+  /** The calendar days it holds, `YYYY-MM-DD`, in date order — what the selection is keyed on. */
+  days: string[]
+  /** How many events fall on them, summed. Above one it is announced as `×N`. */
   count: number
   /**
    * Where it sits along the visible series: the **rank** of the point it names,
-   * `0` at the first and `1` at the last. A fraction rather than a pixel,
+   * `0` at the first and `1` at the last, the middle of its first and last day
+   * for a merged one. A fraction rather than a pixel,
    * because the band that draws it is laid out in the chart's own width; and a
    * fraction of the **index** rather than of the elapsed time, because that is
    * the abscissa the chart itself uses — a Recharts category axis gives every
@@ -793,6 +795,9 @@ interface EventMarker {
    */
   offset: number
 }
+
+/** Two days closer than this fraction of the plot width share a marker. */
+const MERGE_GAP = 0.04
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -864,7 +869,7 @@ export function eventMarkers(
     counts.set(event.date, (counts.get(event.date) ?? 0) + 1)
   }
 
-  return Array.from(counts.entries())
+  const days = Array.from(counts.entries())
     .map(([day, count]) => ({ day, count, start: Date.parse(`${day}T00:00:00Z`) }))
     .filter(({ start }) => Number.isFinite(start) && start + DAY_MS > first && start <= last)
     .sort((left, right) => left.start - right.start)
@@ -873,4 +878,21 @@ export function eventMarkers(
       count,
       offset: nearestStop(stops, start).index / steps,
     }))
+
+  // The offsets rise with the dates (the series is in time order), so a cluster
+  // is a run of neighbours, each within the gap of the one before it.
+  const clusters: { days: typeof days }[] = []
+  for (const day of days) {
+    const current = clusters.at(-1)
+    if (current && day.offset - current.days[current.days.length - 1].offset < MERGE_GAP) {
+      current.days.push(day)
+    } else {
+      clusters.push({ days: [day] })
+    }
+  }
+  return clusters.map(({ days: held }) => ({
+    days: held.map((one) => one.day),
+    count: held.reduce((sum, one) => sum + one.count, 0),
+    offset: (held[0].offset + held[held.length - 1].offset) / 2,
+  }))
 }
