@@ -43,8 +43,7 @@
         "!**/components/ui/**",
         "!**/src/test/**",
         "!**/*.test.{ts,tsx}",
-        "!**/components/ShareBar.tsx",
-        "!**/features/accounts/components/AccountsRail.tsx"
+        "!**/components/ShareBar.tsx"
       ]
     },
     {

@@ -50,7 +50,7 @@ function renderAccounts(
 }
 
 function rail() {
-  return screen.findByRole('list', { name: 'Vos comptes' })
+  return screen.findByRole('group', { name: 'Vos comptes' })
 }
 
 const OFFER = 'Des événements affectés à aucun compte'

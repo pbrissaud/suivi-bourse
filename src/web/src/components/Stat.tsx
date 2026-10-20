@@ -7,8 +7,9 @@
  * product sat on the only component incapable of explaining itself. So the slot
  * is not optional furniture here — it is the reason the primitive exists.
  *
- * Three weights, one component, because they are the same object seen from
- * three distances: `head` is the one figure a page leads with, `term` is what
+ * Four weights, one component, because they are the same object seen from
+ * four distances: `head` is the one figure a page leads with, `figure` a
+ * secondary figure that stands alone (DESIGN.md's Figure rung), `term` is what
  * is subordinate to it, `stat` everything else. Subordination is **vertical**
  * and it is a size — a total and its terms never share a line, and
  * mounted at equal weight nothing says the terms are *inside* the total.
@@ -37,7 +38,7 @@ interface StatProps {
   children?: ReactNode
   /** The colour of the value, decided by `lib/sign.ts` and never here. */
   valueClassName?: string
-  size?: 'head' | 'stat' | 'term'
+  size?: 'head' | 'figure' | 'stat' | 'term'
   /**
    * Where the pair sits on its own line. `start` everywhere but one: the
    * allocation's total is drawn **inside the ring's hole**, which has a middle
@@ -48,13 +49,14 @@ interface StatProps {
 }
 
 /**
- * The three distances: DESIGN.md's hero (60/64, 600, −0.03em) for the one
- * figure a screen leads with, 19 px for a statistic, 16 px for a term inside a
- * total. The hero brings its own tracking, so the value's `tracking-tight`
+ * The four distances: DESIGN.md's hero (60/64, 600, −0.03em) for the one
+ * figure a screen leads with, its Figure (28/32) for a secondary figure that
+ * stands alone, 19 px for a statistic, 16 px for a term inside a total. The hero brings its own tracking, so the value's `tracking-tight`
  * applies to the two others only.
  */
 const SIZES: Record<NonNullable<StatProps['size']>, string> = {
   head: 'text-hero tracking-hero',
+  figure: 'text-4xl',
   stat: 'text-xl',
   term: 'text-lg',
 }
@@ -66,6 +68,7 @@ const SIZES: Record<NonNullable<StatProps['size']>, string> = {
  */
 const LABELS: Record<NonNullable<StatProps['size']>, string> = {
   head: 'label',
+  figure: 'label',
   stat: 'text-xs',
   term: 'text-xs',
 }

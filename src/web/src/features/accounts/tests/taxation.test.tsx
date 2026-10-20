@@ -49,7 +49,7 @@ function renderAccounts(
 
 async function openPanel(user: ReturnType<typeof renderApp>['user'], name = 'Alpha') {
   await user.click(
-    within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole('link', {
+    within(await screen.findByRole('group', { name: 'Vos comptes' })).getByRole('link', {
       name: new RegExp(name),
     }),
   )

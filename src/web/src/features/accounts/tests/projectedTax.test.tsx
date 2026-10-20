@@ -4,20 +4,20 @@
  * At the seam every page test here uses: the whole app in jsdom, HTTP the only
  * faked edge, every assertion on the accessible rendering. The **figure** is the
  * server's and is never recomputed here — what this file is about is the five
- * readings the card exists to keep apart:
+ * readings the third term of the figures row exists to keep apart:
  *
  *  - **a declared exemption is not a measured zero.** A `none` model shows
  *    `0,00 €` and says what that model says; an account carrying no model at all
  *    shows no card, and the sentence that says why is raised once as an advisory;
- *  - **the card waits on the positions**, not on its own read, so a tax never
+ *  - **the row waits on the positions**, not on its own read, so a tax never
  *    appears beside a gain the panel is still refusing to state;
  *  - **the caveat is body text**, read without a click, because not clicking
  *    would cost the entire epistemic status of the figure;
  *  - **the footing names the rate that produced it**, levy folded in, and the
  *    day it changes where an age threshold is still ahead;
  *  - **a read that refused is not a read in flight.** Two different silences,
- *    two different renderings: the refusal is named in the card's own place,
- *    and the one figure resting on no read at all still stands.
+ *    two different renderings: the refusal is named once, across the row, where
+ *    its figures would have been.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -67,13 +67,14 @@ function renderAccounts(
   return renderApp({ url: '/accounts?account=alpha' })
 }
 
+/** The projected tax — the third term of the figures row. */
 async function theCard() {
   return within(await screen.findByRole('region', { name: 'Alpha' })).findByRole('group', {
     name: 'Impôt projeté',
   })
 }
 
-describe('the card is present wherever a model is', () => {
+describe('the term is present wherever a model is', () => {
   it('states what the server projected, and says it is not a tax return', async () => {
     renderAccounts({ taxation_kind: 'flat_realised', projected_tax: 96, projected_rates: [0.3] })
 
@@ -141,7 +142,7 @@ describe('the card is present wherever a model is', () => {
   })
 })
 
-describe('the card waits on the positions, not on its own read', () => {
+describe('the row waits on the positions, not on its own read', () => {
   it('states nothing while the read the figure is derived from is in flight', async () => {
     // `projected_tax` rides on the accounts payload and lands **first**. A tax
     // rendered beside a `Gain` the panel is still refusing to state would be a
@@ -165,36 +166,36 @@ describe('the card waits on the positions, not on its own read', () => {
 
 describe('a read that refused is named, never summed over', () => {
   it('says why the figure is missing instead of stating one derived from nothing', async () => {
-    // **In flight and refused are two different silences.** In flight the card
-    // does not exist at all (#724); refused, it exists and names the read it
-    // could not make — the same sentence the head above it carries, because the
-    // tax is derived from the very terms the head is refusing to state.
+    // **In flight and refused are two different silences.** In flight the row
+    // does not exist at all (#724); refused, it names the read it could not
+    // make, once, where its three figures would have been.
     renderAccounts(
       { taxation_kind: 'flat_realised', projected_tax: 96, projected_rates: [0.3] },
       { positions: 'refused' },
     )
 
-    // The card is here — its own title, which the in-flight case does not have.
-    expect(await screen.findByText('Impôt projeté')).toBeInTheDocument()
-    // Twice: once where the head's figures were, once inside this card.
-    await waitFor(() => expect(screen.getAllByText('Lecture impossible')).toHaveLength(2))
+    const detail = await screen.findByRole('region', { name: 'Alpha' })
+    await waitFor(() => expect(screen.getAllByText('Lecture impossible')).toHaveLength(1))
+    expect(
+      within(detail).getByText('Lecture impossible').closest('[data-row="figures"]'),
+    ).not.toBeNull()
 
     // **The footing waits with it.** *Taux appliqué 30 %* under a hairline with
-    // nothing above it names the rate that produced a figure the card is
+    // nothing above it names the rate that produced a figure the row is
     // refusing to state in the same breath.
     expect(screen.queryByRole('group', { name: 'Taux appliqué' })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Impôt projeté' })).not.toBeInTheDocument()
     expect(screen.queryByText(/96,00/)).not.toBeInTheDocument()
   })
 
-  it('states a declared exemption anyway, that zero resting on no read at all', async () => {
-    // `none` is the one kind whose figure is not derived from the positions:
-    // the model *says* zero. Withholding it because an unrelated read refused
-    // would make a declaration wait on evidence it never used.
+  it('waits for the positions even for a declared exemption', async () => {
+    // The row is one read's worth of figures (#1277): a `0,00 €` beside two
+    // figures the page is refusing to state would be a row with a hole in it.
     renderAccounts({ taxation_kind: 'none' }, { positions: 'refused' })
 
-    expect(await theCard()).toHaveTextContent('0,00')
-    expect(await screen.findByText(/Rien n’est dû sur ce compte/)).toBeInTheDocument()
+    await screen.findByRole('region', { name: 'Alpha' })
+    await waitFor(() => expect(screen.getAllByText('Lecture impossible')).toHaveLength(1))
+    expect(screen.queryByRole('group', { name: 'Impôt projeté' })).not.toBeInTheDocument()
   })
 })
 

@@ -834,7 +834,7 @@ export function submittedAccount(choice: AccountChoice, typed: string): Submitte
 /**
  * **The identity wheel** — which account a mark belongs to, said in hue (#838).
  *
- * It was `AccountsRail`'s and it is now shared, because the dashboard's
+ * It was the accounts rail's and it is now shared, because the dashboard's
  * comparison draws the same accounts as the rail and two wheels would put one
  * account in two colours on two surfaces. It turns through the four category
  * hues of the theme (`--alloc-1` to `--alloc-4`, #1283), so it follows the theme
