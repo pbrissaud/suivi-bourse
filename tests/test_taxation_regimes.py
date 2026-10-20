@@ -2,7 +2,7 @@
 import json
 import re
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -43,7 +43,7 @@ def test_a_regime_has_official_sources_consulted_in_the_past(wrapper):
     assert wrapper['name'] and wrapper['sources']
     for source in wrapper['sources']:
         assert source['url'].startswith('https://') and source['title']
-        assert date.fromisoformat(source['consulted']) <= date.today()
+        assert date.fromisoformat(source['consulted']) <= datetime.now(timezone.utc).date()
 
 
 def test_the_ids_in_the_json_are_the_ids_on_the_page_once_each():
