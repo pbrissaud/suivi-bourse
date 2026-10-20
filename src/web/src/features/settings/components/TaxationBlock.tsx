@@ -64,8 +64,6 @@ export function TaxationBlock() {
 
   return (
     <Section
-      id="taxation"
-      className="scroll-mt-20"
       title={t('settings.taxation')}
       aside={
         <Button type="button" variant="outline" size="sm" onClick={() => setEditing(null)}>

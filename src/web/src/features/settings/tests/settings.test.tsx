@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { taxationModelPath, type TaxationModelDraft } from '@/features/accounts/lib/api'
 import type { StoreState } from '@/features/settings/lib/api'
+import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
 import { type HealthState, type InstallationFact, ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
@@ -59,31 +60,115 @@ describe('the page', () => {
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
   })
 
-  it('holds what the owner sets, without the environment variables', async () => {
+  it('is one sequence of titled sections, the expert dials last', async () => {
     await openSettings()
 
     await waitFor(() =>
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
         'Sur cet appareil',
-        'Général',
+        'Portefeuille',
         'L’agent',
-        'Thème',
         'Accès',
         'Fiscalité',
+        'Thème',
+        'Avancé',
       ]),
     )
     expect(screen.queryByText('SB_STORE_DIR')).not.toBeInTheDocument()
   })
 
+  it('keeps every control out of a section’s gutter, and has no Save button', async () => {
+    await openSettings()
+    await screen.findByRole('heading', { name: 'Avancé' })
+
+    for (const name of ['Sur cet appareil', 'Portefeuille', 'Avancé']) {
+      const gutter = block(name).querySelector('header')
+      expect(gutter, name).not.toBeNull()
+      expect(within(gutter as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
+      expect(within(gutter as HTMLElement).queryByRole('switch')).not.toBeInTheDocument()
+      expect(within(block(name)).queryByRole('button', { name: 'Enregistrer' })).toBeNull()
+    }
+  })
+
   it('leaves the notices to the bell', async () => {
     await openSettings([anEnvironmentFact()])
-    await screen.findByRole('heading', { name: 'Général' })
+    await screen.findByRole('heading', { name: 'Avancé' })
 
     expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
   })
+
+  it('lands on the section its address names, with focus', async () => {
+    await openSettings(undefined, undefined, undefined, '/settings#advanced')
+
+    await waitFor(() => expect(block('Avancé')).toHaveFocus())
+  })
 })
 
-describe('the settings form', () => {
+describe('the device section', () => {
+  it('sets the language from a select', async () => {
+    const { user } = await openSettings()
+
+    await user.click(await screen.findByRole('combobox', { name: 'Langue' }))
+    await user.click(screen.getByRole('option', { name: 'English' }))
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
+  })
+
+  it('names the appearance, and offers automatic, light and dark', async () => {
+    await openSettings()
+
+    const group = await screen.findByRole('radiogroup', { name: 'Apparence' })
+    expect(
+      within(group)
+        .getAllByRole('radio')
+        .map((one) => one.textContent),
+    ).toEqual(['Automatique', 'Clair', 'Sombre'])
+  })
+})
+
+describe('the portfolio section', () => {
+  it('shows the base currency as an answer, with its chip, once it is fixed', async () => {
+    await openSettings()
+    await screen.findByRole('heading', { name: 'Portefeuille' })
+
+    const section = block('Portefeuille')
+    expect(await within(section).findByText('Figée')).toBeInTheDocument()
+    expect(within(section).queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('saves the currency the moment it is chosen, while nobody has answered', async () => {
+    // The walk is closed: it is what normally takes the question.
+    window.localStorage.setItem(FIRST_RUN_STORAGE_KEY, 'dismissed')
+    server.use(
+      http.get(ROUTES.config, () =>
+        HttpResponse.json(
+          aConfig({
+            settings: aConfig().settings.map((setting) =>
+              setting.key === 'base_currency'
+                ? { ...setting, value: null, stored: false }
+                : setting,
+            ),
+          }),
+        ),
+      ),
+    )
+    let sent: unknown = null
+    server.use(
+      http.put(ROUTES.settings, async ({ request }) => {
+        sent = await request.json()
+        return HttpResponse.json({ settings: aConfig().settings, changed: ['base_currency'] })
+      }),
+    )
+    const { user } = await openSettings()
+    const currency = await screen.findByLabelText('Devise de base')
+    await user.selectOptions(currency, 'CHF')
+
+    await waitFor(() => expect(sent).toEqual({ base_currency: 'CHF' }))
+    expect(await within(block('Portefeuille')).findByRole('status')).toHaveTextContent('Enregistré')
+  })
+})
+
+describe('the advanced section', () => {
   it('is drawn from the registry, unknown dials included', async () => {
     server.use(
       http.get(ROUTES.config, () =>
@@ -109,86 +194,485 @@ describe('the settings form', () => {
       ),
     )
     await openSettings()
-    await screen.findByRole('heading', { name: 'Général' })
+    await screen.findByRole('heading', { name: 'Avancé' })
 
-    const field = screen.getByLabelText('a_dial_from_the_future')
+    const field = await screen.findByLabelText('a_dial_from_the_future')
     expect(field).toHaveAttribute('min', '1')
     expect(field).toHaveAttribute('max', '9')
     expect(screen.getByText('Something a later version added.')).toBeInTheDocument()
   })
 
-  it('carries the five dials and the currency, not the benchmark', async () => {
+  it('carries the five dials and the release switch, not the currency or the benchmark', async () => {
     await openSettings()
-    await screen.findByRole('heading', { name: 'Général' })
+    await screen.findByRole('heading', { name: 'Avancé' })
 
-    const settings = block('Général')
+    const advanced = block('Avancé')
+    await within(advanced).findByText('Cadence de relevé')
     for (const dial of [
       'Cadence de relevé',
       'Cadence de reconstruction',
       'Délai entre deux requêtes',
       'Historique par requête',
       'Horizon de cours figé',
-      'Devise de base',
+      'Signaler les nouvelles versions',
     ]) {
-      expect(within(settings).getByText(dial)).toBeInTheDocument()
+      expect(within(advanced).getByText(dial)).toBeInTheDocument()
     }
-    expect(within(settings).queryByText('Référence de comparaison')).not.toBeInTheDocument()
-  })
-
-  it('accepts 0 on the stale-price horizon', async () => {
-    const { user } = await openSettings()
-    await screen.findByRole('heading', { name: 'Général' })
-    expect(screen.getByText(/0 pour ne jamais signaler/)).toBeInTheDocument()
-
-    let sent: Record<string, string> | null = null
-    server.use(
-      http.put(ROUTES.settings, async ({ request }) => {
-        sent = (await request.json()) as Record<string, string>
-        return HttpResponse.json({ settings: aConfig().settings, changed: Object.keys(sent) })
-      }),
-    )
-
-    const field = screen.getByLabelText('Horizon de cours figé')
-    expect(field).toHaveAttribute('min', '0')
-    await user.clear(field)
-    await user.type(field, '0')
-    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
-
-    await waitFor(() => expect(sent).toEqual({ staleness_horizon: '0' }))
+    expect(within(advanced).queryByText('Devise de base')).not.toBeInTheDocument()
+    expect(within(advanced).queryByText('Référence de comparaison')).not.toBeInTheDocument()
   })
 
   it('says what a cadence change reaches, and that it is retroactive', async () => {
     await openSettings()
-    await screen.findByRole('heading', { name: 'Général' })
+    await screen.findByRole('heading', { name: 'Avancé' })
 
     expect(
-      screen.getByText(
+      await screen.findByText(
         /S’applique maintenant à 2 titres, et à 1 autre à l’ouverture de son marché/,
       ),
     ).toBeInTheDocument()
     expect(screen.getByText(/y compris ceux déjà en échec/)).toBeInTheDocument()
   })
+})
 
-  it('writes only what moved', async () => {
-    const { user } = await openSettings()
-    await screen.findByRole('heading', { name: 'Général' })
-
-    let sent: Record<string, string> | null = null
+describe('a number saves itself', () => {
+  /** The `PUT`s the page sent, in order, answering with `answer` once released. */
+  function recordWrites(answer: () => Response = () => HttpResponse.json(okAnswer(['x']))) {
+    const writes: Record<string, unknown>[] = []
     server.use(
       http.put(ROUTES.settings, async ({ request }) => {
-        sent = (await request.json()) as Record<string, string>
-        return HttpResponse.json({ settings: aConfig().settings, changed: Object.keys(sent) })
+        writes.push((await request.json()) as Record<string, unknown>)
+        return answer()
       }),
     )
+    return writes
+  }
+  const okAnswer = (changed: string[]) => ({ settings: aConfig().settings, changed })
 
-    await user.clear(screen.getByLabelText('Cadence de relevé'))
-    await user.type(screen.getByLabelText('Cadence de relevé'), '300')
-    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
+  /** A promise made before the request, so opening it can never come too early. */
+  function gate() {
+    let open: () => void = () => {}
+    const opened = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    return { opened, open }
+  }
 
-    await waitFor(() => expect(sent).toEqual({ regular_interval: '300' }))
-    expect(await within(block('Général')).findByRole('status')).toHaveTextContent(
-      '1 réglage enregistré.',
+  it('on Enter, only what moved, and says so on its own row', async () => {
+    const writes = recordWrites()
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.type(field, '300{Enter}')
+
+    await waitFor(() => expect(writes).toEqual([{ regular_interval: '300' }]))
+    expect(await within(block('Avancé')).findByRole('status')).toHaveTextContent('✓ Enregistré')
+
+    // Leaving the field moves nothing, and the receipt stays.
+    await user.tab()
+    expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré')
+  })
+
+  it('on blur, and a blur right after Enter sends nothing more', async () => {
+    const writes = recordWrites()
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Horizon de cours figé')
+    expect(field).toHaveAttribute('min', '0')
+
+    await user.clear(field)
+    await user.type(field, '0{Enter}')
+    await user.tab()
+
+    await waitFor(() => expect(writes).toEqual([{ staleness_horizon: '0' }]))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(writes).toHaveLength(1)
+  })
+
+  it('sends nothing when the value did not move', async () => {
+    const writes = recordWrites()
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.click(field)
+    await user.tab()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(writes).toEqual([])
+  })
+
+  it('says « Enregistrement… » while it saves', async () => {
+    const held = gate()
+    server.use(
+      http.put(ROUTES.settings, async () => {
+        await held.opened
+        return HttpResponse.json(okAnswer(['regular_interval']))
+      }),
     )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.type(field, '300{Enter}')
+
+    expect(await within(block('Avancé')).findByRole('status')).toHaveTextContent('Enregistrement…')
+    held.open()
+    await waitFor(() =>
+      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
+    )
+  })
+
+  it('keeps what was typed when it is refused, says why, and gives the stored value back on Escape', async () => {
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json(
+          { status: 422, type: PROBLEM_TYPES.invalidSetting, title: 'refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Historique par requête')
+
+    await user.clear(field)
+    await user.type(field, '99999{Enter}')
+
+    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
+      '3 650 au plus. Enregistré : 365.',
+    )
+    expect(field).toHaveValue(99999)
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+
+    await user.keyboard('{Escape}')
+    expect(field).toHaveValue(365)
+    expect(field).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says any other failure on its row, keeps the value, and retries on the next blur', async () => {
+    let refuse = true
+    const writes: unknown[] = []
+    server.use(
+      http.put(ROUTES.settings, async ({ request }) => {
+        writes.push(await request.json())
+        if (refuse) return HttpResponse.error()
+        return HttpResponse.json(okAnswer(['regular_interval']))
+      }),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.type(field, '300{Enter}')
+
+    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent('Non enregistré :')
+    expect(field).toHaveValue(300)
+
+    refuse = false
+    await user.tab()
+
+    await waitFor(() =>
+      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
+    )
+    expect(writes).toEqual([{ regular_interval: '300' }, { regular_interval: '300' }])
+  })
+
+  it('leaves another row alone while one saves', async () => {
+    const held = gate()
+    server.use(
+      http.put(ROUTES.settings, async () => {
+        await held.opened
+        return HttpResponse.json(okAnswer(['update_check']))
+      }),
+    )
+    const { user } = await openSettings()
+
+    await user.click(await screen.findByRole('switch', { name: 'Signaler les nouvelles versions' }))
+    const field = screen.getByLabelText('Cadence de relevé')
+    await user.clear(field)
+    await user.type(field, '300')
+    held.open()
+
+    await waitFor(() => expect(within(block('Avancé')).getByRole('status')).toBeInTheDocument())
+    expect(field).toHaveValue(300)
+  })
+
+  it('writes only its own row into the cache, so another row’s newer value survives', async () => {
+    // The answer carries the whole list, and another row's entry in it is only
+    // as new as this request: it must not be written over what the page holds.
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json({
+          settings: aConfig().settings.map((setting) =>
+            setting.key === 'regular_interval'
+              ? { ...setting, value: 300 }
+              : setting.key === 'backfill_delay'
+                ? { ...setting, value: 99 }
+                : setting,
+          ),
+          changed: ['regular_interval'],
+        }),
+      ),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.type(field, '300{Enter}')
+
+    await waitFor(() => expect(within(block('Avancé')).getByRole('status')).toBeInTheDocument())
+    expect(field).toHaveValue(300)
+    expect(screen.getByLabelText('Délai entre deux requêtes')).toHaveValue(10)
+  })
+
+  it('sends nothing for a blank field and shows the stored value again', async () => {
+    const writes = recordWrites()
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.tab()
+
+    await waitFor(() => expect(field).toHaveValue(120))
+    expect(writes).toEqual([])
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says the lower bound as well', async () => {
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json(
+          { status: 422, type: PROBLEM_TYPES.invalidSetting, title: 'refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Historique par requête')
+
+    await user.clear(field)
+    await user.type(field, '0{Enter}')
+
+    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
+      '1 au moins. Enregistré : 365.',
+    )
+  })
+
+  it('sends a value typed during a failed save, and clears the alert when it lands', async () => {
+    const held = gate()
+    const writes: unknown[] = []
+    server.use(
+      http.put(ROUTES.settings, async ({ request }) => {
+        writes.push(await request.json())
+        if (writes.length === 1) {
+          await held.opened
+          return HttpResponse.error()
+        }
+        return HttpResponse.json(okAnswer(['regular_interval']))
+      }),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.type(field, '300{Enter}')
+    await waitFor(() => expect(writes).toHaveLength(1))
+    await user.clear(field)
+    await user.type(field, '400{Enter}')
+    held.open()
+
+    await waitFor(() =>
+      expect(writes).toEqual([{ regular_interval: '300' }, { regular_interval: '400' }]),
+    )
+    await waitFor(() =>
+      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not take back a value already on its way: Escape then blur sends nothing more', async () => {
+    const held = gate()
+    const writes: unknown[] = []
+    server.use(
+      http.put(ROUTES.settings, async ({ request }) => {
+        writes.push(await request.json())
+        await held.opened
+        return HttpResponse.json(okAnswer(['regular_interval']))
+      }),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Cadence de relevé')
+
+    await user.clear(field)
+    await user.type(field, '300{Enter}{Escape}')
+    await user.tab()
+    held.open()
+
+    await waitFor(() => expect(within(block('Avancé')).getByRole('status')).toBeInTheDocument())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(writes).toEqual([{ regular_interval: '300' }])
+  })
+})
+
+describe('the release switch (#1237)', () => {
+  const toggle = () => screen.findByRole('switch', { name: 'Signaler les nouvelles versions' })
+
+  /** A server that remembers: the config it serves follows the last write. */
+  function statefulServer(hold?: () => Promise<void>) {
+    let on = true
+    const writes: unknown[] = []
+    server.use(
+      http.get(ROUTES.config, () => {
+        const config = aConfig()
+        return HttpResponse.json({
+          ...config,
+          settings: config.settings.map((setting) =>
+            setting.key === 'update_check' ? { ...setting, value: on } : setting,
+          ),
+        })
+      }),
+      http.put(ROUTES.settings, async ({ request }) => {
+        const body = (await request.json()) as { update_check: boolean }
+        writes.push(body)
+        await hold?.()
+        on = body.update_check
+        const config = aConfig()
+        return HttpResponse.json({
+          settings: config.settings.map((setting) =>
+            setting.key === 'update_check' ? { ...setting, value: on } : setting,
+          ),
+          changed: ['update_check'],
+        })
+      }),
+    )
+    return writes
+  }
+
+  it('saves at once, and says so on its row', async () => {
+    const writes = statefulServer()
+    const { user } = await openSettings()
+
+    const control = await toggle()
+    expect(control).toBeChecked()
+    await user.click(control)
+
+    await waitFor(() => expect(writes).toEqual([{ update_check: false }]))
+    await waitFor(() =>
+      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
+    )
+    expect(control).not.toBeChecked()
+  })
+
+  it('ends on « on » after on, off, on, whichever answer comes back first', async () => {
+    const gates: (() => void)[] = []
+    const writes = statefulServer(
+      () =>
+        new Promise<void>((resolve) => {
+          gates.push(resolve)
+        }),
+    )
+    const { user } = await openSettings()
+
+    const control = await toggle()
+    await user.click(control) // off, in flight
+    await user.click(control) // on, waits its turn
+    expect(writes).toEqual([{ update_check: false }])
+
+    gates[0]()
+    await waitFor(() => expect(writes).toEqual([{ update_check: false }, { update_check: true }]))
+    gates[1]()
+
+    await waitFor(() => expect(control).toBeChecked())
+    await waitFor(() =>
+      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
+    )
+  })
+
+  it('says so when the write is refused', async () => {
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json(
+          { status: 422, title: 'refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await openSettings()
+
+    await user.click(await toggle())
+
+    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent('Non enregistré :')
+  })
+})
+
+describe('an unreadable store', () => {
+  it('is said in the sections it feeds, with a way to read again, and the rest still works', async () => {
+    server.use(problemHandler(ROUTES.config, UNAVAILABLE))
+    renderApp({ url: '/settings' })
+
+    expect(await screen.findAllByRole('button', { name: 'Réessayer' })).toHaveLength(2)
+    expect(within(block('Portefeuille')).queryByLabelText('Devise de base')).toBeNull()
+    expect(block('Sur cet appareil')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Cadence de relevé')).not.toBeInTheDocument()
+  })
+
+  it('reads again on request, and the rows come back', async () => {
+    let refuse = true
+    server.use(
+      http.get(ROUTES.config, () =>
+        refuse
+          ? HttpResponse.json(UNAVAILABLE, {
+              status: 503,
+              headers: { 'Content-Type': 'application/problem+json' },
+            })
+          : HttpResponse.json(aConfig()),
+      ),
+    )
+    const { user } = renderApp({ url: '/settings' })
+
+    const retry = await screen.findAllByRole('button', { name: 'Réessayer' })
+    refuse = false
+    await user.click(retry[0])
+
+    expect(await screen.findByLabelText('Cadence de relevé')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Réessayer' })).not.toBeInTheDocument()
+  })
+})
+
+describe('the currency row', () => {
+  it('says a refusal on its own row', async () => {
+    window.localStorage.setItem(FIRST_RUN_STORAGE_KEY, 'dismissed')
+    server.use(
+      http.get(ROUTES.config, () =>
+        HttpResponse.json(
+          aConfig({
+            settings: aConfig().settings.map((setting) =>
+              setting.key === 'base_currency'
+                ? { ...setting, value: null, stored: false }
+                : setting,
+            ),
+          }),
+        ),
+      ),
+      http.put(ROUTES.settings, () => HttpResponse.error()),
+    )
+    const { user } = renderApp({ url: '/settings' })
+
+    await user.selectOptions(await screen.findByLabelText('Devise de base'), 'CHF')
+
+    expect(await within(block('Portefeuille')).findByRole('alert')).toHaveTextContent(
+      'Non enregistré :',
+    )
+  })
+})
+
+describe('in English', () => {
+  it('renders every section', async () => {
+    const { unmount } = renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
+    expect(await screen.findByRole('heading', { name: 'Advanced' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Portfolio' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Taxation' })).toBeInTheDocument()
+    unmount()
   })
 })
 
@@ -309,97 +793,6 @@ describe('a newer release (#1237)', () => {
 
     await screen.findByText('5.1.0')
     await waitFor(() => expect(screen.queryByRole('link', notes('5.1.0'))).not.toBeInTheDocument())
-  })
-})
-
-describe('the release switch (#1237)', () => {
-  const toggle = () => screen.findByRole('switch', { name: 'Signaler les nouvelles versions' })
-
-  it('saves at once, and holds still while it does', async () => {
-    let sent: unknown = null
-    let release: () => void = () => {}
-    server.use(
-      http.put(ROUTES.settings, async ({ request }) => {
-        sent = await request.json()
-        await new Promise<void>((resolve) => {
-          release = resolve
-        })
-        return HttpResponse.json({ settings: aConfig().settings, changed: ['update_check'] })
-      }),
-    )
-    const { user } = await openSettings()
-
-    const control = await toggle()
-    expect(control).toBeChecked()
-    await user.click(control)
-
-    await waitFor(() => expect(sent).toEqual({ update_check: false }))
-    expect(control).toBeDisabled()
-    release()
-    await waitFor(() => expect(control).toBeEnabled())
-  })
-
-  it('says so when the write is refused', async () => {
-    server.use(
-      http.put(ROUTES.settings, () =>
-        HttpResponse.json(
-          { status: 422, title: 'refused' },
-          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-    const { user } = await openSettings()
-
-    await user.click(await toggle())
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('rien n’a été enregistré')
-  })
-
-  it('keeps an unsaved dial when it is toggled', async () => {
-    let off = false
-    server.use(
-      http.get(ROUTES.config, () => {
-        const config = aConfig()
-        return HttpResponse.json({
-          ...config,
-          settings: config.settings.map((setting) =>
-            setting.key === 'update_check' ? { ...setting, value: !off } : setting,
-          ),
-        })
-      }),
-      http.put(ROUTES.settings, () => {
-        off = true
-        return HttpResponse.json({ settings: aConfig().settings, changed: ['update_check'] })
-      }),
-    )
-    const { user } = await openSettings()
-
-    const field = await screen.findByLabelText('Cadence de relevé')
-    await user.clear(field)
-    await user.type(field, '300')
-    await user.click(await toggle())
-
-    await waitFor(async () => expect(await toggle()).not.toBeChecked())
-    expect(screen.getByLabelText('Cadence de relevé')).toHaveValue(300)
-  })
-})
-
-describe('an unreadable store', () => {
-  it('is said in place of the dials', async () => {
-    server.use(problemHandler(ROUTES.config, UNAVAILABLE))
-    renderApp({ url: '/settings' })
-
-    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Général' })).not.toBeInTheDocument()
-  })
-})
-
-describe('in English', () => {
-  it('renders every section', async () => {
-    const { unmount } = renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
-    expect(await screen.findByRole('heading', { name: 'General' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Taxation' })).toBeInTheDocument()
-    unmount()
   })
 })
 

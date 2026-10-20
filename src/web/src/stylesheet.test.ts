@@ -240,6 +240,9 @@ describe('index.css says what DESIGN.md says about the layout', () => {
     expect(declared(source, '--container-column')).toBe(
       rem(designComponent('content-column', 'maxWidth')),
     )
+    expect(declared(source, '--container-settings')).toBe(
+      rem(designComponent('content-settings', 'maxWidth')),
+    )
     expect(declared(source, '--container-reading')).toBe(
       rem(designComponent('content-reading', 'maxWidth')),
     )
@@ -251,7 +254,12 @@ describe('index.css says what DESIGN.md says about the layout', () => {
     // inlined at build time, so a width declared there is out of its way.
     const source = read()
     const inline = source.slice(source.indexOf('@theme inline'))
-    for (const name of ['--container-column', '--container-reading', '--breakpoint-3xl']) {
+    for (const name of [
+      '--container-column',
+      '--container-settings',
+      '--container-reading',
+      '--breakpoint-3xl',
+    ]) {
       expect(declared(inline, name), name).toMatch(/^\d+(\.\d+)?rem$/)
       // Declared once, and after `@theme inline` opens: never in a `:root` or `.dark`.
       expect(source.match(new RegExp(`${name}:`, 'g'))).toHaveLength(1)

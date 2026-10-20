@@ -151,7 +151,7 @@ describe('the navigation, eight entries in six and two', () => {
     // A route that renders a stub is a promise; this one renders the surface —
     // the dials, and the store the reader came to read.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Général' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sur cet appareil' })).toBeInTheDocument()
   })
 
   it('answers on its own address, so a bookmark on the settings survives', async () => {

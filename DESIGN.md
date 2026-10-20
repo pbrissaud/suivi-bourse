@@ -108,6 +108,8 @@ components:
     width: 200px
   content-column:
     maxWidth: 720px
+  content-settings:
+    maxWidth: 1040px
   content-reading:
     maxWidth: 768px
 ---
@@ -234,12 +236,13 @@ shipped face would cost every screen for no reader benefit.
 - **Navigation:** two groups and no group label. The top holds what the owner reads and records: Dashboard, Shares, Accounts, Ledger, Benchmark, Agent. The foot holds the administration: System, Settings.
 - **Content width is set per kind of content, never by one cap:**
   - a table or a chart takes the full width of the content column;
-  - a form, and the Settings page, is one start-aligned column of 720 px (`max-w-column`);
+  - a form is one start-aligned column of 720 px (`max-w-column`);
+  - the Settings page is 1 040 px (`max-w-settings`), start-aligned, one sequence of titled sections: from 1 024 px each section is a `220px | 1fr` grid with a 40 px gap, the title and one sentence in the gutter (sticky) and the rows on the right; under 1 024 px it is one column under a one-line anchor index;
   - the agent's conversation is described below (`max-w-column`, `lg:max-w-reading`);
   - a paragraph keeps its measure, 65 characters (`max-w-prose`), inside any of these;
   - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. The dashboard grid keeps two tracks today; a third track from 1 600 px is planned in #1325.
 
-  The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
+  The widths are tokens in `index.css` (`--container-column`, `--container-settings`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - A table's totals are its last row, under the columns they sum (#1281).
 - A table page's table sits on the background, with no plane and no frame (#1273). The header, the `rule` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
 - **< 768 px:** single column.
