@@ -20,7 +20,7 @@
  * While this renders, **no figure appears anywhere on the page**. A gap
  * computed over a half-built series is a wrong number and not a short one.
  */
-import { Card, CardContent } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import type { BenchmarkRebuild } from '@/features/benchmark/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -37,9 +37,8 @@ export function ReferenceRebuild({ rebuild }: { rebuild: BenchmarkRebuild }) {
     rebuild.ratio === null ? null : rebuild.ratio >= 1 ? 100 : Math.floor(rebuild.ratio * 100)
 
   return (
-    <Card>
-      <CardContent className="space-y-3 py-6">
-        <p className="font-medium">{t('benchmark.rebuild.title', { symbol: rebuild.symbol })}</p>
+    <Section title={t('benchmark.rebuild.title', { symbol: rebuild.symbol })}>
+      <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
           {rebuild.reached === null
             ? t('benchmark.rebuild.starting')
@@ -63,7 +62,7 @@ export function ReferenceRebuild({ rebuild }: { rebuild: BenchmarkRebuild }) {
             aria-label={t('benchmark.rebuild.label', { percent: percent / 100 })}
           />
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Section>
   )
 }

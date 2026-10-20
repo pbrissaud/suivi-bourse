@@ -172,7 +172,7 @@ keep their contrast.
   the 0 % line, `loss` below it, split exactly at zero. The 0 % line and the axis carry the
   same information without colour. Both colours are the `--gain` and `--loss` tokens.
 - `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
-- `rule` separates rows inside a section and nothing else.
+- `rule` separates rows inside a section, or in a page's own table, and nothing else.
 - A job's history bar (System page, #1236) is the one place a status colours a mark: an
   hour with a failed pass is `destructive` with ✕, one that needs a look `foreground`
   with ▲, a good one `text-muted`; an idle hour is a `rule` stub, an hour with no pass a
@@ -240,10 +240,11 @@ shipped face would cost every screen for no reader benefit.
 
   The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - A table's totals are its last row, under the columns they sum (#1281).
+- A table page's table sits on the background, with no plane and no frame (#1273). The header, the `rule` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
 - **< 768 px:** single column.
 - A table page has no side panel: its filters are a toolbar above the table, its
   selection's actions appear only with a selection.
-- The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict.
+- The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict. The head reads like the dashboard's: the gap, the verdict, then the two returns on one row. It sits on the ground; the chart, the rebuild status and the per-account table are sections.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
   flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
   below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).
@@ -474,4 +475,5 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-19 | The agent's proposals come under the answer, and the wait is a line (#1271) | The server already streamed each word; the page drew nothing while the model read a tool result, thought or wrote its proposals (4 to 13 s), and drew each card where its call sat, above the answer that says nothing is saved until confirmed. Cards go after the text, the call keeps its trace line; a pending line fills the gap, so a single thing moves at a time; a decided proposal loses its frame (supersedes the card of 5A). |
 | 2026-10-20 | Figures in tables are Geist with tabular numerals (#1281) | The owner's choice, reversing the table half of #838: a column of amounts reads as a column through tabular numerals, and Geist Mono set on every cell read like a terminal. Geist Mono stays for tickers and account ids. The Shares page also draws its allocation once (bars, in a section), moves its toggle into a toolbar above the table, and ends the table on a total row. |
 | 2026-10-20 | The dashboard's composition (#1280) | Seen on screen, four equal pills read as filter chips and the total gain weighed no more than today's move: it takes its own line, the other three become a plain row. The chart's reading, legend and range share one bar; the edit link closes the grid; the rhythm's strip fills its row. A fresh install now shows the allocation and keeps the benchmark hidden without "Nouveau" (a `hiddenByDefault` flag, apart from `arrivesHidden`, which concerns saved layouts only); the movers go half. Saved layouts are untouched. Three-track packing is #1325. |
+| 2026-10-20 | Tables sit on the page background; the Benchmark head sits on the ground; markers merge (#1273) | Seen on screen, the Shares and Ledger tables in a white bordered card, the Benchmark head, chart and rebuild status in cards, and the share sheet's three gain terms in boxes broke the rule that a card is for a decision. The owner's choices: a page's own table has no plane and no frame (the closed shares become a disclosure row under the total); the Benchmark head reads like the dashboard's, on the ground, with its chart, rebuild status and per-account table as sections; the sheet's terms are a row of Label over figure. Days that land on one plotted point, or within 0.04 of the plot, share one marker whose click selects the lines of all its days. `lint/card-for-decisions.grit` keeps the `Card` for decisions. |
 | 2026-10-20 | Four figure rungs, a dashed outline for a place to put something, dark neutrals pinned (#1284) | The re-audit still counted six standalone figure sizes and figures in Geist Mono. Hero 60, Figure 28, Section title 20 (`Stat`'s `stat` moves from 19) and a named Term 16 are the whole ladder; a figure inside a line takes its line's size. A dashed outline meant both "empty" and "put something here": the empty state loses its border. The dark neutrals already matched the warm values above (within 0.005 ΔE_ok), so the tokens stay and CI now checks every colour on both grounds, with a warmth threshold on the dark ones. |

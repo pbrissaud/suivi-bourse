@@ -22,9 +22,9 @@
  *
  * What stays is the chart, the event list and the fundamentals — and the chart
  * and the list are now **one object**: the liaison between them is a selection
- * of a **day**, never a hover.
+ * of days, never a hover.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
@@ -116,9 +116,12 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
   // the range the reader last chose, which is the one thing a chart control
   // must not forget between two lines of the same table.
   const [window, setWindow] = useState<ChartWindow>('1Y')
-  // The selection is a **day**, and it is the sheet's because two objects share
-  // it. `scrollRequest` is bumped by the chart alone — see `ShareEvents`.
-  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  // Opening the sheet puts the focus on its title: the first thing a keyboard
+  // would otherwise land on is the first ⓘ, a control about a figure not yet read.
+  const title = useRef<HTMLHeadingElement>(null)
+  // The selection is made of **days**, and it is the sheet's because two objects
+  // share it. `scrollRequest` is bumped by the chart alone — see `ShareEvents`.
+  const [selectedDays, setSelectedDays] = useState<readonly string[]>([])
   const [scrollRequest, setScrollRequest] = useState(0)
 
   const symbol = row?.symbol ?? null
@@ -136,10 +139,14 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
     [ledger.data, symbol],
   )
 
+  // Pressing the one day already selected lets it go.
+  const toggle = (day: string) =>
+    setSelectedDays((previous) => (previous.length === 1 && previous[0] === day ? [] : [day]))
+
   // A selection is about one security: carrying it to the next sheet would mark
   // a day that share has no event on, and grow a marker that is not there.
   useEffect(() => {
-    setSelectedDay(null)
+    setSelectedDays([])
     setScrollRequest(0)
   }, [symbol])
 
@@ -172,9 +179,17 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
 
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onClose())}>
-      <SheetContent className="w-full gap-5 overflow-y-auto sm:max-w-120">
+      <SheetContent
+        className="w-full gap-5 overflow-y-auto sm:max-w-120"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          title.current?.focus()
+        }}
+      >
         <SheetHeader>
-          <SheetTitle>{row.name ?? row.symbol}</SheetTitle>
+          <SheetTitle ref={title} tabIndex={-1}>
+            {row.name ?? row.symbol}
+          </SheetTitle>
           <SheetDescription>{t('shares.sheet.description')}</SheetDescription>
         </SheetHeader>
 
@@ -182,8 +197,9 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           {/* The total, then its three terms **under** it and inside its own group
           — subordination is vertical, and the drawer keeps it. The total is a
           `Stat` at DESIGN.md's Figure rung (its note and the three terms are its
-          children, so they stay inside its group); the terms are three boxes on
-          one row instead of three lines down one, their figures on the Term rung. */}
+          children, so they stay inside its group); the terms are one row of three,
+          each a Label over its figure with no box (#1273), their figures on the
+          Term rung. */}
           <Stat
             size="figure"
             label={t('shares.gainTotal')}
@@ -218,7 +234,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                     key={term}
                     role="group"
                     aria-label={t(TERM_LABELS[term])}
-                    className="flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-3 py-2.75"
+                    className="flex min-w-0 flex-col gap-1.5"
                   >
                     <span className="label flex items-center gap-1">
                       {t(TERM_LABELS[term])}
@@ -290,7 +306,12 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             <PriceChart
               symbol={row.symbol}
               window={window}
-              onWindowChange={setWindow}
+              // A new range re-clusters the markers: a selection kept across it could
+              // name days no marker holds any more.
+              onWindowChange={(next) => {
+                setWindow(next)
+                setSelectedDays([])
+              }}
               // **An optional read, so the `?? []` survives**: with
               // no ledger the chart draws no marker rail — *a band with nothing
               // in it does not exist* — which removes a line rather than
@@ -299,9 +320,9 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
               // guarded on `ledger.data`, because there *empty* would read as
               // *this security has no event*.
               events={ledger.data ?? []}
-              selectedDay={selectedDay}
-              onSelectDay={(day) => {
-                setSelectedDay((previous) => (previous === day ? null : day))
+              selectedDays={selectedDays}
+              onSelectDays={(days) => {
+                setSelectedDays(days)
                 setScrollRequest((request) => request + 1)
               }}
             />
@@ -314,8 +335,8 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
               <ShareEvents
                 events={events}
                 currency={currency}
-                selectedDay={selectedDay}
-                onSelectDay={(day) => setSelectedDay((previous) => (previous === day ? null : day))}
+                selectedDays={selectedDays}
+                onSelectDay={toggle}
                 scrollRequest={scrollRequest}
               />
             )}

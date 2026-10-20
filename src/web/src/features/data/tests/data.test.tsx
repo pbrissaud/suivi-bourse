@@ -30,6 +30,7 @@ import {
   aTypedEvent,
   ledgerEvents,
 } from '@/test/factories'
+import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -568,9 +569,12 @@ describe('the toolbar', () => {
 
     expect(screen.queryByRole('complementary', { name: 'Filtres' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /les filtres/ })).not.toBeInTheDocument()
-    // The card is not a track of a grid: nothing sits beside it.
-    const card = ledger().closest('[data-slot="card"]') as HTMLElement
-    expect(card.parentElement?.className).not.toMatch(/\bgrid\b/)
+    // The table is not a track of a grid: nothing sits beside it. It sits on
+    // the page's background, with no plane and no frame (#1273).
+    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
+    expect(table.parentElement?.className).not.toMatch(/\bgrid\b/)
+    expectNoBox()
+    expect(ledger().closest('[data-slot="table-container"]')?.className).not.toMatch(/border/)
   })
 
   it('marks a trigger whose axis is in force, and names its value', async () => {

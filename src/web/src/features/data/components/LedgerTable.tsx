@@ -334,7 +334,7 @@ export function LedgerTable({
   const head = 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)]'
 
   return (
-    <Table containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto rounded-md border">
+    <Table containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto">
       <caption className="sr-only">{t('data.ledger.label')}</caption>
       <TableHeader>
         {table.getHeaderGroups().map((group) => (

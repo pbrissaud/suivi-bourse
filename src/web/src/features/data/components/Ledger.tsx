@@ -71,7 +71,6 @@ import {
   useFileDrop,
 } from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
@@ -488,20 +487,20 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 description={t('data.filter.none.body')}
               />
             ) : (
-              // **The table and its footing are one card** (#838): the
-              // drawing frames the ledger the way it frames the shares
-              // table, and the sentence under it — *fin de la réduction*, or
-              // the count and the reveal — sits inside that frame, above the
-              // card's own edge, rather than floating under it.
+              // **The table and its footing sit on the page's background**
+              // (#1273), with no plane and no frame: the sentence under the
+              // table — *fin de la réduction*, or the count and the reveal —
+              // is its footing, under a rule.
               //
               // It is also **where a file is dropped** once the ledger has
               // rows (#1278): the band is gone, and a file over the table
               // draws the outline and says what dropping it does. The overlay
               // is `aria-hidden` — the picker is the accessible way in.
-              <Card
+              <div
                 {...drop.handlers}
+                data-drop="ledger"
                 className={cn(
-                  '@container/ledger relative gap-0 overflow-hidden py-0',
+                  '@container/ledger relative',
                   drop.over && 'outline-[1.5px] -outline-offset-1 outline-primary outline-dashed',
                 )}
               >
@@ -567,7 +566,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     </>
                   )}
                 </div>
-              </Card>
+              </div>
             )}
           </div>
         </>
