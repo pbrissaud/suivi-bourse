@@ -259,7 +259,7 @@ export function FirstRun() {
         className="gap-5 sm:max-w-xl"
       >
         <DialogHeader className="gap-2.5 pr-8">
-          <DialogTitle id="first-run-title" className="text-xl tracking-tight">
+          <DialogTitle id="first-run-title" className="text-2xl tracking-tight">
             {t('firstRun.title')}
           </DialogTitle>
           {/* Three sentences on what the app *is*, and not one rule of

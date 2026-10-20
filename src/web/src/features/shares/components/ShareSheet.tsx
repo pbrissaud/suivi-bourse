@@ -195,51 +195,38 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
 
         <div className="space-y-8 px-4 pb-8">
           {/* The total, then its three terms **under** it and inside its own group
-          — subordination is vertical, and the drawer keeps it. What changed
-          with the redesign is the setting: a drawer is a column of data beside
-          a page, so every figure in it is in the mono face, the total is 30 px
-          rather than the page's 52, and the three terms are one row of three, each
-          a Label over its figure with no box (#1273), instead of three lines
-          down one.
-
-          It is written here rather than through `Stat` because it is not the
-          same object: `Stat` is a figure on a page, at one of three distances,
-          and these are cells of a drawer. The accessible shape is identical — a
-          group named by its label, the terms inside the total's own group —
-          which is what the tests take hold of. */}
-          <div role="group" aria-label={t('shares.gainTotal')} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <span className="label flex items-center gap-1.5">
-                {t('shares.gainTotal')}
-                <Explain
-                  figure={t('shares.gainTotal')}
-                  body="shares.sheet.gainTotal.explain"
-                  anchor="total-gain"
-                />
-              </span>
-              <span
-                className={cn(
-                  'tabular font-mono text-4xl font-heavy tracking-tight',
-                  signClass(total.known ? total.value : null),
-                )}
-              >
-                {renderFigure(
-                  sumRendering(total),
-                  () => f.currency(total.known ? total.value : null, currency),
-                  t,
-                )}
-              </span>
-              {/* What the total *is*, and what it is of what was put in — the
-                  drawing's one sentence on this drawer, and the only place the
-                  ratio of a **single line** is stated. */}
-              <span className="text-xs text-muted-foreground">
-                {t('shares.sheet.gainNote', {
-                  known: onCost === null ? 'no' : 'yes',
-                  percent: onCost === null ? '' : f.percent(onCost),
-                })}
-              </span>
-            </div>
-            <ul className="grid grid-cols-3 gap-2">
+          — subordination is vertical, and the drawer keeps it. The total is a
+          `Stat` at DESIGN.md's Figure rung (its note and the three terms are its
+          children, so they stay inside its group); the terms are one row of three,
+          each a Label over its figure with no box (#1273), their figures on the
+          Term rung. */}
+          <Stat
+            size="figure"
+            label={t('shares.gainTotal')}
+            explain={
+              <Explain
+                figure={t('shares.gainTotal')}
+                body="shares.sheet.gainTotal.explain"
+                anchor="total-gain"
+              />
+            }
+            valueClassName={signClass(total.known ? total.value : null)}
+            value={renderFigure(
+              sumRendering(total),
+              () => f.currency(total.known ? total.value : null, currency),
+              t,
+            )}
+          >
+            {/* What the total *is*, and what it is of what was put in — the
+                drawing's one sentence on this drawer, and the only place the
+                ratio of a **single line** is stated. */}
+            <span className="block text-xs text-muted-foreground">
+              {t('shares.sheet.gainNote', {
+                known: onCost === null ? 'no' : 'yes',
+                percent: onCost === null ? '' : f.percent(onCost),
+              })}
+            </span>
+            <ul className="grid grid-cols-3 gap-2 pt-3">
               {SHEET_TERMS.map((term) => {
                 const amount = termAmount(terms, term as GainTermName)
                 return (
@@ -259,7 +246,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                     </span>
                     <span
                       className={cn(
-                        'tabular font-mono text-md font-semibold',
+                        'tabular text-lg font-semibold',
                         termTone(terms, term as GainTermName),
                       )}
                     >
@@ -273,7 +260,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                 )
               })}
             </ul>
-          </div>
+          </Stat>
           <div className="grid grid-cols-2 gap-x-3 gap-y-4 border-t pt-5 sm:grid-cols-3">
             <Stat
               size="term"

@@ -37,7 +37,7 @@ interface EmptyStateProps {
 
 export function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
-    <div data-empty className="rounded-lg border border-dashed px-6 py-10 text-center">
+    <div data-empty className="px-6 py-10 text-center">
       <p className="font-medium">{title}</p>
       {description ? (
         <p className="mx-auto mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>

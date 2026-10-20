@@ -259,7 +259,7 @@ export function PriceChart({
                       )}
                     />
                     {marker.count > 1 ? (
-                      <span aria-hidden className="block text-[0.625rem] text-muted-foreground">
+                      <span aria-hidden className="block text-2xs text-muted-foreground">
                         {t('shares.events.count', { count: marker.count })}
                       </span>
                     ) : null}
