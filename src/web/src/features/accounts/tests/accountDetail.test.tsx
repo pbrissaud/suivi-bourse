@@ -37,6 +37,8 @@ import {
   ledgerEvents,
   positionsGoingNowhere,
   sharesPortfolio,
+  theSeededAccount,
+  unassignedLedger,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -52,10 +54,10 @@ function renderAccounts(
   return renderApp({ url: '/accounts' })
 }
 
-/** Open one account's detail — a click on its rail entry, which is a URL. */
+/** Open one account's detail — a click on its chip in the bar, which is a URL. */
 async function open(user: ReturnType<typeof renderApp>['user'], name: string) {
-  const rail = await screen.findByRole('list', { name: 'Vos comptes' })
-  await user.click(within(rail).getByRole('link', { name: new RegExp(name) }))
+  const bar = await screen.findByRole('group', { name: 'Vos comptes' })
+  await user.click(within(bar).getByRole('link', { name: new RegExp(name) }))
   return screen.findByRole('region', { name })
 }
 
@@ -202,16 +204,19 @@ describe('the head states the account, and the curve is in it', () => {
 })
 
 describe('the five blocks', () => {
-  it('splits what the account holds between securities and cash', async () => {
+  it('names the cash under the value, and no composition block remains', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
 
-    // A total and its terms never share a row: the two are subordinate to the
-    // value, and each is its own figure.
+    // The value is the page's one hero, and the cash is the line under it, as
+    // on the dashboard (#1174, #1277). *Composition* and its bar are gone: the
+    // securities were read as the account's total.
     const total = await within(detail).findByRole('group', { name: 'Valeur totale' })
     expect(total).toHaveTextContent(/1\s?800,00/)
-    expect(within(detail).getByRole('group', { name: 'Titres' })).toHaveTextContent(/1\s?300,00/)
-    expect(within(detail).getByRole('group', { name: 'Liquidités' })).toHaveTextContent(/500,00/)
+    expect(total).toHaveTextContent(/dont 500,00\s?€ de liquidités/)
+    expect(within(detail).queryByRole('group', { name: 'Composition' })).not.toBeInTheDocument()
+    expect(within(detail).queryByText('Composition')).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Liquidités' })).not.toBeInTheDocument()
   })
 
   it('states the annualised rate, which has no window to narrow', async () => {
@@ -230,9 +235,9 @@ describe('the five blocks', () => {
     // The very term the block above decomposes, read once and rendered at two
     // altitudes: *what has this account paid me* is the one term that answers a
     // question on its own.
-    expect(await within(detail).findByRole('group', { name: 'Encaissés' })).toHaveTextContent(
-      /25,00/,
-    )
+    expect(
+      await within(detail).findByRole('group', { name: 'Dividendes encaissés' }),
+    ).toHaveTextContent(/25,00/)
   })
 
   it('states what the dividends are worth against what was paid in', async () => {
@@ -399,14 +404,13 @@ describe('no range control, and one rate in the head (#1112)', () => {
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    const card = within(detail)
-      .getByRole('group', { name: 'Valeur totale' })
-      .closest('[data-slot="card"]') as HTMLElement
-    const xirr = within(card).getByRole('group', { name: 'TRI' })
+    // The IRR is a pill under the value, inside the head the value leads.
+    const total = within(detail).getByRole('group', { name: 'Valeur totale' })
+    const xirr = within(total).getByRole('group', { name: 'TRI' })
     expect(xirr).toHaveTextContent(/\+5,12\s?%\s?\/ an/)
     // One signed percentage in the head: the fees' share of the contribution
     // is a share and carries no sign.
-    expect(card.textContent?.match(/[+−-]\d[\d\s]*,\d+\s?%/g)).toHaveLength(1)
+    expect(total.textContent?.match(/[+−-]\d[\d\s]*,\d+\s?%/g)).toHaveLength(1)
     expect(within(detail).queryByRole('group', { name: 'Performance totale' })).toBeNull()
     expect(within(detail).queryByRole('group', { name: 'TWR' })).toBeNull()
     expect(within(detail).queryByRole('heading', { name: /TRI annualisé|Rendement/ })).toBeNull()
@@ -580,5 +584,163 @@ describe('the bubbles', () => {
       'href',
       'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#xirr',
     )
+  })
+})
+
+/** The detail's rows (#1277): every one is shared equally by the blocks present. */
+function row(detail: HTMLElement, name: string) {
+  return detail.querySelector(`[data-row="${name}"]`) as HTMLElement | null
+}
+
+/** Alpha with a declared tax model, so the figures row can hold its third member. */
+function alphaTaxed(extra: Partial<Account> = {}) {
+  return defaultAccounts().map((account) =>
+    account.id === 'alpha'
+      ? {
+          ...account,
+          taxation_kind: 'flat_realised' as const,
+          projected_tax: 96,
+          projected_rates: [0.3],
+          ...extra,
+        }
+      : account,
+  )
+}
+
+describe('the detail reads like the dashboard’s head (#1277)', () => {
+  it('has one hero, the account value, and it is inside the Total value group', async () => {
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
+
+    const heroes = detail.querySelectorAll('.text-hero')
+    expect(heroes).toHaveLength(1)
+    expect(heroes[0].closest('[role="group"]')).toBe(
+      within(detail).getByRole('group', { name: 'Valeur totale' }),
+    )
+    expect(detail.innerHTML).not.toMatch(/text-[567]xl/)
+  })
+
+  it('draws no card for a declared account, and its blocks are level-3 sections', async () => {
+    const { user } = renderAccounts(alphaTaxed(), sharesPortfolio())
+    const detail = await open(user, 'Alpha')
+    await within(detail).findByRole('list', { name: 'Titres distributeurs' })
+
+    expect(detail.querySelectorAll('[data-slot="card"]')).toHaveLength(0)
+    const sections = detail.querySelectorAll('[data-slot="section"]')
+    expect(sections).toHaveLength(3)
+    for (const section of sections) expect(section.querySelector('h3')).not.toBeNull()
+    expect(
+      within(detail).getByRole('heading', { level: 3, name: 'Titres du compte' }),
+    ).toBeInTheDocument()
+    expect(
+      within(detail).getByRole('heading', { level: 3, name: 'Titres distributeurs' }),
+    ).toBeInTheDocument()
+    expect(
+      within(detail).getByRole('heading', { level: 3, name: 'Derniers événements' }),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps one card, the reassignment, on the seeded account that has a standing offer', async () => {
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(unassignedLedger()))))
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(anAccountsPayload([theSeededAccount(), ...defaultAccounts()], true)),
+      ),
+    )
+    renderApp({ url: '/accounts?account=default' })
+    const detail = await screen.findByRole('region', { name: 'Non affecté' })
+    await within(detail).findByRole('region', { name: 'Des événements affectés à aucun compte' })
+
+    expect(detail.querySelectorAll('[data-slot="card"]')).toHaveLength(1)
+  })
+
+  it('shares the figures row between dividends, fees and projected tax', async () => {
+    const { user } = renderAccounts(alphaTaxed())
+    const detail = await open(user, 'Alpha')
+    const figures = await waitFor(() => {
+      const found = row(detail, 'figures')
+      if (found === null) throw new Error('the row has not landed')
+      return found
+    })
+
+    for (const name of ['Dividendes encaissés', 'Frais cumulés', 'Impôt projeté']) {
+      expect(within(figures).getByRole('group', { name })).toBeInTheDocument()
+    }
+    expect(figures.className).toContain('lg:auto-cols-fr')
+  })
+
+  it('drops the fees from the row at zero, and the tax where no model is declared', async () => {
+    const zeroFees = renderAccounts(alphaTaxed({ transfer_fees: 0 }))
+    let detail = await open(zeroFees.user, 'Alpha')
+    let figures = await waitFor(() => row(detail, 'figures') as HTMLElement)
+    expect(
+      within(figures).getAllByRole('group', { name: /^(Dividendes|Frais|Impôt)/ }),
+    ).toHaveLength(2)
+    expect(within(figures).queryByRole('group', { name: 'Frais cumulés' })).not.toBeInTheDocument()
+    zeroFees.unmount()
+
+    const noModel = renderAccounts()
+    detail = await open(noModel.user, 'Alpha')
+    figures = await waitFor(() => row(detail, 'figures') as HTMLElement)
+    expect(within(figures).queryByRole('group', { name: 'Impôt projeté' })).not.toBeInTheDocument()
+    expect(within(figures).getByRole('group', { name: 'Frais cumulés' })).toBeInTheDocument()
+  })
+
+  it('has no figures row while the positions are in flight, and says one refusal if refused', async () => {
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(alphaTaxed()))),
+      http.get(ROUTES.positions, () => new Promise<never>(() => {})),
+    )
+    const inFlight = renderApp({ url: '/accounts' })
+    let detail = await open(inFlight.user, 'Alpha')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
+    expect(row(detail, 'figures')).toBeNull()
+    inFlight.unmount()
+
+    server.use(
+      problemHandler(ROUTES.positions, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp({ url: '/accounts' })
+    detail = await screen.findByRole('region', { name: 'Alpha' })
+    const figures = await waitFor(() => row(detail, 'figures') as HTMLElement)
+    expect(within(figures).getAllByText('Lecture impossible')).toHaveLength(1)
+    expect(within(figures).queryByRole('group')).not.toBeInTheDocument()
+  })
+
+  it('shares the row between the payers and the events when both exist', async () => {
+    const { user } = renderAccounts(defaultAccounts(), sharesPortfolio())
+    const detail = await open(user, 'Alpha')
+    await within(detail).findByRole('list', { name: 'Derniers événements' })
+
+    const activity = row(detail, 'activity') as HTMLElement
+    expect(activity.children).toHaveLength(2)
+  })
+
+  it('has the events section as the only child of its row where no line paid', async () => {
+    const { user } = renderAccounts(
+      defaultAccounts(),
+      defaultPositions().map((position) => ({ ...position, dividends: 0 })),
+    )
+    const detail = await open(user, 'Alpha')
+    await within(detail).findByRole('list', { name: 'Derniers événements' })
+
+    const activity = row(detail, 'activity') as HTMLElement
+    expect(activity.children).toHaveLength(1)
+    expect(activity.children[0].getAttribute('data-slot')).toBe('section')
+  })
+
+  it('draws the holdings alone in their row, with their value beside the title', async () => {
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+    await within(detail).findByRole('list', { name: 'Titres du compte' })
+
+    const holdings = row(detail, 'holdings') as HTMLElement
+    expect(holdings.children).toHaveLength(1)
+    expect(within(holdings).getByRole('group', { name: 'Titres' })).toHaveTextContent(/1\s?300,00/)
   })
 })

@@ -43,9 +43,12 @@ export function Section({
   aside,
   children,
   className,
+  level = 2,
 }: {
-  /** Sentence case, rendered as the region's `<h2>` and its accessible name. */
+  /** Sentence case, rendered as the region's heading and its accessible name. */
   title: ReactNode
+  /** The heading's level: `3` where the page already has an `<h2>` above the section. */
+  level?: 2 | 3
   /** The subtotal or a meta line, on the title's row, right-aligned. */
   aside?: ReactNode
   children: ReactNode
@@ -53,10 +56,11 @@ export function Section({
 }) {
   const id = useId()
   const frame = useContext(SectionControlsContext)
+  const Heading = level === 2 ? 'h2' : 'h3'
   const heading = (
-    <h2 id={id} className="text-2xl font-semibold">
+    <Heading id={id} className="text-2xl font-semibold">
       {title}
-    </h2>
+    </Heading>
   )
   return (
     <section

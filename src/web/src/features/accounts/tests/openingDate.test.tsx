@@ -86,7 +86,7 @@ function renderAccounts(account: Partial<Account>) {
 
 async function openPanel(user: ReturnType<typeof renderApp>['user']) {
   await user.click(
-    within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole('link', {
+    within(await screen.findByRole('group', { name: 'Vos comptes' })).getByRole('link', {
       name: /Alpha/,
     }),
   )

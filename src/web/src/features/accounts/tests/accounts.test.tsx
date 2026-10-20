@@ -2,8 +2,9 @@
  * The accounts page, at the one seam: the whole
  * app in jsdom, HTTP the only faked edge.
  *
- * What this file holds is the **master**: the rail, the weights it draws, and
- * the fact that which account is open is a URL. The detail's five blocks are
+ * What this file holds is the **bar**: the chips that lead to each account,
+ * the value and share each one states, and the fact that which account is open
+ * is a URL. The detail's five blocks are
  * `accountDetail.test.tsx`'s.
  *
  * The fixture's three accounts are worth `1 800`, `900` and `600` — the third
@@ -38,38 +39,9 @@ function renderAccounts(accounts: Account[] = defaultAccounts(), url = '/account
   return renderApp({ url })
 }
 
+/** The accounts bar — one group, whatever the width. */
 function rail() {
-  return screen.getByRole('list', { name: 'Vos comptes' })
-}
-
-/** The bar's own legend, one card up: it is where a share is written. */
-function weightRows() {
-  return within(screen.getByRole('list', { name: 'Poids de vos comptes' })).getAllByRole('listitem')
-}
-
-function weights() {
-  return weightRows().map((row) => row.textContent ?? '')
-}
-
-/**
- * The share a weight row **draws**, in per cent — `null` where it draws none.
- *
- * The written half of a row is `weights()`, and the two are not the same
- * assertion (#800): a bar is `aria-hidden` and carries no word, so every
- * equality on `textContent` above holds identically whether the row draws the
- * right share, the wrong one or nothing at all.
- *
- * **The drawing is the stacked bar's segment** since #838: the block used to
- * put a bar of its own under every legend row, which drew each share twice on
- * one card — once as a slice of the whole and once against an empty track. The
- * segment is looked up by account rather than by position, an account with no
- * share drawing no segment at all.
- */
-function drawnWeight(index: number): number | null {
-  const account = weightRows()[index].getAttribute('data-account')
-  const segment = document.querySelector(`[data-weights-bar] [data-account="${account}"]`)
-  if (segment === null) return null
-  return Number.parseFloat((segment as HTMLElement).style.width)
+  return screen.getByRole('group', { name: 'Vos comptes' })
 }
 
 function entries() {
@@ -83,34 +55,36 @@ async function settled(name = 'Alpha') {
   return screen.findByRole('region', { name })
 }
 
-describe('the rail', () => {
-  it('lists every declared account and carries its weight', async () => {
+describe('the bar', () => {
+  it('is one sticky group at every width, and the only list of accounts', async () => {
     renderAccounts()
     await settled()
 
-    // **Two objects**: the weights are a card of their own, and each account is
-    // its own card carrying what it is worth.
+    // **No second rendering** (#1277): the rail and its narrow-width twin are
+    // one bar, so there is one group and no list standing beside it.
+    expect(screen.getAllByRole('group', { name: 'Vos comptes' })).toHaveLength(1)
+    expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Poids de vos comptes' })).not.toBeInTheDocument()
+    expect(rail().className).toContain('sticky')
+    expect(rail().className).not.toContain('wide:hidden')
+    // And the detail stands in the page's one column.
+    expect(document.querySelector('[data-weights-bar]')).toBeNull()
+  })
+
+  it('lists every declared account with its value and its share', async () => {
+    renderAccounts()
+    await settled()
+
     expect(entries()).toHaveLength(3)
     expect(entries()[0]).toContain('Alpha')
     expect(entries()[0]).toMatch(/1\D?800,00/)
-    // No rate on the card (#1112): the detail's IRR is the screen's one.
-    expect(entries()[0]).not.toMatch(/%/)
-    expect(entries()[0]).not.toContain('Performance totale')
-    // Nor on the chips the narrow width draws instead.
-    expect(screen.getByRole('group', { name: 'Vos comptes' }).textContent).not.toMatch(/%/)
-
-    expect(weights()[0]).toContain('Alpha')
     // A share of a whole, never a change: `+54,55 %` would put the sign of a
     // gain on a weight.
-    expect(weights()[0]).toMatch(/54,55\s%/)
-    expect(weights()[0]).not.toContain('+54,55')
-    // **The name and the share, and nothing a second time** (#800). The bar
-    // drawn under this row is `aria-hidden`, and an equality is how that stays
-    // true: were it ever announced, the row would read its own weight twice.
-    expect(weights()[0].replace(/\s/g, '')).toBe('Alpha54,55%')
-    // And the row **draws** that share as well as writing it, which is the
-    // ticket itself: `1 800 / 3 300`, the same figure the line reads out.
-    expect(drawnWeight(0)).toBeCloseTo(54.55, 1)
+    expect(entries()[0]).toMatch(/54,55\s%/)
+    expect(entries()[0]).not.toContain('+54,55')
+    // No rate on the chip (#1112): the detail's IRR is the screen's one.
+    expect(entries()[0]).not.toContain('Performance totale')
+    expect(entries()[0].replace(/\s/g, '')).toBe('Alpha1800,00€54,55%')
   })
 
   it('weighs an account on its securities where no cash ledger was ever kept', async () => {
@@ -118,49 +92,57 @@ describe('the rail', () => {
     await settled()
 
     // `gamma` has `total_value` at `null` (#708) and 600,00 € of shares all the
-    // same. Weighed on the total alone it would read `0,00 %` — silently, the
-    // bar still summing to a hundred.
+    // same. Weighed on the total alone it would read `0,00 %`.
     expect(entries()[2]).toContain('Gamma')
     expect(entries()[2]).toMatch(/600,00/)
-    expect(weights()[2]).toMatch(/18,18\s%/)
-    expect(entries()[2]).not.toMatch(/%/)
+    expect(entries()[2]).toMatch(/18,18\s%/)
   })
 
   it('states no share at all where there is none, and never a zero', async () => {
     renderAccounts([...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })])
     await settled()
 
-    // The em dash and nothing else: an account nothing has been
-    // written about has no share of the whole to state, and `0,00 %` would be a
-    // *figure* — the fifth rendering of absence the product refuses. The bar
-    // #800 put under each of these rows answers the same way and for the same
-    // reason: a drawing at zero makes that claim silently, so an absent share
-    // draws nothing at all.
-    expect(weights()[3].replace(/\s/g, '')).toBe(`Delta${ABSENT}`)
-    expect(weights()[3]).not.toMatch(/0,00\s%/)
-    // Not an empty track either, and only the DOM can say so: the equality
-    // above passes on a row that draws a bar at zero, that bar having no word.
-    expect(drawnWeight(3)).toBeNull()
-    // The rows that *have* a share keep theirs, so this is the absent share
-    // drawing nothing and not the bars having gone.
-    expect(drawnWeight(0)).toBeCloseTo(54.55, 1)
+    // The em dash: an account nothing has been written about has no share of
+    // the whole to state, and `0,00 %` would be a *figure* — the fifth
+    // rendering of absence the product refuses.
+    expect(entries()[3]).toContain('Delta')
+    expect(entries()[3]).toContain(ABSENT)
+    expect(entries()[3]).not.toMatch(/0,00\s%/)
+    expect(entries()[0]).toMatch(/54,55\s%/)
   })
 
   it('names the reason an account has no figures, and never a progress', async () => {
-    renderAccounts([...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })])
+    renderAccounts(
+      [...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })],
+      '/accounts?account=delta',
+    )
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
-    await settled()
+    await settled('Delta')
 
     // *Without a cash ledger* and *being rebuilt* are the same absent figures
-    // and two different sentences.
-    expect(
-      await screen.findByText('aucun mouvement d’espèces enregistré sur ce compte'),
-    ).toBeInTheDocument()
-    expect(screen.getByText('historique encore en reconstruction')).toBeInTheDocument()
+    // and two different sentences. The open account's detail says it.
+    expect(await screen.findByText('historique encore en reconstruction')).toBeInTheDocument()
     // A progression with a date belongs to the reconstruction's own card in the
     // notifications panel (#829), which is the one place that can
     // carry it without repeating it per account.
-    expect(within(rail()).queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('says a cash-less account has no cash ledger, on its own detail', async () => {
+    renderAccounts(defaultAccounts(), '/accounts?account=gamma')
+    await settled('Gamma')
+
+    expect(
+      await screen.findByText('aucun mouvement d’espèces enregistré sur ce compte'),
+    ).toBeInTheDocument()
+  })
+
+  it('opens the declaration from the dashed chip', async () => {
+    const { user } = renderAccounts()
+    await settled()
+
+    await user.click(within(rail()).getByRole('button', { name: 'Déclarer un compte' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
   it('distinguishes the unassigned line and gives it the way back', async () => {
@@ -207,12 +189,12 @@ describe('the rail', () => {
     // assertion is scoped to one of them rather than counting on there being
     // exactly one link with that name on screen.
     expect(
-      within(await screen.findByRole('list', { name: 'Your accounts' })).getByRole('link', {
+      within(await screen.findByRole('group', { name: 'Your accounts' })).getByRole('link', {
         name: /Unassigned/,
       }),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByRole('list', { name: 'Your accounts' })).getByRole('link', {
+      within(screen.getByRole('group', { name: 'Your accounts' })).getByRole('link', {
         name: /Alpha/,
       }),
     ).toBeInTheDocument()
@@ -329,7 +311,7 @@ describe('the page’s own reads', () => {
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Vos comptes' })).not.toBeInTheDocument()
   })
 
   it('keeps the page when a read one of its blocks needs is the one that failed', async () => {

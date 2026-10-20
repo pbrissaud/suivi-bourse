@@ -251,7 +251,7 @@ describe('a card’s link lands on the figure, not on the page', () => {
     // the rail says with `aria-current` and the address says with `?account=`.
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
     await waitFor(() => expect(view.router.state.location.search).toEqual({ account: 'alpha' }))
-    const rail = await screen.findByRole('list', { name: 'Vos comptes' })
+    const rail = await screen.findByRole('group', { name: 'Vos comptes' })
     // `aria-current` is what says *this one is open* to a screen reader, and
     // the router writes `page` on the entry whose address is the one in force.
     await waitFor(() =>
@@ -270,9 +270,10 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     renderApp({ url: '/accounts' })
 
     const chip = await screen.findByText('25 % de cash')
-    const railEntry = chip.closest('a') as HTMLElement
-    expect(railEntry).toHaveTextContent('Alpha')
-    expect(within(railEntry).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
+    // It sits on the name row of the open account's detail (#1277).
+    const nameRow = chip.parentElement as HTMLElement
+    expect(nameRow).toHaveTextContent('Alpha')
+    expect(within(nameRow).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
   })
 
   it('draws none while the read has not landed', async () => {
@@ -290,7 +291,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     // figure goes on saying so.
     //
     // The server tells the two apart with `?asleep=include`, so the net does
-    // too: `listing` on the panel's read, `standing` on the rail's.
+    // too: `listing` on the panel's read, `standing` on the detail's.
     let asleep = false
     server.use(
       http.get(ROUTES.advisories, ({ request }) => {

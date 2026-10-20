@@ -105,3 +105,38 @@ describe('the layout widths are the ones DESIGN.md sets', () => {
     expect(found).toEqual([])
   })
 })
+
+/**
+ * **The accounts detail's rows are always full** (#1277). A row names its
+ * columns once, in `FULL_ROW`, and its members share it equally — so an absent
+ * member gives its share to the others and never leaves a hole. A hand-written
+ * `grid-cols-2` or `grid-cols-3` is exactly how the page came to have a half
+ * empty row; the 34 px `text-5xl` figures and the head's gradient went with the
+ * cards.
+ */
+describe('the accounts detail has no ragged row', () => {
+  const DETAIL = fs.readFileSync(
+    path.join(SOURCE, 'features', 'accounts', 'components', 'AccountDetail.tsx'),
+    'utf8',
+  )
+
+  it('names no column count, no off-ladder figure and no gradient', () => {
+    for (const forbidden of ['grid-cols-2', 'grid-cols-3', 'text-5xl', 'bg-linear']) {
+      expect(DETAIL).not.toContain(forbidden)
+    }
+  })
+
+  it('writes every grid as FULL_ROW', () => {
+    const code = DETAIL.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const grids = [
+      ...code.matchAll(/(['"`])((?:(?!\1)[^\n])*(?<![\w-])grid(?![\w-])(?:(?!\1)[^\n])*)\1/g),
+    ]
+      .map((match) => match[2])
+      // The constant's own value is the one place the classes are written out.
+      .filter((classes) => classes !== 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr')
+    expect(grids).toEqual([])
+    expect(DETAIL).toContain(
+      "const FULL_ROW = 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr'",
+    )
+  })
+})
