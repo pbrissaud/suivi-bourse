@@ -94,7 +94,14 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
   const items = useMemo<ComboboxItem[]>(() => {
     const wanted = query.trim().toLowerCase()
     const names = new Intl.DisplayNames([language], { type: 'region' })
-    const country = (code: string) => names.of(code.toUpperCase()) ?? code
+    const country = (code: string) => {
+      try {
+        return names.of(code.toUpperCase()) ?? code
+      } catch {
+        // `of` throws on a code that is not a region; the file is ours, but a name is not worth a blank list.
+        return code
+      }
+    }
     const own = ownCountry()?.toUpperCase()
     return (registry.data?.items ?? [])
       .filter(
