@@ -1526,7 +1526,8 @@ describe('on a phone, the lines are a list (#1338)', () => {
       .closest('li') as HTMLElement
 
     expect(item).toHaveTextContent(/1\D?300,00/)
-    expect(item).toHaveTextContent(/\+?300,00/)
+    // The gain element alone: `300,00` is also the tail of the `1 300,00` valuation.
+    expect(item.querySelector('span.text-xs.tabular')).toHaveTextContent(/^300,00/)
     expect(item).toHaveTextContent(/30,00\s?%/)
     expect(item).toHaveTextContent('ZZA · alpha')
 

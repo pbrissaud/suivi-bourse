@@ -40,6 +40,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/features/shares/lib/shares'
 import { signClass } from '@/lib/sign'
+import { cn } from '@/lib/utils'
 
 interface ClosedSharesProps {
   rows: readonly ShareRow[]
@@ -155,7 +156,7 @@ function ClosedList({ rows, currency, onSelect }: ClosedSharesProps) {
   return (
     <ul role="list" aria-label={t('shares.closed.label')} className="divide-y border-t">
       {rows.map((row) => (
-        <li key={row.symbol} className={`${LIST_ITEM} items-center justify-between gap-3`}>
+        <li key={row.symbol} className={cn(LIST_ITEM, 'items-center justify-between gap-3')}>
           <div className="flex min-w-0 flex-col gap-0.5">
             <button type="button" className={ITEM_NAME} onClick={() => onSelect(row.symbol)}>
               {row.name ?? row.symbol}

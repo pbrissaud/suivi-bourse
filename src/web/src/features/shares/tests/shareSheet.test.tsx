@@ -519,9 +519,10 @@ describe('the per-account breakdown on a phone (#1338)', () => {
     expect(items[0]).toHaveTextContent(/alpha/)
     expect(items[0]).toHaveTextContent(/2 × 100,00/)
     expect(items[0]).toHaveTextContent(/220,00/)
-    expect(items[0]).toHaveTextContent(/20,00/)
+    // Not preceded by a digit: `20,00` is also the tail of `220,00`.
+    expect(items[0]).toHaveTextContent(/(?<!\d)20,00/)
     expect(items[1]).toHaveTextContent(/3 × 100,00/)
     expect(items[1]).toHaveTextContent(/330,00/)
-    expect(items[1]).toHaveTextContent(/30,00/)
+    expect(items[1]).toHaveTextContent(/(?<!\d)30,00/)
   })
 })
