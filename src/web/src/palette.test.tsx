@@ -15,7 +15,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { aLedgerPayload, anInstallationFact, ledgerEvents } from '@/test/factories'
+import { aLedgerPayload, anEvent, anInstallationFact, ledgerEvents } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -99,7 +99,7 @@ describe('the three sections that read', () => {
     await open(user)
 
     // The pages and the actions are there at once — they read nothing.
-    expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(6)
+    expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(8)
     expect(section('Actions')).not.toBeNull()
     // And the three that read are **gone**, not empty, and not holding the rest.
     expect(section('Titres détenus')).toBeNull()
@@ -124,6 +124,65 @@ describe('the three sections that read', () => {
 
     await user.type(field(), 'virement')
     await waitFor(() => expect(section('Événements')).not.toBeNull())
+  })
+})
+
+describe('results you can tell apart', () => {
+  it('names the account and the amount of each dividend, and drops a missing amount', async () => {
+    server.use(
+      http.get(ROUTES.events, () =>
+        HttpResponse.json(
+          aLedgerPayload([
+            anEvent({
+              id: '1',
+              event_type: 'DIVIDEND',
+              symbol: 'AI.PA',
+              name: 'Air Liquide',
+              account: 'alpha',
+              amount: 12.5,
+            }),
+            anEvent({
+              id: '2',
+              event_type: 'DIVIDEND',
+              symbol: 'AI.PA',
+              name: 'Air Liquide',
+              account: 'beta',
+              amount: 7,
+            }),
+            anEvent({
+              id: '3',
+              event_type: 'DIVIDEND',
+              symbol: 'AI.PA',
+              name: 'Air Liquide',
+              account: 'gamma',
+              amount: null,
+            }),
+          ]),
+        ),
+      ),
+    )
+    const { user } = render()
+    await open(user)
+    await user.type(field(), 'AI.PA')
+
+    const events = within(await screen.findByRole('list', { name: 'Événements' }))
+    const names = events.getAllByRole('button').map((button) => button.textContent)
+    expect(new Set(names).size).toBe(3)
+    expect(names[0]).toMatch(/Dividende · 12,50\s€ · Alpha · /)
+    expect(names[1]).toMatch(/7,00\s€ · Beta/)
+    expect(names[2]).not.toMatch(/€|· ·/)
+    // The ticker stays whole: no four-character slice of it as a mark.
+    expect(screen.queryByText('AI.P')).toBeNull()
+  })
+
+  it('offers every page the sidebar has', async () => {
+    const { user } = render()
+    await open(user)
+    await user.type(field(), 'Réf')
+    expect(within(section('Pages') as HTMLElement).getByText('Référence')).toBeInTheDocument()
+    await user.clear(field())
+    await user.type(field(), 'Agent')
+    expect(within(section('Pages') as HTMLElement).getByText('Agent')).toBeInTheDocument()
   })
 })
 

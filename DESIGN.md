@@ -176,7 +176,8 @@ keep their contrast.
 - A job's history bar (System page, #1236) is the one place a status colours a mark: an
   hour with a failed pass is `destructive` with ✕, one that needs a look `foreground`
   with ▲, a good one `text-muted`; an idle hour is a `rule` stub, an hour with no pass a
-  dashed `rule` outline. The glyph carries the meaning, the colour repeats it.
+  dashed `rule` outline; an hour before the process started draws nothing. The glyph
+  carries the meaning, the colour repeats it.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
   warm hue, never a neutral gray.
 - Gain is `chart-2` and loss is `destructive`: `--gain` and `--loss` point at them. Nothing
