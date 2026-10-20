@@ -214,10 +214,10 @@ shipped face would cost every screen for no reader benefit.
 - **Body (14/20):** controls, table text, labels in forms. Below the usual 16 px rule
   on purpose: this is a dense tool UI; long reading text uses Prose.
 - **Label (12/16, 500):** meta and column headers, `text-muted`, never letter-spaced.
-- **Mono (13, `tnum`):** the rule from #838 stays: every figure **inside a table**
-  (`td`, `th`) is Geist Mono; every figure **outside a table** is Geist with
-  `font-variant-numeric: tabular-nums`. Tickers are Geist Mono at 11 to 12 px. Mono in
-  the middle of a sentence is a bug.
+- **Mono (13, `tnum`):** every figure, in a table or not, is Geist with
+  `font-variant-numeric: tabular-nums` (#1281, which reverses the table half of #838).
+  Geist Mono is for identifiers: tickers and account ids, 11 to 12 px. Mono in the middle
+  of a sentence is a bug.
 
 ## Layout
 
@@ -231,6 +231,7 @@ shipped face would cost every screen for no reader benefit.
   - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. From 1 600 px the dashboard grid has three tracks.
 
   The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
+- A table's totals are its last row, under the columns they sum (#1281).
 - **< 768 px:** single column.
 - A table page has no side panel: its filters are a toolbar above the table, its
   selection's actions appear only with a selection.
@@ -383,8 +384,8 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 
 - Do keep one hero figure per screen and one performance figure (IRR) visible.
 - Do end every account section with the tax line and "Ce qu'il vous resterait".
-- Do set every figure in a table in Geist Mono and every other figure in Geist with
-  tabular numerals (#838).
+- Do set every figure, in a table or not, in Geist with tabular numerals; Geist Mono is
+  for tickers and account ids (#1281).
 - Do give every new component its empty, loading and error states before it ships.
 - Don't put a card on a page for anything the user does not decide or select.
 - Don't nest a section in a section or a card in a card.
@@ -440,3 +441,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | Gain leaves the primary; action becomes ink (#1283) | The 17/10 audit found the mint on buttons, the current nav item, links, the first account, the eight allocation stops and every gain: a green figure read as a link and a green button as a gain. `--gain` moves to `chart-2`, which nothing else reads and which differs from `primary` on 14 of 16 stock tweakcn theme/ground pairs, against 0 of 16 when it is `primary`. Atelier's `primary` becomes a warm ink. The allocation and the account identities take the other chart hues, measured in CI. Amends the 2026-10-10 row "Semantic tokens are aliases": its alias rule stands, its `gain → primary` does not. |
 | 2026-10-19 | The Benchmark page states its period and its reference first; a shortfall is not a loss (#1282) | The period was an orphan line and the picker sat in the chart's corner while the whole page depends on it. The period joins the header subtitle like « Cours au … », and the picker becomes the first row, since the bar is closed to controls. A gap behind the reference drawn in 60 px red read as money lost; it is money not made, so the gap takes no sign colour anywhere, and the returns, which are gains or losses, keep theirs. |
 | 2026-10-19 | The accounts page reads like the dashboard's head (#1277) | The left rail was mostly empty while the detail scrolled, and the detail's rows were ragged (*Latest events* took half a row when no line paid a dividend). Three choices: the accounts become a sticky bar of chips over the detail at every width, chosen by the owner after comparing both mockups, and the rail is removed; the secondary figures are one row, *Dividends received · Fees paid · Projected tax* (the tax only with a declared model), *Composition* goes and the cash becomes a line under the hero, as on the dashboard (#1174); every row of the detail is shared equally by the blocks present, so an absent block gives its share to the others. The head leaves its card for the ground, and the detail keeps one card, the reassignment, because it asks for a decision. |
+| 2026-10-20 | Figures in tables are Geist with tabular numerals (#1281) | The owner's choice, reversing the table half of #838: a column of amounts reads as a column through tabular numerals, and Geist Mono set on every cell read like a terminal. Geist Mono stays for tickers and account ids. The Shares page also draws its allocation once (bars, in a section), moves its toggle into a toolbar above the table, and ends the table on a total row. |

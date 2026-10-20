@@ -1,7 +1,7 @@
 /**
  * Where the money is, on the dashboard (#1206) — **by security or by account**.
  *
- * The shares page draws the same figure (`AllocationFigure`); showing it on
+ * The shares page draws the same split as bars (`AllocationBars`); showing it on
  * both pages is deliberate, the dashboard being the page the owner opens. Both views are exact from the ledger. Sector
  * and country are not offered: funds publish no sector, so an ETF-heavy
  * portfolio would be mostly *unknown*.
@@ -20,12 +20,11 @@ import { useContext, useState } from 'react'
 
 import { EmptyState } from '@/components/EmptyState'
 import { Segmented } from '@/components/Segmented'
-import { ShareBar } from '@/components/ShareBar'
 import {
+  AllocationBars,
   AllocationFigure,
   AllocationScope,
   AllocationUnplaced,
-  sliceKey,
 } from '@/features/shares/components/Allocation'
 import { Section, SectionControlsContext } from '@/components/ui/section'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -80,8 +79,6 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
   const split = view === 'account' ? byAccount : allocation(rows)
   const currency = positions.base_currency ?? null
   const full = width === 'full' && !mobile
-  // The bars are drawn full at the largest slice — which may be the tail.
-  const largest = split.slices.reduce((most, slice) => Math.max(most, slice.share), 0)
 
   const name = (slice: AllocationSlice) =>
     slice.symbol === null
@@ -141,39 +138,21 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
             title={t('dashboard.allocation.title')}
             name={name}
             amounts
-            ring="card"
           />
         ) : (
           <>
-            {/* One column, a 6 px `primary` bar per row: with no ring beside it
-                the bars are the drawing, so they wear one colour and no rank. */}
             {empty ? (
               <EmptyState
                 title={t('shares.allocation.empty')}
                 description={t('shares.allocation.empty.body')}
               />
             ) : (
-              <ul
-                aria-label={t('dashboard.allocation.title')}
-                className="flex flex-col gap-2 text-sm"
-              >
-                {split.slices.map((slice) => (
-                  <li key={sliceKey(slice)} className="flex flex-col gap-1">
-                    <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate">{name(slice)}</span>
-                      <span className="label tabular shrink-0">
-                        {f.percentPoints(slice.share * 100, 1)}
-                      </span>
-                    </span>
-                    <ShareBar
-                      share={slice.share}
-                      scale={largest}
-                      fill="var(--muted-foreground)"
-                      size="weight"
-                    />
-                  </li>
-                ))}
-              </ul>
+              <AllocationBars
+                slices={split.slices}
+                name={name}
+                columns={1}
+                title={t('dashboard.allocation.title')}
+              />
             )}
             <AllocationUnplaced unplaced={split.unplaced} />
           </>

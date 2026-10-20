@@ -127,6 +127,24 @@ describe('the Figure rung is drawn by one size of Stat (#1277)', () => {
   })
 })
 
+describe('figures in tables (#1281)', () => {
+  it('sets no table cell in the mono face', () => {
+    // Geist Mono is for identifiers, which carry their own class: no rule
+    // reaches a `td` or `th` as a whole.
+    for (const rule of read().matchAll(/([^{}]*)\{([^{}]*)\}/g))
+      if (/var\(--font-mono\)/.test(rule[2]))
+        expect(rule[1], 'a mono rule on a table cell').not.toMatch(/\b(td|th)\b/)
+  })
+
+  it('keeps DESIGN.md in step', () => {
+    const design = fs.readFileSync(DESIGN_MD, 'utf8')
+    const mono = /^- \*\*Mono[\s\S]*?(?=\n- |\n\n)/m.exec(design)?.[0] ?? ''
+    expect(mono).toMatch(/Geist with\s+`font-variant-numeric: tabular-nums`/)
+    expect(mono).not.toMatch(/inside a table/)
+    expect(design).toMatch(/\| [^\n]*#1281[^\n]*\|/)
+  })
+})
+
 describe('index.css says what DESIGN.md says about the colours', () => {
   /** One entry of the front matter's `colors:` block, as its `oklch()` parts. */
   function designColour(name: string): Oklch {
