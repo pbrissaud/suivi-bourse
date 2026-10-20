@@ -1,0 +1,28 @@
+{
+  "country": "IT",
+  "wrappers": [
+    {
+      "id": "it/regime-amministrato",
+      "name": "Regime amministrato (risparmio amministrato)",
+      "tax_year": 2026,
+      "model": {
+        "kind": "flat_realised",
+        "parameters": {
+          "rate": 0.26
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.agenziaentrate.gov.it/portale/documents/20143/8987735/Risposta+n.+135_2025/b1264cfc-ff7d-b6a6-6ad8-cacdcd9b037f",
+          "title": "Risposta n. 135/2025 — Regime del risparmio amministrato (art. 6, d.lgs. 461/1997): l’intermediario applica l’imposta sostitutiva su ogni plusvalenza — Agenzia delle Entrate",
+          "consulted": "2026-10-20"
+        },
+        {
+          "url": "https://infoprecompilata.agenziaentrate.gov.it/portale/quadro-rt",
+          "title": "Quadro RT — Plusvalenze di natura finanziaria: imposta sostitutiva, aliquota — Agenzia delle Entrate",
+          "consulted": "2026-10-20"
+        }
+      ]
+    }
+  ]
+}

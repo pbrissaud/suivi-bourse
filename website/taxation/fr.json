@@ -1,0 +1,129 @@
+{
+  "country": "FR",
+  "wrappers": [
+    {
+      "id": "fr/pea",
+      "name": "Plan d’épargne en actions (PEA)",
+      "tax_year": 2026,
+      "model": {
+        "kind": "aged_flat_realised",
+        "parameters": {
+          "rate_before": 0.128,
+          "rate_after": 0,
+          "threshold_years": 5,
+          "age_basis": "first_payment",
+          "social_rate": 0.186
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.impots.gouv.fr/particulier/questions/jai-un-plan-depargne-en-actions-pea-les-retraits-sont-ils-imposables",
+          "title": "J’ai un Plan d’Épargne en Actions (PEA), les retraits sont-ils imposables ? — impots.gouv.fr",
+          "consulted": "2026-10-20"
+        },
+        {
+          "url": "https://bofip.impots.gouv.fr/bofip/2220-PGP.html/identifiant=BOI-RPPM-RCM-40-50-40-20240730",
+          "title": "BOI-RPPM-RCM-40-50-40 — Plan d’épargne en actions : conséquences des retraits (BOFiP)",
+          "consulted": "2026-10-20"
+        }
+      ]
+    },
+    {
+      "id": "fr/pea-pme",
+      "name": "PEA-PME",
+      "tax_year": 2026,
+      "model": {
+        "kind": "aged_flat_realised",
+        "parameters": {
+          "rate_before": 0.128,
+          "rate_after": 0,
+          "threshold_years": 5,
+          "age_basis": "first_payment",
+          "social_rate": 0.186
+        }
+      },
+      "sources": [
+        {
+          "url": "https://bofip.impots.gouv.fr/bofip/9878-PGP.html/identifiant=BOI-RPPM-RCM-40-55-20240730",
+          "title": "BOI-RPPM-RCM-40-55 — PEA destiné au financement des PME et ETI (BOFiP)",
+          "consulted": "2026-10-20"
+        },
+        {
+          "url": "https://www.impots.gouv.fr/particulier/questions/jai-un-plan-depargne-en-actions-pea-les-retraits-sont-ils-imposables",
+          "title": "J’ai un Plan d’Épargne en Actions (PEA), les retraits sont-ils imposables ? — impots.gouv.fr",
+          "consulted": "2026-10-20"
+        }
+      ]
+    },
+    {
+      "id": "fr/compte-titres",
+      "name": "Compte-titres ordinaire (CTO)",
+      "tax_year": 2026,
+      "model": {
+        "kind": "flat_realised",
+        "parameters": {
+          "rate": 0.128,
+          "social_rate": 0.186
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.impots.gouv.fr/particulier/questions/jai-des-valeurs-mobilieres-comment-sont-elles-imposees",
+          "title": "J’ai des valeurs mobilières, comment sont-elles imposées ? — impots.gouv.fr",
+          "consulted": "2026-10-20"
+        }
+      ]
+    },
+    {
+      "id": "fr/assurance-vie",
+      "name": "Assurance-vie",
+      "tax_year": 2026,
+      "model": {
+        "kind": "aged_flat_realised",
+        "parameters": {
+          "rate_before": 0.128,
+          "rate_after": 0.075,
+          "threshold_years": 8,
+          "age_basis": "opening",
+          "social_rate": 0.172
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F22414?lang=en",
+          "title": "Income tax — How are the income from a life insurance contract taxed? — service-public.gouv.fr",
+          "consulted": "2026-10-20"
+        },
+        {
+          "url": "https://www.impots.gouv.fr/particulier/questions/jai-effectue-des-retraits-sur-mon-contrat-dassurance-vie-quelles-sont-les",
+          "title": "Comment sont imposés les produits des contrats d’assurance-vie depuis le 1er janvier 2018 ? — impots.gouv.fr",
+          "consulted": "2026-10-20"
+        }
+      ]
+    },
+    {
+      "id": "fr/per",
+      "name": "Plan d’épargne retraite (PER)",
+      "tax_year": 2026,
+      "model": {
+        "kind": "flat_realised",
+        "parameters": {
+          "rate": 0.128,
+          "social_rate": 0.186
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F36526/0",
+          "title": "Plan d’épargne retraite (PER) — PER individuel — service-public.gouv.fr",
+          "consulted": "2026-10-20"
+        },
+        {
+          "url": "https://www.impots.gouv.fr/particulier/questions/comment-sont-imposees-les-sommes-du-plan-depargne-de-retraite-populaire-perp",
+          "title": "Comment sont imposées les sommes de mon plan d’épargne retraite ? — impots.gouv.fr",
+          "consulted": "2026-10-20"
+        }
+      ]
+    }
+  ]
+}

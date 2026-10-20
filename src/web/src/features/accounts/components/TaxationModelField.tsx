@@ -10,6 +10,7 @@ import { Refusal } from '@/components/Refusal'
 import { SELECT, TaxationModelEditor } from '@/features/accounts/components/TaxationModelEditor'
 import { Button } from '@/components/ui/button'
 import { accountsApi } from '@/features/accounts/lib/api'
+import { docsPageHref } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 
@@ -23,7 +24,7 @@ interface TaxationModelFieldProps {
 }
 
 export function TaxationModelField({ value, onChange }: TaxationModelFieldProps) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const queryClient = useQueryClient()
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
   /** `null` closed, `'new'` writing one, `'edit'` correcting the selected one. */
@@ -86,6 +87,15 @@ export function TaxationModelField({ value, onChange }: TaxationModelFieldProps)
       <p className="max-w-prose text-xs text-muted-foreground">
         {t('accounts.form.taxation.hint')}
       </p>
+
+      <a
+        href={docsPageHref(language, 'taxation-models-in-europe', 'top')}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-block text-xs font-medium underline underline-offset-4"
+      >
+        {t('accounts.taxation.regimesLink')}
+      </a>
 
       {editing === null && selected !== null ? (
         <div className="flex gap-2">
