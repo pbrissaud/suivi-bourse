@@ -242,6 +242,7 @@ shipped face would cost every screen for no reader benefit.
 - A table's totals are its last row, under the columns they sum (#1281).
 - A table page's table sits on the background, with no plane and no frame (#1273). The header, the `rule` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
 - **< 768 px:** single column.
+- Under 768 px the Shares table is a list on the background (#1338): one ruled item per held line, the name and valuation on the first line, the ticker and the latent gain on the second, the totals as four ruled rows, and a sort select with a direction button in the toolbar. The closed lines and the sheet's per-account breakdown are lists too.
 - A table page has no side panel: its filters are a toolbar above the table, its
   selection's actions appear only with a selection.
 - The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict. The head reads like the dashboard's: the gap, the verdict, then the two returns on one row. It sits on the ground; the chart, the rebuild status and the per-account table are sections.

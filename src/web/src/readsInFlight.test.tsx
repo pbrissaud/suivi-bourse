@@ -40,6 +40,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { type RouteName, ROUTES } from '@/lib/api'
 import { anAgentConfig, aTotals, aTotalsPayload } from '@/test/factories'
+import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -251,6 +252,14 @@ const SURFACES: readonly Surface[] = [
       await user.click(title)
       return screen.findByRole('dialog')
     },
+  },
+  {
+    // Under 768 px the table is a list (#1338), and the net reads the list as
+    // it reads the table: nothing is drawn, or said, over a read in flight.
+    name: 'les titres, sur un téléphone',
+    url: '/shares',
+    heading: 'Titres',
+    handlers: () => setViewportWidth(390),
   },
   { name: 'les comptes', url: '/accounts', heading: 'Comptes' },
   // The comparison, whose whole payload is one read (#760): the gap, the

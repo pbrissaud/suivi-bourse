@@ -44,6 +44,12 @@ export function setViewportWidth(width: number) {
     writable: true,
     value: width,
   })
+  // The hook re-reads `innerWidth` when its query changes, which is what a
+  // browser does as the window crosses the breakpoint.
+  for (const [query, set] of listeners) {
+    if (!query.includes('max-width')) continue
+    for (const listener of set) listener({ media: query } as MediaQueryListEvent)
+  }
 }
 
 /** Flip the system preference, listeners included. */
