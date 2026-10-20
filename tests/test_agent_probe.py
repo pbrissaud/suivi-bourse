@@ -250,6 +250,22 @@ def stored(client):
     return client.get('/api/agent/config').get_json()
 
 
+def test_a_passed_test_keeps_the_thinking_level_changed_meanwhile(client, monkeypatch):
+    configured(client, provider='anthropic', key=KEY)
+
+    def raises_the_level(request):
+        client.put('/api/agent/config', json={'thinking': 'high'})
+        return listing(request)
+    provider(monkeypatch, raises_the_level)
+
+    answer = client.post('/api/agent/test', json={
+        'provider': 'anthropic', 'key': 'test-key-the-new-one-wxyz'})
+
+    assert answer.status_code == 200
+    assert answer.get_json()['config']['thinking'] == 'high'
+    assert stored(client)['thinking'] == 'high'
+
+
 def test_a_refused_key_is_not_stored(client, monkeypatch):
     configured(client, provider='anthropic', key=KEY, enabled=True,
                model='claude-x')
@@ -352,6 +368,7 @@ def test_the_stored_key_is_used_only_for_its_own_provider_and_address(
     ({'provider': 'mistral'}, 'provider'),
     ({'enabled': True}, 'enabled'),
     ({'model': 'claude-x'}, 'model'),
+    ({'thinking': 'low'}, 'thinking'),
 ])
 def test_a_bad_or_unknown_field_is_refused_before_any_request(
         client, monkeypatch, body, key):

@@ -14,6 +14,9 @@ import { authFetch, get, ROUTES, send } from '@/lib/api'
 /** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
 
+/** How hard the analyst thinks, as `agent.THINKING` names the levels (#1191). */
+export type AgentThinking = 'low' | 'medium' | 'high'
+
 /** `GET /api/agent/config`: the key is never on the wire, only its end. */
 export interface AgentConfig {
   enabled: boolean
@@ -22,6 +25,7 @@ export interface AgentConfig {
   /** The name the picker showed when `model` was chosen; `null` until then. */
   model_name: string | null
   base_url: string | null
+  thinking: AgentThinking
   key: { set: boolean; last4: string | null; set_at: string | null }
   /** Present, and `true`, on the one write that switched the agent off. */
   disabled?: boolean
@@ -35,6 +39,7 @@ export interface AgentConfigDraft {
   /** Sent with its `model`: a model without a name clears the name. */
   model_name?: string | null
   base_url?: string | null
+  thinking?: AgentThinking
 }
 
 /** What `POST /api/agent/test` takes: a candidate, kept only if the provider accepts it. */

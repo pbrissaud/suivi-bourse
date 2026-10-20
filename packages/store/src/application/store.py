@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS agent_config (
     base_url    VARCHAR,
     api_key     VARCHAR,
     key_set_at  TIMESTAMPTZ,
+    thinking    VARCHAR DEFAULT 'low',
     updated_at  TIMESTAMPTZ NOT NULL);
 
 -- **The PIN and what it opens** (#1203). One row, absent while the PIN is off,

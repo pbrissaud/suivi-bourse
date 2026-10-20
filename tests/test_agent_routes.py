@@ -403,7 +403,8 @@ def test_a_turn_logs_its_counts_and_never_the_key(runtime, monkeypatch, caplog):
              if r.name == 'agent' and r.levelno == logging.INFO]
     assert len(turns) == 1
     assert re.fullmatch(
-        r'agent turn: anthropic claude-sonnet-5-5 input=\d+ output=\d+ '
+        r'agent turn: anthropic claude-sonnet-5-5 thinking=low '
+        r'input=\d+ output=\d+ '
         r'cache_read=\d+ cache_write=\d+', turns[0].getMessage())
     assert KEY not in caplog.text
 
