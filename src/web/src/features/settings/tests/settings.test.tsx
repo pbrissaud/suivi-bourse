@@ -524,6 +524,14 @@ describe('importing a taxation model', () => {
     await waitFor(() => expect(reads).toBe(1))
   })
 
+  it('opens the list on the field itself, before anything is typed', async () => {
+    await openImport()
+
+    expect(
+      await screen.findByRole('listbox', { name: 'Enveloppes de la documentation' }),
+    ).toBeInTheDocument()
+  })
+
   it('lists the wrappers grouped by country, searchable', async () => {
     const { user, taxation } = await openImport()
     await user.keyboard('pea')

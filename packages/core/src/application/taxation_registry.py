@@ -33,7 +33,8 @@ def _item(entry: object) -> Optional[dict]:
     if not isinstance(entry, dict):
         return None
     fields = {key: entry.get(key) for key in ('id', 'country', 'name', 'kind', 'parameters')}
-    if not all(isinstance(fields[key], str) for key in ('id', 'country', 'name', 'kind')):
+    if not all(isinstance(fields[key], str) and fields[key].strip()
+               for key in ('id', 'country', 'name', 'kind')):
         return None
     try:
         fields['parameters'] = taxation.validate(fields['kind'], fields['parameters'])
@@ -51,7 +52,12 @@ def fetch(fetcher: Callable[[str], bytes]) -> List[dict]:
         raise FetchFailed(f'{type(exc).__name__}: {exc}') from exc
     if not isinstance(data, list):
         raise FetchFailed('invalid registry JSON')
-    return [item for item in map(_item, data) if item is not None]
+    items = {}
+    for item in map(_item, data):
+        # An id is the line's identity in the list: the first one wins.
+        if item is not None:
+            items.setdefault(item['id'], item)
+    return list(items.values())
 
 
 __all__ = ['URL', 'MAX_BYTES', 'FetchFailed', 'http_fetch', 'fetch']

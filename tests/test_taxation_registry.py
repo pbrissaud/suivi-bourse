@@ -54,7 +54,12 @@ def test_a_registry_that_is_not_a_list_fails(body):
 
 
 def test_an_entry_that_is_not_an_item_is_skipped():
-    assert taxation_registry.fetch(_serving([1, {'id': 3}])) == []
+    assert taxation_registry.fetch(_serving([1, {'id': 3}, {**FLAT, 'name': '  '}])) == []
+
+
+def test_the_first_of_two_items_sharing_an_id_wins():
+    items = taxation_registry.fetch(_serving([FLAT, {**FLAT, 'name': 'Other'}]))
+    assert [i['name'] for i in items] == ['Flat']
 
 
 def test_an_exception_of_the_fetcher_is_a_failed_fetch():

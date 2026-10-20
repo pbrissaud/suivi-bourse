@@ -133,6 +133,11 @@ export interface ComboboxProps extends InputProps {
   container?: HTMLElement | null
   /** What a screen reader calls the list. */
   listLabel: string
+  /**
+   * Open the list when the field takes the focus, for a list that is the only
+   * way to fill it (a closed list): the ticker field stays a field and does not.
+   */
+  openOnFocus?: boolean
 }
 
 export function Combobox({
@@ -141,6 +146,7 @@ export function Combobox({
   items,
   container,
   listLabel,
+  openOnFocus,
   className,
   ...props
 }: ComboboxProps) {
@@ -230,13 +236,13 @@ export function Combobox({
         move(-1)
         return
       case 'Home':
-        if (!shown) return
+        if (!shown || enabled.length === 0) return
         event.preventDefault()
         arrowed.current = true
         setActiveValue(items[enabled[0]]?.value ?? null)
         return
       case 'End':
-        if (!shown) return
+        if (!shown || enabled.length === 0) return
         event.preventDefault()
         arrowed.current = true
         setActiveValue(items[enabled[enabled.length - 1]]?.value ?? null)
@@ -288,6 +294,10 @@ export function Combobox({
             setActiveValue(null)
           }}
           onKeyDown={keyDown}
+          onFocus={(event) => {
+            if (openOnFocus) setOpen(true)
+            props.onFocus?.(event)
+          }}
         />
       </PopoverAnchor>
       <PopoverContent
@@ -310,7 +320,7 @@ export function Combobox({
         }}
       >
         <ul id={listId} role="listbox" aria-label={listLabel}>
-          {runs.map((run) => {
+          {runs.map((run, runIndex) => {
             const rows = run.entries.map(({ item, index }) => {
               const said = item.disabledReason ?? item.hint
               return (
@@ -370,7 +380,8 @@ export function Combobox({
               )
             })
             if (run.group === undefined) return rows
-            const headingId = `${listId}-group-${run.group}`
+            // By position: a group's name may hold spaces, and an IDREF list splits on them.
+            const headingId = `${listId}-group-${runIndex}`
             return (
               <li key={`group-${run.group}`} role="group" aria-labelledby={headingId}>
                 <div

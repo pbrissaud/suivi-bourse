@@ -79,11 +79,13 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
       setReplacing(null)
       onImported(saved, item.id)
     },
-    onError: () => {
-      setReplacing(null)
-      focusField()
-    },
+    onError: () => setReplacing(null),
   })
+  // The field is disabled while the write is pending, so focus comes back once
+  // the failure has been drawn and the field is enabled again.
+  useEffect(() => {
+    if (stored.isError) focusField()
+  }, [stored.isError])
 
   // The card opens on its safe answer.
   useEffect(() => {
@@ -161,6 +163,7 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
         placeholder={t('settings.taxation.import.search')}
         disabled={stored.isPending}
         aria-describedby={failure === null ? undefined : 'taxation-import-error'}
+        openOnFocus
         onFocus={() => setAsked(true)}
         onClick={() => setAsked(true)}
       />

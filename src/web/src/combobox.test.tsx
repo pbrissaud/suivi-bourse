@@ -159,7 +159,7 @@ describe('une liste groupée, dont une ligne est refusée', () => {
   }
   const DE = { value: 'de/depot', label: 'Depot', hint: null, group: 'Allemagne' }
 
-  function renderGrouped(heard: [string, boolean][] = []) {
+  function renderGrouped(heard: [string, boolean][] = [], lines = [FR, OLD, DE]) {
     render(
       <>
         <label htmlFor="wrapper">Enveloppe</label>
@@ -167,7 +167,7 @@ describe('une liste groupée, dont une ligne est refusée', () => {
           id="wrapper"
           value=""
           onValueChange={(value, chosen) => heard.push([value, chosen])}
-          items={[FR, OLD, DE]}
+          items={lines}
           listLabel="Les enveloppes"
         />
       </>,
@@ -213,5 +213,60 @@ describe('une liste groupée, dont une ligne est refusée', () => {
 
     await user.click(screen.getByRole('option', { name: /Depot/ }))
     expect(heard.filter(([, chosen]) => chosen)).toEqual([['de/depot', true]])
+  })
+
+  it('nomme un groupe dont le titre a des espaces', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <label htmlFor="wrapper">Enveloppe</label>
+        <Combobox
+          id="wrapper"
+          value=""
+          onValueChange={() => {}}
+          items={[{ ...FR, group: 'United Kingdom' }]}
+          listLabel="Les enveloppes"
+        />
+      </>,
+    )
+    await user.type(screen.getByLabelText('Enveloppe'), 'e')
+
+    expect(screen.getByRole('group')).toHaveAccessibleName('United Kingdom')
+  })
+
+  it('ouvre la liste au focus quand on le demande, et pas autrement', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <label htmlFor="closed">Fermé</label>
+        <Combobox
+          id="closed"
+          value=""
+          onValueChange={() => {}}
+          items={[FR]}
+          listLabel="Les enveloppes"
+          openOnFocus
+        />
+        <label htmlFor="open">Libre</label>
+        <Combobox id="open" value="" onValueChange={() => {}} items={[DE]} listLabel="Les titres" />
+      </>,
+    )
+
+    await user.click(screen.getByLabelText('Libre'))
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    await user.click(screen.getByLabelText('Fermé'))
+    expect(await screen.findByRole('listbox', { name: 'Les enveloppes' })).toBeInTheDocument()
+  })
+
+  it('laisse Home et Fin au champ quand toutes les lignes sont refusées', async () => {
+    const user = userEvent.setup()
+    renderGrouped([], [OLD])
+    const field = screen.getByLabelText('Enveloppe')
+    await user.type(field, 'e')
+
+    const home = fireEvent.keyDown(field, { key: 'Home' })
+
+    expect(home).toBe(true) // not cancelled: the caret still moves
   })
 })
