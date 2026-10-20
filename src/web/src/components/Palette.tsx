@@ -18,12 +18,13 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, LogOut, Plus, Search, Wallet } from 'lucide-react'
 
-import { ADMINISTRATION, PORTFOLIO } from '@/components/AppSidebar'
+import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
+import { ADMINISTRATION, PORTFOLIO, pageLink } from '@/components/AppSidebar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/features/auth/components/AuthBoot'
@@ -63,6 +64,8 @@ export function Palette() {
   const f = useFormatters()
   const navigate = useNavigate()
   const auth = useAuth()
+  const { chat } = useAgentChat()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -182,7 +185,7 @@ export function Palette() {
       mark: <page.icon className="size-3.5" />,
       label: t(page.label),
       hint: null,
-      run: () => leave(() => void navigate({ to: page.to })),
+      run: () => leave(() => void navigate(pageLink(page, chat, pathname))),
     }),
   )
 

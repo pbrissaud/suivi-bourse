@@ -214,9 +214,6 @@ export function AccountDetail({
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
   const reason = degradedReason(row, rebuilding)
-  // **Empty is a claim about the reader's data**, so it waits for the positions
-  // like every claim on this page: in flight, the head keeps today's rendering.
-  const empty = reason === 'empty' && positions !== null
   const cash = cashShare(advisories, row.id)
 
   // **Every derivation below is memoised, and against the reads themselves.**
@@ -233,6 +230,10 @@ export function AccountDetail({
     () => (positions === null ? null : accountPositions(positions, row.id)),
     [positions, row.id],
   )
+  // **Empty is a claim about the reader's data**, so it waits for the positions
+  // like every claim on this page, and needs them to hold nothing for this
+  // account: in flight, or with lines, the head keeps today's rendering.
+  const empty = reason === 'empty' && held !== null && held.length === 0
   const terms = useMemo(
     () => (held === null ? null : portfolioTerms(held, row.transfer_fees)),
     [held, row.transfer_fees],

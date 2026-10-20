@@ -239,7 +239,7 @@ describe('the job history (#1236)', () => {
   it('draws no mark for an hour before the process started', async () => {
     const started = new Date(Date.parse(NOW) - 3 * 3_600_000).toISOString()
     server.use(http.get(ROUTES.jobsHistory, () => HttpResponse.json(aJobsHistory({ started }))))
-    const { region } = await jobs()
+    const { region, user } = await jobs()
     const strip = await within(region).findByRole('listbox', { name: 'Calcul de la performance' })
     const options = within(strip).getAllByRole('option')
 
@@ -247,6 +247,10 @@ describe('the job history (#1236)', () => {
     expect(options[0]).toHaveAccessibleName(/l’application ne tournait pas$/)
     expect(options[0].querySelector('.border-dashed')).toBeNull()
     expect(options[19].querySelector('.border-dashed')).toBeNull()
+    // Opening it states the app was not running, and no pass totals.
+    await user.click(options[0])
+    expect(await within(region).findByText(/l’application ne tournait pas/)).toBeInTheDocument()
+    expect(region).not.toHaveTextContent(/aucun passage/)
     // The first hour after the start, with no pass, keeps its dashed mark.
     expect(options[20].querySelector('.border-dashed')).not.toBeNull()
   })

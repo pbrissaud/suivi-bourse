@@ -876,6 +876,18 @@ describe('the layout (#1196)', () => {
     }
   })
 
+  it('is led back to by the ⌘K palette too, not to a new thread (#1196)', async () => {
+    switchedOn()
+    storedThreads()
+    const { user, router } = await openPage('/agent/t1')
+    await user.keyboard('{Control>}k{/Control}')
+    await user.type(await screen.findByRole('searchbox'), 'Agent')
+    const pages = await screen.findByRole('list', { name: 'Pages' })
+    await user.click(within(pages).getByRole('button', { name: 'Agent' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/agent/t1'))
+  })
+
   it('draws no agent button in the header, and ⌘/Ctrl + J does nothing', async () => {
     switchedOn()
     const { user, router } = renderApp()

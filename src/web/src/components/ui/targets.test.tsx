@@ -13,3 +13,8 @@ it.each([
   const target = screen.getByRole(role)
   expect(target).toHaveClass('relative', 'after:-inset-1')
 })
+
+it('the small switch grows its height to 24 px as well', () => {
+  render(<Switch size="sm" aria-label="x" />)
+  expect(screen.getByRole('switch')).toHaveClass('data-[size=sm]:after:-inset-y-1.25')
+})

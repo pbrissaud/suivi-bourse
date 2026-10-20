@@ -490,7 +490,10 @@ describe('no range control, and one rate in the head (#1112)', () => {
 describe('an account with nothing recorded says what to do', () => {
   it('replaces the head with one empty state and its two ways forward', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))))
-    const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
+    const { user } = renderAccounts(
+      [anAccountWithoutSeries(), ...defaultAccounts().slice(1)],
+      defaultPositions().filter((position) => position.account !== 'alpha'),
+    )
     const detail = await open(user, 'Alpha')
 
     await waitFor(() => expect(detail.querySelector('[data-empty]')).not.toBeNull())
@@ -510,6 +513,15 @@ describe('an account with nothing recorded says what to do', () => {
     expect(within(detail).queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
     expect(detail.querySelector('[data-row="figures"]')).toBeNull()
     expect(within(detail).queryByText('rien d’enregistré sur ce compte')).not.toBeInTheDocument()
+  })
+
+  it('does not claim the account is empty while it holds lines', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))))
+    const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
+    const detail = await open(user, 'Alpha')
+
+    await within(detail).findByText('rien d’enregistré sur ce compte')
+    expect(detail.querySelector('[data-empty]')).toBeNull()
   })
 
   it('keeps the rebuilding sentence while the rebuild runs', async () => {

@@ -115,6 +115,9 @@ export function JobHistogram({
     setChosen({ hour: index === null ? null : track.slots[index].hour })
 
   const last = track.slots.length - 1
+  // Nothing was running: not a quiet hour.
+  const isDown = (slot: JobSlot) =>
+    started !== undefined && Date.parse(slot.hour) + HOUR <= Date.parse(started)
   const means = track.slots.map((slot) => (slot.passes > 0 ? slot.duration / slot.passes : 0))
   const longest = Math.max(...means, 0)
 
@@ -168,8 +171,7 @@ export function JobHistogram({
       >
         {track.slots.map((slot, i) => {
           const tone = toneOf(slot)
-          // Nothing was running: not a quiet hour, so not the dashed "no pass".
-          const down = started !== undefined && Date.parse(slot.hour) + HOUR <= Date.parse(started)
+          const down = isDown(slot)
           const share = longest > 0 ? means[i] / longest : 0
           return (
             <div
@@ -232,7 +234,15 @@ export function JobHistogram({
           )
         })}
       </div>
-      {selected === null ? null : (
+      {selected === null ? null : isDown(track.slots[selected]) ? (
+        <p
+          id={`${id}-detail`}
+          aria-live="polite"
+          className="mt-2 py-1.5 text-xs text-muted-foreground"
+        >
+          {t('settings.jobs.hour.down', { hour: clock(track.slots[selected].hour) })}
+        </p>
+      ) : (
         <HourDetail
           id={`${id}-detail`}
           slot={track.slots[selected]}

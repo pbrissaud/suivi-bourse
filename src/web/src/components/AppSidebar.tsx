@@ -195,16 +195,25 @@ function BuildLine() {
   )
 }
 
+/**
+ * Where a page entry leads. The agent's entry leads back to the conversation on
+ * screen (#1196): `/agent` is a new thread, and starting one stops an answer
+ * still streaming. Shared with the ⌘K palette, so the two cannot drift.
+ */
+export function pageLink(
+  entry: Entry,
+  chat: { id: string; messages: readonly unknown[] },
+  pathname: string,
+) {
+  return entry.to === '/agent' && (chat.messages.length > 0 || pathname === `/agent/${chat.id}`)
+    ? ({ to: '/agent/$threadId', params: { threadId: chat.id } } as const)
+    : ({ to: entry.to } as const)
+}
+
 function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
   const t = useT()
   const { chat } = useAgentChat()
-  // The agent's entry leads back to the conversation on screen (#1196):
-  // `/agent` is a new thread, and starting one stops an answer still
-  // streaming. Read on each render, which a change of page is.
-  const link =
-    entry.to === '/agent' && (chat.messages.length > 0 || pathname === `/agent/${chat.id}`)
-      ? ({ to: '/agent/$threadId', params: { threadId: chat.id } } as const)
-      : ({ to: entry.to } as const)
+  const link = pageLink(entry, chat, pathname)
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
