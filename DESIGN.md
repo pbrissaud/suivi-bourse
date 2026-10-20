@@ -228,7 +228,7 @@ shipped face would cost every screen for no reader benefit.
   - a form, and the Settings page, is one start-aligned column of 720 px (`max-w-column`);
   - the agent's conversation is described below (`max-w-column`, `lg:max-w-reading`);
   - a paragraph keeps its measure, 65 characters (`max-w-prose`), inside any of these;
-  - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. From 1 600 px the dashboard grid has three tracks.
+  - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. The dashboard grid keeps two tracks today; a third track from 1 600 px is planned in #1325.
 
   The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - A table's totals are its last row, under the columns they sum (#1281).
@@ -256,7 +256,7 @@ dashboard alone lays its sections out on a grid the owner arranges (below).
 ### The dashboard grid
 
 Under the hero, the dashboard's sections sit on a grid of **two widths**: half or full,
-20 px apart, one column under 768 px. From 1 600 px the grid has three tracks: a half section takes one track and a full section takes the whole row, so a statement gains a neighbour rather than a longer row. The packing and drag rules for three tracks are #1325's. It is an ordered list of sections, each with a
+20 px apart, one column under 768 px. Three tracks from 1 600 px (a half section taking one track and a full section the whole row, so a statement gains a neighbour rather than a longer row) are planned, not shipped: their packing and drag rules are #1325's. It is an ordered list of sections, each with a
 width, never a free two-dimensional placement, so the reading order is the focus order.
 
 - A section takes the full width only if it **shows more** there (the movers: five
