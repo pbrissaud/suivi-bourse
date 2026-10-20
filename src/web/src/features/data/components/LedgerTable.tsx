@@ -219,8 +219,9 @@ export function LedgerTable({
         // `getIsSomeRowsSelected` counts the raw selection, ids a filter hides
         // included, and would leave the box indeterminate over a table where
         // nothing is ticked.
-        // The columns must not depend on the selection, or the box would be
-        // remounted at every tick: it reads both off the table's options.
+        // The columns are memoised without `rowSelection` (it would remount the
+        // box at every tick), so the header reads the data and the selection off
+        // `table.options`.
         header: ({ table }) => {
           const rows = table.options.data as readonly LedgerEvent[]
           const ticks = selectionState(rows, table.options.state?.rowSelection ?? {})

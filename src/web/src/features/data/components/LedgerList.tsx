@@ -7,7 +7,7 @@
  * no card and no scroll box of its own, and draws what a phone reader scans for:
  *
  *     ☐  AAPL                        1 000,00 €
- *        12 mars 2026 · Achat           [compte]
+ *        12/03/2026 · Achat             [compte]
  *
  * Quantity, unit price, fee and the label under a ticker are not drawn; they
  * live in `EventForm`, one tap away. It takes the table's props and its
@@ -57,17 +57,22 @@ export function LedgerList({
   const ticks = selectionState(events, rowSelection)
   const editable = events.filter(isEditable)
 
-  // Ticks **every** editable row the reduction retains, drawn or not, as the
-  // table's header does.
-  const toggleAll = (on: boolean) =>
+  const tick = (keys: readonly string[], on: boolean) =>
     onRowSelectionChange((current) => {
       const next = { ...current }
-      for (const event of editable) {
-        if (on) next[event.id as string] = true
-        else delete next[event.id as string]
+      for (const key of keys) {
+        if (on) next[key] = true
+        else delete next[key]
       }
       return next
     })
+  // Ticks **every** editable row the reduction retains, drawn or not, as the
+  // table's header does.
+  const toggleAll = (on: boolean) =>
+    tick(
+      editable.map((event) => event.id as string),
+      on,
+    )
 
   return (
     <div>
@@ -80,7 +85,9 @@ export function LedgerList({
           className={TICK}
         />
       </div>
-      <ul aria-label={t('data.ledger.label')}>
+      {/* `role="list"` restated: preflight removes the bullets, and Safari then
+          drops the list semantics, with the name and the count that go with them. */}
+      <ul role="list" aria-label={t('data.ledger.label')}>
         {events.slice(0, Math.max(budget, 0)).map((event, index) => {
           const key = rowKey(event, index)
           const identity = identityOf(event)
@@ -93,7 +100,7 @@ export function LedgerList({
             <li
               key={key}
               data-state={rowSelection[key] ? 'selected' : undefined}
-              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 last:border-b-0 data-[state=selected]:bg-muted/50"
+              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 last:border-b-0 has-[button:active]:bg-muted/50 data-[state=selected]:bg-muted/50"
             >
               <Checkbox
                 aria-label={t('data.select.row', {
@@ -103,35 +110,37 @@ export function LedgerList({
                 })}
                 checked={!!rowSelection[key]}
                 disabled={!isEditable(event)}
-                onCheckedChange={(value) =>
-                  onRowSelectionChange((current) => {
-                    const next = { ...current }
-                    if (value) next[key] = true
-                    else delete next[key]
-                    return next
-                  })
-                }
+                onCheckedChange={(value) => tick([key], !!value)}
                 className={TICK}
               />
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  {name === null ? (
-                    <span className="text-muted-foreground">{ABSENT}</span>
-                  ) : isEditable(event) ? (
+                  {isEditable(event) ? (
+                    // An editable row is always tappable, a label-less transfer
+                    // included: the dash is then the button, named by its date and type.
                     <button
                       type="button"
                       title={title}
+                      aria-label={
+                        name === null
+                          ? `${f.date(event.date)} · ${t(TYPE_LABEL[event.event_type])}`
+                          : undefined
+                      }
                       className={cn(
                         shape,
+                        name === null && 'text-muted-foreground',
                         'outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring',
                       )}
                       onClick={() => onEdit(event)}
                     >
-                      {name}
+                      {name ?? ABSENT}
                     </button>
                   ) : (
-                    <span title={title} className={shape}>
-                      {name}
+                    <span
+                      title={title}
+                      className={cn(shape, name === null && 'text-muted-foreground')}
+                    >
+                      {name ?? ABSENT}
                     </span>
                   )}
                   <span className="tabular shrink-0">{f.currency(event.amount, currency)}</span>

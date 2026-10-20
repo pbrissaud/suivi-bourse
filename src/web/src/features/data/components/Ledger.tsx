@@ -329,7 +329,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // strip above a page that has nothing under it.
   const ledgerFailure = oneFailure(readConditions({ queries: [events] }))
   const currency = totals.data?.base_currency ?? null
-  const rows = {
+  const view = {
     events: shown,
     budget,
     currency,
@@ -541,7 +541,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 ) : null}
                 {/* Below 768 px the table is a list (#1339): same props, same
                     wrapper, so the drop and the reveal tail are shared. */}
-                {isMobile ? <LedgerList {...rows} /> : <LedgerTable {...rows} />}
+                {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} />}
 
                 {/* **The reveal speaks, and the read did not**.
                       Both sentences below describe rows the app already holds —
