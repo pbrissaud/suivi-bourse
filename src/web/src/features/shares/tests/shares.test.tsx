@@ -1478,13 +1478,26 @@ describe('on a phone, the lines are a list (#1338)', () => {
       .map((item) => within(item).getAllByRole('button')[0].textContent)
   }
 
-  it('draws no list while the positions are in flight', async () => {
+  it('draws no list while the positions are in flight, and draws it once they land', async () => {
     setViewportWidth(390)
-    server.use(http.get(ROUTES.positions, () => new Promise<never>(() => {})))
+    let land: () => void = () => {}
+    const landed = new Promise<void>((resolve) => {
+      land = resolve
+    })
+    server.use(
+      http.get(ROUTES.positions, async () => {
+        await landed
+        return HttpResponse.json(aPositionsPayload(sharesPortfolio()))
+      }),
+    )
     renderApp({ url: '/shares' })
     await screen.findByRole('heading', { level: 1, name: 'Titres' })
 
     expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
+
+    land()
+    expect(await screen.findByRole('list', { name: 'Positions détenues' })).toBeInTheDocument()
   })
 
   it('has no table, one item per held line, and no card around them', async () => {
@@ -1645,6 +1658,77 @@ describe('on a phone, the lines are a list (#1338)', () => {
       'aria-sort',
       'descending',
     )
+  })
+
+  it('keeps the column the desktop sorted on as a fourth option', async () => {
+    const { user } = renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+    await user.click(within(liveTable()).getByRole('button', { name: 'Cours' }))
+
+    act(() => setViewportWidth(390))
+
+    const select = await screen.findByLabelText('Trier par')
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Valorisation', 'Latente', 'Nom', 'Cours'])
+    expect(select).toHaveValue('price')
+  })
+
+  it('offers the sort before the runtime answers, and the group toggle only after', async () => {
+    server.use(http.get(ROUTES.runtime, () => new Promise<never>(() => {})))
+    phone()
+
+    expect(await screen.findByLabelText('Trier par')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Grouper par compte' })).not.toBeInTheDocument()
+  })
+
+  it('draws neither a held list nor a sort when every line is closed', async () => {
+    phone([
+      aClosedPosition({
+        account: 'alpha',
+        symbol: 'ZZD',
+        name: 'Zeta Delta',
+        realised: 120,
+        closed_at: '2025-11-04',
+      }),
+    ])
+    await screen.findByRole('button', { name: /position soldée/ })
+
+    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
+    // The totals are still the totals of what is on screen.
+    expect(screen.getAllByRole('term')[0]).toHaveTextContent(/^Total/)
+  })
+
+  it('says the ticker and the account of a closed line, and its figures', async () => {
+    const { user } = phone([
+      ...sharesPortfolio(),
+      // A line the store never dated.
+      {
+        ...aClosedPosition({
+          account: 'alpha',
+          symbol: 'ZZF',
+          name: 'Zeta Phi',
+          realised: -30,
+          closed_at: '2025-01-01',
+        }),
+        closed_at: null,
+      },
+    ])
+    await screen.findByRole('list', { name: 'Positions détenues' })
+    await user.click(fold())
+
+    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
+    const items = within(closed).getAllByRole('listitem')
+    expect(items).toHaveLength(3)
+    const epsilon = items.find((item) => item.textContent?.includes('Zeta Epsilon')) as HTMLElement
+    expect(epsilon).toHaveTextContent('ZZE · beta')
+    expect(epsilon).toHaveTextContent(/-45,00/)
+    const phi = items.find((item) => item.textContent?.includes('Zeta Phi')) as HTMLElement
+    expect(phi).toHaveTextContent('Soldée le —')
+    expect(phi).toHaveTextContent(/-30,00/)
   })
 
   it('opens the closed lines as a list, not a table', async () => {

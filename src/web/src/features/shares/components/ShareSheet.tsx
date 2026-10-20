@@ -353,14 +353,14 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                 // there is no further detail to send the figures to, so each account
                 // keeps all five — the id and the valuation on one line, the holding
                 // and the latent gain on the next.
-                <ul aria-label={t('shares.breakdown.label')}>
+                <ul role="list" aria-label={t('shares.breakdown.label')} className="divide-y">
                   {breakdown.map((line) => {
                     const lineRenderings = positionRenderings(line)
                     const lineGain = unrealised(line)
                     return (
                       <li
                         key={line.accounts[0]}
-                        className="flex min-h-15 flex-col justify-center gap-0.5 border-b py-2.5 last:border-b-0"
+                        className="flex min-h-15 flex-col justify-center gap-0.5 py-2.5"
                       >
                         <div className="flex items-baseline justify-between gap-3">
                           <span className="font-mono text-2xs">{line.accounts[0]}</span>

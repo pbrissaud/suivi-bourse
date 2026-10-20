@@ -25,6 +25,7 @@
 import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 
+import { ITEM_NAME, LIST_ITEM } from '@/features/shares/components/SharesList'
 import { renderAccounts } from '@/features/shares/components/SharesTable'
 import {
   Table,
@@ -92,82 +93,91 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
         </span>
       </div>
 
-      {open && mobile ? (
-        // **Under 768 px a list, not a table** (#1338): five columns scroll
-        // sideways. The name is a button stretched over its item, as in the live
-        // list; the realised gain is on the first line and the dividends under it.
-        <ul aria-label={t('shares.closed.label')} className="border-t">
-          {rows.map((row) => (
-            <li
-              key={row.symbol}
-              className="relative flex min-h-15 items-center justify-between gap-3 rounded-md border-b py-2.5 last:border-b-0 has-focus-visible:ring-2 has-focus-visible:ring-primary has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-background"
-            >
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <button
-                  type="button"
-                  className="truncate text-left text-md font-medium outline-none after:absolute after:inset-0"
-                  onClick={() => onSelect(row.symbol)}
-                >
-                  {row.name ?? row.symbol}
-                </button>
-                <span className="label">
-                  {t('shares.column.closedOn')}{' '}
-                  {row.closedAt === null ? ABSENT : f.date(row.closedAt)}
-                </span>
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-0.5">
-                <span className={`text-md font-medium tabular ${signClass(row.realised)}`}>
-                  {f.currency(row.realised, currency)}
-                </span>
-                <span className={`text-xs font-medium tabular ${signClass(0)}`}>
-                  {f.currency(row.dividends, currency)}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : open ? (
-        <Table containerClassName="border-t">
-          <caption className="sr-only">{t('shares.closed.label')}</caption>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('shares.column.symbol')}</TableHead>
-              <TableHead>{t('shares.column.closedOn')}</TableHead>
-              <TableHead className="text-right">{t('shares.column.realised')}</TableHead>
-              <TableHead className="text-right">{t('shares.column.dividends')}</TableHead>
-              <TableHead>{t('shares.column.account')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.symbol}>
-                <TableCell>
-                  <button
-                    type="button"
-                    className="text-md font-medium underline-offset-4 hover:underline"
-                    onClick={() => onSelect(row.symbol)}
-                  >
-                    {row.name ?? row.symbol}
-                  </button>
-                  <span className="block font-mono text-2xs text-muted-foreground">
-                    {row.symbol}
-                  </span>
-                </TableCell>
-                {/* The one column that discriminates these rows. An em dash
-                    where the store has no date: there is nothing to compute. */}
-                <TableCell>{row.closedAt === null ? ABSENT : f.date(row.closedAt)}</TableCell>
-                <TableCell className={`text-right tabular ${signClass(row.realised)}`}>
-                  {f.currency(row.realised, currency)}
-                </TableCell>
-                <TableCell className={`text-right tabular ${signClass(0)}`}>
-                  {f.currency(row.dividends, currency)}
-                </TableCell>
-                <TableCell>{renderAccounts(row.accounts)}</TableCell>
+      {open ? (
+        mobile ? (
+          <ClosedList rows={rows} currency={currency} onSelect={onSelect} />
+        ) : (
+          <Table containerClassName="border-t">
+            <caption className="sr-only">{t('shares.closed.label')}</caption>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('shares.column.symbol')}</TableHead>
+                <TableHead>{t('shares.column.closedOn')}</TableHead>
+                <TableHead className="text-right">{t('shares.column.realised')}</TableHead>
+                <TableHead className="text-right">{t('shares.column.dividends')}</TableHead>
+                <TableHead>{t('shares.column.account')}</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.symbol}>
+                  <TableCell>
+                    <button
+                      type="button"
+                      className="text-md font-medium underline-offset-4 hover:underline"
+                      onClick={() => onSelect(row.symbol)}
+                    >
+                      {row.name ?? row.symbol}
+                    </button>
+                    <span className="block font-mono text-2xs text-muted-foreground">
+                      {row.symbol}
+                    </span>
+                  </TableCell>
+                  {/* The one column that discriminates these rows. An em dash
+                    where the store has no date: there is nothing to compute. */}
+                  <TableCell>{row.closedAt === null ? ABSENT : f.date(row.closedAt)}</TableCell>
+                  <TableCell className={`text-right tabular ${signClass(row.realised)}`}>
+                    {f.currency(row.realised, currency)}
+                  </TableCell>
+                  <TableCell className={`text-right tabular ${signClass(0)}`}>
+                    {f.currency(row.dividends, currency)}
+                  </TableCell>
+                  <TableCell>{renderAccounts(row.accounts)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )
       ) : null}
     </section>
+  )
+}
+
+/**
+ * **Under 768 px a list, not a table** (#1338): five columns scroll sideways.
+ * The realised gain is on the first line and the dividends under it; the ticker
+ * and the account ids stay, as in the live list, since two lines can share a
+ * name and the account is otherwise said nowhere on a phone.
+ */
+function ClosedList({ rows, currency, onSelect }: ClosedSharesProps) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  return (
+    <ul role="list" aria-label={t('shares.closed.label')} className="divide-y border-t">
+      {rows.map((row) => (
+        <li key={row.symbol} className={`${LIST_ITEM} items-center justify-between gap-3`}>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <button type="button" className={ITEM_NAME} onClick={() => onSelect(row.symbol)}>
+              {row.name ?? row.symbol}
+            </button>
+            <span className="label">
+              {t('shares.column.closedOn')} {row.closedAt === null ? ABSENT : f.date(row.closedAt)}
+            </span>
+            <span className="truncate font-mono text-2xs text-muted-foreground">
+              {row.symbol}
+              {row.accounts.length === 0 ? null : ` · ${row.accounts.join(', ')}`}
+            </span>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-0.5">
+            <span className={`text-md font-medium tabular ${signClass(row.realised)}`}>
+              {f.currency(row.realised, currency)}
+            </span>
+            <span className={`text-xs font-medium tabular ${signClass(0)}`}>
+              {f.currency(row.dividends, currency)}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }

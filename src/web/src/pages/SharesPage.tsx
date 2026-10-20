@@ -59,7 +59,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
@@ -69,6 +69,7 @@ import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Allocation } from '@/features/shares/components/Allocation'
 import { ClosedShares } from '@/features/shares/components/ClosedShares'
 import { SharesList } from '@/features/shares/components/SharesList'
+import { SortControl } from '@/features/shares/components/SortControl'
 import { SharesTable } from '@/features/shares/components/SharesTable'
 import { ShareSheet } from '@/features/shares/components/ShareSheet'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -77,7 +78,7 @@ import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { currencyUnanswered } from '@/lib/firstRun'
-import { useI18n, type MessageKey } from '@/lib/i18n'
+import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import {
   DEFAULT_SORT,
@@ -94,60 +95,6 @@ import {
 } from '@/features/shares/lib/shares'
 import { oneFailure, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
-
-/**
- * The sort a phone offers in place of the nine column heads (#1338): the three
- * orderings a portfolio is read by. Any other column the desktop left in force
- * joins them (`SortControl`), so the select never states an order it is not in.
- */
-const SORT_LABELS: Record<SortColumn, MessageKey> = {
-  value: 'shares.column.value',
-  unrealised: 'shares.column.unrealised',
-  symbol: 'shares.sort.name',
-  price: 'shares.column.price',
-  quantity: 'shares.column.quantity',
-  avgCost: 'shares.column.avgCost',
-  realised: 'shares.column.realised',
-  dividends: 'shares.column.dividends',
-  account: 'shares.column.account',
-}
-const PHONE_SORTS: readonly SortColumn[] = ['value', 'unrealised', 'symbol']
-
-/** Native select and direction button; both 44 px on touch. */
-function SortControl({ sort, onSort }: { sort: ShareSort; onSort: (column: SortColumn) => void }) {
-  const { t } = useI18n()
-  const columns = PHONE_SORTS.includes(sort.column) ? PHONE_SORTS : [...PHONE_SORTS, sort.column]
-  const Arrow = sort.direction === 'asc' ? ArrowUp : ArrowDown
-  return (
-    <div className="flex items-center gap-2">
-      <label htmlFor="shares-sort" className="label">
-        {t('shares.sort.label')}
-      </label>
-      <select
-        id="shares-sort"
-        value={sort.column}
-        onChange={(event) => onSort(event.target.value as SortColumn)}
-        className="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 dark:bg-input/30"
-      >
-        {columns.map((column) => (
-          <option key={column} value={column}>
-            {t(SORT_LABELS[column])}
-          </option>
-        ))}
-      </select>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        aria-label={t(sort.direction === 'asc' ? 'shares.sort.asc' : 'shares.sort.desc')}
-        onClick={() => onSort(sort.column)}
-        className="pointer-coarse:size-11"
-      >
-        <Arrow aria-hidden />
-      </Button>
-    </div>
-  )
-}
 
 export default function SharesPage() {
   const { t } = useI18n()
@@ -230,8 +177,11 @@ export default function SharesPage() {
   // control is not offered rather than offered and inert.
   const accountCount = new Set(reduced.map((position) => position.account)).size
   // The group toggle and the anomaly chip keep their gate: the counters are
-  // claims, so nothing is drawn while `runtime` has not answered.
-  const showFilters = runtime.isSuccess && (accountCount >= 2 || anomalies.length > 0)
+  // claims, so nothing is drawn while `runtime` has not answered. The sort
+  // control (phones only) needs no read but the positions'.
+  const showSort = mobile && held.length > 0
+  const showGroup = runtime.isSuccess && accountCount >= 2
+  const showAnomalies = runtime.isSuccess && anomalies.length > 0
 
   // The folded ones are in that set — a fold is not a filter, so opening the
   // section moves nothing — and the anomaly lens is, which is the other half of
@@ -359,16 +309,16 @@ export default function SharesPage() {
               would say nothing was wrong on the strength of a read that failed
               (#775, #777, #778). */}
           <div data-slot="shares-table" className="space-y-3">
-            {!(mobile && held.length > 0) && !showFilters ? null : (
+            {!showSort && !showGroup && !showAnomalies ? null : (
               <div className="flex flex-wrap items-center gap-2">
-                {mobile && held.length > 0 ? <SortControl sort={sort} onSort={onSort} /> : null}
+                {showSort ? <SortControl sort={sort} onSort={onSort} /> : null}
 
                 {/* **A partition, offered only where there is something to
                     partition.** At one account the group header would repeat
                     the total row line for line, and a control that cannot
                     change anything is the per-row marker rule met at the level
                     of a button. */}
-                {!runtime.isSuccess || accountCount < 2 ? null : (
+                {!showGroup ? null : (
                   <Button
                     type="button"
                     variant="outline"
@@ -387,7 +337,7 @@ export default function SharesPage() {
 
                 {/* At zero it is nothing at all: the drawing draws no chip where
                     there is nothing to repair. */}
-                {!runtime.isSuccess || anomalies.length === 0 ? null : (
+                {!showAnomalies ? null : (
                   <button
                     type="button"
                     aria-pressed={onlyAnomalies}

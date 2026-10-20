@@ -37,6 +37,18 @@ import {
 } from '@/features/shares/lib/shares'
 import { toneOf } from '@/lib/sign'
 
+/**
+ * The recipe of a tappable item, shared by the live lines and the closed ones:
+ * the name is a button stretched over the item (`ITEM_NAME`), so the whole item
+ * opens the sheet and its accessible name is the name alone, and the focus ring
+ * is drawn on the item by `has-focus-visible`. The rule between items is the
+ * list's `divide-y`, not a border on the item, so a radius never tapers it.
+ */
+export const LIST_ITEM =
+  'relative flex min-h-15 cursor-pointer gap-0.5 py-2.5 has-focus-visible:rounded-md has-focus-visible:ring-2 has-focus-visible:ring-primary has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-background'
+export const ITEM_NAME =
+  'min-w-0 truncate text-left text-md font-medium outline-none after:absolute after:inset-0'
+
 interface SharesListProps {
   /** One group when nothing is grouped, one per account when it is — as the table's. */
   groups: readonly ShareGroup[]
@@ -56,21 +68,26 @@ export function SharesList({ groups, currency, onSelect, totals, closedCount }: 
     <div>
       {groups.map((group, index) =>
         group.account === null ? (
-          <ul key="all" aria-label={t('shares.table.label')}>
-            {group.rows.map((row) => (
-              <ShareItem
-                key={row.symbol}
-                row={row}
-                grouped={false}
-                currency={currency}
-                onSelect={onSelect}
-              />
-            ))}
-          </ul>
+          // Every line closed: there is no list to name, only the totals below.
+          group.rows.length === 0 ? null : (
+            // `role="list"`: preflight's `list-style: none` makes WebKit drop the
+            // list semantics of a bare `<ul>`.
+            <ul key="all" role="list" aria-label={t('shares.table.label')} className="divide-y">
+              {group.rows.map((row) => (
+                <ShareItem
+                  key={row.symbol}
+                  row={row}
+                  grouped={false}
+                  currency={currency}
+                  onSelect={onSelect}
+                />
+              ))}
+            </ul>
+          )
         ) : (
-          <section key={group.account}>
+          <section key={group.account} className="not-first:border-t">
             <GroupHead id={`${id}-${index}`} group={group} currency={currency} />
-            <ul aria-labelledby={`${id}-${index}`}>
+            <ul role="list" aria-labelledby={`${id}-${index}`} className="divide-y">
               {group.rows.map((row) => (
                 <ShareItem
                   key={row.symbol}
@@ -134,17 +151,10 @@ function ShareItem({ row, grouped, currency, onSelect }: ShareItemProps) {
   const ratio = unrealisedRatio(row)
 
   return (
-    // **The whole item opens the sheet**: the name is a button stretched over
-    // it (`after:inset-0`), so its accessible name is the name alone, and its
-    // focus ring is drawn on the item by `has-focus-visible`.
-    <li className="relative flex min-h-15 flex-col justify-center gap-0.5 rounded-md border-b py-2.5 has-focus-visible:ring-2 has-focus-visible:ring-primary has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-background">
+    <li className={`${LIST_ITEM} flex-col justify-center`}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="flex min-w-0 items-center gap-1.5">
-          <button
-            type="button"
-            className="min-w-0 truncate text-left text-md font-medium outline-none after:absolute after:inset-0"
-            onClick={() => onSelect(row.symbol)}
-          >
+          <button type="button" className={ITEM_NAME} onClick={() => onSelect(row.symbol)}>
             {row.name ?? row.symbol}
           </button>
           {isAnomalous(row) ? (
@@ -190,7 +200,7 @@ function Totals({
   const f = useFormatters()
   const { valuation, terms } = totals
   const term = (name: Exclude<GainTermName, 'transferFees'>, label: MessageKey) => (
-    <div className="flex items-baseline justify-between gap-3 border-b py-2.5 text-md last:border-b-0">
+    <div className="flex items-baseline justify-between gap-3 py-2.5 text-md">
       <dt className="text-muted-foreground">{t(label)}</dt>
       <dd className={`text-right tabular ${termTone(terms, name)}`}>
         {renderFigure(
@@ -202,8 +212,8 @@ function Totals({
     </div>
   )
   return (
-    <dl>
-      <div className="flex items-baseline justify-between gap-3 border-b py-2.5 text-md">
+    <dl className="divide-y border-t">
+      <div className="flex items-baseline justify-between gap-3 py-2.5 text-md">
         <dt>
           {t('shares.total')}
           {closedCount > 0 ? (
