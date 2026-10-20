@@ -13,8 +13,8 @@ first position in the app, and the form that records it is the onboarding.
 
 **You hand the app a file; it reads it once and never looks at it again.** There
 is no folder to mount and nothing to watch. On the **Ledger** page there is
-a rectangle above the table: drop a `.csv` or an `.xlsx` on it, or click it and
-pick one.
+a rectangle above the table: drop one or several `.csv` or `.xlsx` files on it, or click it
+and pick them.
 
 Three steps, and the middle one is the point:
 
@@ -42,6 +42,9 @@ curl -F 'file=@2024.csv' 'http://localhost:8080/api/events/import?dry_run=1'
 
 # The import.
 curl -F 'file=@2024.csv' http://localhost:8080/api/events/import
+
+# Several files, previewed and written as one import.
+curl -F 'file=@2023.csv' -F 'file=@2024.csv' 'http://localhost:8080/api/events/import?dry_run=1'
 ```
 
 ### Rows your ledger already has
@@ -73,13 +76,16 @@ Every refusal names its subject, and **none of them writes a single row**:
 - a file that would leave the ledger unable to replay — an export starting
   mid-history sells shares no earlier row bought.
 
-## The format
+In a batch, one refused file refuses the batch, and the message names it: remove
+that file from the preview and the others are read again.
+
+## The format {#format}
 
 An event file is a `.csv` or an `.xlsx` with one header row and one event per
 row. Every sheet of a workbook is read, and the rows are **sorted by date**, so
 the order inside a file is yours to choose. Organise by year, by broker, by
-account, or not at all — and hand the app as many files as you like, one after
-another.
+account, or not at all — and hand the app as many files as you like, several at
+once if you wish: they are previewed and written as one import.
 
 | Column | Required | What it holds |
 |---|---|---|

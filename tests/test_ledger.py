@@ -1877,3 +1877,251 @@ def test_import_write_warms_the_rates_again_when_the_base_moved_before_the_lock(
     assert warmed == ['GBP', 'EUR']
     assert opened.query(
         "SELECT max(unit_price) FROM event WHERE symbol = 'AAPL'") == [(85.0,)]
+
+
+# --------------------------------------------------------------------------- #
+# Several files, one batch (#1266)
+# --------------------------------------------------------------------------- #
+
+HEADER = "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+Z_2023 = (HEADER + "2023-03-15,BUY,ZZA,Zed A,10,100.00,,,\n"
+                   "2023-06-15,DIVIDEND,ZZA,Zed A,,,,8.50,\n").encode('utf-8')
+Z_2024 = (HEADER + "2024-01-15,BUY,ZZA,Zed A,5,110.00,,,\n").encode('utf-8')
+
+
+def _upload_many(client, parts, query="", fields=None):
+    """Several files as repeated ``file`` parts, in the order given."""
+    return client.post(
+        f'/api/events/import{query}',
+        data={'file': [(io.BytesIO(body), name) for name, body in parts],
+              **(fields or {})},
+        content_type='multipart/form-data')
+
+
+def test_two_files_are_previewed_as_one_batch(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    receipt = _upload_many(client, [('2023.csv', Z_2023), ('2024.csv', Z_2024)],
+                           query="?dry_run=1").get_json()
+
+    assert receipt['rows'] == 3
+    assert receipt['files'] == [
+        {'filename': '2023.csv', 'rows': 2,
+         'period': {'from': '2023-03-15', 'to': '2023-06-15'}},
+        {'filename': '2024.csv', 'rows': 1,
+         'period': {'from': '2024-01-15', 'to': '2024-01-15'}}]
+    assert receipt['period'] == {'from': '2023-03-15', 'to': '2024-01-15'}
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_two_files_are_written_by_one_request(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload_many(client, [('2023.csv', Z_2023), ('2024.csv', Z_2024)])
+
+    assert response.status_code == 201
+    assert response.get_json()['written'] == 3
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+
+
+def test_one_part_answers_exactly_as_before(tmp_path):
+    client, _ = build_client_and_store(tmp_path)
+
+    receipt = _upload(client, Z_2023, filename='2023.csv',
+                      query="?dry_run=1").get_json()
+
+    assert receipt['filename'] == '2023.csv'
+    assert receipt['files'] == [
+        {'filename': '2023.csv', 'rows': 2,
+         'period': {'from': '2023-03-15', 'to': '2023-06-15'}}]
+
+
+def test_a_batch_is_sorted_across_files_before_it_is_judged(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    sells = (HEADER + "2024-02-01,SELL,ZZA,Zed A,5,120.00,,,\n").encode('utf-8')
+    buys = (HEADER + "2024-02-01,BUY,ZZA,Zed A,10,100.00,,,\n").encode('utf-8')
+
+    response = _upload_many(client, [('sells.csv', sells), ('buys.csv', buys)])
+
+    assert response.status_code == 201
+    assert opened.query(
+        'SELECT event_type FROM event ORDER BY id') == [('BUY',), ('SELL',)]
+
+
+def test_an_unreadable_file_refuses_the_whole_batch_and_is_named(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    no_type = b"date,symbol\n2024-01-15,ZZA\n"
+
+    for bad, name in ((b'%PDF-', 'scan.pdf'), (no_type, 'broken.csv')):
+        for query in ("?dry_run=1", ""):
+            response = _upload_many(
+                client, [('good.csv', Z_2023), (name, bad)], query=query)
+            body = response.get_json()
+            assert response.status_code == 422, (name, query)
+            assert body['type'] == '/problems/invalid-file'
+            assert body['file'] == name
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_two_files_declaring_different_currencies_are_refused(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    head = "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+    euro = (head + "2024-01-15,BUY,ZZA,Zed A,1,100.00,EUR\n").encode('utf-8')
+    dollar = (head + "2024-01-16,BUY,ZZA,Zed A,1,100.00,USD\n").encode('utf-8')
+
+    response = _upload_many(client, [('eur.csv', euro), ('usd.csv', dollar)])
+
+    assert response.status_code == 422
+    assert response.get_json()['file'] == 'usd.csv'
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_batch_level_refusal_names_no_file(tmp_path):
+    client, _ = build_client_and_store(tmp_path)
+
+    response = _upload_many(
+        client, [('2023.csv', Z_2023), ('2024.csv', Z_2024)],
+        query=_query(dry_run=1, map='{"TR": "pea"}'))
+
+    assert response.status_code == 422
+    assert 'file' not in response.get_json()
+
+
+def test_the_accounts_of_a_batch_are_counted_across_files(tmp_path):
+    client, _ = build_client_and_store(tmp_path)
+    head = "date,event_type,account,symbol,name,quantity,unit_price\n"
+    one = (head + "2024-01-15,BUY,TR,ZZA,Zed A,1,100.00\n").encode('utf-8')
+    two = (head + "2024-01-16,BUY,TR,ZZA,Zed A,1,100.00\n"
+                  "2024-01-17,BUY,,ZZA,Zed A,1,100.00\n").encode('utf-8')
+
+    receipt = _upload_many(client, [('a.csv', one), ('b.csv', two)],
+                           query=_query(dry_run=1, map='{}')).get_json()
+
+    assert receipt['file_accounts'] == [
+        {'name': '', 'rows': 1}, {'name': 'TR', 'rows': 2}]
+
+
+def test_a_line_in_two_files_is_a_repeat_with_global_indexes(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    dividend = (HEADER + "2024-03-15,DIVIDEND,ZZA,Zed A,,,,8.50,\n").encode('utf-8')
+    buy = (HEADER + "2024-01-15,BUY,ZZA,Zed A,10,100.00,,,\n").encode('utf-8')
+
+    receipt = _upload_many(
+        client, [('a.csv', buy + dividend.split(b"\n", 1)[1]),
+                 ('b.csv', dividend)], query="?dry_run=1").get_json()
+
+    ((row,),) = [(row,) for row in receipt['duplicate_rows']]
+    assert (row['repeat_of'], row['file'], row['repeat_of_file']) == (1, 1, 0)
+
+    written = _upload_many(
+        client, [('a.csv', buy + dividend.split(b"\n", 1)[1]),
+                 ('b.csv', dividend)], fields={'write_repeat': ['1']})
+    assert written.get_json()['written'] == 3
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+
+
+def test_a_batch_shares_the_body_bound(tmp_path):
+    client, _ = build_client_and_store(tmp_path)
+    half = b"x" * (uploads.MAX_UPLOAD_BYTES // 2 + 40 * 1024)
+
+    response = _upload_many(client, [('a.csv', half), ('b.csv', half)])
+
+    assert response.status_code == 413
+    assert response.get_json()['type'] == '/problems/payload-too-large'
+
+
+def test_the_docs_example_header_is_the_one_the_app_reads():
+    from pathlib import Path
+    from application.events import export
+    page = (Path(__file__).parent.parent / 'website' / 'docs'
+            / 'import-your-events.mdx').read_text(encoding='utf-8')
+
+    assert '## The format {#format}' in page
+    section = page.split('## The format {#format}', 1)[1]
+    header = section.split('```csv\n', 1)[1].split('\n', 1)[0]
+    assert header.split(',') == [
+        column for column in export.EVENT_COLUMNS if column != 'base_currency']
+
+
+def test_import_preview_of_a_batch_lists_foreign_lines_summed_across_files(
+        euro_install):
+    client, _ = euro_install
+    head = "date,event_type,symbol,name,quantity,unit_price\n"
+    one = (head + "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n").encode('utf-8')
+    two = (head + "2024-02-15,BUY,AAPL,Apple Inc,5,160.00\n"
+                  "2024-02-16,BUY,MC.PA,LVMH,1,700.00\n").encode('utf-8')
+
+    receipt = _upload_many(client, [('a.csv', one), ('b.csv', two)],
+                           query="?dry_run=1").get_json()
+
+    assert receipt['foreign_lines'] == [
+        {'symbol': 'AAPL', 'currency': 'USD', 'rows': 2}]
+
+
+def test_a_file_declaring_its_currency_adds_no_foreign_line_to_the_batch(
+        euro_install):
+    client, _ = euro_install
+    stated = ("date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+              "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,EUR\n").encode('utf-8')
+    silent = ("date,event_type,symbol,name,quantity,unit_price\n"
+              "2024-02-15,BUY,AAPL,Apple Inc,5,160.00\n").encode('utf-8')
+
+    receipt = _upload_many(client, [('stated.csv', stated), ('silent.csv', silent)],
+                           query="?dry_run=1").get_json()
+
+    assert receipt['foreign_lines'] == [
+        {'symbol': 'AAPL', 'currency': 'USD', 'rows': 1}]
+
+
+def test_a_converted_batch_leaves_the_rows_of_a_declaring_file_alone(
+        euro_install):
+    """Rows are converted by position in the merged list: a file that states its
+    currency sits between the others after the sort, and keeps its amounts."""
+    client, opened = euro_install
+    head = "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+    stated = (head + "2024-01-20,BUY,AAPL,Apple Inc,1,100.00,EUR\n").encode('utf-8')
+    silent = ("date,event_type,symbol,name,quantity,unit_price\n"
+              "2024-01-10,BUY,AAPL,Apple Inc,1,150.00\n"
+              "2024-01-30,BUY,AAPL,Apple Inc,1,150.00\n").encode('utf-8')
+    parts = [('stated.csv', stated), ('silent.csv', silent)]
+    query = _query(amounts_in='quote', foreign=['AAPL:USD'])
+
+    previewed = _upload_many(client, parts, query=query + "&dry_run=1")
+    assert previewed.status_code == 200
+    assert previewed.get_json()['foreign_lines'] == [
+        {'symbol': 'AAPL', 'currency': 'USD', 'rows': 2}]
+
+    assert _upload_many(client, parts, query=query).status_code == 201
+    assert opened.query('SELECT date, unit_price FROM event ORDER BY date') == [
+        (date(2024, 1, 10), 75.0), (date(2024, 1, 20), 100.0),
+        (date(2024, 1, 30), 75.0)]
+
+
+def test_a_file_without_a_row_is_listed_with_no_period_in_a_batch(tmp_path):
+    client, _ = build_client_and_store(tmp_path)
+
+    receipt = _upload_many(
+        client, [('2023.csv', Z_2023), ('empty.csv', HEADER.encode('utf-8'))],
+        query="?dry_run=1").get_json()
+
+    assert receipt['files'][1] == {'filename': 'empty.csv', 'rows': 0, 'period': None}
+    assert receipt['rows'] == receipt['written'] + receipt['duplicates']
+
+
+def test_files_declaring_the_same_currency_are_one_batch_and_a_third_may_conflict(
+        tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    head = "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+
+    def declaring(day, code):
+        return (head + f"{day},BUY,ZZA,Zed A,1,100.00,{code}\n").encode('utf-8')
+
+    same = [('a.csv', declaring('2024-01-15', 'EUR')),
+            ('b.csv', declaring('2024-01-16', 'EUR'))]
+    assert _upload_many(client, same, query="?dry_run=1").status_code == 200
+
+    clash = same + [('c.csv', declaring('2024-01-17', 'USD'))]
+    response = _upload_many(client, clash, query="?dry_run=1")
+    assert response.status_code == 422
+    assert response.get_json()['file'] == 'c.csv'
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
