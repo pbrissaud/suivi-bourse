@@ -381,6 +381,7 @@
   "shares.events.empty": "No event recorded for this share.",
   "shares.events.markers": "Days carrying an event",
   "shares.events.marker": "{count, plural, one {# event on {date}} other {# events on {date}}}",
+  "shares.events.markerRange": "{count, plural, one {# event} other {# events}}, from {from} to {to}",
   "shares.events.count": "×{count}",
   "shares.events.quantity": "{quantity} shares",
   "shares.breakdown.title": "By account",

@@ -453,15 +453,15 @@ describe('the import over a populated ledger (#1278)', () => {
     const seen = watchingPreviews()
     renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
-    const card = ledger().closest('[data-slot="card"]') as HTMLElement
+    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
 
-    fireEvent.dragOver(card, dragOf([aFile()]))
-    // While a file is over the card, the card says what dropping it does.
+    fireEvent.dragOver(table, dragOf([aFile()]))
+    // While a file is over the table, it says what dropping it does.
     expect(
       screen.getByText(/Déposez ici : vous verrez ce que le fichier ferait/),
     ).toBeInTheDocument()
 
-    fireEvent.drop(card, dragOf([aFile()]))
+    fireEvent.drop(table, dragOf([aFile()]))
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(seen).toEqual(['preview'])
@@ -471,12 +471,12 @@ describe('the import over a populated ledger (#1278)', () => {
     const seen = watchingPreviews()
     renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
-    const card = ledger().closest('[data-slot="card"]') as HTMLElement
+    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
 
-    fireEvent.dragOver(card, dragOf([]))
+    fireEvent.dragOver(table, dragOf([]))
     expect(screen.queryByText(/Déposez ici/)).not.toBeInTheDocument()
 
-    fireEvent.drop(card, dragOf([]))
+    fireEvent.drop(table, dragOf([]))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(seen).toEqual([])
   })

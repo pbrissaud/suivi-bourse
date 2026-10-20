@@ -29,9 +29,11 @@
  *    per day out of it. The inset below mirrors the `YAxis` width and the
  *    `LineChart` margin, which are the only two numbers that place the plot.
  *
- * **One marker per day, announcing its count.** A single symbol of the real
- * portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event
+ * **One marker per plotted point, announcing its count.** A single symbol of the
+ * real portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event
  * those points overlap, and three purchases read as one with nothing saying so.
+ * Days that land on one point, or close enough for their labels to touch, are one
+ * marker (#1273): it names its dates and selects the lines of all of them.
  */
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
@@ -62,10 +64,10 @@ interface PriceChartProps {
    * about which day carries what.
    */
   events?: readonly LedgerEvent[]
-  /** The selected day, or `null`. The selection is a **day**, never an event. */
-  selectedDay?: string | null
-  /** Clicking a marker: select that day, and take the list to it. */
-  onSelectDay?: (day: string) => void
+  /** The selected days. The selection is made of **days**, never of events. */
+  selectedDays?: readonly string[]
+  /** Clicking a marker: select the days it holds and take the list to them, or `[]` to let it go. */
+  onSelectDays?: (days: readonly string[]) => void
 }
 
 export function PriceChart({
@@ -73,8 +75,8 @@ export function PriceChart({
   window,
   onWindowChange,
   events = [],
-  selectedDay = null,
-  onSelectDay,
+  selectedDays = [],
+  onSelectDays,
 }: PriceChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -224,18 +226,27 @@ export function PriceChart({
               style={{ marginLeft: PLOT_INSET_LEFT, marginRight: PLOT_INSET_RIGHT }}
             >
               {markers.map((marker) => {
-                const selected = marker.day === selectedDay
+                // A line of the list grows the marker that holds its day.
+                const selected = marker.days.some((day) => selectedDays.includes(day))
+                const from = marker.days[0]
+                const to = marker.days[marker.days.length - 1]
                 return (
                   <button
-                    key={marker.day}
+                    key={from}
                     type="button"
                     aria-pressed={selected}
-                    aria-label={t('shares.events.marker', {
-                      count: marker.count,
-                      date: f.date(marker.day),
-                    })}
-                    onClick={() => onSelectDay?.(marker.day)}
-                    className="absolute top-0 -translate-x-1/2"
+                    aria-label={
+                      from === to
+                        ? t('shares.events.marker', { count: marker.count, date: f.date(from) })
+                        : t('shares.events.markerRange', {
+                            count: marker.count,
+                            from: f.date(from),
+                            to: f.date(to),
+                          })
+                    }
+                    onClick={() => onSelectDays?.(selected ? [] : marker.days)}
+                    // A 24 px hit box, the rail's own height.
+                    className="absolute top-0 flex h-6 min-w-6 -translate-x-1/2 flex-col items-center"
                     style={{ left: `${marker.offset * 100}%` }}
                   >
                     {/* The point **grows** on selection — the one thing the

@@ -104,8 +104,8 @@ describe('the ledger’s column budget', () => {
 
   it('declares the container the thresholds are measured on', () => {
     const ledger = read('features/data/components/Ledger.tsx')
-    // The card's classes go through `cn` since the drop outline (#1278).
-    expect(ledger).toMatch(/<Card\b[^>]*'[^']*@container\/ledger\b[^']*'/)
+    // The drop target's classes go through `cn` since the drop outline (#1278).
+    expect(ledger).toMatch(/'[^']*@container\/ledger\b[^']*'/)
   })
 
   it('subtracts no facet panel from that container (#1278)', () => {

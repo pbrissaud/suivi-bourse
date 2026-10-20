@@ -21,10 +21,12 @@ import {
   aClosedPosition,
   aPosition,
   aPositionsPayload,
+  aPriceSeries,
   fundamentalsOf,
   shareLedger,
   sharesPortfolio,
 } from '@/test/factories'
+import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -123,6 +125,29 @@ describe('The bubble’s form, naked', () => {
     expect(within(sheet).queryByText('Variation')).not.toBeInTheDocument()
     expect(within(sheet).queryByText(/reconstitution|backfill/i)).not.toBeInTheDocument()
     expect(within(sheet).queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+})
+
+describe('the sheet draws no box (#1273)', () => {
+  it('sets the three terms on the sheet itself, with no frame', async () => {
+    const { user } = renderShares()
+    const sheet = await openSheet(user)
+
+    expectNoBox(sheet)
+    const term = within(sheetHead(sheet)).getByRole('group', { name: 'Latente' })
+    expect(term.className).not.toMatch(/\b(border|bg-card|px-3|py-\S+|rounded\S*)\b/)
+  })
+
+  it('puts the focus on the title when it opens, never on an ⓘ', async () => {
+    const { user } = renderShares()
+    const sheet = await openSheet(user)
+
+    await waitFor(() =>
+      expect(within(sheet).getByRole('heading', { name: 'Zeta Alpha' })).toHaveFocus(),
+    )
+    for (const info of within(sheet).getAllByRole('button', { name: /Ce que veut dire/ })) {
+      expect(info).not.toHaveFocus()
+    }
   })
 })
 
@@ -300,7 +325,7 @@ describe('the chart, the list and the fundamentals stay', () => {
 })
 
 describe('the liaison is a selection, not a hover', () => {
-  it('is one marker per day, announcing its count', async () => {
+  it('is one marker per point, announcing its count', async () => {
     const { user } = renderShares()
     const sheet = await openSheet(user)
 
@@ -313,6 +338,66 @@ describe('the liaison is a selection, not a hover', () => {
       '3 événements le 1ᵉʳ mars 2026',
     ])
     expect(band).toHaveTextContent('×3')
+  })
+
+  describe('days that share a plotted point', () => {
+    // 28 February and 1 March both name the 1 March close: two markers there
+    // would draw "×1×3" on one spot.
+    function renderMerged() {
+      server.use(
+        http.get(ROUTES.prices, ({ params }) =>
+          HttpResponse.json(
+            aPriceSeries({
+              symbol: String(params.symbol),
+              points: [
+                { t: '2026-02-20T17:30:00.000Z', price: 120 },
+                { t: '2026-03-01T17:30:00.000Z', price: 128 },
+                { t: '2026-03-02T12:00:00.000Z', price: 130 },
+              ],
+            }),
+          ),
+        ),
+      )
+      return renderShares()
+    }
+    const label = '4 opérations, du 28 févr. 2026 au 1ᵉʳ mars 2026'
+
+    it('draw one marker, summing the count and naming the dates', async () => {
+      const { user } = renderMerged()
+      const sheet = await openSheet(user)
+
+      const band = await within(sheet).findByRole('group', { name: 'Jours portant un événement' })
+      const markers = within(band).getAllByRole('button')
+      expect(markers.map((marker) => marker.getAttribute('aria-label'))).toEqual([label])
+      expect(band).toHaveTextContent('×4')
+      expect(band).not.toHaveTextContent('×1')
+    })
+
+    it('select the lines of all their days, and a line grows the marker', async () => {
+      const { user } = renderMerged()
+      const sheet = await openSheet(user)
+      const band = await within(sheet).findByRole('group', { name: 'Jours portant un événement' })
+
+      await user.click(within(band).getByRole('button', { name: label }))
+      expect(within(sheet).getAllByRole('button', { current: 'date' })).toHaveLength(4)
+
+      // Let go, then point at the 28th alone: its marker is the merged one.
+      await user.click(within(band).getByRole('button', { name: label }))
+      expect(within(sheet).queryAllByRole('button', { current: 'date' })).toHaveLength(0)
+      await user.click(within(sheet).getByText('28 févr. 2026'))
+      expect(within(band).getByRole('button', { name: label })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+
+      // The marker shows pressed for one of its days, and pressing it lets go.
+      await user.click(within(band).getByRole('button', { name: label }))
+      expect(within(sheet).queryAllByRole('button', { current: 'date' })).toHaveLength(0)
+      expect(within(band).getByRole('button', { name: label })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    })
   })
 
   it('selects nothing on hover', async () => {
