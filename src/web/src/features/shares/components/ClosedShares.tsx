@@ -65,7 +65,7 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
   return (
     <section className="border-t">
       <h2 className="sr-only">{t('shares.closed.label')}</h2>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-1.5 py-3.5 xl:px-4">
         <button
           type="button"
           aria-expanded={open}

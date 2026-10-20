@@ -745,9 +745,10 @@ describe('the page sits on the ground (#1273)', () => {
     renderBenchmark(ready({ series }))
 
     const card = await headCard()
-    const returns = within(card).getByRole('group', { name: 'Votre portefeuille' }).parentElement
-      ?.parentElement
+    const returns = card.querySelector('[data-row="returns"]')
+    expect(returns).not.toBeNull()
     expect(returns?.className).toMatch(/flex-wrap/)
+    expect(within(returns as HTMLElement).getAllByRole('group')).toHaveLength(2)
     // The gap leads, the period line comes before the two returns.
     const text = card.textContent ?? ''
     expect(text.indexOf('+4 212,80')).toBeLessThan(text.indexOf('Gain sur l’argent investi, du'))

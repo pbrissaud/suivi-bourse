@@ -22,7 +22,7 @@
  *
  * What stays is the chart, the event list and the fundamentals — and the chart
  * and the list are now **one object**: the liaison between them is a selection
- * of a **day**, never a hover.
+ * of days, never a hover.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -116,11 +116,11 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
   // the range the reader last chose, which is the one thing a chart control
   // must not forget between two lines of the same table.
   const [window, setWindow] = useState<ChartWindow>('1Y')
-  // The selection is a **day**, and it is the sheet's because two objects share
-  // it. `scrollRequest` is bumped by the chart alone — see `ShareEvents`.
   // Opening the sheet puts the focus on its title: the first thing a keyboard
   // would otherwise land on is the first ⓘ, a control about a figure not yet read.
   const title = useRef<HTMLHeadingElement>(null)
+  // The selection is made of **days**, and it is the sheet's because two objects
+  // share it. `scrollRequest` is bumped by the chart alone — see `ShareEvents`.
   const [selectedDays, setSelectedDays] = useState<readonly string[]>([])
   const [scrollRequest, setScrollRequest] = useState(0)
 
@@ -139,11 +139,9 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
     [ledger.data, symbol],
   )
 
-  // Pressing what is already selected lets it go.
-  const toggle = (days: readonly string[]) =>
-    setSelectedDays((previous) =>
-      previous.length === days.length && days.every((day, at) => day === previous[at]) ? [] : days,
-    )
+  // Pressing the one day already selected lets it go.
+  const toggle = (day: string) =>
+    setSelectedDays((previous) => (previous.length === 1 && previous[0] === day ? [] : [day]))
 
   // A selection is about one security: carrying it to the next sheet would mark
   // a day that share has no event on, and grow a marker that is not there.
@@ -189,7 +187,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
         }}
       >
         <SheetHeader>
-          <SheetTitle ref={title} tabIndex={-1} className="outline-none">
+          <SheetTitle ref={title} tabIndex={-1}>
             {row.name ?? row.symbol}
           </SheetTitle>
           <SheetDescription>{t('shares.sheet.description')}</SheetDescription>
@@ -321,7 +319,12 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             <PriceChart
               symbol={row.symbol}
               window={window}
-              onWindowChange={setWindow}
+              // A new range re-clusters the markers: a selection kept across it could
+              // name days no marker holds any more.
+              onWindowChange={(next) => {
+                setWindow(next)
+                setSelectedDays([])
+              }}
               // **An optional read, so the `?? []` survives**: with
               // no ledger the chart draws no marker rail — *a band with nothing
               // in it does not exist* — which removes a line rather than
@@ -332,7 +335,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
               events={ledger.data ?? []}
               selectedDays={selectedDays}
               onSelectDays={(days) => {
-                toggle(days)
+                setSelectedDays(days)
                 setScrollRequest((request) => request + 1)
               }}
             />
@@ -346,7 +349,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                 events={events}
                 currency={currency}
                 selectedDays={selectedDays}
-                onSelectDay={(day) => toggle([day])}
+                onSelectDay={toggle}
                 scrollRequest={scrollRequest}
               />
             )}

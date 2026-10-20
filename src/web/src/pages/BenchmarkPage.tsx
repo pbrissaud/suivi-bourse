@@ -275,7 +275,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
             })
           : t('benchmark.returns.titleBare')}
       </p>
-      <div className="flex flex-wrap gap-x-10 gap-y-4">
+      <div data-row="returns" className="flex flex-wrap gap-x-10 gap-y-4">
         <div className="w-56 max-w-full">
           <Stat
             size="figure"
@@ -426,8 +426,10 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
               these rows add up to it, and the only way to make that claim
               checkable is to print it where the addition ends. */}
           {hasTotal ? (
+            // The 1 px `rule` above it is the last account row's own bottom border:
+            // `TableBody` zeroes the border of its last row.
             <TableRow
-              className={`${still} border-t font-semibold max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:p-4`}
+              className={`${still} font-semibold max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:p-4`}
             >
               <TableCell className={`label pl-0 xl:pl-0 ${stack}`}>
                 {t('benchmark.accounts.total')}

@@ -351,18 +351,31 @@ describe('the chart’s event markers', () => {
     const markers = eventMarkers([onDay(10), onDay(13)], 'ZZA', DAILY)
     expect(markers).toHaveLength(1)
     expect(markers[0].days).toHaveLength(2)
-    expect(markers[0].offset).toBeCloseTo(0.115)
+    expect(markers[0].offset).toBe(0.1)
   })
 
   it('keeps two days 0,05 of the plot apart separate', () => {
     expect(eventMarkers([onDay(10), onDay(15)], 'ZZA', DAILY)).toHaveLength(2)
   })
 
+  it('keeps two days exactly 0,04 of the plot apart separate', () => {
+    // "Less than 0,04": the boundary itself is not merged, on every rank.
+    expect(eventMarkers([onDay(10), onDay(14)], 'ZZA', DAILY)).toHaveLength(2)
+    expect(eventMarkers([onDay(54), onDay(58)], 'ZZA', DAILY)).toHaveLength(2)
+  })
+
+  it('never chains a run of days into one marker wider than the gap', () => {
+    // Each day is 0,03 from the one before it, and the third is 0,06 from the
+    // first: the first two share a marker and the third opens the next.
+    const markers = eventMarkers([onDay(10), onDay(13), onDay(16)], 'ZZA', DAILY)
+    expect(markers.map((marker) => marker.days.length)).toEqual([2, 1])
+  })
+
   it('sums the counts and keeps the days in date order', () => {
     // Handed in the wrong order, with two events on the later day.
     const markers = eventMarkers([onDay(12), onDay(10), onDay(12)], 'ZZA', DAILY)
     expect(markers).toEqual([
-      { days: [DAILY[10].t.slice(0, 10), DAILY[12].t.slice(0, 10)], count: 3, offset: 0.11 },
+      { days: [DAILY[10].t.slice(0, 10), DAILY[12].t.slice(0, 10)], count: 3, offset: 0.1 },
     ])
   })
 

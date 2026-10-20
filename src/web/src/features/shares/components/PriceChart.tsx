@@ -66,7 +66,7 @@ interface PriceChartProps {
   events?: readonly LedgerEvent[]
   /** The selected days. The selection is made of **days**, never of events. */
   selectedDays?: readonly string[]
-  /** Clicking a marker: select the days it holds, and take the list to them. */
+  /** Clicking a marker: select the days it holds and take the list to them, or `[]` to let it go. */
   onSelectDays?: (days: readonly string[]) => void
 }
 
@@ -244,7 +244,7 @@ export function PriceChart({
                             to: f.date(to),
                           })
                     }
-                    onClick={() => onSelectDays?.(marker.days)}
+                    onClick={() => onSelectDays?.(selected ? [] : marker.days)}
                     // A 24 px hit box, the rail's own height.
                     className="absolute top-0 flex h-6 min-w-6 -translate-x-1/2 flex-col items-center"
                     style={{ left: `${marker.offset * 100}%` }}

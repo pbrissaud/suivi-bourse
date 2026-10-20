@@ -389,6 +389,14 @@ describe('the liaison is a selection, not a hover', () => {
         'aria-pressed',
         'true',
       )
+
+      // The marker shows pressed for one of its days, and pressing it lets go.
+      await user.click(within(band).getByRole('button', { name: label }))
+      expect(within(sheet).queryAllByRole('button', { current: 'date' })).toHaveLength(0)
+      expect(within(band).getByRole('button', { name: label })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
     })
   })
 

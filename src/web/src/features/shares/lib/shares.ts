@@ -770,7 +770,7 @@ export function shareEvents(events: readonly LedgerEvent[], symbol: string): Led
  * event: a single symbol of the real portfolio carries `×2`, `×2`, `×3`, `×3`
  * over four days, so points drawn per event overlap and the reader is shown
  * three purchases as one with nothing saying so. Days that land on one point,
- * or closer than {@link MERGE_GAP} of the plot, are **one** marker: drawn apart
+ * or closer than {@link MERGE_GAP_PERCENT} of the plot, are **one** marker: drawn apart
  * their `×N` labels overlap into "×2×3".
  */
 interface EventMarker {
@@ -780,8 +780,8 @@ interface EventMarker {
   count: number
   /**
    * Where it sits along the visible series: the **rank** of the point it names,
-   * `0` at the first and `1` at the last, the middle of its first and last day
-   * for a merged one. A fraction rather than a pixel,
+   * `0` at the first and `1` at the last — a merged marker sits on the point of
+   * its first day, so it still names a point of the series. A fraction rather than a pixel,
    * because the band that draws it is laid out in the chart's own width; and a
    * fraction of the **index** rather than of the elapsed time, because that is
    * the abscissa the chart itself uses — a Recharts category axis gives every
@@ -796,8 +796,13 @@ interface EventMarker {
   offset: number
 }
 
-/** Two days closer than this fraction of the plot width share a marker. */
-const MERGE_GAP = 0.04
+/**
+ * Two days closer than this share of the plot width share a marker, measured
+ * from the first day of the marker: a run of days never chains into one marker
+ * wider than the gap. A whole percentage, compared on integer ranks, so the
+ * threshold does not depend on how `index / steps` rounds.
+ */
+const MERGE_GAP_PERCENT = 4
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -873,18 +878,14 @@ export function eventMarkers(
     .map(([day, count]) => ({ day, count, start: Date.parse(`${day}T00:00:00Z`) }))
     .filter(({ start }) => Number.isFinite(start) && start + DAY_MS > first && start <= last)
     .sort((left, right) => left.start - right.start)
-    .map(({ day, count, start }) => ({
-      day,
-      count,
-      offset: nearestStop(stops, start).index / steps,
-    }))
+    .map(({ day, count, start }) => ({ day, count, rank: nearestStop(stops, start).index }))
 
-  // The offsets rise with the dates (the series is in time order), so a cluster
-  // is a run of neighbours, each within the gap of the one before it.
+  // The ranks rise with the dates (the series is in time order), so a cluster
+  // is a run of neighbours, each within the gap of the cluster's first day.
   const clusters: { days: typeof days }[] = []
   for (const day of days) {
     const current = clusters.at(-1)
-    if (current && day.offset - current.days[current.days.length - 1].offset < MERGE_GAP) {
+    if (current && (day.rank - current.days[0].rank) * 100 < MERGE_GAP_PERCENT * steps) {
       current.days.push(day)
     } else {
       clusters.push({ days: [day] })
@@ -893,6 +894,6 @@ export function eventMarkers(
   return clusters.map(({ days: held }) => ({
     days: held.map((one) => one.day),
     count: held.reduce((sum, one) => sum + one.count, 0),
-    offset: (held[0].offset + held[held.length - 1].offset) / 2,
+    offset: held[0].rank / steps,
   }))
 }
