@@ -11,9 +11,10 @@ Pure: the fetcher is injected, ``http_fetch`` is the one the app passes.
 import json
 import math
 import re
-import urllib.request
 from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
+
+from application.bounded_get import bounded_get
 
 
 #: The keys of a tweakcn ``cssVars.light``. ``src/web/lint/semantic-token-alias.grit``
@@ -225,13 +226,7 @@ def fetch(theme_id: object, fetcher: Callable[[str], bytes]) -> dict:
 
 def http_fetch(url: str) -> bytes:
     """The registry entry, or an exception."""
-    with urllib.request.urlopen(url, timeout=5) as response:
-        if response.status != 200:
-            raise OSError(f'HTTP {response.status}')
-        raw = response.read(MAX_BYTES + 1)
-    if len(raw) > MAX_BYTES:
-        raise OSError('theme larger than MAX_BYTES')
-    return raw
+    return bounded_get(url, MAX_BYTES)
 
 
 __all__ = ['STANDARD', 'ALLOWED', 'MAX_BYTES', 'sanitize', 'render_css', 'font_imports',
