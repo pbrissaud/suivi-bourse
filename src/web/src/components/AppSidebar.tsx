@@ -71,7 +71,7 @@ interface Entry {
  * record uses it, so a label inventing a second one puts two names on one
  * thing. The source string is `Ledger`, English being decided first.
  */
-const PORTFOLIO: Entry[] = [
+export const PORTFOLIO: Entry[] = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/shares', label: 'nav.shares', icon: CircleDollarSign },
   { to: '/accounts', label: 'nav.accounts', icon: Wallet },
@@ -82,7 +82,7 @@ const PORTFOLIO: Entry[] = [
 ]
 
 /** The administration, pinned to the foot of the column. */
-const ADMINISTRATION: Entry[] = [
+export const ADMINISTRATION: Entry[] = [
   { to: '/system', label: 'nav.system', icon: Server },
   { to: '/settings', label: 'nav.settings', icon: Settings },
 ]

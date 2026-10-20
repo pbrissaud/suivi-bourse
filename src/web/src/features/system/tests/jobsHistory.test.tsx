@@ -67,7 +67,12 @@ describe('the job history (#1236)', () => {
   it('names each hour by its passes and its faults', async () => {
     server.use(
       http.get(ROUTES.jobsHistory, () =>
-        HttpResponse.json(aJobsHistory({ jobs: { ...aJobsHistory().jobs, performance: FAILED } })),
+        HttpResponse.json(
+          aJobsHistory({
+            started: '2026-02-28T00:00:00.000Z',
+            jobs: { ...aJobsHistory().jobs, performance: FAILED },
+          }),
+        ),
       ),
     )
     const { region } = await jobs()
@@ -218,6 +223,32 @@ describe('the job history (#1236)', () => {
 
     expect(region).toHaveTextContent('Dernières 24 h.')
     expect(region).not.toHaveTextContent(/depuis le démarrage/)
+  })
+
+  it('draws no histogram under two hours of history, and says so', async () => {
+    const started = new Date(Date.parse(NOW) - 3_600_000).toISOString()
+    server.use(http.get(ROUTES.jobsHistory, () => HttpResponse.json(aJobsHistory({ started }))))
+    const { region } = await jobs()
+
+    expect(await within(region).findByText(/s’affiche après deux heures/)).toBeInTheDocument()
+    expect(within(region).queryByRole('listbox')).not.toBeInTheDocument()
+    // The date and the verdict of each job stay.
+    expect(region).toHaveTextContent('Relevé des cours')
+  })
+
+  it('draws no mark for an hour before the process started', async () => {
+    const started = new Date(Date.parse(NOW) - 3 * 3_600_000).toISOString()
+    server.use(http.get(ROUTES.jobsHistory, () => HttpResponse.json(aJobsHistory({ started }))))
+    const { region } = await jobs()
+    const strip = await within(region).findByRole('listbox', { name: 'Calcul de la performance' })
+    const options = within(strip).getAllByRole('option')
+
+    expect(options).toHaveLength(24)
+    expect(options[0]).toHaveAccessibleName(/l’application ne tournait pas$/)
+    expect(options[0].querySelector('.border-dashed')).toBeNull()
+    expect(options[19].querySelector('.border-dashed')).toBeNull()
+    // The first hour after the start, with no pass, keeps its dashed mark.
+    expect(options[20].querySelector('.border-dashed')).not.toBeNull()
   })
 
   it('still dates the last replay once it has left the 24 hours', async () => {
