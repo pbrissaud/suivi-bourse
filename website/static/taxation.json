@@ -1,0 +1,119 @@
+[
+  {
+    "id": "be/compte-titres",
+    "country": "BE",
+    "name": "Effectenrekening / compte-titres",
+    "kind": "flat_realised",
+    "parameters": {
+      "rate": 0.1
+    }
+  },
+  {
+    "id": "de/depot",
+    "country": "DE",
+    "name": "Wertpapierdepot",
+    "kind": "flat_realised",
+    "parameters": {
+      "rate": 0.25,
+      "social_rate": 0.01375
+    }
+  },
+  {
+    "id": "es/cuenta-valores",
+    "country": "ES",
+    "name": "Cuenta de valores",
+    "kind": "bracketed_realised",
+    "parameters": {
+      "brackets": [
+        {
+          "upper_bound": 6000,
+          "rate": 0.19
+        },
+        {
+          "upper_bound": 50000,
+          "rate": 0.21
+        },
+        {
+          "upper_bound": 200000,
+          "rate": 0.23
+        },
+        {
+          "upper_bound": 300000,
+          "rate": 0.27
+        },
+        {
+          "upper_bound": null,
+          "rate": 0.3
+        }
+      ]
+    }
+  },
+  {
+    "id": "fr/pea",
+    "country": "FR",
+    "name": "Plan d’épargne en actions (PEA)",
+    "kind": "aged_flat_realised",
+    "parameters": {
+      "rate_before": 0.128,
+      "rate_after": 0,
+      "threshold_years": 5,
+      "age_basis": "first_payment",
+      "social_rate": 0.186
+    }
+  },
+  {
+    "id": "fr/pea-pme",
+    "country": "FR",
+    "name": "PEA-PME",
+    "kind": "aged_flat_realised",
+    "parameters": {
+      "rate_before": 0.128,
+      "rate_after": 0,
+      "threshold_years": 5,
+      "age_basis": "first_payment",
+      "social_rate": 0.186
+    }
+  },
+  {
+    "id": "fr/compte-titres",
+    "country": "FR",
+    "name": "Compte-titres ordinaire (CTO)",
+    "kind": "flat_realised",
+    "parameters": {
+      "rate": 0.128,
+      "social_rate": 0.186
+    }
+  },
+  {
+    "id": "fr/assurance-vie",
+    "country": "FR",
+    "name": "Assurance-vie",
+    "kind": "aged_flat_realised",
+    "parameters": {
+      "rate_before": 0.128,
+      "rate_after": 0.075,
+      "threshold_years": 8,
+      "age_basis": "opening",
+      "social_rate": 0.172
+    }
+  },
+  {
+    "id": "fr/per",
+    "country": "FR",
+    "name": "Plan d’épargne retraite (PER)",
+    "kind": "flat_realised",
+    "parameters": {
+      "rate": 0.128,
+      "social_rate": 0.186
+    }
+  },
+  {
+    "id": "it/regime-amministrato",
+    "country": "IT",
+    "name": "Regime amministrato (risparmio amministrato)",
+    "kind": "flat_realised",
+    "parameters": {
+      "rate": 0.26
+    }
+  }
+]

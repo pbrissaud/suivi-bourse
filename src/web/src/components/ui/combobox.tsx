@@ -18,7 +18,7 @@
  *   └─────────────────────────────┘
  * ```
  *
- * Five things are decisions rather than defaults:
+ * Six things are decisions rather than defaults:
  *
  *  - **No line is active until an arrow key says so.** `Entrée` on a field
  *    nobody has arrowed into still submits the form it sits in, which is the
@@ -66,6 +66,11 @@
  *
  * The active surface is therefore `--accent` and never `--primary`.
  *
+ *  - **A list may be grouped and may refuse a line** (#1290). The caller sorts
+ *    the items so that a group is a run, and each run gets a heading; a line
+ *    with a `disabledReason` stays where it is, says the reason where its hint
+ *    would be, and is neither active for the arrows nor chosen by a click.
+ *
  * It holds no vocabulary of its own: the items, their labels and the sentence a
  * screen reader hears are the caller's, which is what keeps this file a
  * primitive rather than a second place the domain is spelled.
@@ -93,6 +98,16 @@ export interface ComboboxItem {
    * that offers to record what was typed is a sentence and reads as one.
    */
   mono?: boolean
+  /**
+   * The heading of the run this line belongs to. The caller keeps a group's
+   * lines together; a line with no `group` is listed bare, as before.
+   */
+  group?: string
+  /**
+   * Why this line cannot be chosen, or `null`/absent when it can. The reason
+   * replaces the hint, and the line is skipped by the arrow keys.
+   */
+  disabledReason?: string | null
 }
 
 // `onKeyDown` is refused rather than merged: the keyboard contract above is
@@ -118,6 +133,11 @@ export interface ComboboxProps extends InputProps {
   container?: HTMLElement | null
   /** What a screen reader calls the list. */
   listLabel: string
+  /**
+   * Open the list when the field takes the focus, for a list that is the only
+   * way to fill it (a closed list): the ticker field stays a field and does not.
+   */
+  openOnFocus?: boolean
 }
 
 export function Combobox({
@@ -126,6 +146,7 @@ export function Combobox({
   items,
   container,
   listLabel,
+  openOnFocus,
   className,
   ...props
 }: ComboboxProps) {
@@ -148,6 +169,17 @@ export function Combobox({
   const optionId = (index: number) => `${listId}-option-${index}`
   /** Where the active value sits **today**. `-1` — nothing is active. */
   const active = activeValue === null ? -1 : items.findIndex((item) => item.value === activeValue)
+  const enabled = items.flatMap((item, index) => (item.disabledReason ? [] : [index]))
+
+  /** The items as runs of one group, in the order given; a bare line is a run of its own group `undefined`. */
+  const runs = items.reduce<
+    { group: string | undefined; entries: { item: ComboboxItem; index: number }[] }[]
+  >((acc, item, index) => {
+    const last = acc[acc.length - 1]
+    if (last !== undefined && last.group === item.group) last.entries.push({ item, index })
+    else acc.push({ group: item.group, entries: [{ item, index }] })
+    return acc
+  }, [])
 
   // Nothing to show is nothing to open: the two states that produce an empty
   // list — no match, and a read that has not answered — render identically.
@@ -160,7 +192,7 @@ export function Combobox({
 
   function choose(index: number) {
     const item = items[index]
-    if (item === undefined) return
+    if (item === undefined || item.disabledReason) return
     onValueChange(item.value, true)
     close()
     field.current?.focus()
@@ -183,12 +215,14 @@ export function Combobox({
   }, [active])
 
   function move(step: number) {
-    if (items.length === 0) return
+    if (enabled.length === 0) return
     arrowed.current = true
     setOpen(true)
+    // Among the lines that can be chosen: a refused one is never active.
+    const at = enabled.indexOf(active)
     const next =
-      active < 0 ? (step > 0 ? 0 : items.length - 1) : (active + step + items.length) % items.length
-    setActiveValue(items[next]?.value ?? null)
+      at < 0 ? (step > 0 ? 0 : enabled.length - 1) : (at + step + enabled.length) % enabled.length
+    setActiveValue(items[enabled[next]]?.value ?? null)
   }
 
   function keyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -202,16 +236,16 @@ export function Combobox({
         move(-1)
         return
       case 'Home':
-        if (!shown) return
+        if (!shown || enabled.length === 0) return
         event.preventDefault()
         arrowed.current = true
-        setActiveValue(items[0]?.value ?? null)
+        setActiveValue(items[enabled[0]]?.value ?? null)
         return
       case 'End':
-        if (!shown) return
+        if (!shown || enabled.length === 0) return
         event.preventDefault()
         arrowed.current = true
-        setActiveValue(items[items.length - 1]?.value ?? null)
+        setActiveValue(items[enabled[enabled.length - 1]]?.value ?? null)
         return
       case 'Enter':
         // **An input method commits its composition with this key**, and that
@@ -260,6 +294,10 @@ export function Combobox({
             setActiveValue(null)
           }}
           onKeyDown={keyDown}
+          onFocus={(event) => {
+            if (openOnFocus) setOpen(true)
+            props.onFocus?.(event)
+          }}
         />
       </PopoverAnchor>
       <PopoverContent
@@ -282,58 +320,81 @@ export function Combobox({
         }}
       >
         <ul id={listId} role="listbox" aria-label={listLabel}>
-          {items.map((item, index) => (
-            <li
-              key={item.value}
-              ref={(node) => {
-                options.current[index] = node
-              }}
-              id={optionId(index)}
-              role="option"
-              aria-selected={index === active}
-              // The pointer chooses; the caret stays where it was. Only for a
-              // mouse: cancelling `pointerdown` on a touch screen is what stops
-              // a finger from scrolling the very list it is scrolling.
-              onPointerDown={(event) => {
-                if (event.pointerType === 'mouse') event.preventDefault()
-              }}
-              onClick={() => choose(index)}
-              onMouseMove={() => {
-                arrowed.current = false
-                setActiveValue(item.value)
-              }}
-              className={cn(
-                'flex cursor-default items-center gap-3 rounded-md px-3 py-3 text-sm',
-                index === active && 'bg-accent text-accent-foreground',
-              )}
-            >
-              {/* **C'est l'indice qui cède, jamais le libellé.** La palette fait
-                  l'inverse, et elle a raison chez elle : son libellé est un nom
-                  de société et son indice un ticker. Ici les deux ont échangé
-                  leurs places, donc la priorité de rétrécissement échange aussi
-                  — sans quoi `MC.PA` s'abrège en `M…` pour laisser tout leur
-                  aise à « Taiwan Semiconductor Manufacturing Company Limited ». */}
-              <span
-                className={cn(
-                  'truncate',
-                  // Un code est court et ne cède pas — mais `max-w-full` le
-                  // borne quand même, faute de quoi un ticker absurde importé
-                  // d'un fichier ferait défiler la liste à l'horizontale.
-                  item.mono ? 'max-w-full shrink-0 font-mono' : 'min-w-0 grow',
-                )}
-              >
-                {item.label}
-              </span>
-              {item.hint === null ? null : (
-                // Un nom de société vient du grand livre et n'a ni longueur ni
-                // direction connues : `<bdi>` l'isole du sens de lecture de la
-                // ligne, qu'un caractère de bascule renverserait autrement.
-                <bdi className="min-w-0 grow truncate text-right text-xs text-muted-foreground">
-                  {item.hint}
-                </bdi>
-              )}
-            </li>
-          ))}
+          {runs.map((run, runIndex) => {
+            const rows = run.entries.map(({ item, index }) => {
+              const said = item.disabledReason ?? item.hint
+              return (
+                <li
+                  key={item.value}
+                  ref={(node) => {
+                    options.current[index] = node
+                  }}
+                  id={optionId(index)}
+                  role="option"
+                  aria-selected={index === active}
+                  aria-disabled={item.disabledReason ? true : undefined}
+                  // The pointer chooses; the caret stays where it was. Only for a
+                  // mouse: cancelling `pointerdown` on a touch screen is what stops
+                  // a finger from scrolling the very list it is scrolling.
+                  onPointerDown={(event) => {
+                    if (event.pointerType === 'mouse') event.preventDefault()
+                  }}
+                  onClick={() => choose(index)}
+                  onMouseMove={() => {
+                    if (item.disabledReason) return
+                    arrowed.current = false
+                    setActiveValue(item.value)
+                  }}
+                  className={cn(
+                    'flex cursor-default items-center gap-3 rounded-md px-3 py-3 text-sm',
+                    index === active && 'bg-accent text-accent-foreground',
+                    item.disabledReason && 'text-muted-foreground',
+                  )}
+                >
+                  {/* **C'est l'indice qui cède, jamais le libellé.** La palette fait
+                    l'inverse, et elle a raison chez elle : son libellé est un nom
+                    de société et son indice un ticker. Ici les deux ont échangé
+                    leurs places, donc la priorité de rétrécissement échange aussi
+                    — sans quoi `MC.PA` s'abrège en `M…` pour laisser tout leur
+                    aise à « Taiwan Semiconductor Manufacturing Company Limited ». */}
+                  <span
+                    className={cn(
+                      'truncate',
+                      // Un code est court et ne cède pas — mais `max-w-full` le
+                      // borne quand même, faute de quoi un ticker absurde importé
+                      // d'un fichier ferait défiler la liste à l'horizontale.
+                      item.mono ? 'max-w-full shrink-0 font-mono' : 'min-w-0 grow',
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                  {said === null || said === undefined ? null : (
+                    // Un nom de société vient du grand livre et n'a ni longueur ni
+                    // direction connues : `<bdi>` l'isole du sens de lecture de la
+                    // ligne, qu'un caractère de bascule renverserait autrement.
+                    <bdi className="min-w-0 grow truncate text-right text-xs text-muted-foreground">
+                      {said}
+                    </bdi>
+                  )}
+                </li>
+              )
+            })
+            if (run.group === undefined) return rows
+            // By position: a group's name may hold spaces, and an IDREF list splits on them.
+            const headingId = `${listId}-group-${runIndex}`
+            return (
+              <li key={`group-${run.group}`} role="group" aria-labelledby={headingId}>
+                <div
+                  id={headingId}
+                  role="presentation"
+                  className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground"
+                >
+                  {run.group}
+                </div>
+                <ul role="presentation">{rows}</ul>
+              </li>
+            )
+          })}
         </ul>
       </PopoverContent>
     </Popover>

@@ -79,6 +79,9 @@ const WRITE_ONLY_ROUTES = [
   // A tweakcn import answers the reader's own press; the stored theme is read
   // through `theme` (#1248).
   'themeImport',
+  // The docs site's wrappers answer the reader reaching for the import control
+  // (#1290), once, and the list is drawn from nothing else: no surface waits on it.
+  'taxationRegistry',
   // A turn is the reader's question, and its answer streams into the thread
   // that asked it (#1117): a gesture, never a read a surface is drawn from.
   'agentChat',

@@ -39,12 +39,15 @@ export interface SectionFrame {
 export const SectionControlsContext = createContext<SectionFrame | null>(null)
 
 export function Section({
+  id: anchor,
   title,
   aside,
   children,
   className,
   level = 2,
 }: {
+  /** The region's own id, for a link that lands on it (`/settings#taxation`). */
+  id?: string
   /** Sentence case, rendered as the region's heading and its accessible name. */
   title: ReactNode
   /** The heading's level: `3` where the page already has an `<h2>` above the section. */
@@ -64,6 +67,7 @@ export function Section({
   )
   return (
     <section
+      id={anchor}
       data-slot="section"
       aria-labelledby={id}
       className={cn(

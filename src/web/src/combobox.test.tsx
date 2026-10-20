@@ -147,3 +147,126 @@ describe('ce que le champ dit au parent', () => {
     ])
   })
 })
+
+describe('une liste groupée, dont une ligne est refusée', () => {
+  const FR = { value: 'fr/pea', label: 'PEA', hint: null, group: 'France' }
+  const OLD = {
+    value: 'fr/new',
+    label: 'Nouveau',
+    hint: null,
+    group: 'France',
+    disabledReason: 'nécessite une version plus récente',
+  }
+  const DE = { value: 'de/depot', label: 'Depot', hint: null, group: 'Allemagne' }
+
+  function renderGrouped(heard: [string, boolean][] = [], lines = [FR, OLD, DE]) {
+    render(
+      <>
+        <label htmlFor="wrapper">Enveloppe</label>
+        <Combobox
+          id="wrapper"
+          value=""
+          onValueChange={(value, chosen) => heard.push([value, chosen])}
+          items={lines}
+          listLabel="Les enveloppes"
+        />
+      </>,
+    )
+    return heard
+  }
+
+  it('range les lignes sous le titre de leur groupe', async () => {
+    const user = userEvent.setup()
+    renderGrouped()
+    await user.type(screen.getByLabelText('Enveloppe'), 'e')
+
+    const groups = screen.getAllByRole('group')
+    expect(groups.map((group) => group.textContent)).toEqual([
+      expect.stringContaining('France'),
+      expect.stringContaining('Allemagne'),
+    ])
+    expect(within(groups[0]).getAllByRole('option')).toHaveLength(2)
+    expect(groups[0]).toHaveAccessibleName('France')
+  })
+
+  it('dit la raison de la ligne refusée, et les flèches la sautent', async () => {
+    const user = userEvent.setup()
+    renderGrouped()
+    const field = screen.getByLabelText('Enveloppe')
+    await user.type(field, 'e')
+
+    const refused = screen.getByRole('option', { name: /Nouveau/ })
+    expect(refused).toHaveAttribute('aria-disabled', 'true')
+    expect(refused).toHaveTextContent('nécessite une version plus récente')
+
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(screen.getByRole('option', { name: /Depot/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('ne choisit pas la ligne refusée, ni au clic ni à Entrée', async () => {
+    const user = userEvent.setup()
+    const heard = renderGrouped()
+    await user.type(screen.getByLabelText('Enveloppe'), 'e')
+
+    await user.click(screen.getByRole('option', { name: /Nouveau/ }))
+    expect(heard.filter(([, chosen]) => chosen)).toEqual([])
+
+    await user.click(screen.getByRole('option', { name: /Depot/ }))
+    expect(heard.filter(([, chosen]) => chosen)).toEqual([['de/depot', true]])
+  })
+
+  it('nomme un groupe dont le titre a des espaces', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <label htmlFor="wrapper">Enveloppe</label>
+        <Combobox
+          id="wrapper"
+          value=""
+          onValueChange={() => {}}
+          items={[{ ...FR, group: 'United Kingdom' }]}
+          listLabel="Les enveloppes"
+        />
+      </>,
+    )
+    await user.type(screen.getByLabelText('Enveloppe'), 'e')
+
+    expect(screen.getByRole('group')).toHaveAccessibleName('United Kingdom')
+  })
+
+  it('ouvre la liste au focus quand on le demande, et pas autrement', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <label htmlFor="closed">Fermé</label>
+        <Combobox
+          id="closed"
+          value=""
+          onValueChange={() => {}}
+          items={[FR]}
+          listLabel="Les enveloppes"
+          openOnFocus
+        />
+        <label htmlFor="open">Libre</label>
+        <Combobox id="open" value="" onValueChange={() => {}} items={[DE]} listLabel="Les titres" />
+      </>,
+    )
+
+    await user.click(screen.getByLabelText('Libre'))
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    await user.click(screen.getByLabelText('Fermé'))
+    expect(await screen.findByRole('listbox', { name: 'Les enveloppes' })).toBeInTheDocument()
+  })
+
+  it('laisse Home et Fin au champ quand toutes les lignes sont refusées', async () => {
+    const user = userEvent.setup()
+    renderGrouped([], [OLD])
+    const field = screen.getByLabelText('Enveloppe')
+    await user.type(field, 'e')
+
+    const home = fireEvent.keyDown(field, { key: 'Home' })
+
+    expect(home).toBe(true) // not cancelled: the caret still moves
+  })
+})

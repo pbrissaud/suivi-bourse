@@ -55,6 +55,8 @@ export const ROUTES = {
   taxationModels: '/api/taxation-models',
   /** One model. A **pattern**, like {@link ROUTES.account}. */
   taxationModel: '/api/taxation-models/:id',
+  /** The wrappers the documentation site publishes, read on a click and stored nowhere (#1290). */
+  taxationRegistry: '/api/taxation-models/registry',
   positions: '/api/positions',
   portfolioTotals: '/api/portfolio-totals',
   /**

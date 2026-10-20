@@ -1,6 +1,7 @@
 """A theme over the bundled Atelier (#1130, #1248): what is let through, and from where."""
 import json
 import re
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -113,7 +114,7 @@ class _Response:
 def test_http_fetch_raises_on_a_refusal_and_on_an_oversized_body(monkeypatch):
     replies = iter([_Response(200, b'{}'), _Response(404, b''),
                     _Response(200, b'x' * (tweakcn.MAX_BYTES + 1))])
-    monkeypatch.setattr(tweakcn.urllib.request, 'urlopen', lambda url, timeout: next(replies))
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda url, timeout: next(replies))
     assert tweakcn.http_fetch('https://tweakcn.com/r/themes/x') == b'{}'
     for _ in range(2):
         try:

@@ -8,6 +8,8 @@ import {
   accountsApi,
   type TaxationBracket,
   type TaxationModel,
+  type TaxationModelDraft,
+  type TaxationModelsResponse,
   type TaxationParameter,
   type TaxationParameters,
 } from '@/features/accounts/lib/api'
@@ -25,7 +27,8 @@ interface Row {
   rate: string
 }
 
-interface Editor {
+/** What is typed in the fields, before it is a model: strings, percentages. */
+export interface ModelDraft {
   name: string
   kind: string
   /** The scalar parameters, as the reader typed them. */
@@ -33,23 +36,49 @@ interface Editor {
   brackets: Row[]
 }
 
+type Kinds = TaxationModelsResponse['kinds']
+
 const EMPTY_ROWS: Row[] = [{ upper_bound: '', rate: '' }]
 
-interface TaxationModelEditorProps {
-  /** The model being corrected, or `null` to write a new one. */
-  model: TaxationModel | null
-  onSaved: (model: TaxationModel) => void
-  onCancel: () => void
+/** The fields of `model`, or of a blank model of the first kind. */
+export function draftOf(model: TaxationModel | null, kinds: Kinds): ModelDraft {
+  return model === null
+    ? { name: '', kind: kinds[0]?.kind ?? '', fields: {}, brackets: EMPTY_ROWS }
+    : disassemble(model, parametersIn(kinds, model.kind))
+}
+
+/** The request body a draft stands for. */
+export function bodyOf(draft: ModelDraft, kinds: Kinds): TaxationModelDraft {
+  return {
+    name: draft.name.trim(),
+    kind: draft.kind,
+    parameters: assemble(parametersIn(kinds, draft.kind), draft),
+  }
+}
+
+function parametersIn(kinds: Kinds, kind: string): TaxationParameter[] {
+  return kinds.find((entry) => entry.kind === kind)?.parameters ?? []
+}
+
+interface TaxationModelFieldsProps {
+  draft: ModelDraft
+  onChange: (next: ModelDraft) => void
+  /** The server refused the model: the name, where focus goes, says so. */
+  invalid?: boolean
 }
 
 /**
- * Writes or corrects one taxation model (#752). Mounted inside the account
- * form as well, so it never submits a form: Enter saves the model and the
- * buttons are `type="button"`.
+ * The fields of a taxation model (#752), controlled: the owner of the draft
+ * decides when it is written. Inside the account form there is no button of
+ * its own, the account's single submit writes the model first; in Settings
+ * {@link TaxationModelEditor} wraps them with Save and Cancel.
  */
-export function TaxationModelEditor({ model, onSaved, onCancel }: TaxationModelEditorProps) {
+export function TaxationModelFields({
+  draft: editor,
+  onChange,
+  invalid,
+}: TaxationModelFieldsProps) {
   const { t } = useI18n()
-  const queryClient = useQueryClient()
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
   // The currency cannot move once answered, so no refetch on every mount.
   const config = useQuery({
@@ -61,56 +90,20 @@ export function TaxationModelEditor({ model, onSaved, onCancel }: TaxationModelE
 
   const kinds = catalogue.data?.kinds ?? []
   const ageBases = catalogue.data?.age_bases ?? []
-  function parametersOf(kind: string): TaxationParameter[] {
-    return kinds.find((entry) => entry.kind === kind)?.parameters ?? []
-  }
-
-  const [editor, setEditor] = useState<Editor>(() =>
-    model === null
-      ? { name: '', kind: kinds[0]?.kind ?? '', fields: {}, brackets: EMPTY_ROWS }
-      : disassemble(model, parametersOf(model.kind)),
-  )
-  const parameters = parametersOf(editor.kind)
-
-  const write = useMutation({
-    mutationFn: (draft: Editor) => {
-      const body = {
-        name: draft.name.trim(),
-        kind: draft.kind,
-        parameters: assemble(parameters, draft),
-      }
-      return model === null
-        ? accountsApi.createTaxationModel(body)
-        : accountsApi.updateTaxationModel(model.id, body)
-    },
-    onSuccess: (saved) => {
-      void queryClient.invalidateQueries({ queryKey: ['taxation-models'] })
-      // A correction reaches every account carrying the model.
-      void queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      onSaved(saved)
-    },
-  })
+  const parameters = parametersIn(kinds, editor.kind)
 
   function field(name: string, next: string) {
-    setEditor((previous) => ({ ...previous, fields: { ...previous.fields, [name]: next } }))
+    onChange({ ...editor, fields: { ...editor.fields, [name]: next } })
   }
+  const setEditor = onChange
 
   return (
-    <div
-      className="space-y-4 rounded-md border border-border bg-background p-3"
-      // Inside `AccountForm`, Enter would submit the account; it saves the model.
-      onKeyDown={(pressed) => {
-        if (pressed.key !== 'Enter' || pressed.shiftKey) return
-        // A button's own Enter is its activation: leave Cancel to cancel.
-        if (pressed.target instanceof HTMLButtonElement) return
-        pressed.preventDefault()
-        if (!write.isPending) write.mutate(editor)
-      }}
-    >
+    <div className="space-y-4">
       <Labelled id="taxation-name" label="taxation.name">
         <Input
           id="taxation-name"
           value={editor.name}
+          aria-invalid={invalid || undefined}
           onChange={(changed) => setEditor({ ...editor, name: changed.target.value })}
         />
       </Labelled>
@@ -201,6 +194,57 @@ export function TaxationModelEditor({ model, onSaved, onCancel }: TaxationModelE
           </Labelled>
         ),
       )}
+    </div>
+  )
+}
+
+interface TaxationModelEditorProps {
+  /** The model being corrected, or `null` to write a new one. */
+  model: TaxationModel | null
+  onSaved: (model: TaxationModel) => void
+  onCancel: () => void
+}
+
+/**
+ * Writes or corrects one taxation model on its own Save (#752): the Settings
+ * sheet. The account form does not use it, its declaration writes the model.
+ */
+export function TaxationModelEditor({ model, onSaved, onCancel }: TaxationModelEditorProps) {
+  const { t } = useI18n()
+  const queryClient = useQueryClient()
+  const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
+  const kinds = catalogue.data?.kinds ?? []
+
+  const [initial] = useState(() => draftOf(model, kinds))
+  const [editor, setEditor] = useState<ModelDraft>(initial)
+
+  const write = useMutation({
+    mutationFn: (draft: ModelDraft) => {
+      const body = bodyOf(draft, kinds)
+      return model === null
+        ? accountsApi.createTaxationModel(body)
+        : accountsApi.updateTaxationModel(model.id, body)
+    },
+    onSuccess: (saved) => {
+      void queryClient.invalidateQueries({ queryKey: ['taxation-models'] })
+      // A correction reaches every account carrying the model.
+      void queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      onSaved(saved)
+    },
+  })
+
+  return (
+    <div
+      className="space-y-4 rounded-md border border-border bg-background p-3"
+      onKeyDown={(pressed) => {
+        if (pressed.key !== 'Enter' || pressed.shiftKey) return
+        // A button's own Enter is its activation: leave Cancel to cancel.
+        if (pressed.target instanceof HTMLButtonElement) return
+        pressed.preventDefault()
+        if (!write.isPending) write.mutate(editor)
+      }}
+    >
+      <TaxationModelFields draft={editor} onChange={setEditor} />
 
       {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
@@ -214,7 +258,7 @@ export function TaxationModelEditor({ model, onSaved, onCancel }: TaxationModelE
           {t('taxation.save')}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={onCancel}>
-          {t('taxation.cancel')}
+          {t(editor === initial ? 'taxation.close' : 'taxation.cancel')}
         </Button>
       </div>
     </div>
@@ -365,7 +409,7 @@ function Brackets({
  * An empty optional field is left out rather than sent as a zero: the two are
  * two sentences, and *no social charge* is not *a social charge of nothing*.
  */
-function assemble(parameters: TaxationParameter[], editor: Editor): TaxationParameters {
+function assemble(parameters: TaxationParameter[], editor: ModelDraft): TaxationParameters {
   const built: TaxationParameters = {}
   for (const parameter of parameters) {
     if (parameter.type === 'brackets') {
@@ -395,7 +439,7 @@ function assemble(parameters: TaxationParameter[], editor: Editor): TaxationPara
  * kind's own declaration says which of the two is a percentage. Guessed, a
  * five-year threshold would come back into the form as `500`.
  */
-function disassemble(model: TaxationModel, parameters: TaxationParameter[]): Editor {
+function disassemble(model: TaxationModel, parameters: TaxationParameter[]): ModelDraft {
   const fields: Record<string, string> = {}
   let brackets = EMPTY_ROWS
   for (const parameter of parameters) {

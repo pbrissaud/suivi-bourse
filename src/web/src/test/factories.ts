@@ -78,6 +78,7 @@ import type {
   PerfPoint,
   TaxationModel,
   TaxationModelsResponse,
+  TaxationRegistryItem,
 } from '@/features/accounts/lib/api'
 import type { AgentConfig } from '@/features/agent/lib/api'
 import type {
@@ -174,6 +175,19 @@ export function aTaxationModel(overrides: Partial<TaxationModel> = {}): Taxation
     name: 'A flat model',
     kind: 'flat_realised',
     parameters: { rate: 0.3 },
+    ...overrides,
+  }
+}
+
+/** One wrapper of the registry the docs site publishes (#1290). */
+export function aRegistryItem(overrides: Partial<TaxationRegistryItem> = {}): TaxationRegistryItem {
+  return {
+    id: 'fr/cto',
+    country: 'FR',
+    name: 'Compte-titres ordinaire (CTO)',
+    kind: 'flat_realised',
+    parameters: { rate: 0.3 },
+    refused: null,
     ...overrides,
   }
 }
