@@ -13,7 +13,9 @@ import axe from 'axe-core'
 import { HttpResponse, http } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { agentSeam, httpTransport } from '@/features/agent/lib/agentChat'
+import type { UIMessage } from 'ai'
+
+import { agentSeam, httpTransport, pendingAnswer } from '@/features/agent/lib/agentChat'
 import type { AgentConfig } from '@/features/agent/lib/api'
 import { ROUTES } from '@/lib/api'
 import fr from '@/i18n/fr.json'
@@ -134,13 +136,14 @@ describe('the states (4A)', () => {
     const { user, main } = await openPage()
     await ask(user, main, QUESTION)
 
-    expect(await within(main).findByText('Simulation en cours…')).toBeInTheDocument()
-    expect(within(main).getByText('Simulation d’une vente et de son impôt.'))
+    const sentence = await within(main).findByText('Simulation d’une vente et de son impôt.')
+    expect(sentence.closest('[data-slot=trace-line]')).toHaveAttribute('data-status', 'running')
+    // One thing moves at a time: the running call, not the waiting line too.
+    expect(within(main).queryByText(fr['agent.waiting'])).not.toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Arrêter' })).toBeInTheDocument()
     expect(within(main).queryByRole('button', { name: 'Envoyer' })).not.toBeInTheDocument()
 
     expect(await within(main).findByText('La vente laisserait 812,50 €.')).toBeInTheDocument()
-    expect(within(main).queryByText('Simulation en cours…')).not.toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Envoyer' })).toBeInTheDocument()
   })
 
@@ -698,7 +701,7 @@ describe('the address (#1196)', () => {
     )
     const { user, main, router } = await openPage()
     await ask(user, main, QUESTION)
-    await within(main).findByText('Simulation en cours…')
+    await within(main).findByText('Simulation d’une vente et de son impôt.')
     const thread = router.state.location.pathname
 
     await router.navigate({ to: '/' })
@@ -766,7 +769,7 @@ describe('the address (#1196)', () => {
     )
     const { user, main, router } = await openPage()
     await ask(user, main, QUESTION)
-    await within(main).findByText('Simulation en cours…')
+    await within(main).findByText('Simulation d’une vente et de son impôt.')
     const thread = router.state.location.pathname
 
     await router.navigate({ to: '/' })
@@ -802,7 +805,7 @@ describe('the address (#1196)', () => {
     queryClient.setQueryDefaults(['agent-threads'], { staleTime: 30_000 })
     await within(main).findByRole('navigation', { name: 'Fils récents' })
     await ask(user, main, QUESTION)
-    await within(main).findByText('Simulation en cours…')
+    await within(main).findByText('Simulation d’une vente et de son impôt.')
     const thread = router.state.location.pathname
 
     await router.navigate({ to: '/' })
@@ -988,5 +991,224 @@ describe('accessibility (11A)', () => {
     const field = within(main).getByRole('textbox', { name: 'Votre question' })
     expect(field.compareDocumentPosition(cif) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(cif).toHaveClass('text-muted-foreground')
+  })
+})
+
+// ------------------------------------------------------------------------ //
+
+const assistant = (...parts: UIMessage['parts']): UIMessage => ({
+  id: 'a',
+  role: 'assistant',
+  parts,
+})
+const tool = (state: 'input-available' | 'output-available') =>
+  ({
+    type: 'tool-simulate_sale',
+    toolCallId: 'c',
+    state,
+    input: {},
+    ...(state === 'output-available' ? { output: {} } : {}),
+  }) as UIMessage['parts'][number]
+
+describe('pendingAnswer (#1271)', () => {
+  const table: [string, string, UIMessage | undefined, boolean][] = [
+    ['the question just sent', 'submitted', assistant(), true],
+    ['no assistant message yet', 'streaming', { id: 'u', role: 'user', parts: [] }, true],
+    ['no message at all', 'streaming', undefined, true],
+    ['a running tool', 'streaming', assistant(tool('input-available')), false],
+    ['an answered tool at the tail', 'streaming', assistant(tool('output-available')), true],
+    [
+      'reasoning at the tail',
+      'streaming',
+      assistant({ type: 'text', text: 'Début.' }, { type: 'reasoning', text: 'Hmm' }),
+      true,
+    ],
+    ['empty text', 'streaming', assistant({ type: 'text', text: '  ' }), true],
+    ['the first word', 'streaming', assistant({ type: 'text', text: 'Bonjour' }), false],
+    [
+      'text then a tool answered',
+      'streaming',
+      assistant({ type: 'text', text: 'Un' }, tool('output-available')),
+      true,
+    ],
+    ['a turn that is ready', 'ready', assistant(tool('output-available')), false],
+    ['a turn that failed', 'error', assistant(), false],
+  ]
+  for (const [name, status, last, expected] of table) {
+    it(`is ${expected} on ${name}`, () => expect(pendingAnswer(status, last)).toBe(expected))
+  }
+})
+
+describe('the silence before the answer (#1271)', () => {
+  const pending = (main: HTMLElement) =>
+    within(main).queryByText(fr['agent.waiting'])?.closest('[data-slot=trace-line]') ?? null
+
+  it('shows the waiting line after the tool answers and while the model thinks, until the first word', async () => {
+    switchedOn()
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer.tool('simulate_sale', { input: {} }).output({})
+          writer.sleep(300).reasoning('Je réfléchis.', { mode: 'instant' })
+          writer.sleep(300).text('premier deuxième troisième quatrième dernier', { delayMs: 150 })
+        }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const line = await within(main).findByText(fr['agent.waiting'])
+    expect(line.closest('[data-slot=trace-line]')).toHaveAttribute('data-status', 'running')
+    // Not a disclosure: no chevron to open.
+    expect(line.closest('button')).toBeNull()
+    expect(within(main).queryByText('Je réfléchis.')).not.toBeInTheDocument()
+
+    await within(main).findByText(/premier/)
+    expect(pending(main)).toBeNull()
+    // The first word is on screen while the last is not.
+    expect(within(main).queryByText(/dernier/)).not.toBeInTheDocument()
+    await waitFor(() => expect(within(main).getByText(/dernier/)).toBeInTheDocument())
+  })
+
+  it('drops the waiting line when the reader stops the turn during the text', async () => {
+    switchedOn()
+    scripted(
+      createChat()
+        .user(QUESTION)
+        .assistant(({ writer }) => {
+          writer.text('premier deuxième troisième quatrième dernier', { delayMs: 400 })
+        }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+    await within(main).findByText(/premier/)
+    await user.click(within(main).getByRole('button', { name: 'Arrêter' }))
+
+    await within(main).findByRole('button', { name: 'Envoyer' })
+    expect(pending(main)).toBeNull()
+    // Twice: on screen, and in the polite region that announces it.
+    expect(within(main).getAllByText(/premier/)[0]).toBeInTheDocument()
+  })
+})
+
+// ------------------------------------------------------------------------ //
+
+const FIRST = 'a'.repeat(32)
+const SECOND = 'b'.repeat(32)
+
+/** The server's read of the two proposals a turn made, both waiting on the reader. */
+function proposalsReady() {
+  server.use(
+    http.get(ROUTES.profileProposals, () =>
+      HttpResponse.json({
+        proposals: [
+          { id: FIRST, key: 'marginal_rate', value: 0.3, status: 'ready' },
+          { id: SECOND, key: 'risk_tolerance', value: 'balanced', status: 'ready' },
+        ].map((p) => ({ ...p, created_at: '2026-10-19T09:00:00+00:00', decided_at: null })),
+      }),
+    ),
+  )
+}
+
+/** What a scripted turn's writer lets the rest of it say. */
+type Writer = {
+  text(text: string, options?: { mode?: 'instant'; delayMs?: number }): unknown
+  error(errorText: string): unknown
+}
+
+/** A turn that proposes two facts before it writes, as the model does. */
+function proposingTurn(after: (writer: Writer) => void) {
+  return createChat()
+    .user(QUESTION)
+    .assistant(({ writer }) => {
+      writer.tool('propose_profile_fact', {
+        input: { key: 'marginal_rate', value: 0.3 },
+        output: { proposal_id: FIRST, status: 'ready' },
+      })
+      writer.tool('propose_profile_fact', {
+        input: { key: 'risk_tolerance', value: 'balanced' },
+        output: { proposal_id: SECOND, status: 'ready' },
+      })
+      after(writer)
+    })
+}
+
+describe('the proposals come under the answer (#1271)', () => {
+  const follows = (a: Element, b: Element) =>
+    Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+  it('draws no card while the turn streams, then both under the text in call order, the calls kept in the trace', async () => {
+    switchedOn()
+    proposalsReady()
+    scripted(
+      proposingTurn((writer) => {
+        writer.text('Rien n’est noté avant votre accord.', { mode: 'instant' })
+      }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    await within(main).findByRole('button', { name: 'Envoyer' })
+    const confirms = await within(main).findAllByRole('button', { name: 'Confirmer' })
+    expect(confirms).toHaveLength(2)
+    const answer = within(main).getAllByText('Rien n’est noté avant votre accord.')[0]
+    for (const confirm of confirms) expect(follows(answer, confirm)).toBe(true)
+    expect(follows(confirms[0], confirms[1])).toBe(true)
+    expect(within(main).getAllByText(fr['agent.tool.propose_profile_fact'])).toHaveLength(2)
+  })
+
+  it('keeps the cards away from a turn that is still writing', async () => {
+    switchedOn()
+    proposalsReady()
+    scripted(
+      proposingTurn((writer) => {
+        writer.text('premier deuxième troisième quatrième dernier', { delayMs: 200 })
+      }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    await within(main).findByText(/premier/)
+    expect(within(main).queryByRole('button', { name: 'Confirmer' })).not.toBeInTheDocument()
+  })
+
+  it('puts the error block after the card when a turn fails after its text', async () => {
+    switchedOn()
+    proposalsReady()
+    scripted(
+      proposingTurn((writer) => {
+        writer.text('Un début de réponse.', { mode: 'instant' })
+        writer.error(refusedTurn('overloaded'))
+      }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    const retry = await within(main).findByRole('button', { name: 'Réessayer' })
+    const confirm = await within(main).findAllByRole('button', { name: 'Confirmer' })
+    const text = within(main).getByText('Un début de réponse.')
+    expect(follows(text, confirm[0])).toBe(true)
+    expect(follows(confirm[1], retry)).toBe(true)
+  })
+
+  it('ends the announcement on the facts to confirm, and keeps the log silent', async () => {
+    switchedOn()
+    proposalsReady()
+    scripted(
+      proposingTurn((writer) => {
+        writer.text('Voici la réponse.', { mode: 'instant' })
+      }),
+    )
+    const { user, main } = await openPage()
+    await ask(user, main, QUESTION)
+
+    await waitFor(() =>
+      expect(main.querySelector('[aria-live="polite"]')).toHaveTextContent(
+        'Voici la réponse. 2 informations à confirmer sous la réponse.',
+      ),
+    )
+    expect(main.querySelector('[role="log"]')).toHaveAttribute('aria-live', 'off')
+    const { violations } = await axe.run(main)
+    expect(violations).toEqual([])
   })
 })

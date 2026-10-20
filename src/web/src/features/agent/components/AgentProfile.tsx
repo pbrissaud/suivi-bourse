@@ -126,8 +126,14 @@ export function FactCard({ proposal }: { proposal: Proposal }) {
       : t('agent.fact.failed')
 
   return (
-    // Polite: the decision replaces the buttons, and is said once it has.
-    <div aria-live="polite" className="flex flex-col gap-3 rounded-card border bg-card p-3.5">
+    // Polite: the decision replaces the buttons, and is said once it has. The
+    // frame is the question's: a decided proposal is a line, not a card (#1271).
+    <div
+      aria-live="polite"
+      className={
+        proposal.status === 'ready' ? 'flex flex-col gap-3 rounded-card border bg-card p-3.5' : ''
+      }
+    >
       {proposal.status === 'ready' ? (
         <>
           <p className="text-prose">

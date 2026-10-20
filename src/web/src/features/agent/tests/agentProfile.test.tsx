@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { factLabel, type Profile, type Proposal } from '@/features/agent/lib/profile'
 import { ROUTES } from '@/lib/api'
+import fr from '@/i18n/fr.json'
 import { formatMessage } from '@/lib/i18n'
 import { anAgentConfig } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
@@ -140,6 +141,17 @@ describe('the proposal card (5A)', () => {
     expect(within(main).queryByRole('button', { name: 'Confirmer' })).not.toBeInTheDocument()
   })
 
+  it('draws the card after the answer, with the call kept among the tool lines (#1271)', async () => {
+    switchedOn()
+    threadWithProposal(aProposal('ready'))
+    const { main } = await openPage()
+
+    const card = await within(main).findByRole('button', { name: 'Confirmer' })
+    const answer = within(main).getAllByText('À confirmer.')[0]
+    expect(answer.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(main).getByText(fr['agent.tool.propose_profile_fact'])).toBeInTheDocument()
+  })
+
   for (const [status, line] of [
     ['merged', 'Noté'],
     ['ignored', 'Ignoré'],
@@ -150,7 +162,9 @@ describe('the proposal card (5A)', () => {
       threadWithProposal(aProposal(status))
       const { main } = await openPage()
 
-      expect(await within(main).findByText(line)).toBeInTheDocument()
+      const said = await within(main).findByText(line)
+      // A line, not a card: nothing around it carries the frame (#1271).
+      expect(said.closest('.rounded-card, .border')).toBeNull()
       expect(within(main).queryByRole('button', { name: 'Confirmer' })).not.toBeInTheDocument()
       expect(within(main).queryByRole('button', { name: 'Ignorer' })).not.toBeInTheDocument()
     })

@@ -78,6 +78,25 @@ export function toolRunning(part: AgentToolPart): boolean {
   return part.state === 'input-streaming' || part.state === 'input-available'
 }
 
+/**
+ * Is a live turn between two things the page draws (#1271)? Between a tool's
+ * answer and the first word, the model reads, thinks (reasoning is not drawn)
+ * or writes its proposals, and nothing moved for 4 to 13 s. True from the
+ * question sent until a running tool, or the answer's first word, is on screen.
+ * `last`: the thread's last message.
+ */
+export function pendingAnswer(status: string, last: UIMessage | undefined): boolean {
+  if (status !== 'submitted' && status !== 'streaming') return false
+  if (status === 'submitted' || last?.role !== 'assistant') return true
+  if (toolParts(last).some(toolRunning)) return false
+  // The tail, not any earlier text: after « Je regarde. » and an answered tool
+  // the page stands still while the model reads the result, which is the gap.
+  const tail = last.parts
+    .filter((p) => p.type === 'text' || p.type === 'reasoning' || isToolUIPart(p))
+    .at(-1)
+  return !(tail?.type === 'text' && tail.text.trim() !== '')
+}
+
 /** The text of a message, its text parts joined. */
 export function textOf(message: UIMessage): string {
   return message.parts

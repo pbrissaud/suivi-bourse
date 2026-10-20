@@ -75,6 +75,7 @@ import {
   exampleQuestions,
   getToolName,
   isToolUIPart,
+  pendingAnswer,
   textOf,
   threadNotWritable,
   toolRunning,
@@ -471,7 +472,7 @@ function AgentConversation() {
       ) : null}
     </div>
   )
-  const waiting = busy && waitingOnTools(status, messages)
+  const waiting = pendingAnswer(status, messages.at(-1))
 
   return (
     <>
@@ -507,7 +508,12 @@ function AgentConversation() {
                 ))}
                 {waiting ? (
                   <MessageScrollerItem messageId="waiting">
-                    <p className="text-sm text-muted-foreground">{t('agent.waiting')}</p>
+                    {/* The model is reading, thinking or writing its proposals (#1271). */}
+                    <Trace>
+                      <TraceLine status="running">
+                        <TraceTitle>{t('agent.waiting')}</TraceTitle>
+                      </TraceLine>
+                    </Trace>
                   </MessageScrollerItem>
                 ) : null}
                 {failed ? (
@@ -546,15 +552,6 @@ function AgentConversation() {
   )
 }
 
-/** Is the turn still on a tool, or not yet on its first word? */
-function waitingOnTools(status: string, messages: UIMessage[]): boolean {
-  const last = messages.at(-1)
-  if (status === 'submitted' || last?.role !== 'assistant') return true
-  const parts = last.parts.filter((p) => p.type === 'text' || isToolUIPart(p))
-  const tail = parts.at(-1)
-  return tail === undefined || (isToolUIPart(tail) && toolRunning(tail))
-}
-
 /** Thread not writable (4A): said once the server said it, until the thread changes. */
 function useNotKept(threadId: string, error: Error | undefined): boolean {
   const [notKept, setNotKept] = useState(false)
@@ -580,7 +577,11 @@ function useAnnouncement(status: string, messages: UIMessage[]): string {
     if (started && (was === 'ready' || was === 'error')) setSaid(t('agent.answering'))
     if (status === 'ready' && (was === 'streaming' || was === 'submitted')) {
       const last = messages.at(-1)
-      setSaid(last?.role === 'assistant' ? textOf(last) : '')
+      // The cards sit under the answer, so the announcement ends on them (#1271).
+      const count =
+        last?.role === 'assistant' ? last.parts.filter((p) => proposalOf(p) !== null).length : 0
+      const answer = last?.role === 'assistant' ? textOf(last) : ''
+      setSaid(count === 0 ? answer : `${answer}\n\n${t('agent.proposals.below', { count })}`)
     }
   }, [status, messages, t])
   return said
@@ -709,14 +710,12 @@ function Turn({
       </Message>
     )
   }
+  const { steps, cards } = stepsAndText(message.parts, proposals)
   return (
     <Message>
       <MessageContent className="gap-2">
-        {stepsAndText(message.parts, proposals).map((group, index) => {
+        {steps.map((group, index) => {
           const key = `${message.id}-${index}`
-          if (typeof group === 'object' && 'proposal' in group) {
-            return group.proposal === null ? null : <FactCard key={key} proposal={group.proposal} />
-          }
           if (Array.isArray(group)) {
             return (
               <Trace key={key}>
@@ -732,35 +731,39 @@ function Turn({
             </div>
           )
         })}
+        {cards.map((proposal) => (
+          <FactCard key={proposal.id} proposal={proposal} />
+        ))}
       </MessageContent>
     </Message>
   )
 }
 
-type Step = string | AgentToolPart[] | { proposal: Proposal | null }
-
 /**
- * The parts in order, consecutive tool calls gathered into one Trace. A
- * proposal is a card of its own (5A): nothing until its state is read, and
- * the plain tool line when the server does not know it.
+ * The parts in order, consecutive tool calls gathered into one Trace, and
+ * apart from them the proposals' cards (5A), drawn under the answer (#1271):
+ * the model calls `propose_profile_fact` before it writes, so a card drawn
+ * where its call sits stood above the words it is about. The call keeps its
+ * trace line; a card is there once its state is read, and not before.
  */
 function stepsAndText(
   parts: UIMessage['parts'],
   proposals: Map<string, Proposal> | undefined,
-): Step[] {
-  const groups: Step[] = []
+): { steps: (string | AgentToolPart[])[]; cards: Proposal[] } {
+  const steps: (string | AgentToolPart[])[] = []
+  const cards: Proposal[] = []
   for (const part of parts) {
-    const id = proposalOf(part)
-    const proposal = id === null ? undefined : proposals === undefined ? null : proposals.get(id)
-    if (part.type === 'text') groups.push(part.text)
-    else if (proposal !== undefined) groups.push({ proposal })
+    if (part.type === 'text') steps.push(part.text)
     else if (isToolUIPart(part)) {
-      const last = groups.at(-1)
+      const last = steps.at(-1)
       if (Array.isArray(last)) last.push(part)
-      else groups.push([part])
+      else steps.push([part])
+      const id = proposalOf(part)
+      const proposal = id === null ? undefined : proposals?.get(id)
+      if (proposal) cards.push(proposal)
     }
   }
-  return groups
+  return { steps, cards }
 }
 
 /**

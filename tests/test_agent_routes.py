@@ -100,6 +100,36 @@ def run(runtime, work):
     return asyncio.run(_run())
 
 
+async def asgi_post(app, path, payload):
+    """``app`` called as a server calls it: ``(time, message)`` per ``send``.
+
+    Not ``httpx2.ASGITransport``, which hands the body back whole once the app
+    is done and so cannot tell a stream from one write.
+    """
+    raw = json.dumps(payload).encode()
+    scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
+             'method': 'POST', 'scheme': 'http', 'path': path, 'raw_path': path.encode(),
+             'query_string': b'', 'root_path': '', 'server': ('app', 80),
+             'client': ('127.0.0.1', 1),
+             'headers': [(b'host', b'app'), (b'content-type', b'application/json'),
+                         (b'content-length', str(len(raw)).encode())]}
+    sent = []
+
+    asked = []
+
+    async def receive():
+        if asked:  # the client stays connected until the response ends
+            await asyncio.sleep(3600)
+        asked.append(True)
+        return {'type': 'http.request', 'body': raw, 'more_body': False}
+
+    async def send(message):
+        sent.append((time.monotonic(), message))
+
+    await app(scope, receive, send)
+    return sent
+
+
 def post(thread_id, **kwargs):
     async def work(client):
         return await client.post('/api/agent/chat', json=body(thread_id, **kwargs))
@@ -225,6 +255,28 @@ def test_a_scripted_turn_reads_the_benchmark_comparison(runtime, monkeypatch):
     for member in ('gap_gross', 'covered_from', 'covered_to'):
         assert reached[member] is not None, member
     assert 'series' not in reached
+
+
+def test_a_turn_writes_each_word_as_it_comes(runtime, monkeypatch):
+    """The page's silence is not the server's (#1271): a delta leaves as it comes."""
+    switched_on(runtime)
+
+    async def slowly(messages, info):
+        for word in ('one ', 'two ', 'three'):
+            yield word
+            await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=slowly)))
+
+    sent = asyncio.run(asgi_post(serving(runtime), '/api/agent/chat', body('k1')))
+
+    deltas = [(at, chunk) for at, message in sent
+              if message['type'] == 'http.response.body'
+              for chunk in chunks(message['body'].decode())
+              if chunk['type'] == 'text-delta']
+    assert [chunk['delta'] for _, chunk in deltas] == ['one ', 'two ', 'three']
+    assert deltas[-1][0] - deltas[0][0] > 0.3
 
 
 def test_a_provider_failure_is_said_by_name_and_never_with_the_key(
