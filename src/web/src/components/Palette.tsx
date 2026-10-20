@@ -142,7 +142,7 @@ export function Palette() {
   // it, which is the honest of the two silences.
   const shares: Entry[] = titlesMatching(titles, query).map((title) => ({
     key: title.symbol,
-    mark: <span className="font-mono text-[10px]">{title.symbol.slice(0, 4)}</span>,
+    mark: <span className="font-mono text-2xs">{title.symbol.slice(0, 4)}</span>,
     label: title.name ?? title.symbol,
     hint: title.name === null ? null : title.symbol,
     run: () => leave(() => void navigate({ to: '/shares', search: { symbol: title.symbol } })),

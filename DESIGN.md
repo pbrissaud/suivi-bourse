@@ -43,6 +43,11 @@ typography:
     fontWeight: 600
     fontSize: 20px
     lineHeight: 28px
+  term:
+    fontFamily: Geist
+    fontWeight: 600
+    fontSize: 16px
+    lineHeight: 24px
   prose:
     fontFamily: Geist
     fontSize: 15px
@@ -205,11 +210,14 @@ and used everywhere. Geist is on the list of overused display faces; we accept i
 because in this app the display voice is the figure, not the font, and replacing a
 shipped face would cost every screen for no reader benefit.
 
-- **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen.
+- **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen. Fluid from 36 px on a narrow screen.
 - **Figure (28/32, 600):** a secondary figure that stands alone (an account in the dashboard's accounts section, a term of the accounts page's figures row).
 - **Page title (15/22, 500):** the page's `<h1>`, in the header bar, followed by its dated subtitle in Label-muted after a `·`. The same size at every width. Quiet on purpose: the bar is chrome and the navigation already says where the reader is; the page leads with its hero, not its name.
 - **Section title (20/28, 600):** sentence case. No uppercase, letter-spaced overlines,
-  no kicker above a heading.
+  no kicker above a heading. Also the rung of a figure that heads a section (its subtotal)
+  or stands under the hero.
+- **Term (16/24, 600):** a term under a figure (a sheet's price, average cost, quantity; the
+  benchmark's two returns). A figure inside a line takes its line's size.
 - **Prose (15/22):** the agent's answers and any explanatory paragraph.
 - **Body (14/20):** controls, table text, labels in forms. Below the usual 16 px rule
   on purpose: this is a dense tool UI; long reading text uses Prose.
@@ -349,6 +357,10 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   concentric.
 - `rounded.sm` (8 px): buttons, inputs, menus.
 - `rounded.full`: chips only.
+- A dashed `rule` outline marks a place where something can be put (a free grid slot, a
+  drop zone, the slot for a new account). An empty state is text on its plane, never
+  outlined. Marks inside a drawing (a chart's grid and curves, a job hour with no pass)
+  are exempt.
 
 ## Components
 
@@ -364,7 +376,8 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 - **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `text-muted`, tabular numerals; no axis line, no tick mark; the dashed `rule` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
 - **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
-  opacity, no pointer events, the reason given in text next to it.
+  opacity, no pointer events, the reason given in text next to it. A submit disabled only
+  because its own field is empty needs no sentence: the field's placeholder says what to enter.
 - **Chips (agent profile facts):** outlined, Label size; each opens a popover with
   the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
 - **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
@@ -461,3 +474,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-19 | The agent's proposals come under the answer, and the wait is a line (#1271) | The server already streamed each word; the page drew nothing while the model read a tool result, thought or wrote its proposals (4 to 13 s), and drew each card where its call sat, above the answer that says nothing is saved until confirmed. Cards go after the text, the call keeps its trace line; a pending line fills the gap, so a single thing moves at a time; a decided proposal loses its frame (supersedes the card of 5A). |
 | 2026-10-20 | Figures in tables are Geist with tabular numerals (#1281) | The owner's choice, reversing the table half of #838: a column of amounts reads as a column through tabular numerals, and Geist Mono set on every cell read like a terminal. Geist Mono stays for tickers and account ids. The Shares page also draws its allocation once (bars, in a section), moves its toggle into a toolbar above the table, and ends the table on a total row. |
 | 2026-10-20 | The dashboard's composition (#1280) | Seen on screen, four equal pills read as filter chips and the total gain weighed no more than today's move: it takes its own line, the other three become a plain row. The chart's reading, legend and range share one bar; the edit link closes the grid; the rhythm's strip fills its row. A fresh install now shows the allocation and keeps the benchmark hidden without "Nouveau" (a `hiddenByDefault` flag, apart from `arrivesHidden`, which concerns saved layouts only); the movers go half. Saved layouts are untouched. Three-track packing is #1325. |
+| 2026-10-20 | Four figure rungs, a dashed outline for a place to put something, dark neutrals pinned (#1284) | The re-audit still counted six standalone figure sizes and figures in Geist Mono. Hero 60, Figure 28, Section title 20 (`Stat`'s `stat` moves from 19) and a named Term 16 are the whole ladder; a figure inside a line takes its line's size. A dashed outline meant both "empty" and "put something here": the empty state loses its border. The dark neutrals already matched the warm values above (within 0.005 ΔE_ok), so the tokens stay and CI now checks every colour on both grounds, with a warmth threshold on the dark ones. |

@@ -187,7 +187,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
                     )}
                   >
                     <span aria-hidden>{f.month(year, facet.value)}</span>
-                    <span aria-hidden className="font-mono text-[0.625rem] tabular">
+                    <span aria-hidden className="text-2xs tabular">
                       {facet.count}
                     </span>
                   </button>
@@ -335,7 +335,7 @@ function FacetButton({
       <span aria-hidden className={cn('truncate', mono && 'font-mono text-xs')}>
         {label}
       </span>
-      <span aria-hidden className="shrink-0 font-mono text-xs tabular">
+      <span aria-hidden className="shrink-0 text-xs tabular">
         {facet.count}
       </span>
     </button>

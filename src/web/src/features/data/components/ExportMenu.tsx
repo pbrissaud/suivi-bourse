@@ -209,7 +209,7 @@ function Entry({
         {label}
         <span className="block text-xs text-muted-foreground">{note}</span>
       </span>
-      <span className="shrink-0 rounded border px-1.5 font-mono text-[11px] text-muted-foreground">
+      <span className="shrink-0 rounded border px-1.5 font-mono text-2xs text-muted-foreground">
         {format}
       </span>
     </DropdownMenuItem>

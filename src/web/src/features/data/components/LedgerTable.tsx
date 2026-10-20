@@ -204,7 +204,7 @@ export function LedgerTable({
     ): ColumnDef<typeof features, LedgerEvent> => ({
       id,
       header: () => t(heading),
-      cell: ({ row }) => <span className="font-mono tabular">{value(row.original)}</span>,
+      cell: ({ row }) => <span className="tabular">{value(row.original)}</span>,
     })
     return [
       {

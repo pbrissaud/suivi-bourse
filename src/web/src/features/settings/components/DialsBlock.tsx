@@ -236,7 +236,7 @@ function Dial({
             max={setting.maximum ?? undefined}
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            className="tabular h-9.5 w-27 rounded-lg bg-background font-mono"
+            className="tabular h-9.5 w-27 rounded-lg bg-background"
           />
           {unit ? <span className="text-xs text-muted-foreground">{t(unit)}</span> : null}
         </div>

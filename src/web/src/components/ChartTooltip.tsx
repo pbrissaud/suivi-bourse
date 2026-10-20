@@ -94,7 +94,7 @@ export function ChartTooltip({ format }: ChartTooltipProps) {
             {lines.map((line) => (
               <p key={line.key} className="flex items-baseline gap-3.5">
                 <span style={{ color: line.colour }}>{line.name}</span>
-                <span className="tabular ml-auto font-mono">{format(line.value)}</span>
+                <span className="tabular ml-auto">{format(line.value)}</span>
               </p>
             ))}
           </div>
