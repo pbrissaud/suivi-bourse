@@ -693,6 +693,22 @@ export function isEditable(event: LedgerEvent): boolean {
 }
 
 /**
+ * What the head checkbox shows: every **editable** row of `events` ticked, some
+ * of them, or none. Read off those rows only — the selection also holds ids a
+ * filter hides or the store no longer has, and counting them would leave the
+ * box indeterminate over a ledger where nothing is ticked.
+ */
+export function selectionState(
+  events: readonly LedgerEvent[],
+  rowSelection: Readonly<Record<string, boolean>>,
+): 'all' | 'some' | 'none' {
+  const rows = events.filter(isEditable)
+  const ticked = rows.filter((event) => rowSelection[event.id as string]).length
+  if (ticked === 0) return 'none'
+  return ticked === rows.length ? 'all' : 'some'
+}
+
+/**
  * A calendar day, or `null` — and `null` is what the form **names** instead of
  * dropping. The shape alone does not settle it (`0000-00-00` matches it), so the
  * value is parsed and written back: a day that does not survive the round trip

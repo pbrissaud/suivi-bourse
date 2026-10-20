@@ -77,7 +77,7 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
       <Button
         type="button"
         variant="outline"
-        className="h-8 rounded-lg border-destructive/45 bg-transparent px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive dark:bg-transparent dark:hover:bg-destructive/10"
+        className="h-8 rounded-lg pointer-coarse:h-11 border-destructive/45 bg-transparent px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive dark:bg-transparent dark:hover:bg-destructive/10"
         onClick={() => {
           // A mutation error outlives its gesture, so reopening on another
           // selection would show a sentence about the previous one.

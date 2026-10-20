@@ -488,6 +488,18 @@ describe('a read that has not landed is never rendered as an absence', () => {
     }, 60_000)
   }
 
+  it('draws no phone list for the ledger while its events are in flight', async () => {
+    setViewportWidth(390)
+    stage({ name: 'le grand livre', url: '/ledger', heading: 'Grand livre' })
+    server.use(http.get(ROUTES.events, () => new Promise<never>(() => {})))
+    renderApp({ url: '/ledger' })
+    await screen.findByRole('heading', { level: 1, name: 'Grand livre' })
+    await quiet()
+
+    expect(screen.queryByRole('list', { name: 'Vos événements' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+  })
+
   it('leaves no declared route unvisited', () => {
     // The other half of the rule: a route armed under a condition false by
     // default (`enabled:`) would otherwise never be exercised, and it is

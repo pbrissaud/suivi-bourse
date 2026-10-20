@@ -13,7 +13,7 @@
  *    only discriminant a row owns — which is why the search is not a
  *    convenience.
  */
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -27,10 +27,12 @@ import {
   aPriceSeries,
   anAccountsPayload,
   anEvent,
+  anUnaddressableEvent,
   aTypedEvent,
   ledgerEvents,
 } from '@/test/factories'
 import { expectNoBox } from '@/test/noBox'
+import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -2666,5 +2668,115 @@ describe('the ticker search', () => {
 
     await waitFor(() => expect(sent).not.toBeNull())
     expect(sent).toMatchObject({ symbol: 'ZZA', name: 'Zeta Alpha Imported' })
+  })
+})
+
+describe('the ledger on a phone (#1339)', () => {
+  const list = () => screen.getByRole('list', { name: 'Vos événements' })
+  const items = () => within(list()).getAllByRole('listitem')
+
+  async function renderPhone(events: LedgerEvent[] = ledgerEvents()) {
+    setViewportWidth(390)
+    const view = renderData(events)
+    await screen.findByRole('list', { name: 'Vos événements' })
+    return view
+  }
+
+  it('is a list of forty items revealed forty at a time, with no table and no card', async () => {
+    const { user } = await renderPhone(aLongLedger(120))
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(items()).toHaveLength(40)
+    expect(list().closest('[data-slot="card"]')).toBeNull()
+    // Only the account chip is set in Geist Mono; the amount is Geist, tabular.
+    expect(
+      Array.from(list().querySelectorAll('.font-mono')).every((node) => node.hasAttribute('title')),
+    ).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    expect(items()).toHaveLength(80)
+  })
+
+  it('keeps the table, and no list, from 768 px up', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    expect(screen.queryByRole('list', { name: 'Vos événements' })).not.toBeInTheDocument()
+  })
+
+  it('shows the date, the type, the identity, the amount and the account of an item', async () => {
+    await renderPhone([anEvent({ id: 'a', amount: 480, account: 'alpha' })])
+
+    const item = items()[0]
+    expect(within(item).getByRole('button', { name: 'ZZA' })).toBeInTheDocument()
+    expect(within(item).getByText('Achat')).toBeInTheDocument()
+    expect(within(item).getByText('alpha')).toHaveClass('font-mono')
+    expect(within(item).getByText(/480/)).toBeInTheDocument()
+    expect(within(item).getByText(/2026/)).toBeInTheDocument()
+    // Quantity, price, fee and the label under a ticker live in the form.
+    expect(within(item).queryByText(/Ordre au marché/)).not.toBeInTheDocument()
+  })
+
+  it('opens the editor from the identity, and not from the checkbox', async () => {
+    const { user } = await renderPhone()
+
+    await user.click(within(items()[0]).getByRole('checkbox'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('1 sélectionné')).toBeInTheDocument()
+
+    await user.click(within(items()[0]).getByRole('button', { name: 'ZZA' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('leaves a row without an id inert', async () => {
+    await renderPhone([anUnaddressableEvent()])
+
+    const item = items()[0]
+    expect(within(item).getByRole('checkbox')).toBeDisabled()
+    expect(within(item).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('ticks the whole reduction from the head, and deletes it through the summary', async () => {
+    const { user } = await renderPhone(aLongLedger(120))
+    let asked: { ids: string[] } | null = null
+    server.use(
+      http.delete(ROUTES.events, async ({ request }) => {
+        asked = (await request.json()) as { ids: string[] }
+        return HttpResponse.json({ events_removed: 120 })
+      }),
+    )
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Sélectionner les 120 événements filtrés' }),
+    )
+    expect(screen.getByText('120 sélectionnés')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Supprimer' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+    )
+    await waitFor(() => expect(asked?.ids).toHaveLength(120))
+  })
+
+  it('sticks the summary line only while a row is ticked', async () => {
+    const { user } = await renderPhone()
+    const line = () => screen.getByRole('status')
+
+    expect(line()).not.toHaveClass('sticky')
+    await user.click(within(items()[0]).getByRole('checkbox'))
+    expect(line()).toHaveClass('sticky', 'top-0', 'z-20', 'bg-background')
+    await user.click(screen.getByRole('button', { name: 'Désélectionner' }))
+    expect(line()).not.toHaveClass('sticky')
+  })
+
+  it('carries two ticked rows from the phone to the table', async () => {
+    const { user } = await renderPhone()
+    await user.click(within(items()[0]).getByRole('checkbox'))
+    await user.click(within(items()[2]).getByRole('checkbox'))
+
+    act(() => setViewportWidth(1024))
+
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    expect(screen.getByText('2 sélectionnés')).toBeInTheDocument()
+    expect(within(ledger()).getAllByRole('checkbox', { checked: true })).toHaveLength(2)
   })
 })
