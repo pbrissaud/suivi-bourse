@@ -8,7 +8,7 @@
  * ladder and adds four rungs the framework has no name for — `text-2xs`,
  * `text-md`, `text-prose` and `text-hero`. An unknown
  * `text-…` is read as a **colour**, so `cn('text-hero', 'text-gain')` silently dropped the size: the
- * dashboard's 52 px figure came out at the body's 15 px, with nothing failing
+ * dashboard's hero came out at the body's 15 px, with nothing failing
  * anywhere.
  *
  * `text-prose` was missed, and the agent's questions came out at 13 px: the
@@ -26,7 +26,7 @@ const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
       // The four rungs the framework has no name for. The rest of the ladder —
-      // `xs` through `7xl` — it already knows by name, redeclared value and all.
+      // `xs` through `4xl` — it already knows by name, redeclared value and all.
       'font-size': ['text-2xs', 'text-md', 'text-prose', 'text-hero'],
     },
   },

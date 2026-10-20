@@ -79,7 +79,7 @@ export function ChartTooltip({ format }: ChartTooltipProps) {
           // The drawing's own box: the sidebar's ground rather than the
           // popover's, a hairline, and the date above the figures at the size
           // of a caption. Each row is the curve's **name in the curve's own
-          // colour** and its figure in the mono face — the pairing is what
+          // colour** and its figure in tabular numerals — the pairing is what
           // makes a tooltip readable without a legend under the pointer.
           //
           // `aria-live` sits **here** rather than on the library's wrapper,

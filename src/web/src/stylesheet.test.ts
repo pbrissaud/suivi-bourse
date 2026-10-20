@@ -227,7 +227,8 @@ describe('the disabled button (#1284)', () => {
       path.join(WEB_ROOT, 'src', 'components', 'ui', 'button.tsx'),
       'utf8',
     )
-    expect(button).toContain('disabled:pointer-events-none disabled:opacity-50')
+    expect(button).toMatch(/(?<![\w-])disabled:pointer-events-none(?![\w-])/)
+    expect(button).toMatch(/(?<![\w-])disabled:opacity-50(?![\w-])/)
   })
 })
 
@@ -265,6 +266,8 @@ describe('every rung index.css declares is a size to cn', () => {
     // lost to the bubble's `text-sm` and the questions came out at 13 px.
     const rungs = [...read().matchAll(/^\s*--text-([a-z0-9]+):/gm)].map((rung) => rung[1])
     expect(rungs).toContain('prose')
+    // DESIGN.md names no 19 px, 26 px, 34 px, 42 px or 52 px rung (#1284).
+    for (const gone of ['xl', '3xl', '5xl', '6xl', '7xl']) expect(rungs).not.toContain(gone)
     for (const rung of rungs) {
       const other = rung === 'sm' ? 'text-lg' : 'text-sm'
       expect(cn(other, `text-${rung}`), rung).toBe(`text-${rung}`)

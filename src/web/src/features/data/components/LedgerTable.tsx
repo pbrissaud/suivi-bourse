@@ -31,7 +31,7 @@
  * the body scrolls inside its own container, and how many rows are in it is the
  * caller's business — this component draws what it is handed and says nothing
  * about what it was not. The type is a coloured badge and the four money
- * columns are set in the mono face, both for the same reason: forty rows are
+ * columns are set in tabular numerals, both for the same reason: forty rows are
  * read by scanning down a column, not across a row.
  *
  * **The ninth column left with its subject** (#816). It said *"row 14 of
@@ -149,8 +149,8 @@ interface LedgerColumn {
 }
 
 /**
- * **The ledger's column budget** (#1264). A figure is 7.8 px per mono character
- * at 13 px; each threshold is the first `rem` step at or above the worst-case
+ * **The ledger's column budget** (#1264). A figure is estimated at 7.8 px per digit
+ * at 13 px (Geist, tabular numerals); each threshold is the first `rem` step at or above the worst-case
  * sum of the columns shown there. What hides first as the table narrows: fee,
  * then unit price, then quantity, then account. `ledgerColumns.test.ts` checks
  * the arithmetic and that `from` and `show` say the same width.
@@ -194,9 +194,8 @@ export function LedgerTable({
   const f = useFormatters()
 
   const columns = useMemo<ColumnDef<typeof features, LedgerEvent>[]>(() => {
-    // The four money columns are set in the **mono** face on top of the tabular
-    // figures: read down a column of forty rows, the two together are what lets
-    // a comma line up with a comma.
+    // The four money columns are Geist with tabular numerals (#1281): read down
+    // a column of forty rows, that is what lets a comma line up with a comma.
     const money = (
       id: string,
       heading: MessageKey,

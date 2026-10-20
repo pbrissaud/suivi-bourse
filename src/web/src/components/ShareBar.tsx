@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Three heights, because they are the same object at three distances — `Stat`'s
- * three sizes, one order of magnitude down. `line` sits under a legend row or
+ * four sizes, one order of magnitude down. `line` sits under a legend row or
  * inside a table cell, where the bar is subordinate to the text above it;
  * `weight` is DESIGN.md's 6 px weight bar, the drawing of a legend with no ring
  * beside it (the dashboard's allocation card, #1206); `block` sits under a

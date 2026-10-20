@@ -164,20 +164,20 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
     return found
   }
 
+  const all = sources()
+
   /** The files holding a match of `pattern`, as a list a failure can print. */
   const holding = (pattern: RegExp) =>
-    sources()
-      .filter(({ text }) => pattern.test(text))
-      .map(({ file }) => file)
+    all.filter(({ text }) => pattern.test(text)).map(({ file }) => file)
 
   it('writes no size off the ladder', () => {
     // Any variant prefix (`md:text-xl`), and an arbitrary `text-[…]` size.
-    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|3xl|5xl|6xl|7xl|\[)/)).toEqual([])
+    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|3xl|[5-9]xl|\[)/)).toEqual([])
   })
 
-  it('sets no figure in mono, and keeps no heavier weight', () => {
+  it('sets no figure in mono, and drops font-heavy', () => {
     const className = /(['"`])((?:(?!\1)[^\n])*)\1/g
-    const mixed = sources()
+    const mixed = all
       .filter(({ text }) =>
         [...text.matchAll(className)].some(
           ([, , classes]) =>
@@ -200,9 +200,9 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
       'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',
     }
-    expect(
-      holding(/(?:border|outline)-(?:\[[^\]]*\] )?dashed|border-dashed|outline-dashed/).sort(),
-    ).toEqual(Object.keys(REASONS).sort())
+    expect(holding(/(?:border|outline)-(?:\[[^\]]*\] )?dashed/).sort()).toEqual(
+      Object.keys(REASONS).sort(),
+    )
     expect(holding(/dashed/).filter((file) => file.endsWith('EmptyState.tsx'))).toEqual([])
   })
 })

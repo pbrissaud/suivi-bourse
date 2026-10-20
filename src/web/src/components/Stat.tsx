@@ -7,7 +7,7 @@
  * product sat on the only component incapable of explaining itself. So the slot
  * is not optional furniture here — it is the reason the primitive exists.
  *
- * Four weights, one component, because they are the same object seen from
+ * Four sizes, one component, because they are the same object seen from
  * four distances: `head` is the one figure a page leads with, `figure` a
  * secondary figure that stands alone (DESIGN.md's Figure rung), `term` is what
  * is subordinate to it, `stat` everything else. Subordination is **vertical**
