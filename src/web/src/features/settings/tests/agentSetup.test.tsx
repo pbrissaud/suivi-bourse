@@ -417,6 +417,21 @@ describe('the thinking level (#1191)', () => {
     expect(activate(block)).toBeChecked()
   })
 
+  it('is offered as soon as a passed test has preselected a model, before the agent is on', async () => {
+    const writes = provider()
+    const { user, block } = await openAgent()
+    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
+    expect(within(block).queryByLabelText('Réflexion')).not.toBeInTheDocument()
+    await user.click(testButton(block))
+    await within(block).findByLabelText('Modèle')
+
+    await user.selectOptions(within(block).getByLabelText('Réflexion'), 'medium')
+
+    await waitFor(() => expect(writes.at(-1)).toEqual(['config', { thinking: 'medium' }]))
+    expect(activate(block)).not.toBeChecked()
+  })
+
   it('is not offered until a model is chosen', async () => {
     provider()
     const { block } = await openAgent()

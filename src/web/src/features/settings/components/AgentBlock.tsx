@@ -370,7 +370,8 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
           ) : null}
         </section>
 
-        {config.model !== null ? (
+        {/* A model chosen by a passed test counts before it is activated: the level can be set first. */}
+        {config.model !== null || model !== '' ? (
           <section className="space-y-1.5">
             <label htmlFor="agent-thinking" className="block text-sm font-medium">
               {t('settings.agent.thinking')}
