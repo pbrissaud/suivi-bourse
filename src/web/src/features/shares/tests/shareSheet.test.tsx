@@ -26,6 +26,7 @@ import {
   shareLedger,
   sharesPortfolio,
 } from '@/test/factories'
+import { setViewportWidth } from '@/test/media'
 import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -481,5 +482,46 @@ describe('the liaison is a selection, not a hover', () => {
     await user.click(screen.getByRole('button', { name: 'Zeta Gamma' }))
     const other = await screen.findByRole('dialog', { name: 'Zeta Gamma' })
     expect(within(other).queryAllByRole('button', { current: 'date' })).toHaveLength(0)
+  })
+})
+
+describe('the per-account breakdown on a phone (#1338)', () => {
+  it('is a list of two items that keeps the table’s five figures', async () => {
+    setViewportWidth(390)
+    const { user } = renderShares([
+      ...sharesPortfolio(),
+      aPosition({
+        account: 'alpha',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 2,
+        cost_basis: 200,
+        price: 110,
+      }),
+      aPosition({
+        account: 'beta',
+        symbol: 'ZZF',
+        name: 'Zeta Phi',
+        quantity: 3,
+        cost_basis: 300,
+        price: 110,
+      }),
+    ])
+    await user.click(await screen.findByRole('button', { name: 'Zeta Phi' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Zeta Phi' })
+
+    expect(within(sheet).queryByRole('table')).not.toBeInTheDocument()
+    const items = within(
+      within(sheet).getByRole('list', { name: 'Ce titre, compte par compte' }),
+    ).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    // 2 × 110 = 220,00 against 200,00 and 3 × 110 = 330,00 against 300,00.
+    expect(items[0]).toHaveTextContent(/alpha/)
+    expect(items[0]).toHaveTextContent(/2 × 100,00/)
+    expect(items[0]).toHaveTextContent(/220,00/)
+    expect(items[0]).toHaveTextContent(/20,00/)
+    expect(items[1]).toHaveTextContent(/3 × 100,00/)
+    expect(items[1]).toHaveTextContent(/330,00/)
+    expect(items[1]).toHaveTextContent(/30,00/)
   })
 })

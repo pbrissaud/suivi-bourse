@@ -48,6 +48,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { positionRenderings, renderFigure } from '@/lib/absence'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { dataApi } from '@/features/data/lib/api'
 import type { ChartWindow, Position } from '@/features/shares/lib/api'
 import type { DocsAnchor } from '@/lib/docs'
@@ -112,6 +113,7 @@ interface ShareSheetProps {
 export function ShareSheet({ row, positions, failures, currency, onClose }: ShareSheetProps) {
   const { t } = useI18n()
   const f = useFormatters()
+  const mobile = useIsMobile()
   // The range is the sheet's, not the chart's: reopening on another share keeps
   // the range the reader last chose, which is the one thing a chart control
   // must not forget between two lines of the same table.
@@ -346,57 +348,107 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           {breakdown.length === 0 ? null : (
             <section className="space-y-3 border-t pt-6">
               <h3 className="label">{t('shares.breakdown.title')}</h3>
-              <Table>
-                <caption className="sr-only">{t('shares.breakdown.label')}</caption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('shares.column.account')}</TableHead>
-                    <TableHead className="text-right">{t('shares.column.quantity')}</TableHead>
-                    <TableHead className="text-right">{t('shares.column.avgCost')}</TableHead>
-                    <TableHead className="text-right">{t('shares.column.value')}</TableHead>
-                    <TableHead className="text-right">{t('shares.column.unrealised')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              {mobile ? (
+                // **A list under 768 px** (#1338): five columns scroll sideways, and
+                // there is no further detail to send the figures to, so each account
+                // keeps all five — the id and the valuation on one line, the holding
+                // and the latent gain on the next.
+                <ul aria-label={t('shares.breakdown.label')}>
                   {breakdown.map((line) => {
                     const lineRenderings = positionRenderings(line)
-                    const lineValue = marketValue(line)
                     const lineGain = unrealised(line)
                     return (
-                      <TableRow key={line.accounts[0]}>
-                        {/* One account per line by construction, so plain text
-                            and never a list of one (#684 D11). */}
-                        <TableCell>{line.accounts[0]}</TableCell>
-                        <TableCell className="text-right tabular">
-                          {f.quantity(line.quantity)}
-                        </TableCell>
-                        <TableCell className="text-right tabular">
-                          {f.currency(unitCost(line), currency)}
-                        </TableCell>
-                        <TableCell className="text-right tabular">
-                          {renderFigure(
-                            lineRenderings.valuation,
-                            () => f.currency(lineValue, currency),
-                            t,
-                          )}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right tabular ${toneOf(
-                            lineRenderings.unrealised,
-                            lineGain,
-                          )}`}
-                        >
-                          {renderFigure(
-                            lineRenderings.unrealised,
-                            () => f.currency(lineGain, currency),
-                            t,
-                          )}
-                        </TableCell>
-                      </TableRow>
+                      <li
+                        key={line.accounts[0]}
+                        className="flex min-h-15 flex-col justify-center gap-0.5 border-b py-2.5 last:border-b-0"
+                      >
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="font-mono text-2xs">{line.accounts[0]}</span>
+                          <span className="text-md font-medium tabular">
+                            {renderFigure(
+                              lineRenderings.valuation,
+                              () => f.currency(marketValue(line), currency),
+                              t,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="label tabular">
+                            {t('shares.breakdown.holding', {
+                              quantity: f.quantity(line.quantity),
+                              avgCost: f.currency(unitCost(line), currency),
+                            })}
+                          </span>
+                          <span
+                            className={`text-xs font-medium tabular ${toneOf(
+                              lineRenderings.unrealised,
+                              lineGain,
+                            )}`}
+                          >
+                            {renderFigure(
+                              lineRenderings.unrealised,
+                              () => f.currency(lineGain, currency),
+                              t,
+                            )}
+                          </span>
+                        </div>
+                      </li>
                     )
                   })}
-                </TableBody>
-              </Table>
+                </ul>
+              ) : (
+                <Table>
+                  <caption className="sr-only">{t('shares.breakdown.label')}</caption>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('shares.column.account')}</TableHead>
+                      <TableHead className="text-right">{t('shares.column.quantity')}</TableHead>
+                      <TableHead className="text-right">{t('shares.column.avgCost')}</TableHead>
+                      <TableHead className="text-right">{t('shares.column.value')}</TableHead>
+                      <TableHead className="text-right">{t('shares.column.unrealised')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {breakdown.map((line) => {
+                      const lineRenderings = positionRenderings(line)
+                      const lineValue = marketValue(line)
+                      const lineGain = unrealised(line)
+                      return (
+                        <TableRow key={line.accounts[0]}>
+                          {/* One account per line by construction, so plain text
+                              and never a list of one (#684 D11). */}
+                          <TableCell>{line.accounts[0]}</TableCell>
+                          <TableCell className="text-right tabular">
+                            {f.quantity(line.quantity)}
+                          </TableCell>
+                          <TableCell className="text-right tabular">
+                            {f.currency(unitCost(line), currency)}
+                          </TableCell>
+                          <TableCell className="text-right tabular">
+                            {renderFigure(
+                              lineRenderings.valuation,
+                              () => f.currency(lineValue, currency),
+                              t,
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right tabular ${toneOf(
+                              lineRenderings.unrealised,
+                              lineGain,
+                            )}`}
+                          >
+                            {renderFigure(
+                              lineRenderings.unrealised,
+                              () => f.currency(lineGain, currency),
+                              t,
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </section>
           )}
 

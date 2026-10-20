@@ -59,7 +59,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { TriangleAlert } from 'lucide-react'
+import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
@@ -68,14 +68,16 @@ import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Allocation } from '@/features/shares/components/Allocation'
 import { ClosedShares } from '@/features/shares/components/ClosedShares'
+import { SharesList } from '@/features/shares/components/SharesList'
 import { SharesTable } from '@/features/shares/components/SharesTable'
 import { ShareSheet } from '@/features/shares/components/ShareSheet'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { settingsApi } from '@/features/settings/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { currencyUnanswered } from '@/lib/firstRun'
-import { useI18n } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import {
   DEFAULT_SORT,
@@ -93,8 +95,63 @@ import {
 import { oneFailure, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
+/**
+ * The sort a phone offers in place of the nine column heads (#1338): the three
+ * orderings a portfolio is read by. Any other column the desktop left in force
+ * joins them (`SortControl`), so the select never states an order it is not in.
+ */
+const SORT_LABELS: Record<SortColumn, MessageKey> = {
+  value: 'shares.column.value',
+  unrealised: 'shares.column.unrealised',
+  symbol: 'shares.sort.name',
+  price: 'shares.column.price',
+  quantity: 'shares.column.quantity',
+  avgCost: 'shares.column.avgCost',
+  realised: 'shares.column.realised',
+  dividends: 'shares.column.dividends',
+  account: 'shares.column.account',
+}
+const PHONE_SORTS: readonly SortColumn[] = ['value', 'unrealised', 'symbol']
+
+/** Native select and direction button; both 44 px on touch. */
+function SortControl({ sort, onSort }: { sort: ShareSort; onSort: (column: SortColumn) => void }) {
+  const { t } = useI18n()
+  const columns = PHONE_SORTS.includes(sort.column) ? PHONE_SORTS : [...PHONE_SORTS, sort.column]
+  const Arrow = sort.direction === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <div className="flex items-center gap-2">
+      <label htmlFor="shares-sort" className="label">
+        {t('shares.sort.label')}
+      </label>
+      <select
+        id="shares-sort"
+        value={sort.column}
+        onChange={(event) => onSort(event.target.value as SortColumn)}
+        className="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 dark:bg-input/30"
+      >
+        {columns.map((column) => (
+          <option key={column} value={column}>
+            {t(SORT_LABELS[column])}
+          </option>
+        ))}
+      </select>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        aria-label={t(sort.direction === 'asc' ? 'shares.sort.asc' : 'shares.sort.desc')}
+        onClick={() => onSort(sort.column)}
+        className="pointer-coarse:size-11"
+      >
+        <Arrow aria-hidden />
+      </Button>
+    </div>
+  )
+}
+
 export default function SharesPage() {
   const { t } = useI18n()
+  const mobile = useIsMobile()
   const f = useFormatters()
   const [onlyAnomalies, setOnlyAnomalies] = useState(false)
   // The order and the grouping are **states of the page**, exactly like the
@@ -120,6 +177,7 @@ export default function SharesPage() {
   // and the overlay are its way out; the address exists so that somebody can
   // **arrive** at one — which is what ⌘K does — not so that the history holds a
   // record of every row that was looked at.
+  const onSort = (column: SortColumn) => setSort((previous) => nextSort(previous, column))
   const select = (symbol: string | null) =>
     void navigate({
       to: '/shares',
@@ -171,6 +229,9 @@ export default function SharesPage() {
   // reason `accountBreakdown` does not exist at one account either — so the
   // control is not offered rather than offered and inert.
   const accountCount = new Set(reduced.map((position) => position.account)).size
+  // The group toggle and the anomaly chip keep their gate: the counters are
+  // claims, so nothing is drawn while `runtime` has not answered.
+  const showFilters = runtime.isSuccess && (accountCount >= 2 || anomalies.length > 0)
 
   // The folded ones are in that set — a fold is not a filter, so opening the
   // section moves nothing — and the anomaly lens is, which is the other half of
@@ -298,14 +359,16 @@ export default function SharesPage() {
               would say nothing was wrong on the strength of a read that failed
               (#775, #777, #778). */}
           <div data-slot="shares-table" className="space-y-3">
-            {!runtime.isSuccess || (accountCount < 2 && anomalies.length === 0) ? null : (
+            {!(mobile && held.length > 0) && !showFilters ? null : (
               <div className="flex flex-wrap items-center gap-2">
+                {mobile && held.length > 0 ? <SortControl sort={sort} onSort={onSort} /> : null}
+
                 {/* **A partition, offered only where there is something to
                     partition.** At one account the group header would repeat
                     the total row line for line, and a control that cannot
                     change anything is the per-row marker rule met at the level
                     of a button. */}
-                {accountCount < 2 ? null : (
+                {!runtime.isSuccess || accountCount < 2 ? null : (
                   <Button
                     type="button"
                     variant="outline"
@@ -313,6 +376,7 @@ export default function SharesPage() {
                     aria-pressed={grouped}
                     onClick={() => setGrouped((previous) => !previous)}
                     className={cn(
+                      'pointer-coarse:h-11',
                       grouped &&
                         'border-primary bg-primary/12 text-primary hover:bg-primary/20 hover:text-primary dark:border-primary dark:bg-primary/12 dark:hover:bg-primary/20',
                     )}
@@ -323,13 +387,13 @@ export default function SharesPage() {
 
                 {/* At zero it is nothing at all: the drawing draws no chip where
                     there is nothing to repair. */}
-                {anomalies.length === 0 ? null : (
+                {!runtime.isSuccess || anomalies.length === 0 ? null : (
                   <button
                     type="button"
                     aria-pressed={onlyAnomalies}
                     onClick={() => setOnlyAnomalies((previous) => !previous)}
                     className={cn(
-                      'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention',
+                      'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention pointer-coarse:h-11',
                       onlyAnomalies && 'ring-1 ring-attention/60',
                     )}
                   >
@@ -346,15 +410,28 @@ export default function SharesPage() {
                 the held lines alone is what printed the other correct figure.
                 The closed ones fold into a row under that total. */}
             <div>
-              <SharesTable
-                groups={groups}
-                currency={currency}
-                sort={sort}
-                onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
-                onSelect={select}
-                totals={sharesTotals(summed, onScreen)}
-                closedCount={closed.length}
-              />
+              {/* Under 768 px the nine columns would scroll sideways: a list
+                  stands in for the table, with the same groups and totals
+                  (#1338). */}
+              {mobile ? (
+                <SharesList
+                  groups={groups}
+                  currency={currency}
+                  onSelect={select}
+                  totals={sharesTotals(summed, onScreen)}
+                  closedCount={closed.length}
+                />
+              ) : (
+                <SharesTable
+                  groups={groups}
+                  currency={currency}
+                  sort={sort}
+                  onSort={onSort}
+                  onSelect={select}
+                  totals={sharesTotals(summed, onScreen)}
+                  closedCount={closed.length}
+                />
+              )}
               <ClosedShares rows={closed} currency={currency} onSelect={select} />
             </div>
           </div>

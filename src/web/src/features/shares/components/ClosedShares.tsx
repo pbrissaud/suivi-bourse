@@ -35,6 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ABSENT, useFormatters } from '@/lib/format'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/features/shares/lib/shares'
 import { signClass } from '@/lib/sign'
@@ -56,6 +57,7 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
   // reference that resolves to nothing is worse than none. `aria-expanded`
   // already carries what a reader needs, and the panel follows the button.
   const [open, setOpen] = useState(false)
+  const mobile = useIsMobile()
 
   if (rows.length === 0) return null
 
@@ -70,7 +72,7 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((previous) => !previous)}
-          className="inline-flex items-center gap-2 text-sm font-medium underline-offset-4 hover:underline"
+          className="inline-flex items-center gap-2 text-sm font-medium underline-offset-4 hover:underline pointer-coarse:min-h-11"
         >
           <ChevronRight
             className={`size-4 transition-transform ${open ? 'rotate-90' : ''}`}
@@ -90,7 +92,41 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
         </span>
       </div>
 
-      {open ? (
+      {open && mobile ? (
+        // **Under 768 px a list, not a table** (#1338): five columns scroll
+        // sideways. The name is a button stretched over its item, as in the live
+        // list; the realised gain is on the first line and the dividends under it.
+        <ul aria-label={t('shares.closed.label')} className="border-t">
+          {rows.map((row) => (
+            <li
+              key={row.symbol}
+              className="relative flex min-h-15 items-center justify-between gap-3 rounded-md border-b py-2.5 last:border-b-0 has-focus-visible:ring-2 has-focus-visible:ring-primary has-focus-visible:ring-offset-2 has-focus-visible:ring-offset-background"
+            >
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <button
+                  type="button"
+                  className="truncate text-left text-md font-medium outline-none after:absolute after:inset-0"
+                  onClick={() => onSelect(row.symbol)}
+                >
+                  {row.name ?? row.symbol}
+                </button>
+                <span className="label">
+                  {t('shares.column.closedOn')}{' '}
+                  {row.closedAt === null ? ABSENT : f.date(row.closedAt)}
+                </span>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className={`text-md font-medium tabular ${signClass(row.realised)}`}>
+                  {f.currency(row.realised, currency)}
+                </span>
+                <span className={`text-xs font-medium tabular ${signClass(0)}`}>
+                  {f.currency(row.dividends, currency)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : open ? (
         <Table containerClassName="border-t">
           <caption className="sr-only">{t('shares.closed.label')}</caption>
           <TableHeader>
