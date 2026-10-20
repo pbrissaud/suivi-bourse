@@ -470,7 +470,10 @@ export function UploadZone({ upload, compact = false, label }: UploadZoneProps) 
         type="button"
         variant="outline"
         size={compact ? 'sm' : 'default'}
-        className={cn('rounded-lg bg-transparent dark:bg-transparent', !compact && 'h-8.5')}
+        className={cn(
+          'rounded-lg bg-transparent pointer-coarse:min-h-11 dark:bg-transparent',
+          !compact && 'h-8.5',
+        )}
         disabled={upload.pending}
         onClick={() => input.current?.click()}
       >

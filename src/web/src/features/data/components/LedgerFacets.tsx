@@ -260,6 +260,7 @@ function FilterMenu({
           size="sm"
           aria-label={value === null ? undefined : t('data.toolbar.filter.active', { axis, value })}
           className={cn(
+            'pointer-coarse:min-h-11',
             value !== null &&
               'border-primary bg-primary/12 text-primary hover:bg-primary/20 hover:text-primary dark:border-primary dark:bg-primary/12 dark:hover:bg-primary/20',
           )}

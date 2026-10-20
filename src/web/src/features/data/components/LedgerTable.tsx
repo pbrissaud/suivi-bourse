@@ -81,7 +81,13 @@ import {
 import type { LedgerEvent, LedgerEventType } from '@/features/data/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { accountOf, identityOf, isEditable, rowKey } from '@/features/data/lib/ledger'
+import {
+  accountOf,
+  identityOf,
+  isEditable,
+  rowKey,
+  selectionState,
+} from '@/features/data/lib/ledger'
 import { cn } from '@/lib/utils'
 
 const features = tableFeatures({ rowSelectionFeature })
@@ -209,22 +215,20 @@ export function LedgerTable({
       {
         id: 'select',
         // Ticks **every** row the reduction retains, drawn or not. Its state
-        // is read off those rows only: the table's own `getIsSomeRowsSelected`
-        // counts the raw selection, ids a filter hides included, and would
-        // leave the box indeterminate over a table where nothing is ticked.
+        // is read off those rows only (`selectionState`): the table's own
+        // `getIsSomeRowsSelected` counts the raw selection, ids a filter hides
+        // included, and would leave the box indeterminate over a table where
+        // nothing is ticked.
+        // The columns are memoised without `rowSelection` (it would remount the
+        // box at every tick), so the header reads the data and the selection off
+        // `table.options`.
         header: ({ table }) => {
-          const rows = table.getCoreRowModel().rows.filter((row) => row.getCanSelect())
-          const ticked = rows.filter((row) => row.getIsSelected()).length
+          const rows = table.options.data as readonly LedgerEvent[]
+          const ticks = selectionState(rows, table.options.state?.rowSelection ?? {})
           return (
             <Checkbox
-              aria-label={t('data.select.all', { count: rows.length })}
-              checked={
-                rows.length > 0 && ticked === rows.length
-                  ? true
-                  : ticked > 0
-                    ? 'indeterminate'
-                    : false
-              }
+              aria-label={t('data.select.all', { count: rows.filter(isEditable).length })}
+              checked={ticks === 'all' ? true : ticks === 'some' ? 'indeterminate' : false}
               onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
             />
           )
@@ -254,16 +258,7 @@ export function LedgerTable({
       {
         id: 'type',
         header: () => t('data.column.type'),
-        cell: ({ row }) => (
-          <span
-            className={cn(
-              'inline-block rounded-md px-2 py-0.5 text-2xs font-medium',
-              TYPE_BADGE[row.original.event_type],
-            )}
-          >
-            {t(TYPE_LABEL[row.original.event_type])}
-          </span>
-        ),
+        cell: ({ row }) => <TypePill type={row.original.event_type} />,
       },
       {
         id: 'what',
@@ -296,19 +291,7 @@ export function LedgerTable({
       {
         id: 'account',
         header: () => t('data.column.account'),
-        // An account id is typed, not written: the mono face is what says so,
-        // and it is the one the accounts page already sets an id in
-        // (`AccountDetail`, `AccountsBar`).
-        cell: ({ row }) => (
-          // Capped at 12 characters plus the chip's own padding: account ids have no
-          // length bound on the server.
-          <span
-            title={accountOf(row.original)}
-            className="inline-block max-w-[calc(12ch+1rem)] truncate rounded-md bg-accent px-2 py-0.5 align-middle font-mono text-2xs text-foreground/85"
-          >
-            {accountOf(row.original)}
-          </span>
-        ),
+        cell: ({ row }) => <AccountChip event={row.original} />,
       },
     ]
   }, [t, f, currency, onEdit])
@@ -381,6 +364,35 @@ export function LedgerTable({
           ))}
       </TableBody>
     </Table>
+  )
+}
+
+/** A ledger type: the word in the one unhued `muted` pill, the table's and the phone list's alike. */
+export function TypePill({ type }: { type: LedgerEventType }) {
+  const { t } = useI18n()
+  return (
+    <span
+      className={cn('inline-block rounded-md px-2 py-0.5 text-2xs font-medium', TYPE_BADGE[type])}
+    >
+      {t(TYPE_LABEL[type])}
+    </span>
+  )
+}
+
+/**
+ * An account id is typed, not written: the mono face is what says so, and it is
+ * the one the accounts page already sets an id in (`AccountDetail`,
+ * `AccountsBar`). Capped at 12 characters plus the chip's own padding: account
+ * ids have no length bound on the server.
+ */
+export function AccountChip({ event }: { event: LedgerEvent }) {
+  return (
+    <span
+      title={accountOf(event)}
+      className="inline-block max-w-[calc(12ch+1rem)] truncate rounded-md bg-accent px-2 py-0.5 align-middle font-mono text-2xs text-foreground/85"
+    >
+      {accountOf(event)}
+    </span>
   )
 }
 

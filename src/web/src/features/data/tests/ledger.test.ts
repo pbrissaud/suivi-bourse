@@ -9,7 +9,13 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { aLongLedger, anEvent, aTypedEvent, ledgerEvents } from '@/test/factories'
+import {
+  aLongLedger,
+  anEvent,
+  anUnaddressableEvent,
+  aTypedEvent,
+  ledgerEvents,
+} from '@/test/factories'
 import {
   accountFacets,
   accountOf,
@@ -30,6 +36,7 @@ import {
   reduces,
   reveal,
   selectionParams,
+  selectionState,
   startsWithQuery,
   titlesFor,
   titlesNamed,
@@ -589,5 +596,24 @@ describe('a title the ledger never named', () => {
     expect(titlesNamed([anEvent({ symbol: ' ZZA ' }), anEvent({ symbol: 'ZZA' })])).toEqual([
       { symbol: 'ZZA', name: expect.any(String) },
     ])
+  })
+})
+
+describe('the state of the head checkbox', () => {
+  const rows = aLongLedger(3)
+
+  it('is none, some and all for an empty, partial and full selection', () => {
+    expect(selectionState(rows, {})).toBe('none')
+    expect(selectionState([], {})).toBe('none')
+    expect(selectionState(rows, { '1': true })).toBe('some')
+    expect(selectionState(rows, { '1': true, '2': true, '3': true })).toBe('all')
+  })
+
+  it('ignores rows without a key and ids that are not in the events', () => {
+    const mixed = [...rows, anUnaddressableEvent()]
+    expect(selectionState(mixed, { '1': true, '2': true, '3': true })).toBe('all')
+    expect(selectionState(rows, { gone: true })).toBe('none')
+    expect(selectionState(rows, { '1': true, gone: true })).toBe('some')
+    expect(selectionState(rows, { '1': false })).toBe('none')
   })
 })

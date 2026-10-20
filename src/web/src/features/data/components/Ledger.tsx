@@ -62,6 +62,7 @@ import { EventForm } from '@/features/data/components/EventForm'
 import { ImportPreview } from '@/features/data/components/ImportPreview'
 import { LedgerFacets } from '@/features/data/components/LedgerFacets'
 import { LedgerChips, LedgerSearch } from '@/features/data/components/LedgerFilters'
+import { LedgerList } from '@/features/data/components/LedgerList'
 import { LedgerTable, TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { RowDelete } from '@/features/data/components/RowDelete'
 import {
@@ -75,6 +76,7 @@ import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { exportable } from '@/features/data/lib/imports'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useI18n } from '@/lib/i18n'
 import {
   accountsNamed,
@@ -146,6 +148,7 @@ interface LedgerProps {
 
 export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = {}) {
   const { t } = useI18n()
+  const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   // **The gesture is held here and nowhere lower** (#811): the first import
   // fills an empty ledger, which unmounts the entry pair the zone was in and
@@ -326,6 +329,14 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // strip above a page that has nothing under it.
   const ledgerFailure = oneFailure(readConditions({ queries: [events] }))
   const currency = totals.data?.base_currency ?? null
+  const view = {
+    events: shown,
+    budget,
+    currency,
+    rowSelection,
+    onRowSelectionChange: setRowSelection,
+    onEdit: setEditing,
+  }
 
   return (
     <div className="space-y-6">
@@ -430,7 +441,12 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     total={all.length}
                   />
                 ) : null}
-                <Button type="button" size="sm" onClick={() => setEditing(null)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="pointer-coarse:min-h-11"
+                  onClick={() => setEditing(null)}
+                >
                   {t('data.new')}
                 </Button>
               </div>
@@ -447,7 +463,12 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               tabIndex={-1}
               role="status"
               aria-live="polite"
-              className="flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none"
+              className={cn(
+                'flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none',
+                // On a phone the list is long and the page scrolls: the ticked
+                // rows' actions stay under the thumb while there are some.
+                isMobile && selected.length > 0 && 'sticky top-0 z-20 bg-background',
+              )}
             >
               <p className="text-muted-foreground">
                 {t('data.filter.count', {
@@ -460,7 +481,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 <button
                   type="button"
                   onClick={() => reduce(NO_FILTERS)}
-                  className="text-xs text-muted-foreground underline underline-offset-4"
+                  className="text-xs text-muted-foreground underline underline-offset-4 pointer-coarse:min-h-11"
                 >
                   {t('data.facets.reset')}
                 </button>
@@ -474,7 +495,13 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                       consumes** (#814, #1113), and exists only while there is
                       something to consume. */}
                   <BulkDelete selected={selected} onDeleted={clearSelection} />
-                  <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="pointer-coarse:min-h-11"
+                    onClick={clearSelection}
+                  >
                     {t('data.selection.clear')}
                   </Button>
                 </div>
@@ -512,14 +539,9 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     {t('data.drop.over')}
                   </div>
                 ) : null}
-                <LedgerTable
-                  events={shown}
-                  budget={budget}
-                  currency={currency}
-                  rowSelection={rowSelection}
-                  onRowSelectionChange={setRowSelection}
-                  onEdit={setEditing}
-                />
+                {/* Below 768 px the table is a list (#1339): same props, same
+                    wrapper, so the drop and the reveal tail are shared. */}
+                {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} />}
 
                 {/* **The reveal speaks, and the read did not**.
                       Both sentences below describe rows the app already holds —
@@ -559,6 +581,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="pointer-coarse:min-h-11"
                         onClick={() => setBudget((current) => current + PAGE)}
                       >
                         {t('data.ledger.more')}
