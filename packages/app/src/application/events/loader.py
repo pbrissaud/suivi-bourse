@@ -22,6 +22,11 @@ CSV_DELIMITERS = (',', ';', '\t')
 NUMERIC_COLUMNS = ('quantity', 'unit_price', 'fee', 'amount')
 
 
+def replay_key(event: Event):
+    """The order the ledger replays in: by day, then by kind (a ``BUY`` before a same-day ``SELL``)."""
+    return (event.date, REPLAY_ORDER[event.event_type])
+
+
 class EventLoaderError(Exception):
     """Exception raised when loading events fails."""
     pass
@@ -52,7 +57,7 @@ class EventLoader:
         elif self.source_path.is_dir():
             events = self._load_directory(self.source_path)
 
-        events.sort(key=lambda e: (e.date, REPLAY_ORDER[e.event_type]))
+        events.sort(key=replay_key)
         return events
 
     def _load_directory(self, directory: Path) -> List[Event]:

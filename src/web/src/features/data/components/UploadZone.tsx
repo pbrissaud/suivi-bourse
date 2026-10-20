@@ -1,5 +1,7 @@
 /**
- * **The rectangle becomes a target** (#811).
+ * **The rectangle becomes a target** (#811), and since #1266 it takes **several
+ * files at once**: they are previewed as one batch, in one request, and written
+ * by one request.
  *
  * What stood here named a folder, and it was right to: there was no upload
  * route, the drop folder was the mechanism, and a rectangle that swallowed a
@@ -68,7 +70,12 @@ import { dataApi, type AmountsIn, type ImportReceipt } from '@/features/data/lib
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-import { NO_CORRESPONDENCE, repeatGroups, type Correspondence } from '@/features/data/lib/imports'
+import {
+  keptAsOne,
+  NO_CORRESPONDENCE,
+  repeatGroups,
+  type Correspondence,
+} from '@/features/data/lib/imports'
 import { receiptMessage } from '@/lib/receipts'
 
 /**
@@ -95,11 +102,13 @@ interface Answer {
   amountsIn: AmountsIn | undefined
   /**
    * The groups of identical lines the file repeats that the reader keeps **one
-   * copy** of, by the index of their first copy (#1267). Empty by default: every
-   * copy is written, since only the reader knows whether two identical lines are
-   * one order filled twice.
+   * copy** of, by the index of their first copy (#1267). `undefined` is *the
+   * reader has not said*, and then the default stands (#1266): a group inside one
+   * file is written whole, since only the reader knows whether two identical
+   * lines are one order filled twice; a group spanning files keeps one copy,
+   * since two overlapping exports are the usual cause.
    */
-  collapsed: ReadonlySet<number>
+  collapsed: ReadonlySet<number> | undefined
 }
 
 /** Nothing answered yet — the first preview's answer, and a reset. */
@@ -107,18 +116,23 @@ const NO_ANSWER: Answer = {
   correspondence: NO_CORRESPONDENCE,
   writeDuplicates: false,
   amountsIn: undefined,
-  collapsed: new Set(),
+  collapsed: undefined,
 }
 
 /**
  * **The groups to write whole**: every group the census names, but the ones the
- * reader collapsed. Computed from the census just read and never held, so an id
- * a remapped account has dropped is never sent (#1267).
+ * reader collapsed — or, until they have said, the ones spanning files (#1266).
+ * Computed from the census just read and never held, so an id a remapped
+ * account has dropped is never sent (#1267).
  */
-function repeatsToWrite(census: ImportReceipt, collapsed: ReadonlySet<number>): number[] {
+function repeatsToWrite(
+  census: ImportReceipt,
+  collapsed: ReadonlySet<number> | undefined,
+): number[] {
+  const kept = keptAsOne(collapsed, census.duplicate_rows)
   return repeatGroups(census.duplicate_rows)
     .map((group) => group.first)
-    .filter((first) => !collapsed.has(first))
+    .filter((first) => !kept.has(first))
 }
 
 /**
@@ -152,21 +166,28 @@ interface Forecast {
 /** The gesture, held by whoever survives the write it causes. */
 export interface EventUpload {
   /**
-   * Hand one file over, whichever way it arrived. It is **previewed**, not
-   * written (#813): what comes back is the forecast below.
+   * Hand the files over, whichever way they arrived. They are **previewed** as
+   * one batch, not written (#813): what comes back is the forecast below. A new
+   * hand replaces the batch (#1266).
    */
-  hand: (file: File | null | undefined) => void
+  hand: (files: readonly File[]) => void
   /**
-   * Write the file that was previewed — by **re-uploading it**.
+   * Take one file out of the batch and read the rest again (#1266). The answer
+   * and the standing forecast go with it; the last file out is `discard`.
+   */
+  drop: (index: number) => void
+  /**
+   * Write the files that were previewed — by **re-uploading them**, in the
+   * order they were first sent.
    *
-   * The `File` the reader chose is held in this hook for exactly as long as
-   * their forecast stands, and it is sent again. There is no import id to
+   * The `File`s the reader chose are held in this hook for exactly as long as
+   * their forecast stands, and they are sent again. There is no import id to
    * commit instead, because the server remembers no import: a pending-import
    * token would be `import_source` under another name, with a lifetime and a
    * sweeper to write.
    */
   commit: (options?: { declineCurrency?: boolean }) => void
-  /** Put the file down without writing it — the refusal the preview is for. */
+  /** Put the batch down without writing it — the refusal the preview is for. */
   discard: () => void
   /**
    * **Read the same file again under a new answer** (#835).
@@ -191,17 +212,17 @@ export interface EventUpload {
    * exactly what the reader has to be shown, with the button disabled beside it.
    */
   held: boolean
-  /** The file on its way in — the running sentence names it. */
-  filename: string | undefined
+  /** The files in hand, in the order they are sent (#1266). */
+  filenames: string[]
   /** What *would* be written, while a file stands unwritten. */
   forecast: Forecast | undefined
   receipt: ImportReceipt | undefined
   error: unknown
 }
 
-/** One handing-over: the file, and the answer standing when it was sent. */
+/** One handing-over: the files, and the answer standing when it was sent. */
 interface Handed {
-  file: File
+  files: readonly File[]
   answer: Answer
 }
 
@@ -217,10 +238,12 @@ interface Written extends Handed {
 
 export function useEventUpload(): EventUpload {
   const queryClient = useQueryClient()
-  // The file itself, held between the two halves of the gesture. It is the one
-  // piece of state the double upload costs, and it lives in the browser — which
-  // is the point: nothing on the server outlives the preview.
-  const [held, setHeld] = useState<File | null>(null)
+  // The files themselves, held between the two halves of the gesture. They are
+  // the one piece of state the double upload costs, and they live in the
+  // browser — which is the point: nothing on the server outlives the preview.
+  // Re-sent in the same order every time: the row indexes are positions in the
+  // merged list, and the order is what keeps them stable (#1266).
+  const [held, setHeld] = useState<readonly File[]>([])
   // The answer the reader has given so far, held beside the file and for the
   // file's own lifetime: it is a parameter of *this* gesture and it is dropped
   // with it, which is what keeps the correspondence from becoming a
@@ -236,8 +259,8 @@ export function useEventUpload(): EventUpload {
   // still be taken back.
   const [standing, setStanding] = useState<Forecast | undefined>(undefined)
   const preview = useMutation({
-    mutationFn: async ({ file, answer: given }: Handed): Promise<Forecast> => {
-      const seen = await dataApi.importEvents(file, {
+    mutationFn: async ({ files, answer: given }: Handed): Promise<Forecast> => {
+      const seen = await dataApi.importEvents(files, {
         dryRun: true,
         mapping: given.correspondence.mapping,
         declaring: given.correspondence.declaring,
@@ -261,7 +284,7 @@ export function useEventUpload(): EventUpload {
       try {
         return {
           file: seen,
-          writing: await dataApi.importEvents(file, {
+          writing: await dataApi.importEvents(files, {
             dryRun: true,
             writeDuplicates: given.writeDuplicates,
             writeRepeats,
@@ -298,8 +321,8 @@ export function useEventUpload(): EventUpload {
       ),
   })
   const write = useMutation({
-    mutationFn: ({ file, answer: given, declineCurrency, foreign, writeRepeats }: Written) =>
-      dataApi.importEvents(file, {
+    mutationFn: ({ files, answer: given, declineCurrency, foreign, writeRepeats }: Written) =>
+      dataApi.importEvents(files, {
         writeDuplicates: given.writeDuplicates,
         writeRepeats,
         declineCurrency,
@@ -315,36 +338,59 @@ export function useEventUpload(): EventUpload {
       void queryClient.invalidateQueries()
       // The file has landed; nothing is holding it any more. What stays on
       // screen is the receipt, which is a sentence and not a pending gesture.
-      setHeld(null)
+      setHeld([])
     },
   })
 
   const pending = preview.isPending || write.isPending
 
+  const discard = () => {
+    setHeld([])
+    setAnswer(NO_ANSWER)
+    setStanding(undefined)
+    preview.reset()
+    write.reset()
+  }
+
   return {
-    hand: (file) => {
+    hand: (files) => {
       // **One gesture at a time.** The control disables itself while a file is
       // in flight; a drop does not go through the control, and two POSTs racing
       // the server's writer mutex would show the reader whichever receipt
       // resolved last — the other import having written rows nothing says.
-      if (!file || pending) return
-      // A second file handed over replaces the first outright: the forecast on
-      // screen must never describe a file other than the one the button would
+      if (files.length === 0 || pending) return
+      // A second batch handed over replaces the first outright: the forecast on
+      // screen must never describe files other than the ones the button would
       // send, which is the whole reason the preview is worth reading. The
-      // correspondence goes with it — the next file asks the question again.
+      // correspondence goes with it — the next batch asks the question again.
       write.reset()
       setStanding(undefined)
-      setHeld(file)
+      setHeld(files)
       setAnswer(NO_ANSWER)
-      preview.mutate({ file, answer: NO_ANSWER })
+      preview.mutate({ files, answer: NO_ANSWER })
+    },
+    drop: (index) => {
+      if (pending || index < 0 || index >= held.length) return
+      const rest = held.filter((_, at) => at !== index)
+      if (rest.length === 0) {
+        discard()
+        return
+      }
+      // The answers were given about files that are no longer all there: the
+      // account census, the repeat groups and the foreign lines are the batch's.
+      write.reset()
+      setStanding(undefined)
+      setHeld(rest)
+      setAnswer(NO_ANSWER)
+      preview.mutate({ files: rest, answer: NO_ANSWER })
     },
     reconsider: (next) => {
-      if (!held || pending) return
+      if (held.length === 0 || pending) return
       setAnswer(next)
-      preview.mutate({ file: held, answer: next })
+      preview.mutate({ files: held, answer: next })
     },
     commit: (options) => {
-      if (!held || !standing || pending) return
+      if (held.length === 0 || !standing || pending) return
       // The pairs the forecast on screen listed, sent back so the server converts
       // what was judged and looks nothing up (#1261). Only with an answer: a
       // pair without one has nothing to apply.
@@ -352,24 +398,17 @@ export function useEventUpload(): EventUpload {
         ? (standing.file.foreign_lines ?? []).map((line) => `${line.symbol}:${line.currency}`)
         : []
       write.mutate({
-        file: held,
+        files: held,
         answer,
         foreign,
         writeRepeats: repeatsToWrite(standing.file, answer.collapsed),
         ...options,
       })
     },
-    discard: () => {
-      setHeld(null)
-      setAnswer(NO_ANSWER)
-      setStanding(undefined)
-      preview.reset()
-      write.reset()
-    },
+    discard,
     pending,
-    held: held !== null,
-    filename:
-      (write.isPending ? write.variables?.file.name : preview.variables?.file.name) ?? held?.name,
+    held: held.length > 0,
+    filenames: held.map((file) => file.name),
     // **The forecast stands only while nothing has been written**: the fact
     // replaces it rather than joining it, or the reader would read one file's
     // future beside its past and have to work out which is which.
@@ -431,7 +470,7 @@ export function useFileDrop(hand: EventUpload['hand']) {
         if (!carriesFile(event)) return
         event.preventDefault()
         setOver(false)
-        hand(event.dataTransfer.files?.[0])
+        hand(Array.from(event.dataTransfer.files ?? []))
       },
     },
   }
@@ -458,11 +497,12 @@ export function UploadZone({ upload, compact = false, label }: UploadZoneProps) 
         ref={input}
         id={field}
         type="file"
+        multiple
         accept={ACCEPTED}
         className="sr-only"
         disabled={upload.pending}
         onChange={(event) => {
-          hand(event.target.files?.[0])
+          hand(Array.from(event.target.files ?? []))
           event.target.value = ''
         }}
       />
@@ -597,7 +637,7 @@ function written(
 ): string {
   const said =
     receipt.period === null
-      ? receiptMessage({ kind: 'import.empty', filename: receipt.filename })
+      ? receiptMessage({ kind: 'import.empty', files: receipt.files.map((file) => file.filename) })
       : receiptMessage({
           kind: 'import.written',
           count: receipt.written,

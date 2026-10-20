@@ -14,12 +14,15 @@
  * editable** — which is the ticket's own criterion, said on the accessible
  * rendering.
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Account } from '@/features/accounts/lib/api'
 import type { ImportReceipt, LedgerEvent } from '@/features/data/lib/api'
+import { EVENT_FILE_COLUMNS } from '@/features/data/lib/imports'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
@@ -432,7 +435,9 @@ describe('the import over a populated ledger (#1278)', () => {
     renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    expect(screen.queryByText(/Déposez un fichier \.csv ou \.xlsx/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/Déposez un ou plusieurs fichiers \.csv ou \.xlsx/),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Parcourir…')).not.toBeInTheDocument()
   })
@@ -458,7 +463,7 @@ describe('the import over a populated ledger (#1278)', () => {
     fireEvent.dragOver(table, dragOf([aFile()]))
     // While a file is over the table, it says what dropping it does.
     expect(
-      screen.getByText(/Déposez ici : vous verrez ce que le fichier ferait/),
+      screen.getByText(/Déposez ici : vous verrez ce que les fichiers feraient/),
     ).toBeInTheDocument()
 
     fireEvent.drop(table, dragOf([aFile()]))
@@ -502,8 +507,8 @@ describe('an install that has imported nothing', () => {
       }),
     )
     renderImports({ events: [] })
-    const band = (await screen.findByText(/Déposez un fichier \.csv ou \.xlsx/)).parentElement
-      ?.parentElement as HTMLElement
+    const band = (await screen.findByText(/Déposez un ou plusieurs fichiers \.csv ou \.xlsx/))
+      .parentElement?.parentElement as HTMLElement
     // No export beside it, and no toolbar: the band is the page.
     expect(within(band).queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument()
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
@@ -735,6 +740,7 @@ describe('the file handed over', () => {
         HttpResponse.json(
           aReceipt({
             filename: 'vide.csv',
+            files: [{ filename: 'vide.csv', rows: 0, period: null }],
             rows: 0,
             written: 0,
             duplicates: 0,
@@ -1886,5 +1892,396 @@ describe('the currency of the amounts (#1261)', () => {
     expect(
       within(group).getByRole('radio', { name: 'En USD, la devise de chaque titre' }),
     ).toHaveAccessibleDescription(/Convertis en EUR au cours de clôture/)
+  })
+})
+
+describe('several files, one batch (#1266)', () => {
+  const file = (name: string) => new File(['date,event_type\n'], name, { type: 'text/csv' })
+  const A = file('2023.csv')
+  const B = file('2024.csv')
+
+  /** What a browser hands a drop: `types` names `Files` only when a file is dragged. */
+  const dragOf = (files: File[]) => ({ dataTransfer: { types: ['Files'], files } })
+
+  interface Read {
+    url: URL
+    /** The names of the `file` parts, in the order the body carries them. */
+    files: string[]
+    repeats: string[]
+  }
+
+  /** The filename of every `file` part `upload()` appended, in order. */
+  let appends: string[]
+  beforeEach(() => {
+    appends = []
+    const append = FormData.prototype.append
+    vi.spyOn(FormData.prototype, 'append').mockImplementation(function (
+      this: FormData,
+      ...args: Parameters<FormData['append']>
+    ) {
+      if (args[0] === 'file') appends.push(String(args[2]))
+      return append.apply(this, args)
+    })
+  })
+
+  /**
+   * The route as a batch meets it. The body is read raw (jsdom's `File` and
+   * undici's disagree about what one is), and `receipt` decides the response.
+   */
+  function watching(receipt: (read: Read) => ImportReceipt | Response = () => aReceipt()): Read[] {
+    const seen: Read[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, async ({ request }) => {
+        const url = new URL(request.url)
+        const body = await request.text()
+        // jsdom's `File` reaches undici as a nameless blob, so the names are the
+        // ones `upload()` appended, in order; the body says how many parts it has.
+        const parts = [...body.matchAll(/name="file"/g)].length
+        const read = {
+          url,
+          files: appends.slice(appends.length - parts),
+          repeats: [...body.matchAll(/name="write_repeat"\r\n\r\n(\d+)/g)].map((m) => m[1]),
+        }
+        seen.push(read)
+        const answered = receipt(read)
+        return answered instanceof Response
+          ? answered
+          : HttpResponse.json(answered, { status: url.searchParams.has('dry_run') ? 200 : 201 })
+      }),
+    )
+    return seen
+  }
+
+  const refusing = (name: string) =>
+    HttpResponse.json(
+      { type: PROBLEM_TYPES.invalidFile, title: 'Invalid file', status: 422, file: name },
+      { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+    )
+
+  const TWO_FILES = [
+    { filename: '2023.csv', rows: 140, period: { from: '2023-01-02', to: '2023-12-29' } },
+    { filename: '2024.csv', rows: 0, period: null },
+  ]
+
+  async function open() {
+    const rendered = renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    return rendered
+  }
+
+  it('lets the picker take several files', async () => {
+    await open()
+
+    expect(fileField()).toHaveAttribute('multiple')
+  })
+
+  it('hands every picked file to one preview, as repeated file parts', async () => {
+    const seen = watching()
+    const { user } = await open()
+
+    await user.upload(fileField(), [A, B])
+
+    await screen.findByRole('dialog')
+    expect(seen).toHaveLength(1)
+    expect(seen[0].url.searchParams.has('dry_run')).toBe(true)
+    expect(seen[0].files).toEqual(['2023.csv', '2024.csv'])
+  })
+
+  it('takes every dropped file, not the first', async () => {
+    const seen = watching()
+    await open()
+    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
+
+    fireEvent.drop(table, dragOf([A, B]))
+
+    await screen.findByRole('dialog')
+    expect(seen[0].files).toEqual(['2023.csv', '2024.csv'])
+  })
+
+  it('names a batch in flight by its count, not by a filename', async () => {
+    server.use(http.post(ROUTES.eventsImport, () => new Promise(() => {})))
+    const { user } = await open()
+
+    await user.upload(fileField(), [A, B])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      await within(dialog).findByText('Lecture de 2 fichiers et vérification des devises…'),
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByText(/Lecture de 2023\.csv/)).not.toBeInTheDocument()
+  })
+
+  it('takes nothing from a drop that carries no file', async () => {
+    const seen = watching()
+    await open()
+    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
+
+    fireEvent.drop(table, dragOf([]))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(seen).toEqual([])
+  })
+
+  it('lists each file with its own count under the batch total', async () => {
+    watching(() => aReceipt({ rows: 140, files: TWO_FILES, written: 140 }))
+    const { user } = await open()
+
+    await user.upload(fileField(), [A, B])
+
+    const block = (await screen.findByRole('heading', { name: 'Les fichiers' })).closest(
+      'section',
+    ) as HTMLElement
+    const rows = within(block).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('2023.csv')).toBeInTheDocument()
+    expect(
+      within(rows[0]).getByText(/140 lignes · 2 janv\. 2023 – 29 déc\. 2023/),
+    ).toBeInTheDocument()
+    expect(within(rows[1]).getByText('aucun événement')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('2 fichiers')).toBeInTheDocument()
+  })
+
+  it('draws no files block for a single file', async () => {
+    watching()
+    const { user } = await open()
+
+    await user.upload(fileField(), A)
+
+    await windowImport()
+    expect(screen.queryByRole('heading', { name: 'Les fichiers' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('2023.csv')).toBeInTheDocument()
+  })
+
+  it('writes the batch with one request carrying every file', async () => {
+    const seen = watching(() => aReceipt({ files: TWO_FILES }))
+    const { user } = await open()
+    await user.upload(fileField(), [A, B])
+
+    await user.click(await windowImport())
+
+    await waitFor(() => expect(seen).toHaveLength(2))
+    expect(seen[1].url.searchParams.has('dry_run')).toBe(false)
+    expect(seen[1].files).toEqual(['2023.csv', '2024.csv'])
+  })
+
+  it('names the refused file and lets the reader remove it', async () => {
+    const seen = watching((read) =>
+      read.files.includes('2024.csv') ? refusing('2024.csv') : aReceipt(),
+    )
+    const { user } = await open()
+
+    await user.upload(fileField(), [A, B])
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'L’application a refusé 2024.csv et n’a rien écrit.',
+    )
+    const block = screen
+      .getByRole('heading', { name: 'Les fichiers' })
+      .closest('section') as HTMLElement
+    expect(within(block).getByText('refusé')).toBeInTheDocument()
+    expect(windowImportNow()).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Retirer 2024.csv' }))
+
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
+    expect(seen).toHaveLength(2)
+    expect(seen[1].files).toEqual(['2023.csv'])
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('puts focus on the next remove button, else on the title, after a removal', async () => {
+    watching()
+    const { user } = await open()
+    await user.upload(fileField(), [A, B, file('2025.csv')])
+    await windowImport()
+
+    await user.click(screen.getByRole('button', { name: 'Retirer 2023.csv' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Retirer 2024.csv' })).toHaveFocus(),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Retirer 2025.csv' }))
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Ce que cet import ferait' })).toHaveFocus(),
+    )
+  })
+
+  it('forgets the answers when a file is removed', async () => {
+    const seen = watching(() =>
+      aReceipt({
+        files: TWO_FILES,
+        file_accounts: [{ name: 'TR', rows: 3 }],
+        duplicate_rows: [aDuplicateRow()],
+      }),
+    )
+    const { user } = await open()
+    await user.upload(fileField(), [A, B])
+    await user.selectOptions(await screen.findByLabelText('Cible pour TR'), 'beta')
+    await user.click(
+      await screen.findByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Retirer 2024.csv' }))
+
+    await waitFor(() => expect(seen[seen.length - 1].files).toEqual(['2023.csv']))
+    const last = seen[seen.length - 1].url
+    expect(JSON.parse(last.searchParams.get('map') ?? '{}')).toEqual({})
+    expect(last.searchParams.has('write_duplicates')).toBe(false)
+    expect(await screen.findByLabelText('Cible pour TR')).toHaveValue('')
+    expect(
+      screen.getByLabelText('Écrire quand même les lignes déjà dans votre grand livre'),
+    ).not.toBeChecked()
+  })
+
+  it('starts a group repeated across two files on one copy', async () => {
+    const across = aDuplicateRow({
+      event_type: 'DIVIDEND',
+      symbol: 'ZZA',
+      quantity: null,
+      unit_price: null,
+      amount: 8.5,
+      duplicate_of: null,
+      repeat_of: 0,
+      file: 1,
+      repeat_of_file: 0,
+    })
+    const within_ = aDuplicateRow({
+      event_type: 'DIVIDEND',
+      symbol: 'ZZB',
+      quantity: null,
+      unit_price: null,
+      amount: 3,
+      duplicate_of: null,
+      repeat_of: 2,
+      file: 1,
+      repeat_of_file: 1,
+    })
+    const seen = watching((read) => {
+      const kept = read.repeats.length > 0
+      const rows = [across, within_].filter(
+        (row) => !kept || !read.repeats.includes(String(row.repeat_of)),
+      )
+      return aReceipt({
+        files: TWO_FILES,
+        rows: 4,
+        written: 4 - rows.length,
+        duplicates: rows.length,
+        duplicate_rows: read.url.searchParams.has('dry_run') && !kept ? [across, within_] : rows,
+      })
+    })
+    const { user } = await open()
+
+    await user.upload(fileField(), [A, B])
+
+    const block = (
+      await screen.findByRole('heading', { name: 'Répétées dans les fichiers' })
+    ).closest('section') as HTMLElement
+    const radios = within(block).getAllByRole('radio', { name: 'N’en écrire qu’une' })
+    expect(radios[0]).toBeChecked()
+    expect(within(block).getAllByRole('radio', { name: 'Écrire les deux' })[1]).toBeChecked()
+    expect(within(block).getByText('2 fois, dans 2023.csv et 2024.csv')).toBeInTheDocument()
+    expect(
+      within(block).getByText(/vient le plus souvent de deux exports qui se chevauchent/),
+    ).toBeInTheDocument()
+    // The census carries nothing; the writing read carries the in-file group only.
+    await waitFor(() => expect(seen.map((read) => read.repeats)).toEqual([[], ['2']]))
+
+    await user.click(windowImportNow())
+
+    await waitFor(() => expect(seen[seen.length - 1].url.searchParams.has('dry_run')).toBe(false))
+    expect(seen[seen.length - 1].repeats).toEqual(['2'])
+  })
+
+  it('says a batch with no event writes nothing, by its count', async () => {
+    watching(() =>
+      aReceipt({ rows: 0, written: 0, period: null, accounts: [], symbols: [], files: TWO_FILES }),
+    )
+    const { user } = await open()
+    await user.upload(fileField(), [A, B])
+
+    expect(
+      await screen.findByText(
+        'Ces 2 fichiers ne portent aucun événement : il n’y a rien à écrire.',
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(windowImportNow())
+
+    expect(
+      await screen.findByText('Ces 2 fichiers ne portaient aucun événement : rien n’a été écrit.'),
+    ).toBeInTheDocument()
+  })
+
+  it('sends one currency answer for the whole batch', async () => {
+    const seen = watching(() =>
+      aReceipt({ files: TWO_FILES, foreign_lines: [{ symbol: 'AAPL', currency: 'USD', rows: 5 }] }),
+    )
+    const { user } = await open()
+    await user.upload(fileField(), [A, B])
+
+    await user.click(await screen.findByLabelText('En USD, la devise de chaque titre'))
+    await waitFor(() => expect(windowImportNow()).toBeEnabled())
+    await user.click(windowImportNow())
+
+    await waitFor(() => expect(seen[seen.length - 1].url.searchParams.has('dry_run')).toBe(false))
+    const write = seen[seen.length - 1].url.searchParams
+    expect(write.getAll('amounts_in')).toEqual(['quote'])
+    expect(write.getAll('foreign')).toEqual(['AAPL:USD'])
+    expect(screen.queryAllByRole('radio')).toHaveLength(0)
+  })
+})
+
+describe('an install that has imported nothing, and the format it reads (#1266)', () => {
+  it('names the columns a file is read by', async () => {
+    renderImports({ events: [] })
+
+    const label = await screen.findByText('Colonnes attendues')
+    const columns = label.nextElementSibling as HTMLElement
+    expect(columns).toHaveTextContent(EVENT_FILE_COLUMNS.join(', '))
+    expect(columns.textContent?.split(', ')).toHaveLength(10)
+  })
+
+  it('says the account column holds a declared account id', async () => {
+    renderImports({ events: [] })
+
+    expect(
+      await screen.findByText(
+        'La colonne « account » porte l’identifiant d’un compte déclaré dans Comptes.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('offers a template whose header is the column list', async () => {
+    renderImports({ events: [] })
+
+    const link = await screen.findByRole('link', { name: 'Télécharger un modèle (.csv)' })
+
+    expect(link).toHaveAttribute('download', 'suivi-bourse-template.csv')
+    const [, body] = (link.getAttribute('href') ?? '').split('data:text/csv;charset=utf-8,')
+    expect(decodeURIComponent(body)).toBe(`${EVENT_FILE_COLUMNS.join(',')}\n`)
+  })
+
+  it('links the format section of the docs in the reader language', async () => {
+    renderImports({ events: [] })
+
+    const link = await screen.findByRole('link', { name: 'Le format, colonne par colonne' })
+
+    expect(link).toHaveAttribute(
+      'href',
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/import-your-events#format',
+    )
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noreferrer'))
+  })
+
+  it('keeps the template header equal to the docs example', () => {
+    const page = fs.readFileSync(
+      path.resolve(import.meta.dirname, '../../../../../..', 'website/docs/import-your-events.mdx'),
+      'utf8',
+    )
+
+    const example = page.split('## The format {#format}')[1].split('```csv\n')[1].split('\n')[0]
+
+    expect(example.split(',')).toEqual([...EVENT_FILE_COLUMNS])
   })
 })

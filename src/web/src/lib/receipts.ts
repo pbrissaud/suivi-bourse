@@ -48,7 +48,11 @@ export type Receipt =
   | { kind: 'export.running'; file: ExportFile }
   /** It is on the reader's disk. */
   | { kind: 'export.saved'; file: ExportFile }
-  /** A file is on its way in and its currencies are being checked (#811, #1261). */
+  /**
+   * A file is on its way in and its currencies are being checked (#811, #1261).
+   * `filename` is what the sentence names: the file's own name, or — for a
+   * batch — the files count, said by the caller, which holds the `t` (#1266).
+   */
   | { kind: 'import.checking'; filename: string }
   /**
    * **The same sentence, one moment earlier** (#813, `CONTEXT.md` § Receipt).
@@ -67,8 +71,8 @@ export type Receipt =
       accounts: number
       symbols: number
     }
-  /** The forecast for a file with no row in it: there is nothing to write. */
-  | { kind: 'import.forecast.empty'; filename: string }
+  /** The forecast for files with no row in them: there is nothing to write. */
+  | { kind: 'import.forecast.empty'; files: readonly string[] }
   /**
    * **What of the file the ledger already has** — said in both moments (#813).
    *
@@ -106,7 +110,7 @@ export type Receipt =
       symbols: number
     }
   /** It landed and wrote nothing: a header with no row under it. */
-  | { kind: 'import.empty'; filename: string }
+  | { kind: 'import.empty'; files: readonly string[] }
   /**
    * The ticked rows were deleted, and this is **what actually left** (#814,
    * #1113).
@@ -162,10 +166,20 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
     // **A file that wrote nothing has its own sentence**, not the other one at
     // zero: *0 lines written, from — to —* would state a period the file does
     // not carry, and no plural rule can invent the two days that are missing.
+    //
+    // **From two files on, the count is said and no name is** (#1266): a list of
+    // names in a sentence is the thing the files block is for.
     case 'import.empty':
-      return { message: 'receipt.import.empty', values: { file: receipt.filename } }
+      return receipt.files.length > 1
+        ? { message: 'receipt.import.empty.many', values: { count: receipt.files.length } }
+        : { message: 'receipt.import.empty', values: { file: receipt.files[0] ?? '' } }
     case 'import.forecast.empty':
-      return { message: 'receipt.import.forecast.empty', values: { file: receipt.filename } }
+      return receipt.files.length > 1
+        ? {
+            message: 'receipt.import.forecast.empty.many',
+            values: { count: receipt.files.length },
+          }
+        : { message: 'receipt.import.forecast.empty', values: { file: receipt.files[0] ?? '' } }
     case 'import.known':
       return { message: 'receipt.import.known', values: { count: receipt.count } }
     case 'import.known.forecast':

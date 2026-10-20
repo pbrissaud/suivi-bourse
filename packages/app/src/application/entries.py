@@ -58,10 +58,13 @@ class Duplicate:
 
     ``held`` is the ledger row it repeats, or ``None`` when it repeats an earlier
     line of the file itself — then ``repeat_of`` is that first copy's index.
+    ``index`` is this line's own position in the list that was split (for a
+    batch, the merged one).
     """
 
     event: Event
     held: Optional[Event]
+    index: int
     repeat_of: Optional[int] = None
 
 
@@ -236,7 +239,7 @@ def split_duplicates(store, drafts: Sequence[Event], *,
                      write_held: bool = False,
                      write_repeats: AbstractSet[int] = frozenset()
                      ) -> Tuple[List[Event], List[Duplicate]]:
-    """One file, cut in two: what is written, and what is skipped as a duplicate.
+    """One batch (or file), cut in two: what is written, and what is skipped as a duplicate.
 
     A line the ledger holds is skipped unless ``write_held``. A line the file
     repeats is skipped unless the index of its **first copy** is in
@@ -254,14 +257,15 @@ def split_duplicates(store, drafts: Sequence[Event], *,
             if write_held:
                 fresh.append(draft)
             else:
-                duplicates.append(Duplicate(draft, held=held[key]))
+                duplicates.append(Duplicate(draft, held=held[key], index=index))
         elif key in first:
             repeated.add(first[key])
             if first[key] in write_repeats:
                 fresh.append(draft)
             else:
                 duplicates.append(
-                    Duplicate(draft, held=None, repeat_of=first[key]))
+                    Duplicate(draft, held=None, repeat_of=first[key],
+                              index=index))
         else:
             first[key] = index
             fresh.append(draft)
