@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { signClass, signOf } from '@/lib/sign'
+import { figureClass, signClass, signOf } from '@/lib/sign'
 
 describe('the colour of a money figure', () => {
   it('separates a zero from an absence, which the prototype did not', () => {
@@ -31,5 +31,16 @@ describe('the colour of a money figure', () => {
   it('answers gain and loss on either side', () => {
     expect(signClass(0.01)).toBe('text-gain')
     expect(signClass(-0.01)).toBe('text-loss')
+  })
+})
+
+describe('a figure that is neither money made nor money lost (#1282)', () => {
+  it('figureClass: the colour of text for a figure of either sign, muted for an absence', () => {
+    expect(figureClass(4212.8)).toBe('text-foreground')
+    expect(figureClass(-1200)).toBe('text-foreground')
+    expect(figureClass(0)).toBe('text-foreground')
+    expect(figureClass(null)).toBe('text-muted-foreground')
+    expect(figureClass(undefined)).toBe('text-muted-foreground')
+    expect(figureClass(Number.NaN)).toBe('text-muted-foreground')
   })
 })

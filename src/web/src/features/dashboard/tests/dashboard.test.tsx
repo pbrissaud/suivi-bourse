@@ -2370,7 +2370,7 @@ describe('the comparison card (#1205)', () => {
     renderCard(ready())
     const region = await card('Face au MSCI World')
 
-    expect(within(region).getByText('+4 212,80 €')).toHaveClass('text-gain', 'text-2xl')
+    expect(within(region).getByText('+4 212,80 €')).toHaveClass('text-foreground', 'text-2xl')
     expect(region).toHaveTextContent(
       'd’avance, avec les mêmes versements · 4 mars 2019 → 17 sept. 2026',
     )
@@ -2382,16 +2382,36 @@ describe('the comparison card (#1205)', () => {
     )
   })
 
+  it('the benchmark card writes its gap in the colour of text', async () => {
+    renderCard(
+      ready({
+        gap_gross: -12.5,
+        per_account: [
+          aBenchmarkAccountRow({ account: 'PEA', gap_gross: 5000 }),
+          aBenchmarkAccountRow({ account: 'CTO', gap_gross: -787.2 }),
+        ],
+      }),
+    )
+    const region = await card()
+
+    for (const figure of [/^[-−]12,50 €$/, /^[-−]787,20 €$/, /^\+5\D?000,00 €$/]) {
+      const node = within(region).getByText(figure)
+      expect(node).toHaveClass('text-foreground')
+      expect(node).not.toHaveClass('text-loss')
+      expect(node).not.toHaveClass('text-gain')
+    }
+  })
+
   // To the cent: `−0,004 €` is a zero, not a loss printed as `−0,00 €`.
   it.each([
-    [-12.5, /^[-−]12,50 €$/, 'de retard', 'text-loss'],
+    [-12.5, /^[-−]12,50 €$/, 'de retard', 'text-foreground'],
     [0.004, /^0,00 €$/, 'à égalité', 'text-foreground'],
     [-0.004, /^0,00 €$/, 'à égalité', 'text-foreground'],
     // Half a cent is a cent on either side, as `Intl` would round it.
-    [0.005, /^\+0,01 €$/, 'd’avance', 'text-gain'],
-    [-0.005, /^[-−]0,01 €$/, 'de retard', 'text-loss'],
+    [0.005, /^\+0,01 €$/, 'd’avance', 'text-foreground'],
+    [-0.005, /^[-−]0,01 €$/, 'de retard', 'text-foreground'],
     // `1.005 * 100` is 100.4999… in binary: the cent is the decimal's.
-    [1.005, /^\+1,01 €$/, 'd’avance', 'text-gain'],
+    [1.005, /^\+1,01 €$/, 'd’avance', 'text-foreground'],
   ])('reads %s as %s, %s', async (gap, figure, verdict, tone) => {
     renderCard(ready({ gap_gross: gap }))
     const region = await card()

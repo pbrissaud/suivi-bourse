@@ -43,6 +43,15 @@ export function signClass(value: number | null | undefined): string {
   return CLASSES[signOf(value)]
 }
 
+/**
+ * A figure that is neither money made nor money lost — a gap against the
+ * benchmark reference (#1282): the colour of text whatever its sign, the grey of
+ * absence for no figure.
+ */
+export function figureClass(value: number | null | undefined): string {
+  return CLASSES[signOf(value) === 'absent' ? 'absent' : 'zero']
+}
+
 /** The colour of a cell whose content is not a number at all — the one predicate (#860). */
 export function toneOf(rendering: Rendering, value: number | null): string {
   return rendering.kind === 'figure' ? signClass(value) : signClass(null)

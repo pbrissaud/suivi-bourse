@@ -162,6 +162,7 @@ keep their contrast.
   neutral, `foreground` in its figure: colouring a sign known in advance tells nothing and
   dilutes the red of a real loss. The predicate is `termCarriesSign` in
   `src/web/src/lib/gain.ts`.
+- A gap against the benchmark reference is neither money made nor money lost: it is written with its sign in `foreground`, on the Benchmark page, in its per-account rows and on the dashboard card, and its bars and the band between the two curves are `muted-foreground`. Each side's own return keeps its sign colour (#1282).
 - The dashboard's *Performance* curve is the one drawing coloured by its sign: `gain` above
   the 0 % line, `loss` below it, split exactly at zero. The 0 % line and the axis carry the
   same information without colour. Both colours are the `--gain` and `--loss` tokens.
@@ -233,6 +234,7 @@ shipped face would cost every screen for no reader benefit.
 - **< 768 px:** single column.
 - A table page has no side panel: its filters are a toolbar above the table, its
   selection's actions appear only with a selection.
+- The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
   flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
   below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).
@@ -435,3 +437,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-18 | One layout system for the shell (#1276) | Three choices made by the owner: the page title stays in the header bar on the Figure rung (over moving it into the content or keeping it at 20 px); language, theme and density move to Settings › On this device (over a header menu or table toolbars); a statement gains a third grid track from 1 600 px (over a page bounded at 1 280 px). Also: the sidebar goes back to the 200 px this file always said; the ledger joins the pages the owner reads, and the foot keeps the administration; one 1 040 px cap gives way to a width per kind of content, because a cap starves tables while a statement stretched to 800 px stops reading as a statement. |
 | 2026-10-18 | The page title goes quiet (supersedes the title rung of #1276) | Seen on screen, a 28 px title in a 56 px bar filled the bar, stacked a second display size 60 px above the hero, and stranded its 12 px subtitle. The owner chose the quiet bar: 15/22 at 500, the subtitle after a `·`. |
 | 2026-10-18 | Gain leaves the primary; action becomes ink (#1283) | The 17/10 audit found the mint on buttons, the current nav item, links, the first account, the eight allocation stops and every gain: a green figure read as a link and a green button as a gain. `--gain` moves to `chart-2`, which nothing else reads and which differs from `primary` on 14 of 16 stock tweakcn theme/ground pairs, against 0 of 16 when it is `primary`. Atelier's `primary` becomes a warm ink. The allocation and the account identities take the other chart hues, measured in CI. Amends the 2026-10-10 row "Semantic tokens are aliases": its alias rule stands, its `gain → primary` does not. |
+| 2026-10-19 | The Benchmark page states its period and its reference first; a shortfall is not a loss (#1282) | The period was an orphan line and the picker sat in the chart's corner while the whole page depends on it. The period joins the header subtitle like « Cours au … », and the picker becomes the first row, since the bar is closed to controls. A gap behind the reference drawn in 60 px red read as money lost; it is money not made, so the gap takes no sign colour anywhere, and the returns, which are gains or losses, keep theirs. |
