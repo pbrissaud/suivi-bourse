@@ -577,7 +577,7 @@ def test_only_the_gate_reads_the_auth_row():
     readers = sorted(str(p.relative_to(root)) for p in root.rglob('*.py')
                      if 'auth_secret' in p.read_text(encoding='utf-8'))
     assert readers == ['app/src/application/auth_gate.py',
-                       'store/src/application/store.py']
+                       'store/src/application/store_ddl.py']
 
 
 def test_the_current_code_is_throttled_even_with_a_session(opened):

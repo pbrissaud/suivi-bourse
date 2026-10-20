@@ -6,6 +6,7 @@ import duckdb
 
 from application import schema_steps
 from application import store as store_module
+from application import store_ddl, store_steps
 
 #: The marks a store migrated before #1198 carries, written out rather than
 #: read from the code: they are what is on the disks.
@@ -59,9 +60,11 @@ def test_a_store_migrated_before_the_split_opens_without_running_a_step(
 def test_the_store_imports_nothing_above_it():
     """The cycle #1198 broke: the store reaches only what sits below it, and a
     deferred import inside a function counts as much as one at the top."""
-    source = Path(store_module.__file__).read_text()
     imported = set()
-    for node in ast.walk(ast.parse(source)):
+    # The store is three modules since #1201: connection, DDL and steps.
+    nodes = (node for module in (store_module, store_ddl, store_steps)
+             for node in ast.walk(ast.parse(Path(module.__file__).read_text())))
+    for node in nodes:
         if isinstance(node, ast.ImportFrom):
             # ``from .entries import x`` and ``from . import entries`` are
             # spelled relative to ``application``, where the store lives.
@@ -76,7 +79,8 @@ def test_the_store_imports_nothing_above_it():
             imported.update(alias.name for alias in node.names)
     assert {name for name in imported if name.startswith('application')} == {
         'application.boot_env', 'application.settings_registry',
-        'application.incoming', 'application.events.schemas'}
+        'application.incoming', 'application.events.schemas',
+        'application.store', 'application.store_ddl', 'application.store_steps'}
 
 
 def test_the_amounts_currency_step_adds_a_null_column_and_keeps_rows(tmp_path):
