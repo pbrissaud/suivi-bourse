@@ -52,6 +52,18 @@ def _add_agent_model_name(connection) -> None:
     store.add_column(connection, 'agent_config', 'model_name', 'VARCHAR')
 
 
+def _add_agent_thinking(connection) -> None:
+    """Give ``agent_config`` the analyst's thinking level (#1191).
+
+    A row stored before reads ``low``, the cheap default. A no-op on a new
+    store, whose table already has the column. Not ``NOT NULL``: DuckDB refuses
+    a constraint on an added column, and :func:`agent.change` keeps a write from
+    storing anything but a level, so the DDL says the same.
+    """
+    store.add_column(connection, 'agent_config', 'thinking',
+                     "VARCHAR DEFAULT 'low'")
+
+
 #: Every step, oldest first, under the names stores in the wild already carry.
 #: The rules of :data:`store.STEPS` hold over this list as a whole: a name is an
 #: identity forever, and a new step — the store's own included — is appended
@@ -60,6 +72,7 @@ STEPS = store.STEPS + (
     ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
     ('add_event_amounts_currency', store._add_event_amounts_currency),
     ('add_agent_model_name', _add_agent_model_name),
+    ('add_agent_thinking', _add_agent_thinking),
 )
 
 __all__ = ['STEPS']

@@ -1051,6 +1051,34 @@ describe('pendingAnswer (#1271)', () => {
   }
 })
 
+describe('the reasoning of a stored thread (#1191)', () => {
+  it('is never drawn', async () => {
+    switchedOn()
+    server.use(
+      http.get(ROUTES.agentThread, ({ params }) =>
+        HttpResponse.json({
+          id: String(params.id),
+          title: 'Revenu',
+          messages: [
+            {
+              id: 'a1',
+              role: 'assistant',
+              parts: [
+                { type: 'reasoning', text: 'Je pèse les options.' },
+                { type: 'text', text: 'Voici la réponse.' },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    const { main } = await openPage('/agent/t1')
+
+    expect(await within(main).findByText('Voici la réponse.')).toBeInTheDocument()
+    expect(within(main).queryByText(/Je pèse les options/)).not.toBeInTheDocument()
+  })
+})
+
 describe('the silence before the answer (#1271)', () => {
   const pending = (main: HTMLElement) =>
     within(main).queryByText(fr['agent.waiting'])?.closest('[data-slot=trace-line]') ?? null

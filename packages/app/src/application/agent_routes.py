@@ -165,7 +165,8 @@ def build_app(runtime, mcp) -> Starlette:
         # Off the loop: the first build imports a provider SDK (half a second),
         # and the history is validated whole.
         assistant = await anyio.to_thread.run_sync(
-            lambda: agent.build_agent(agent.build_model(settings), mcp))
+            lambda: agent.build_agent(
+                agent.build_model(settings), mcp, thinking=settings['thinking']))
         adapter = _Adapter(
             agent=assistant,
             run_input=run_input, accept=request.headers.get('accept'),
@@ -214,7 +215,7 @@ def build_app(runtime, mcp) -> Starlette:
             usage = result.usage
             logger.info(
                 f"agent turn: {settings['provider']} {settings['model']} "
-                f"input={usage.input_tokens} output={usage.output_tokens} "
+                f"thinking={settings['thinking']} input={usage.input_tokens} output={usage.output_tokens} "
                 f"cache_read={usage.cache_read_tokens} "
                 f"cache_write={usage.cache_write_tokens}")
             try:

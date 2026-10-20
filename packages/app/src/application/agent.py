@@ -66,12 +66,17 @@ MODEL_MAX = 200
 SAID_MAX = 300
 BASE_URL_MAX = 500
 
+#: How hard the analyst thinks (#1191), cheapest first. There is no "off":
+#: on Claude Opus 5.5 and Sonnet 5.5 Pydantic AI drops it and sends nothing, so
+#: the model would think at the API's own default, which costs more than ``low``.
+THINKING = ('low', 'medium', 'high')
+
 _COLUMNS = ('enabled', 'provider', 'model', 'model_name', 'base_url',
-            'api_key', 'key_set_at', 'updated_at')
+            'api_key', 'key_set_at', 'thinking', 'updated_at')
 
 EMPTY = {'enabled': False, 'provider': None, 'model': None, 'model_name': None,
          'base_url': None, 'api_key': None, 'key_set_at': None,
-         'updated_at': None}
+         'thinking': 'low', 'updated_at': None}
 
 _HTTP_URL = re.compile(r'https?://\S+')
 
@@ -100,6 +105,7 @@ def describe(config: dict, **extra: Any) -> dict:
         'model': config['model'],
         'model_name': config['model_name'],
         'base_url': config['base_url'],
+        'thinking': config['thinking'],
         'key': {'set': key is not None,
                 'last4': key[-4:] if key is not None else None,
                 'set_at': instants.iso(config['key_set_at'])},
@@ -119,7 +125,8 @@ def change(config: dict, body: Any) -> tuple:
     """
     if not isinstance(body, dict):
         raise InvalidAgentConfig('a JSON object is required', 'body')
-    allowed = ('enabled', 'provider', 'model', 'model_name', 'base_url')
+    allowed = ('enabled', 'provider', 'model', 'model_name', 'base_url',
+               'thinking')
     for name in body:
         if name not in allowed:
             raise InvalidAgentConfig(
@@ -145,6 +152,9 @@ def change(config: dict, body: Any) -> tuple:
         raise InvalidAgentConfig(
             f"the base URL is an http:// or https:// address of at most "
             f"{BASE_URL_MAX} characters", 'base_url')
+    if 'thinking' in body and body['thinking'] not in THINKING:
+        raise InvalidAgentConfig(
+            f"the thinking level is one of {', '.join(THINKING)}", 'thinking')
     changed = dict(config)
     changed.update(body)
     if isinstance(changed['model'], str):
@@ -261,14 +271,16 @@ def write(store, config: dict, now: datetime) -> None:
     """Keep ``config``, which :func:`check` has passed. Under the write lock."""
     store.execute(
         'INSERT INTO agent_config (id, enabled, provider, model, model_name, '
-        'base_url, api_key, key_set_at, updated_at) '
-        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) '
+        'base_url, api_key, key_set_at, thinking, updated_at) '
+        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
         'ON CONFLICT (id) DO UPDATE SET enabled = excluded.enabled, '
         'provider = excluded.provider, model = excluded.model, '
         'model_name = excluded.model_name, base_url = excluded.base_url, api_key = excluded.api_key, '
-        'key_set_at = excluded.key_set_at, updated_at = excluded.updated_at',
+        'key_set_at = excluded.key_set_at, thinking = excluded.thinking, '
+        'updated_at = excluded.updated_at',
         [config['enabled'], config['provider'], config['model'],
-         config['model_name'], config['base_url'], config['api_key'], config['key_set_at'], now])
+         config['model_name'], config['base_url'], config['api_key'], config['key_set_at'],
+         config['thinking'], now])
     config['updated_at'] = now
 
 
@@ -363,7 +375,7 @@ def build_model(config: dict):
     raise ValueError(f'unknown provider {provider!r}')
 
 
-def build_agent(model, mcp):
+def build_agent(model, mcp, *, thinking: str):
     """The agent: ``model`` over the MCP server's tools, in process.
 
     No tool exists only for the agent. ``deps`` stays empty: the investor's
@@ -375,9 +387,12 @@ def build_agent(model, mcp):
     GPT-5.6); the others ignore it. A turn re-sends all three, so the prefix
     is read back at a tenth of the price, as long as it stays byte-stable:
     nothing per request goes into :data:`SYSTEM_PROMPT` (#1190).
+
+    ``thinking`` is one of :data:`THINKING`. Pydantic AI maps it to each
+    provider's own setting, and a model without reasoning ignores it (#1191).
     """
     from pydantic_ai import Agent
     from pydantic_ai.mcp import MCPToolset
     from pydantic_ai.settings import ModelSettings
     return Agent(model, toolsets=[MCPToolset(mcp)], instructions=SYSTEM_PROMPT,
-                 model_settings=ModelSettings(cache=True))
+                 model_settings=ModelSettings(cache=True, thinking=thinking))
