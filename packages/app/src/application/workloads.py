@@ -80,6 +80,30 @@ class Workloads:
         self._backfill.complete = complete
 
     @property
+    def _backfill_unreachable(self) -> Dict[str, datetime]:
+        return self._backfill.unreachable
+
+    @_backfill_unreachable.setter
+    def _backfill_unreachable(self, unreachable: Dict[str, datetime]) -> None:
+        self._backfill.unreachable = unreachable
+
+    @property
+    def _backward_retry_at(self) -> Dict[str, datetime]:
+        return self._backfill.backward_retry_at
+
+    @_backward_retry_at.setter
+    def _backward_retry_at(self, retry_at: Dict[str, datetime]) -> None:
+        self._backfill.backward_retry_at = retry_at
+
+    @property
+    def _forward_retry_at(self) -> Dict[str, datetime]:
+        return self._backfill.forward_retry_at
+
+    @_forward_retry_at.setter
+    def _forward_retry_at(self, retry_at: Dict[str, datetime]) -> None:
+        self._backfill.forward_retry_at = retry_at
+
+    @property
     def _lateral_retry_at(self) -> Dict[str, datetime]:
         return self._backfill.lateral_retry_at
 

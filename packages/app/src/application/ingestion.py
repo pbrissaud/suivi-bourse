@@ -55,8 +55,12 @@ class IngestionWorkload:
         targets = {
             symbol: carrying.holding_bounds(window[0], window[1], now)[0]
             for symbol, window in windows.items()}
+        # Unreachable (#1288) is settled too: the pass keeps retrying, but the
+        # reconstruction no longer waits on it.
+        settled = (self.facade._backfill_complete,
+                   self.facade._backfill_unreachable)
         complete = sum(1 for symbol, target in targets.items()
-                       if self.facade._backfill_complete.get(symbol) == target)
+                       if any(done.get(symbol) == target for done in settled))
         return complete, len(windows)
 
     def review_installation_facts(self) -> None:
