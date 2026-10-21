@@ -34,11 +34,21 @@ export const RATIO_DECIMALS = 4
 
 export function signOf(value: number | null | undefined, decimals = MONEY_DECIMALS): Sign {
   if (value === null || value === undefined || Number.isNaN(value)) return 'absent'
-  // Half away from zero, as `Intl` rounds. The product is trimmed to 15
-  // significant digits first: `1.005 * 100` is `100.49999999999999` in binary,
-  // and the decimal the owner reads is 1,005.
-  if (Math.round(Number((Math.abs(value) * 10 ** decimals).toPrecision(15))) === 0) return 'zero'
+  if (roundedAt(decimals).format(Math.abs(value)) === '0') return 'zero'
   return value > 0 ? 'gain' : 'loss'
+}
+
+// `Intl` itself decides, because it is what writes the digits: it rounds the
+// number's shortest decimal, so `1.005` is `1,01` and `0.004999999999999999`
+// is `0,00`, which no arithmetic on the binary value reproduces at both ends.
+const ROUNDERS = new Map<number, Intl.NumberFormat>()
+function roundedAt(decimals: number): Intl.NumberFormat {
+  let rounder = ROUNDERS.get(decimals)
+  if (rounder === undefined) {
+    rounder = new Intl.NumberFormat('en', { maximumFractionDigits: decimals, useGrouping: false })
+    ROUNDERS.set(decimals, rounder)
+  }
+  return rounder
 }
 
 const CLASSES: Record<Sign, string> = {

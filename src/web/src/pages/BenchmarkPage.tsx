@@ -287,11 +287,15 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
               share={magnitude(data.portfolio_return)}
               scale={scale}
               // The sign's colour, as on the per-account bars: a loss drawn in
-              // the gain's green read as a gain (#1112).
+              // the gain's green read as a gain (#1112), and a return that reads
+              // `0,0 %` takes neither (#1286).
               fill={
-                signOf(data.portfolio_return ?? null, POINTS_DECIMALS) === 'loss'
-                  ? 'var(--loss)'
-                  : 'var(--gain)'
+                {
+                  gain: 'var(--gain)',
+                  loss: 'var(--loss)',
+                  zero: 'var(--muted-foreground)',
+                  absent: 'var(--muted-foreground)',
+                }[signOf(data.portfolio_return ?? null, POINTS_DECIMALS)]
               }
               size="block"
               className="mt-1.5"

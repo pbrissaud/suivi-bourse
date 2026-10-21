@@ -69,6 +69,13 @@ describe('the sign of the figure shown, not of the raw value (#1286)', () => {
     expect(signOf(-1.005)).toBe('loss')
   })
 
+  it('reads the last double under the half unit as the zero Intl writes', () => {
+    expect(signOf(0.004999999999999999)).toBe('zero')
+    expect(signOf(-0.004999999999999999)).toBe('zero')
+    expect(signOf(0.00004999999999999999, RATIO_DECIMALS)).toBe('zero')
+    expect(signOf(-0.00004999999999999999, RATIO_DECIMALS)).toBe('zero')
+  })
+
   it('keeps a real ratio a gain: 0,4 % is not money', () => {
     expect(signOf(0.004, RATIO_DECIMALS)).toBe('gain')
   })
