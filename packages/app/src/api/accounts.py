@@ -13,6 +13,7 @@ from application import reassignment
 from application import taxation
 from application import taxation_registry
 from application.events.aggregator import AggregationError
+from application.event_body import ISO_DAY, InvalidBody
 from api.problem import (
     GESTURE_WRITE,
     bad_request,
@@ -24,13 +25,11 @@ from api.problem import (
 )
 from api.common import (
     DEFAULT_HISTORY_WINDOW,
-    _ISO_DAY,
     _reader,
     _snapshot,
     _store,
     current_runtime,
     _unreplayable,
-    _InvalidBody,
     _json_object,
     _flag,
     _parse_window,
@@ -95,7 +94,7 @@ def create_account():
 
     try:
         day = _opening_day(body)
-    except _InvalidBody as exc:
+    except InvalidBody as exc:
         return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
@@ -156,7 +155,7 @@ def update_account(account_id: str):
 
     try:
         day = _opening_day(body)
-    except _InvalidBody as exc:
+    except InvalidBody as exc:
         return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
@@ -238,15 +237,15 @@ def _opening_day(body: dict) -> Optional[date]:
     raw = body.get('opened_on')
     if raw is None:
         return None
-    if not isinstance(raw, str) or not _ISO_DAY.fullmatch(raw.strip()):
-        raise _InvalidBody(
+    if not isinstance(raw, str) or not ISO_DAY.fullmatch(raw.strip()):
+        raise InvalidBody(
             f"opened_on {raw!r} is not a calendar day (YYYY-MM-DD)",
             'opened_on')
     try:
         return date.fromisoformat(raw.strip())
     except ValueError:
-        raise _InvalidBody(f"opened_on {raw!r} is not a day that exists",
-                           'opened_on')
+        raise InvalidBody(f"opened_on {raw!r} is not a day that exists",
+                          'opened_on')
 
 
 # --------------------------------------------------------------------------- #

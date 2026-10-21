@@ -1,6 +1,7 @@
 """The agent's interface — seven read tools, a sale simulator, the owner's
-profile and the one write, a proposal, on the one socket (#749, #1109, #1116,
-#1270)."""
+profile and two proposals, the only writes, on the one socket (#749, #1109,
+#1116, #1119, #1270)."""
+import json
 from datetime import date, datetime, timedelta, timezone
 from functools import cache
 from typing import Any, Dict, List, NotRequired, Optional, TypedDict
@@ -14,9 +15,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from application import account_facts
 from application.account_facts import AccountsPayload
 from application import benchmark_view
+from application import event_proposals
 from application import instants
 from application import portfolio_facts
 from application import profile
+from application import proposals
 from application import rhythm
 from application import simulation
 from application import store as store_module
@@ -793,6 +796,39 @@ these rules is refused in words naming the rule, and nothing is recorded.
 {_ABSENCE}
 """
 
+PROPOSE_EVENTS_DESCRIPTION = f"""\
+Propose ledger events the owner stated ("j'ai acheté 10 CW8 le 3 mars à 512 €").
+THIS WRITES NO EVENT: it records a proposal the owner reviews in SuiviBourse's
+import preview and merges or ignores, and only what they merge reaches the
+ledger. A proposal left unmerged expires after 7 days. Never tell the owner a
+proposed event is recorded; say it awaits their review, and give them the
+`preview_url`.
+
+`title` is one line of 1 to 80 characters naming the batch. `events_json` is a
+JSON STRING holding a list of 1 to 200 event objects, one per ledger line:
+- date: an ISO calendar day, YYYY-MM-DD.
+- event_type: BUY, SELL, GRANT, DIVIDEND, DEPOSIT or WITHDRAWAL.
+- account: the id of an account that EXISTS (see `list_accounts`). You never
+  create an account: an unknown one refuses the whole batch.
+- symbol and name for a BUY, SELL, GRANT or DIVIDEND; quantity and unit_price
+  for a BUY, SELL or GRANT; amount for a DIVIDEND, DEPOSIT or WITHDRAWAL; fee
+  and notes are optional. Amounts are in the reporting currency unless the
+  owner says otherwise in the preview.
+- Never set mark: the app sets it, and it refuses a batch that carries one.
+
+THE WHOLE BATCH IS ACCEPTED OR REFUSED. A line that is not an event, an unknown
+account, a SELL past the quantity held, or a batch the ledger could not replay
+refuses it in words naming the line ("line 3 (event_type): ...") and records
+nothing: fix that line and propose again. A line the ledger already holds is not
+an error; the owner sees it in the preview, unchecked.
+
+The answer is the proposal: `proposal_id`, its `title`, `count` of events,
+`status` (always ready here), `created_at`, `expires_at`, `preview_url` where
+the owner reviews it, and a `note` to relay.
+
+{_ABSENCE}
+"""
+
 
 class DeclaredIncome(TypedDict):
     declared: bool
@@ -830,6 +866,17 @@ class ProposedFact(TypedDict):
     note: str
 
 
+class ProposedEvents(TypedDict):
+    proposal_id: str
+    title: str
+    count: int
+    status: str
+    created_at: str
+    expires_at: str
+    preview_url: str
+    note: str
+
+
 #: One validator per shape, built on first use and kept.
 _adapter = cache(TypeAdapter)
 
@@ -842,9 +889,9 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             "SuiviBourse tracks one person's stock portfolio. A portfolio here "
             "is a dated ledger of what its owner did; everything else — the "
             "positions, the prices, the returns — is derived from it. Every "
-            "tool reads, except `propose_profile_fact`, which records a "
-            "proposal the owner confirms or ignores in the app; no tool "
-            "confirms one. One tool simulates a sale; a simulation changes "
+            "tool reads, except `propose_profile_fact` and `propose_events`, "
+            "which record a proposal the owner confirms or ignores in the "
+            "app; no tool confirms one. One tool simulates a sale; a simulation changes "
             "nothing and is not advice.\n\n"
             "THIS IS NOT THE OWNER'S WHOLE WEALTH. The ledger holds listed "
             "instruments, valued from market data: anything held outside that "
@@ -866,8 +913,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     def _store():
         """The runtime's read view on the store, raising when there is none.
 
-        Every tool below reads, the simulator too, except
-        ``propose_profile_fact``, which writes under the writers' mutex — so
+        Every tool below reads, the simulator too, except the two proposals,
+        which write under the writers' mutex — so
         the reads go through the same connection of its own the ``/api``
         blueprint uses (#967), rather than waiting behind a background pass.
         """
@@ -903,6 +950,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
             raise ToolError(f"this simulation is refused: {exc}") from exc
         except profile.InvalidProfileFact as exc:
             raise ToolError(f"this fact is refused: {exc}") from exc
+        except event_proposals.InvalidProposal as exc:
+            raise ToolError(f"this proposal is refused: {exc}") from exc
         except profile.UnknownFact as exc:
             raise ToolError(
                 f"there is no project {exc} in the profile; read "
@@ -1085,6 +1134,28 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                     'note': "Le propriétaire doit confirmer dans SuiviBourse ; "
                             "rien n'est noté avant."}
         return reading(_body, ProposedFact)
+
+    @mcp.tool(description=PROPOSE_EVENTS_DESCRIPTION)
+    def propose_events(title: str, events_json: str) -> ProposedEvents:
+        """**The other write on this server**: a ``proposal`` row, ``ready``.
+
+        No tool merges, ignores or reproposes it; only the app's
+        ``/api/agent/proposals/<id>/merge`` writes the events.
+        """
+        def _body():
+            """The write, under the writers' mutex like every other."""
+            now = datetime.now(timezone.utc)
+            with runtime.config_manager.writing() as opened:
+                proposal_id = event_proposals.propose(
+                    opened, title, events_json, now)
+            return {'proposal_id': proposal_id, 'title': title.strip(),
+                    'count': len(json.loads(events_json)), 'status': 'ready',
+                    'created_at': instants.iso(now),
+                    'expires_at': instants.iso(now + proposals.EXPIRY),
+                    'preview_url': f'/ledger?proposal={proposal_id}',
+                    'note': "Le propriétaire doit revoir et fusionner dans "
+                            "SuiviBourse ; rien n'est inscrit avant."}
+        return reading(_body, ProposedEvents)
 
     return mcp
 

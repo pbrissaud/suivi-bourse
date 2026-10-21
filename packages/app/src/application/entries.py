@@ -104,57 +104,71 @@ def create_many(store, drafts: Sequence[Event], *,
     (#1261), by symbol: stamped on its events' ``amounts_currency``. A symbol it
     does not name is stamped with nothing.
     """
-    stated = stated or {}
     if not drafts and base_currency is None and not declare_accounts:
         return []
 
     with store.transaction():
-        for account_id in declare_accounts:
-            # **The id and nothing else.** `create_account` falls the label back
-            # to the id, which is what a row nobody named must carry; passing a
-            # second argument here would put that word in the *label*, the type
-            # having stopped being a parameter with #916.
-            accounts_module.create_account(store, account_id)
-            logger.info(f"The file names {account_id} and nobody had declared "
-                        f"it; declaring it with the import")
+        return record_many(store, drafts, base_currency=base_currency,
+                           declare_accounts=declare_accounts, stated=stated)
 
-        if base_currency is not None:
-            store.execute(
-                'INSERT INTO setting (key, value) VALUES (?, ?) '
-                'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
-                ['base_currency',
-                 settings_registry.stored_form('base_currency', base_currency)])
-            logger.info(f"The file declares {base_currency} as the reporting "
-                        f"currency; taking it up")
 
-        settled = _settled_all(store, drafts)
-        _refuse_all(store, settled)
+def record_many(store, drafts: Sequence[Event], *,
+                base_currency: Optional[str] = None,
+                declare_accounts: Sequence[str] = (),
+                stated: Optional[Mapping[str, str]] = None) -> List[Event]:
+    """:func:`create_many` for a caller already inside its own transaction.
 
-        if not settled:
-            return []
+    ``store.transaction()`` does not nest, so a gesture that must write the
+    ledger *and* something else together (a merged proposal, #1119) opens the
+    one transaction and writes the ledger through here.
+    """
+    stated = stated or {}
+    for account_id in declare_accounts:
+        # **The id and nothing else.** `create_account` falls the label back
+        # to the id, which is what a row nobody named must carry; passing a
+        # second argument here would put that word in the *label*, the type
+        # having stopped being a parameter with #916.
+        accounts_module.create_account(store, account_id)
+        logger.info(f"The file names {account_id} and nobody had declared "
+                    f"it; declaring it with the import")
 
-        next_id = store.reserve('event', len(settled))
-        store.write_arrow(
-            f'INSERT INTO symbol (symbol) SELECT symbol FROM {INCOMING} '
-            'ON CONFLICT DO NOTHING',
-            ('symbol',),
-            [[symbol] for symbol in sorted({event.symbol for event in settled
-                                            if event.symbol})])
-        stored = [replace(event, id=next_id + offset,
-                          account=event.account or DEFAULT_ACCOUNT)
-                  for offset, event in enumerate(settled)]
-        store.write_arrow(
-            f'INSERT INTO event ({", ".join(EVENT_COLUMNS)}) '
-            f'SELECT {", ".join(EVENT_COLUMNS)} FROM {INCOMING}',
-            EVENT_COLUMNS,
-            [[event.id, event.date, event.event_type.value, event.account,
-              event.symbol, event.name, event.quantity, event.unit_price,
-              event.fee, event.amount, event.notes,
-              stated.get(event.symbol)] for event in stored])
+    if base_currency is not None:
+        store.execute(
+            'INSERT INTO setting (key, value) VALUES (?, ?) '
+            'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+            ['base_currency',
+             settings_registry.stored_form('base_currency', base_currency)])
+        logger.info(f"The file declares {base_currency} as the reporting "
+                    f"currency; taking it up")
 
-        _stamp_write(store)
-        _replays(store)
-        logger.info(f"Recorded {len(stored)} event(s) from one file")
+    settled = _settled_all(store, drafts)
+    _refuse_all(store, settled)
+
+    if not settled:
+        return []
+
+    next_id = store.reserve('event', len(settled))
+    store.write_arrow(
+        f'INSERT INTO symbol (symbol) SELECT symbol FROM {INCOMING} '
+        'ON CONFLICT DO NOTHING',
+        ('symbol',),
+        [[symbol] for symbol in sorted({event.symbol for event in settled
+                                        if event.symbol})])
+    stored = [replace(event, id=next_id + offset,
+                      account=event.account or DEFAULT_ACCOUNT)
+              for offset, event in enumerate(settled)]
+    store.write_arrow(
+        f'INSERT INTO event ({", ".join(EVENT_COLUMNS)}) '
+        f'SELECT {", ".join(EVENT_COLUMNS)} FROM {INCOMING}',
+        EVENT_COLUMNS,
+        [[event.id, event.date, event.event_type.value, event.account,
+          event.symbol, event.name, event.quantity, event.unit_price,
+          event.fee, event.amount, event.notes,
+          stated.get(event.symbol)] for event in stored])
+
+    _stamp_write(store)
+    _replays(store)
+    logger.info(f"Recorded {len(stored)} event(s) from one file")
     return stored
 
 
@@ -430,6 +444,6 @@ def _replays(store) -> None:
 __all__ = [
     'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
     'UnknownEntry', 'InvalidEntry', 'Duplicate',
-    'create', 'create_many', 'update', 'remove', 'remove_keys',
+    'create', 'create_many', 'record_many', 'update', 'remove', 'remove_keys',
     'content_key', 'split_duplicates', 'judge', 'cap_dividend_fees',
 ]

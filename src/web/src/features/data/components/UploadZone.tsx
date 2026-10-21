@@ -90,7 +90,7 @@ import { receiptMessage } from '@/lib/receipts'
  * a flag the preview never carried would be a flag the server judges for the
  * first time under the button.
  */
-interface Answer {
+export interface Answer {
   correspondence: Correspondence
   /** *These are real orders, write them* — the rows the ledger already holds. */
   writeDuplicates: boolean
@@ -112,7 +112,7 @@ interface Answer {
 }
 
 /** Nothing answered yet — the first preview's answer, and a reset. */
-const NO_ANSWER: Answer = {
+export const NO_ANSWER: Answer = {
   correspondence: NO_CORRESPONDENCE,
   writeDuplicates: false,
   amountsIn: undefined,
@@ -154,7 +154,7 @@ function repeatsToWrite(
  * by it, so the reader can untick and go on instead of being left with *Annuler*
  * as their only move.
  */
-interface Forecast {
+export interface Forecast {
   /** The file read with the duplicates skipped: the census, and its figures. */
   file: ImportReceipt
   /** What the answer would write, or nothing at all where it is refused. */
@@ -163,19 +163,12 @@ interface Forecast {
   refused: unknown
 }
 
-/** The gesture, held by whoever survives the write it causes. */
-export interface EventUpload {
-  /**
-   * Hand the files over, whichever way they arrived. They are **previewed** as
-   * one batch, not written (#813): what comes back is the forecast below. A new
-   * hand replaces the batch (#1266).
-   */
-  hand: (files: readonly File[]) => void
-  /**
-   * Take one file out of the batch and read the rest again (#1266). The answer
-   * and the standing forecast go with it; the last file out is `discard`.
-   */
-  drop: (index: number) => void
+/**
+ * What `ImportPreview` reads, whatever the source of the rows: the files the
+ * reader handed over (`useEventUpload`) or the proposal the agent made
+ * (`useProposalImport`, #1119).
+ */
+export interface ImportReview {
   /**
    * Write the files that were previewed — by **re-uploading them**, in the
    * order they were first sent.
@@ -218,6 +211,26 @@ export interface EventUpload {
   forecast: Forecast | undefined
   receipt: ImportReceipt | undefined
   error: unknown
+  /**
+   * The rows are the agent's proposal and not files (#1119): there is no file
+   * to take out of the batch, and the window says whose rows they are.
+   */
+  proposal?: boolean
+}
+
+/** The gesture, held by whoever survives the write it causes. */
+export interface EventUpload extends ImportReview {
+  /**
+   * Hand the files over, whichever way they arrived. They are **previewed** as
+   * one batch, not written (#813): what comes back is the forecast below. A new
+   * hand replaces the batch (#1266).
+   */
+  hand: (files: readonly File[]) => void
+  /**
+   * Take one file out of the batch and read the rest again (#1266). The answer
+   * and the standing forecast go with it; the last file out is `discard`.
+   */
+  drop: (index: number) => void
 }
 
 /** One handing-over: the files, and the answer standing when it was sent. */
