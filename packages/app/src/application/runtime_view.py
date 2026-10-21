@@ -283,7 +283,8 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
         'total': total,
         'in_scope': in_scope,
         'complete': complete,
-        'failing': states.get(BACKFILL_FAILING, 0),
+        'failing': sum(states.get(state, 0) for state in
+                       (BACKFILL_FAILING, runtime_state.TERMINAL_UNREACHABLE)),
         'running': states.get(BACKFILL_RUNNING, 0),
         'unknown': states.get(BACKFILL_UNKNOWN, 0),
         'ratio': complete / in_scope if in_scope > 0 else None,
@@ -412,7 +413,8 @@ _SCRAPE_RANK = (PILL_WRITE_FAILED, PILL_BACKOFF, PILL_FROZEN, PILL_FAILING,
 
 _SCRAPE_ATTENTION = (PILL_WRITE_FAILED, PILL_BACKOFF, PILL_FROZEN, PILL_FAILING)
 
-_BACKFILL_ATTENTION = (BACKFILL_FAILING, runtime_state.TERMINAL_UNCONVERTIBLE)
+_BACKFILL_ATTENTION = (BACKFILL_FAILING, runtime_state.TERMINAL_UNCONVERTIBLE,
+                       runtime_state.TERMINAL_UNREACHABLE)
 
 
 def health_scrape(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
@@ -450,7 +452,7 @@ def health_backfill(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
             if stamped is not None:
                 passes.append(stamped)
 
-    if BACKFILL_FAILING in states:
+    if BACKFILL_FAILING in states or runtime_state.TERMINAL_UNREACHABLE in states:
         verdict = BACKFILL_FAILING
     elif runtime_state.TERMINAL_UNCONVERTIBLE in states:
         verdict = runtime_state.TERMINAL_UNCONVERTIBLE

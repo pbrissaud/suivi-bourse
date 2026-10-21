@@ -31,6 +31,9 @@ FAILURE_GRACE = 3          # K: first K failures still re-arm at base_interval
 _BACKOFF_FACTOR = 2        # geometric growth per failure beyond the grace window
 _MAX_BACKOFF_EXP = 32
 
+# consecutive backward failures before the symbol stops counting toward the reconstruction (#1288)
+BACKWARD_GIVE_UP = 9
+
 _APPROX_OPEN_HOUR = 8
 
 JITTER_SECONDS = 30

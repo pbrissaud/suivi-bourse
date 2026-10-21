@@ -1086,6 +1086,25 @@ def test_an_unconvertible_series_is_a_reason_to_look_although_it_is_terminal():
     assert body['jobs']['backfill']['attention'] == ['AAPL']
 
 
+def test_an_unreachable_series_reads_as_a_failing_job():
+    """The give-up (#1288) stops the symbol counting toward the reconstruction, not toward the owner's attention."""
+    body = _health(backfill={
+        ('AAPL', runtime_state.BACKWARD): _backfill(
+            failed=True, failures=9,
+            terminal=runtime_state.TERMINAL_UNREACHABLE)})
+
+    assert body['jobs']['backfill']['verdict'] == 'failing'
+    assert body['jobs']['backfill']['status'] == runtime_view.HEALTH_ATTENTION
+    assert body['jobs']['backfill']['attention'] == ['AAPL']
+
+    symbols = runtime_view.build_symbols(
+        [_share()], {},
+        {('AAPL', runtime_state.BACKWARD): _backfill(
+            failed=True, failures=9,
+            terminal=runtime_state.TERMINAL_UNREACHABLE)}, {}, NOW)
+    assert runtime_view.build_backfill_summary(symbols)['failing'] == 1
+
+
 def test_a_reconstruction_that_reached_its_target_reads_complete():
     """And it carries its two numbers, because *advancing* is not a word."""
     body = _health(backfill={

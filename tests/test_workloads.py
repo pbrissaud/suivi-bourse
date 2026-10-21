@@ -29,6 +29,7 @@ from application import market
 from application import quotes
 from application import runtime_state
 from application import runtime_view
+from application import scheduling
 from application import settings as settings_module
 from application.workloads import Workloads
 from application.events.schemas import Event, EventType
@@ -1402,6 +1403,139 @@ def test_neither_a_failed_fetch_nor_a_failed_write_moves_the_forward_anchor(
         return_value=([{"timestamp": saturday, "price": 175.0}], None))
     metrics.backfill(saturday)
     assert quotes.newest_window_tried(store, "AAPL") is None
+
+
+# ---------------------------------------------------------------------------
+# A failing history fetch backs off, and the backward pass gives up counting (#1288)
+# ---------------------------------------------------------------------------
+
+_T0 = datetime.now(timezone.utc)
+_ACQUIRED = datetime(2020, 1, 15, tzinfo=timezone.utc)
+
+
+def _failing_history(store, mocker, symbols=("AAPL",)):
+    """A held line whose backward pass has a long way to go, and a provider that answers ``None``."""
+    events = [Event(_ACQUIRED.date(), EventType.BUY, symbol, symbol,
+                    quantity=10, unit_price=150.0) for symbol in symbols]
+    metrics, _ = _build_metrics(
+        [_valid_shares(symbol, symbol, quantity=10) for symbol in symbols],
+        store, mode="events", events=events)
+    metrics.regular_interval = 120
+    for symbol in symbols:
+        _seed_up_to_now(store, symbol, datetime(2024, 1, 10, tzinfo=timezone.utc))
+    return metrics, mocker.patch.object(
+        metrics, "_fetch_historical_data", return_value=None)
+
+
+def _fetch_instants(metrics, fetch, seconds):
+    """The offsets at which stepping ``now`` by hand actually reaches the provider."""
+    reached = []
+    for second in seconds:
+        before = fetch.call_count
+        metrics.backfill(_T0 + timedelta(seconds=second))
+        if fetch.call_count > before:
+            reached.append(second)
+    return reached
+
+
+def test_a_failing_backward_fetch_backs_off_then_stops_counting_toward_the_reconstruction(
+        store, mocker):
+    metrics, fetch = _failing_history(store, mocker)
+
+    reached = _fetch_instants(metrics, fetch, range(0, 7801, 60))
+
+    assert reached == [0, 120, 240, 360, 600, 1080, 2040, 3960, 7800]
+    record = metrics.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    assert (record.terminal, record.failed, record.failures) == (
+        runtime_state.TERMINAL_UNREACHABLE, True, 9)
+    assert metrics._backfill_unreachable["AAPL"] == _ACQUIRED
+    assert metrics.reconstruction_state() == (1, 1)
+
+
+def test_the_wait_after_each_backward_failure_is_the_617_formula(store, mocker):
+    metrics, fetch = _failing_history(store, mocker)
+
+    for failures in range(1, 12):
+        at = _T0 + timedelta(days=failures)
+        metrics._backward_retry_at.clear()
+        metrics.backfill(at)
+        waited = metrics._backward_retry_at["AAPL"] - at
+        assert waited.total_seconds() == pytest.approx(
+            scheduling.backoff_delay(120, failures))
+    assert waited.total_seconds() > scheduling.backoff_delay(120, 9)
+
+
+def test_one_complete_and_one_unreachable_series_settle_the_reconstruction(
+        store, mocker):
+    metrics, fetch = _failing_history(store, mocker, symbols=("AAPL", "MSFT"))
+    metrics._backfill_complete["MSFT"] = _ACQUIRED
+    assert metrics.reconstruction_state() == (1, 2)
+
+    _fetch_instants(metrics, fetch, range(0, 7801, 60))
+
+    assert metrics.reconstruction_state() == (2, 2)
+
+
+def test_a_fetch_that_lands_after_the_give_up_brings_the_symbol_back(store, mocker):
+    metrics, fetch = _failing_history(store, mocker)
+    _fetch_instants(metrics, fetch, range(0, 7801, 60))
+    assert metrics._backfill_unreachable
+
+    fetch.return_value = [
+        {"timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc), "price": 90.0}]
+    metrics.backfill(_T0 + timedelta(days=2))
+
+    record = metrics.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    assert (record.terminal, record.failures) == (None, 0)
+    assert "AAPL" not in metrics._backward_retry_at
+    assert "AAPL" not in metrics._backfill_unreachable
+    assert metrics.reconstruction_state() == (0, 1)
+
+
+def test_a_failed_store_write_backs_off_and_counts_toward_the_give_up(
+        store, mocker):
+    metrics, _ = _failing_history(store, mocker)
+    mocker.patch.object(
+        metrics, "_fetch_and_store",
+        return_value=([{"timestamp": _T0, "price": 175.0}], None))
+
+    reached = []
+    for second in range(0, 7801, 60):
+        before = metrics._fetch_and_store.call_count
+        metrics.backfill(_T0 + timedelta(seconds=second))
+        if metrics._fetch_and_store.call_count > before:
+            reached.append(second)
+
+    assert reached == [0, 120, 240, 360, 600, 1080, 2040, 3960, 7800]
+    record = metrics.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    assert record.terminal == runtime_state.TERMINAL_UNREACHABLE
+
+
+def test_a_failing_forward_fetch_backs_off_without_a_terminal_and_one_success_resets_it(
+        store, mocker):
+    friday = datetime(2024, 3, 1, 16, 0, tzinfo=timezone.utc)
+    metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
+    metrics.regular_interval = 120
+    fetch = mocker.patch.object(metrics, "_fetch_historical_data", return_value=None)
+    t0 = datetime(2024, 3, 4, 12, 0, tzinfo=timezone.utc)
+
+    reached = []
+    for second in range(0, 1081, 60):
+        before = fetch.call_count
+        metrics.backfill(t0 + timedelta(seconds=second))
+        if fetch.call_count > before:
+            reached.append(second)
+
+    assert reached == [0, 120, 240, 360, 600, 1080]
+    record = metrics.recorder.backfill_of("AAPL", runtime_state.FORWARD)
+    assert (record.failed, record.terminal, record.failures) == (True, None, 6)
+
+    fetch.return_value = [{"timestamp": t0, "price": 175.0}]
+    metrics.backfill(t0 + timedelta(days=1))
+
+    assert metrics.recorder.backfill_of(
+        "AAPL", runtime_state.FORWARD).failures == 0
+    assert "AAPL" not in metrics._forward_retry_at
 
 
 # ---------------------------------------------------------------------------

@@ -374,8 +374,9 @@ def test_a_failed_history_fetch_raises_the_consecutive_counter(
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
     mocker.patch.object(m, "_fetch_historical_data", return_value=None)
 
-    m.backfill()
-    m.backfill()
+    now = datetime.now(UTC)
+    m.backfill(now)
+    m.backfill(now + timedelta(hours=1))  # past the back-off (#1288)
     record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
 
     assert record.failures == 2

@@ -38,6 +38,14 @@ class BackfillWorkload:
 
         self.complete: Dict[str, datetime] = {}
 
+        #: Symbol → the ``target`` the backward pass gave up on (#1288), keyed
+        #: like ``complete``. A symbol in here counts as settled, and keeps retrying.
+        self.unreachable: Dict[str, datetime] = {}
+
+        self.backward_retry_at: Dict[str, datetime] = {}
+
+        self.forward_retry_at: Dict[str, datetime] = {}
+
         self.lateral_retry_at: Dict[str, datetime] = {}
 
         self.quote_currency_unknown: Set[str] = set()
@@ -210,6 +218,16 @@ class BackfillWorkload:
             point['converted'] = converted
             point['rate'] = rate
 
+    def back_off(self, retry_at: Dict[str, datetime], symbol: str,
+                 direction: str, now: datetime) -> int:
+        """Arm the wait after one more failure (#1288), on #617's formula and the lateral pass's base. Returns the consecutive failures so far."""
+        record = self.facade.recorder.backfill_of(symbol, direction)
+        failures = (record.failures if record is not None else 0) + 1
+        retry_at[symbol] = now + timedelta(
+            seconds=scheduling.backoff_delay(
+                self.facade.regular_interval, failures))
+        return failures
+
     def backward(self, symbol: str, target: datetime, ceiling: datetime,
                  now: Optional[datetime] = None) -> int:
         """Backward pass: extend the series toward the first acquisition, one chunk (``backfill_chunk_days``) per cycle. Returns points written this cycle."""
@@ -222,6 +240,15 @@ class BackfillWorkload:
 
         now = now or datetime.now(timezone.utc)
 
+        retry_at = self.backward_retry_at.get(symbol)
+        if retry_at is not None and now < retry_at:
+            return 0
+
+        def settle() -> None:
+            """Any outcome that is not a failure: the same records on which ``failures`` falls back to 0."""
+            self.backward_retry_at.pop(symbol, None)
+            self.unreachable.pop(symbol, None)
+
         oldest_timestamp = quotes.oldest_ts(self.facade.config_manager.store, symbol)
         end_date = self.facade._backward_anchor(symbol, ceiling)
 
@@ -230,6 +257,7 @@ class BackfillWorkload:
                 f"Backfill complete for {symbol}: "
                 f"anchor={end_date.date()}, target={target.date()}")
             self.complete[symbol] = target
+            settle()
             publish(anchor=end_date, oldest=oldest_timestamp,
                     terminal=runtime_state.TERMINAL_COMPLETE)
             return 0
@@ -245,6 +273,7 @@ class BackfillWorkload:
         if (end_date - start_date).days < 1:
             app_logger.debug(
                 f"Backfill window too small for {symbol}, skipping until next cycle")
+            settle()
             publish(anchor=end_date, oldest=oldest_timestamp,
                     skipped=runtime_state.SKIP_WINDOW_TOO_SMALL)
             return 0
@@ -254,22 +283,29 @@ class BackfillWorkload:
 
         prices, written = self.facade._fetch_and_store(symbol, start_date, end_date)
 
+        def fail(**fields) -> None:
+            """Back off, and give up counting the symbol toward the reconstruction at the ``BACKWARD_GIVE_UP``-th failure in a row — the pass keeps retrying (#1288)."""
+            failures = self.back_off(
+                self.backward_retry_at, symbol, runtime_state.BACKWARD, now)
+            if failures >= scheduling.BACKWARD_GIVE_UP:
+                self.unreachable[symbol] = target
+                fields['terminal'] = runtime_state.TERMINAL_UNREACHABLE
+            publish(anchor=end_date, oldest=oldest_timestamp,
+                    window=(start_date, end_date), failed=True, **fields)
+
         if prices is None:
-            app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
-            publish(anchor=end_date, oldest=oldest_timestamp, window=(start_date, end_date),
-                    failed=True,
-                    error=f"yfinance returned no history for {symbol} over "
-                          f"{start_date.date()} → {end_date.date()}")
+            app_logger.warning(f"Failed to fetch history for {symbol}, will retry later")
+            fail(error=f"yfinance returned no history for {symbol} over "
+                       f"{start_date.date()} → {end_date.date()}")
             return 0
 
         if written is None:
-            publish(anchor=end_date, oldest=oldest_timestamp,
-                    window=(start_date, end_date), failed=True,
-                    error=f"the history of {symbol} over "
-                          f"{start_date.date()} → {end_date.date()} was fetched "
-                          f"but could not be written to the store")
+            fail(error=f"the history of {symbol} over "
+                       f"{start_date.date()} → {end_date.date()} was fetched "
+                       f"but could not be written to the store")
             return 0
 
+        settle()
         self.facade._record_window_tried(symbol, start_date.date())
 
         if not prices:
@@ -318,6 +354,11 @@ class BackfillWorkload:
     def forward(self, symbol: str, now: Optional[datetime] = None) -> int:
         """Forward pass: recover a session missed while the app was down by fetching ``[anchor, now]`` (issue #627, #854)."""
         now = now or datetime.now(timezone.utc)
+
+        retry_at = self.forward_retry_at.get(symbol)
+        if retry_at is not None and now < retry_at:
+            return 0
+
         store = self.facade.config_manager.store
         newest = quotes.newest_ts(store, symbol)
         anchor = carrying.forward_anchor(
@@ -333,6 +374,7 @@ class BackfillWorkload:
         window = scheduling.forward_backfill_window(
             anchor, now, self.facade.backfill_chunk_days)
         if window is None:
+            self.forward_retry_at.pop(symbol, None)
             publish(skipped=(runtime_state.SKIP_NO_SERIES if anchor is None
                              else runtime_state.SKIP_TOO_RECENT))
             return 0
@@ -345,19 +387,22 @@ class BackfillWorkload:
 
         if prices is None:
             app_logger.warning(
-                f"Failed to fetch forward history for {symbol}, will retry next cycle")
+                f"Failed to fetch forward history for {symbol}, will retry later")
+            self.back_off(self.forward_retry_at, symbol, runtime_state.FORWARD, now)
             publish(window=(start_date, end_date), failed=True,
                     error=f"yfinance returned no history for {symbol} over "
                           f"{start_date.date()} → {end_date.date()}")
             return 0
 
         if written is None:
+            self.back_off(self.forward_retry_at, symbol, runtime_state.FORWARD, now)
             publish(window=(start_date, end_date), failed=True,
                     error=f"the history of {symbol} over "
                           f"{start_date.date()} → {end_date.date()} was fetched "
                           f"but could not be written to the store")
             return 0
 
+        self.forward_retry_at.pop(symbol, None)
         self.facade._record_forward_window_tried(symbol, end_date.date())
 
         if not prices:
