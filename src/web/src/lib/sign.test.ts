@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { figureClass, signClass, signOf } from '@/lib/sign'
+import { figureClass, RATIO_DECIMALS, signClass, signOf } from '@/lib/sign'
 
 describe('the colour of a money figure', () => {
   it('separates a zero from an absence, which the prototype did not', () => {
@@ -42,5 +42,34 @@ describe('a figure that is neither money made nor money lost (#1282)', () => {
     expect(figureClass(null)).toBe('text-muted-foreground')
     expect(figureClass(undefined)).toBe('text-muted-foreground')
     expect(figureClass(Number.NaN)).toBe('text-muted-foreground')
+  })
+})
+
+describe('the sign of the figure shown, not of the raw value (#1286)', () => {
+  it('reads a ratio that rounds to 0,00 % as a zero, on either side', () => {
+    // An IRR of +0,00003 % reads `0,00 %`: a green arrow beside it claims a
+    // gain the digits do not show.
+    expect(signOf(0.0000003, RATIO_DECIMALS)).toBe('zero')
+    expect(signOf(-0.0000003, RATIO_DECIMALS)).toBe('zero')
+    expect(signClass(0.0000003, RATIO_DECIMALS)).toBe('text-foreground')
+  })
+
+  it('rounds half away from zero, as the formatter does', () => {
+    // +0,005 % is `+0,01 %` once formatted, and coloured as the gain it shows.
+    expect(signOf(0.00005, RATIO_DECIMALS)).toBe('gain')
+    expect(signOf(-0.00005, RATIO_DECIMALS)).toBe('loss')
+    expect(signOf(0.0000499, RATIO_DECIMALS)).toBe('zero')
+  })
+
+  it('reads money to the cent by default', () => {
+    expect(signOf(0.004)).toBe('zero')
+    expect(signOf(-0.004)).toBe('zero')
+    expect(signOf(0.005)).toBe('gain')
+    // `1.005 * 100` is 100.4999… in binary: the cent is the decimal's.
+    expect(signOf(-1.005)).toBe('loss')
+  })
+
+  it('keeps a real ratio a gain: 0,4 % is not money', () => {
+    expect(signOf(0.004, RATIO_DECIMALS)).toBe('gain')
   })
 })

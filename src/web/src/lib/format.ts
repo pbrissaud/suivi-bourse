@@ -16,6 +16,7 @@
 import { useMemo } from 'react'
 
 import { useI18n } from '@/lib/i18n'
+import { signOf } from '@/lib/sign'
 
 /** What absence looks like. One glyph, one place to change it. */
 export const ABSENT = '—'
@@ -35,7 +36,7 @@ export function formatCurrency(
     currency,
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
-  }).format(value)
+  }).format(unsignedZero(value, fractionDigits))
 }
 
 /**
@@ -77,7 +78,12 @@ function formatSignedCurrency(
   currency: string | null | undefined,
 ): string {
   const rendered = formatCurrency(locale, value, currency)
-  return value !== null && value !== undefined && value > 0 ? `+${rendered}` : rendered
+  return signOf(value) === 'gain' ? `+${rendered}` : rendered
+}
+
+/** `−0,004 €` is a zero and reads `0,00 €`, not a loss of nothing (#1286). */
+function unsignedZero(value: number, decimals: number): number {
+  return signOf(value, decimals) === 'zero' ? 0 : value
 }
 
 export function formatNumber(
@@ -89,7 +95,7 @@ export function formatNumber(
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
-  }).format(value)
+  }).format(unsignedZero(value, fractionDigits))
 }
 
 /** Quantities can be fractional (fractional shares) but are usually whole. */

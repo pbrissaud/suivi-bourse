@@ -23,11 +23,22 @@ import type { Rendering } from '@/lib/absence'
 
 export type Sign = 'gain' | 'loss' | 'zero' | 'absent'
 
-export function signOf(value: number | null | undefined): Sign {
+/**
+ * The decimals a figure is **shown** at, which is what its sign is read at
+ * (#1286): money and percent points at two, a ratio at two of percent. An IRR of
+ * `+0,00003 %` reads `0,00 %`, and a green arrow beside it claims a gain the
+ * digits do not show.
+ */
+export const MONEY_DECIMALS = 2
+export const RATIO_DECIMALS = 4
+
+export function signOf(value: number | null | undefined, decimals = MONEY_DECIMALS): Sign {
   if (value === null || value === undefined || Number.isNaN(value)) return 'absent'
-  if (value > 0) return 'gain'
-  if (value < 0) return 'loss'
-  return 'zero'
+  // Half away from zero, as `Intl` rounds. The product is trimmed to 15
+  // significant digits first: `1.005 * 100` is `100.49999999999999` in binary,
+  // and the decimal the owner reads is 1,005.
+  if (Math.round(Number((Math.abs(value) * 10 ** decimals).toPrecision(15))) === 0) return 'zero'
+  return value > 0 ? 'gain' : 'loss'
 }
 
 const CLASSES: Record<Sign, string> = {
@@ -39,8 +50,8 @@ const CLASSES: Record<Sign, string> = {
   absent: 'text-muted-foreground',
 }
 
-export function signClass(value: number | null | undefined): string {
-  return CLASSES[signOf(value)]
+export function signClass(value: number | null | undefined, decimals = MONEY_DECIMALS): string {
+  return CLASSES[signOf(value, decimals)]
 }
 
 /**

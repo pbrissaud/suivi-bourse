@@ -81,6 +81,7 @@ import { renderFigure } from '@/lib/absence'
 import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
 import { dayMove, heroReading, unpricedLines } from '@/features/dashboard/lib/dashboard'
 import { useI18n } from '@/lib/i18n'
+import { RATIO_DECIMALS } from '@/lib/sign'
 
 interface DashboardHeadProps {
   /**
@@ -295,6 +296,7 @@ export function DashboardHead({
         <SignedFigure
           amount={totalsRow.xirr}
           text={f.percent(totalsRow.xirr)}
+          decimals={RATIO_DECIMALS}
           className="font-medium"
         />
         <span className="text-xs font-normal text-muted-foreground">

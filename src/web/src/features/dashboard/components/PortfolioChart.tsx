@@ -110,7 +110,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { signOf } from '@/lib/sign'
+import { RATIO_DECIMALS, signOf } from '@/lib/sign'
 import type { ReadingCurve } from '@/lib/chartReading'
 import type { ReadFailure } from '@/lib/status'
 
@@ -185,7 +185,10 @@ export function PortfolioChart({
   // covers the whole path, and the series always opens on 0 % (rebased), so the
   // solid colour is read off the first value that is not zero.
   const split = offset !== null && offset > 0 && offset < 1 ? offset : null
-  const solidSign = signOf(performanceValues.find((value) => value !== null && value !== 0) ?? null)
+  const solidSign = signOf(
+    performanceValues.find((value) => value !== null && value !== 0) ?? null,
+    RATIO_DECIMALS,
+  )
   const solidStroke =
     solidSign === 'gain'
       ? 'var(--gain)'

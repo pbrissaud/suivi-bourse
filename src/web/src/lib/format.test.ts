@@ -197,3 +197,18 @@ describe('the chart axes (#1265)', () => {
     expect(formatAxisDate(EN, '2024-01-01', 'year')).toBe('2024')
   })
 })
+
+describe('a figure that rounds to zero carries no sign (#1286)', () => {
+  it('writes a tiny ratio as a bare 0,00 %, on either side', () => {
+    expect(formatPercent(FR, 0.0000003)).toMatch(/^0,00\s%$/)
+    expect(formatPercent(FR, -0.0000003)).toMatch(/^0,00\s%$/)
+    expect(formatPercent(FR, 0.00005)).toMatch(/^\+0,01\s%$/)
+  })
+
+  it('writes a tiny negative amount as 0,00 €, not a loss of nothing', () => {
+    expect(formatCurrency(FR, -0.004, 'EUR')).toBe('0,00 €')
+    expect(formatCurrency(FR, -0, 'EUR')).toBe('0,00 €')
+    expect(formatNumber(FR, -0.004)).toBe('0,00')
+    expect(formatCurrency(FR, -0.005, 'EUR')).toBe('-0,01 €')
+  })
+})

@@ -43,7 +43,7 @@ import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/features/shares/lib/shares'
-import { signClass } from '@/lib/sign'
+import { RATIO_DECIMALS, signClass } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -128,7 +128,9 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
                     token holding and a 0,4 % drift on the biggest line are not
                     the same news, and a percentage alone cannot say which. */}
               <span className="flex shrink-0 flex-col items-end">
-                <span className={`tabular text-sm font-semibold ${signClass(mover.change_pct)}`}>
+                <span
+                  className={`tabular text-sm font-semibold ${signClass(mover.change_pct, RATIO_DECIMALS)}`}
+                >
                   {f.percent(mover.change_pct)}
                 </span>
                 <span className="tabular text-2xs text-muted-foreground">
