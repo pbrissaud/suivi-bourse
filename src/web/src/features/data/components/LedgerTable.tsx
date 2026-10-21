@@ -82,6 +82,7 @@ import type { LedgerEvent, LedgerEventType } from '@/features/data/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
+  FIELDS,
   accountOf,
   identityOf,
   isEditable,
@@ -290,7 +291,29 @@ export function LedgerTable({
         f.currency(event.unit_price, currency),
       ),
       money('fee', 'data.column.fee', (event) => f.currency(event.fee, currency)),
-      money('amount', 'data.column.amount', (event) => f.currency(event.amount, currency)),
+      {
+        id: 'amount',
+        header: () => t('data.column.amount'),
+        // A trade has no amount, so below the quantity column's threshold the figure
+        // that column would have shown stands in; from there the cell keeps its dash
+        // and the quantity is read in its own column (#1355).
+        cell: ({ row }) => {
+          const event = row.original
+          const figure = <EventFigure event={event} currency={currency} />
+          return (
+            <span className="tabular">
+              {FIELDS[event.event_type].amount ? (
+                figure
+              ) : (
+                <>
+                  <span className="@min-[56rem]/ledger:hidden">{figure}</span>
+                  <span className="hidden @min-[56rem]/ledger:inline">{ABSENT}</span>
+                </>
+              )}
+            </span>
+          )
+        },
+      },
       {
         id: 'account',
         header: () => t('data.column.account'),
@@ -384,6 +407,21 @@ export function TypePill({ type }: { type: LedgerEventType }) {
     >
       {t(TYPE_LABEL[type])}
     </span>
+  )
+}
+
+/**
+ * The figure the type declares (`FIELDS`): an amount, else `× quantity` in muted
+ * text. Never a total composed out of the other fields — a purchase states a
+ * quantity and a transfer an amount, and the two do not share a rendering:
+ * `× 0,1661` beside `10,20 €` is a quantity, a bare `0,1661` is read as money.
+ */
+export function EventFigure({ event, currency }: { event: LedgerEvent; currency: string | null }) {
+  const f = useFormatters()
+  if (FIELDS[event.event_type].amount) return <>{f.currency(event.amount, currency)}</>
+  if (event.quantity === null) return <>{ABSENT}</>
+  return (
+    <span className="text-muted-foreground">{`\u00d7\u00a0${f.quantity(event.quantity)}`}</span>
   )
 }
 

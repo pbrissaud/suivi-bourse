@@ -13,10 +13,12 @@
  *    only discriminant a row owns — which is why the search is not a
  *    convenience.
  */
-import { act, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
+import { EventFigure } from '@/features/data/components/LedgerTable'
+import { I18nProvider } from '@/lib/i18n'
 import { useIsMobile } from '@/hooks/use-mobile'
 import type { LedgerEvent } from '@/features/data/lib/api'
 import { ROUTES } from '@/lib/api'
@@ -132,6 +134,18 @@ describe('the columns of the ledger', () => {
       'Montant',
       'Compte',
     ])
+  })
+
+  it('hands a trade’s Montant cell to its quantity below 896 px, and to a dash from there (#1355)', async () => {
+    renderData([anEvent({ id: 'a', quantity: 0.1661 })])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    // jsdom evaluates no container query: the two spans and their classes are the contract.
+    const cell = rowsOf(ledger())[0].querySelectorAll('td')[7]
+    expect(within(cell).getByText(/×\s0,1661/).parentElement).toHaveClass(
+      '@min-[56rem]/ledger:hidden',
+    )
+    expect(within(cell).getByText('—')).toHaveClass('hidden', '@min-[56rem]/ledger:inline')
   })
 
   it('has no `Nom`, no padlock column and no provenance of any kind', async () => {
@@ -2705,17 +2719,29 @@ describe('the ledger on a phone (#1339)', () => {
   })
 
   it('shows the date, the type, the identity, the amount and the account of an item', async () => {
-    await renderPhone([anEvent({ id: 'a', amount: 480, account: 'alpha' })])
+    await renderPhone([anEvent({ id: 'a', event_type: 'DIVIDEND', amount: 480, account: 'alpha' })])
 
     const item = items()[0]
     expect(within(item).getByRole('button', { name: 'ZZA' })).toBeInTheDocument()
-    expect(within(item).getByText('Achat')).toBeInTheDocument()
+    expect(within(item).getByText('Dividende')).toBeInTheDocument()
     expect(within(item).getByText('alpha')).toHaveClass('font-mono')
     expect(within(item).getByText(/480/)).toHaveClass('tabular')
     expect(within(item).getByText(/480/)).not.toHaveClass('font-mono')
     expect(within(item).getByText(/2026/)).toBeInTheDocument()
     // Quantity, price, fee and the label under a ticker live in the form.
     expect(within(item).queryByText(/Ordre au marché/)).not.toBeInTheDocument()
+  })
+
+  it('shows `× quantity` on a trade, which has no amount, and the amount on a transfer (#1355)', async () => {
+    await renderPhone([
+      anEvent({ id: 'a', quantity: 0.1661 }),
+      anEvent({ id: 'b', event_type: 'DEPOSIT', symbol: null, name: null, amount: 100 }),
+    ])
+
+    const [buy, deposit] = items()
+    expect(within(buy).getByText(/×\s0,1661/)).toHaveClass('text-muted-foreground')
+    expect(within(buy).queryByText('—')).not.toBeInTheDocument()
+    expect(within(deposit).getByText(/100,00/)).toBeInTheDocument()
   })
 
   it('opens the editor from the identity, and not from the checkbox', async () => {
@@ -2832,5 +2858,30 @@ describe('the ledger on a phone (#1339)', () => {
       return value
     })
     expect(seen[0]).toBe(true)
+  })
+})
+
+describe('EventFigure (#1355)', () => {
+  const draw = (event: LedgerEvent) =>
+    render(
+      <I18nProvider>
+        <p data-testid="figure">
+          <EventFigure event={event} currency="EUR" />
+        </p>
+      </I18nProvider>,
+    ).getByTestId('figure')
+
+  it('draws the amount of a type that declares one', () => {
+    expect(draw(anEvent({ event_type: 'DEPOSIT', amount: 100 }))).toHaveTextContent(/^100,00/)
+  })
+
+  it('draws `× quantity` in muted text for a type that declares none', () => {
+    const figure = draw(anEvent({ quantity: 0.1661 }))
+    expect(figure).toHaveTextContent(/^×\s0,1661$/)
+    expect(figure.firstElementChild).toHaveClass('text-muted-foreground')
+  })
+
+  it('draws a dash, never `× —`, when the quantity is unknown', () => {
+    expect(draw(anEvent({ quantity: null }))).toHaveTextContent(/^—$/)
   })
 })

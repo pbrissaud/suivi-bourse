@@ -51,7 +51,7 @@ import { Explain } from '@/components/Explain'
 import { PILL, SignedFigure } from '@/components/FigurePill'
 import { Stat } from '@/components/Stat'
 import { ShareBar } from '@/components/ShareBar'
-import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
+import { EventFigure, TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Section } from '@/components/ui/section'
@@ -78,7 +78,7 @@ import type { Advisory } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { portfolioTerms, termAmount, termRendering } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { FIELDS, identityOf } from '@/features/data/lib/ledger'
+import { identityOf } from '@/features/data/lib/ledger'
 import { problemSentence } from '@/lib/problem'
 import {
   buildShareRows,
@@ -705,13 +705,7 @@ export function AccountDetail({
                       rendering. `× 0,1661` beside `10,20 €` is a quantity; a
                       bare `0,1661` in the same column is read as money. */}
                     <span className="tabular shrink-0">
-                      {FIELDS[event.event_type].amount ? (
-                        f.currency(event.amount, currency)
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {`\u00d7\u00a0${f.quantity(event.quantity)}`}
-                        </span>
-                      )}
+                      <EventFigure event={event} currency={currency} />
                     </span>
                   </li>
                 ))}
