@@ -403,7 +403,11 @@ export function AccountDetail({
                 IRR keeps its pill, with the em dash. */}
                 <span role="group" aria-label={t('accounts.figure.xirr')} className={PILL}>
                   <span className="text-muted-foreground">{t('accounts.figure.xirr')}</span>
-                  <SignedFigure amount={row.xirr} text={f.percent(row.xirr)} decimals={RATIO_DECIMALS} />
+                  <SignedFigure
+                    amount={row.xirr}
+                    text={f.percent(row.xirr)}
+                    decimals={RATIO_DECIMALS}
+                  />
                   {row.xirr == null ? null : (
                     <span className="text-xs font-normal text-muted-foreground">
                       {t('accounts.xirr.unit')}
