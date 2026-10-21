@@ -1,6 +1,6 @@
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 
-import { signClass, signOf } from '@/lib/sign'
+import { MONEY_DECIMALS, signClass, signOf } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 export const PILL =
@@ -16,22 +16,29 @@ export const PILL =
  *
  * The accounts page sets it in a `PILL`; the dashboard's head sets it bare, on
  * the ground (#1280).
+ *
+ * `decimals` is the precision `text` is written at (#1286): a figure that rounds
+ * to zero is a zero, whatever its raw sign.
  */
 export function SignedFigure({
   amount,
   text,
   className,
   arrowClassName = 'size-3',
+  decimals = MONEY_DECIMALS,
 }: {
   amount: number | null
   text: string
   className?: string
   arrowClassName?: string
+  decimals?: number
 }) {
-  const sign = signOf(amount)
+  const sign = signOf(amount, decimals)
   const Arrow = sign === 'gain' ? ArrowUpRight : sign === 'loss' ? ArrowDownRight : null
   return (
-    <span className={cn('inline-flex items-center gap-1.5', signClass(amount), className)}>
+    <span
+      className={cn('inline-flex items-center gap-1.5', signClass(amount, decimals), className)}
+    >
       {Arrow === null ? null : <Arrow className={arrowClassName} aria-hidden />}
       {text}
     </span>

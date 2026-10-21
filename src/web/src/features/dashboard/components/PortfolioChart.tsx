@@ -110,7 +110,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { signOf } from '@/lib/sign'
+import { RATIO_DECIMALS, signOf } from '@/lib/sign'
 import type { ReadingCurve } from '@/lib/chartReading'
 import type { ReadFailure } from '@/lib/status'
 
@@ -183,9 +183,15 @@ export function PortfolioChart({
   const offset = signSplitOffset(performanceValues)
   // The gradient only where the curve really crosses zero. At 0 or 1 one colour
   // covers the whole path, and the series always opens on 0 % (rebased), so the
-  // solid colour is read off the first value that is not zero.
+  // solid colour is read off the first value that does not read as zero.
   const split = offset !== null && offset > 0 && offset < 1 ? offset : null
-  const solidSign = signOf(performanceValues.find((value) => value !== null && value !== 0) ?? null)
+  const solidSign = signOf(
+    performanceValues.find((value) => {
+      const sign = signOf(value, RATIO_DECIMALS)
+      return sign === 'gain' || sign === 'loss'
+    }) ?? null,
+    RATIO_DECIMALS,
+  )
   const solidStroke =
     solidSign === 'gain'
       ? 'var(--gain)'

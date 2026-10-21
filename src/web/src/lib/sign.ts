@@ -23,11 +23,32 @@ import type { Rendering } from '@/lib/absence'
 
 export type Sign = 'gain' | 'loss' | 'zero' | 'absent'
 
-export function signOf(value: number | null | undefined): Sign {
+/**
+ * The decimals a figure is **shown** at, which is what its sign is read at
+ * (#1286): money and percent points at two, a ratio at two of percent. An IRR of
+ * `+0,00003 %` reads `0,00 %`, and a green arrow beside it claims a gain the
+ * digits do not show.
+ */
+export const MONEY_DECIMALS = 2
+export const RATIO_DECIMALS = 4
+
+export function signOf(value: number | null | undefined, decimals = MONEY_DECIMALS): Sign {
   if (value === null || value === undefined || Number.isNaN(value)) return 'absent'
-  if (value > 0) return 'gain'
-  if (value < 0) return 'loss'
-  return 'zero'
+  if (roundedAt(decimals).format(Math.abs(value)) === '0') return 'zero'
+  return value > 0 ? 'gain' : 'loss'
+}
+
+// `Intl` itself decides, because it is what writes the digits: it rounds the
+// number's shortest decimal, so `1.005` is `1,01` and `0.004999999999999999`
+// is `0,00`, which no arithmetic on the binary value reproduces at both ends.
+const ROUNDERS = new Map<number, Intl.NumberFormat>()
+function roundedAt(decimals: number): Intl.NumberFormat {
+  let rounder = ROUNDERS.get(decimals)
+  if (rounder === undefined) {
+    rounder = new Intl.NumberFormat('en', { maximumFractionDigits: decimals, useGrouping: false })
+    ROUNDERS.set(decimals, rounder)
+  }
+  return rounder
 }
 
 const CLASSES: Record<Sign, string> = {
@@ -39,8 +60,8 @@ const CLASSES: Record<Sign, string> = {
   absent: 'text-muted-foreground',
 }
 
-export function signClass(value: number | null | undefined): string {
-  return CLASSES[signOf(value)]
+export function signClass(value: number | null | undefined, decimals = MONEY_DECIMALS): string {
+  return CLASSES[signOf(value, decimals)]
 }
 
 /**

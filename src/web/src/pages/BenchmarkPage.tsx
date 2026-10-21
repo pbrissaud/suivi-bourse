@@ -281,15 +281,21 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
             size="figure"
             label={t('benchmark.term.yours')}
             value={points(f, data.portfolio_return)}
-            valueClassName={signClass(data.portfolio_return ?? null)}
+            valueClassName={signClass(data.portfolio_return ?? null, POINTS_DECIMALS)}
           >
             <ShareBar
               share={magnitude(data.portfolio_return)}
               scale={scale}
               // The sign's colour, as on the per-account bars: a loss drawn in
-              // the gain's green read as a gain (#1112).
+              // the gain's green read as a gain (#1112), and a return that reads
+              // `0,0 %` takes neither (#1286).
               fill={
-                signOf(data.portfolio_return ?? null) === 'loss' ? 'var(--loss)' : 'var(--gain)'
+                {
+                  gain: 'var(--gain)',
+                  loss: 'var(--loss)',
+                  zero: 'var(--muted-foreground)',
+                  absent: 'var(--muted-foreground)',
+                }[signOf(data.portfolio_return ?? null, POINTS_DECIMALS)]
               }
               size="block"
               className="mt-1.5"
@@ -301,7 +307,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
             size="figure"
             label={t('benchmark.term.theirs')}
             value={points(f, data.reference_return)}
-            valueClassName={signClass(data.reference_return ?? null)}
+            valueClassName={signClass(data.reference_return ?? null, POINTS_DECIMALS)}
           >
             <ShareBar
               share={magnitude(data.reference_return)}
@@ -469,10 +475,10 @@ function Returns({
   return (
     <>
       {t('benchmark.accounts.yours')}{' '}
-      <span className={signClass(yours ?? null)}>{points(f, yours)}</span>
+      <span className={signClass(yours ?? null, POINTS_DECIMALS)}>{points(f, yours)}</span>
       {' · '}
       {t('benchmark.accounts.theirs')}{' '}
-      <span className={signClass(theirs ?? null)}>{points(f, theirs)}</span>
+      <span className={signClass(theirs ?? null, POINTS_DECIMALS)}>{points(f, theirs)}</span>
     </>
   )
 }
@@ -489,20 +495,22 @@ function magnitude(value: number | null | undefined): number | null {
 /**
  * One of the three subordinate figures, at **one** decimal.
  *
- * `formatPercent` is fixed at two, which is right for a figure that leads a
- * screen and too much for three that sit under a euro: the row is read as a
- * shape — ahead, behind, by roughly how much — and a second decimal on each of
- * them is three digits of noise across it. `percentPoints` is the front's own
- * one-decimal path (`AccountDetail`, `AccountsBar`).
+ * Two decimals are right for a figure that leads a screen and too much for
+ * three that sit under a euro: the row is read as a shape — ahead, behind, by
+ * roughly how much — and a second decimal on each of them is three digits of
+ * noise across it.
  *
- * The sign is carried explicitly, because a gap of zero is a figure and an
- * unsigned `6,4 %` beside a signed euro reads as a different kind of number.
+ * The sign is carried, because a gap of zero is a figure and an unsigned
+ * `6,4 %` beside a signed euro reads as a different kind of number. `Intl`
+ * places it on the rounded figure, so `+0,04 %` is `0,0 %` (#1286), and its
+ * colour is read at the same {@link POINTS_DECIMALS}.
  */
 function points(f: ReturnType<typeof useFormatters>, value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  const scaled = value * 100
-  return `${scaled > 0 ? '+' : ''}${f.percentPoints(scaled, 1)}`
+  return f.percent(value, 1, 1)
 }
+
+/** A ratio at one decimal of percent. */
+const POINTS_DECIMALS = 3
 
 /**
  * What shortened the period, under the verdict — the period itself is the

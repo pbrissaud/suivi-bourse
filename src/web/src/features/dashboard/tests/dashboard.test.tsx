@@ -501,6 +501,22 @@ describe('the total gain, then the year, today and the IRR (#1149, #1174, #1280)
     )
   })
 
+  // An IRR of +0,00003 % reads `0,00 %`: the colour and the arrow follow the
+  // figure shown, not the raw value (#1286).
+  it.each([0.0000003, -0.0000003])(
+    'gives an IRR of %s, which reads as zero, no sign',
+    async (xirr) => {
+      server.use(totalsOf({ xirr }))
+      renderApp()
+      const head = await hero()
+
+      const pill = await within(head).findByRole('group', { name: 'TRI' })
+      const figure = within(pill).getByText(/^0,00\s%$/)
+      expect(figure).toHaveClass('text-foreground')
+      expect(figure.querySelector('svg')).toBeNull()
+    },
+  )
+
   it('sets the total gain on its own line, on the Section title rung', async () => {
     renderApp()
     const head = await hero()

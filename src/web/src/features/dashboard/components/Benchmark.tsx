@@ -47,19 +47,6 @@ export function benchmarkRenderState({
 
 const LINK = 'font-medium underline underline-offset-4'
 
-/**
- * To the cent, half away from zero as `Intl` rounds, and `−0` is a zero:
- * `±0,004 €` is *à égalité*, `±0,005 €` is a cent either way.
- *
- * The product is trimmed to 15 significant digits before rounding: `1.005 * 100`
- * is `100.49999999999999` in binary, and the decimal the owner reads is 1,005.
- */
-function toCents(value: number | null | undefined): number | null {
-  if (value === null || value === undefined) return null
-  const cents = Math.round(Number((Math.abs(value) * 100).toPrecision(15)))
-  return (Math.sign(value) * cents) / 100 || 0
-}
-
 const VERDICT = {
   gain: 'dashboard.benchmark.ahead',
   loss: 'dashboard.benchmark.behind',
@@ -74,7 +61,7 @@ export function Benchmark({ benchmark, failure = null, width = 'half' }: Benchma
   const data = benchmark
   const currency = data.base_currency
   const index = data.index ?? data.reference ?? ''
-  const gap = toCents(data.gap_gross)
+  const gap = data.gap_gross ?? null
   const ready = currency !== null && data.state === 'ready'
 
   const toPage = (
@@ -172,7 +159,7 @@ function Accounts({
   return (
     <ul aria-label={t('benchmark.accounts.title')} className="mt-3">
       {rows.map((row) => {
-        const gap = toCents(row.gap_gross)
+        const gap = row.gap_gross ?? null
         return (
           <li
             key={row.account}
