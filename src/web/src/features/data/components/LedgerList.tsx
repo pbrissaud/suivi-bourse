@@ -6,8 +6,13 @@
  * trapped in a nested scroller. This list sits in the page's flow instead, with
  * no card and no scroll box of its own, and draws what a phone reader scans for:
  *
- *     ☐  AAPL                        1 000,00 €
+ *     ☐  AAPL                           × 3
  *        12/03/2026 · Achat             [compte]
+ *     ☐  Virement                  1 000,00 €
+ *        12/03/2026 · Dépôt             [compte]
+ *
+ * The figure is the one the type declares: an amount for a transfer or a
+ * dividend, `× quantity` for a trade (`EventFigure`, #1355).
  *
  * Quantity, unit price, fee and the label under a ticker are not drawn; they
  * live in `EventForm`, one tap away. It takes the table's props and its
@@ -22,7 +27,12 @@ import type { OnChangeFn, RowSelectionState } from '@tanstack/react-table'
 
 import { Checkbox } from '@/components/ui/checkbox'
 import type { LedgerEvent } from '@/features/data/lib/api'
-import { AccountChip, TYPE_LABEL, TypePill } from '@/features/data/components/LedgerTable'
+import {
+  AccountChip,
+  EventFigure,
+  TYPE_LABEL,
+  TypePill,
+} from '@/features/data/components/LedgerTable'
 import { identityOf, isEditable, rowKey, selectionState } from '@/features/data/lib/ledger'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -147,7 +157,9 @@ export function LedgerList({
                       {name ?? ABSENT}
                     </span>
                   )}
-                  <span className="tabular shrink-0">{f.currency(event.amount, currency)}</span>
+                  <span className="tabular shrink-0">
+                    <EventFigure event={event} currency={currency} />
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-1.5">
