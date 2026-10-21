@@ -738,6 +738,37 @@ def test_a_stop_while_a_tool_runs_closes_the_call_as_interrupted(
     assert part['callProviderMetadata']['pydantic_ai']['outcome'] == 'interrupted'
 
 
+def test_the_next_turn_after_a_stop_in_a_tool_is_accepted_with_the_call_closed(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    real = mcp_server.simulation.simulate_sale
+
+    def slow_sale(*args, **kwargs):
+        time.sleep(1.5)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(mcp_server.simulation, 'simulate_sale', slow_sale)
+    seen = []
+
+    async def sale_then_ok(messages, info):
+        if len([m for m in messages if isinstance(m, ModelRequest)
+                and any(p.part_kind == 'user-prompt' for p in m.parts)]) == 1:
+            yield {0: DeltaToolCall('simulate_sale', json.dumps(SALE),
+                                    tool_call_id='c1')}
+        else:
+            seen.extend(messages)
+            yield 'ok'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=sale_then_ok)))
+    stop(runtime, when='tool-input-available')
+
+    again = run(runtime, post('k1', text='And now?'))
+
+    assert again.status_code == 200 and 'ok' in again.text
+    assert [r.outcome for r in returns(seen)] == ['interrupted']
+    assert kinds(stored(runtime, 'k1')) == [
+        'user-prompt', 'tool-call', 'tool-return', 'user-prompt', 'text']
+
+
 def test_a_stop_after_a_proposal_keeps_the_card_and_the_proposal(
         runtime, monkeypatch):
     switched_on(runtime)
