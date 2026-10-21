@@ -10,7 +10,6 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
 
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Button } from '@/components/ui/button'
@@ -32,25 +31,35 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
   const client = useQueryClient()
   // *Relancer* makes a new proposal; the card then shows that one, read like
   // the first (`['proposals']` is invalidated by every decision and merge).
-  const [successor, setSuccessor] = useState<string | undefined>(undefined)
-  const next = useQuery({
-    queryKey: ['proposals', 'successor', successor],
-    queryFn: () => eventProposalsApi.proposals([successor as string]),
-    enabled: successor !== undefined,
+  // Held in the query cache and not in state, so a card that remounts (the
+  // thread is left and returned to) still shows the new proposal.
+  const successor = useQuery<string | null>({
+    queryKey: ['proposal-successor', proposal.id],
+    queryFn: () => null,
+    enabled: false,
+    initialData: null,
+    staleTime: Number.POSITIVE_INFINITY,
   })
-  const shown = next.data?.proposals[0] ?? proposal
+  const next = useQuery({
+    queryKey: ['proposals', 'successor', successor.data],
+    queryFn: () => eventProposalsApi.proposals([successor.data as string]),
+    enabled: successor.data !== null,
+  })
+  const shown = (successor.data !== null ? next.data?.proposals[0] : undefined) ?? proposal
 
   const decide = useMutation({
     mutationFn: (again: boolean) =>
       again ? eventProposalsApi.repropose(shown.id) : eventProposalsApi.ignore(shown.id),
     onSuccess: ({ proposal: decided }, again) => {
-      if (again) setSuccessor(decided.id)
       // Written at once: while a later turn streams, the read is disabled and an
-      // invalidation alone would leave the buttons standing.
+      // invalidation alone would leave the buttons standing. A new proposal
+      // replaces nothing: the one it came from reads `ignored`.
+      if (again) client.setQueryData(['proposal-successor', proposal.id], decided.id)
+      const settled = again ? { ...shown, status: 'ignored' as const } : decided
       client.setQueriesData<{ proposals: { id: string }[] }>(
         { queryKey: ['proposals'] },
         (read) =>
-          read && { proposals: read.proposals.map((p) => (p.id === decided.id ? decided : p)) },
+          read && { proposals: read.proposals.map((p) => (p.id === settled.id ? settled : p)) },
       )
     },
     // A 409 too: the card then reads what the server holds.
@@ -156,7 +165,7 @@ function decided(
 }
 
 /** *3 mars 2026 · Achat · CW8.PA · 10 × 512 · cto*, and a badge where a mark is set. */
-function LineText({ line }: { line: Line }) {
+export function LineText({ line, detailed = false }: { line: Line; detailed?: boolean }) {
   const { t } = useI18n()
   const f = useFormatters()
   const what =
@@ -170,7 +179,9 @@ function LineText({ line }: { line: Line }) {
     t(TYPE_LABEL[line.event_type as LedgerEventType]),
     line.symbol,
     what,
+    detailed && line.fee ? `${t('data.import.proposal.fee')} ${f.number(line.fee, 2)}` : null,
     line.account,
+    detailed ? line.notes : null,
   ].filter((part): part is string => part !== null && part !== '')
   return (
     <>

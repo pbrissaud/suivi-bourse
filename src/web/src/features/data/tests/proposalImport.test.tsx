@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { aLedgerPayload, aReceipt, ledgerEvents } from '@/test/factories'
+import { aDuplicateRow, aLedgerPayload, aReceipt, ledgerEvents } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -71,6 +71,79 @@ describe('the proposal as the import preview’s source (#1119)', () => {
       .getAllByRole('row')
       .filter((row) => row.hasAttribute('data-fresh'))
     expect(marked).toHaveLength(1)
+  })
+
+  it('lists every proposed line in the window, notes and fee included', async () => {
+    const line = (day: string, notes: string | null) => ({
+      date: day,
+      event_type: 'BUY',
+      account: 'beta',
+      symbol: 'CW8.PA',
+      quantity: 10,
+      unit_price: 512,
+      fee: 1.5,
+      amount: null,
+      notes,
+    })
+    const events = Array.from({ length: 12 }, (_, i) =>
+      line(`2026-03-${String(i + 1).padStart(2, '0')}`, i === 11 ? 'Ordre du 12' : null),
+    )
+    server.use(
+      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
+      http.post(ROUTES.agentProposalPreview, () => HttpResponse.json(receipt('ready'))),
+      http.get(ROUTES.agentProposals, () =>
+        HttpResponse.json({
+          proposals: [
+            {
+              id: ID,
+              kind: 'events',
+              title: 'Achat CW8',
+              status: 'ready',
+              count: 12,
+              events,
+              created_at: '2026-10-21T09:00:00+00:00',
+              decided_at: null,
+            },
+          ],
+        }),
+      ),
+    )
+    renderApp({ url: `/ledger?proposal=${ID}` })
+
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Les 12 événements proposés')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Ordre du 12/)).toBeInTheDocument()
+    expect(within(dialog).getAllByText(/frais 1,50/)).toHaveLength(12)
+  })
+
+  it('writes a repeated line whole unless told otherwise, and says so to the server', async () => {
+    const urls: string[] = []
+    const repeated = {
+      ...receipt('ready'),
+      rows: 2,
+      written: 1,
+      duplicates: 1,
+      duplicate_rows: [aDuplicateRow({ duplicate_of: null, repeat_of: 0 })],
+    }
+    server.use(
+      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
+      http.post(ROUTES.agentProposalPreview, ({ request }) => {
+        urls.push(`preview ${new URL(request.url).search}`)
+        return HttpResponse.json(repeated)
+      }),
+      http.post(ROUTES.agentProposalMerge, ({ request }) => {
+        urls.push(`merge ${new URL(request.url).search}`)
+        return HttpResponse.json({ ...receipt('merged'), written_ids: [] }, { status: 201 })
+      }),
+    )
+    const { user } = renderApp({ url: `/ledger?proposal=${ID}` })
+
+    await user.click(await screen.findByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(urls).toContain('merge ?write_repeat=0'))
+    // The census read carries none; the reading of what would be written does.
+    expect(urls).toContain('preview ')
+    expect(urls).toContain('preview ?write_repeat=0')
   })
 
   it('closes on the stale sentence when the ledger moved under the button', async () => {

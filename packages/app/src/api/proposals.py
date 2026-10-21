@@ -13,7 +13,8 @@ from application import profile as profile_module
 from application import proposals as proposals_module
 from application import uploads
 from api.events import (
-    IMPORT_REFUSALS, _asked, _receipt_to_dict, _run_import, import_refusal,
+    IMPORT_REFUSALS, _asked, _receipt_to_dict, _run_import, _write_repeats,
+    import_refusal,
 )
 from api.problem import (
     bad_request, conflict, not_found, proposal_stale, unprocessable_request,
@@ -105,6 +106,12 @@ def _import(proposal_id, *, dry_run):
     except proposals_module.ProposalNotReady as exc:
         return _not_ready(exc)
 
+    try:
+        # A proposal has at most 200 lines: its answers fit the query string,
+        # which the file import ignores (its groups do not).
+        write_repeats = _write_repeats(request.args.getlist('write_repeat'))
+    except uploads.UploadRefused as exc:
+        return import_refusal(exc)
     parsed = uploads.merge([uploads.Upload(
         filename=row['title'], events=event_proposals.events_of(row),
         declared_currency=None)])
@@ -112,7 +119,7 @@ def _import(proposal_id, *, dry_run):
         done = _run_import(
             parsed, uploads.mapping(None), dry_run=dry_run,
             write_duplicates=_asked('write_duplicates'),
-            write_repeats=frozenset(), adopt_currency=False,
+            write_repeats=write_repeats, adopt_currency=False,
             amounts_in=amounts_in,
             record=lambda opened, fresh, **how: event_proposals.merge(
                 opened, proposal_id, now, fresh, **how))

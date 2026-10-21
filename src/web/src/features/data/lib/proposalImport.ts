@@ -9,8 +9,8 @@
  * `409 proposal-stale`: the window closes on that sentence and the card reads
  * *stale*.
  */
-import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import {
@@ -18,8 +18,9 @@ import {
   type Forecast,
   type ImportReview,
   NO_ANSWER,
+  repeatsToWrite,
 } from '@/features/data/components/UploadZone'
-import { proposalPath } from '@/features/agent/lib/eventProposals'
+import { eventProposalsApi, proposalPath } from '@/features/agent/lib/eventProposals'
 import type { ImportReceipt } from '@/features/data/lib/api'
 import { ApiProblem, ROUTES, send } from '@/lib/api'
 import { type MessageKey, useI18n } from '@/lib/i18n'
@@ -31,18 +32,30 @@ export interface MergedReceipt extends ImportReceipt {
   proposal: { id: string; title: string; status: string }
 }
 
-function query(answer: Answer, writeDuplicates: boolean, foreign: readonly string[] = []): string {
+function query(
+  answer: Answer,
+  writeDuplicates: boolean,
+  repeats: readonly number[],
+  foreign: readonly string[] = [],
+): string {
   const params = [
     ...(writeDuplicates ? ['write_duplicates=1'] : []),
+    // A proposal has at most 200 lines: the answers fit the query string.
+    ...repeats.map((first) => `write_repeat=${first}`),
     ...(answer.amountsIn ? [`amounts_in=${answer.amountsIn}`] : []),
     ...foreign.map((pair) => `foreign=${encodeURIComponent(pair)}`),
   ]
   return params.length === 0 ? '' : `?${params.join('&')}`
 }
 
-const preview = (id: string, answer: Answer, writeDuplicates: boolean) =>
+const preview = (
+  id: string,
+  answer: Answer,
+  writeDuplicates: boolean,
+  repeats: readonly number[] = [],
+) =>
   send<MergedReceipt>(
-    proposalPath(ROUTES.agentProposalPreview, id) + query(answer, writeDuplicates),
+    proposalPath(ROUTES.agentProposalPreview, id) + query(answer, writeDuplicates, repeats),
     'POST',
     {},
   )
@@ -64,6 +77,15 @@ export function useProposalImport(
   // The forecast on screen, held beside the mutation for the reason
   // `useEventUpload` gives: TanStack empties `data` on every `mutate`.
   const [standing, setStanding] = useState<Forecast | undefined>(undefined)
+  // The proposal on screen now: a reading that lands for another is let go of.
+  const latest = useRef(id)
+  latest.current = id
+  // Every line the owner is about to merge, not the eight the card lists.
+  const lines = useQuery({
+    queryKey: ['proposals', 'review', id],
+    queryFn: () => eventProposalsApi.proposals([id as string]),
+    enabled: id !== undefined,
+  })
 
   /**
    * **The proposal cannot be acted on any more**: the ledger moved, or it was
@@ -83,18 +105,24 @@ export function useProposalImport(
   }
 
   const read = useMutation({
-    mutationFn: async ({ given }: { given: Answer }): Promise<Forecast> => {
-      const proposal = id as string
+    mutationFn: async ({ given, proposal }: { given: Answer; proposal: string }) => {
       const file = await preview(proposal, given, false)
-      if (!given.writeDuplicates) return { file, writing: file, refused: undefined }
-      // The second reading, as the file's: the flag is a different ledger to replay.
+      // Repeats within one proposal are written whole until the owner says
+      // otherwise, as for a file; the census read carries none.
+      const repeats = repeatsToWrite(file, given.collapsed)
+      const forecast: Forecast = { file, writing: file, refused: undefined }
+      if (!given.writeDuplicates && repeats.length === 0) return { proposal, forecast }
+      // The second reading, as the file's: it is a different ledger to replay.
       try {
-        return { file, writing: await preview(proposal, given, true), refused: undefined }
+        const writing = await preview(proposal, given, given.writeDuplicates, repeats)
+        return { proposal, forecast: { file, writing, refused: undefined } }
       } catch (refused) {
-        return { file, writing: undefined, refused }
+        return { proposal, forecast: { file, writing: undefined, refused } }
       }
     },
-    onSuccess: (forecast) => setStanding(forecast),
+    onSuccess: ({ proposal, forecast }) => {
+      if (proposal === latest.current) setStanding(forecast)
+    },
     onError: (error) => {
       const key = closing(error)
       if (key) closeOn(key)
@@ -105,10 +133,16 @@ export function useProposalImport(
     },
   })
   const write = useMutation({
-    mutationFn: ({ foreign }: { foreign: readonly string[] }) =>
+    mutationFn: ({
+      foreign,
+      repeats,
+    }: {
+      foreign: readonly string[]
+      repeats: readonly number[]
+    }) =>
       send<MergedReceipt>(
         proposalPath(ROUTES.agentProposalMerge, id as string) +
-          query(answer, answer.writeDuplicates, foreign),
+          query(answer, answer.writeDuplicates, repeats, foreign),
         'POST',
         {},
       ),
@@ -135,7 +169,7 @@ export function useProposalImport(
     setAnswer(NO_ANSWER)
     resetRead()
     resetWrite()
-    if (id !== undefined) readFirst({ given: NO_ANSWER })
+    if (id !== undefined) readFirst({ given: NO_ANSWER, proposal: id })
   }, [id])
 
   const pending = read.isPending || write.isPending
@@ -145,7 +179,7 @@ export function useProposalImport(
     reconsider: (next) => {
       if (!held || pending) return
       setAnswer(next)
-      read.mutate({ given: next })
+      read.mutate({ given: next, proposal: id as string })
     },
     commit: () => {
       if (!held || !standing || pending) return
@@ -153,7 +187,7 @@ export function useProposalImport(
       const foreign = answer.amountsIn
         ? (standing.file.foreign_lines ?? []).map((line) => `${line.symbol}:${line.currency}`)
         : []
-      write.mutate({ foreign })
+      write.mutate({ foreign, repeats: repeatsToWrite(standing.file, answer.collapsed) })
     },
     discard: () => {
       setStanding(undefined)
@@ -167,6 +201,6 @@ export function useProposalImport(
     forecast: standing,
     receipt: undefined,
     error: pending ? undefined : (write.error ?? read.error ?? standing?.refused),
-    proposal: held,
+    proposal: held ? { lines: lines.data?.proposals[0]?.events ?? [] } : undefined,
   }
 }

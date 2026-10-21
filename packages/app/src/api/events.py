@@ -348,14 +348,15 @@ def _settled_mapping(opened, correspondence, census):
                                    if label not in declared))
 
 
-def _write_repeats() -> frozenset:
+def _write_repeats(raw: Optional[Sequence[str]] = None) -> frozenset:
     """The ``write_repeat`` form fields: first copies of the groups to write whole.
 
     A form field and not a query parameter: a file pasted twice carries about a
     thousand groups, past the 16 KiB h11 caps on the request line (see
     :func:`delete_events`).
     """
-    raw = request.form.getlist('write_repeat')
+    if raw is None:
+        raw = request.form.getlist('write_repeat')
     # Bounded: ``int()`` refuses past 4300 digits, and no file has that many rows.
     if not all(_DIGITS.fullmatch(value) and len(value) <= 12 for value in raw):
         raise uploads.UploadRefused(

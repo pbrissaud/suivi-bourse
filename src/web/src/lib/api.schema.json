@@ -733,6 +733,16 @@
         "event_type": {
           "type": "string"
         },
+        "fee": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "mark": {
           "enum": [
             "statement",
@@ -740,6 +750,16 @@
             "estimated_price"
           ],
           "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "quantity": {
           "anyOf": [
@@ -779,7 +799,9 @@
         "symbol",
         "quantity",
         "unit_price",
-        "amount"
+        "fee",
+        "amount",
+        "notes"
       ],
       "title": "ProposedLine",
       "type": "object"

@@ -850,6 +850,8 @@
   "problem.entryGone": "This event is no longer in the ledger: it was deleted elsewhere, and nothing was changed here.",
   "problem.badRequest": "The app refused the request this page made.",
   "problem.conflict": "Refused: that name already exists, or something still depends on it.",
+  "data.import.proposal.fee": "fee",
+  "data.import.proposal.lines": "{count, plural, one {The proposed event} other {The # proposed events}}",
   "data.import.proposal.decided": "This proposal is no longer waiting: nothing was written.",
   "problem.proposalStale": "The ledger has changed since this proposal: nothing was written.",
   "problem.unreplayableLedger": "Refused, and nothing changed: the ledger would end up selling shares it does not hold.",

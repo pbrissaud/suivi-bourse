@@ -19,7 +19,9 @@ from application import entries
 from application import instants
 from application import ledger
 from application import proposals
-from application.event_body import InvalidBody, body_of, event_from_body
+from application.event_body import (
+    TEXT_FIELDS, InvalidBody, body_of, event_from_body,
+)
 from application.events.aggregator import AggregationError
 from application.events.schemas import Event
 from application.proposals import (
@@ -29,6 +31,8 @@ from application.proposals import (
 KIND = 'events'
 EVENTS_MAX = 200
 TITLE_MAX = 80
+#: A text member (symbol, name, account, notes) is a label, not a document.
+TEXT_MAX = 200
 
 Mark = Literal['statement', 'gap', 'estimated_price']
 
@@ -41,7 +45,9 @@ class ProposedLine(TypedDict):
     symbol: Optional[str]
     quantity: Optional[float]
     unit_price: Optional[float]
+    fee: Optional[float]
     amount: Optional[float]
+    notes: Optional[str]
     mark: NotRequired[Mark]
 
 
@@ -97,10 +103,16 @@ def parse(events_json: Any) -> List[Event]:
                 f"line {line} (mark): a mark is set by the app, never "
                 f"proposed; leave it out", line, 'mark')
         try:
-            events.append(event_from_body(body))
+            event = event_from_body(body)
         except InvalidBody as exc:
             raise InvalidProposal(f"line {line} ({exc.field}): {exc}",
                                   line, exc.field)
+        for field in TEXT_FIELDS:
+            if len(getattr(event, field) or '') > TEXT_MAX:
+                raise InvalidProposal(
+                    f"line {line} ({field}): {field} is past {TEXT_MAX} "
+                    f"characters", line, field)
+        events.append(event)
     return events
 
 
@@ -250,4 +262,4 @@ def _shape(row: dict, now: datetime, stamp: str) -> EventsProposal:
 
 
 _LISTED = ('date', 'event_type', 'account', 'symbol', 'quantity',
-           'unit_price', 'amount')
+           'unit_price', 'fee', 'amount', 'notes')

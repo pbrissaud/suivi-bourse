@@ -27,7 +27,9 @@ function aLine(overrides: Partial<Line> = {}): Line {
     symbol: 'CW8.PA',
     quantity: 10,
     unit_price: 512,
+    fee: null,
     amount: null,
+    notes: null,
     ...overrides,
   }
 }

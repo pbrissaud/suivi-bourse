@@ -154,7 +154,8 @@ def test_a_proposal_reads_stale_once_the_ledger_moved(http, opened):
     assert read['status'] == 'stale' and read['count'] == 1
     assert read['events'] == [{
         'date': '2026-03-03', 'event_type': 'BUY', 'account': 'cto',
-        'symbol': 'CW8.PA', 'quantity': 10.0, 'unit_price': 512.0, 'amount': None}]
+        'symbol': 'CW8.PA', 'quantity': 10.0, 'unit_price': 512.0, 'fee': None,
+        'amount': None, 'notes': None}]
 
 
 def test_the_list_route_validates_its_ids(http):
@@ -408,3 +409,48 @@ def test_the_tool_answers_through_mcp_directly(runtime):
 
     assert answer['count'] == 1 and answer['title'] == 'Achat CW8'
     assert count(runtime.store, 'event') == 1
+
+
+# ------------------------------------------------- after the adversarial review --
+
+def test_two_identical_lines_are_skipped_unless_the_owner_writes_the_repeat(
+        http, opened):
+    proposal_id = propose_now(opened, BUY, BUY)
+
+    preview = http.post(f'/api/agent/proposals/{proposal_id}/preview').get_json()
+    assert preview['rows'] == 2 and preview['written'] == 1
+    [repeat] = preview['duplicate_rows']
+    assert repeat['repeat_of'] == 0
+
+    whole = http.post(f'/api/agent/proposals/{proposal_id}/preview?write_repeat=0')
+    assert whole.get_json()['written'] == 2
+    merged = http.post(f'/api/agent/proposals/{proposal_id}/merge?write_repeat=0')
+    assert merged.status_code == 201 and len(merged.get_json()['written_ids']) == 2
+    assert count(opened, 'event') == 3
+
+
+def test_a_repeat_index_that_names_no_group_is_refused(http, opened):
+    proposal_id = propose_now(opened)
+
+    answer = http.post(f'/api/agent/proposals/{proposal_id}/merge?write_repeat=0')
+
+    assert answer.status_code == 422 and count(opened, 'event') == 1
+    assert opened.query('SELECT status FROM proposal') == [('ready',)]
+
+
+@pytest.mark.parametrize('body, where', [
+    ({'notes': 'x' * 201}, 'line 1 (notes)'),
+    ({'symbol': 'X' * 201}, 'line 1 (symbol)'),
+])
+def test_a_text_member_past_its_cap_is_refused_naming_line_and_field(
+        opened, body, where):
+    with pytest.raises(event_proposals.InvalidProposal, match=re.escape(where)):
+        event_proposals.propose(opened, 'x', batch({**BUY, **body}), NOW)
+    assert count(opened, 'proposal') == 0
+
+
+def test_a_number_too_large_for_a_float_is_refused_in_words(opened):
+    huge = '[{"date": "2026-03-03", "event_type": "DEPOSIT", "amount": 1' + '0' * 400 + '}]'
+
+    with pytest.raises(event_proposals.InvalidProposal, match=r'line 1 \(amount\)'):
+        event_proposals.propose(opened, 'x', huge, NOW)

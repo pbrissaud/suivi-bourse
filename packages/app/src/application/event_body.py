@@ -77,4 +77,7 @@ def _number_member(body: dict, name: str) -> Optional[float]:
         return None
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise InvalidBody(f"{name} must be a number", name)
-    return float(raw)
+    try:
+        return float(raw)
+    except OverflowError:
+        raise InvalidBody(f"{name} is too large to be a number", name)

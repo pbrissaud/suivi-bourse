@@ -76,6 +76,7 @@ import {
   repeatGroups,
   type Correspondence,
 } from '@/features/data/lib/imports'
+import type { ProposedLine } from '@/lib/api.gen'
 import { receiptMessage } from '@/lib/receipts'
 
 /**
@@ -125,7 +126,7 @@ export const NO_ANSWER: Answer = {
  * Computed from the census just read and never held, so an id a remapped
  * account has dropped is never sent (#1267).
  */
-function repeatsToWrite(
+export function repeatsToWrite(
   census: ImportReceipt,
   collapsed: ReadonlySet<number> | undefined,
 ): number[] {
@@ -215,7 +216,7 @@ export interface ImportReview {
    * The rows are the agent's proposal and not files (#1119): there is no file
    * to take out of the batch, and the window says whose rows they are.
    */
-  proposal?: boolean
+  proposal?: { lines: readonly ProposedLine[] }
 }
 
 /** The gesture, held by whoever survives the write it causes. */

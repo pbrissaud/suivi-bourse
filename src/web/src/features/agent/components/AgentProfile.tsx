@@ -97,16 +97,17 @@ export function useProposals(
     enabled: !busy && eventIds.length > 0,
     placeholderData: keepPreviousData,
   })
-  const failed = facts.error !== null || events.error !== null
+  const factsFailed = facts.error !== null
+  const eventsFailed = events.error !== null
   return useMemo(() => {
-    if (failed) return new Map()
-    if (facts.data === undefined && events.data === undefined) return undefined
-    const read: ThreadProposal[] = [
-      ...(facts.data?.proposals ?? []),
-      ...(events.data?.proposals ?? []),
-    ]
-    return new Map(read.map((p) => [p.id, p]))
-  }, [failed, facts.data, events.data])
+    // A read that failed is an empty answer for its own kind only (the other
+    // kind's cards still show), and `undefined` stays *nobody has answered*.
+    const answered = (failed: boolean, data: { proposals: ThreadProposal[] } | undefined) =>
+      failed ? [] : data?.proposals
+    const read = [answered(factsFailed, facts.data), answered(eventsFailed, events.data)]
+    if (read.every((one) => one === undefined)) return undefined
+    return new Map(read.flatMap((one) => one ?? []).map((p) => [p.id, p]))
+  }, [factsFailed, eventsFailed, facts.data, events.data])
 }
 
 /** A proposal (5A): the question and its two answers, or the one line it came to. */

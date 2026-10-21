@@ -126,7 +126,9 @@ export interface ProposedLine {
   amount: number | null;
   date: string;
   event_type: string;
+  fee: number | null;
   mark?: "statement" | "gap" | "estimated_price";
+  notes: string | null;
   quantity: number | null;
   symbol: string | null;
   unit_price: number | null;

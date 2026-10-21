@@ -82,6 +82,7 @@ import { XIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
+import { LineText } from '@/features/agent/components/EventsCard'
 import type { ImportReview } from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
 import {
@@ -348,6 +349,23 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
 
             {ready ? (
               <>
+                {upload.proposal && upload.proposal.lines.length > 0 ? (
+                  <section className="space-y-1.5">
+                    <h3 className="text-sm font-medium">
+                      {t('data.import.proposal.lines', { count: upload.proposal.lines.length })}
+                    </h3>
+                    {/* Every line, not a summary: this is what gets merged. */}
+                    <ul className="max-h-52 space-y-1 overflow-y-auto rounded-lg border p-2.5 text-sm">
+                      {upload.proposal.lines.map((line, index) => (
+                        // A read-out of a stored batch: the position is the identity.
+                        <li key={index}>
+                          <LineText line={line} detailed />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+
                 <AccountsBlock
                   lines={lines}
                   declared={declared}
