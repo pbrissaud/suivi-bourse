@@ -1252,3 +1252,126 @@ describe('the proposals come under the answer (#1271)', () => {
     expect(violations).toEqual([])
   })
 })
+
+// ------------------------------------------------------------------------ //
+
+/** The server's read of thread `t1`, as a stopped or failed turn leaves it (#1324). */
+function readBack(thread: { failed: boolean; messages: UIMessage[] }) {
+  server.use(
+    http.get(ROUTES.agentThread, ({ params }) =>
+      HttpResponse.json({ id: String(params.id), title: 'Fil', ...thread }),
+    ),
+  )
+}
+
+const asked = (text: string): UIMessage => ({
+  id: 'u',
+  role: 'user',
+  parts: [{ type: 'text', text }],
+})
+
+describe('a turn that did not complete (#1324)', () => {
+  const follows = (a: Element, b: Element) =>
+    Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+  it('draws a call that failed or was cut off as halted, in a mark and in words', async () => {
+    switchedOn()
+    readBack({
+      failed: false,
+      messages: [
+        asked(QUESTION),
+        assistant(
+          {
+            type: 'tool-simulate_sale',
+            toolCallId: 'cut',
+            state: 'output-available',
+            input: {},
+            output: 'The tool call was interrupted before a result was produced.',
+            callProviderMetadata: { pydantic_ai: { outcome: 'interrupted' } },
+          },
+          {
+            type: 'tool-list_positions',
+            toolCallId: 'broken',
+            state: 'output-error',
+            input: {},
+            errorText: 'boom',
+          },
+          {
+            type: 'tool-list_accounts',
+            toolCallId: 'fine',
+            state: 'output-available',
+            input: {},
+            output: {},
+          },
+        ),
+      ],
+    })
+    const { main } = await openPage('/agent/t1')
+
+    const halted = await within(main).findAllByRole('button', { name: /interrompu$/ })
+    expect(halted.map((b) => b.textContent)).toEqual([
+      'Simulation d’une vente et de son impôt. interrompu',
+      'Lecture de vos positions. interrompu',
+    ])
+    for (const button of halted) {
+      const line = button.querySelector('[data-slot=trace-line]')
+      expect(line).toHaveAttribute('data-status', 'error')
+      const mark = line?.querySelector('[data-slot=trace-icon]')
+      expect(mark).toHaveAttribute('aria-hidden', 'true')
+      expect(mark?.querySelector('svg')).not.toBeNull()
+    }
+    const fine = within(main).getByRole('button', { name: 'Lecture de vos comptes.' })
+    expect(fine.querySelector('[data-slot=trace-line]')).not.toHaveAttribute('data-status')
+  })
+
+  it('draws a stopped turn’s card after its partial text, as the stream did', async () => {
+    switchedOn()
+    proposalsReady()
+    readBack({
+      failed: false,
+      messages: [
+        asked(QUESTION),
+        assistant({
+          type: 'tool-propose_profile_fact',
+          toolCallId: 'p1',
+          state: 'output-available',
+          input: { key: 'marginal_rate', value: 0.3 },
+          output: { proposal_id: FIRST, status: 'ready' },
+        }),
+        { ...assistant({ type: 'text', text: 'Je note votre taux' }), id: 'b' },
+      ],
+    })
+    const { main } = await openPage('/agent/t1')
+
+    const card = await within(main).findByRole('button', { name: 'Confirmer' })
+    expect(follows(within(main).getByText('Je note votre taux'), card)).toBe(true)
+    expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says a reloaded failed turn under its partial answer, and Réessayer asks the question again', async () => {
+    switchedOn()
+    readBack({
+      failed: true,
+      messages: [asked('Question t1 ?'), assistant({ type: 'text', text: 'Un début.' })],
+    })
+    const sent = scripted(
+      createChat()
+        .user('Question t1 ?')
+        .assistant(({ writer }) => writer.text('La réponse entière.', { mode: 'instant' })),
+    )
+    const { user, main } = await openPage('/agent/t1')
+
+    const alert = await within(main).findByRole('alert')
+    expect(alert).toHaveTextContent(fr['agent.failed.reloaded'])
+    expect(follows(within(main).getByText('Un début.'), alert)).toBe(true)
+
+    await user.click(within(alert).getByRole('button', { name: 'Réessayer' }))
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(1))
+    expect(sent.mock.calls[0][0].parts).toEqual([{ type: 'text', text: 'Question t1 ?' }])
+    expect(await within(main).findByText('La réponse entière.')).toBeInTheDocument()
+    expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
+    // The failed turn is replaced, not stacked.
+    expect(within(main).queryByText('Un début.')).not.toBeInTheDocument()
+    expect(within(main).getAllByText('Question t1 ?')).toHaveLength(1)
+  })
+})

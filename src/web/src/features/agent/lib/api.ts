@@ -63,6 +63,8 @@ export interface AgentThreadSummary {
 export interface AgentThread {
   id: string
   title: string | null
+  /** The last turn ended on an error: its partial answer is there, the rest is not. */
+  failed: boolean
   messages: UIMessage[]
 }
 

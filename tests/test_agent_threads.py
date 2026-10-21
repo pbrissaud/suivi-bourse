@@ -3,7 +3,8 @@ import os
 
 import pytest
 from pydantic_ai.messages import (
-    ModelRequest, ModelResponse, TextPart, UserPromptPart,
+    ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart,
+    UserPromptPart,
 )
 
 from application import agent_threads
@@ -60,6 +61,53 @@ def test_unanswered_requests_are_dropped_from_the_history():
 
     assert agent_threads.answered(history) == history[:2]
     assert agent_threads.answered(history[:2]) == history[:2]
+
+
+def test_a_thread_says_whether_its_last_turn_failed():
+    assert thread('k1', [asked('Q')])['failed'] is False
+    assert agent_threads.saved(
+        None, 'k1', 't', [asked('Q')], 'anthropic', 'm', True)['failed'] is True
+
+
+def test_a_failed_turn_is_dropped_back_to_its_question():
+    history = [asked('Q'), answer('A'), asked('B'), answer('half')]
+
+    assert agent_threads.answered(history, True) == history[:2]
+    # A stopped turn is not failed: its partial answer stays.
+    assert agent_threads.answered(history) == history
+
+
+def test_a_closing_request_of_tool_returns_is_kept():
+    closing = ModelRequest(parts=[ToolReturnPart(
+        tool_name='t', content='x', tool_call_id='c', outcome='interrupted')])
+    history = [asked('Q'), ModelResponse(parts=[
+        ToolCallPart(tool_name='t', tool_call_id='c')]), closing]
+
+    assert agent_threads.answered(history) == history
+
+
+def test_closing_answers_the_calls_the_last_response_left_open():
+    done = ToolCallPart(tool_name='t', tool_call_id='done')
+    cut = ToolCallPart(tool_name='t', tool_call_id='cut')
+    history = [asked('Q'), ModelResponse(parts=[done]),
+               ModelRequest(parts=[ToolReturnPart(
+                   tool_name='t', content='x', tool_call_id='done')]),
+               ModelResponse(parts=[cut])]
+
+    closed = agent_threads.closed(history)
+
+    assert closed[:-1] == history
+    (part,) = closed[-1].parts
+    assert (part.tool_call_id, part.outcome) == ('cut', 'interrupted')
+    assert agent_threads.closed(closed) == closed
+    whole = [asked('Q'), answer('A')]
+    assert agent_threads.closed(whole) == whole
+
+
+def test_an_empty_trailing_response_is_not_kept():
+    history = [asked('Q')]
+
+    assert agent_threads.closed([*history, ModelResponse(parts=[])]) == history
 
 
 def test_the_listing_is_most_recent_first(tmp_path):

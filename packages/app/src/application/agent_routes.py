@@ -23,6 +23,7 @@ from starlette.routing import Route
 
 from application import agent
 from application import agent_threads
+from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter, VercelAIEventStream
 from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
@@ -175,10 +176,11 @@ def build_app(runtime, mcp) -> Starlette:
             secret=settings['api_key'])
 
         def stored_history():
-            """The file, and its history without a question left unanswered."""
+            """The file, and its history without a turn that has no answer."""
             stored = agent_threads.read(directory, thread_id)
             return stored, agent_threads.answered(
-                agent_threads.messages(stored))
+                agent_threads.messages(stored),
+                bool((stored or {}).get('failed')))
 
         try:
             stored, history = await anyio.to_thread.run_sync(stored_history)
@@ -191,11 +193,11 @@ def build_app(runtime, mcp) -> Starlette:
         title = agent_threads.title_of(' '.join(
             getattr(part, 'text', '') for part in run_input.messages[0].parts))
 
-        def save(messages, thread):
+        def save(messages, thread, failed=False):
             """The thread holding ``messages``, written whole."""
             kept = agent_threads.saved(
                 thread, thread_id, title, messages,
-                settings['provider'], settings['model'])
+                settings['provider'], settings['model'], failed)
             agent_threads.write(directory, kept)
             return kept
 
@@ -209,8 +211,14 @@ def build_app(runtime, mcp) -> Starlette:
             running.discard(thread_id)
             return _error(500, message)
 
+        #: The run was written by ``on_complete``, saved or not: ``released``
+        #: writes what a run that ended otherwise held, and only then.
+        kept = False
+
         async def on_complete(result):
             """Rewrite the thread with the whole run, or say it was not kept."""
+            nonlocal kept
+            kept = True  # before the await: a save that fails here is not retried
             # The counts alone: what the cache saved, never the key or a word.
             usage = result.usage
             logger.info(
@@ -226,13 +234,40 @@ def build_app(runtime, mcp) -> Starlette:
                     f"agent thread {directory / thread_id}.json: {exc}")
                 yield ErrorChunk(error_text=NOT_SAVED.format(_reason(exc)))
 
+        async def keep_partial(captured, failed):
+            """A turn that did not complete: what it held, as far as it got.
+
+            A stop (the client left: the cancellation reaches the stream
+            wherever it waits) and a provider error end here with the partial
+            answer and the tool calls that returned, which Pydantic AI holds
+            in ``captured``. Shielded, or the cancellation that brought us here
+            cancels the write too.
+            """
+            if len(captured) <= len(history):  # not even the question: it is kept
+                return
+            try:
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(
+                        save, agent_threads.closed(captured), first, failed)
+            except OSError as exc:
+                logger.error(
+                    f"agent thread {directory / thread_id}.json: {exc}")
+
         async def released():
             """The stream, giving the thread back however it ends."""
+            failed = False
             try:
-                async for chunk in adapter.run_stream(
-                        message_history=history,
-                        on_complete=on_complete):
-                    yield chunk
+                with capture_run_messages() as captured:
+                    try:
+                        async for chunk in adapter.run_stream(
+                                message_history=history,
+                                on_complete=on_complete):
+                            failed = failed or (
+                                not kept and isinstance(chunk, ErrorChunk))
+                            yield chunk
+                    finally:
+                        if not kept:
+                            await keep_partial(captured, failed)
             finally:
                 running.discard(thread_id)
 
@@ -263,6 +298,7 @@ def build_app(runtime, mcp) -> Starlette:
             messages = VercelAIAdapter.dump_messages(
                 agent_threads.messages(stored), sdk_version=AI_SDK_VERSION)
             return {'id': thread_id, 'title': stored.get('title'),
+                    'failed': bool(stored.get('failed')),
                     'messages': [m.model_dump(mode='json', by_alias=True,
                                               exclude_none=True)
                                  for m in messages]}
