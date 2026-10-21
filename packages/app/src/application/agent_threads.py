@@ -98,8 +98,8 @@ def answered(history: list, failed: bool = False) -> list:
 
     A question no response followed (the turn was killed) is dropped, and the
     next turn takes its place rather than stacking a second one on it. A
-    ``failed`` turn is dropped whole, back to and including its question, so
-    *Réessayer* replaces it. A stopped turn is kept: its partial answer is the
+    ``failed`` turn is dropped whole, back to and including its question,
+    whatever the next turn asks (the page drops it too). A stopped turn is kept: its partial answer is the
     conversation's, and a closing request of tool returns is not a question.
     """
     history = list(history)

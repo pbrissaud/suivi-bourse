@@ -1348,6 +1348,30 @@ describe('a turn that did not complete (#1324)', () => {
     expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('drops a reloaded failed turn from the page when another question is asked, as the server does', async () => {
+    switchedOn()
+    readBack({
+      failed: true,
+      messages: [asked('Question t1 ?'), assistant({ type: 'text', text: 'Un début.' })],
+    })
+    const sent = scripted(
+      createChat()
+        .user('Autre chose ?')
+        .assistant(({ writer }) => writer.text('Autre réponse.', { mode: 'instant' })),
+    )
+    const { user, main } = await openPage('/agent/t1')
+    await within(main).findByRole('alert')
+
+    await ask(user, main, 'Autre chose ?')
+
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(1))
+    expect(sent.mock.calls[0][0].parts).toEqual([{ type: 'text', text: 'Autre chose ?' }])
+    expect(await within(main).findByText('Autre réponse.')).toBeInTheDocument()
+    expect(within(main).queryByText('Question t1 ?')).not.toBeInTheDocument()
+    expect(within(main).queryByText('Un début.')).not.toBeInTheDocument()
+    expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('says a reloaded failed turn under its partial answer, and Réessayer asks the question again', async () => {
     switchedOn()
     readBack({

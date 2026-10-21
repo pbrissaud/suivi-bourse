@@ -428,19 +428,23 @@ function AgentConversation() {
     if (threadId === undefined) {
       void navigate({ to: '/agent/$threadId', params: { threadId: chat.id }, replace: true })
     }
+    // A failed turn is dropped by the server whatever is asked next, so the
+    // page drops it too: what is on screen is what the model will be given.
+    if (failed) {
+      const last = messages.map((m) => m.role).lastIndexOf('user')
+      if (last !== -1) setMessages(messages.slice(0, last))
+    }
     if (error) clearError()
     settle()
     void sendMessage({ text })
   }
 
-  // *Réessayer*: the question again, as a new turn. The server keeps the
-  // unanswered one in the file and replaces it rather than stacking a second.
+  // *Réessayer*: the question again, as a new turn, in place of the failed one.
   const retry = () => {
     const last = messages.map((m) => m.role).lastIndexOf('user')
     if (last === -1) return
     const text = textOf(messages[last])
     if (text === '') return
-    setMessages(messages.slice(0, last))
     ask(text)
   }
 
