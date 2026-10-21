@@ -113,6 +113,12 @@ Ollama's address), test the connection, then flip the switch at the top of the
 section. The key stays on this server, in the `/data` volume, and is never sent
 back to the browser: the page only shows its last four characters.
 
+Once a model is chosen, *Thinking* sets how hard the agent reasons before it
+answers: light (the default), medium or deep. A change is saved at once, with no
+new connection test. More thinking costs more output tokens and more time per
+answer, so raise it for comparing options or running simulations; a model that
+does not reason ignores it.
+
 **What goes to the provider:**
 
 - the results of the agent's tools — your figures, as the app computes them;

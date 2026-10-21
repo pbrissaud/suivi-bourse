@@ -1171,3 +1171,40 @@ def test_an_agent_config_from_before_gains_model_name(tmp_path):
                 (True, 'anthropic', 'claude-x', None, 'test-key-0001')]
     finally:
         opened.close()
+
+
+def test_a_new_agent_config_reads_low_and_an_old_row_is_stepped_to_low(tmp_path):
+    """The column's default is the cheap level, on a new store and on a row
+    stored before the step (#1191)."""
+    path = tmp_path / 'old.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    connection.execute('DROP TABLE agent_config')
+    connection.execute(
+        'CREATE TABLE agent_config ('
+        'id INTEGER PRIMARY KEY CHECK (id = 1), '
+        'enabled BOOLEAN NOT NULL DEFAULT FALSE, provider VARCHAR, '
+        'model VARCHAR, model_name VARCHAR, base_url VARCHAR, api_key VARCHAR, '
+        'key_set_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL)')
+    connection.execute(
+        "INSERT INTO agent_config (id, enabled, provider, model, updated_at) "
+        "VALUES (1, TRUE, 'anthropic', 'claude-x', "
+        "TIMESTAMPTZ '2026-10-01 00:00:00+00')")
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'add_agent_thinking'")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query('SELECT thinking FROM agent_config') == [('low',)]
+    finally:
+        opened.close()
+
+    fresh = store_module.open_store(tmp_path / 'new.duckdb', schema_steps.STEPS)
+    try:
+        fresh.execute(
+            "INSERT INTO agent_config (id, updated_at) "
+            "VALUES (1, TIMESTAMPTZ '2026-10-01 00:00:00+00')")
+        assert fresh.query('SELECT thinking FROM agent_config') == [('low',)]
+    finally:
+        fresh.close()

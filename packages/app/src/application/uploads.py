@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from logfmt_logger import getLogger
 
 from application import accounts as accounts_module
-from application.events.loader import EventLoader
+from application.events.loader import EventLoader, replay_key
 from application.events.loader import EventLoaderError
 from application.events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, Event
 
@@ -27,7 +27,14 @@ MIGRATION_PAGE = 'https://pbrissaud.github.io/suivi-bourse/docs/v5/coming-from-v
 
 
 class UploadRefused(Exception):
-    """The file is not one this app writes rows from, and nothing was written."""
+    """The file is not one this app writes rows from, and nothing was written.
+
+    ``file`` names the part of a batch that was refused, when one was (#1266).
+    """
+
+    def __init__(self, message: str, file: Optional[str] = None):
+        super().__init__(message)
+        self.file = file
 
 
 class UploadTooLarge(Exception):
@@ -41,6 +48,20 @@ class Upload:
     filename: str
     events: List[Event]
     declared_currency: Optional[str]
+
+
+@dataclass(frozen=True)
+class Batch:
+    """The files of one request, merged: the unit a preview and a write act on (#1266)."""
+
+    files: Tuple[Upload, ...]
+    events: List[Event]
+    origin: List[int]
+    declared_currency: Optional[str]
+
+    @property
+    def filename(self) -> str:
+        return self.files[0].filename
 
 
 @dataclass(frozen=True)
@@ -69,6 +90,16 @@ class AccountMapping:
 
 
 @dataclass(frozen=True)
+class FileSummary:
+    """One file of the batch, read off before any correspondence."""
+
+    filename: str
+    rows: int
+    first_day: Optional[date]
+    last_day: Optional[date]
+
+
+@dataclass(frozen=True)
 class Receipt:
     """What the gesture produced, in the units the owner counts in."""
 
@@ -81,6 +112,7 @@ class Receipt:
     accounts: Tuple[str, ...]
     symbols: Tuple[str, ...]
     file_accounts: Tuple[FileAccount, ...] = ()
+    files: Tuple[FileSummary, ...] = ()
 
 
 def oversize(content_length: Optional[int]) -> bool:
@@ -97,6 +129,42 @@ def too_large_detail() -> str:
 def read(filename: str, stream) -> Upload:
     """One uploaded file as the events it declares, or a named refusal."""
     name = Path(filename or '').name
+    try:
+        return _read(name, stream)
+    except UploadRefused as exc:
+        exc.file = name or None
+        raise
+
+
+def merge(files: Sequence[Upload]) -> Batch:
+    """The files of a request as one ledger: rows in the order the loader replays.
+
+    The parts are concatenated in the order sent, then stable-sorted by the
+    loader's own key, so a ``BUY`` in one file and a same-day ``SELL`` in
+    another are laid down BUY first. ``origin[i]`` is the index in ``files`` of
+    ``events[i]``; every row index of a batch is a position in this list.
+    """
+    tagged = [(event, n) for n, upload in enumerate(files)
+              for event in upload.events]
+    tagged.sort(key=lambda pair: replay_key(pair[0]))
+
+    declared = None
+    for upload in files:
+        if not upload.declared_currency:
+            continue
+        if declared and declared != upload.declared_currency:
+            raise UploadRefused(
+                f"{upload.filename} declares {upload.declared_currency} as its "
+                f"reporting currency and an earlier file declares {declared}; "
+                f"base_currency is one fact about the whole batch",
+                file=upload.filename or None)
+        declared = upload.declared_currency
+
+    return Batch(files=tuple(files), events=[event for event, _ in tagged],
+                 origin=[n for _, n in tagged], declared_currency=declared)
+
+
+def _read(name: str, stream) -> Upload:
     if name.lower() in LEGACY_FILENAMES:
         logger.warning(f"Refused {name}: a v4 configuration file")
         raise UploadRefused(
@@ -166,13 +234,13 @@ def _label(event: Event) -> str:
     return (event.account or '').strip()
 
 
-def receipt(filename: str, rows: Sequence[Event], *,
+def receipt(batch: Batch, rows: Sequence[Event], *,
             written: int, duplicates: int,
             file_accounts: Tuple[FileAccount, ...] = ()) -> Receipt:
-    """The receipt for one file, in the order a reader reads it."""
+    """The receipt for one batch, in the order a reader reads it."""
     days = sorted(event.date for event in rows if event.date)
     return Receipt(
-        filename=Path(filename or '').name,
+        filename=Path(batch.filename or '').name,
         rows=len(rows),
         written=written,
         duplicates=duplicates,
@@ -183,7 +251,15 @@ def receipt(filename: str, rows: Sequence[Event], *,
         symbols=tuple(sorted({event.symbol for event in rows
                               if event.symbol})),
         file_accounts=file_accounts,
+        files=tuple(_summary(upload) for upload in batch.files),
     )
+
+
+def _summary(upload: Upload) -> FileSummary:
+    days = sorted(event.date for event in upload.events if event.date)
+    return FileSummary(filename=upload.filename, rows=len(upload.events),
+                       first_day=days[0] if days else None,
+                       last_day=days[-1] if days else None)
 
 
 def _bounded(stream) -> bytes:
@@ -221,7 +297,7 @@ def _parse(path: Path, name: str) -> Upload:
 __all__ = [
     'MAX_UPLOAD_BYTES', 'MAX_BODY_BYTES', 'MIGRATION_PAGE', 'LEGACY_FILENAMES',
     'IMPORT_SUFFIXES',
-    'AccountMapping', 'FileAccount',
+    'AccountMapping', 'Batch', 'FileAccount', 'FileSummary',
     'Receipt', 'Upload', 'UploadRefused', 'UploadTooLarge',
-    'census', 'mapping', 'oversize', 'too_large_detail', 'read', 'receipt',
+    'census', 'mapping', 'merge', 'oversize', 'too_large_detail', 'read', 'receipt',
 ]

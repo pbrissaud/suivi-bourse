@@ -3,7 +3,7 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, current_app, jsonify
 
 from application import account_facts
 from application import accounts as accounts_module
@@ -11,12 +11,14 @@ from application import instants
 from application import main
 from application import reassignment
 from application import taxation
+from application import taxation_registry
 from application.events.aggregator import AggregationError
 from api.problem import (
     GESTURE_WRITE,
     bad_request,
     conflict,
     not_found,
+    provider_refused,
     unprocessable_request,
     model_in_use,
 )
@@ -264,6 +266,20 @@ def list_taxation_models():
         'models': [asdict(model)
                    for model in accounts_module.read_models(_store())],
     })
+
+
+@bp.post('/taxation-models/registry')
+def read_taxation_registry():
+    """The wrappers the documentation site publishes: the one outbound call, on click.
+
+    Outside ``writing()``, like the theme import: a slow Pages must not hold the
+    store. Nothing is stored; a pick is a ``POST /taxation-models`` (#1290).
+    """
+    try:
+        items = taxation_registry.fetch(current_app.config['TAXATION_REGISTRY_FETCH'])
+    except taxation_registry.FetchFailed as exc:
+        return provider_refused(f'taxation-registry: {exc.reason}', 'taxation-registry', 'unreachable')
+    return jsonify({'items': items})
 
 
 @bp.post('/taxation-models')

@@ -124,6 +124,33 @@ export function exportable(events: readonly LedgerEvent[]): { events: boolean } 
 }
 
 /**
+ * **The ten columns a file is read by**, in the export's order without
+ * `base_currency` (#1266). The empty ledger renders this list and the template
+ * is built from it, so the two cannot disagree; the docs page's example and the
+ * loader are pinned to it by tests.
+ */
+export const EVENT_FILE_COLUMNS = [
+  'date',
+  'event_type',
+  'account',
+  'symbol',
+  'name',
+  'quantity',
+  'unit_price',
+  'fee',
+  'amount',
+  'notes',
+] as const
+
+/**
+ * The template as a `data:` URI: the header and nothing else. An example row the
+ * reader forgets to delete would be imported.
+ */
+export function templateHref(): string {
+  return `data:text/csv;charset=utf-8,${encodeURIComponent(`${EVENT_FILE_COLUMNS.join(',')}\n`)}`
+}
+
+/**
  * **The groups of identical lines the file repeats** (#1267): the index of each
  * group's first copy, in the order the file has them, with how many lines the
  * group holds. Read off the census, whose `duplicate_rows` name every copy after
@@ -131,13 +158,53 @@ export function exportable(events: readonly LedgerEvent[]): { events: boolean } 
  */
 export function repeatGroups(
   rows: readonly DuplicateRow[],
-): { first: number; row: DuplicateRow; copies: number }[] {
-  const groups = new Map<number, { first: number; row: DuplicateRow; copies: number }>()
+): { first: number; row: DuplicateRow; copies: number; files: number[] }[] {
+  const groups = new Map<
+    number,
+    { first: number; row: DuplicateRow; copies: number; files: Set<number> }
+  >()
   for (const row of rows) {
     if (row.repeat_of === null) continue
     const group = groups.get(row.repeat_of)
-    if (group) group.copies += 1
-    else groups.set(row.repeat_of, { first: row.repeat_of, row, copies: 2 })
+    if (group) {
+      group.copies += 1
+      group.files.add(row.file)
+    } else {
+      // The first copy is written, so it is not a row: its file is the group's
+      // `repeat_of_file` (#1266).
+      const files = new Set([row.file])
+      if (row.repeat_of_file !== null) files.add(row.repeat_of_file)
+      groups.set(row.repeat_of, { first: row.repeat_of, row, copies: 2, files })
+    }
   }
-  return [...groups.values()]
+  return [...groups.values()].map((group) => ({
+    ...group,
+    files: [...group.files].sort((a, b) => a - b),
+  }))
+}
+
+/**
+ * **The groups the screen and the payload both keep one copy of**: the reader's
+ * answer, else the groups spanning files (#1266). One rule, read by the window
+ * and by the request, so what is ticked is what is sent.
+ */
+export function keptAsOne(
+  collapsed: ReadonlySet<number> | undefined,
+  rows: readonly DuplicateRow[],
+): ReadonlySet<number> {
+  return collapsed ?? acrossFiles(rows)
+}
+
+/**
+ * **The groups whose copies come from two files or more** (#1266): the index of
+ * each group's first copy. Two overlapping exports are the usual cause, so these
+ * start on *write just one*; a group inside one file starts on *write all*.
+ */
+export function acrossFiles(rows: readonly DuplicateRow[]): Set<number> {
+  const across = new Set<number>()
+  for (const row of rows) {
+    if (row.repeat_of === null || row.repeat_of_file === null) continue
+    if (row.file !== row.repeat_of_file) across.add(row.repeat_of)
+  }
+  return across
 }

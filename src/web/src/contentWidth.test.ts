@@ -140,3 +140,69 @@ describe('the accounts detail has no ragged row', () => {
     )
   })
 })
+
+/**
+ * **The type scale and the recurring motifs are DESIGN.md's** (#1284). Source
+ * walks in the shape of "writes no width the tokens already name": the
+ * primitives in `components/ui` and the tests are out of it.
+ */
+describe('the type scale and the motifs stay on DESIGN.md', () => {
+  /** Every `.ts`, `.tsx` and `.css` file outside `components/ui` and the tests. */
+  function sources(): { file: string; text: string }[] {
+    const found: { file: string; text: string }[] = []
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const file = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (file !== path.join(SOURCE, 'components', 'ui')) walk(file)
+        } else if (/\.(ts|tsx|css)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          found.push({ file: path.relative(SOURCE, file), text: fs.readFileSync(file, 'utf8') })
+        }
+      }
+    }
+    walk(SOURCE)
+    return found
+  }
+
+  const all = sources()
+
+  /** The files holding a match of `pattern`, as a list a failure can print. */
+  const holding = (pattern: RegExp) =>
+    all.filter(({ text }) => pattern.test(text)).map(({ file }) => file)
+
+  it('writes no size off the ladder', () => {
+    // Any variant prefix (`md:text-xl`), and an arbitrary `text-[…]` size.
+    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|3xl|[5-9]xl|\[)/)).toEqual([])
+  })
+
+  it('sets no figure in mono, and drops font-heavy', () => {
+    const className = /(['"`])((?:(?!\1)[^\n])*)\1/g
+    const mixed = all
+      .filter(({ text }) =>
+        [...text.matchAll(className)].some(
+          ([, , classes]) =>
+            /(?<![\w-])font-mono(?![\w-])/.test(classes) &&
+            /(?<![\w-])tabular(?![\w-])/.test(classes),
+        ),
+      )
+      .map(({ file }) => file)
+    expect(mixed).toEqual([])
+    expect(holding(/font-heavy/)).toEqual([])
+  })
+
+  it('draws a dashed outline only where something can be put', () => {
+    const REASONS: Record<string, string> = {
+      'features/accounts/components/AccountsBar.tsx': 'the slot for a new account',
+      'features/data/components/UploadZone.tsx': 'a drop zone',
+      'features/data/components/Ledger.tsx': 'the ledger’s drop',
+      'components/FirstRun.tsx': 'the first-run declare button',
+      'features/dashboard/components/DashboardGrid.tsx': 'a free grid slot',
+      'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
+      'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',
+    }
+    expect(holding(/(?:border|outline)-(?:\[[^\]]*\] )?dashed/).sort()).toEqual(
+      Object.keys(REASONS).sort(),
+    )
+    expect(holding(/dashed/).filter((file) => file.endsWith('EmptyState.tsx'))).toEqual([])
+  })
+})

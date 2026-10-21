@@ -64,13 +64,15 @@ import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Allocation } from '@/features/shares/components/Allocation'
 import { ClosedShares } from '@/features/shares/components/ClosedShares'
+import { SharesList } from '@/features/shares/components/SharesList'
+import { SortControl } from '@/features/shares/components/SortControl'
 import { SharesTable } from '@/features/shares/components/SharesTable'
 import { ShareSheet } from '@/features/shares/components/ShareSheet'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { settingsApi } from '@/features/settings/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
@@ -96,6 +98,7 @@ import { cn } from '@/lib/utils'
 
 export default function SharesPage() {
   const { t } = useI18n()
+  const mobile = useIsMobile()
   const f = useFormatters()
   const [onlyAnomalies, setOnlyAnomalies] = useState(false)
   // The order and the grouping are **states of the page**, exactly like the
@@ -121,6 +124,7 @@ export default function SharesPage() {
   // and the overlay are its way out; the address exists so that somebody can
   // **arrive** at one — which is what ⌘K does — not so that the history holds a
   // record of every row that was looked at.
+  const onSort = (column: SortColumn) => setSort((previous) => nextSort(previous, column))
   const select = (symbol: string | null) =>
     void navigate({
       to: '/shares',
@@ -172,6 +176,12 @@ export default function SharesPage() {
   // reason `accountBreakdown` does not exist at one account either — so the
   // control is not offered rather than offered and inert.
   const accountCount = new Set(reduced.map((position) => position.account)).size
+  // The group toggle and the anomaly chip keep their gate: the counters are
+  // claims, so nothing is drawn while `runtime` has not answered. The sort
+  // control (phones only) needs no read but the positions'.
+  const showSort = mobile && held.length > 0
+  const showGroup = runtime.isSuccess && accountCount >= 2
+  const showAnomalies = runtime.isSuccess && anomalies.length > 0
 
   // The folded ones are in that set — a fold is not a filter, so opening the
   // section moves nothing — and the anomaly lens is, which is the other half of
@@ -299,14 +309,16 @@ export default function SharesPage() {
               would say nothing was wrong on the strength of a read that failed
               (#775, #777, #778). */}
           <div data-slot="shares-table" className="space-y-3">
-            {!runtime.isSuccess || (accountCount < 2 && anomalies.length === 0) ? null : (
+            {!showSort && !showGroup && !showAnomalies ? null : (
               <div className="flex flex-wrap items-center gap-2">
+                {showSort ? <SortControl sort={sort} onSort={onSort} /> : null}
+
                 {/* **A partition, offered only where there is something to
                     partition.** At one account the group header would repeat
                     the total row line for line, and a control that cannot
                     change anything is the per-row marker rule met at the level
                     of a button. */}
-                {accountCount < 2 ? null : (
+                {!showGroup ? null : (
                   <Button
                     type="button"
                     variant="outline"
@@ -314,6 +326,7 @@ export default function SharesPage() {
                     aria-pressed={grouped}
                     onClick={() => setGrouped((previous) => !previous)}
                     className={cn(
+                      'pointer-coarse:h-11',
                       grouped &&
                         'border-primary bg-primary/12 text-primary hover:bg-primary/20 hover:text-primary dark:border-primary dark:bg-primary/12 dark:hover:bg-primary/20',
                     )}
@@ -324,13 +337,13 @@ export default function SharesPage() {
 
                 {/* At zero it is nothing at all: the drawing draws no chip where
                     there is nothing to repair. */}
-                {anomalies.length === 0 ? null : (
+                {!showAnomalies ? null : (
                   <button
                     type="button"
                     aria-pressed={onlyAnomalies}
                     onClick={() => setOnlyAnomalies((previous) => !previous)}
                     className={cn(
-                      'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention',
+                      'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention pointer-coarse:h-11',
                       onlyAnomalies && 'ring-1 ring-attention/60',
                     )}
                   >
@@ -341,23 +354,37 @@ export default function SharesPage() {
               </div>
             )}
 
-            {/* **One card; the totals are its last row** (#1281). The rows the
-                total row sums are the ones on screen, closed ones included:
-                handing it the held lines alone is what printed the other
-                correct figure. */}
-            <Card className="gap-0 overflow-hidden py-0">
-              <SharesTable
-                groups={groups}
-                currency={currency}
-                sort={sort}
-                onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
-                onSelect={select}
-                totals={sharesTotals(summed, onScreen)}
-                closedCount={closed.length}
-              />
-            </Card>
+            {/* **The totals are the table's last row** (#1281), and the table
+                sits on the page's background (#1273). The rows the total row
+                sums are the ones on screen, closed ones included: handing it
+                the held lines alone is what printed the other correct figure.
+                The closed ones fold into a row under that total. */}
+            <div>
+              {/* Under 768 px the nine columns would scroll sideways: a list
+                  stands in for the table, with the same groups and totals
+                  (#1338). */}
+              {mobile ? (
+                <SharesList
+                  groups={groups}
+                  currency={currency}
+                  onSelect={select}
+                  totals={sharesTotals(summed, onScreen)}
+                  closedCount={closed.length}
+                />
+              ) : (
+                <SharesTable
+                  groups={groups}
+                  currency={currency}
+                  sort={sort}
+                  onSort={onSort}
+                  onSelect={select}
+                  totals={sharesTotals(summed, onScreen)}
+                  closedCount={closed.length}
+                />
+              )}
+              <ClosedShares rows={closed} currency={currency} onSelect={select} />
+            </div>
           </div>
-          <ClosedShares rows={closed} currency={currency} onSelect={select} />
         </>
       )}
 

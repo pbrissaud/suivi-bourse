@@ -106,6 +106,8 @@ describe('index.css says what DESIGN.md says', () => {
     expect(said('--text-2xl--line-height')).toBe(rem(designType('section-title', 'lineHeight')))
     expect(said('--text-4xl')).toBe(rem(designType('figure', 'fontSize')))
     expect(said('--text-4xl--line-height')).toBe(rem(designType('figure', 'lineHeight')))
+    expect(said('--text-lg')).toBe(rem(designType('term', 'fontSize')))
+    expect(said('--text-lg--line-height')).toBe(rem(designType('term', 'lineHeight')))
     // The page title rides the prose rung: one size, two names in DESIGN.md.
     expect(said('--text-prose')).toBe(rem(designType('page-title', 'fontSize')))
     expect(said('--text-prose--line-height')).toBe(rem(designType('page-title', 'lineHeight')))
@@ -124,6 +126,22 @@ describe('the Figure rung is drawn by one size of Stat (#1277)', () => {
     expect(stat).toMatch(/figure: 'text-4xl'/)
     // And that class is the 28/32 DESIGN.md calls Figure (asserted above).
     expect(designType('figure', 'fontSize')).toBe('28px')
+  })
+})
+
+describe('Stat draws only DESIGN.md’s figure rungs (#1284)', () => {
+  it('keeps four sizes, one per rung', () => {
+    const stat = fs.readFileSync(path.join(WEB_ROOT, 'src', 'components', 'Stat.tsx'), 'utf8')
+    const sizes = /const SIZES[^{]*\{([^}]*)\}/.exec(stat)?.[1] ?? ''
+    const found = Object.fromEntries(
+      [...sizes.matchAll(/(\w+): '([^']*)'/g)].map((entry) => [entry[1], entry[2]]),
+    )
+    expect(found).toEqual({
+      head: 'text-hero tracking-hero',
+      figure: 'text-4xl',
+      stat: 'text-2xl',
+      term: 'text-lg',
+    })
   })
 })
 
@@ -154,21 +172,63 @@ describe('index.css says what DESIGN.md says about the colours', () => {
     return oklch(value[1])
   }
 
-  it('DESIGN.md states the preset’s primary and gain', () => {
+  /** Distance in OKLab, the metric the ticket calls ΔE_ok. */
+  function distance(one: Oklch, other: Oklch): number {
+    const lab = ({ lightness, chroma, hue }: Oklch) => [
+      lightness,
+      chroma * Math.cos((hue * Math.PI) / 180),
+      chroma * Math.sin((hue * Math.PI) / 180),
+    ]
+    const [l1, a1, b1] = lab(one)
+    const [l2, a2, b2] = lab(other)
+    return Math.hypot(l1 - l2, a1 - a2, b1 - b2)
+  }
+
+  /** DESIGN.md's colour names and the token of block 1 each one is drawn with. */
+  const TOKENS = {
+    background: '--background',
+    surface: '--card',
+    tint: '--muted',
+    text: '--foreground',
+    'text-muted': '--muted-foreground',
+    rule: '--border',
+    primary: '--primary',
+    'on-primary': '--primary-foreground',
+    gain: '--chart-2',
+  } as const
+
+  it('DESIGN.md states every colour of the preset, on both grounds', () => {
     const primitives = blocks()[0]
-    const cases = [
-      ['primary', 'light', '--primary'],
-      ['dark-primary', 'dark', '--primary'],
-      ['gain', 'light', '--chart-2'],
-      ['dark-gain', 'dark', '--chart-2'],
-    ] as const
-    for (const [name, ground, token] of cases) {
-      const said = oklch(declarations(primitives, ground).get(token) ?? '')
-      const stated = designColour(name)
-      expect(Math.abs(stated.lightness - said.lightness), `${name} L`).toBeLessThanOrEqual(0.01)
-      expect(Math.abs(stated.chroma - said.chroma), `${name} C`).toBeLessThanOrEqual(0.01)
-      expect(Math.abs(stated.hue - said.hue), `${name} H`).toBeLessThanOrEqual(1)
+    for (const ground of ['light', 'dark'] as const) {
+      for (const [name, token] of Object.entries(TOKENS)) {
+        const stated = designColour(ground === 'dark' ? `dark-${name}` : name)
+        const said = oklch(declarations(primitives, ground).get(token) ?? '')
+        expect(distance(stated, said), `${name}, ${ground}`).toBeLessThanOrEqual(0.01)
+      }
     }
+  })
+
+  it('keeps the dark neutrals warm', () => {
+    // Grey would pass the distance above if DESIGN.md went grey with it; this
+    // is the floor under both: some chroma, and a hue between yellow and orange.
+    const dark = declarations(blocks()[0], 'dark')
+    for (const token of ['--background', '--card', '--muted']) {
+      const { chroma, hue } = oklch(dark.get(token) ?? '')
+      expect(chroma, `${token} chroma`).toBeGreaterThanOrEqual(0.01)
+      expect(hue, `${token} hue`).toBeGreaterThanOrEqual(40)
+      expect(hue, `${token} hue`).toBeLessThanOrEqual(90)
+    }
+  })
+})
+
+describe('the disabled button (#1284)', () => {
+  it('stays at half opacity with no pointer events', () => {
+    const button = fs.readFileSync(
+      path.join(WEB_ROOT, 'src', 'components', 'ui', 'button.tsx'),
+      'utf8',
+    )
+    expect(button).toMatch(/(?<![\w-])disabled:pointer-events-none(?![\w-])/)
+    expect(button).toMatch(/(?<![\w-])disabled:opacity-50(?![\w-])/)
   })
 })
 
@@ -179,6 +239,9 @@ describe('index.css says what DESIGN.md says about the layout', () => {
     const source = read()
     expect(declared(source, '--container-column')).toBe(
       rem(designComponent('content-column', 'maxWidth')),
+    )
+    expect(declared(source, '--container-settings')).toBe(
+      rem(designComponent('content-settings', 'maxWidth')),
     )
     expect(declared(source, '--container-reading')).toBe(
       rem(designComponent('content-reading', 'maxWidth')),
@@ -191,7 +254,12 @@ describe('index.css says what DESIGN.md says about the layout', () => {
     // inlined at build time, so a width declared there is out of its way.
     const source = read()
     const inline = source.slice(source.indexOf('@theme inline'))
-    for (const name of ['--container-column', '--container-reading', '--breakpoint-3xl']) {
+    for (const name of [
+      '--container-column',
+      '--container-settings',
+      '--container-reading',
+      '--breakpoint-3xl',
+    ]) {
       expect(declared(inline, name), name).toMatch(/^\d+(\.\d+)?rem$/)
       // Declared once, and after `@theme inline` opens: never in a `:root` or `.dark`.
       expect(source.match(new RegExp(`${name}:`, 'g'))).toHaveLength(1)
@@ -206,6 +274,8 @@ describe('every rung index.css declares is a size to cn', () => {
     // lost to the bubble's `text-sm` and the questions came out at 13 px.
     const rungs = [...read().matchAll(/^\s*--text-([a-z0-9]+):/gm)].map((rung) => rung[1])
     expect(rungs).toContain('prose')
+    // DESIGN.md names no 19 px, 26 px, 34 px, 42 px or 52 px rung (#1284).
+    for (const gone of ['xl', '3xl', '5xl', '6xl', '7xl']) expect(rungs).not.toContain(gone)
     for (const rung of rungs) {
       const other = rung === 'sm' ? 'text-lg' : 'text-sm'
       expect(cn(other, `text-${rung}`), rung).toBe(`text-${rung}`)

@@ -14,7 +14,7 @@
  * `+300,00 + 50,00 + 25,00 = 375,00`. Both are correct; only one is the gain.
  * On the portfolio that decided it the gap was 708,92 €, 73 % of what was shown.
  */
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -28,6 +28,8 @@ import {
   defaultPositions,
   sharesPortfolio,
 } from '@/test/factories'
+import { setViewportWidth } from '@/test/media'
+import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -247,7 +249,9 @@ describe('the table’s toolbar (#1281)', () => {
 
     const block = document.querySelector('[data-slot="shares-table"]') as HTMLElement
     expect(block.children).toHaveLength(1)
-    expect(block.firstElementChild).toHaveAttribute('data-slot', 'card')
+    // The table alone, on the page's background.
+    expect(within(block.firstElementChild as HTMLElement).getByRole('table')).toBeInTheDocument()
+    expectNoBox(block)
   })
 })
 
@@ -261,6 +265,27 @@ describe('one line per row (#1281)', () => {
     // The ticker is beside the name, outside its button.
     expect(within(row).getByText('ZZA')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Zeta Alpha' })).not.toHaveTextContent('ZZA')
+  })
+})
+
+describe('the table sits on the page’s background (#1273)', () => {
+  it('draws no box, with the closed shares folded under the total', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+
+    expectNoBox()
+    // The disclosure row follows the table, ruled off above and not framed.
+    const section = fold().closest('section') as HTMLElement
+    expect(section.className).toMatch(/\bborder-t\b/)
+    expect(section.className).not.toMatch(/\b(rounded\S*|bg-card)\b/)
+    expect(liveTable().closest('[data-slot="shares-table"]')).toContainElement(section)
+  })
+
+  it('draws no box with no closed share', async () => {
+    renderShares(defaultPositions())
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+
+    expectNoBox()
   })
 })
 
@@ -1411,5 +1436,314 @@ describe('a refetch that fails keeps the figures (#1180)', () => {
 
     expect(figure('Réalisée')).toHaveTextContent(/125,00/)
     expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
+  })
+})
+
+// ------------------------------------------------------------------------- //
+// Under 768 px the table is a list (#1338)
+// ------------------------------------------------------------------------- //
+
+describe('on a phone, the lines are a list (#1338)', () => {
+  /** Zeta Beta is the line that gained most, so *Latente* reorders the list. */
+  function reorderable() {
+    return sharesPortfolio().map((position) =>
+      position.symbol === 'ZZB'
+        ? aPosition({
+            account: 'beta',
+            symbol: 'ZZB',
+            name: 'Zeta Beta',
+            quantity: 4,
+            cost_basis: 400,
+            realised: 50,
+            price: 300,
+            currency: 'USD',
+            rate: 0.8,
+          })
+        : position,
+    )
+  }
+
+  function phone(positions = sharesPortfolio()) {
+    setViewportWidth(390)
+    return renderShares(positions)
+  }
+
+  function heldList() {
+    return screen.getByRole('list', { name: 'Positions détenues' })
+  }
+
+  function names() {
+    return within(heldList())
+      .getAllByRole('listitem')
+      .map((item) => within(item).getAllByRole('button')[0].textContent)
+  }
+
+  it('draws no list while the positions are in flight, and draws it once they land', async () => {
+    setViewportWidth(390)
+    let land: () => void = () => {}
+    const landed = new Promise<void>((resolve) => {
+      land = resolve
+    })
+    server.use(
+      http.get(ROUTES.positions, async () => {
+        await landed
+        return HttpResponse.json(aPositionsPayload(sharesPortfolio()))
+      }),
+    )
+    renderApp({ url: '/shares' })
+    await screen.findByRole('heading', { level: 1, name: 'Titres' })
+
+    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
+
+    land()
+    expect(await screen.findByRole('list', { name: 'Positions détenues' })).toBeInTheDocument()
+  })
+
+  it('has no table, one item per held line, and no card around them', async () => {
+    phone()
+    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3)
+    expect(list.closest('[data-slot="card"]')).toBeNull()
+    expectNoBox()
+  })
+
+  it('keeps the table at 1024 px, and no list with that name', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+
+    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
+  })
+
+  it('shows the valuation and the latent gain, and opens the sheet from the name', async () => {
+    const { user } = phone()
+    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const item = within(list)
+      .getByRole('button', { name: 'Zeta Alpha' })
+      .closest('li') as HTMLElement
+
+    expect(item).toHaveTextContent(/1\D?300,00/)
+    // The gain element alone: `300,00` is also the tail of the `1 300,00` valuation.
+    expect(item.querySelector('span.text-xs.tabular')).toHaveTextContent(/^300,00/)
+    expect(item).toHaveTextContent(/30,00\s?%/)
+    expect(item).toHaveTextContent('ZZA · alpha')
+
+    await user.click(within(item).getByRole('button', { name: 'Zeta Alpha' }))
+    expect(await screen.findByRole('dialog', { name: 'Zeta Alpha' })).toBeInTheDocument()
+  })
+
+  it('sets only the ticker and the account ids in Geist Mono', async () => {
+    phone()
+    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const page = list.parentElement as HTMLElement
+
+    // The tickers and nothing else: no figure of the list, nor of its totals.
+    const mono = [...page.querySelectorAll('.font-mono')].map((node) => node.textContent)
+    expect(mono).toEqual(['ZZA · alpha', 'ZZC · gamma', 'ZZB · beta'])
+  })
+
+  it('names an absence where the table names it', async () => {
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
+        ),
+      ),
+    )
+    // Still being rebuilt: the table names the valuation, so the list does.
+    phone(
+      sharesPortfolio().map((position) =>
+        position.symbol === 'ZZC'
+          ? aPosition({
+              account: 'gamma',
+              symbol: 'ZZC',
+              name: 'Zeta Gamma',
+              quantity: 6,
+              cost_basis: 600,
+              price: null,
+              terminal: false,
+            })
+          : position,
+      ),
+    )
+    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const item = within(list)
+      .getByRole('button', { name: 'Zeta Gamma' })
+      .closest('li') as HTMLElement
+
+    expect(item).toHaveTextContent('3 relevés consécutifs, aucun cours')
+    expect(item).not.toHaveTextContent(/600,00/)
+  })
+
+  it('marks a line to repair, carried at its cost', async () => {
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
+        ),
+      ),
+    )
+    phone()
+    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const item = within(list)
+      .getByRole('button', { name: 'Zeta Gamma' })
+      .closest('li') as HTMLElement
+
+    expect(item).toHaveTextContent(/Vérifiez le symbole/)
+    expect(item).toHaveTextContent(/600,00/)
+  })
+
+  it('cuts the list by account, a heading each, when grouped', async () => {
+    const { user } = phone()
+    await screen.findByRole('list', { name: 'Positions détenues' })
+    await user.click(await screen.findByRole('button', { name: 'Grouper par compte' }))
+
+    const headings = screen.getAllByRole('heading', { level: 3 })
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      expect.stringMatching(/^alpha\s·\s1\D?300,00/),
+      expect.stringMatching(/^beta\s·\s400,00/),
+      expect.stringMatching(/^gamma\s·\s600,00/),
+    ])
+    for (const heading of headings) {
+      const group = screen.getByRole('list', { name: heading.textContent as string })
+      expect(within(group).getAllByRole('listitem')).toHaveLength(1)
+      // The head says the account once.
+      expect(group).not.toHaveTextContent(/ZZ[ABC] ·/)
+    }
+  })
+
+  it('reads the totals the table’s footer reads, closed lines included', async () => {
+    phone()
+    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const totals = list.parentElement?.querySelector('dl') as HTMLElement
+
+    const rows = within(totals).getAllByRole('term')
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Total · dont 2 lignes soldées',
+      'Latente',
+      'Réalisée',
+      'Dividendes',
+    ])
+    const definitions = within(totals).getAllByRole('definition')
+    expect(definitions[0]).toHaveTextContent(/2\D?300,00/)
+    expect(definitions[1]).toHaveTextContent(/300,00/)
+    expect(definitions[2]).toHaveTextContent(/125,00/)
+    expect(definitions[3]).toHaveTextContent(/35,00/)
+    expect(totals.querySelector('.font-mono')).toBeNull()
+  })
+
+  it('sorts from a select and a direction button', async () => {
+    const { user } = phone(reorderable())
+    await screen.findByRole('list', { name: 'Positions détenues' })
+    expect(names()).toEqual(['Zeta Alpha', 'Zeta Beta', 'Zeta Gamma'])
+
+    await user.selectOptions(screen.getByLabelText('Trier par'), 'Latente')
+    expect(names()).toEqual(['Zeta Beta', 'Zeta Alpha', 'Zeta Gamma'])
+
+    await user.click(screen.getByRole('button', { name: 'Ordre décroissant' }))
+    expect(names()).toEqual(['Zeta Gamma', 'Zeta Alpha', 'Zeta Beta'])
+    expect(screen.getByRole('button', { name: 'Ordre croissant' })).toBeInTheDocument()
+  })
+
+  it('keeps the desktop’s order when the viewport widens', async () => {
+    const { user } = phone(reorderable())
+    await user.selectOptions(await screen.findByLabelText('Trier par'), 'Latente')
+
+    act(() => setViewportWidth(1024))
+
+    expect(await screen.findByRole('table', { name: 'Positions détenues' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /Latente/ })).toHaveAttribute(
+      'aria-sort',
+      'descending',
+    )
+  })
+
+  it('keeps the column the desktop sorted on as a fourth option', async () => {
+    const { user } = renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+    await user.click(within(liveTable()).getByRole('button', { name: 'Cours' }))
+
+    act(() => setViewportWidth(390))
+
+    const select = await screen.findByLabelText('Trier par')
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Valorisation', 'Latente', 'Nom', 'Cours'])
+    expect(select).toHaveValue('price')
+  })
+
+  it('offers the sort before the runtime answers, and the group toggle only after', async () => {
+    server.use(http.get(ROUTES.runtime, () => new Promise<never>(() => {})))
+    phone()
+
+    expect(await screen.findByLabelText('Trier par')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Grouper par compte' })).not.toBeInTheDocument()
+  })
+
+  it('draws neither a held list nor a sort when every line is closed', async () => {
+    phone([
+      aClosedPosition({
+        account: 'alpha',
+        symbol: 'ZZD',
+        name: 'Zeta Delta',
+        realised: 120,
+        closed_at: '2025-11-04',
+      }),
+    ])
+    await screen.findByRole('button', { name: /position soldée/ })
+
+    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
+    // The totals are still the totals of what is on screen.
+    expect(screen.getAllByRole('term')[0]).toHaveTextContent(/^Total/)
+  })
+
+  it('says the ticker and the account of a closed line, and its figures', async () => {
+    const { user } = phone([
+      ...sharesPortfolio(),
+      // A line the store never dated.
+      {
+        ...aClosedPosition({
+          account: 'alpha',
+          symbol: 'ZZF',
+          name: 'Zeta Phi',
+          realised: -30,
+          closed_at: '2025-01-01',
+        }),
+        closed_at: null,
+      },
+    ])
+    await screen.findByRole('list', { name: 'Positions détenues' })
+    await user.click(fold())
+
+    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
+    const items = within(closed).getAllByRole('listitem')
+    expect(items).toHaveLength(3)
+    const epsilon = items.find((item) => item.textContent?.includes('Zeta Epsilon')) as HTMLElement
+    expect(epsilon).toHaveTextContent('ZZE · beta')
+    expect(epsilon).toHaveTextContent(/-45,00/)
+    const phi = items.find((item) => item.textContent?.includes('Zeta Phi')) as HTMLElement
+    expect(phi).toHaveTextContent('Soldée le —')
+    expect(phi).toHaveTextContent(/-30,00/)
+  })
+
+  it('opens the closed lines as a list, not a table', async () => {
+    const { user } = phone()
+    await screen.findByRole('list', { name: 'Positions détenues' })
+    await user.click(fold())
+
+    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    const items = within(closed).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent('Soldée le')
+    expect(items[0]).toHaveTextContent(/15 janv. 2026/)
+    await user.click(within(items[0]).getByRole('button'))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 })

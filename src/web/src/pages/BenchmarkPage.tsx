@@ -54,7 +54,7 @@ import { BenchmarkChart } from '@/features/benchmark/components/BenchmarkChart'
 import { NothingToCompare } from '@/features/benchmark/components/NothingToCompare'
 import { ReferenceRebuild } from '@/features/benchmark/components/ReferenceRebuild'
 import { ReferenceSelect } from '@/features/benchmark/components/ReferenceSelect'
-import { Card } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import {
   Table,
   TableBody,
@@ -201,18 +201,24 @@ export default function BenchmarkPage() {
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
       <Head data={data} currency={currency} />
-      <BenchmarkChart
-        points={data.series ?? []}
-        index={data.index ?? data.reference ?? ''}
-        currency={currency}
-      />
-      <PerAccount data={data} currency={currency} />
+
+      {/* The sections: 20 px apart, and the hero's 40 above the first. */}
+      <div className="mt-4 space-y-5">
+        <BenchmarkChart
+          points={data.series ?? []}
+          index={data.index ?? data.reference ?? ''}
+          currency={currency}
+        />
+        <PerAccount data={data} currency={currency} />
+      </div>
     </div>
   )
 }
 
 /**
- * The one `Card`: the verdict on the left, and its terms on the right.
+ * The head, on the ground, like the dashboard's and the accounts page's: the
+ * gap as the hero, the verdict and the caveats, then the period line and the
+ * two returns on one row (#1273).
  *
  * The two returns carry a bar each, on one scale, so *behind, by roughly how
  * much* reads before the digits do. The bars take the curves' own colours —
@@ -234,49 +240,45 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
     // figure and the verdict back. Polite and never assertive — the reader is
     // already looking at the control they pressed, which is `Refusal`'s own
     // reasoning for keeping `role="status"`.
-    <Card className="gap-0 overflow-hidden py-0" aria-live="polite">
-      <div className="grid grid-cols-1 md:grid-cols-2">
-        <div className="space-y-4 p-5 sm:p-8">
-          <Stat
-            size="head"
-            // The picker right above already names the fund and its ticker.
-            label={t('benchmark.head.label', { index })}
-            value={shown === null ? '—' : f.signedCurrency(shown, currency)}
-            valueClassName={figureClass(shown)}
-            explain={
-              <Explain
-                figure={t('benchmark.term.gap')}
-                body="benchmark.explain.gap"
-                anchor="benchmark"
-              />
-            }
+    <div className="space-y-4" aria-live="polite">
+      <Stat
+        size="head"
+        // The picker right above already names the fund and its ticker.
+        label={t('benchmark.head.label', { index })}
+        value={shown === null ? '—' : f.signedCurrency(shown, currency)}
+        valueClassName={figureClass(shown)}
+        explain={
+          <Explain
+            figure={t('benchmark.term.gap')}
+            body="benchmark.explain.gap"
+            anchor="benchmark"
           />
-          {shown === null ? null : (
-            <p className="max-w-prose text-base leading-relaxed">
-              {signOf(shown) === 'zero'
-                ? t('benchmark.verdict.equal', { index })
-                : t(
-                    signOf(shown) === 'gain'
-                      ? 'benchmark.verdict.ahead'
-                      : 'benchmark.verdict.behind',
-                    { gap: f.currency(Math.abs(shown), currency), index },
-                  )}
-            </p>
-          )}
-          <Caveats data={data} />
-        </div>
+        }
+      />
+      {shown === null ? null : (
+        <p className="max-w-prose text-base leading-relaxed">
+          {signOf(shown) === 'zero'
+            ? t('benchmark.verdict.equal', { index })
+            : t(signOf(shown) === 'gain' ? 'benchmark.verdict.ahead' : 'benchmark.verdict.behind', {
+                gap: f.currency(Math.abs(shown), currency),
+                index,
+              })}
+        </p>
+      )}
+      <Caveats data={data} />
 
-        <div className="flex flex-col justify-center gap-5 border-t bg-muted/40 p-5 sm:p-8 md:border-t-0 md:border-l">
-          <p className="text-xs font-medium text-muted-foreground">
-            {data.covered_from && data.covered_to
-              ? t('benchmark.returns.title', {
-                  from: f.date(data.covered_from),
-                  to: f.date(data.covered_to),
-                })
-              : t('benchmark.returns.titleBare')}
-          </p>
+      <p className="label text-muted-foreground">
+        {data.covered_from && data.covered_to
+          ? t('benchmark.returns.title', {
+              from: f.date(data.covered_from),
+              to: f.date(data.covered_to),
+            })
+          : t('benchmark.returns.titleBare')}
+      </p>
+      <div data-row="returns" className="flex flex-wrap gap-x-10 gap-y-4">
+        <div className="w-56 max-w-full">
           <Stat
-            size="term"
+            size="figure"
             label={t('benchmark.term.yours')}
             value={points(f, data.portfolio_return)}
             valueClassName={signClass(data.portfolio_return ?? null, POINTS_DECIMALS)}
@@ -295,8 +297,10 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
               className="mt-1.5"
             />
           </Stat>
+        </div>
+        <div className="w-56 max-w-full">
           <Stat
-            size="term"
+            size="figure"
             label={t('benchmark.term.theirs')}
             value={points(f, data.reference_return)}
             valueClassName={signClass(data.reference_return ?? null, POINTS_DECIMALS)}
@@ -311,7 +315,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
           </Stat>
         </div>
       </div>
-    </Card>
+    </div>
   )
 }
 
@@ -347,18 +351,25 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
   // same cells, `display` changed — so a row stays a `<tr>` for every reader
   // and nothing is rendered twice.
   const stack = 'max-sm:block max-sm:border-0 max-sm:p-0 max-sm:whitespace-normal'
+  // On the section's plane: no strip under the header, and rows that are not
+  // interactive do not answer the pointer.
+  const bare = 'bg-transparent'
+  const still = 'hover:bg-transparent'
 
   return (
-    <section className="overflow-hidden rounded-xl border bg-card">
-      <h2 className="px-5 py-4 text-base font-semibold">{t('benchmark.accounts.title')}</h2>
-      <Table className="max-sm:block" containerClassName="border-t">
+    <Section title={t('benchmark.accounts.title')}>
+      <Table className="max-sm:block">
         <caption className="sr-only">{t('benchmark.accounts.caption')}</caption>
         <TableHeader className="max-sm:hidden">
           <TableRow>
-            <TableHead className="xl:px-5">{t('benchmark.accounts.column.account')}</TableHead>
-            <TableHead>{t('benchmark.accounts.column.period')}</TableHead>
-            <TableHead className="text-right">{t('benchmark.accounts.column.gap')}</TableHead>
-            <TableHead className="text-right xl:pr-5">
+            <TableHead className={`pl-0 xl:pl-0 ${bare}`}>
+              {t('benchmark.accounts.column.account')}
+            </TableHead>
+            <TableHead className={bare}>{t('benchmark.accounts.column.period')}</TableHead>
+            <TableHead className={`text-right ${bare}`}>
+              {t('benchmark.accounts.column.gap')}
+            </TableHead>
+            <TableHead className={`pr-0 text-right xl:pr-0 ${bare}`}>
               {t('benchmark.accounts.column.returns')}
             </TableHead>
           </TableRow>
@@ -367,9 +378,9 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
           {rows.map((row) => (
             <TableRow
               key={row.account}
-              className="max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:border-b max-sm:p-4"
+              className={`${still} max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:border-b max-sm:p-4`}
             >
-              <TableCell className={`font-semibold xl:px-5 ${stack}`}>{row.account}</TableCell>
+              <TableCell className={`pl-0 font-semibold xl:pl-0 ${stack}`}>{row.account}</TableCell>
               <TableCell className={`text-muted-foreground ${stack}`}>
                 {t('benchmark.accounts.period', {
                   from: f.date(row.covered_from),
@@ -406,7 +417,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
                 />
               </TableCell>
               <TableCell
-                className={`tabular text-xs text-muted-foreground sm:text-right xl:pr-5 ${stack}`}
+                className={`tabular text-xs text-muted-foreground sm:text-right sm:pr-0 xl:pr-0 ${stack}`}
               >
                 <Returns f={f} yours={row.portfolio_return} theirs={row.reference_return} />
               </TableCell>
@@ -417,8 +428,14 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
               these rows add up to it, and the only way to make that claim
               checkable is to print it where the addition ends. */}
           {hasTotal ? (
-            <TableRow className="border-t-2 bg-muted/40 font-semibold max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:p-4">
-              <TableCell className={`xl:px-5 ${stack}`}>{t('benchmark.accounts.total')}</TableCell>
+            // The 1 px `rule` above it is the last account row's own bottom border:
+            // `TableBody` zeroes the border of its last row.
+            <TableRow
+              className={`${still} font-semibold max-sm:flex max-sm:flex-col max-sm:gap-2.5 max-sm:p-4`}
+            >
+              <TableCell className={`label pl-0 xl:pl-0 ${stack}`}>
+                {t('benchmark.accounts.total')}
+              </TableCell>
               <TableCell className={`max-sm:hidden ${stack}`} />
               <TableCell
                 className={`tabular text-right ${figureClass(data.gap_gross ?? null)} ${stack}`}
@@ -428,7 +445,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
                   : f.signedCurrency(data.gap_gross, currency)}
               </TableCell>
               <TableCell
-                className={`tabular text-xs font-normal text-muted-foreground sm:text-right xl:pr-5 ${stack}`}
+                className={`tabular text-xs font-normal text-muted-foreground sm:pr-0 sm:text-right xl:pr-0 ${stack}`}
               >
                 <Returns f={f} yours={data.portfolio_return} theirs={data.reference_return} />
               </TableCell>
@@ -436,7 +453,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
           ) : null}
         </TableBody>
       </Table>
-    </section>
+    </Section>
   )
 }
 

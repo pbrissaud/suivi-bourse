@@ -6,7 +6,7 @@ module above the store is declared here, so the store imports none of them.
 from logfmt_logger import getLogger
 
 from application import entries
-from application import store
+from application import store_steps
 
 # The store's logger, so the line reads as it did when the step lived there.
 logger = getLogger("store")
@@ -46,20 +46,33 @@ def _add_agent_model_name(connection) -> None:
     ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds. The column
     stays NULL on a configuration stored before: the agent page shows the id
     until a model is chosen again. A no-op on a new store. The write is
-    :func:`store.add_column`, the store's own, as the step has no need of a
+    :func:`store_steps.add_column`, the store's own, as the step has no need of a
     module above it.
     """
-    store.add_column(connection, 'agent_config', 'model_name', 'VARCHAR')
+    store_steps.add_column(connection, 'agent_config', 'model_name', 'VARCHAR')
+
+
+def _add_agent_thinking(connection) -> None:
+    """Give ``agent_config`` the analyst's thinking level (#1191).
+
+    A row stored before reads ``low``, the cheap default. A no-op on a new
+    store, whose table already has the column. Not ``NOT NULL``: DuckDB refuses
+    a constraint on an added column, and :func:`agent.change` keeps a write from
+    storing anything but a level, so the DDL says the same.
+    """
+    store_steps.add_column(connection, 'agent_config', 'thinking',
+                           "VARCHAR DEFAULT 'low'")
 
 
 #: Every step, oldest first, under the names stores in the wild already carry.
-#: The rules of :data:`store.STEPS` hold over this list as a whole: a name is an
+#: The rules of :data:`store_steps.STEPS` hold over this list as a whole: a name is an
 #: identity forever, and a new step — the store's own included — is appended
 #: **here**, after the last one released.
-STEPS = store.STEPS + (
+STEPS = store_steps.STEPS + (
     ('cap_dividend_fee_at_amount', _cap_dividend_fee_at_amount),
-    ('add_event_amounts_currency', store._add_event_amounts_currency),
+    ('add_event_amounts_currency', store_steps._add_event_amounts_currency),
     ('add_agent_model_name', _add_agent_model_name),
+    ('add_agent_thinking', _add_agent_thinking),
 )
 
 __all__ = ['STEPS']

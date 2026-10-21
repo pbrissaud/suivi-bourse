@@ -188,7 +188,14 @@ interface ImportPeriod {
  * imported.
  */
 export interface ImportReceipt {
+  /** The **first** file's name, kept for `curl` and MCP callers; the front reads `files`. */
   filename: string
+  /**
+   * **One entry per file handed over, in the order sent** (#1266), read off that
+   * file before any correspondence. `rows`, `period`, `accounts`, `symbols` and
+   * `file_accounts` beside it describe the batch.
+   */
+  files: ImportFile[]
   rows: number
   written: number
   duplicates: number
@@ -228,6 +235,13 @@ export interface ImportReceipt {
   unverified: string[]
 }
 
+/** One file of a batch, and what it carries on its own (#1266). */
+export interface ImportFile {
+  filename: string
+  rows: number
+  period: ImportPeriod | null
+}
+
 /** One security quoted outside the base currency, and how many events carry money. */
 export interface ForeignLine {
   symbol: string
@@ -250,6 +264,10 @@ export interface DuplicateRow extends LedgerEvent {
   duplicate_of: string | null
   /** The index of the first copy, for a line the file repeats; `null` for a ledger duplicate. */
   repeat_of: number | null
+  /** The index in `files` of the file this line comes from (#1266). */
+  file: number
+  /** The index in `files` of the file holding the group's first copy; `null` for a ledger duplicate. */
+  repeat_of_file: number | null
 }
 
 /**
@@ -333,10 +351,10 @@ export const dataApi = {
   // `dryRun` for the forecast, once without it to commit — **the same file**,
   // re-sent. There is no pending-import id to hold instead, because holding one
   // would be the table this lot deleted under another name.
-  importEvents: (file: File, options: ImportOptions = {}) =>
+  importEvents: (files: readonly File[], options: ImportOptions = {}) =>
     upload<ImportReceipt>(
       ROUTES.eventsImport,
-      file,
+      files,
       [
         ...(options.dryRun ? ['dry_run=1'] : []),
         ...(options.writeDuplicates ? ['write_duplicates=1'] : []),

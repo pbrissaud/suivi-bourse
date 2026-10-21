@@ -81,6 +81,8 @@ interface JobHistogramProps {
   initial?: number | null
   /** 70 px for a job, less for a symbol under the scrape. */
   height?: number
+  /** When the process started: an hour that ended before it draws no mark. */
+  started?: string
 }
 
 /**
@@ -89,7 +91,13 @@ interface JobHistogramProps {
  * (`role="listbox"`), the arrows move the open hour, and on touch the whole
  * height takes a drag. Divs and not Recharts: there is no axis to draw.
  */
-export function JobHistogram({ label, track, initial = null, height = 70 }: JobHistogramProps) {
+export function JobHistogram({
+  label,
+  track,
+  initial = null,
+  height = 70,
+  started,
+}: JobHistogramProps) {
   const { t } = useI18n()
   const format = useFormatters()
   const clock = useClock()
@@ -107,6 +115,9 @@ export function JobHistogram({ label, track, initial = null, height = 70 }: JobH
     setChosen({ hour: index === null ? null : track.slots[index].hour })
 
   const last = track.slots.length - 1
+  // Nothing was running: not a quiet hour.
+  const isDown = (slot: JobSlot) =>
+    started !== undefined && Date.parse(slot.hour) + HOUR <= Date.parse(started)
   const means = track.slots.map((slot) => (slot.passes > 0 ? slot.duration / slot.passes : 0))
   const longest = Math.max(...means, 0)
 
@@ -160,6 +171,7 @@ export function JobHistogram({ label, track, initial = null, height = 70 }: JobH
       >
         {track.slots.map((slot, i) => {
           const tone = toneOf(slot)
+          const down = isDown(slot)
           const share = longest > 0 ? means[i] / longest : 0
           return (
             <div
@@ -168,17 +180,19 @@ export function JobHistogram({ label, track, initial = null, height = 70 }: JobH
               role="option"
               aria-selected={selected === i}
               aria-label={
-                t('settings.jobs.hour', {
-                  hour: clock(slot.hour),
-                  passes: slot.passes,
-                  errors: slot.errors,
-                  attentions: slot.attentions,
-                }) +
-                (slot.passes > 0
-                  ? `, ${t('settings.jobs.mean', {
-                      value: t('settings.jobs.seconds', { value: format.number(means[i], 1) }),
-                    })}`
-                  : '')
+                down
+                  ? t('settings.jobs.hour.down', { hour: clock(slot.hour) })
+                  : t('settings.jobs.hour', {
+                      hour: clock(slot.hour),
+                      passes: slot.passes,
+                      errors: slot.errors,
+                      attentions: slot.attentions,
+                    }) +
+                    (slot.passes > 0
+                      ? `, ${t('settings.jobs.mean', {
+                          value: t('settings.jobs.seconds', { value: format.number(means[i], 1) }),
+                        })}`
+                      : '')
               }
               onClick={() => select(i)}
               className={cn(
@@ -198,27 +212,37 @@ export function JobHistogram({ label, track, initial = null, height = 70 }: JobH
                   {tone === 'error' ? '✕' : '▲'}
                 </span>
               ) : null}
-              <span
-                aria-hidden
-                style={
-                  tone === 'ok' || tone === 'attention' || tone === 'error'
-                    ? { height: `${Math.max(8, share * 80)}%` }
-                    : undefined
-                }
-                className={cn(
-                  'block rounded-[1px]',
-                  tone === 'ok' && 'bg-muted-foreground',
-                  tone === 'attention' && 'bg-foreground',
-                  tone === 'error' && 'bg-destructive',
-                  tone === 'idle' && 'h-1 bg-border',
-                  tone === 'none' && 'h-1.5 border border-dashed border-border',
-                )}
-              />
+              {down ? null : (
+                <span
+                  aria-hidden
+                  style={
+                    tone === 'ok' || tone === 'attention' || tone === 'error'
+                      ? { height: `${Math.max(8, share * 80)}%` }
+                      : undefined
+                  }
+                  className={cn(
+                    'block rounded-[1px]',
+                    tone === 'ok' && 'bg-muted-foreground',
+                    tone === 'attention' && 'bg-foreground',
+                    tone === 'error' && 'bg-destructive',
+                    tone === 'idle' && 'h-1 bg-border',
+                    tone === 'none' && 'h-1.5 border border-dashed border-border',
+                  )}
+                />
+              )}
             </div>
           )
         })}
       </div>
-      {selected === null ? null : (
+      {selected === null ? null : isDown(track.slots[selected]) ? (
+        <p
+          id={`${id}-detail`}
+          aria-live="polite"
+          className="mt-2 py-1.5 text-xs text-muted-foreground"
+        >
+          {t('settings.jobs.hour.down', { hour: clock(track.slots[selected].hour) })}
+        </p>
+      ) : (
         <HourDetail
           id={`${id}-detail`}
           slot={track.slots[selected]}

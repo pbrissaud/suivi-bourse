@@ -31,12 +31,17 @@ function nav() {
   return screen.getByRole('navigation', { name: 'Sections' })
 }
 
-/** One option of a preference's segmented control, on the settings page. */
+/** One option of a preference on the settings page: a select for the language, a segmented control otherwise. */
 async function chooseInSettings(
   user: ReturnType<typeof renderApp>['user'],
   control: string,
   option: string,
 ) {
+  if (control === 'Langue' || control === 'Language') {
+    await user.click(await screen.findByRole('combobox', { name: control }))
+    await user.click(screen.getByRole('option', { name: option }))
+    return
+  }
   const group = await screen.findByRole('radiogroup', { name: control })
   await user.click(within(group).getByRole('radio', { name: option }))
 }
@@ -53,7 +58,7 @@ describe('the walking skeleton', () => {
 
     // The preferences are set on the settings page, and nowhere else.
     await user.click(within(nav()).getByRole('link', { name: 'Réglages' }))
-    await chooseInSettings(user, 'Thème', 'Sombre')
+    await chooseInSettings(user, 'Apparence', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
 
     await chooseInSettings(user, 'Langue', 'English')
@@ -153,7 +158,7 @@ describe('the reader preferences', () => {
     expect(within(nav()).getByRole('link', { name: 'Shares' })).toBeInTheDocument()
     // The chrome follows too: the control that was `Langue` a moment ago is now
     // `Language`, so nothing is left in the other language on screen.
-    expect(screen.getByRole('radiogroup', { name: 'Language' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument()
     expect(document.documentElement).toHaveAttribute('lang', 'en')
   })
 
@@ -162,7 +167,7 @@ describe('the reader preferences', () => {
     await screen.findByRole('heading', { level: 1, name: 'Réglages' })
     expect(document.documentElement).not.toHaveClass('dark')
 
-    await chooseInSettings(user, 'Thème', 'Sombre')
+    await chooseInSettings(user, 'Apparence', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
 
     unmount()
@@ -198,7 +203,7 @@ describe('the reader preferences', () => {
     const { user } = renderApp({ url: '/settings' })
     await screen.findByRole('heading', { level: 1, name: 'Réglages' })
 
-    await chooseInSettings(user, 'Thème', 'Sombre')
+    await chooseInSettings(user, 'Apparence', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
     await chooseInSettings(user, 'Langue', 'English')
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
@@ -279,7 +284,7 @@ describe('the content header', () => {
       expect.arrayContaining(['Afficher ou masquer la navigation', 'Tableau de bord']),
     )
     expect(within(header()).getByRole('button', { name: /^Notifications/ })).toBeInTheDocument()
-    for (const preference of ['Densité des tableaux', 'Langue', 'Thème']) {
+    for (const preference of ['Densité des tableaux', 'Langue', 'Apparence']) {
       expect(within(header()).queryByRole('button', { name: preference })).not.toBeInTheDocument()
     }
 

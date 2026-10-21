@@ -55,6 +55,8 @@ export const ROUTES = {
   taxationModels: '/api/taxation-models',
   /** One model. A **pattern**, like {@link ROUTES.account}. */
   taxationModel: '/api/taxation-models/:id',
+  /** The wrappers the documentation site publishes, read on a click and stored nowhere (#1290). */
+  taxationRegistry: '/api/taxation-models/registry',
   positions: '/api/positions',
   portfolioTotals: '/api/portfolio-totals',
   /**
@@ -370,7 +372,8 @@ export async function send<T>(
 }
 
 /**
- * One file on its way in (#811).
+ * The files of one request on their way in (#811, #1266): one `file` part each,
+ * in the order given — the order fixes the merge, and so every row index.
  *
  * `Content-Type` is deliberately **not** set: the browser writes it, boundary
  * included, and a hand-written one is a multipart body no server can split. The
@@ -379,7 +382,7 @@ export async function send<T>(
  */
 export async function upload<T>(
   path: string,
-  file: File,
+  files: readonly File[],
   params: string[] = [],
   fields: Record<string, readonly string[]> = {},
 ): Promise<T> {
@@ -387,7 +390,7 @@ export async function upload<T>(
   // The **third argument is the filename**, and it is not optional in practice:
   // the receipt is named after the file, and an implementation that reads the
   // `File`'s own name rather than the part's states `blob` back at the reader.
-  body.append('file', file, file.name)
+  for (const file of files) body.append('file', file, file.name)
   // The gesture's own parameters travel on the query string and never in the
   // form (#813): they are *how* the file is to be read, not part of it, and a
   // second part in the body would make the route parse the reader's intention

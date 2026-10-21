@@ -52,27 +52,27 @@ export function cadenceReach(runtime: RuntimeState | undefined): CadenceReach | 
 // ------------------------------------------------------------------------- //
 
 /**
- * The dial whose change is retroactive, and the reason the form says so out
+ * The dial whose change is retroactive, and the reason its row says so out
  * loud: the dead-ticker back-off waits `regular_interval × 2^(n−3)` and stores
- * no absolute delay anywhere, so lowering the number in the form shortens —
+ * no absolute delay anywhere, so lowering the number shortens —
  * *retroactively* — the wait of a symbol that has been failing since this
- * morning. No interface can hide it: the number in the form is the number in
+ * morning. No interface can hide it: the number typed is the number in
  * the formula.
  */
 export const RETROACTIVE_DIAL = 'regular_interval'
 
-/** The form's field id for a dial. One spelling, so a label and a link agree. */
+/** A dial's field id. One spelling, so a label and a link agree. */
 export function settingFieldId(key: string): string {
   return `setting-${key}`
 }
 
 /**
- * What the form should send: every dial whose field differs from the store's
+ * What a row should send: the dial whose field differs from the store's
  * effective value, and nothing else.
  *
  * `PUT /api/settings` re-arms exactly what it reports as changed, and
- * `reschedule_job` recomputes `next_run_time` from *now* — so a save button
- * that posted every field would put every timer back to zero on every click,
+ * `reschedule_job` recomputes `next_run_time` from *now* — so a save that
+ * posted every dial would put every timer back to zero on every blur,
  * invisibly. Sending only what moved is not an optimisation, it is the
  * difference between a save that does nothing and a save that silently
  * restarts the scheduler's whole clock.
@@ -98,7 +98,7 @@ export function changedValues(
   return changed
 }
 
-/** The draft a form starts from: every dial at its effective value, as text. */
+/** The draft a row starts from: every dial at its effective value, as text. */
 export function draftFrom(settings: readonly SettingDescription[]): Record<string, string> {
   const draft: Record<string, string> = {}
   for (const setting of settings) {

@@ -34,7 +34,15 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Refusal } from '@/components/Refusal'
-import { TaxationModelField } from '@/features/accounts/components/TaxationModelField'
+import {
+  bodyOf,
+  draftOf,
+  type ModelDraft,
+} from '@/features/accounts/components/TaxationModelEditor'
+import {
+  type ModelEditing,
+  TaxationModelField,
+} from '@/features/accounts/components/TaxationModelField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -51,7 +59,12 @@ import {
   type Reassignment,
   type Removal,
 } from '@/features/accounts/lib/accounts'
-import { type Account, type AccountDraft, accountsApi } from '@/features/accounts/lib/api'
+import {
+  type Account,
+  type AccountDraft,
+  accountsApi,
+  type TaxationModelDraft,
+} from '@/features/accounts/lib/api'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey, problemSentence } from '@/lib/problem'
 
@@ -76,6 +89,13 @@ interface Draft {
 }
 
 type FieldName = keyof Draft
+
+/** What one press of the submit button writes: the model if there is one to write, then the account. */
+interface Submission {
+  model: { mode: 'new' | 'edit'; draft: ModelDraft; body: TaxationModelDraft } | null
+  /** The account's body once the id of the model it carries is known. */
+  build: (modelId: string | null) => AccountDraft
+}
 
 const EMPTY: Draft = { id: '', label: '', openedOn: '' }
 
@@ -128,6 +148,14 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
   // has or has not. `null` is *no model*, which is an ordinary answer and the
   // one a declaration opens on.
   const [taxationModel, setTaxationModel] = useState<string | null>(null)
+  // **The model written with the account** (#1290): no Save of its own, the
+  // declaration below writes it first. Once written it is `edit` on the id the
+  // select now holds, so a retry after an account refusal PATCHes that model
+  // instead of creating a second one.
+  const [editing, setEditing] = useState<ModelEditing>(null)
+  // What the server refused about the model, kept apart from the account's own
+  // refusal: it is shown at the editor, and focus goes there.
+  const [modelError, setModelError] = useState<unknown>(null)
 
   // **The same query as the field below**, which react-query serves from one
   // cache. What it decides is whether the opening date is asked for at all, and
@@ -139,7 +167,12 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
   // Nothing at all while the read is in flight.
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
   const carried = catalogue.data?.models.find((model) => model.id === taxationModel)
-  const ageMatters = carried?.parameters.age_basis === 'opening'
+  const kinds = catalogue.data?.kinds ?? []
+  // **Read from the draft while one is open**: a model being written is not
+  // stored yet, and its `age_basis` is what decides whether this date is asked.
+  const ageMatters =
+    (editing === null ? carried?.parameters.age_basis : editing.draft.fields.age_basis) ===
+    'opening'
 
   const remove = useMutation({
     mutationFn: (id: string) => accountsApi.removeAccount(id),
@@ -152,10 +185,29 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
   })
 
   const write = useMutation({
-    mutationFn: (body: AccountDraft) =>
-      account === null
+    mutationFn: async ({ build, model }: Submission) => {
+      let modelId = taxationModel
+      if (model !== null) {
+        try {
+          const saved =
+            model.mode === 'edit' && modelId !== null
+              ? await accountsApi.updateTaxationModel(modelId, model.body)
+              : await accountsApi.createTaxationModel(model.body)
+          modelId = saved.id
+          // Remembered: from here a retry corrects this model, never adds one.
+          setTaxationModel(saved.id)
+          setEditing({ mode: 'edit', draft: model.draft })
+          void queryClient.invalidateQueries({ queryKey: ['taxation-models'] })
+        } catch (error) {
+          setModelError(error)
+          throw error
+        }
+      }
+      const body = build(modelId)
+      return account === null
         ? accountsApi.createAccount(body)
-        : accountsApi.updateAccount(account.id, body),
+        : accountsApi.updateAccount(account.id, body)
+    },
     onSuccess: () => {
       // A declaration moves what an event file is allowed to say and what every
       // page groups by, so the whole cache goes rather than a list of keys that
@@ -177,6 +229,8 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     write.reset()
     remove.reset()
     setTaxationModel(account?.taxation_model ?? null)
+    setEditing(null)
+    setModelError(null)
     setDraft(
       account === null
         ? EMPTY
@@ -211,6 +265,11 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
   /** A declaration cannot be submitted before the offer is known. See {@link AccountFormProps.offer}. */
   const waiting = account === null && offer === null
 
+  // Focus follows the refusal of the model to the editor it is shown at.
+  useEffect(() => {
+    if (modelError !== null) document.getElementById('taxation-name')?.focus()
+  }, [modelError])
+
   function submit() {
     const found: Partial<Record<FieldName, MessageKey>> = {}
     const id = draft.id.trim()
@@ -237,29 +296,39 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
       ageMatters && draft.openedOn !== (account?.opened_on ?? '')
         ? { opened_on: draft.openedOn || null }
         : {}
-    write.mutate(
-      account === null
-        ? {
-            id,
-            label: label || id,
-            ...(taxationModel === null ? {} : { taxation_model: taxationModel }),
-            ...opening,
-            // Sent only where the box was shown **and** left ticked: `reassign`
-            // is a request, and a client that never asks must never perform one.
-            ...(offered && reassign ? { reassign: true } : {}),
-          }
-        : // **Sent when the reader moved it**, `null` included — detaching is a
-          // gesture, and it is this one. Left alone, the member is absent, which
-          // is what a client with no such control sends and what keeps a rename a
-          // rename: the server reads an absent member as *leave it alone*.
-          {
-            label,
-            ...(taxationModel === (account.taxation_model ?? null)
-              ? {}
-              : { taxation_model: taxationModel }),
-            ...opening,
-          },
-    )
+    // **Written only if it was moved**: a model opened for correction and left
+    // as it was is not rewritten, so a rename stays a rename.
+    const model =
+      editing === null ||
+      (editing.mode === 'edit' &&
+        carried !== undefined &&
+        JSON.stringify(editing.draft) === JSON.stringify(draftOf(carried, kinds)))
+        ? null
+        : { mode: editing.mode, draft: editing.draft, body: bodyOf(editing.draft, kinds) }
+    setModelError(null)
+    write.mutate({
+      model,
+      build: (modelId) =>
+        account === null
+          ? {
+              id,
+              label: label || id,
+              ...(modelId === null ? {} : { taxation_model: modelId }),
+              ...opening,
+              // Sent only where the box was shown **and** left ticked: `reassign`
+              // is a request, and a client that never asks must never perform one.
+              ...(offered && reassign ? { reassign: true } : {}),
+            }
+          : // **Sent when the reader moved it**, `null` included — detaching is a
+            // gesture, and it is this one. Left alone, the member is absent, which
+            // is what a client with no such control sends and what keeps a rename a
+            // rename: the server reads an absent member as *leave it alone*.
+            {
+              label,
+              ...(modelId === (account.taxation_model ?? null) ? {} : { taxation_model: modelId }),
+              ...opening,
+            },
+    })
   }
 
   return (
@@ -328,7 +397,14 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
             )}
           </Field>
 
-          <TaxationModelField value={taxationModel} onChange={setTaxationModel} />
+          <TaxationModelField
+            accountId={account?.id ?? null}
+            value={taxationModel}
+            onChange={setTaxationModel}
+            editing={editing}
+            onEditing={setEditing}
+            write={{ error: modelError }}
+          />
 
           {/* **Asked for only where it changes a figure**: the shape this
               account carries counts its threshold from the wrapper's age, and
@@ -369,7 +445,9 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
             </div>
           ) : null}
 
-          {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+          {write.error && write.error !== modelError ? (
+            <Refusal>{problemSentence(t, write.error)}</Refusal>
+          ) : null}
 
           <div className="flex gap-2">
             <Button type="submit" disabled={write.isPending || waiting}>

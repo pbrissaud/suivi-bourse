@@ -11,7 +11,8 @@
  * than by a second rule: a day is what the marker counts, so selecting one
  * marks every line it counted. Selecting one line of a `×3` day therefore marks
  * its two neighbours, which is the truth of what the reader pointed at — a
- * marker cannot grow for a third of itself.
+ * marker cannot grow for a third of itself. A marker that merged several days
+ * (#1273) selects the lines of all of them.
  */
 import { useEffect, useRef } from 'react'
 
@@ -34,7 +35,7 @@ const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
 interface ShareEventsProps {
   events: readonly LedgerEvent[]
   currency: string | null
-  selectedDay: string | null
+  selectedDays: readonly string[]
   onSelectDay: (day: string) => void
   /**
    * Bumped by the **chart** and by nothing else. A line that was just clicked is
@@ -48,7 +49,7 @@ interface ShareEventsProps {
 export function ShareEvents({
   events,
   currency,
-  selectedDay,
+  selectedDays,
   onSelectDay,
   scrollRequest,
 }: ShareEventsProps) {
@@ -57,9 +58,9 @@ export function ShareEvents({
   const lines = useRef(new Map<string, HTMLButtonElement>())
 
   useEffect(() => {
-    if (scrollRequest === 0 || selectedDay === null) return
-    lines.current.get(selectedDay)?.scrollIntoView({ block: 'nearest' })
-  }, [scrollRequest, selectedDay])
+    if (scrollRequest === 0 || selectedDays.length === 0) return
+    lines.current.get(selectedDays[0])?.scrollIntoView({ block: 'nearest' })
+  }, [scrollRequest, selectedDays])
 
   return (
     <section className="space-y-3">
@@ -72,7 +73,7 @@ export function ShareEvents({
           className="max-h-64 divide-y overflow-y-auto rounded border"
         >
           {events.map((event, index) => {
-            const selected = event.date !== null && event.date === selectedDay
+            const selected = event.date !== null && selectedDays.includes(event.date)
             const fields = FIELDS[event.event_type]
             return (
               <li key={rowKey(event, index)}>

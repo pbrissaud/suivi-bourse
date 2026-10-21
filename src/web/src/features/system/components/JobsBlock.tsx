@@ -74,6 +74,9 @@ export function JobsBlock({
     health.jobs !== null && JOB_KEYS.every((key) => health.jobs?.[key] != null) ? health.jobs : null
   // In flight: the strips keep their place, empty (#795).
   const pending = history === null && historyFailure === null
+  // Under two hours of life there is no history worth drawing: the bars would
+  // be 23 "no pass" slots and one block, which reads as a broken chart.
+  const young = history !== null && Date.parse(history.started) > Date.parse(history.now) - 2 * HOUR
 
   return (
     <Section
@@ -90,9 +93,11 @@ export function JobsBlock({
       )}
       {history === null ? null : (
         <p className="mb-2 text-xs text-muted-foreground">
-          {Date.parse(history.started) > Date.parse(history.now) - 24 * HOUR
-            ? t('settings.jobs.since', { at: format.dateTime(history.started) })
-            : t('settings.jobs.day')}
+          {young
+            ? t('settings.jobs.young', { at: format.dateTime(history.started) })
+            : Date.parse(history.started) > Date.parse(history.now) - 24 * HOUR
+              ? t('settings.jobs.since', { at: format.dateTime(history.started) })
+              : t('settings.jobs.day')}
         </p>
       )}
       {rows === null ? (
@@ -120,15 +125,16 @@ export function JobsBlock({
                     track={track}
                     pending={pending}
                     flagged={rows[key].status === 'attention'}
+                    started={young ? null : history?.started}
                   />
-                  {key === 'scrape' && history !== null ? (
-                    <SymbolHistories tracks={history.scrape} />
+                  {key === 'scrape' && history !== null && !young ? (
+                    <SymbolHistories tracks={history.scrape} started={history.started} />
                   ) : null}
                 </dd>
               </div>
             )
           })}
-          <IngestionRow history={history} pending={pending} />
+          <IngestionRow history={history} pending={pending} young={young} />
         </dl>
       )}
       {historyFailure === null ? null : <Unreadable failure={historyFailure} />}
@@ -148,20 +154,37 @@ function History({
   track,
   pending,
   flagged,
+  started,
 }: {
   label: string
   track: JobTrack | null
   pending: boolean
   flagged: boolean
+  /** `null` for a process too young to draw; `undefined` while unread. */
+  started?: string | null
 }) {
   if (track === null) return pending ? <div className="h-[70px]" /> : null
+  if (started === null) return null
   return (
-    <JobHistogram label={label} track={track} initial={flagged ? lastFaultyHour(track) : null} />
+    <JobHistogram
+      label={label}
+      track={track}
+      initial={flagged ? lastFaultyHour(track) : null}
+      started={started}
+    />
   )
 }
 
 /** The ingestion is not in `/health`: its row is read off its own history. */
-function IngestionRow({ history, pending }: { history: JobsHistory | null; pending: boolean }) {
+function IngestionRow({
+  history,
+  pending,
+  young,
+}: {
+  history: JobsHistory | null
+  pending: boolean
+  young: boolean
+}) {
   const { t } = useI18n()
   const format = useFormatters()
   const track = history?.jobs.ingestion ?? null
@@ -191,6 +214,7 @@ function IngestionRow({ history, pending }: { history: JobsHistory | null; pendi
           track={track}
           pending={pending}
           flagged={failed}
+          started={young ? null : history?.started}
         />
       </dd>
     </div>
@@ -198,7 +222,13 @@ function IngestionRow({ history, pending }: { history: JobsHistory | null; pendi
 }
 
 /** One mini-histogram per held symbol, the worst first, five open. */
-function SymbolHistories({ tracks }: { tracks: Record<string, JobTrack> }) {
+function SymbolHistories({
+  tracks,
+  started,
+}: {
+  tracks: Record<string, JobTrack>
+  started: string
+}) {
   const { t } = useI18n()
   const [all, setAll] = useState(false)
   const sum = (track: JobTrack, field: 'errors' | 'attentions') =>
@@ -220,6 +250,7 @@ function SymbolHistories({ tracks }: { tracks: Record<string, JobTrack> }) {
             label={`${t('settings.jobs.scrape')} · ${symbol}`}
             track={tracks[symbol]}
             height={32}
+            started={started}
           />
         </div>
       ))}

@@ -220,6 +220,12 @@ export function problemMessage(error: unknown): {
       }
     }
   }
+  if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.invalidFile) {
+    // **The refused file of a batch is named** (#1266): one refused file refuses
+    // them all, and the reader's next move is to remove that one.
+    const file = refusedFile(error)
+    if (file !== null) return { message: 'problem.invalidFile.named', values: { file } }
+  }
   if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.taxationModelInUse) {
     // **Named, or not said at all.** The point of the refusal is where to go
     // next, and *some account carries it* sends its reader through every panel
@@ -243,6 +249,16 @@ export function problemMessage(error: unknown): {
     }
   }
   return { message: problemMessageKey(error), values: {} }
+}
+
+/**
+ * The file of a batch the server refused, by name (#1266), or `null` when the
+ * refusal is about no file in particular (the correspondence, the currency).
+ */
+export function refusedFile(error: unknown): string | null {
+  return error instanceof ApiProblem && error.type === PROBLEM_TYPES.invalidFile
+    ? text(error, 'file')
+    : null
 }
 
 /**

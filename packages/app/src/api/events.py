@@ -96,12 +96,12 @@ def create_event():
 
 @bp.post('/events/import')
 def import_events():
-    """One file handed over, read once, and written as ordinary events (#811)."""
+    """The files handed over, read once, and written as ordinary events (#811, #1266)."""
     if uploads.oversize(request.content_length):
         return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
 
-    upload = request.files.get('file')
-    if upload is None:
+    sent = request.files.getlist('file')
+    if not sent:
         return bad_request(
             "a file is required, as the 'file' part of a multipart/form-data "
             "body")
@@ -114,14 +114,15 @@ def import_events():
         return bad_request("amounts_in is either 'base' or 'quote'")
 
     try:
-        parsed = uploads.read(upload.filename or '', upload.stream)
+        parsed = uploads.merge([uploads.read(part.filename or '', part.stream)
+                                for part in sent])
         correspondence = uploads.mapping(request.args.get('map'),
                                          request.args.getlist('declare'))
         write_repeats = _write_repeats()
     except uploads.UploadTooLarge as exc:
         return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
     except uploads.UploadRefused as exc:
-        return unprocessable_file(str(exc))
+        return unprocessable_file(str(exc), file=exc.file)
 
     census = uploads.census(parsed.events)
 
@@ -142,9 +143,12 @@ def import_events():
             rows = settled.applied(parsed.events)
             base = _question_base(opened, parsed)
             if base:
-                found = import_currency.survey(opened, rows, base)
+                asked = _unstated(parsed)
+                found = import_currency.survey(
+                    opened, [rows[i] for i in asked], base)
                 foreign, unverified = found.lines, found.unverified
-                rows = _answered(rows, amounts_in, found.pairs, runtime, base)
+                rows = _answered(rows, asked, amounts_in, found.pairs,
+                                 runtime, base)
             fresh, duplicates = entries.split_duplicates(
                 opened, rows, write_held=write_duplicates,
                 write_repeats=write_repeats)
@@ -168,13 +172,17 @@ def import_events():
                             raise _RatesStale(base)
                         says = {}
                         if base:
-                            sent = import_currency.pairs(
-                                rows, request.args.getlist('foreign'), base)
-                            foreign = import_currency.lines(rows, sent)
-                            rows = _answered(rows, amounts_in, sent, runtime, base)
+                            asked = _unstated(parsed)
+                            chosen = import_currency.pairs(
+                                [rows[i] for i in asked],
+                                request.args.getlist('foreign'), base)
+                            foreign = import_currency.lines(
+                                [rows[i] for i in asked], chosen)
+                            rows = _answered(rows, asked, amounts_in, chosen,
+                                             runtime, base)
                             if amounts_in:
                                 says = {symbol: base if amounts_in == 'base' else code
-                                        for symbol, code in sent.items()}
+                                        for symbol, code in chosen.items()}
                         fresh, duplicates = entries.split_duplicates(
                             opened, rows, write_held=write_duplicates,
                             write_repeats=write_repeats)
@@ -192,7 +200,7 @@ def import_events():
         return currency_unconvertible(
             str(exc), exc.symbol, exc.currency, exc.base, exc.day.isoformat())
     except uploads.UploadRefused as exc:
-        return unprocessable_file(str(exc))
+        return unprocessable_file(str(exc), file=exc.file)
     except accounts_module.AccountSourceError as exc:
         return unprocessable_file(str(exc))
     except settings_registry.InvalidSetting as exc:
@@ -205,10 +213,11 @@ def import_events():
     if not dry_run:
         main.replay_after_write(runtime)
     return jsonify(_receipt_to_dict(
-        uploads.receipt(parsed.filename, rows,
+        uploads.receipt(parsed, rows,
                         written=written, duplicates=len(duplicates),
                         file_accounts=census),
         duplicates=duplicates,
+        origin=parsed.origin,
         currency=declared if adopt_currency else None,
         declared_currency=stated,
         foreign=foreign,
@@ -216,13 +225,20 @@ def import_events():
     )), 200 if dry_run else 201
 
 
-def _question_base(opened, parsed) -> Optional[str]:
-    """The base currency when the file's amounts have no stated unit, else ``None``.
+def _unstated(parsed) -> list:
+    """The positions of the rows whose file states no unit for its amounts.
 
     A file that declares a ``base_currency`` column has stated the unit of its
-    amounts (the app's own export does), so nothing is asked of it (#1261).
+    amounts (the app's own export does), so its rows are never foreign lines
+    (#1261), whatever the other files of the batch say (#1266).
     """
-    if parsed.declared_currency:
+    return [i for i, n in enumerate(parsed.origin)
+            if not parsed.files[n].declared_currency]
+
+
+def _question_base(opened, parsed) -> Optional[str]:
+    """The base currency when some file's amounts have no stated unit, else ``None``."""
+    if not _unstated(parsed):
         return None
     return opened.setting('base_currency') or None
 
@@ -242,19 +258,24 @@ def _warm_rates(parsed, runtime, base: Optional[str]) -> Optional[str]:
     once it holds the lock.
     """
     if base:
-        sent = import_currency.pairs(
-            parsed.events, request.args.getlist('foreign'), base)
-        _answered(parsed.events, 'quote', sent, runtime, base)
+        asked = _unstated(parsed)
+        rows = [parsed.events[i] for i in asked]
+        chosen = import_currency.pairs(rows, request.args.getlist('foreign'), base)
+        _answered(rows, range(len(rows)), 'quote', chosen, runtime, base)
     return base
 
 
-def _answered(rows, amounts_in: Optional[str], chosen, runtime, base: str):
-    """``rows`` with the foreign securities' amounts in ``base`` if asked to."""
+def _answered(rows, asked, amounts_in: Optional[str], chosen, runtime, base: str):
+    """``rows`` with the amounts of the ``asked`` positions in ``base`` if asked to."""
     if amounts_in != 'quote' or not chosen:
         return rows
     running = getattr(runtime, 'workloads', None)
-    return import_currency.convert(
-        rows, chosen, getattr(running, 'rates', None), base)
+    converted = import_currency.convert(
+        [rows[i] for i in asked], chosen, getattr(running, 'rates', None), base)
+    answered = list(rows)
+    for i, event in zip(asked, converted):
+        answered[i] = event
+    return answered
 
 
 def _stated_currency(declared: Optional[str]) -> Optional[str]:
@@ -318,6 +339,7 @@ def _unless_declined(name: str) -> bool:
 
 def _receipt_to_dict(receipt: uploads.Receipt, *,
                      duplicates: Sequence[entries.Duplicate] = (),
+                     origin: Sequence[int],
                      currency: Optional[str] = None,
                      declared_currency: Optional[str] = None,
                      foreign: Sequence[import_currency.ForeignLine] = (),
@@ -334,13 +356,21 @@ def _receipt_to_dict(receipt: uploads.Receipt, *,
         },
         'accounts': list(receipt.accounts),
         'symbols': list(receipt.symbols),
+        'files': [{'filename': file.filename, 'rows': file.rows,
+                   'period': None if file.first_day is None else {
+                       'from': file.first_day.isoformat(),
+                       'to': file.last_day.isoformat()}}
+                  for file in receipt.files],
         'file_accounts': [{'name': account.name, 'rows': account.rows}
                           for account in receipt.file_accounts],
         'duplicate_rows': [
             dict(_event_to_dict(duplicate.event),
                  duplicate_of=(None if duplicate.held is None
                                else str(duplicate.held.id)),
-                 repeat_of=duplicate.repeat_of)
+                 repeat_of=duplicate.repeat_of,
+                 file=origin[duplicate.index],
+                 repeat_of_file=(None if duplicate.repeat_of is None
+                                 else origin[duplicate.repeat_of]))
             for duplicate in duplicates],
         'currency': None if not declared_currency else {
             'declared': declared_currency,

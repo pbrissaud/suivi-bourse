@@ -120,36 +120,53 @@ CHAT_ANSWER = {'id': 'c1', 'object': 'chat.completion', 'created': 0,
                          'total_tokens': 11}}
 
 
-def two_turns(tmp_path, model_for, answer):
-    """The JSON bodies of two turns, the second continuing the first, over
-    the MCP server's real tools. ``model_for(http_client)`` builds the model."""
+def run_turns(tmp_path, steps):
+    """The JSON bodies each step sent, a step being ``(model_for, answer,
+    thinking, events)``: a turn that continues the history of the one before,
+    over the MCP server's real tools. ``model_for(http_client)`` builds the
+    model, ``events`` is what an Anthropic stream carries."""
     import asyncio
     import json
 
     import httpx2
 
     from application import mcp_server
-    bodies = []
 
-    def handler(request):
-        sent = json.loads(request.content)
-        bodies.append(sent)
-        if sent.get('stream') and 'system' in sent:
-            return httpx2.Response(200, content=''.join(
-                f'event: {name}\ndata: {json.dumps(data)}\n\n'
-                for name, data in ANSWER_EVENTS).encode(),
-                headers={'content-type': 'text/event-stream'})
-        return httpx2.Response(200, json=answer)
+    def handler_of(bodies, answer, events):
+        def handler(request):
+            sent = json.loads(request.content)
+            bodies.append(sent)
+            if sent.get('stream') and 'system' in sent:
+                return httpx2.Response(200, content=''.join(
+                    f'event: {name}\ndata: {json.dumps(data)}\n\n'
+                    for name, data in events).encode(),
+                    headers={'content-type': 'text/event-stream'})
+            return httpx2.Response(200, json=answer)
+        return handler
 
     async def run():
-        client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
         runtime, _ = build_runtime(tmp_path)
-        assistant = agent.build_agent(
-            model_for(client), mcp_server.build_server(runtime))
-        first = await assistant.run('Mes positions ?')
-        await assistant.run('Et le CTO ?', message_history=first.all_messages())
-    asyncio.run(run())
-    return bodies
+        server = mcp_server.build_server(runtime)
+        history, sent = [], []
+        for model_for, answer, thinking, events in steps:
+            bodies = []
+            client = httpx2.AsyncClient(transport=httpx2.MockTransport(
+                handler_of(bodies, answer, events)))
+            assistant = agent.build_agent(
+                model_for(client), server, thinking=thinking)
+            result = await assistant.run(
+                'Et le CTO ?' if history else 'Mes positions ?',
+                message_history=history)
+            history = result.all_messages()
+            sent += bodies
+        return sent
+    return asyncio.run(run())
+
+
+def two_turns(tmp_path, model_for, answer):
+    """The JSON bodies of two turns, the second continuing the first."""
+    step = (model_for, answer, 'low', ANSWER_EVENTS)
+    return run_turns(tmp_path, [step, step])
 
 
 def test_the_agent_asks_for_the_cache(tmp_path):
@@ -157,7 +174,7 @@ def test_the_agent_asks_for_the_cache(tmp_path):
     runtime, _ = build_runtime(tmp_path)
     assistant = agent.build_agent(
         agent.build_model(config('anthropic')),
-        mcp_server.build_server(runtime))
+        mcp_server.build_server(runtime), thinking='low')
     assert assistant.model_settings['cache'] is True
 
 
@@ -205,7 +222,8 @@ def test_ollama_and_an_older_gpt_get_no_breakpoint(tmp_path, provider, base_url)
 def test_the_agent_is_off_and_keyless_until_configured(client):
     assert client.get('/api/agent/config').get_json() == {
         'enabled': False, 'provider': None, 'model': None, 'model_name': None,
-        'base_url': None, 'key': {'set': False, 'last4': None, 'set_at': None}}
+        'base_url': None, 'thinking': 'low',
+        'key': {'set': False, 'last4': None, 'set_at': None}}
 
 
 def test_a_key_is_served_back_as_its_last_four_characters_only(client):
@@ -306,6 +324,8 @@ def test_a_new_provider_with_enabled_true_is_refused_without_its_key(client):
     ({'base_url': 'ftp://x'}, 'base_url'),
     ({'provider': 'anthropic', 'base_url': 'https://x'}, 'base_url'),
     ({'api_key': KEY}, 'api_key'),
+    *[({'thinking': value}, 'thinking')
+      for value in ('off', 'xhigh', '', None, 3)],
 ])
 def test_a_bad_value_is_refused_by_name(client, body, key):
     answer = client.put('/api/agent/config', json=body)
@@ -389,3 +409,140 @@ def test_a_404_is_an_address_only_for_a_provider_that_takes_one():
     assert agent.refusal(404, None, 'test', 'openai_compatible') == 'address'
     assert agent.refusal(404, None, 'test', 'anthropic') == 'refused'
     assert agent.refusal(404, None, 'turn', 'openai_compatible') == 'model'
+
+
+# ---------------------------------------------------------- the thinking --
+
+@pytest.mark.parametrize('level', agent.THINKING)
+def test_each_thinking_level_is_kept_without_touching_the_rest(client, level):
+    before = configured(client, key=KEY, enabled=True, provider='anthropic',
+                        model='claude-sonnet-5-5', model_name='Sonnet',
+                        thinking='medium' if level == 'low' else 'low')
+
+    answer = client.put('/api/agent/config', json={'thinking': level})
+
+    assert answer.status_code == 200
+    kept = client.get('/api/agent/config').get_json()
+    assert kept['thinking'] == level
+    assert 'disabled' not in answer.get_json()
+    assert {**kept, 'thinking': 'low'} == {**before, 'thinking': 'low'}
+
+
+def test_a_bad_thinking_level_leaves_the_row_unchanged(client):
+    configured(client, provider='anthropic', thinking='high')
+
+    answer = client.put('/api/agent/config', json={'thinking': 'off'})
+
+    assert answer.status_code == 422
+    assert answer.get_json()['key'] == 'thinking'
+    assert client.get('/api/agent/config').get_json()['thinking'] == 'high'
+
+
+def test_a_connection_test_does_not_carry_the_thinking_level(client):
+    configured(client, provider='anthropic', key=KEY)
+
+    answer = client.post('/api/agent/test', json={'thinking': 'low'})
+
+    assert answer.status_code == 422
+    assert answer.get_json()['key'] == 'thinking'
+
+
+def test_a_provider_switch_keeps_the_thinking_level():
+    stored = {**config('anthropic'), 'thinking': 'high'}
+    tried = {**config('openai'), 'api_key': 'test-key-other-0000'}
+
+    assert agent.adopted(stored, tried)['thinking'] == 'high'
+
+
+def test_the_thinking_level_is_what_the_agent_is_built_with(tmp_path):
+    from application import mcp_server
+    runtime, _ = build_runtime(tmp_path)
+    assistant = agent.build_agent(
+        agent.build_model(config('anthropic')),
+        mcp_server.build_server(runtime), thinking='high')
+    assert assistant.model_settings['thinking'] == 'high'
+
+
+def anthropic(name):
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+    return lambda client: AnthropicModel(
+        name, provider=AnthropicProvider(api_key=KEY, http_client=client))
+
+
+def openai(name):
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+    return lambda client: OpenAIChatModel(
+        name, provider=OpenAIProvider(api_key=KEY, http_client=client))
+
+
+def only(tmp_path, model_for, answer, thinking):
+    """The one body a single turn sent."""
+    return run_turns(tmp_path, [(model_for, answer, thinking, ANSWER_EVENTS)])[0]
+
+
+@pytest.mark.parametrize('name', ['claude-opus-5-5', 'claude-sonnet-5-5'])
+def test_an_anthropic_model_thinks_adaptively_at_the_chosen_effort(tmp_path, name):
+    sent = only(tmp_path, anthropic(name), ANSWER, 'low')
+
+    assert sent['thinking']['type'] == 'adaptive'
+    assert sent['output_config']['effort'] == 'low'
+
+
+def test_gpt_5_5_gets_a_reasoning_effort(tmp_path):
+    sent = only(tmp_path, openai('gpt-5.5'), CHAT_ANSWER, 'medium')
+
+    assert sent['reasoning_effort'] == 'medium'
+
+
+def test_a_model_that_does_not_reason_is_sent_nothing_and_answers(tmp_path):
+    sent = only(tmp_path, openai('gpt-4.1'), CHAT_ANSWER, 'high')
+
+    assert 'reasoning_effort' not in sent
+
+
+THOUGHT_EVENTS = [
+    ANSWER_EVENTS[0],
+    ('content_block_start', {'type': 'content_block_start', 'index': 0,
+                             'content_block': {'type': 'thinking',
+                                               'thinking': '', 'signature': ''}}),
+    ('content_block_delta', {'type': 'content_block_delta', 'index': 0,
+                             'delta': {'type': 'thinking_delta',
+                                       'thinking': 'Look at the positions.'}}),
+    ('content_block_delta', {'type': 'content_block_delta', 'index': 0,
+                             'delta': {'type': 'signature_delta',
+                                       'signature': 'sig-1'}}),
+    ('content_block_stop', {'type': 'content_block_stop', 'index': 0}),
+    ('content_block_start', {'type': 'content_block_start', 'index': 1,
+                             'content_block': {'type': 'text', 'text': ''}}),
+    ('content_block_delta', {'type': 'content_block_delta', 'index': 1,
+                             'delta': {'type': 'text_delta', 'text': 'ok'}}),
+    ('content_block_stop', {'type': 'content_block_stop', 'index': 1}),
+    *ANSWER_EVENTS[-2:],
+]
+
+
+def test_raising_the_level_mid_thread_keeps_the_thinking_in_the_history(tmp_path):
+    model = anthropic('claude-sonnet-5-5')
+    first, second = run_turns(tmp_path, [
+        (model, ANSWER, 'low', THOUGHT_EVENTS),
+        (model, ANSWER, 'high', ANSWER_EVENTS)])
+
+    assert first['output_config']['effort'] == 'low'
+    assert second['output_config']['effort'] == 'high'
+    thought = [block for message in second['messages']
+               if isinstance(message['content'], list)
+               for block in message['content'] if block['type'] == 'thinking']
+    assert thought == [{'type': 'thinking', 'thinking': 'Look at the positions.',
+                        'signature': 'sig-1'}]
+
+
+def test_a_thread_that_thought_on_anthropic_continues_on_openai(tmp_path):
+    first, second = run_turns(tmp_path, [
+        (anthropic('claude-sonnet-5-5'), ANSWER, 'low', THOUGHT_EVENTS),
+        (openai('gpt-5.5'), CHAT_ANSWER, 'low', ANSWER_EVENTS)])
+
+    assert first['thinking']['type'] == 'adaptive'
+    assert second['reasoning_effort'] == 'low'
+    assert [m['role'] for m in second['messages']][-1] == 'user'

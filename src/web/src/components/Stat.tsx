@@ -7,7 +7,7 @@
  * product sat on the only component incapable of explaining itself. So the slot
  * is not optional furniture here — it is the reason the primitive exists.
  *
- * Four weights, one component, because they are the same object seen from
+ * Four sizes, one component, because they are the same object seen from
  * four distances: `head` is the one figure a page leads with, `figure` a
  * secondary figure that stands alone (DESIGN.md's Figure rung), `term` is what
  * is subordinate to it, `stat` everything else. Subordination is **vertical**
@@ -51,13 +51,14 @@ interface StatProps {
 /**
  * The four distances: DESIGN.md's hero (60/64, 600, −0.03em) for the one
  * figure a screen leads with, its Figure (28/32) for a secondary figure that
- * stands alone, 19 px for a statistic, 16 px for a term inside a total. The hero brings its own tracking, so the value's `tracking-tight`
- * applies to the two others only.
+ * stands alone, 20 px (Section title) for a statistic, 16 px (Term) for a term
+ * inside a total. The hero brings its own tracking, so the value's `tracking-tight`
+ * applies to the three others only.
  */
 const SIZES: Record<NonNullable<StatProps['size']>, string> = {
   head: 'text-hero tracking-hero',
   figure: 'text-4xl',
-  stat: 'text-xl',
+  stat: 'text-2xl',
   term: 'text-lg',
 }
 

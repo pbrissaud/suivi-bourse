@@ -43,6 +43,11 @@ typography:
     fontWeight: 600
     fontSize: 20px
     lineHeight: 28px
+  term:
+    fontFamily: Geist
+    fontWeight: 600
+    fontSize: 16px
+    lineHeight: 24px
   prose:
     fontFamily: Geist
     fontSize: 15px
@@ -103,6 +108,8 @@ components:
     width: 200px
   content-column:
     maxWidth: 720px
+  content-settings:
+    maxWidth: 1040px
   content-reading:
     maxWidth: 768px
 ---
@@ -167,11 +174,12 @@ keep their contrast.
   the 0 % line, `loss` below it, split exactly at zero. The 0 % line and the axis carry the
   same information without colour. Both colours are the `--gain` and `--loss` tokens.
 - `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
-- `rule` separates rows inside a section and nothing else.
+- `rule` separates rows inside a section, or in a page's own table, and nothing else.
 - A job's history bar (System page, #1236) is the one place a status colours a mark: an
   hour with a failed pass is `destructive` with ✕, one that needs a look `foreground`
   with ▲, a good one `text-muted`; an idle hour is a `rule` stub, an hour with no pass a
-  dashed `rule` outline. The glyph carries the meaning, the colour repeats it.
+  dashed `rule` outline; an hour before the process started draws nothing. The glyph
+  carries the meaning, the colour repeats it.
 - Secondary text on a tinted plane uses `text-muted`, which is derived from the same
   warm hue, never a neutral gray.
 - Gain is `chart-2` and loss is `destructive`: `--gain` and `--loss` point at them. Nothing
@@ -205,11 +213,14 @@ and used everywhere. Geist is on the list of overused display faces; we accept i
 because in this app the display voice is the figure, not the font, and replacing a
 shipped face would cost every screen for no reader benefit.
 
-- **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen.
+- **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen. Fluid from 36 px on a narrow screen.
 - **Figure (28/32, 600):** a secondary figure that stands alone (an account in the dashboard's accounts section, a term of the accounts page's figures row).
 - **Page title (15/22, 500):** the page's `<h1>`, in the header bar, followed by its dated subtitle in Label-muted after a `·`. The same size at every width. Quiet on purpose: the bar is chrome and the navigation already says where the reader is; the page leads with its hero, not its name.
 - **Section title (20/28, 600):** sentence case. No uppercase, letter-spaced overlines,
-  no kicker above a heading.
+  no kicker above a heading. Also the rung of a figure that heads a section (its subtotal)
+  or stands under the hero.
+- **Term (16/24, 600):** a term under a figure (a sheet's price, average cost, quantity; the
+  benchmark's two returns). A figure inside a line takes its line's size.
 - **Prose (15/22):** the agent's answers and any explanatory paragraph.
 - **Body (14/20):** controls, table text, labels in forms. Below the usual 16 px rule
   on purpose: this is a dense tool UI; long reading text uses Prose.
@@ -225,17 +236,20 @@ shipped face would cost every screen for no reader benefit.
 - **Navigation:** two groups and no group label. The top holds what the owner reads and records: Dashboard, Shares, Accounts, Ledger, Benchmark, Agent. The foot holds the administration: System, Settings.
 - **Content width is set per kind of content, never by one cap:**
   - a table or a chart takes the full width of the content column;
-  - a form, and the Settings page, is one start-aligned column of 720 px (`max-w-column`);
+  - a form is one start-aligned column of 720 px (`max-w-column`);
+  - the Settings page is 1 040 px (`max-w-settings`), start-aligned, one sequence of titled sections: from 1 024 px each section is a `220px | 1fr` grid with a 40 px gap, the title and one sentence in the gutter (sticky) and the rows on the right; under 1 024 px it is one column under a one-line anchor index;
   - the agent's conversation is described below (`max-w-column`, `lg:max-w-reading`);
   - a paragraph keeps its measure, 65 characters (`max-w-prose`), inside any of these;
   - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. The dashboard grid keeps two tracks today; a third track from 1 600 px is planned in #1325.
 
-  The widths are tokens in `index.css` (`--container-column`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
+  The widths are tokens in `index.css` (`--container-column`, `--container-settings`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - A table's totals are its last row, under the columns they sum (#1281).
+- A table page's table sits on the background, with no plane and no frame (#1273). The header, the `rule` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
 - **< 768 px:** single column.
+- Under 768 px the Shares table is a list on the background (#1338): one ruled item per held line, the name and valuation on the first line, the ticker and the latent gain on the second, the totals as four ruled rows, and a sort select with a direction button in the toolbar. The closed lines and the sheet's per-account breakdown are lists too.
 - A table page has no side panel: its filters are a toolbar above the table, its
   selection's actions appear only with a selection.
-- The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict.
+- The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict. The head reads like the dashboard's: the gap, the verdict, then the two returns on one row. It sits on the ground; the chart, the rebuild status and the per-account table are sections.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
   flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
   below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).
@@ -349,6 +363,10 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   concentric.
 - `rounded.sm` (8 px): buttons, inputs, menus.
 - `rounded.full`: chips only.
+- A dashed `rule` outline marks a place where something can be put (a free grid slot, a
+  drop zone, the slot for a new account). An empty state is text on its plane, never
+  outlined. Marks inside a drawing (a chart's grid and curves, a job hour with no pass)
+  are exempt.
 
 ## Components
 
@@ -364,7 +382,8 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 - **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `text-muted`, tabular numerals; no axis line, no tick mark; the dashed `rule` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
 - **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
-  opacity, no pointer events, the reason given in text next to it.
+  opacity, no pointer events, the reason given in text next to it. A submit disabled only
+  because its own field is empty needs no sentence: the field's placeholder says what to enter.
 - **Chips (agent profile facts):** outlined, Label size; each opens a popover with
   the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
 - **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
@@ -461,3 +480,5 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-19 | The agent's proposals come under the answer, and the wait is a line (#1271) | The server already streamed each word; the page drew nothing while the model read a tool result, thought or wrote its proposals (4 to 13 s), and drew each card where its call sat, above the answer that says nothing is saved until confirmed. Cards go after the text, the call keeps its trace line; a pending line fills the gap, so a single thing moves at a time; a decided proposal loses its frame (supersedes the card of 5A). |
 | 2026-10-20 | Figures in tables are Geist with tabular numerals (#1281) | The owner's choice, reversing the table half of #838: a column of amounts reads as a column through tabular numerals, and Geist Mono set on every cell read like a terminal. Geist Mono stays for tickers and account ids. The Shares page also draws its allocation once (bars, in a section), moves its toggle into a toolbar above the table, and ends the table on a total row. |
 | 2026-10-20 | The dashboard's composition (#1280) | Seen on screen, four equal pills read as filter chips and the total gain weighed no more than today's move: it takes its own line, the other three become a plain row. The chart's reading, legend and range share one bar; the edit link closes the grid; the rhythm's strip fills its row. A fresh install now shows the allocation and keeps the benchmark hidden without "Nouveau" (a `hiddenByDefault` flag, apart from `arrivesHidden`, which concerns saved layouts only); the movers go half. Saved layouts are untouched. Three-track packing is #1325. |
+| 2026-10-20 | Tables sit on the page background; the Benchmark head sits on the ground; markers merge (#1273) | Seen on screen, the Shares and Ledger tables in a white bordered card, the Benchmark head, chart and rebuild status in cards, and the share sheet's three gain terms in boxes broke the rule that a card is for a decision. The owner's choices: a page's own table has no plane and no frame (the closed shares become a disclosure row under the total); the Benchmark head reads like the dashboard's, on the ground, with its chart, rebuild status and per-account table as sections; the sheet's terms are a row of Label over figure. Days that land on one plotted point, or within 0.04 of the plot, share one marker whose click selects the lines of all its days. `lint/card-for-decisions.grit` keeps the `Card` for decisions. |
+| 2026-10-20 | Four figure rungs, a dashed outline for a place to put something, dark neutrals pinned (#1284) | The re-audit still counted six standalone figure sizes and figures in Geist Mono. Hero 60, Figure 28, Section title 20 (`Stat`'s `stat` moves from 19) and a named Term 16 are the whole ladder; a figure inside a line takes its line's size. A dashed outline meant both "empty" and "put something here": the empty state loses its border. The dark neutrals already matched the warm values above (within 0.005 ΔE_ok), so the tokens stay and CI now checks every colour on both grounds, with a warmth threshold on the dark ones. |

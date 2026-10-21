@@ -1,0 +1,24 @@
+{
+  "country": "DE",
+  "wrappers": [
+    {
+      "id": "de/depot",
+      "name": "Wertpapierdepot",
+      "tax_year": 2026,
+      "model": {
+        "kind": "flat_realised",
+        "parameters": {
+          "rate": 0.25,
+          "social_rate": 0.01375
+        }
+      },
+      "sources": [
+        {
+          "url": "https://www.bzst.de/DE/Privatpersonen/Kapitalertraege/kapitalertraege_node.html",
+          "title": "Kapitalerträge — Bundeszentralamt für Steuern",
+          "consulted": "2026-10-20"
+        }
+      ]
+    }
+  ]
+}

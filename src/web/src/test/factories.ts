@@ -78,6 +78,7 @@ import type {
   PerfPoint,
   TaxationModel,
   TaxationModelsResponse,
+  TaxationRegistryItem,
 } from '@/features/accounts/lib/api'
 import type { AgentConfig } from '@/features/agent/lib/api'
 import type {
@@ -174,6 +175,19 @@ export function aTaxationModel(overrides: Partial<TaxationModel> = {}): Taxation
     name: 'A flat model',
     kind: 'flat_realised',
     parameters: { rate: 0.3 },
+    ...overrides,
+  }
+}
+
+/** One wrapper of the registry the docs site publishes (#1290). */
+export function aRegistryItem(overrides: Partial<TaxationRegistryItem> = {}): TaxationRegistryItem {
+  return {
+    id: 'fr/cto',
+    country: 'FR',
+    name: 'Compte-titres ordinaire (CTO)',
+    kind: 'flat_realised',
+    parameters: { rate: 0.3 },
+    refused: null,
     ...overrides,
   }
 }
@@ -1020,6 +1034,10 @@ export function aLedgerPayload(events: LedgerEvent[] = ledgerEvents()): EventsRe
 export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt {
   return {
     filename: 'zeta-events_2.csv',
+    // **One file by default** (#1266): the receipt of one part lists that part.
+    files: [
+      { filename: 'zeta-events_2.csv', rows: 3, period: { from: '2026-01-05', to: '2026-02-27' } },
+    ],
     // The three numbers close — `rows === written + duplicates` (#813) — and
     // the default file has nothing the ledger already holds, which is the case
     // a test that does not care about duplicates should not have to think about.
@@ -1059,6 +1077,9 @@ export function aDuplicateRow(overrides: Partial<DuplicateRow> = {}): DuplicateR
     ...anEvent(),
     duplicate_of: '1',
     repeat_of: null,
+    // **From the batch's first file, no group across files** (#1266).
+    file: 0,
+    repeat_of_file: null,
     ...overrides,
   }
 }
@@ -1325,6 +1346,7 @@ export function anAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig
     model: null,
     model_name: null,
     base_url: null,
+    thinking: 'low',
     key: { set: false, last4: null, set_at: null },
     ...overrides,
   }

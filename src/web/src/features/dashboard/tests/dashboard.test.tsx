@@ -2115,7 +2115,7 @@ describe('the investment rhythm', () => {
     // amount's own group rather than beside it, which is what makes *500 €*
     // impossible to read on its own — and *500 € a month* is what a reader
     // turns into *6 000 € a year* when half of that never went in.
-    const amount = await screen.findByRole('group', { name: 'Acheté par mois' })
+    const amount = await screen.findByRole('group', { name: 'Acheté par mois (médiane)' })
     expect(amount).toHaveTextContent(/500,00/)
     expect(amount).toHaveTextContent('Sur 6 des 12 derniers mois')
   })
@@ -2210,7 +2210,9 @@ describe('the investment rhythm', () => {
     await screen.findByRole('group', { name: 'Gain total' })
 
     expect(await screen.findByText('Aucun achat sur les 12 derniers mois')).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Acheté par mois' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('group', { name: 'Acheté par mois (médiane)' }),
+    ).not.toBeInTheDocument()
   })
 
   it('draws one month when one month is all there is', async () => {
@@ -2234,7 +2236,7 @@ describe('the investment rhythm', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    const amount = await screen.findByRole('group', { name: 'Acheté par mois' })
+    const amount = await screen.findByRole('group', { name: 'Acheté par mois (médiane)' })
     // And the coverage says *the one month observed* rather than counting one
     // out of one, which is a sentence with the same number twice in it.
     expect(amount).toHaveTextContent('Sur le seul mois observé')

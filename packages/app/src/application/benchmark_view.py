@@ -250,6 +250,18 @@ def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (
         # shares. The comparison reads them as outperformance, which is what a
         # free share is. Taking the account out instead hid the whole wrapper
         # from the one screen that judges it, for a line that only helps it.
+        #
+        # **That edge starts the day after the pot does (#1194).** A grant on
+        # the seed day itself — the one that makes the first positive holding,
+        # or the only holding there ever is — is inside the seed, because the
+        # seed is the day's closing `holdings_value`. The reference is bought
+        # with the same value, so that day carries no gap, in the account's own
+        # replay and in the shared period's re-seed alike (`_merged`). Pricing
+        # the granted lots to strip them out would need positions this module
+        # does not read, and would leave an account of free shares only with a
+        # zero seed, which `replay` takes for nothing to compare. Kept on
+        # purpose; revisit if free-share accounts turn out to be common.
+        #
         # **The seed is the first day the pot exists** (#1025), floored at the
         # fund's own first quoted day. Every wrapper is opened by a deposit and
         # buys days or weeks later, so since #1018 an account's first written

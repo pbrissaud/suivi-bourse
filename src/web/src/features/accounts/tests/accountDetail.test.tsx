@@ -32,6 +32,7 @@ import {
   aLedgerPayload,
   aPosition,
   aPositionsPayload,
+  aRuntime,
   defaultAccounts,
   defaultPositions,
   ledgerEvents,
@@ -187,6 +188,7 @@ describe('the head states the account, and the curve is in it', () => {
     // term is not that total. **And the term renders, as a dash**: a
     // headline that goes out with no visible cause under it is worse than the
     // wrong number it replaces.
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
     const detail = await open(user, 'Alpha')
 
@@ -211,7 +213,9 @@ describe('the five blocks', () => {
     // The value is the page's one hero, and the cash is the line under it, as
     // on the dashboard (#1174, #1277). *Composition* and its bar are gone: the
     // securities were read as the account's total.
-    const total = await within(detail).findByRole('group', { name: 'Valeur totale' })
+    const total = await within(detail).findByRole('group', {
+      name: 'Valeur totale',
+    })
     expect(total).toHaveTextContent(/1\s?800,00/)
     expect(total).toHaveTextContent(/dont 500,00\s?€ de liquidités/)
     expect(within(detail).queryByRole('group', { name: 'Composition' })).not.toBeInTheDocument()
@@ -236,7 +240,9 @@ describe('the five blocks', () => {
     // altitudes: *what has this account paid me* is the one term that answers a
     // question on its own.
     expect(
-      await within(detail).findByRole('group', { name: 'Dividendes encaissés' }),
+      await within(detail).findByRole('group', {
+        name: 'Dividendes encaissés',
+      }),
     ).toHaveTextContent(/25,00/)
   })
 
@@ -267,7 +273,9 @@ describe('the five blocks', () => {
     const { user } = renderAccounts(defaultAccounts(), sharesPortfolio())
     const detail = await open(user, 'Alpha')
 
-    const payers = await within(detail).findByRole('list', { name: 'Titres distributeurs' })
+    const payers = await within(detail).findByRole('list', {
+      name: 'Titres distributeurs',
+    })
     const rows = within(payers).getAllByRole('listitem')
     // Biggest payer first, the line that was sold kept what it paid, and the
     // two shares close the whole: 25,00 and 10,00 of 35,00.
@@ -307,7 +315,9 @@ describe('the five blocks', () => {
     ])
     const detail = await open(user, 'Alpha')
 
-    const lines = await within(detail).findByRole('list', { name: 'Titres du compte' })
+    const lines = await within(detail).findByRole('list', {
+      name: 'Titres du compte',
+    })
     const rows = within(lines).getAllByRole('listitem')
     expect(rows).toHaveLength(2)
     // 1 300,00 of 1 560,00, then 260,00 of it. The figure is written out, which
@@ -323,7 +333,9 @@ describe('the five blocks', () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
 
-    const lines = await within(detail).findByRole('list', { name: 'Titres du compte' })
+    const lines = await within(detail).findByRole('list', {
+      name: 'Titres du compte',
+    })
     expect(within(lines).getAllByRole('listitem')).toHaveLength(1)
     expect(lines).toHaveTextContent('ZZA')
     // The link counts what the page it leads to shows — **symbols**, closed
@@ -332,7 +344,9 @@ describe('the five blocks', () => {
     // list above it is the held ones and the two counts are two subjects. And
     // the reduction is a URL, so it survives a reload.
     expect(
-      within(detail).getByRole('link', { name: 'Voir la ligne de ce compte dans Titres' }),
+      within(detail).getByRole('link', {
+        name: 'Voir la ligne de ce compte dans Titres',
+      }),
     ).toHaveAttribute('href', '/shares?account=alpha')
   })
 
@@ -351,7 +365,9 @@ describe('the five blocks', () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
 
-    const events = await within(detail).findByRole('list', { name: 'Derniers événements' })
+    const events = await within(detail).findByRole('list', {
+      name: 'Derniers événements',
+    })
     // Newest first, and the four the fixture's ledger names `alpha` with.
     expect(within(events).getAllByRole('listitem')).toHaveLength(4)
     expect(within(events).getAllByRole('listitem')[0]).toHaveTextContent('10 févr. 2026')
@@ -413,7 +429,11 @@ describe('no range control, and one rate in the head (#1112)', () => {
     expect(total.textContent?.match(/[+−-]\d[\d\s]*,\d+\s?%/g)).toHaveLength(1)
     expect(within(detail).queryByRole('group', { name: 'Performance totale' })).toBeNull()
     expect(within(detail).queryByRole('group', { name: 'TWR' })).toBeNull()
-    expect(within(detail).queryByRole('heading', { name: /TRI annualisé|Rendement/ })).toBeNull()
+    expect(
+      within(detail).queryByRole('heading', {
+        name: /TRI annualisé|Rendement/,
+      }),
+    ).toBeNull()
   })
 
   it('says nothing to compute where nothing was ever paid in', async () => {
@@ -446,7 +466,9 @@ describe('no range control, and one rate in the head (#1112)', () => {
       expect(detail).toHaveTextContent('Dessiné sur toute l’histoire de ce compte'),
     )
     expect(
-      within(detail).getByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
+      within(detail).getByRole('region', {
+        name: 'Valeur face à ce que vous avez versé',
+      }),
     ).toBeInTheDocument()
   })
 
@@ -458,8 +480,74 @@ describe('no range control, and one rate in the head (#1112)', () => {
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
     expect(
-      within(detail).queryByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
+      within(detail).queryByRole('region', {
+        name: 'Valeur face à ce que vous avez versé',
+      }),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('an account with nothing recorded says what to do', () => {
+  it('replaces the head with one empty state and its two ways forward', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))))
+    const { user } = renderAccounts(
+      [anAccountWithoutSeries(), ...defaultAccounts().slice(1)],
+      defaultPositions().filter((position) => position.account !== 'alpha'),
+    )
+    const detail = await open(user, 'Alpha')
+
+    await waitFor(() => expect(detail.querySelector('[data-empty]')).not.toBeNull())
+    expect(within(detail).getByText('Rien d’enregistré sur ce compte')).toBeVisible()
+    expect(within(detail).getByText(/Importez le fichier de votre courtier/)).toBeVisible()
+    expect(
+      within(detail).getByRole('link', { name: 'Saisir un événement' }).getAttribute('href'),
+    ).toContain('open=event')
+    expect(
+      within(detail).getByRole('link', {
+        name: 'Importer depuis le grand livre',
+      }),
+    ).toBeVisible()
+    // Name row stays; head, reason line and figures row go.
+    expect(within(detail).getByRole('button', { name: /Modifier/ })).toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
+    expect(detail.querySelector('[data-row="figures"]')).toBeNull()
+    expect(within(detail).queryByText('rien d’enregistré sur ce compte')).not.toBeInTheDocument()
+  })
+
+  it('does not claim the account is empty while it holds lines', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))))
+    const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
+    const detail = await open(user, 'Alpha')
+
+    await within(detail).findByText('rien d’enregistré sur ce compte')
+    expect(detail.querySelector('[data-empty]')).toBeNull()
+  })
+
+  it('keeps the rebuilding sentence while the rebuild runs', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
+    const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
+    const detail = await open(user, 'Alpha')
+
+    expect(await within(detail).findByText('historique encore en reconstruction')).toBeVisible()
+    expect(detail.querySelector('[data-empty]')).toBeNull()
+  })
+
+  it('claims nothing while the positions are in flight', async () => {
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload([anAccountWithoutSeries(), ...defaultAccounts().slice(1)]),
+        ),
+      ),
+      http.get(ROUTES.positions, () => new Promise<never>(() => {})),
+    )
+    const { user } = renderApp({ url: '/accounts' })
+    const detail = await open(user, 'Alpha')
+
+    await within(detail).findByText('rien d’enregistré sur ce compte')
+    expect(detail.querySelector('[data-empty]')).toBeNull()
   })
 })
 
@@ -515,7 +603,9 @@ describe('a read in flight is not an absence', () => {
     // The whole card, its title included: a drawing of a series nobody has read
     // is not a drawing that is loading, it is a claim about the reader's data.
     expect(
-      within(detail).queryByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
+      within(detail).queryByRole('region', {
+        name: 'Valeur face à ce que vous avez versé',
+      }),
     ).not.toBeInTheDocument()
     // And the head figure stands, because it reads none of that: the IRR is a
     // member of the account row. A read that failed never costs the reader a
@@ -569,7 +659,9 @@ describe('the bubbles', () => {
   it('files the TWR inside the IRR’s bubble, on click and not on hover', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
-    const trigger = await within(detail).findByRole('button', { name: 'Ce que veut dire TRI' })
+    const trigger = await within(detail).findByRole('button', {
+      name: 'Ce que veut dire TRI',
+    })
 
     await user.hover(trigger)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -631,13 +723,22 @@ describe('the detail reads like the dashboard’s head (#1277)', () => {
     expect(sections).toHaveLength(3)
     for (const section of sections) expect(section.querySelector('h3')).not.toBeNull()
     expect(
-      within(detail).getByRole('heading', { level: 3, name: 'Titres du compte' }),
+      within(detail).getByRole('heading', {
+        level: 3,
+        name: 'Titres du compte',
+      }),
     ).toBeInTheDocument()
     expect(
-      within(detail).getByRole('heading', { level: 3, name: 'Titres distributeurs' }),
+      within(detail).getByRole('heading', {
+        level: 3,
+        name: 'Titres distributeurs',
+      }),
     ).toBeInTheDocument()
     expect(
-      within(detail).getByRole('heading', { level: 3, name: 'Derniers événements' }),
+      within(detail).getByRole('heading', {
+        level: 3,
+        name: 'Derniers événements',
+      }),
     ).toBeInTheDocument()
   })
 
@@ -650,7 +751,9 @@ describe('the detail reads like the dashboard’s head (#1277)', () => {
     )
     renderApp({ url: '/accounts?account=default' })
     const detail = await screen.findByRole('region', { name: 'Non affecté' })
-    await within(detail).findByRole('region', { name: 'Des événements affectés à aucun compte' })
+    await within(detail).findByRole('region', {
+      name: 'Des événements affectés à aucun compte',
+    })
 
     expect(detail.querySelectorAll('[data-slot="card"]')).toHaveLength(1)
   })
@@ -675,7 +778,9 @@ describe('the detail reads like the dashboard’s head (#1277)', () => {
     let detail = await open(zeroFees.user, 'Alpha')
     let figures = await waitFor(() => row(detail, 'figures') as HTMLElement)
     expect(
-      within(figures).getAllByRole('group', { name: /^(Dividendes|Frais|Impôt)/ }),
+      within(figures).getAllByRole('group', {
+        name: /^(Dividendes|Frais|Impôt)/,
+      }),
     ).toHaveLength(2)
     expect(within(figures).queryByRole('group', { name: 'Frais cumulés' })).not.toBeInTheDocument()
     zeroFees.unmount()

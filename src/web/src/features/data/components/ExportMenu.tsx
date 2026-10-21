@@ -114,7 +114,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
         <Button
           type="button"
           variant="outline"
-          className="h-8 gap-2.5 rounded-lg bg-transparent pr-2 pl-3.5 dark:bg-transparent"
+          className="h-8 gap-2.5 rounded-lg bg-transparent pr-2 pl-3.5 pointer-coarse:h-11 dark:bg-transparent"
         >
           <Download aria-hidden className="size-3.5" />
           {t('data.export.title')}
@@ -209,7 +209,7 @@ function Entry({
         {label}
         <span className="block text-xs text-muted-foreground">{note}</span>
       </span>
-      <span className="shrink-0 rounded border px-1.5 font-mono text-[11px] text-muted-foreground">
+      <span className="shrink-0 rounded border px-1.5 font-mono text-2xs text-muted-foreground">
         {format}
       </span>
     </DropdownMenuItem>

@@ -479,6 +479,86 @@ def test_a_grant_at_no_declared_price_is_the_portfolio_s_edge(named):
     assert payload['gap_gross'] == pytest.approx(300.0)
 
 
+def _grant(day, account, quantity=3, unit_price=None):
+    return Event(date.fromisoformat(day), EventType.GRANT, 'AAPL', 'Apple',
+                 quantity=quantity, unit_price=unit_price, account=account)
+
+
+def test_a_grant_at_a_declared_price_is_still_replayed_into_the_reference(
+        named):
+    """#1194 changes nothing for a priced grant: it enters at its value, so
+    the reference is bought the same shares and there is no edge."""
+    _write_curve(named, 'pea', last='2024-01-14', value=1000.0)
+    _write_curve(named, 'pea', first='2024-01-15', value=1300.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _grant('2024-01-15', 'pea', unit_price=100.0)]),
+        NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['reference_value'] == pytest.approx(1300.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
+
+
+def test_a_free_grant_that_opens_the_pot_is_seeded_like_any_first_holding(
+        named):
+    """#1194: the seed-day rule stands — the grant is **not** the owner's edge.
+
+    The pot starts on the first day it holds anything, and the seed is that
+    day's closing `holdings_value`, granted shares included. The reference is
+    seeded with the same value, so the day carries no gap; the purchase that
+    follows is replayed as usual. A grant *after* the seed day is the edge
+    (see above) — the asymmetry is the cost of not repricing granted lots.
+    """
+    _write_curve(named, 'pea', last='2024-01-09', value=300.0)
+    _write_curve(named, 'pea', first='2024-01-10', value=1300.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_grant('2024-01-01', 'pea'),
+                          _invest('2024-01-10', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['series'][0] == {'t': '2024-01-01', 'portfolio': 300.0,
+                                    'reference': 300.0}
+    assert payload['reference_value'] == pytest.approx(1300.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
+
+
+def test_an_account_holding_only_free_shares_is_compared_on_their_value(
+        named):
+    """Seeded on the grant's value, so it replays and does not vanish."""
+    _write_curve(named, 'pea', value=300.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_grant('2024-01-01', 'pea')]), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['accounts'] == ['pea']
+    assert payload['reference_value'] == pytest.approx(300.0)
+    assert payload['gap_gross'] == pytest.approx(0.0)
+
+
+def test_the_shared_period_seeds_a_late_free_grant_account_on_its_value(
+        named):
+    """The head follows the same rule: the later account's pot enters the
+    shared reference at its seed-day value, free shares included."""
+    _write_curve(named, 'pea', value=1000.0)
+    _write_curve(named, 'cto', first='2024-01-20', value=300.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0),
+                          _grant('2024-01-20', 'cto')],
+                         accounts=('pea', 'cto')), NOW)
+
+    assert payload['state'] == benchmark_view.READY
+    assert payload['accounts'] == ['cto', 'pea']
+    assert payload['reference_value'] == pytest.approx(1300.0)
+    assert payload['portfolio_value'] == pytest.approx(1300.0)
+    assert sum(row['gap_gross'] for row in payload['per_account']) == (
+        pytest.approx(payload['gap_gross']))
+
+
 def test_a_reference_whose_splits_were_never_read_publishes_no_figure(named):
     """The defect a store in circulation would have shipped with.
 

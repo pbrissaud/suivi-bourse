@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useLocation } from '@tanstack/react-router'
 
 import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
@@ -20,18 +21,30 @@ import {
 } from '@/components/ui/sheet'
 import { TaxationModelEditor } from '@/features/accounts/components/TaxationModelEditor'
 import { accountsApi, type TaxationModel } from '@/features/accounts/lib/api'
+import { TaxationImport } from '@/features/settings/components/TaxationImport'
+import { docsPageHref } from '@/lib/docs'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 
 /** The taxation models, and which accounts carry each one (#752). */
 export function TaxationBlock() {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const queryClient = useQueryClient()
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
   /** `undefined` closed, `null` a new model, otherwise the model being corrected. */
   const [editing, setEditing] = useState<TaxationModel | null | undefined>(undefined)
   const [removing, setRemoving] = useState<TaxationModel | null>(null)
+  /** The wrapper (`<cc>/<slug>`) the model being shown was just imported from. */
+  const [imported, setImported] = useState<string | null>(null)
+
+  // `/settings#taxation`, from the account form: the section is drawn only once
+  // its read lands, so the router's own hash scroll finds nothing.
+  const hash = useLocation({ select: (location) => location.hash })
+  const drawn = catalogue.data !== undefined
+  useEffect(() => {
+    if (hash === 'taxation' && drawn) document.getElementById('taxation')?.scrollIntoView()
+  }, [hash, drawn])
 
   const remove = useMutation({
     mutationFn: (id: string) => accountsApi.removeTaxationModel(id),
@@ -44,7 +57,10 @@ export function TaxationBlock() {
   if (catalogue.data === undefined) return null
   const models = catalogue.data.models
   const declared = accounts.data?.accounts ?? []
-  const close = () => setEditing(undefined)
+  const close = () => {
+    setEditing(undefined)
+    setImported(null)
+  }
 
   return (
     <Section
@@ -55,6 +71,15 @@ export function TaxationBlock() {
         </Button>
       }
     >
+      <TaxationImport
+        catalogue={catalogue.data}
+        accounts={declared}
+        onImported={(model, wrapper) => {
+          setImported(wrapper)
+          setEditing(model)
+        }}
+      />
+
       {models.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('settings.taxation.empty')}</p>
       ) : (
@@ -103,10 +128,35 @@ export function TaxationBlock() {
       )}
 
       <Sheet open={editing !== undefined} onOpenChange={(open) => (open ? undefined : close())}>
-        <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
+        <SheetContent
+          className="w-full gap-6 overflow-y-auto sm:max-w-md"
+          // After an import the name is what the owner checks first.
+          onOpenAutoFocus={(event) => {
+            if (imported === null) return
+            event.preventDefault()
+            document.getElementById('taxation-name')?.focus()
+          }}
+        >
           <SheetHeader>
             <SheetTitle>{editing ? editing.name : t('settings.taxation.new')}</SheetTitle>
             <SheetDescription>{t('settings.taxation.sheet')}</SheetDescription>
+            {imported === null ? null : (
+              <p className="text-xs text-muted-foreground">
+                {t('settings.taxation.imported')}{' '}
+                <a
+                  href={docsPageHref(
+                    language,
+                    'taxation-models-in-europe',
+                    imported.replace('/', '-'),
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium underline underline-offset-4"
+                >
+                  {t('settings.taxation.imported.check')}
+                </a>
+              </p>
+            )}
           </SheetHeader>
           {editing !== undefined ? (
             <div className="px-4 pb-6">

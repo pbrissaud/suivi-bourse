@@ -62,6 +62,7 @@ import { EventForm } from '@/features/data/components/EventForm'
 import { ImportPreview } from '@/features/data/components/ImportPreview'
 import { LedgerFacets } from '@/features/data/components/LedgerFacets'
 import { LedgerChips, LedgerSearch } from '@/features/data/components/LedgerFilters'
+import { LedgerList } from '@/features/data/components/LedgerList'
 import { LedgerTable, TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { RowDelete } from '@/features/data/components/RowDelete'
 import {
@@ -71,11 +72,12 @@ import {
   useFileDrop,
 } from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
-import { exportable } from '@/features/data/lib/imports'
+import { EVENT_FILE_COLUMNS, exportable, templateHref } from '@/features/data/lib/imports'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { docsPageHref } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import {
   accountsNamed,
@@ -146,7 +148,8 @@ interface LedgerProps {
 }
 
 export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = {}) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
+  const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   // **The gesture is held here and nowhere lower** (#811): the first import
   // fills an empty ledger, which unmounts the entry pair the zone was in and
@@ -327,6 +330,14 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // strip above a page that has nothing under it.
   const ledgerFailure = oneFailure(readConditions({ queries: [events] }))
   const currency = totals.data?.base_currency ?? null
+  const view = {
+    events: shown,
+    budget,
+    currency,
+    rowSelection,
+    onRowSelectionChange: setRowSelection,
+    onEdit: setEditing,
+  }
 
   return (
     <div className="space-y-6">
@@ -356,7 +367,41 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               // missing.
               // The band, here and only here: it is the empty ledger's state,
               // and a populated one imports from the toolbar.
-              action: <UploadZone upload={upload} />,
+              //
+              // **It says what a file looks like** (#1266): the columns, from the
+              // constant the template is built from so the two cannot disagree,
+              // the one thing the header does not say about `account`, a
+              // header-only template and the docs page. The picker stays last,
+              // lined up with *Saisir un événement*.
+              action: (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t('data.empty.file.columns')}
+                    </p>
+                    <p className="font-mono text-xs break-words">{EVENT_FILE_COLUMNS.join(', ')}</p>
+                    <p className="text-xs text-muted-foreground">{t('data.empty.file.account')}</p>
+                  </div>
+                  <UploadZone upload={upload} />
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                    <a
+                      download="suivi-bourse-template.csv"
+                      href={templateHref()}
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      {t('data.empty.file.template')}
+                    </a>
+                    <a
+                      href={docsPageHref(language, 'import-your-events', 'format')}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      {t('data.empty.file.docs')}
+                    </a>
+                  </div>
+                </div>
+              ),
             },
             {
               title: t('data.empty.manual.title'),
@@ -431,7 +476,12 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     total={all.length}
                   />
                 ) : null}
-                <Button type="button" size="sm" onClick={() => setEditing(null)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="pointer-coarse:min-h-11"
+                  onClick={() => setEditing(null)}
+                >
                   {t('data.new')}
                 </Button>
               </div>
@@ -448,7 +498,12 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               tabIndex={-1}
               role="status"
               aria-live="polite"
-              className="flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none"
+              className={cn(
+                'flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none',
+                // On a phone the list is long and the page scrolls: the ticked
+                // rows' actions stay under the thumb while there are some.
+                isMobile && selected.length > 0 && 'sticky top-0 z-20 bg-background',
+              )}
             >
               <p className="text-muted-foreground">
                 {t('data.filter.count', {
@@ -461,7 +516,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 <button
                   type="button"
                   onClick={() => reduce(NO_FILTERS)}
-                  className="text-xs text-muted-foreground underline underline-offset-4"
+                  className="text-xs text-muted-foreground underline underline-offset-4 pointer-coarse:min-h-11"
                 >
                   {t('data.facets.reset')}
                 </button>
@@ -475,7 +530,13 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                       consumes** (#814, #1113), and exists only while there is
                       something to consume. */}
                   <BulkDelete selected={selected} onDeleted={clearSelection} />
-                  <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="pointer-coarse:min-h-11"
+                    onClick={clearSelection}
+                  >
                     {t('data.selection.clear')}
                   </Button>
                 </div>
@@ -488,20 +549,20 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 description={t('data.filter.none.body')}
               />
             ) : (
-              // **The table and its footing are one card** (#838): the
-              // drawing frames the ledger the way it frames the shares
-              // table, and the sentence under it — *fin de la réduction*, or
-              // the count and the reveal — sits inside that frame, above the
-              // card's own edge, rather than floating under it.
+              // **The table and its footing sit on the page's background**
+              // (#1273), with no plane and no frame: the sentence under the
+              // table — *fin de la réduction*, or the count and the reveal —
+              // is its footing, under a rule.
               //
               // It is also **where a file is dropped** once the ledger has
               // rows (#1278): the band is gone, and a file over the table
               // draws the outline and says what dropping it does. The overlay
               // is `aria-hidden` — the picker is the accessible way in.
-              <Card
+              <div
                 {...drop.handlers}
+                data-drop="ledger"
                 className={cn(
-                  '@container/ledger relative gap-0 overflow-hidden py-0',
+                  '@container/ledger relative',
                   drop.over && 'outline-[1.5px] -outline-offset-1 outline-primary outline-dashed',
                 )}
               >
@@ -513,14 +574,9 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     {t('data.drop.over')}
                   </div>
                 ) : null}
-                <LedgerTable
-                  events={shown}
-                  budget={budget}
-                  currency={currency}
-                  rowSelection={rowSelection}
-                  onRowSelectionChange={setRowSelection}
-                  onEdit={setEditing}
-                />
+                {/* Below 768 px the table is a list (#1339): same props, same
+                    wrapper, so the drop and the reveal tail are shared. */}
+                {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} />}
 
                 {/* **The reveal speaks, and the read did not**.
                       Both sentences below describe rows the app already holds —
@@ -560,6 +616,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="pointer-coarse:min-h-11"
                         onClick={() => setBudget((current) => current + PAGE)}
                       >
                         {t('data.ledger.more')}
@@ -567,7 +624,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     </>
                   )}
                 </div>
-              </Card>
+              </div>
             )}
           </div>
         </>

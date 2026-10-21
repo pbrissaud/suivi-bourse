@@ -45,6 +45,7 @@ import {
   type AgentConfig,
   type AgentProvider,
   type AgentTestResult,
+  type AgentThinking,
 } from '@/features/agent/lib/api'
 import { docsPageHref } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
@@ -67,6 +68,14 @@ const PROVIDER_HINT: Record<AgentProvider, MessageKey> = {
   openai: 'settings.agent.provider.openai.hint',
   openai_compatible: 'settings.agent.provider.openai_compatible.hint',
   ollama: 'settings.agent.provider.ollama.hint',
+}
+
+const THINKING_LEVELS: AgentThinking[] = ['low', 'medium', 'high']
+
+const THINKING_LABEL: Record<AgentThinking, MessageKey> = {
+  low: 'settings.agent.thinking.low',
+  medium: 'settings.agent.thinking.medium',
+  high: 'settings.agent.thinking.high',
 }
 
 export function AgentBlock({ config }: { config: AgentConfig }) {
@@ -137,6 +146,13 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
           : undefined,
       )
     },
+  })
+
+  // Written at once, with nothing else: not a field of the connection, so no test.
+  const thinking = useMutation({
+    mutationFn: (level: AgentThinking) => agentApi.saveAgentConfig({ thinking: level }),
+    onSuccess: stored,
+    onSettled: () => client.invalidateQueries({ queryKey: ['agent-config'] }),
   })
 
   const provider = draft.provider
@@ -353,6 +369,36 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
             )
           ) : null}
         </section>
+
+        {/* A model chosen by a passed test counts before it is activated: the level can be set first. */}
+        {config.model !== null || model !== '' ? (
+          <section className="space-y-1.5">
+            <label htmlFor="agent-thinking" className="block text-sm font-medium">
+              {t('settings.agent.thinking')}
+            </label>
+            <select
+              id="agent-thinking"
+              value={config.thinking}
+              disabled={thinking.isPending}
+              onChange={(event) => thinking.mutate(event.target.value as AgentThinking)}
+              className={SELECT}
+            >
+              {THINKING_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {t(THINKING_LABEL[level])}
+                </option>
+              ))}
+            </select>
+            <p className="text-2xs leading-relaxed text-muted-foreground">
+              {t('settings.agent.thinking.help')}
+            </p>
+            {thinking.isError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {t(problemMessageKey(thinking.error))}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {config.enabled ? null : activatable ? (

@@ -18,8 +18,16 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { accountLines, correspondenceOf, exportable, unanswered } from '@/features/data/lib/imports'
-import { anEvent } from '@/test/factories'
+import {
+  accountLines,
+  acrossFiles,
+  correspondenceOf,
+  exportable,
+  keptAsOne,
+  repeatGroups,
+  unanswered,
+} from '@/features/data/lib/imports'
+import { aDuplicateRow, anEvent } from '@/test/factories'
 
 describe('what there is to export', () => {
   it('offers the events as soon as one is recorded, whatever it came from', () => {
@@ -106,5 +114,29 @@ describe('where each account of the file goes', () => {
 
     expect(unanswered(lines).map((line) => line.name)).toEqual(['CTO'])
     expect(correspondenceOf(lines)).toEqual({ mapping: { TR: 'pea' }, declaring: [] })
+  })
+})
+
+describe('the groups a batch repeats (#1266)', () => {
+  const copy = (repeat_of: number, file: number, repeat_of_file: number) =>
+    aDuplicateRow({ duplicate_of: null, repeat_of, file, repeat_of_file })
+
+  it('names every file a group touches, the first copy’s included, in order', () => {
+    // Three copies over three files: the first copy is in file 2 and is not a row.
+    const rows = [copy(4, 0, 2), copy(4, 1, 2)]
+
+    expect(repeatGroups(rows)).toMatchObject([{ first: 4, copies: 3, files: [0, 1, 2] }])
+  })
+
+  it('keeps one copy of the groups spanning files, until the reader says otherwise', () => {
+    const rows = [copy(0, 1, 0), copy(2, 1, 1), copy(5, 0, 0)]
+
+    expect([...acrossFiles(rows)]).toEqual([0])
+    expect([...keptAsOne(undefined, rows)]).toEqual([0])
+    expect([...keptAsOne(new Set(), rows)]).toEqual([])
+  })
+
+  it('reads a row with no repeat_of_file as inside its file', () => {
+    expect(acrossFiles([aDuplicateRow({ duplicate_of: null, repeat_of: 0, file: 1 })]).size).toBe(0)
   })
 })

@@ -30,7 +30,7 @@ def get_agent_config():
 @bp.put('/agent/config')
 def put_agent_config():
     """Change any of ``enabled``, ``provider``, ``model``, ``model_name``,
-    ``base_url``.
+    ``base_url``, ``thinking``.
 
     A different provider or address forgets the key (#1197). A ``model``
     without its ``model_name`` clears the name, which belongs to its model.

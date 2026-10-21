@@ -279,9 +279,10 @@
      DESIGN.md names: label 12/16 (`text-xs`), mono 13 (`text-sm`), body 14/20
      (`text-md` and `text-base`, which `<body>` reads), prose 15/22
      (`text-prose`), section title 20/28 (`text-2xl`), figure 28/32
-     (`text-4xl`), hero 60/64 (`text-hero`). `--text-2xs` is the tickers' 11 px.
-     The rungs left over (`lg`, `xl`, `3xl`, `5xl` to `7xl`) are not DESIGN.md's
-     and leave with the pages still using them. */
+     (`text-4xl`), hero 60/64 (`text-hero`), and the term 16/24 (`text-lg`), the
+     rung of a term under a figure. `--text-2xs` is the tickers' 11 px. The
+     rungs `xl`, `3xl`, `5xl`, `6xl` and `7xl` are gone, and a guard
+     (`contentWidth.test.ts`) keeps them from coming back. */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;
@@ -295,21 +296,11 @@
   --text-prose: 0.9375rem;
   --text-prose--line-height: 1.375rem;
   --text-lg: 1rem;
-  --text-lg--line-height: calc(1.5 / 1);
-  --text-xl: 1.1875rem;
-  --text-xl--line-height: calc(1.5 / 1.1875);
+  --text-lg--line-height: 1.5rem;
   --text-2xl: 1.25rem;
   --text-2xl--line-height: 1.75rem;
-  --text-3xl: 1.625rem;
-  --text-3xl--line-height: 1.15;
   --text-4xl: 1.75rem;
   --text-4xl--line-height: 2rem;
-  --text-5xl: 2.125rem;
-  --text-5xl--line-height: 1.1;
-  --text-6xl: 2.625rem;
-  --text-6xl--line-height: 1;
-  --text-7xl: 3.25rem;
-  --text-7xl--line-height: 1;
 
   /* **The one figure a screen leads with, and it is the only fluid rung.**
      DESIGN.md sets it at 60/64, which a phone cannot hold: a six-figure amount
@@ -318,10 +309,6 @@
   --text-hero: clamp(2.25rem, 1rem + 4.5vw, 3.75rem);
   --text-hero--line-height: calc(64 / 60);
   --tracking-hero: -0.03em;
-
-  /* The one weight above `font-semibold`, kept for the figures on the pages
-     5.4 migrates; DESIGN.md sets every figure, the hero included, at 600. */
-  --font-weight-heavy: 650;
 
   /* **The 976 px reflow target, as a breakpoint of its own.** It is the width
      the redesign was measured at — the worst realistic case, a narrow laptop
@@ -334,7 +321,8 @@
   /* DESIGN.md's content widths, per kind of content (#1276). Literal on
      purpose: inlined at build time, so no theme served by /api/theme.css can
      reach them. Tables and charts take no token: they fill the column. */
-  --container-column: 45rem; /* 720: a form, the Settings page, the conversation under 1 024 px */
+  --container-column: 45rem; /* 720: a form, the conversation under 1 024 px */
+  --container-settings: 65rem; /* 1 040: the Settings page, a 220 px gutter and its rows */
   --container-reading: 48rem; /* 768: the conversation from 1 024 px */
   /* From here the dashboard grid has three tracks: a statement gains a
      neighbour instead of a longer row. */

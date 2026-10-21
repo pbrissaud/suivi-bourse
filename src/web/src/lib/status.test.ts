@@ -443,3 +443,26 @@ describe('the currency-unconvertible refusal (#1261)', () => {
     expect(problemMessage(bare).message).toBe('problem.badRequest')
   })
 })
+
+describe('the refused file of a batch (#1266)', () => {
+  it('names the refused file when the server says which', () => {
+    const refusal = new ApiProblem({
+      status: 422,
+      type: PROBLEM_TYPES.invalidFile,
+      file: '2024.csv',
+    })
+
+    const said = problemMessage(refusal)
+
+    expect(said.message).toBe('problem.invalidFile.named')
+    expect(formatMessage('en', said.message, said.values)).toMatch(
+      /^The app refused 2024\.csv and wrote nothing\./,
+    )
+  })
+
+  it('keeps the generic sentence for a refusal about no file in particular', () => {
+    const batch = new ApiProblem({ status: 422, type: PROBLEM_TYPES.invalidFile })
+
+    expect(problemMessage(batch).message).toBe('problem.invalidFile')
+  })
+})

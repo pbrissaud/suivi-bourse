@@ -876,6 +876,18 @@ describe('the layout (#1196)', () => {
     }
   })
 
+  it('is led back to by the ⌘K palette too, not to a new thread (#1196)', async () => {
+    switchedOn()
+    storedThreads()
+    const { user, router } = await openPage('/agent/t1')
+    await user.keyboard('{Control>}k{/Control}')
+    await user.type(await screen.findByRole('searchbox'), 'Agent')
+    const pages = await screen.findByRole('list', { name: 'Pages' })
+    await user.click(within(pages).getByRole('button', { name: 'Agent' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/agent/t1'))
+  })
+
   it('draws no agent button in the header, and ⌘/Ctrl + J does nothing', async () => {
     switchedOn()
     const { user, router } = renderApp()
@@ -1037,6 +1049,34 @@ describe('pendingAnswer (#1271)', () => {
   for (const [name, status, last, expected] of table) {
     it(`is ${expected} on ${name}`, () => expect(pendingAnswer(status, last)).toBe(expected))
   }
+})
+
+describe('the reasoning of a stored thread (#1191)', () => {
+  it('is never drawn', async () => {
+    switchedOn()
+    server.use(
+      http.get(ROUTES.agentThread, ({ params }) =>
+        HttpResponse.json({
+          id: String(params.id),
+          title: 'Revenu',
+          messages: [
+            {
+              id: 'a1',
+              role: 'assistant',
+              parts: [
+                { type: 'reasoning', text: 'Je pèse les options.' },
+                { type: 'text', text: 'Voici la réponse.' },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    const { main } = await openPage('/agent/t1')
+
+    expect(await within(main).findByText('Voici la réponse.')).toBeInTheDocument()
+    expect(within(main).queryByText(/Je pèse les options/)).not.toBeInTheDocument()
+  })
 })
 
 describe('the silence before the answer (#1271)', () => {

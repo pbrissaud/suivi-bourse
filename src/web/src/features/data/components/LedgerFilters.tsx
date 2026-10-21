@@ -61,7 +61,7 @@ export function LedgerSearch({ filters, onChange }: LedgerSearchProps) {
         value={filters.query}
         placeholder={t('data.search.placeholder')}
         onChange={(event) => onChange({ ...filters, query: event.target.value })}
-        className="h-8 rounded-lg bg-card pl-9.5"
+        className="h-8 rounded-lg bg-card pl-9.5 pointer-coarse:h-11"
       />
     </div>
   )
@@ -164,7 +164,7 @@ export function LedgerChips({ filters, onChange }: LedgerChipsProps) {
           // second way of pressing that dimension rather than as the way out.
           aria-label={t('data.chips.clear', { label: chip.label })}
           onClick={chip.clear}
-          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-primary bg-primary/12 px-3 text-xs font-medium text-primary"
+          className="inline-flex h-7 items-center gap-1.5 rounded-full pointer-coarse:h-11 border border-primary bg-primary/12 px-3 text-xs font-medium text-primary"
         >
           <span aria-hidden>{chip.label}</span>
           <X className="size-3" aria-hidden />

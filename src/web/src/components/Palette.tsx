@@ -18,23 +18,13 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
-import type { LucideIcon } from 'lucide-react'
-import {
-  Server,
-  CalendarDays,
-  Coins,
-  LayoutDashboard,
-  LogOut,
-  Plus,
-  Search,
-  Settings,
-  Table2,
-  Wallet,
-} from 'lucide-react'
+import { CalendarDays, LogOut, Plus, Search, Wallet } from 'lucide-react'
 
+import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
+import { ADMINISTRATION, PORTFOLIO, pageLink } from '@/components/AppSidebar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/features/auth/components/AuthBoot'
@@ -45,8 +35,8 @@ import { dataApi } from '@/features/data/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
 import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/features/accounts/lib/accounts'
 import { useFormatters } from '@/lib/format'
-import { useI18n, type MessageKey } from '@/lib/i18n'
-import { identityOf, ledgerSearchOf, matchesQuery } from '@/features/data/lib/ledger'
+import { useI18n } from '@/lib/i18n'
+import { accountOf, identityOf, ledgerSearchOf, matchesQuery } from '@/features/data/lib/ledger'
 import { oneFailure, readConditions } from '@/lib/status'
 import {
   accountsMatching,
@@ -56,14 +46,9 @@ import {
   titlesMatching,
 } from '@/lib/palette'
 
-const PAGES = [
-  { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
-  { to: '/shares', label: 'nav.shares', icon: Coins },
-  { to: '/accounts', label: 'nav.accounts', icon: Wallet },
-  { to: '/ledger', label: 'nav.ledger', icon: Table2 },
-  { to: '/system', label: 'nav.system', icon: Server },
-  { to: '/settings', label: 'nav.settings', icon: Settings },
-] as const satisfies readonly { to: string; label: MessageKey; icon: LucideIcon }[]
+// The sidebar's own two lists: a page added there is found here.
+const PAGES = [...PORTFOLIO, ...ADMINISTRATION]
+const SharesIcon = PORTFOLIO.find((page) => page.to === '/shares')?.icon ?? PORTFOLIO[0].icon
 
 /** One line of the palette: what it says, and what it does. */
 interface Entry {
@@ -79,6 +64,8 @@ export function Palette() {
   const f = useFormatters()
   const navigate = useNavigate()
   const auth = useAuth()
+  const { chat } = useAgentChat()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -142,7 +129,7 @@ export function Palette() {
   // it, which is the honest of the two silences.
   const shares: Entry[] = titlesMatching(titles, query).map((title) => ({
     key: title.symbol,
-    mark: <span className="font-mono text-[10px]">{title.symbol.slice(0, 4)}</span>,
+    mark: <SharesIcon className="size-3.5" />,
     label: title.name ?? title.symbol,
     hint: title.name === null ? null : title.symbol,
     run: () => leave(() => void navigate({ to: '/shares', search: { symbol: title.symbol } })),
@@ -156,13 +143,33 @@ export function Palette() {
     run: () => leave(() => void navigate({ to: '/accounts', search: { account: account.id } })),
   }))
 
-  const rows: Entry[] = eventsMatching(ledger, query).map((event, index) => {
+  const nameOf = new Map(named.map((account) => [account.id, account.name]))
+  const baseCurrency = positions.data?.base_currency ?? null
+  // The amount is said in the base currency (the positions) and the account by
+  // its declared name (the accounts): until both have answered or refused the
+  // line would say less than it will, and a result should not change under the
+  // reader's eye.
+  const unread = [positions, accounts].some((read) => read.data === undefined && !read.isError)
+  const rows: Entry[] = (unread ? [] : eventsMatching(ledger, query)).map((event, index) => {
     const identity = identityOf(event)
+    // Type · amount · account · date: the same dividend on the same day in two
+    // accounts must not read, nor be named, twice.
+    const account = accountOf(event)
+    const hint = [
+      t(TYPE_LABEL[event.event_type]),
+      event.amount === null || baseCurrency === null
+        ? null
+        : f.currency(event.amount, baseCurrency),
+      nameOf.get(account) ?? account,
+      f.date(event.date),
+    ]
+      .filter((part) => part !== null)
+      .join(' · ')
     return {
       key: `${event.date}-${index}`,
       mark: <CalendarDays className="size-3.5" />,
       label: identity.ticker ?? identity.label ?? t(TYPE_LABEL[event.event_type]),
-      hint: `${t(TYPE_LABEL[event.event_type])} · ${f.date(event.date)}`,
+      hint,
       // **The reduction, and it is an address** — so the ledger it lands on can
       // name what it retains and offer the way out of it (`lib/palette.ts`).
       run: () =>
@@ -178,7 +185,7 @@ export function Palette() {
       mark: <page.icon className="size-3.5" />,
       label: t(page.label),
       hint: null,
-      run: () => leave(() => void navigate({ to: page.to })),
+      run: () => leave(() => void navigate(pageLink(page, chat, pathname))),
     }),
   )
 

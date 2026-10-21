@@ -1,0 +1,10 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// DESIGN.md: a card exists only for something the reader decides or selects, and
+// a block of a page is a Section (#1273). The few decisions that use it are
+// exempt in biome.json.
+JsModuleSource() as $hit where {
+  $hit <: r"['\"][\s\S]*components/ui/card['\"]",
+  register_diagnostic(span = $hit, message = "[card-for-decisions] A Card is for a decision or a selection only: a block of a page is a Section, a table sits on the page (#1273)")
+}
