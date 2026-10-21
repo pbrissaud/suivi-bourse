@@ -26,6 +26,7 @@ import type { Position } from '@/features/shares/lib/api'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
+  anAccount,
   anAccountGoingNowhere,
   anAccountsPayload,
   anAccountWithoutSeries,
@@ -847,5 +848,108 @@ describe('the detail reads like the dashboard’s head (#1277)', () => {
     const holdings = row(detail, 'holdings') as HTMLElement
     expect(holdings.children).toHaveLength(1)
     expect(within(holdings).getByRole('group', { name: 'Titres' })).toHaveTextContent(/1\s?300,00/)
+  })
+})
+
+describe('a row cut before today during a first rebuild (#1285)', () => {
+  // The newest row is a day of cash alone, the day before a line's acquisition.
+  const TRUNCATED = {
+    as_of: '2026-03-01',
+    total_value: 500,
+    holdings_value: 0,
+    cash_balance: 777,
+    net_contributed: 666,
+    gain_absolu: 0,
+    xirr: 0,
+    transfer_fees: -3,
+    taxation_kind: 'flat_realised',
+    projected_tax: 96,
+    projected_rates: [0.3],
+  }
+  const positions = () => [
+    aPosition({
+      account: 'alpha',
+      symbol: 'ZZA',
+      name: 'Zeta Alpha',
+      dividends: 25,
+      price: null,
+      terminal: false,
+    }),
+    aPosition({ account: 'beta', symbol: 'ZZB', name: 'Zeta Beta', price: null, terminal: false }),
+  ]
+  const rebuilding = (reconstruction: { complete: number; total: number } | null = null) =>
+    http.get(ROUTES.runtime, () =>
+      HttpResponse.json(aRuntime({ rebuilding: true, reconstruction })),
+    )
+
+  async function openTruncated() {
+    const { user } = renderAccounts(
+      [anAccount(TRUNCATED), ...defaultAccounts().slice(1)],
+      positions(),
+    )
+    return open(user, 'Alpha')
+  }
+
+  it('asserts nothing as current, and keeps the dividends, the curve and the progress', async () => {
+    server.use(rebuilding({ complete: 9, total: 19 }))
+    const detail = await openTruncated()
+
+    expect(
+      await within(detail).findByText(/9 séries remontent au premier achat, sur 19/),
+    ).toBeVisible()
+    // Only this account's lines: Zeta Beta belongs to `beta`.
+    expect(within(detail).getByText('Toujours sans cours : Zeta Alpha.')).toBeVisible()
+
+    // The slot stays, empty: no figure, no skeleton (#795).
+    expect(
+      within(detail).getByRole('group', { name: 'Valeur totale' }).querySelector('.invisible'),
+    ).not.toBeNull()
+    expect(detail).not.toHaveTextContent(/(777|666),00/)
+    expect(within(detail).queryByRole('group', { name: 'Versé net' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Gain' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: /Frais/ })).not.toBeInTheDocument()
+    expect(within(detail).queryByText(/Impôt projeté/)).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
+    expect(
+      within(detail).queryByText('historique encore en reconstruction'),
+    ).not.toBeInTheDocument()
+
+    // What stays: the dividends' amount without its truncated denominator, the
+    // curve (a true history) and the lines' list.
+    const dividends = within(detail).getByRole('group', { name: /Dividendes/ })
+    expect(dividends).toHaveTextContent(/25,00/)
+    expect(within(detail).queryByRole('group', { name: 'du versé' })).not.toBeInTheDocument()
+    await waitFor(() => expect(detail.querySelector('figure')).not.toBeNull())
+    expect(within(detail).getByRole('list', { name: 'Titres du compte' })).toBeVisible()
+  })
+
+  it('keeps today’s head once the rebuild is over', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))))
+    const detail = await openTruncated()
+
+    await waitFor(() => expect(head(detail)).toBeInTheDocument())
+    expect(within(detail).getByRole('group', { name: 'Valeur totale' })).toHaveTextContent(
+      /(777|666),00/,
+    )
+    expect(within(detail).queryByText(/séries remontent/)).not.toBeInTheDocument()
+  })
+
+  it('draws the empty slot alone while the runtime has not answered', async () => {
+    server.use(
+      problemHandler(ROUTES.runtime, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    const detail = await openTruncated()
+
+    await within(detail).findByRole('group', { name: /Dividendes/ })
+    // The slot stays, empty: no figure, no skeleton (#795).
+    expect(within(detail).getByRole('group', { name: 'Valeur totale' })).not.toHaveTextContent(/\d/)
+    expect(detail).not.toHaveTextContent(/(777|666),00/)
+    expect(within(detail).queryByText(/séries remontent/)).not.toBeInTheDocument()
+    expect(within(detail).queryByText(/Historique en reconstruction/)).not.toBeInTheDocument()
   })
 })

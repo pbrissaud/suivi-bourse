@@ -216,6 +216,7 @@ export default function AccountsPage() {
             rows={rows}
             selected={opened.id}
             currency={currency}
+            runtime={runtime.data}
             // Whether there is anything to reassign — the module's own answer
             // (#725), which is *events still naming a row nobody declared*
             // and not *a row called `default` exists*: renamed, retyped or
@@ -234,7 +235,7 @@ export default function AccountsPage() {
             events={ledger}
             points={series}
             currency={currency}
-            rebuilding={runtime.data?.rebuilding ?? null}
+            runtime={runtime.data}
             // `?? null` and never `?? []`: a chip is a claim about the reader's
             // own account, and a read in flight is not one.
             advisories={advisories.data ?? null}

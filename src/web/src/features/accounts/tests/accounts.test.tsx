@@ -55,6 +55,26 @@ async function settled(name = 'Alpha') {
   return screen.findByRole('region', { name })
 }
 
+describe('the bar over a row cut before today (#1285)', () => {
+  it('states neither the truncated chip’s value nor any share', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
+    renderAccounts([
+      anAccount({ as_of: '2026-03-01', total_value: 500 }),
+      ...defaultAccounts().slice(1),
+    ])
+    await settled()
+
+    const [alpha, beta, gamma] = entries().map((entry) => entry.replace(/\s/g, ''))
+    expect(alpha).toBe(`Alpha${ABSENT}${ABSENT}`)
+    // The current rows keep their value; their shares divide a whole that is
+    // missing a part, so none is stated.
+    expect(beta).toContain('Beta900,00€')
+    expect(beta).toContain(ABSENT)
+    expect(beta).not.toMatch(/%/)
+    expect(gamma).not.toMatch(/%/)
+  })
+})
+
 describe('the bar', () => {
   it('is one sticky group at every width, and the only list of accounts', async () => {
     renderAccounts()
