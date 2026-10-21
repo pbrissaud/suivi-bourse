@@ -100,11 +100,13 @@ def run(runtime, work):
     return asyncio.run(_run())
 
 
-async def asgi_post(app, path, payload):
+async def asgi_post(app, path, payload, until=None):
     """``app`` called as a server calls it: ``(time, message)`` per ``send``.
 
     Not ``httpx2.ASGITransport``, which hands the body back whole once the app
-    is done and so cannot tell a stream from one write.
+    is done and so cannot tell a stream from one write, nor leave it half way.
+    ``until(chunk)``: the client disconnects once a chunk of the stream satisfies
+    it, as a stopped ``useChat`` does; without it the client stays connected.
     """
     raw = json.dumps(payload).encode()
     scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
@@ -116,15 +118,20 @@ async def asgi_post(app, path, payload):
     sent = []
 
     asked = []
+    gone = asyncio.Event()
 
     async def receive():
         if asked:  # the client stays connected until the response ends
-            await asyncio.sleep(3600)
+            await gone.wait()
+            return {'type': 'http.disconnect'}
         asked.append(True)
         return {'type': 'http.request', 'body': raw, 'more_body': False}
 
     async def send(message):
         sent.append((time.monotonic(), message))
+        if until and message['type'] == 'http.response.body' and any(
+                until(c) for c in chunks(message['body'].decode())):
+            gone.set()
 
     await app(scope, receive, send)
     return sent
@@ -646,3 +653,225 @@ def test_deleting_is_refused_off_with_a_bad_id_and_while_a_turn_runs(
     assert first.status_code == 200
     assert refused.status_code == 409
     assert stored(runtime, 'k1') is not None
+
+
+# ------------------------------------------------------------------------ #
+# A turn that does not complete keeps what it got as far as it got (#1324).
+
+def stop(runtime, thread_id='k1', text='Que se passe-t-il si je vends ?',
+         when='text-delta', **kwargs):
+    """A turn the client leaves as soon as a chunk of type ``when`` arrives."""
+    app = agent_routes.build_app(runtime, mcp_server.build_server(runtime))
+    return asyncio.run(asgi_post(
+        app, '/api/agent/chat', body(thread_id, text=text),
+        until=lambda chunk: chunk['type'] == when, **kwargs))
+
+
+def kinds(thread):
+    return [part['part_kind'] for message in thread['messages']
+            for part in message['parts']]
+
+
+def shown(runtime, thread_id='k1'):
+    return run(runtime, get(f'/api/agent/threads/{thread_id}')).json()
+
+
+def shown_parts(runtime, thread_id='k1'):
+    """The assistant's parts of the thread as the page reads it, in order."""
+    return [part for message in shown(runtime, thread_id)['messages'][1:]
+            for part in message['parts'] if part['type'] != 'step-start']
+
+
+async def a_tool_then_a_word_then_a_wait(messages, info):
+    """``list_positions``, then the start of an answer, then a long wait."""
+    if returns(messages):
+        yield 'Selling four '
+        await asyncio.sleep(30)
+        yield 'would net the figure.'
+    else:
+        yield {0: DeltaToolCall('list_positions', '{}', tool_call_id='c1')}
+
+
+def test_a_stop_mid_text_keeps_the_question_the_tool_and_the_partial_answer(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=a_tool_then_a_word_then_a_wait)))
+
+    stop(runtime)
+
+    thread = stored(runtime, 'k1')
+    assert kinds(thread) == ['user-prompt', 'tool-call', 'tool-return', 'text']
+    assert thread['messages'][-1]['parts'][0]['content'] == 'Selling four '
+    assert thread['failed'] is False
+    answer = shown(runtime)
+    assert answer['failed'] is False
+    parts = shown_parts(runtime)
+    assert [p['type'] for p in parts] == ['tool-list_positions', 'text']
+    assert parts[-1]['text'] == 'Selling four '
+
+
+def test_a_stop_while_a_tool_runs_closes_the_call_as_interrupted(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    real = mcp_server.simulation.simulate_sale
+
+    def slow_sale(*args, **kwargs):
+        time.sleep(1.5)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(mcp_server.simulation, 'simulate_sale', slow_sale)
+
+    async def sale(messages, info):
+        yield {0: DeltaToolCall('simulate_sale', json.dumps(SALE),
+                                tool_call_id='c1')}
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=sale)))
+
+    stop(runtime, when='tool-input-available')
+
+    thread = stored(runtime, 'k1')
+    assert kinds(thread) == ['user-prompt', 'tool-call', 'tool-return']
+    closing = thread['messages'][-1]['parts'][0]
+    assert closing['outcome'] == 'interrupted' and closing['tool_call_id'] == 'c1'
+    part = shown_parts(runtime)[-1]
+    assert part['state'] == 'output-available'
+    assert part['callProviderMetadata']['pydantic_ai']['outcome'] == 'interrupted'
+
+
+def test_the_next_turn_after_a_stop_in_a_tool_is_accepted_with_the_call_closed(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    real = mcp_server.simulation.simulate_sale
+
+    def slow_sale(*args, **kwargs):
+        time.sleep(1.5)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(mcp_server.simulation, 'simulate_sale', slow_sale)
+    seen = []
+
+    async def sale_then_ok(messages, info):
+        if len([m for m in messages if isinstance(m, ModelRequest)
+                and any(p.part_kind == 'user-prompt' for p in m.parts)]) == 1:
+            yield {0: DeltaToolCall('simulate_sale', json.dumps(SALE),
+                                    tool_call_id='c1')}
+        else:
+            seen.extend(messages)
+            yield 'ok'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=sale_then_ok)))
+    stop(runtime, when='tool-input-available')
+
+    again = run(runtime, post('k1', text='And now?'))
+
+    assert again.status_code == 200 and 'ok' in again.text
+    assert [r.outcome for r in returns(seen)] == ['interrupted']
+    assert kinds(stored(runtime, 'k1')) == [
+        'user-prompt', 'tool-call', 'tool-return', 'user-prompt', 'text']
+
+
+def test_a_stop_after_a_proposal_keeps_the_card_and_the_proposal(
+        runtime, monkeypatch):
+    switched_on(runtime)
+
+    async def proposes(messages, info):
+        if returns(messages):
+            yield 'I noted it '
+            await asyncio.sleep(30)
+        else:
+            yield {0: DeltaToolCall(
+                'propose_profile_fact',
+                json.dumps({'key': 'marginal_rate', 'value': 0.3}),
+                tool_call_id='p1')}
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=proposes)))
+
+    stop(runtime)
+
+    part = next(p for p in shown_parts(runtime)
+                if p['type'] == 'tool-propose_profile_fact')
+    assert part['state'] == 'output-available'
+    ids = part['output']['proposal_id']
+    read = run(runtime, get(f'/api/profile/proposals?ids={ids}')).json()
+    assert [p['status'] for p in read['proposals']] == ['ready']
+
+
+def test_the_next_turn_after_a_stop_sees_the_partial_answer_and_is_accepted(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    seen = []
+
+    async def second_time_round(messages, info):
+        if len([m for m in messages if isinstance(m, ModelRequest)
+                and any(p.part_kind == 'user-prompt' for p in m.parts)]) == 1:
+            async for chunk in a_tool_then_a_word_then_a_wait(messages, info):
+                yield chunk
+        else:
+            seen.extend(messages)
+            yield 'ok'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=second_time_round)))
+    stop(runtime)
+
+    again = run(runtime, post('k1', text='And now?'))
+
+    assert again.status_code == 200
+    assert 'Selling four ' in json.dumps(
+        [part.content for message in seen for part in message.parts
+         if part.part_kind == 'text'])
+
+
+def test_a_provider_error_after_some_text_keeps_it_and_marks_the_turn_failed(
+        runtime, monkeypatch):
+    switched_on(runtime)
+
+    async def breaks(messages, info):
+        yield 'Half an answer '
+        raise ModelHTTPError(503, 'm', body='overloaded')
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=breaks)))
+
+    run(runtime, post('k1'))
+
+    thread = stored(runtime, 'k1')
+    assert thread['failed'] is True
+    assert thread['messages'][-1]['parts'][0]['content'] == 'Half an answer '
+    assert shown(runtime)['failed'] is True
+
+    # *Réessayer* takes the failed turn's place: question and partial answer.
+    async def fine(messages, info):
+        yield 'whole'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=fine)))
+    run(runtime, post('k1'))
+    thread = stored(runtime, 'k1')
+    assert thread['failed'] is False
+    assert kinds(thread) == ['user-prompt', 'text']
+
+
+def test_a_fallback_save_that_fails_is_logged_and_the_thread_released(
+        runtime, monkeypatch, caplog):
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=a_tool_then_a_word_then_a_wait)))
+    real = agent_threads.write
+    writes = []
+
+    def third_fails(root, thread):
+        writes.append(thread)
+        if len(writes) == 2:
+            raise OSError(28, 'No space left on device')
+        real(root, thread)
+    monkeypatch.setattr(agent_threads, 'write', third_fails)
+
+    with caplog.at_level(logging.ERROR):
+        stop(runtime)
+
+    assert any(r.levelno == logging.ERROR and 'No space left' in r.getMessage()
+               for r in caplog.records)
+    assert kinds(stored(runtime, 'k1')) == ['user-prompt']
+
+    async def quick(messages, info):
+        yield 'ok'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=quick)))
+    assert run(runtime, post('k1', text='again')).status_code == 200

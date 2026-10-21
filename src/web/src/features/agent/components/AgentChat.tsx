@@ -22,7 +22,7 @@ import { useChat } from '@ai-sdk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import type { UIMessage } from 'ai'
-import { ArrowUp, History, SquarePen, Trash2 } from 'lucide-react'
+import { ArrowUp, History, SquarePen, Trash2, X } from 'lucide-react'
 import {
   type ClipboardEvent,
   type ComponentProps,
@@ -65,6 +65,7 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
+  TraceIcon,
   TraceLine,
   TraceTitle,
 } from '@/components/ui/trace'
@@ -410,7 +411,7 @@ function AgentConversation() {
   // The page's own read, already in the cache: it names the provider a refusal blames.
   const provider =
     useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig }).data?.provider ?? null
-  const { chat } = useAgentChat()
+  const { chat, failedOnReload, settle } = useAgentChat()
   const threadId = useThreadParam()
   const navigate = useNavigate()
   const { messages, sendMessage, status, error, stop, setMessages, clearError } = useChat({
@@ -427,18 +428,23 @@ function AgentConversation() {
     if (threadId === undefined) {
       void navigate({ to: '/agent/$threadId', params: { threadId: chat.id }, replace: true })
     }
+    // A failed turn is dropped by the server whatever is asked next, so the
+    // page drops it too: what is on screen is what the model will be given.
+    if (failed) {
+      const last = messages.map((m) => m.role).lastIndexOf('user')
+      if (last !== -1) setMessages(messages.slice(0, last))
+    }
     if (error) clearError()
+    settle()
     void sendMessage({ text })
   }
 
-  // *Réessayer*: the question again, as a new turn. The server keeps the
-  // unanswered one in the file and replaces it rather than stacking a second.
+  // *Réessayer*: the question again, as a new turn, in place of the failed one.
   const retry = () => {
     const last = messages.map((m) => m.role).lastIndexOf('user')
     if (last === -1) return
     const text = textOf(messages[last])
     if (text === '') return
-    setMessages(messages.slice(0, last))
     ask(text)
   }
 
@@ -455,8 +461,11 @@ function AgentConversation() {
     clearError()
   }, [error, messages, setMessages, clearError])
 
-  const failed = error !== undefined && !threadNotWritable(error) && !isSessionEnded(error)
-  const refusal = failed ? turnRefusal(error) : null
+  const streamFailed = error !== undefined && !threadNotWritable(error) && !isSessionEnded(error)
+  // A thread read back whose last turn failed: the error is gone with the
+  // stream, so the page says it in a generic sentence under the partial answer.
+  const failed = streamFailed || failedOnReload
+  const refusal = streamFailed ? turnRefusal(error) : null
   const retryButton = (
     <div className="flex flex-wrap items-center gap-3 pt-1">
       <Button variant="outline" className="min-h-11" onClick={retry}>
@@ -530,7 +539,9 @@ function AgentConversation() {
                         </RefusalNotice>
                       ) : (
                         <div className="flex flex-col items-start gap-2">
-                          <p className="text-sm text-destructive">{errorSentence(error)}</p>
+                          <p className="text-sm text-destructive">
+                            {streamFailed ? errorSentence(error) : t('agent.failed.reloaded')}
+                          </p>
                           {retryButton}
                         </div>
                       )}
@@ -781,15 +792,28 @@ function ToolLine({ part, live }: { part: AgentToolPart; live: boolean }) {
   const sentence = toolSentence(name)
   // Stopped or cut mid-call: the answer never comes, so the line stops shimmering.
   const running = toolRunning(part) && live
-  const failed = part.state === 'output-error' || (toolRunning(part) && !live)
+  // Halted: the call failed, or a stop cut it off (the server closes it as
+  // `interrupted`). Said in words and a mark too, never by the colour alone.
+  const outcome = part.callProviderMetadata?.pydantic_ai?.outcome
+  const failed =
+    part.state === 'output-error' ||
+    (toolRunning(part) && !live) ||
+    outcome === 'interrupted' ||
+    outcome === 'failed'
   return (
     <TraceCollapsible>
       {/* 44 px on touch only: three reads stacked 156 px of chrome before the answer. */}
       <TraceCollapsibleTrigger className="min-h-8 pointer-coarse:min-h-11">
         <TraceLine status={running ? 'running' : failed ? 'error' : undefined}>
+          {failed ? (
+            <TraceIcon className="text-destructive">
+              <X />
+            </TraceIcon>
+          ) : null}
           <TraceTitle className="overflow-visible whitespace-normal">
             {t(sentence.key, sentence.values)}
           </TraceTitle>
+          {failed ? <span className="sr-only"> {t('agent.tool.halted')}</span> : null}
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="flex flex-col gap-2 text-xs">

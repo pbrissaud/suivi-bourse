@@ -15,7 +15,11 @@ from typing import List, Optional
 
 from application import agent  # noqa: F401 - sets PYDANTIC_AI_NO_BANNER first
 from application import instants
-from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest
+from pydantic_ai.messages import (
+    INTERRUPTED_TOOL_RETURN_CONTENT, ModelMessagesTypeAdapter, ModelRequest,
+    ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart,
+    UserPromptPart,
+)
 
 VERSION = 1
 
@@ -83,16 +87,58 @@ def messages(thread: Optional[dict]) -> list:
     return ModelMessagesTypeAdapter.validate_python(thread.get('messages'))
 
 
-def answered(history: list) -> list:
-    """``history`` without a trailing request no response followed.
+def _asks(message) -> bool:
+    """Is ``message`` a request carrying a question?"""
+    return isinstance(message, ModelRequest) and any(
+        isinstance(part, UserPromptPart) for part in message.parts)
 
-    A turn that failed left its user message in the file; the next turn takes
-    its place rather than stacking a second unanswered one on it.
+
+def answered(history: list, failed: bool = False) -> list:
+    """``history`` without the turn that has no answer to keep.
+
+    A question no response followed (the turn was killed) is dropped, and the
+    next turn takes its place rather than stacking a second one on it. A
+    ``failed`` turn is dropped whole, back to and including its question,
+    whatever the next turn asks (the page drops it too). A stopped turn is kept: its partial answer is the
+    conversation's, and a closing request of tool returns is not a question.
     """
     history = list(history)
-    while history and isinstance(history[-1], ModelRequest):
+    if failed:
+        while history and not _asks(history.pop()):
+            pass
+    while history and _asks(history[-1]):
         history.pop()
     return history
+
+
+def closed(history: list) -> list:
+    """``history`` with the tool calls the last response left open answered.
+
+    A call cut off by a stop has no return and would dump as awaiting an
+    approval; it is closed as ``interrupted``, as Pydantic AI does before it
+    sends such a history on. A trailing response that got no part is dropped:
+    it says nothing, and a provider may refuse it.
+    """
+    if history and isinstance(history[-1], ModelResponse):
+        if not history[-1].parts:
+            history = history[:-1]
+    returned = set()
+    for message in reversed(history):
+        if isinstance(message, ModelResponse):
+            calls = [p for p in message.parts if isinstance(p, ToolCallPart)]
+            open_calls = [c for c in calls if c.tool_call_id not in returned]
+            break
+        returned.update(part.tool_call_id for part in message.parts
+                        if isinstance(part, (ToolReturnPart, RetryPromptPart)))
+    else:
+        return history
+    if not open_calls:
+        return history
+    return [*history, ModelRequest(parts=[
+        ToolReturnPart(tool_name=call.tool_name, tool_call_id=call.tool_call_id,
+                       content=INTERRUPTED_TOOL_RETURN_CONTENT,
+                       outcome='interrupted')
+        for call in open_calls])]
 
 
 def title_of(text: str) -> str:
@@ -101,8 +147,12 @@ def title_of(text: str) -> str:
 
 
 def saved(thread: Optional[dict], thread_id: str, title: str,
-          history: list, provider: str, model: str) -> dict:
-    """``thread`` (or a new one) holding ``history``."""
+          history: list, provider: str, model: str,
+          failed: bool = False) -> dict:
+    """``thread`` (or a new one) holding ``history``.
+
+    ``failed``: the last turn ended on an error, not on an answer or a stop.
+    """
     stamp = instants.iso(datetime.now(timezone.utc))
     return {
         'version': VERSION,
@@ -112,6 +162,7 @@ def saved(thread: Optional[dict], thread_id: str, title: str,
         'updated_at': stamp,
         'provider': provider,
         'model': model,
+        'failed': failed,
         'messages': ModelMessagesTypeAdapter.dump_python(history, mode='json'),
     }
 

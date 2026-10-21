@@ -98,6 +98,22 @@ export function pendingAnswer(status: string, last: UIMessage | undefined): bool
   return !(tail?.type === 'text' && tail.text.trim() !== '')
 }
 
+/**
+ * A stored turn comes back as one assistant message per model response; the
+ * stream drew it as one, and so does a thread read back: a proposal's card
+ * stands under the whole answer, not under the response that called it.
+ */
+export function joinAssistantMessages(messages: UIMessage[]): UIMessage[] {
+  const joined: UIMessage[] = []
+  for (const message of messages) {
+    const last = joined.at(-1)
+    if (last?.role === 'assistant' && message.role === 'assistant') {
+      joined[joined.length - 1] = { ...last, parts: [...last.parts, ...message.parts] }
+    } else joined.push(message)
+  }
+  return joined
+}
+
 /** The text of a message, its text parts joined. */
 export function textOf(message: UIMessage): string {
   return message.parts
