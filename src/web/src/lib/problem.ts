@@ -102,6 +102,11 @@ export const PROBLEM_TYPES = {
    * the first day without a rate; read it through `problemMessage` below.
    */
   currencyUnconvertible: '/problems/currency-unconvertible',
+  /**
+   * The ledger changed after the agent proposed these events (#1119): the merge
+   * wrote nothing, and the proposal can be run again.
+   */
+  proposalStale: '/problems/proposal-stale',
   internal: '/problems/internal-error',
 } as const
 
@@ -129,6 +134,7 @@ const MESSAGES: Record<string, MessageKey> = {
   // was refused; the sentence that names the pair and the day is
   // `problemMessage`'s.
   [PROBLEM_TYPES.currencyUnconvertible]: 'problem.badRequest',
+  [PROBLEM_TYPES.proposalStale]: 'problem.proposalStale',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 

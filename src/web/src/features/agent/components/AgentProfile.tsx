@@ -36,6 +36,7 @@ import {
   proposalId,
   RISK_TOLERANCES,
 } from '@/features/agent/lib/profile'
+import { type EventsProposal, eventProposalsApi } from '@/features/agent/lib/eventProposals'
 import { settingsApi } from '@/features/settings/lib/api'
 import { ApiProblem } from '@/lib/api'
 import { baseCurrency } from '@/lib/firstRun'
@@ -51,10 +52,19 @@ const SELECT =
 
 // ------------------------------------------------------------ proposals --
 
+/** A proposal the thread made: a profile fact's, or ledger events' (#1119). */
+export type ThreadProposal = Proposal | EventsProposal
+
 /** The proposal a tool part came back with, or `null` for any other part. */
-export function proposalOf(part: UIMessage['parts'][number]): string | null {
-  if (!isToolUIPart(part) || getToolName(part) !== 'propose_profile_fact') return null
-  return part.state === 'output-available' ? proposalId(part.output) : null
+export function proposalOf(
+  part: UIMessage['parts'][number],
+): { id: string; kind: 'fact' | 'events' } | null {
+  if (!isToolUIPart(part) || part.state !== 'output-available') return null
+  const name = getToolName(part)
+  const kind =
+    name === 'propose_profile_fact' ? 'fact' : name === 'propose_events' ? 'events' : null
+  const id = kind === null ? null : proposalId(part.output)
+  return kind === null || id === null ? null : { id, kind }
 }
 
 /**
@@ -67,23 +77,37 @@ export function useProposals(
   threadId: string,
   messages: UIMessage[],
   busy: boolean,
-): Map<string, Proposal> | undefined {
-  const ids = [
-    ...new Set(messages.flatMap((m) => m.parts.map(proposalOf)).filter((id) => id !== null)),
-  ].sort()
-  const read = useQuery({
-    queryKey: ['proposals', threadId, ids],
-    queryFn: () => profileApi.proposals(ids),
-    enabled: !busy && ids.length > 0,
-    // A proposal made mid-stream changes the key: the cards already read keep
-    // their state, and the new one is its tool line until the turn ends.
+): Map<string, ThreadProposal> | undefined {
+  const refs = messages.flatMap((m) => m.parts.map(proposalOf)).filter((ref) => ref !== null)
+  const idsOf = (kind: 'fact' | 'events') =>
+    [...new Set(refs.filter((ref) => ref.kind === kind).map((ref) => ref.id))].sort()
+  const factIds = idsOf('fact')
+  const eventIds = idsOf('events')
+  // A proposal made mid-stream changes the key: the cards already read keep
+  // their state, and the new one is its tool line until the turn ends.
+  const facts = useQuery({
+    queryKey: ['proposals', threadId, 'facts', factIds],
+    queryFn: () => profileApi.proposals(factIds),
+    enabled: !busy && factIds.length > 0,
     placeholderData: keepPreviousData,
   })
-  const failed = read.error !== null
-  return useMemo(
-    () => (failed ? new Map() : read.data && new Map(read.data.proposals.map((p) => [p.id, p]))),
-    [failed, read.data],
-  )
+  const events = useQuery({
+    queryKey: ['proposals', threadId, 'events', eventIds],
+    queryFn: () => eventProposalsApi.proposals(eventIds),
+    enabled: !busy && eventIds.length > 0,
+    placeholderData: keepPreviousData,
+  })
+  const factsFailed = facts.error !== null
+  const eventsFailed = events.error !== null
+  return useMemo(() => {
+    // A read that failed is an empty answer for its own kind only (the other
+    // kind's cards still show), and `undefined` stays *nobody has answered*.
+    const answered = (failed: boolean, data: { proposals: ThreadProposal[] } | undefined) =>
+      failed ? [] : data?.proposals
+    const read = [answered(factsFailed, facts.data), answered(eventsFailed, events.data)]
+    if (read.every((one) => one === undefined)) return undefined
+    return new Map(read.flatMap((one) => one ?? []).map((p) => [p.id, p]))
+  }, [factsFailed, eventsFailed, facts.data, events.data])
 }
 
 /** A proposal (5A): the question and its two answers, or the one line it came to. */

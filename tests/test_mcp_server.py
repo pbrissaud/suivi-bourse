@@ -124,8 +124,8 @@ LEDGER = [
 # The surface itself
 # --------------------------------------------------------------------- #
 
-def test_the_surface_is_ten_tools_and_nothing_else(tmp_path):
-    """Ten, named, and no eleventh arriving by accident.
+def test_the_surface_is_eleven_tools_and_nothing_else(tmp_path):
+    """Eleven, named, and no twelfth arriving by accident.
 
     Either should fail a test rather than a user's setup.
 
@@ -134,7 +134,9 @@ def test_the_surface_is_ten_tools_and_nothing_else(tmp_path):
     the word rather than gaining a second exception. The seventh is
     the sale simulator (#1109), with flat arguments. The eighth and ninth are
     the profile (#1116): one read, and one proposal that no tool confirms. The
-    tenth is the benchmark comparison (#1270), which takes no argument.
+    tenth is the benchmark comparison (#1270), which takes no argument. The
+    eleventh is the second proposal (#1119), ledger events: none of the
+    eleven merges, ignores or reproposes one.
     """
     runtime, _ = build_runtime(tmp_path)
 
@@ -142,13 +144,14 @@ def test_the_surface_is_ten_tools_and_nothing_else(tmp_path):
     assert names == ['get_benchmark_comparison', 'get_investment_rhythm',
                      'get_portfolio_history',
                      'get_portfolio_totals', 'get_profile', 'list_accounts',
-                     'list_events', 'list_positions', 'propose_profile_fact',
-                     'simulate_sale']
+                     'list_events', 'list_positions', 'propose_events',
+                     'propose_profile_fact', 'simulate_sale']
     arguments = {tool.name: list(tool.input_schema['properties'])
                  for tool in listed(runtime)}
     assert arguments['get_benchmark_comparison'] == []
     assert arguments['simulate_sale'] == ['account', 'symbol', 'quantity']
     assert arguments['propose_profile_fact'] == ['key', 'value']
+    assert arguments['propose_events'] == ['title', 'events_json']
 
 
 def test_every_description_states_the_absence_rule(tmp_path):
@@ -1021,6 +1024,10 @@ SERVED_WITH = {
         {'account': 'other', 'symbol': 'AAPL', 'quantity': 2},
     ],
     'propose_profile_fact': [{'key': 'marginal_rate', 'value': 0.3}],
+    'propose_events': [{'title': 'Achat CW8', 'events_json': json.dumps([
+        {'date': '2026-03-03', 'event_type': 'BUY', 'symbol': 'CW8.PA',
+         'name': 'Amundi MSCI World', 'quantity': 10, 'unit_price': 512,
+         'account': 'cto'}])}],
 }
 
 

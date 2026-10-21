@@ -126,9 +126,15 @@ const dataRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ledger',
   component: DataPage,
-  validateSearch: (search: Record<string, unknown>): LedgerSearch & { open?: 'event' } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): LedgerSearch & { open?: 'event'; proposal?: string } => ({
     ...validateLedgerSearch(search),
     ...(search.open === 'event' ? { open: 'event' as const } : {}),
+    // The agent's proposal to review (#1119): an id, and anything else is none.
+    ...(typeof search.proposal === 'string' && /^[0-9a-f]{32}$/.test(search.proposal)
+      ? { proposal: search.proposal }
+      : {}),
   }),
 })
 

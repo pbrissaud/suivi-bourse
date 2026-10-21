@@ -20,6 +20,7 @@ TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
 TYPE_REFUSED = '/problems/refused'
 TYPE_PROVIDER_REFUSED = '/problems/provider-refused'
 TYPE_CURRENCY_UNCONVERTIBLE = '/problems/currency-unconvertible'
+TYPE_PROPOSAL_STALE = '/problems/proposal-stale'
 
 
 def problem(status: int, title: str, detail: Optional[str] = None,
@@ -71,6 +72,11 @@ def bad_request(detail: str):
 def conflict(detail: str):
     """409 — the request is well formed and the store's state refuses it."""
     return problem(409, 'Conflict', detail, TYPE_CONFLICT)
+
+
+def proposal_stale(detail: str):
+    """409 — the ledger changed since the agent proposed these events (#1119)."""
+    return problem(409, 'Proposal is stale', detail, TYPE_PROPOSAL_STALE)
 
 
 GESTURE_WRITE = 'write'

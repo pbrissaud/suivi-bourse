@@ -1,11 +1,11 @@
 """What the ``/api`` blueprints share: the reads, the parsing, the refusals."""
-import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from flask import request
 
 from application import instants
+from application.event_body import ISO_DAY as _ISO_DAY
 from application import quotes
 from application import runtime_view
 from application.events.aggregator import AggregationError
@@ -17,8 +17,6 @@ from api.problem import (
 DEFAULT_WINDOW = timedelta(days=30)
 
 DEFAULT_HISTORY_WINDOW = timedelta(days=365)
-
-_ISO_DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 
 
 def _reader() -> PortfolioReader:
@@ -72,14 +70,6 @@ def _unreplayable(exc: AggregationError, gesture: str):
         symbol=exc.symbol, wanted=exc.wanted, owned=exc.owned,
         day=exc.day.isoformat() if exc.day is not None else None,
         account=exc.account)
-
-
-class _InvalidBody(Exception):
-    """A member of the body is not a value an event can carry."""
-
-    def __init__(self, message: str, field: str):
-        super().__init__(message)
-        self.field = field
 
 
 class _InvalidParameter(Exception):

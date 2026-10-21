@@ -75,6 +75,7 @@ import { Button } from '@/components/ui/button'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
+import { useProposalImport } from '@/features/data/lib/proposalImport'
 import { EVENT_FILE_COLUMNS, exportable, templateHref } from '@/features/data/lib/imports'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { docsPageHref } from '@/lib/docs'
@@ -145,9 +146,27 @@ interface LedgerProps {
    * made two tabs ago. A gesture is spent once, and this is where it is spent.
    */
   onComposed?: () => void
+  /**
+   * An agent proposal to review (#1119): its id, from the address. The window
+   * opens on it as it opens on files, and *Importer* merges it.
+   */
+  proposal?: string
+  /** The proposal was merged or put down: the address stops naming it. */
+  onProposalClosed?: () => void
 }
 
-export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = {}) {
+/** How long the rows a merge wrote stay marked. */
+const FRESH_MS = 2000
+const NO_ROWS: ReadonlySet<string> = new Set()
+
+export function Ledger({
+  focus,
+  onReduced,
+  compose,
+  onComposed,
+  proposal,
+  onProposalClosed,
+}: LedgerProps = {}) {
   const { t, language } = useI18n()
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
@@ -158,6 +177,18 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   const upload = useEventUpload()
   // The drop half of it, taken by the table's card once the ledger has rows.
   const drop = useFileDrop(upload.hand)
+  // The same window over the agent's proposal (#1119), and the rows its merge
+  // wrote, marked for a moment so the reader sees where they landed.
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(NO_ROWS)
+  const reviewed = useProposalImport(proposal, {
+    onMerged: (ids) => setFresh(new Set(ids)),
+    onClose: () => onProposalClosed?.(),
+  })
+  useEffect(() => {
+    if (fresh.size === 0) return
+    const timer = window.setTimeout(() => setFresh(NO_ROWS), FRESH_MS)
+    return () => window.clearTimeout(timer)
+  }, [fresh])
 
   useEffect(() => {
     if (!focus) return
@@ -337,6 +368,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     rowSelection,
     onRowSelectionChange: setRowSelection,
     onEdit: setEditing,
+    fresh,
   }
 
   return (
@@ -349,7 +381,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
       {/* And the window the forecast is read in (#835), mounted here for the
           same reason: it is open across the swap the first import makes, and
           the three answers it collects are held by the hook above it. */}
-      {ledgerFailure ? null : <ImportPreview upload={upload} />}
+      {ledgerFailure ? null : <ImportPreview upload={proposal ? reviewed : upload} />}
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}

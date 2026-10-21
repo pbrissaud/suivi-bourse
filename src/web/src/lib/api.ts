@@ -164,6 +164,12 @@ export const ROUTES = {
   profileProposals: '/api/profile/proposals',
   profileProposalConfirm: '/api/profile/proposals/:id/confirm',
   profileProposalIgnore: '/api/profile/proposals/:id/ignore',
+  /** The ledger events the agent proposed (#1119). The `:id` ones are patterns. */
+  agentProposals: '/api/agent/proposals',
+  agentProposalPreview: '/api/agent/proposals/:id/preview',
+  agentProposalMerge: '/api/agent/proposals/:id/merge',
+  agentProposalIgnore: '/api/agent/proposals/:id/ignore',
+  agentProposalRepropose: '/api/agent/proposals/:id/repropose',
   /**
    * The PIN (#1203): the gate in front of the whole socket answers these, never
    * Flask. A `401` from one of them is a wrong code, not a session that ended.

@@ -73,10 +73,12 @@ export default function DataPage() {
         symbol: search.symbol,
         since: search.since,
         until: search.until,
+        proposal: search.proposal,
       },
       replace: true,
     })
   }, [
+    search.proposal,
     search.open,
     search.q,
     search.type,
@@ -97,7 +99,23 @@ export default function DataPage() {
   const release = () => {
     setFocus(undefined)
     if (reduction === null) return
-    void navigate({ to: '/ledger', search: {}, replace: true })
+    void navigate({ to: '/ledger', search: { proposal: search.proposal }, replace: true })
+  }
+
+  /** The agent's proposal was merged or put down: the address stops naming it. */
+  const proposalClosed = () => {
+    void navigate({
+      to: '/ledger',
+      search: {
+        q: search.q,
+        type: search.type,
+        account: search.account,
+        symbol: search.symbol,
+        since: search.since,
+        until: search.until,
+      },
+      replace: true,
+    })
   }
 
   usePageHeading(t('page.ledger'))
@@ -115,6 +133,8 @@ export default function DataPage() {
         // The arming is spent where it was made, so nothing reopens a form the
         // reader has closed.
         onComposed={() => setCompose(undefined)}
+        proposal={search.proposal}
+        onProposalClosed={proposalClosed}
       />
     </div>
   )

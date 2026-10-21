@@ -13,13 +13,16 @@ stores that: no background job, the write mutex is busy enough (#972).
 import json
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Sequence, TypedDict
 from uuid import uuid4
 
 from application import instants
+from application import proposals
+from application.proposals import ProposalNotReady, UnknownProposal
 
-EXPIRY = timedelta(days=7)
+EXPIRY = proposals.EXPIRY
+KIND = 'profile_fact'
 
 #: The facts that are one value each; projects are ``project:<id>``.
 FACTS = ('income', 'marginal_rate', 'risk_tolerance')
@@ -32,6 +35,10 @@ NEW_PROJECT = 'project'
 
 _PROJECT_KEY = re.compile(r'project:[0-9a-f]{12}')
 _PROPOSAL_ID = re.compile(r'[0-9a-f]{32}')
+
+
+#: A fact never goes ``stale``: that is the events' (``proposals.Status``).
+Status = Literal['ready', 'merged', 'ignored', 'expired']
 
 
 class Fact(TypedDict):
@@ -50,9 +57,6 @@ class Project(TypedDict):
 class Profile(TypedDict):
     facts: Dict[str, Fact]
     projects: List[Project]
-
-
-Status = Literal['ready', 'merged', 'ignored', 'expired']
 
 
 class Proposal(TypedDict):
@@ -87,18 +91,6 @@ class InvalidProfileFact(ValueError):
 
 class UnknownFact(LookupError):
     """A key that names no fact this profile has, or could have."""
-
-
-class UnknownProposal(LookupError):
-    """An id no proposal carries."""
-
-
-class ProposalNotReady(Exception):
-    """A proposal already decided, or expired: nothing is written twice."""
-
-    def __init__(self, status: str):
-        super().__init__(f"the proposal is {status}, not ready")
-        self.status = status
 
 
 def is_key(key: str) -> bool:
@@ -147,11 +139,7 @@ def validate(key: Any, value: Any, now: datetime,
         f"project:<id>", str(key))
 
 
-def status(row: dict, now: datetime) -> Status:
-    """``ready``, ``merged``, ``ignored`` or ``expired``, which is never stored."""
-    if row['status'] == 'ready' and now - row['created_at'] > EXPIRY:
-        return 'expired'
-    return row['status']
+status = proposals.status
 
 
 # --------------------------------------------------------------- the writes --
@@ -166,10 +154,7 @@ def propose(store, key: Any, value: Any, now: datetime) -> str:
     if _is_project(key):
         _existing(store, key)
     proposal_id = uuid4().hex
-    store.execute(
-        'INSERT INTO proposal (id, kind, payload, status, created_at) '
-        "VALUES (?, 'profile_fact', ?, 'ready', ?)",
-        [proposal_id, json.dumps({'key': key, 'value': value}), now])
+    proposals.insert(store, KIND, {'key': key, 'value': value}, proposal_id, now)
     return proposal_id
 
 
@@ -233,28 +218,11 @@ def read(store) -> Profile:
 
 def read_proposals(store, ids: Sequence[str], now: datetime) -> List[Proposal]:
     """The proposals ``ids`` name, in that order; an unknown id is omitted."""
-    if not ids:
-        return []
-    marks = ', '.join('?' for _ in ids)
-    rows = {row['id']: row for row in map(_row, store.query(
-        f'SELECT {_COLUMNS} FROM proposal WHERE {_KIND} AND id IN ({marks})',
-        list(ids)))}
+    rows = proposals.fetch(store, KIND, ids)
     return [_shape(rows[i], now) for i in ids if i in rows]
 
 
 # ----------------------------------------------------------------- inside --
-
-_COLUMNS = 'id, payload, status, created_at, decided_at'
-#: The proposals this module decides; #1119's kinds are not its to confirm.
-_KIND = "kind = 'profile_fact'"
-
-
-def _row(row: tuple) -> dict:
-    payload = json.loads(row[1])
-    return {'id': row[0], 'key': payload['key'], 'value': payload['value'],
-            'status': row[2], 'created_at': instants.utc(row[3]),
-            'decided_at': instants.utc(row[4])}
-
 
 def _shape(row: dict, now: datetime) -> Proposal:
     return {'id': row['id'], 'key': row['key'], 'value': row['value'],
@@ -264,12 +232,10 @@ def _shape(row: dict, now: datetime) -> Proposal:
 
 
 def _proposal(store, proposal_id: str) -> dict:
-    rows = store.query(
-        f'SELECT {_COLUMNS} FROM proposal WHERE {_KIND} AND id = ?',
-        [proposal_id])
+    rows = proposals.fetch(store, KIND, [proposal_id])
     if not rows:
         raise UnknownProposal(proposal_id)
-    return _row(rows[0])
+    return rows[proposal_id]
 
 
 def _ready(store, proposal_id: str, now: datetime) -> dict:
@@ -284,16 +250,11 @@ def _ready(store, proposal_id: str, now: datetime) -> dict:
 def _decide(store, proposal_id: str, decided: str, now: datetime) -> Proposal:
     """Decide a proposal that is still ready, or :class:`ProposalNotReady`.
 
-    The guard is in the ``UPDATE`` itself, so a decision that lost a race
-    writes nothing, and inside :func:`confirm`'s transaction rolls the fact
-    back with it.
+    Inside :func:`confirm`'s transaction a lost race rolls the fact back.
     """
-    decided_rows = store.query(
-        f"UPDATE proposal SET status = ?, decided_at = ? "
-        f"WHERE {_KIND} AND id = ? AND status = 'ready' AND created_at >= ? "
-        f"RETURNING id", [decided, now, proposal_id, now - EXPIRY])
+    won = proposals.decide(store, KIND, proposal_id, decided, now)
     row = _proposal(store, proposal_id)
-    if not decided_rows:
+    if not won:
         raise ProposalNotReady(status(row, now))
     return _shape(row, now)
 

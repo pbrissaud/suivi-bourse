@@ -232,6 +232,79 @@
       "title": "Converted",
       "type": "object"
     },
+    "EventsProposal": {
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "decided_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/ProposedLine"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "events",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "merged",
+            "ignored",
+            "expired",
+            "stale"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "status",
+        "count",
+        "events",
+        "created_at",
+        "decided_at"
+      ],
+      "title": "EventsProposal",
+      "type": "object"
+    },
+    "EventsProposalsPayload": {
+      "properties": {
+        "proposals": {
+          "items": {
+            "$ref": "#/$defs/EventsProposal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "proposals"
+      ],
+      "title": "EventsProposalsPayload",
+      "type": "object"
+    },
     "Fact": {
       "properties": {
         "confirmed_at": {
@@ -629,6 +702,108 @@
         "proposals"
       ],
       "title": "ProposalsPayload",
+      "type": "object"
+    },
+    "ProposedLine": {
+      "description": "One proposed event, as a card lists it.",
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "date": {
+          "type": "string"
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "fee": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mark": {
+          "enum": [
+            "statement",
+            "gap",
+            "estimated_price"
+          ],
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit_price": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "date",
+        "event_type",
+        "account",
+        "symbol",
+        "quantity",
+        "unit_price",
+        "fee",
+        "amount",
+        "notes"
+      ],
+      "title": "ProposedLine",
       "type": "object"
     }
   },

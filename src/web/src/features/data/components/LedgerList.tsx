@@ -39,6 +39,8 @@ interface LedgerListProps {
   onRowSelectionChange: OnChangeFn<RowSelectionState>
   /** Opens the panel on a row. Offered for every row that has a key. */
   onEdit: (event: LedgerEvent) => void
+  /** The rows a merge has just written (#1119): marked, then let go of. */
+  fresh?: ReadonlySet<string>
 }
 
 /** 44 × 44 on a coarse pointer, around a 16 px box, above the stretched button. */
@@ -51,6 +53,7 @@ export function LedgerList({
   rowSelection,
   onRowSelectionChange,
   onEdit,
+  fresh,
 }: LedgerListProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -100,7 +103,8 @@ export function LedgerList({
             <li
               key={key}
               data-state={rowSelection[key] ? 'selected' : undefined}
-              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 last:border-b-0 has-[button:active]:bg-muted/50 data-[state=selected]:bg-muted/50"
+              data-fresh={fresh?.has(String(event.id)) ? '' : undefined}
+              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 last:border-b-0 has-[button:active]:bg-muted/50 data-[state=selected]:bg-muted/50 data-fresh:bg-primary/10"
             >
               <Checkbox
                 aria-label={t('data.select.row', {

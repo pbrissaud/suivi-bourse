@@ -91,6 +91,13 @@ const WRITE_ONLY_ROUTES = [
   'profileFact',
   'profileProposalConfirm',
   'profileProposalIgnore',
+  // The same for the events the agent proposed (#1119): a preview, a merge, an
+  // ignoring and a re-proposal each answer the reader's own press. The
+  // proposals a thread made are a read.
+  'agentProposalPreview',
+  'agentProposalMerge',
+  'agentProposalIgnore',
+  'agentProposalRepropose',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
@@ -352,6 +359,17 @@ const PROPOSAL = {
   decided_at: null,
 }
 
+const EVENTS_PROPOSAL = {
+  id: 'b'.repeat(32),
+  kind: 'events',
+  title: 'Achat CW8',
+  status: 'ready',
+  count: 0,
+  events: [],
+  created_at: '2026-10-12T09:00:00+00:00',
+  decided_at: null,
+}
+
 /** The agent switched on, with one kept thread. */
 function agentHandlers() {
   return [
@@ -380,6 +398,13 @@ function agentHandlers() {
                 input: { key: 'risk_tolerance', value: 'prudent' },
                 output: { proposal_id: PROPOSAL.id },
               },
+              {
+                type: 'tool-propose_events',
+                toolCallId: 'p2',
+                state: 'output-available',
+                input: { title: 'Achat CW8', events_json: '[]' },
+                output: { proposal_id: EVENTS_PROPOSAL.id },
+              },
               { type: 'text', text: 'Voici la simulation.' },
             ],
           },
@@ -388,6 +413,7 @@ function agentHandlers() {
     ),
     // The proposal the thread made (#1116): its card is drawn from this read.
     http.get(ROUTES.profileProposals, () => HttpResponse.json({ proposals: [PROPOSAL] })),
+    http.get(ROUTES.agentProposals, () => HttpResponse.json({ proposals: [EVENTS_PROPOSAL] })),
   ]
 }
 

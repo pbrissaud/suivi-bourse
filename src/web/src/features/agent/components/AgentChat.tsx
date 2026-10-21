@@ -89,9 +89,10 @@ import {
   FactCard,
   ProfileChips,
   proposalOf,
+  type ThreadProposal,
   useProposals,
 } from '@/features/agent/components/AgentProfile'
-import type { Proposal } from '@/features/agent/lib/profile'
+import { EventsCard } from '@/features/agent/components/EventsCard'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { agentApi, type AgentConfig } from '@/features/agent/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
@@ -697,7 +698,7 @@ function Turn({
 }: {
   message: UIMessage
   live: boolean
-  proposals: Map<string, Proposal> | undefined
+  proposals: Map<string, ThreadProposal> | undefined
 }) {
   if (message.role === 'user') {
     return (
@@ -731,9 +732,13 @@ function Turn({
             </div>
           )
         })}
-        {cards.map((proposal) => (
-          <FactCard key={proposal.id} proposal={proposal} />
-        ))}
+        {cards.map((proposal) =>
+          'kind' in proposal ? (
+            <EventsCard key={proposal.id} proposal={proposal} />
+          ) : (
+            <FactCard key={proposal.id} proposal={proposal} />
+          ),
+        )}
       </MessageContent>
     </Message>
   )
@@ -748,18 +753,18 @@ function Turn({
  */
 function stepsAndText(
   parts: UIMessage['parts'],
-  proposals: Map<string, Proposal> | undefined,
-): { steps: (string | AgentToolPart[])[]; cards: Proposal[] } {
+  proposals: Map<string, ThreadProposal> | undefined,
+): { steps: (string | AgentToolPart[])[]; cards: ThreadProposal[] } {
   const steps: (string | AgentToolPart[])[] = []
-  const cards: Proposal[] = []
+  const cards: ThreadProposal[] = []
   for (const part of parts) {
     if (part.type === 'text') steps.push(part.text)
     else if (isToolUIPart(part)) {
       const last = steps.at(-1)
       if (Array.isArray(last)) last.push(part)
       else steps.push([part])
-      const id = proposalOf(part)
-      const proposal = id === null ? undefined : proposals?.get(id)
+      const ref = proposalOf(part)
+      const proposal = ref === null ? undefined : proposals?.get(ref.id)
       if (proposal) cards.push(proposal)
     }
   }

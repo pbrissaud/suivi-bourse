@@ -103,6 +103,45 @@ export interface Converted {
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "EventsProposal".
+ */
+export interface EventsProposal {
+  count: number;
+  created_at: string;
+  decided_at: string | null;
+  events: ProposedLine[];
+  id: string;
+  kind: "events";
+  status: "ready" | "merged" | "ignored" | "expired" | "stale";
+  title: string;
+}
+/**
+ * One proposed event, as a card lists it.
+ *
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "ProposedLine".
+ */
+export interface ProposedLine {
+  account: string | null;
+  amount: number | null;
+  date: string;
+  event_type: string;
+  fee: number | null;
+  mark?: "statement" | "gap" | "estimated_price";
+  notes: string | null;
+  quantity: number | null;
+  symbol: string | null;
+  unit_price: number | null;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "EventsProposalsPayload".
+ */
+export interface EventsProposalsPayload {
+  proposals: EventsProposal[];
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
  * via the `definition` "Fundamentals".
  */
 export interface Fundamentals {

@@ -1,20 +1,19 @@
 """The event ledger under ``/api``: one row, many rows, and a file (#811, #816)."""
 import re
-from dataclasses import replace
-from datetime import date
+from dataclasses import dataclass, replace
 from typing import Any, Optional, Sequence
 
 from flask import Blueprint, jsonify, request
 
 from application import accounts as accounts_module
 from application import entries
+from application.event_body import InvalidBody, event_from_body
 from application import import_currency
 from application import ledger
 from application import main
 from application import settings_registry
 from application import store as store_module
 from application import uploads
-from application.events.schemas import Event, EventType
 from application.events.aggregator import AggregationError
 from api.problem import (
     GESTURE_REMOVE,
@@ -28,12 +27,10 @@ from api.problem import (
     unprocessable_request,
 )
 from api.common import (
-    _ISO_DAY,
     _snapshot,
     _store,
     current_runtime,
     _unreplayable,
-    _InvalidBody,
     _json_object,
 )
 
@@ -77,8 +74,8 @@ def create_event():
         return bad_request("a JSON object is required")
 
     try:
-        draft = _event_from_body(body)
-    except _InvalidBody as exc:
+        draft = event_from_body(body)
+    except InvalidBody as exc:
         return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
@@ -124,105 +121,147 @@ def import_events():
     except uploads.UploadRefused as exc:
         return unprocessable_file(str(exc), file=exc.file)
 
-    census = uploads.census(parsed.events)
+    try:
+        done = _run_import(
+            parsed, correspondence, dry_run=dry_run,
+            write_duplicates=write_duplicates, write_repeats=write_repeats,
+            adopt_currency=adopt_currency, amounts_in=amounts_in)
+    except IMPORT_REFUSALS as exc:
+        return import_refusal(exc)
 
+    if not dry_run:
+        main.replay_after_write(current_runtime())
+    return jsonify(_receipt_to_dict(
+        uploads.receipt(parsed, done.rows,
+                        written=done.written, duplicates=len(done.duplicates),
+                        file_accounts=done.census),
+        duplicates=done.duplicates,
+        origin=parsed.origin,
+        currency=done.declared if adopt_currency else None,
+        declared_currency=done.stated,
+        foreign=done.foreign,
+        unverified=done.unverified,
+    )), 200 if dry_run else 201
+
+
+IMPORT_REFUSALS = (
+    import_currency.BadPair, import_currency.Unconvertible,
+    uploads.UploadRefused, accounts_module.AccountSourceError,
+    settings_registry.InvalidSetting, entries.InvalidEntry, AggregationError,
+)
+
+
+def import_refusal(exc: Exception):
+    """The answer to each way :func:`_run_import` refuses."""
+    if isinstance(exc, import_currency.BadPair):
+        return bad_request(str(exc))
+    if isinstance(exc, import_currency.Unconvertible):
+        return currency_unconvertible(
+            str(exc), exc.symbol, exc.currency, exc.base, exc.day.isoformat())
+    if isinstance(exc, uploads.UploadRefused):
+        return unprocessable_file(str(exc), file=exc.file)
+    if isinstance(exc, AggregationError):
+        return _unreplayable(exc, GESTURE_WRITE)
+    return unprocessable_file(str(exc))
+
+
+@dataclass(frozen=True)
+class Imported:
+    """What :func:`_run_import` settled: the rows, and the questions it asked."""
+
+    rows: list
+    written: int
+    duplicates: list
+    declared: Optional[str]
+    stated: Optional[str]
+    foreign: Sequence[import_currency.ForeignLine]
+    unverified: Sequence[str]
+    census: Sequence[uploads.FileAccount]
+    created: list
+
+
+def _run_import(parsed, correspondence, *, dry_run: bool,
+                write_duplicates: bool, write_repeats: frozenset,
+                adopt_currency: bool, amounts_in: Optional[str],
+                record=entries.create_many) -> Imported:
+    """The batch read against the ledger: a dry run, or the write.
+
+    ``record(opened, fresh, **how)`` lays the fresh rows down, inside the
+    writers' lock, and answers the events written. An import records them with
+    :func:`entries.create_many`; a merged proposal (#1119) with its own gesture,
+    which also marks the proposal.
+    """
+    census = uploads.census(parsed.events)
     runtime = current_runtime()
     foreign: Sequence[import_currency.ForeignLine] = ()
     unverified: Sequence[str] = ()
-    try:
-        # The rates are fetched **before** the writer lock: a slow Yahoo must
-        # not hold every read behind it. The write below finds them cached.
-        warmed = (_warm_rates(parsed, runtime, _question_base(_store(), parsed))
-                  if not dry_run and amounts_in == 'quote' else None)
-        if dry_run:
-            opened = _store()   # a dry run reads and nothing else (#967)
-            settled = _settled_mapping(opened, correspondence, census)
-            declared = ledger.currency_to_adopt(opened,
-                                                parsed.declared_currency)
-            stated = _stated_currency(parsed.declared_currency)
-            rows = settled.applied(parsed.events)
-            base = _question_base(opened, parsed)
-            if base:
-                asked = _unstated(parsed)
-                found = import_currency.survey(
-                    opened, [rows[i] for i in asked], base)
-                foreign, unverified = found.lines, found.unverified
-                rows = _answered(rows, asked, amounts_in, found.pairs,
-                                 runtime, base)
-            fresh, duplicates = entries.split_duplicates(
-                opened, rows, write_held=write_duplicates,
-                write_repeats=write_repeats)
-            entries.judge(opened, fresh, declaring=settled.declaring,
-                          accounts_pending=settled.stated)
-            written = len(fresh)
-        else:
-            while True:
-                try:
-                    with runtime.config_manager.writing() as opened:
-                        settled = _settled_mapping(opened, correspondence, census)
-                        declared = ledger.currency_to_adopt(
-                            opened, parsed.declared_currency)
-                        stated = _stated_currency(parsed.declared_currency)
-                        rows = settled.applied(parsed.events)
-                        base = _question_base(opened, parsed)
-                        if amounts_in == 'quote' and base != warmed:
-                            # The base moved between the warm-up and the lock:
-                            # the cached rates are for another pair. Leave the
-                            # lock, fetch the right ones, and come back.
-                            raise _RatesStale(base)
-                        says = {}
-                        if base:
-                            asked = _unstated(parsed)
-                            chosen = import_currency.pairs(
-                                [rows[i] for i in asked],
-                                request.args.getlist('foreign'), base)
-                            foreign = import_currency.lines(
-                                [rows[i] for i in asked], chosen)
-                            rows = _answered(rows, asked, amounts_in, chosen,
-                                             runtime, base)
-                            if amounts_in:
-                                says = {symbol: base if amounts_in == 'base' else code
-                                        for symbol, code in chosen.items()}
-                        fresh, duplicates = entries.split_duplicates(
-                            opened, rows, write_held=write_duplicates,
-                            write_repeats=write_repeats)
-                        written = len(entries.create_many(
-                            opened, fresh,
-                            base_currency=declared if adopt_currency else None,
-                            declare_accounts=settled.declaring,
-                            stated=says))
-                    break
-                except _RatesStale as stale:
-                    warmed = _warm_rates(parsed, runtime, stale.base)
-    except import_currency.BadPair as exc:
-        return bad_request(str(exc))
-    except import_currency.Unconvertible as exc:
-        return currency_unconvertible(
-            str(exc), exc.symbol, exc.currency, exc.base, exc.day.isoformat())
-    except uploads.UploadRefused as exc:
-        return unprocessable_file(str(exc), file=exc.file)
-    except accounts_module.AccountSourceError as exc:
-        return unprocessable_file(str(exc))
-    except settings_registry.InvalidSetting as exc:
-        return unprocessable_file(str(exc))
-    except entries.InvalidEntry as exc:
-        return unprocessable_file(str(exc))
-    except AggregationError as exc:
-        return _unreplayable(exc, GESTURE_WRITE)
-
-    if not dry_run:
-        main.replay_after_write(runtime)
-    return jsonify(_receipt_to_dict(
-        uploads.receipt(parsed, rows,
-                        written=written, duplicates=len(duplicates),
-                        file_accounts=census),
-        duplicates=duplicates,
-        origin=parsed.origin,
-        currency=declared if adopt_currency else None,
-        declared_currency=stated,
-        foreign=foreign,
-        unverified=unverified,
-    )), 200 if dry_run else 201
+    created: list = []
+    # The rates are fetched **before** the writer lock: a slow Yahoo must
+    # not hold every read behind it. The write below finds them cached.
+    warmed = (_warm_rates(parsed, runtime, _question_base(_store(), parsed))
+              if not dry_run and amounts_in == 'quote' else None)
+    if dry_run:
+        opened = _store()   # a dry run reads and nothing else (#967)
+        settled = _settled_mapping(opened, correspondence, census)
+        declared = ledger.currency_to_adopt(opened, parsed.declared_currency)
+        stated = _stated_currency(parsed.declared_currency)
+        rows = settled.applied(parsed.events)
+        base = _question_base(opened, parsed)
+        if base:
+            asked = _unstated(parsed)
+            found = import_currency.survey(
+                opened, [rows[i] for i in asked], base)
+            foreign, unverified = found.lines, found.unverified
+            rows = _answered(rows, asked, amounts_in, found.pairs,
+                             runtime, base)
+        fresh, duplicates = entries.split_duplicates(
+            opened, rows, write_held=write_duplicates,
+            write_repeats=write_repeats)
+        entries.judge(opened, fresh, declaring=settled.declaring,
+                      accounts_pending=settled.stated)
+        written = len(fresh)
+    else:
+        while True:
+            try:
+                with runtime.config_manager.writing() as opened:
+                    settled = _settled_mapping(opened, correspondence, census)
+                    declared = ledger.currency_to_adopt(
+                        opened, parsed.declared_currency)
+                    stated = _stated_currency(parsed.declared_currency)
+                    rows = settled.applied(parsed.events)
+                    base = _question_base(opened, parsed)
+                    if amounts_in == 'quote' and base != warmed:
+                        # The base moved between the warm-up and the lock:
+                        # the cached rates are for another pair. Leave the
+                        # lock, fetch the right ones, and come back.
+                        raise _RatesStale(base)
+                    says = {}
+                    if base:
+                        asked = _unstated(parsed)
+                        chosen = import_currency.pairs(
+                            [rows[i] for i in asked],
+                            request.args.getlist('foreign'), base)
+                        foreign = import_currency.lines(
+                            [rows[i] for i in asked], chosen)
+                        rows = _answered(rows, asked, amounts_in, chosen,
+                                         runtime, base)
+                        if amounts_in:
+                            says = {symbol: base if amounts_in == 'base' else code
+                                    for symbol, code in chosen.items()}
+                    fresh, duplicates = entries.split_duplicates(
+                        opened, rows, write_held=write_duplicates,
+                        write_repeats=write_repeats)
+                    created = record(
+                        opened, fresh,
+                        base_currency=declared if adopt_currency else None,
+                        declare_accounts=settled.declaring,
+                        stated=says)
+                    written = len(created)
+                break
+            except _RatesStale as stale:
+                warmed = _warm_rates(parsed, runtime, stale.base)
+    return Imported(rows, written, duplicates, declared, stated, foreign,
+                    unverified, census, created)
 
 
 def _unstated(parsed) -> list:
@@ -309,14 +348,15 @@ def _settled_mapping(opened, correspondence, census):
                                    if label not in declared))
 
 
-def _write_repeats() -> frozenset:
+def _write_repeats(raw: Optional[Sequence[str]] = None) -> frozenset:
     """The ``write_repeat`` form fields: first copies of the groups to write whole.
 
     A form field and not a query parameter: a file pasted twice carries about a
     thousand groups, past the 16 KiB h11 caps on the request line (see
     :func:`delete_events`).
     """
-    raw = request.form.getlist('write_repeat')
+    if raw is None:
+        raw = request.form.getlist('write_repeat')
     # Bounded: ``int()`` refuses past 4300 digits, and no file has that many rows.
     if not all(_DIGITS.fullmatch(value) and len(value) <= 12 for value in raw):
         raise uploads.UploadRefused(
@@ -393,8 +433,8 @@ def update_event(event_id: str):
     if body is None:
         return bad_request("a JSON object is required")
     try:
-        draft = _event_from_body(body)
-    except _InvalidBody as exc:
+        draft = event_from_body(body)
+    except InvalidBody as exc:
         return unprocessable_request(str(exc), key=exc.field)
 
     runtime = current_runtime()
@@ -481,58 +521,3 @@ def _entry_key(event_id: str) -> Optional[int]:
         return int(event_id)
     except (TypeError, ValueError):
         return None
-
-
-_EVENT_TEXT_FIELDS = ('symbol', 'name', 'notes', 'account')
-_EVENT_NUMBER_FIELDS = ('quantity', 'unit_price', 'fee', 'amount')
-
-
-def _event_from_body(body: Optional[dict]) -> Any:
-    """One JSON object as an :class:`events.schemas.Event`, or a named refusal."""
-    if not isinstance(body, dict):
-        raise _InvalidBody("a JSON object is required", 'date')
-
-    raw_type = body.get('event_type')
-    try:
-        event_type = EventType(str(raw_type).upper())
-    except (ValueError, AttributeError):
-        allowed = ", ".join(kind.value for kind in EventType)
-        raise _InvalidBody(
-            f"event_type {raw_type!r} is not one of {allowed}", 'event_type')
-
-    fields = {name: _text_member(body, name) for name in _EVENT_TEXT_FIELDS}
-    fields.update({name: _number_member(body, name)
-                   for name in _EVENT_NUMBER_FIELDS})
-
-    return Event(date=_day_member(body), event_type=event_type, **fields)
-
-
-def _day_member(body: dict) -> date:
-    raw = body.get('date')
-    if not isinstance(raw, str) or not _ISO_DAY.fullmatch(raw.strip()):
-        raise _InvalidBody(
-            f"date {raw!r} is not a calendar day (YYYY-MM-DD)", 'date')
-    try:
-        return date.fromisoformat(raw.strip())
-    except ValueError:
-        raise _InvalidBody(f"date {raw!r} is not a day that exists", 'date')
-
-
-def _text_member(body: dict, name: str) -> Optional[str]:
-    """A string member, blank read as absent — the empty cell of a CSV."""
-    raw = body.get(name)
-    if raw is None:
-        return None
-    if not isinstance(raw, str):
-        raise _InvalidBody(f"{name} must be text", name)
-    return raw.strip() or None
-
-
-def _number_member(body: dict, name: str) -> Optional[float]:
-    """A numeric member, or ``None``."""
-    raw = body.get(name)
-    if raw is None:
-        return None
-    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        raise _InvalidBody(f"{name} must be a number", name)
-    return float(raw)

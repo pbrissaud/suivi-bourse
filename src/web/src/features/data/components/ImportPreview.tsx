@@ -82,7 +82,8 @@ import { XIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
-import type { EventUpload } from '@/features/data/components/UploadZone'
+import { LineText } from '@/features/agent/components/EventsCard'
+import type { ImportReview } from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -130,7 +131,7 @@ import { receiptMessage } from '@/lib/receipts'
  */
 const DECLARE = ' declare'
 
-export function ImportPreview({ upload }: { upload: EventUpload }) {
+export function ImportPreview({ upload }: { upload: ImportReview }) {
   const { t } = useI18n()
   const f = useFormatters()
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
@@ -189,7 +190,8 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
     // What the reader said was about files that are no longer all there.
     forgetAnswers()
     setRefocus(index)
-    upload.drop(index)
+    // A proposal has no file to take out: `several` is never true for it.
+    if ('drop' in upload && typeof upload.drop === 'function') upload.drop(index)
   }
   const several = upload.filenames.length > 1
   const refused = refusedFile(upload.error)
@@ -305,7 +307,9 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             </span>
           ) : null}
           <DialogDescription>
-            {t('data.import.preview.body', { files: upload.filenames.length })}
+            {upload.proposal
+              ? t('data.import.proposal.body')
+              : t('data.import.preview.body', { files: upload.filenames.length })}
           </DialogDescription>
         </DialogHeader>
 
@@ -345,6 +349,23 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
 
             {ready ? (
               <>
+                {upload.proposal && upload.proposal.lines.length > 0 ? (
+                  <section className="space-y-1.5">
+                    <h3 className="text-sm font-medium">
+                      {t('data.import.proposal.lines', { count: upload.proposal.lines.length })}
+                    </h3>
+                    {/* Every line, not a summary: this is what gets merged. */}
+                    <ul className="max-h-52 space-y-1 overflow-y-auto rounded-lg border p-2.5 text-sm">
+                      {upload.proposal.lines.map((line, index) => (
+                        // A read-out of a stored batch: the position is the identity.
+                        <li key={index}>
+                          <LineText line={line} detailed />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+
                 <AccountsBlock
                   lines={lines}
                   declared={declared}

@@ -177,11 +177,12 @@ CREATE TABLE IF NOT EXISTS profile_fact (
     confirmed_at  TIMESTAMPTZ NOT NULL);
 
 -- What the agent proposes and only the UI decides (#1116, #1119). ``expired``
--- is read, never stored: a ``ready`` row older than ``profile.EXPIRY``.
+-- and ``stale`` (events whose ledger moved) are read, never stored: a
+-- ``ready`` row older than ``proposals.EXPIRY``.
 CREATE TABLE IF NOT EXISTS proposal (
     id          VARCHAR PRIMARY KEY,     -- uuid4 hex
-    kind        VARCHAR NOT NULL,        -- 'profile_fact'
-    payload     VARCHAR NOT NULL,        -- JSON: {"key": ..., "value": ...}
+    kind        VARCHAR NOT NULL,        -- 'profile_fact' | 'events'
+    payload     VARCHAR NOT NULL,        -- JSON: {"key", "value"} | {"title", "events", "stamp"}
     status      VARCHAR NOT NULL,        -- 'ready' | 'merged' | 'ignored'
     created_at  TIMESTAMPTZ NOT NULL,
     decided_at  TIMESTAMPTZ);

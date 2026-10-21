@@ -38,7 +38,10 @@ SYSTEM_PROMPT = (
     "never by its `id`, and never quote a tool's field names: say what a "
     "figure is in words. When the user states their income, marginal tax "
     "rate, risk tolerance or a project, propose it with "
-    "`propose_profile_fact`; never treat a proposal as confirmed. Read what "
+    "`propose_profile_fact`; never treat a proposal as confirmed. When the "
+    "user states a purchase, a sale, a dividend or a deposit, propose it with "
+    "`propose_events` on an account that already exists; the owner reviews "
+    "and merges it, so never say it is recorded. Read what "
     "is confirmed with `get_profile`. Lead with the money-weighted return; "
     "give a time-weighted return only as a percent change with the day it "
     "counts from — turning an index into that percent is the one calculation "
@@ -379,8 +382,9 @@ def build_agent(model, mcp, *, thinking: str):
     """The agent: ``model`` over the MCP server's tools, in process.
 
     No tool exists only for the agent. ``deps`` stays empty: the investor's
-    profile is a tool, ``get_profile``, and the agent's one write,
-    ``propose_profile_fact``, is a proposal only the app confirms (#1116).
+    profile is a tool, ``get_profile``, and the agent's only writes,
+    ``propose_profile_fact`` and ``propose_events``, are proposals only the app
+    confirms (#1116, #1119).
 
     ``cache=True`` puts a breakpoint after the tools, the instructions and the
     conversation for the providers that take one (Anthropic, OpenAI from

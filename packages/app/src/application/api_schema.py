@@ -18,7 +18,7 @@ from pydantic import TypeAdapter
 
 from application.account_facts import AccountsPayload
 from application.mcp_server import Positions
-from application import profile
+from application import event_proposals, profile
 
 #: Where the front reads it.
 TARGET = Path(__file__).resolve().parents[4] / 'src/web/src/lib/api.schema.json'
@@ -30,7 +30,9 @@ def schema() -> dict:
          ('AccountsPayload', 'serialization', TypeAdapter(AccountsPayload)),
          *((name, 'serialization', TypeAdapter(getattr(profile, name)))
            for name in ('Profile', 'ProposalsPayload', 'Confirmed',
-                        'Ignored'))],
+                        'Ignored')),
+         ('EventsProposalsPayload', 'serialization',
+          TypeAdapter(event_proposals.EventsProposalsPayload))],
         title='Api')
     # A property's title makes `json2ts` emit one alias per field
     # (`export type Quantity = number | null`); a definition's names the

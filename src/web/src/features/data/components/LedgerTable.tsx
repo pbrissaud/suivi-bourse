@@ -132,6 +132,8 @@ interface LedgerTableProps {
   onRowSelectionChange: OnChangeFn<RowSelectionState>
   /** Opens the panel on a row. Offered for every row that has a key. */
   onEdit: (event: LedgerEvent) => void
+  /** The rows a merge has just written (#1119): marked, then let go of. */
+  fresh?: ReadonlySet<string>
 }
 
 type LedgerColumnId =
@@ -195,6 +197,7 @@ export function LedgerTable({
   rowSelection,
   onRowSelectionChange,
   onEdit,
+  fresh,
 }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -344,7 +347,12 @@ export function LedgerTable({
             <TableRow
               key={row.id}
               data-state={row.getIsSelected() ? 'selected' : undefined}
-              className={cn(isEditable(row.original) && 'cursor-pointer')}
+              data-fresh={fresh?.has(String(row.original.id)) ? '' : undefined}
+              className={cn(
+                isEditable(row.original) && 'cursor-pointer',
+                // The rows a merge just wrote: a plain tint, never a movement.
+                'data-fresh:bg-primary/10 motion-reduce:transition-none',
+              )}
               onClick={isEditable(row.original) ? () => onEdit(row.original) : undefined}
             >
               {row.getAllCells().map((cell) => (
