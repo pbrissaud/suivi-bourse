@@ -919,7 +919,7 @@ describe('a row cut before today during a first rebuild (#1285)', () => {
     // curve (a true history) and the lines' list.
     const dividends = within(detail).getByRole('group', { name: /Dividendes/ })
     expect(dividends).toHaveTextContent(/25,00/)
-    expect(within(detail).queryByRole('group', { name: 'du versé' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Sur le versé' })).not.toBeInTheDocument()
     await waitFor(() => expect(detail.querySelector('figure')).not.toBeNull())
     expect(within(detail).getByRole('list', { name: 'Titres du compte' })).toBeVisible()
   })
@@ -932,6 +932,11 @@ describe('a row cut before today during a first rebuild (#1285)', () => {
     expect(within(detail).getByRole('group', { name: 'Valeur totale' })).toHaveTextContent(
       /(777|666),00/,
     )
+    // The figures the other test asserts gone are really there to be dropped.
+    expect(within(detail).getByRole('group', { name: 'Sur le versé' })).toBeInTheDocument()
+    expect(within(detail).getByRole('group', { name: /Frais/ })).toBeInTheDocument()
+    expect(within(detail).getByText(/Impôt projeté/)).toBeInTheDocument()
+    expect(within(detail).getByRole('group', { name: 'Titres' })).toBeInTheDocument()
     expect(within(detail).queryByText(/séries remontent/)).not.toBeInTheDocument()
   })
 
