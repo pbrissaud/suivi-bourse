@@ -46,6 +46,9 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
     enabled: successor.data !== null,
   })
   const shown = (successor.data !== null ? next.data?.proposals[0] : undefined) ?? proposal
+  // The new proposal could not be read: say so, rather than let the old card
+  // (stale, with its buttons) stand as if nothing had happened.
+  const successorFailed = successor.data !== null && next.isError
 
   const decide = useMutation({
     mutationFn: (again: boolean) =>
@@ -93,8 +96,8 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
         <>
           <ul className="flex flex-col gap-1 text-sm">
             {lines.map((line, index) => (
-              // A read-out of a stored batch: the position is the identity.
-              <li key={index}>
+              // A read-out of a stored batch: the position is the identity, within a proposal.
+              <li key={`${shown.id}-${index}`}>
                 <LineText line={line} />
               </li>
             ))}
@@ -148,6 +151,11 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
             </p>
           ) : null}
         </>
+      ) : null}
+      {successorFailed ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('agent.events.failed')}
+        </p>
       ) : null}
     </div>
   )

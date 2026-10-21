@@ -79,7 +79,9 @@ export function useProposalImport(
   const [standing, setStanding] = useState<Forecast | undefined>(undefined)
   // The proposal on screen now: a reading that lands for another is let go of.
   const latest = useRef(id)
-  latest.current = id
+  // The proposal a reading was started for; keeps the effect below from
+  // starting it twice (React runs effects twice in development).
+  const started = useRef<string | undefined>(undefined)
   // Every line the owner is about to merge, not the eight the card lists.
   const lines = useQuery({
     queryKey: ['proposals', 'review', id],
@@ -165,6 +167,10 @@ export function useProposalImport(
   const { reset: resetWrite } = write
   // Only the id starts a reading: the mutations' own functions are stable.
   useEffect(() => {
+    // Set here and not while rendering, and before the reading it guards.
+    latest.current = id
+    if (started.current === id) return
+    started.current = id
     setStanding(undefined)
     setAnswer(NO_ANSWER)
     resetRead()

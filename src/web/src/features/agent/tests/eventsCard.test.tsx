@@ -185,6 +185,25 @@ describe('the events card (#1119)', () => {
     expect(within(main).getByText('Achat CW8 (relancé)')).toBeInTheDocument()
   })
 
+  it('says so when the re-proposed card cannot be read, instead of standing as before', async () => {
+    threadWith((ids) => {
+      if (ids[0] === NEXT) throw new Error('unreadable')
+      return [aProposal('stale')]
+    })
+    server.use(
+      http.post(ROUTES.agentProposalRepropose, () =>
+        HttpResponse.json({ proposal: aProposal('ready', { id: NEXT }) }),
+      ),
+    )
+    const { user, main } = await openPage()
+
+    await user.click(await within(main).findByRole('button', { name: 'Relancer' }))
+
+    expect(await within(main).findByRole('alert')).toHaveTextContent(
+      'La décision n’a pas été enregistrée.',
+    )
+  })
+
   it('shows the refusal in the server’s words when the events no longer pass', async () => {
     threadWith(() => [aProposal('stale')])
     server.use(

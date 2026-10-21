@@ -331,12 +331,14 @@ def test_a_foreign_security_asks_its_currency_question_in_the_preview(
         http, opened, monkeypatch):
     from application import import_currency
     monkeypatch.setattr(import_currency, '_look_up', lambda symbol: 'USD')
+    # The base is EUR and the proposal states no unit: a USD security is asked about.
     proposal_id = propose_now(opened, {**BUY, 'symbol': 'AAPL', 'name': 'Apple Inc'})
-    # a security the ledger already holds in USD is not asked about
+
     answer = http.post(f'/api/agent/proposals/{proposal_id}/preview')
 
     assert answer.status_code == 200
-    assert 'foreign_lines' in answer.get_json()
+    assert answer.get_json()['foreign_lines'] == [
+        {'symbol': 'AAPL', 'currency': 'USD', 'rows': 1}]
 
 
 # ---------------------------------------------------------- a turn, scripted --

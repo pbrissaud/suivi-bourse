@@ -86,7 +86,7 @@ export function useProposals(
   // A proposal made mid-stream changes the key: the cards already read keep
   // their state, and the new one is its tool line until the turn ends.
   const facts = useQuery({
-    queryKey: ['proposals', threadId, factIds],
+    queryKey: ['proposals', threadId, 'facts', factIds],
     queryFn: () => profileApi.proposals(factIds),
     enabled: !busy && factIds.length > 0,
     placeholderData: keepPreviousData,
