@@ -49,6 +49,8 @@ import {
   type AccountRow,
   type Reassignment as ReassignmentOffer,
 } from '@/features/accounts/lib/accounts'
+import { accountReading } from '@/features/dashboard/lib/dashboard'
+import type { RuntimeState } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -60,6 +62,7 @@ export function AccountsBar({
   rows,
   selected,
   currency,
+  runtime,
   offer,
   onDeclare,
 }: {
@@ -68,6 +71,8 @@ export function AccountsBar({
   selected: string
   /** The one currency everything is reported in. */
   currency: string | null
+  /** The runtime read, `undefined` while it has not answered (#1285). */
+  runtime: RuntimeState | undefined | null
   /**
    * Whether events still name a row nobody declared, and **which of #725's two
    * renderings applies** — the page's answer off `reassignmentOf`, never *is one
@@ -82,6 +87,12 @@ export function AccountsBar({
   const { t } = useI18n()
   const f = useFormatters()
   const weights = accountWeights(rows)
+  // **A row cut before today is not a value** (#1285), the dashboard hero's own
+  // predicate. One such chip takes every share with it: the whole they divide
+  // is missing one of its parts.
+  const now = new Date()
+  const readings = rows.map((row) => accountReading(row, runtime, now))
+  const allValued = readings.every((reading) => reading === 'valued')
   const open = useRef<HTMLAnchorElement>(null)
 
   // On arrival the open chip is brought into view: a bar that scrolls sideways
@@ -97,7 +108,7 @@ export function AccountsBar({
       className="sticky top-0 z-10 -mt-1.5 flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5"
     >
       {rows.map((row, index) => {
-        const share = weights.get(row.id) ?? null
+        const share = allValued ? (weights.get(row.id) ?? null) : null
         const isOpen = row.id === selected
         return (
           <Link
@@ -117,7 +128,7 @@ export function AccountsBar({
               {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
             </span>
             <span className="tabular text-sm whitespace-nowrap">
-              {f.currency(accountWorth(row), currency)}
+              {readings[index] === 'valued' ? f.currency(accountWorth(row), currency) : ABSENT}
             </span>
             <span className="tabular text-xs whitespace-nowrap">
               {share === null ? ABSENT : f.percentPoints(share * 100)}

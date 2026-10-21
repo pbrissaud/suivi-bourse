@@ -46,7 +46,7 @@ import type {
 import type { Position, PositionsResponse } from '@/features/shares/lib/api'
 import type { RuntimeState } from '@/lib/api'
 import { absenceCase } from '@/lib/absence'
-import { shifted } from '@/features/accounts/lib/accounts'
+import { shifted, type AccountRow } from '@/features/accounts/lib/accounts'
 import { isClosed, type ShareRow } from '@/features/shares/lib/shares'
 import type { AxisUnit } from '@/lib/format'
 
@@ -470,7 +470,7 @@ export function dayMove(points: readonly PerfPoint[] | null, now: Date): number 
 // The hero over a row from a past day (#1260)
 // ------------------------------------------------------------------------- //
 
-type HeroReading = 'valued' | 'partial' | 'pending'
+export type HeroReading = 'valued' | 'partial' | 'pending'
 
 /**
  * Is the newest `portfolio_totals` row **today's**? While the history is being
@@ -493,7 +493,7 @@ type HeroReading = 'valued' | 'partial' | 'pending'
  * not `null`.
  */
 export function heroReading(
-  totals: PortfolioTotals,
+  totals: Pick<PortfolioTotals, 'day'>,
   runtime: RuntimeState | undefined | null,
   now: Date,
 ): HeroReading {
@@ -501,6 +501,19 @@ export function heroReading(
   if (totals.day >= today) return 'valued'
   if (!runtime) return 'pending'
   return runtime.rebuilding ? 'partial' : 'valued'
+}
+
+/**
+ * The same reading for an account's `account_metrics` row (#1285), which is cut
+ * the same way: `as_of` is the row's day. A row with **no** day was never
+ * written — `degradedReason`'s case, not this one — so it reads `valued` here.
+ */
+export function accountReading(
+  row: Pick<AccountRow, 'as_of'>,
+  runtime: RuntimeState | undefined | null,
+  now: Date,
+): HeroReading {
+  return row.as_of === null ? 'valued' : heroReading({ day: row.as_of }, runtime, now)
 }
 
 /**

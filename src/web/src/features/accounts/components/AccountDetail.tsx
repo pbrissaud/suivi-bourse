@@ -72,9 +72,10 @@ import {
   type Reassignment as ReassignmentOffer,
 } from '@/features/accounts/lib/accounts'
 import { accountsApi, type PerfPoint } from '@/features/accounts/lib/api'
+import { accountReading, unpricedLines } from '@/features/dashboard/lib/dashboard'
 import type { LedgerEvent } from '@/features/data/lib/api'
 import type { Position } from '@/features/shares/lib/api'
-import type { Advisory } from '@/lib/api'
+import type { Advisory, RuntimeState } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { portfolioTerms, termAmount, termRendering } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
@@ -153,8 +154,12 @@ interface AccountDetailProps {
    */
   points: readonly PerfPoint[] | null
   currency: string | null
-  /** Whether the reconstruction is still running. `null` — not observed yet. */
-  rebuilding: boolean | null
+  /**
+   * The runtime read, or `undefined` while it has not answered. It says whether
+   * the reconstruction is running and how far (#1285): a row cut before today
+   * is a day of cash alone, and only the runtime tells that from a settled one.
+   */
+  runtime: RuntimeState | undefined | null
   /**
    * What this portfolio says about itself, or `null` while the read is in
    * flight. The detail wears the one about **its** account, as a chip.
@@ -198,7 +203,7 @@ export function AccountDetail({
   events,
   points,
   currency,
-  rebuilding,
+  runtime,
   advisories,
   reassignment,
   failures = {},
@@ -213,7 +218,13 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-  const reason = degradedReason(row, rebuilding)
+  const reason = degradedReason(row, runtime?.rebuilding ?? null)
+  // **A row cut before today is not the value** (#1285). During the rebuild a
+  // held line with no close caps the series the day before its acquisition, so
+  // the row is a day of cash alone: no figure of the head is today's, and none
+  // is dated to say otherwise. The curve is a true history and stays.
+  const reading = accountReading(row, runtime, new Date())
+  const valued = reading === 'valued'
   const cash = cashShare(advisories, row.id)
 
   // **Every derivation below is memoised, and against the reads themselves.**
@@ -262,6 +273,8 @@ export function AccountDetail({
     [held],
   )
   const symbols = held === null ? 0 : distinctSymbols(held)
+  // This account's lines alone: the dashboard names the portfolio's.
+  const unpriced = reading === 'partial' && held !== null ? unpricedLines(held) : []
   // The whole the weight of each line divides — the shares page's own three
   // functions, read here for the first time. They shipped with #791 and outlived
   // the column that read them, which is why they are the ones called rather than
@@ -359,79 +372,106 @@ export function AccountDetail({
               label={t('accounts.figure.totalValue')}
               // A value is not a direction: it is set in the colour of text, and the
               // sign lives on the pills under it.
-              value={f.currency(row.total_value, currency)}
+              value={
+                valued ? (
+                  f.currency(row.total_value, currency)
+                ) : (
+                  // An empty plane of the figure's height (#795): no skeleton,
+                  // no spinner. Another key, so the figure that replaces it
+                  // mounts and shows at once.
+                  <span key="unvalued" aria-hidden className="invisible">
+                    &nbsp;
+                  </span>
+                )
+              }
             >
-              {/* What of the value is cash, and what was paid in: the two figures it
+              {reading === 'partial' ? (
+                <div className="max-w-prose space-y-1 text-sm text-muted-foreground">
+                  <p>
+                    {runtime?.reconstruction
+                      ? t('dashboard.rebuilding.progress', runtime.reconstruction)
+                      : t('dashboard.rebuilding.progressUnobserved')}
+                  </p>
+                  {unpriced.length === 0 ? null : (
+                    <p>{t('dashboard.rebuilding.unpriced', { lines: f.list(unpriced) })}</p>
+                  )}
+                </div>
+              ) : null}
+              {!valued ? null : (
+                <>
+                  {/* What of the value is cash, and what was paid in: the two figures it
               is a change of and made of, on one line and a rung down. The cash
               is a balance, not a direction — no sign colour, `0` is a figure. */}
-              <p className="text-sm text-muted-foreground">
-                {/* The cash waits for the unit it is said in: the sentence names an
+                  <p className="text-sm text-muted-foreground">
+                    {/* The cash waits for the unit it is said in: the sentence names an
                 amount, and *dont 500,00 de liquidités* over a read that has not
                 landed would be a bare number in a sentence. */}
-                {row.cash_balance === null || currency === null
-                  ? null
-                  : t('accounts.cashLine', {
-                      amount: f.currency(row.cash_balance, currency),
-                    })}
-                {row.cash_balance === null || currency === null ? null : ' · '}
-                <span role="group" aria-label={t('accounts.figure.netContributed')}>
-                  {t('accounts.figure.netContributed')}{' '}
-                  <span className="tabular text-foreground">
-                    {f.currency(row.net_contributed, currency)}
-                  </span>
-                </span>
-              </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span role="group" aria-label={t('accounts.figure.gain')} className={PILL}>
-                  {/* The figure and its words are two nodes: the unit follows the
+                    {row.cash_balance === null || currency === null
+                      ? null
+                      : t('accounts.cashLine', {
+                          amount: f.currency(row.cash_balance, currency),
+                        })}
+                    {row.cash_balance === null || currency === null ? null : ' · '}
+                    <span role="group" aria-label={t('accounts.figure.netContributed')}>
+                      {t('accounts.figure.netContributed')}{' '}
+                      <span className="tabular text-foreground">
+                        {f.currency(row.net_contributed, currency)}
+                      </span>
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span role="group" aria-label={t('accounts.figure.gain')} className={PILL}>
+                      {/* The figure and its words are two nodes: the unit follows the
                   totals read, and a sentence composed around a bare amount
                   would be said, for a moment, about a figure with no unit. */}
-                  <SignedFigure
-                    amount={row.gain_absolu}
-                    text={f.signedCurrency(row.gain_absolu, currency)}
-                  />
-                  <span className="text-muted-foreground">{t('accounts.gain.pill')}</span>
-                  <Explain
-                    figure={t('accounts.figure.gain')}
-                    body="accounts.detail.gainTotal.explain"
-                    anchor="total-gain"
-                  />
-                </span>
-                {/* **The one rate on this screen, the annualised IRR** (#1112). The
+                      <SignedFigure
+                        amount={row.gain_absolu}
+                        text={f.signedCurrency(row.gain_absolu, currency)}
+                      />
+                      <span className="text-muted-foreground">{t('accounts.gain.pill')}</span>
+                      <Explain
+                        figure={t('accounts.figure.gain')}
+                        body="accounts.detail.gainTotal.explain"
+                        anchor="total-gain"
+                      />
+                    </span>
+                    {/* **The one rate on this screen, the annualised IRR** (#1112). The
                 TWR went into its bubble, which says why the two differ: three
                 rates on one head read as three answers to one question. A null
                 IRR keeps its pill, with the em dash. */}
-                <span role="group" aria-label={t('accounts.figure.xirr')} className={PILL}>
-                  <span className="text-muted-foreground">{t('accounts.figure.xirr')}</span>
-                  <SignedFigure
-                    amount={row.xirr}
-                    text={f.percent(row.xirr)}
-                    decimals={RATIO_DECIMALS}
-                  />
-                  {row.xirr == null ? null : (
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {t('accounts.xirr.unit')}
+                    <span role="group" aria-label={t('accounts.figure.xirr')} className={PILL}>
+                      <span className="text-muted-foreground">{t('accounts.figure.xirr')}</span>
+                      <SignedFigure
+                        amount={row.xirr}
+                        text={f.percent(row.xirr)}
+                        decimals={RATIO_DECIMALS}
+                      />
+                      {row.xirr == null ? null : (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {t('accounts.xirr.unit')}
+                        </span>
+                      )}
+                      {twr === null ? (
+                        <Explain
+                          figure={t('accounts.figure.xirr')}
+                          body="accounts.xirr.explain"
+                          anchor="xirr"
+                        />
+                      ) : (
+                        <Explain
+                          figure={t('accounts.figure.xirr')}
+                          body="accounts.xirr.explainTwr"
+                          values={{
+                            explain: t('accounts.xirr.explain'),
+                            twr: f.percent(twr),
+                          }}
+                          anchor="xirr"
+                        />
+                      )}
                     </span>
-                  )}
-                  {twr === null ? (
-                    <Explain
-                      figure={t('accounts.figure.xirr')}
-                      body="accounts.xirr.explain"
-                      anchor="xirr"
-                    />
-                  ) : (
-                    <Explain
-                      figure={t('accounts.figure.xirr')}
-                      body="accounts.xirr.explainTwr"
-                      values={{
-                        explain: t('accounts.xirr.explain'),
-                        twr: f.percent(twr),
-                      }}
-                      anchor="xirr"
-                    />
-                  )}
-                </span>
-              </div>
+                  </div>
+                </>
+              )}
             </Stat>
 
             {/* The curve, full width under the pills. Nothing at all while the
@@ -494,18 +534,22 @@ export function AccountDetail({
                   contribution at the head is what the ratio beside it divides,
                   so the dividends divide it too rather than acquiring a base of
                   their own. */}
-                  <p
-                    role="group"
-                    aria-label={t('accounts.detail.dividends.onContributed')}
-                    className="flex items-baseline gap-1.5 text-xs text-muted-foreground"
-                  >
-                    <span>{t('accounts.detail.dividends.onContributed')}</span>
-                    <span className="tabular">
-                      {dividendsOnContributed === null
-                        ? ABSENT
-                        : f.percentPoints(dividendsOnContributed * 100)}
-                    </span>
-                  </p>
+                  {/* Gone with a truncated row: its contribution is the
+                  denominator, and it is cut like everything else (#1285). */}
+                  {!valued ? null : (
+                    <p
+                      role="group"
+                      aria-label={t('accounts.detail.dividends.onContributed')}
+                      className="flex items-baseline gap-1.5 text-xs text-muted-foreground"
+                    >
+                      <span>{t('accounts.detail.dividends.onContributed')}</span>
+                      <span className="tabular">
+                        {dividendsOnContributed === null
+                          ? ABSENT
+                          : f.percentPoints(dividendsOnContributed * 100)}
+                      </span>
+                    </p>
+                  )}
                 </Stat>
 
                 {/* Dropped at **zero and only at zero**: an install whose transfers
@@ -513,7 +557,7 @@ export function AccountDetail({
                 a different sentence — the server has no day to bound the fees
                 by — and it renders, as a dash, because a total that goes out
                 incomplete owes the reader the cause under it (#775). */}
-                {row.transfer_fees === 0 ? null : (
+                {!valued || row.transfer_fees === 0 ? null : (
                   <Stat
                     size="figure"
                     label={t('accounts.figure.fees')}
@@ -529,7 +573,7 @@ export function AccountDetail({
                   </Stat>
                 )}
 
-                <ProjectedTax row={row} currency={currency} />
+                {valued ? <ProjectedTax row={row} currency={currency} /> : null}
               </div>
             )}
           </>
@@ -544,13 +588,15 @@ export function AccountDetail({
             level={3}
             title={t('accounts.detail.lines')}
             aside={
-              <span
-                role="group"
-                aria-label={t('accounts.figure.holdings')}
-                className="tabular text-2xl font-semibold"
-              >
-                {f.currency(row.holdings_value, currency)}
-              </span>
+              valued ? (
+                <span
+                  role="group"
+                  aria-label={t('accounts.figure.holdings')}
+                  className="tabular text-2xl font-semibold"
+                >
+                  {f.currency(row.holdings_value, currency)}
+                </span>
+              ) : undefined
             }
           >
             {/* **Four columns and a header row** (#838). The weight's bar is
