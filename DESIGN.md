@@ -145,6 +145,7 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
 - Cards exist only where you decide something.
 - Colour means something: ink for action, mint for money made, red for money lost, and the
   chart hues to tell the parts of a drawing apart.
+- Avoid unnecessary supporting text, descriptive copy, and redundant UI microcopy
 
 ## Colors
 
