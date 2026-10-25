@@ -142,8 +142,15 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
   }
 
   const failure = registry.isError ? registry.error : stored.isError ? stored.error : null
+  const registryRefusal = registry.isError ? providerRefusal(registry.error) : null
   const failureSaid =
-    failure === null ? null : (providerRefusal(failure)?.said ?? t(problemMessageKey(failure)))
+    failure === null
+      ? null
+      : registry.isError
+        ? registryRefusal !== null
+          ? t('settings.taxation.import.failed', { reason: registryRefusal.said })
+          : t(problemMessageKey(failure))
+        : problemSentence(t, failure)
   const carriers =
     replacing === null
       ? []
@@ -184,9 +191,7 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
       ) : (
         <div className="space-y-2">
           <p id="taxation-import-error" role="alert" className="text-sm text-destructive">
-            {registry.isError
-              ? t('settings.taxation.import.failed', { reason: failureSaid })
-              : problemSentence(t, failure)}
+            {failureSaid}
           </p>
           <div className="flex flex-wrap items-center gap-3">
             {registry.isError ? (
