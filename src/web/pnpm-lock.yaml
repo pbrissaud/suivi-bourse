@@ -195,7 +195,7 @@ importers:
         version: 9.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       ai:
         specifier: ^7.0.137
-        version: 7.0.148(zod@4.6.7)
+        version: 7.0.149(zod@4.6.7)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -241,7 +241,7 @@ importers:
         version: 2.6.2
       '@shadcn/helpers':
         specifier: ^0.3.0
-        version: 0.3.0(ai@7.0.148(zod@4.6.7))
+        version: 0.3.0(ai@7.0.149(zod@4.6.7))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.5(@types/node@26.6.5)(jiti@2.7.0))
@@ -302,12 +302,6 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@ai-sdk/gateway@4.0.121':
-    resolution: {integrity: sha512-cPNXvQ4B5OkmVAm98Dxe1fHdMthyqqqAG0HJx3D92NUa9FpcvkNxdAqiuZdeAhNAodFb9lBrslzzzEwxuVS53A==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/gateway@4.0.122':
     resolution: {integrity: sha512-QtROlSOKDDao+65TXfNpL8HFaRLFzjGGJUna4TE9zATfP9N8ZGwAxjLmP4/97DvFKlqBFDKI6E2sdH+b0dYwHQ==}
     engines: {node: '>=22'}
@@ -320,21 +314,11 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.65':
-    resolution: {integrity: sha512-LCugcsP8oWmdeI3BASf4Fuo1wiC6Qx0YrefFssl7n12s+LV4DNi5RdwWQrtrB4oek3GGNQRN/h/NSwVZM2eHKw==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/provider-utils@5.0.66':
     resolution: {integrity: sha512-wESzs2LhjES2V2+xUoLOMOJiRrzeN17Gx5P2pCby6yVibD2O9+JGTugSmJeV56/3yxd7ZNjqIOS/GZEC+8Zdug==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/provider@4.0.31':
-    resolution: {integrity: sha512-3wJnwVTFg8SwOyoZCv+ov7Re2GB+7IQnU5a5MYJACrtiWDDUHgqTBeeesq2MB2ddgojzL8hgWleltwpAgtUqfg==}
-    engines: {node: '>=22'}
 
   '@ai-sdk/provider@4.0.32':
     resolution: {integrity: sha512-n6GdH9HgsMyX7CkUn4L42BIY2QdSEvJTqOyigDLU9legdQKVNlOK8vWVvNY9uGLgjygku1wc5U4eLOhtWWKu6g==}
@@ -1945,12 +1929,6 @@ packages:
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
-
-  ai@7.0.148:
-    resolution: {integrity: sha512-FPgfIAhz/FrlzcvqTN7pGGibahR5rD19NXZWX9WQ1tskTic+CN+jxvubpreyq8uN1maIEHPwvZmil/3IYN8FIw==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
 
   ai@7.0.149:
     resolution: {integrity: sha512-DfAW8hsNKcHgn4najFQr1ssGjI1aHgBkStv1loR8uG3NPfgC9s50V27yqy8n86DnEVHvyGbFxezZdnu75uEiTg==}
@@ -4113,13 +4091,6 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@ai-sdk/gateway@4.0.121(zod@4.6.7)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.31
-      '@ai-sdk/provider-utils': 5.0.65(zod@4.6.7)
-      '@vercel/oidc': 3.2.0
-      zod: 4.6.7
-
   '@ai-sdk/gateway@4.0.122(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 4.0.32
@@ -4135,15 +4106,6 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.6.7
 
-  '@ai-sdk/provider-utils@5.0.65(zod@4.6.7)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.31
-      '@standard-schema/spec': 1.1.0
-      '@workflow/serde': 4.1.0
-      eventsource-parser: 3.1.1
-      undici: 7.30.0
-      zod: 4.6.7
-
   '@ai-sdk/provider-utils@5.0.66(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 4.0.32
@@ -4152,10 +4114,6 @@ snapshots:
       eventsource-parser: 3.1.1
       undici: 7.30.0
       zod: 4.6.7
-
-  '@ai-sdk/provider@4.0.31':
-    dependencies:
-      json-schema: 0.4.0
 
   '@ai-sdk/provider@4.0.32':
     dependencies:
@@ -5462,9 +5420,9 @@ snapshots:
 
   '@sec-ant/readable-stream@0.4.1': {}
 
-  '@shadcn/helpers@0.3.0(ai@7.0.148(zod@4.6.7))':
+  '@shadcn/helpers@0.3.0(ai@7.0.149(zod@4.6.7))':
     optionalDependencies:
-      ai: 7.0.148(zod@4.6.7)
+      ai: 7.0.149(zod@4.6.7)
 
   '@shadcn/react@0.3.1(@types/react@19.3.0)(react@19.3.1)':
     optionalDependencies:
@@ -5812,13 +5770,6 @@ snapshots:
     dependencies:
       mime-types: 3.0.2
       negotiator: 1.1.0
-
-  ai@7.0.148(zod@4.6.7):
-    dependencies:
-      '@ai-sdk/gateway': 4.0.121(zod@4.6.7)
-      '@ai-sdk/provider': 4.0.31
-      '@ai-sdk/provider-utils': 5.0.65(zod@4.6.7)
-      zod: 4.6.7
 
   ai@7.0.149(zod@4.6.7):
     dependencies:
