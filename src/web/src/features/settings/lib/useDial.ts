@@ -78,6 +78,11 @@ export function useDial(key: string) {
         return t('settings.row.atLeast', { min: kept.minimum, stored: stays })
       }
     }
+    if (problemMessageKey(error) === 'problem.unreachable') {
+      return kept.type === 'integer' && kept.value !== null
+        ? t('settings.row.unreachable.stored', { stored: Number(kept.value) })
+        : t('settings.row.unreachable')
+    }
     return t('settings.row.notSaved', { reason: t(problemMessageKey(error)) })
   }
 

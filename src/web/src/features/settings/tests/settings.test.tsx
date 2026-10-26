@@ -365,7 +365,9 @@ describe('a number saves itself', () => {
     await user.clear(field)
     await user.type(field, '300{Enter}')
 
-    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent('Non enregistré :')
+    expect((await within(block('Avancé')).findByRole('alert')).textContent).toBe(
+      'Non enregistré : l’application ne répond pas. Enregistré : 120.',
+    )
     expect(field).toHaveValue(300)
 
     refuse = false
@@ -660,8 +662,8 @@ describe('the currency row', () => {
 
     await user.selectOptions(await screen.findByLabelText('Devise de base'), 'CHF')
 
-    expect(await within(block('Portefeuille')).findByRole('alert')).toHaveTextContent(
-      'Non enregistré :',
+    expect((await within(block('Portefeuille')).findByRole('alert')).textContent).toBe(
+      'Non enregistré : l’application ne répond pas.',
     )
   })
 })
@@ -1051,11 +1053,30 @@ describe('importing a taxation model', () => {
     )
     const { user, taxation } = await openImport()
 
-    expect(await within(taxation).findByRole('alert')).toHaveTextContent(
-      'Registre injoignable : OSError: HTTP 503.',
+    expect((await within(taxation).findByRole('alert')).textContent).toBe(
+      'Registre injoignable : OSError: HTTP 503',
     )
     expect(taxation).toHaveTextContent('Vous pouvez aussi écrire un modèle.')
     expect(within(taxation).getByRole('button', { name: 'Nouveau modèle' })).toBeEnabled()
+
+    await user.click(within(taxation).getByRole('button', { name: 'Réessayer' }))
+    await waitFor(() => expect(within(taxation).queryByRole('alert')).toBeNull())
+    expect(answer).toBe(2)
+  })
+
+  it('blames the app, not the registry, when the app does not answer', async () => {
+    let answer = 0
+    server.use(
+      http.post(ROUTES.taxationRegistry, () => {
+        answer += 1
+        return answer === 1 ? HttpResponse.error() : HttpResponse.json({ items: [aRegistryItem()] })
+      }),
+    )
+    const { user, taxation } = await openImport()
+
+    expect((await within(taxation).findByRole('alert')).textContent).toBe(
+      'L’application ne répond pas.',
+    )
 
     await user.click(within(taxation).getByRole('button', { name: 'Réessayer' }))
     await waitFor(() => expect(within(taxation).queryByRole('alert')).toBeNull())
