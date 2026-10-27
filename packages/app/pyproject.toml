@@ -45,7 +45,7 @@ dependencies = [
     # process, streamed to the front in the Vercel AI SDK's UI protocol. Pinned
     # like uvicorn: `agent_routes` subclasses its event stream, and the stream's
     # `sdk_version` is held to the front's `ai` major.
-    "pydantic-ai-slim[mcp,ui,openai,anthropic]==2.60.0",
+    "pydantic-ai-slim[mcp,ui,openai,anthropic]==2.61.0",
 ]
 
 [tool.uv.sources]
