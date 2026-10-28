@@ -492,8 +492,11 @@ function AgentConversation() {
         </p>
       ) : null}
       <div className="min-h-0 flex-1">
-        {/* A thread read back opens on its last question, not halfway down its answer. */}
-        <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor">
+        {/* A thread read back opens on its last question, not halfway down its answer.
+            And it stays there (#1368): the scroller follows the bottom only while
+            an answer streams — proposal cards, read once the turn has ended,
+            grow the thread under the reader without pulling the view down. */}
+        <MessageScrollerProvider autoScroll={busy} defaultScrollPosition="last-anchor">
           <MessageScroller>
             <MessageScrollerViewport aria-label={t('agent.messages')} className="px-4">
               {/* Silenced: the polite region below announces the whole answer once. */}

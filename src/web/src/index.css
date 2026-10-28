@@ -438,6 +438,12 @@
   progress::-webkit-progress-value {
     background-color: var(--primary);
   }
+  /* Chromium's blue clear × on `type="search"` (#1388): the one blue thing in
+     Atelier, and in the palette a second cross beside the dialog's close. The
+     field still clears on Escape. */
+  input[type="search"]::-webkit-search-cancel-button {
+    appearance: none;
+  }
   progress::-moz-progress-bar {
     background-color: var(--primary);
   }

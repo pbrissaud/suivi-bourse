@@ -534,7 +534,7 @@ export function Ledger({
                 'flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none',
                 // On a phone the list is long and the page scrolls: the ticked
                 // rows' actions stay under the thumb while there are some.
-                isMobile && selected.length > 0 && 'sticky top-0 z-20 bg-background',
+                isMobile && selected.length > 0 && 'sticky top-14 z-20 bg-background',
               )}
             >
               <p className="text-muted-foreground">

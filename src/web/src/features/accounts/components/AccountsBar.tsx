@@ -105,7 +105,7 @@ export function AccountsBar({
     <div
       role="group"
       aria-label={t('accounts.rail.label')}
-      className="sticky top-0 z-10 -mt-1.5 flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5"
+      className="sticky top-14 z-10 -mt-1.5 flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5"
     >
       {rows.map((row, index) => {
         const share = allValued ? (weights.get(row.id) ?? null) : null

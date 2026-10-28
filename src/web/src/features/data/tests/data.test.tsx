@@ -2791,7 +2791,7 @@ describe('the ledger on a phone (#1339)', () => {
 
     expect(line()).not.toHaveClass('sticky')
     await user.click(within(items()[0]).getByRole('checkbox'))
-    expect(line()).toHaveClass('sticky', 'top-0', 'z-20', 'bg-background')
+    expect(line()).toHaveClass('sticky', 'top-14', 'z-20', 'bg-background')
     await user.click(screen.getByRole('button', { name: 'Désélectionner' }))
     expect(line()).not.toHaveClass('sticky')
   })

@@ -195,6 +195,28 @@ describe('the navigation, eight entries in six and two', () => {
     const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
     expect(within(drawer).getAllByRole('link')).toHaveLength(8)
   })
+
+  it('closes once a page is chosen, by an entry or by Back (#1375)', async () => {
+    setViewportWidth(390)
+    const { user, router } = renderApp({ url: '/ledger' })
+    const toggle = await screen.findByRole('button', { name: 'Afficher ou masquer la navigation' })
+
+    await user.click(toggle)
+    const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
+    await user.click(within(drawer).getByRole('link', { name: 'Comptes' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/accounts'))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument(),
+    )
+
+    await user.click(toggle)
+    await screen.findByRole('dialog', { name: 'Navigation' })
+    router.history.back()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/ledger'))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument(),
+    )
+  })
 })
 
 describe('the bell is the one global indicator (#829)', () => {
