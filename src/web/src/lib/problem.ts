@@ -229,8 +229,17 @@ export function problemMessage(error: unknown): {
   if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.invalidFile) {
     // **The refused file of a batch is named** (#1266): one refused file refuses
     // them all, and the reader's next move is to remove that one.
+    // **And the server's reason is said** (#1377): it is the one thing that names
+    // the column, the row or the value to repair, and the docs promise it. The
+    // second exception to *never by `detail`*, for `providerRefused`'s reason:
+    // the reader acts on it in the file, where those words mean something.
     const file = refusedFile(error)
+    const reason = error.detail?.trim() || null
+    if (file !== null && reason !== null) {
+      return { message: 'problem.invalidFile.named.reason', values: { file, reason } }
+    }
     if (file !== null) return { message: 'problem.invalidFile.named', values: { file } }
+    if (reason !== null) return { message: 'problem.invalidFile.reason', values: { reason } }
   }
   if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.taxationModelInUse) {
     // **Named, or not said at all.** The point of the refusal is where to go
@@ -264,6 +273,16 @@ export function problemMessage(error: unknown): {
 export function refusedFile(error: unknown): string | null {
   return error instanceof ApiProblem && error.type === PROBLEM_TYPES.invalidFile
     ? text(error, 'file')
+    : null
+}
+
+/**
+ * The form field a `422` refused, by the `key` the server names it with (#1395),
+ * or `null` when the refusal is about no field in particular.
+ */
+export function refusedKey(error: unknown): string | null {
+  return error instanceof ApiProblem && error.type === PROBLEM_TYPES.badRequest
+    ? text(error, 'key')
     : null
 }
 

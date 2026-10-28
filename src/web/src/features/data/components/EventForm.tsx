@@ -68,7 +68,7 @@ import {
   titlesFor,
   type Title,
 } from '@/features/data/lib/ledger'
-import { entryGone, problemSentence } from '@/lib/problem'
+import { entryGone, problemSentence, refusedKey } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
@@ -98,6 +98,16 @@ const DISPLAY_ORDER = [
   'amount',
   'fee',
 ] as const satisfies readonly FieldName[]
+
+/**
+ * The field a server refusal names (#1395), by its `key` — `unit_price` is the
+ * one spelled differently — or `null` when it names none this form draws.
+ */
+function refusedField(error: unknown): FieldName | null {
+  const key = refusedKey(error)
+  const name = key === 'unit_price' ? 'unitPrice' : key
+  return DISPLAY_ORDER.find((field) => field === name) ?? null
+}
 
 /** The sentence under Ticker for a free ticker nobody has confirmed (#1268). */
 const UNKNOWN_SYMBOL = 'data.form.symbol.unknown' satisfies MessageKey
@@ -246,6 +256,10 @@ export function EventForm({
       // panel stays open holding what was typed, and the one list that went
       // stale is re-read so the row it is about stops being displayed.
       if (entryGone(error)) void queryClient.invalidateQueries({ queryKey: ['events'] })
+      // A value the server refused is marked on its field, like one this form
+      // could not read (#1395).
+      const field = refusedField(error)
+      if (field !== null) setErrors({ [field]: 'data.form.refused' })
     },
   })
 
@@ -253,7 +267,9 @@ export function EventForm({
   // again. The native `focus()` scrolls the panel to it and a screen reader
   // reads it (#1268).
   useEffect(() => {
-    if (write.error) refusal.current?.focus()
+    if (!write.error) return
+    const field = refusedField(write.error)
+    ;(field === null ? refusal.current : document.getElementById(`event-${field}`))?.focus()
   }, [write.error])
 
   /**
@@ -512,6 +528,18 @@ export function EventForm({
     )
     const fee = number('fee', false, fields.fee)
     const amount = number('amount', true, fields.amount)
+
+    // **The server's rules, said on the field before the round trip** (#1395):
+    // the direction is the type's, never the sign, so these are above zero.
+    function positive(field: FieldName, value: number | null) {
+      if (value !== null && value <= 0) found[field] = 'data.form.number.positive'
+    }
+    positive('quantity', quantity)
+    if (fields.unitPrice === 'required') positive('unitPrice', unitPrice)
+    positive('amount', amount)
+    if (fee !== null && fee < 0) found.fee = 'data.form.fee.negative'
+    else if (type === 'DIVIDEND' && fee !== null && amount !== null && amount > 0 && fee > amount)
+      found.fee = 'data.form.fee.overAmount'
 
     setErrors(found)
     if (Object.values(found).some(Boolean)) {
@@ -886,7 +914,7 @@ export function EventForm({
                 )}
               </Field>
 
-              {write.error ? (
+              {write.error && refusedField(write.error) === null ? (
                 <Refusal ref={refusal}>{problemSentence(t, write.error)}</Refusal>
               ) : null}
 

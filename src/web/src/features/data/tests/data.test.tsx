@@ -13,7 +13,16 @@
  *    only discriminant a row owns — which is why the search is not a
  *    convenience.
  */
-import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -136,8 +145,8 @@ describe('the columns of the ledger', () => {
     ])
   })
 
-  it('hands a trade’s Montant cell to its quantity below 896 px, and to a dash from there (#1355)', async () => {
-    renderData([anEvent({ id: 'a', quantity: 0.1661 })])
+  it('hands a grant’s Montant cell to its quantity below 896 px, and to a dash from there (#1355)', async () => {
+    renderData([anEvent({ id: 'a', event_type: 'GRANT', quantity: 0.1661 })])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     // jsdom evaluates no container query: the two spans and their classes are the contract.
@@ -1752,6 +1761,52 @@ describe('the create form, which is the onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
     expect(await screen.findByText('Ce n’est pas un nombre.')).toBeInTheDocument()
   })
+
+  it('says on the field that an amount is above zero, before the round trip (#1395)', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
+    await user.type(screen.getByLabelText('Montant'), '-100')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    expect(
+      await screen.findByText('Ce champ attend un nombre supérieur à zéro.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Montant')).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('marks the field the server refused, by the key it names (#1395)', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    server.use(
+      http.post(ROUTES.events, () =>
+        HttpResponse.json(
+          {
+            status: 422,
+            type: PROBLEM_TYPES.badRequest,
+            title: 'Invalid request',
+            key: 'amount',
+            detail: 'amount must be positive for DEPOSIT',
+          },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    await openTheForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+
+    fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
+    await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
+    await user.type(screen.getByLabelText('Montant'), '100')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    expect(await screen.findByText('L’application a refusé cette valeur.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Montant')).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.queryByText('L’application a refusé la requête faite par cette page.'),
+    ).not.toBeInTheDocument()
+  })
 })
 
 describe('the ledger at zero', () => {
@@ -2719,7 +2774,9 @@ describe('the ledger on a phone (#1339)', () => {
   })
 
   it('shows the date, the type, the identity, the amount and the account of an item', async () => {
-    await renderPhone([anEvent({ id: 'a', event_type: 'DIVIDEND', amount: 480, account: 'alpha' })])
+    await renderPhone([
+      anEvent({ id: 'a', event_type: 'DIVIDEND', amount: 480, fee: null, account: 'alpha' }),
+    ])
 
     const item = items()[0]
     expect(within(item).getByRole('button', { name: 'ZZA' })).toBeInTheDocument()
@@ -2732,16 +2789,18 @@ describe('the ledger on a phone (#1339)', () => {
     expect(within(item).queryByText(/Ordre au marché/)).not.toBeInTheDocument()
   })
 
-  it('shows `× quantity` on a trade, which has no amount, and the amount on a transfer (#1355)', async () => {
+  it('shows the amount on a trade and a transfer, and `× quantity` on a grant (#1355, #1425)', async () => {
     await renderPhone([
-      anEvent({ id: 'a', quantity: 0.1661 }),
-      anEvent({ id: 'b', event_type: 'DEPOSIT', symbol: null, name: null, amount: 100 }),
+      anEvent({ id: 'a', event_type: 'GRANT', quantity: 0.1661 }),
+      anEvent({ id: 'b', event_type: 'DEPOSIT', symbol: null, name: null, amount: 100, fee: null }),
+      anEvent({ id: 'c', quantity: 4, unit_price: 120, fee: 1.5 }),
     ])
 
-    const [buy, deposit] = items()
-    expect(within(buy).getByText(/×\s0,1661/)).toHaveClass('text-muted-foreground')
-    expect(within(buy).queryByText('—')).not.toBeInTheDocument()
-    expect(within(deposit).getByText(/100,00/)).toBeInTheDocument()
+    const [grant, deposit, buy] = items()
+    expect(within(grant).getByText(/×\s0,1661/)).toHaveClass('text-muted-foreground')
+    expect(within(grant).queryByText('—')).not.toBeInTheDocument()
+    expect(within(deposit).getByText(/\+100,00/)).toBeInTheDocument()
+    expect(within(buy).getByText(/481,50/)).toBeInTheDocument()
   })
 
   it('opens the editor from the identity, and not from the checkbox', async () => {
@@ -2861,7 +2920,7 @@ describe('the ledger on a phone (#1339)', () => {
   })
 })
 
-describe('EventFigure (#1355)', () => {
+describe('EventFigure (#1355, #1425)', () => {
   const draw = (event: LedgerEvent) =>
     render(
       <I18nProvider>
@@ -2871,17 +2930,33 @@ describe('EventFigure (#1355)', () => {
       </I18nProvider>,
     ).getByTestId('figure')
 
-  it('draws the amount of a type that declares one', () => {
-    expect(draw(anEvent({ event_type: 'DEPOSIT', amount: 100 }))).toHaveTextContent(/^100,00/)
+  it('draws the cash an event moved, fees in, its direction in its sign', () => {
+    // The sign and the digits, whatever the language the test runs in.
+    const said = (event: LedgerEvent) => {
+      const text = draw(event).textContent ?? ''
+      cleanup()
+      return text.replace(/[^\d+\-\u2212]/g, '').replace('\u2212', '-')
+    }
+    // 5 × 541,20 + 1,35: what left the account, as the server books it.
+    expect(said(anEvent({ quantity: 5, unit_price: 541.2, fee: 1.35 }))).toBe('-270735')
+    expect(said(anEvent({ event_type: 'SELL', quantity: 5, unit_price: 541.2, fee: 1.35 }))).toBe(
+      '+270465',
+    )
+    expect(said(anEvent({ event_type: 'DEPOSIT', amount: 100, fee: null }))).toBe('+10000')
+    expect(said(anEvent({ event_type: 'WITHDRAWAL', amount: 100, fee: 2 }))).toBe('-10200')
+    expect(said(anEvent({ event_type: 'DIVIDEND', amount: 10, fee: 1.5 }))).toBe('+850')
+    // Never in colour: the sign is fixed by the type.
+    const figure = draw(anEvent({ event_type: 'DIVIDEND', amount: 10 }))
+    expect(figure.innerHTML).not.toMatch(/text-(gain|loss)/)
   })
 
-  it('draws `× quantity` in muted text for a type that declares none', () => {
-    const figure = draw(anEvent({ quantity: 0.1661 }))
+  it('draws `× quantity` in muted text for a grant, which moves no cash', () => {
+    const figure = draw(anEvent({ event_type: 'GRANT', quantity: 0.1661 }))
     expect(figure).toHaveTextContent(/^×\s0,1661$/)
     expect(figure.firstElementChild).toHaveClass('text-muted-foreground')
   })
 
   it('draws a dash, never `× —`, when the quantity is unknown', () => {
-    expect(draw(anEvent({ quantity: null }))).toHaveTextContent(/^—$/)
+    expect(draw(anEvent({ event_type: 'GRANT', quantity: null }))).toHaveTextContent(/^—$/)
   })
 })

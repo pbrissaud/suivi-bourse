@@ -66,6 +66,8 @@ export type Receipt =
   | {
       kind: 'import.forecast'
       count: number
+      /** What of the file the ledger already has: said instead when nothing is new. */
+      duplicates: number
       from: string
       to: string
       accounts: number
@@ -104,6 +106,7 @@ export type Receipt =
   | {
       kind: 'import.written'
       count: number
+      duplicates: number
       from: string
       to: string
       accounts: number
@@ -140,29 +143,32 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
       return { message: 'receipt.export.saved', values: { file: receipt.file } }
     case 'import.checking':
       return { message: 'receipt.import.checking', values: { file: receipt.filename } }
+    // The same values, one moment earlier — see the type above.
     case 'import.written':
+    case 'import.forecast': {
+      const done = receipt.kind === 'import.written'
+      // **Nothing new is its own sentence** (#1397): the period and the counts
+      // describe the file, not what is written, and *0 events, from … to …*
+      // promises a period nothing lands in.
+      if (receipt.count === 0 && receipt.duplicates > 0) {
+        return {
+          message: done ? 'receipt.import.nothingNew.written' : 'receipt.import.nothingNew',
+          values: { count: receipt.duplicates },
+        }
+      }
       return {
-        message: 'receipt.import.written',
+        message: done ? 'receipt.import.written' : 'receipt.import.forecast',
         values: {
           count: receipt.count,
+          // One day reads as one day, not as a range from it to itself (#1397).
+          span: receipt.from === receipt.to ? 'day' : 'range',
           from: receipt.from,
           to: receipt.to,
           accounts: receipt.accounts,
           symbols: receipt.symbols,
         },
       }
-    // The same five values, one moment earlier — see the type above.
-    case 'import.forecast':
-      return {
-        message: 'receipt.import.forecast',
-        values: {
-          count: receipt.count,
-          from: receipt.from,
-          to: receipt.to,
-          accounts: receipt.accounts,
-          symbols: receipt.symbols,
-        },
-      }
+    }
     // **A file that wrote nothing has its own sentence**, not the other one at
     // zero: *0 lines written, from — to —* would state a period the file does
     // not carry, and no plural rule can invent the two days that are missing.

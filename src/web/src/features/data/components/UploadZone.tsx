@@ -654,6 +654,7 @@ function written(
       : receiptMessage({
           kind: 'import.written',
           count: receipt.written,
+          duplicates: receipt.duplicates,
           from: f.date(receipt.period.from),
           to: f.date(receipt.period.to),
           accounts: receipt.accounts.length,

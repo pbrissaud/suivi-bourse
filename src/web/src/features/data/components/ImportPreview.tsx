@@ -441,9 +441,12 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
                   <span className="text-sm font-medium tabular-nums">
                     {foreseen(t, f, forecast.writing)}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('data.import.skipped', { count: forecast.writing.duplicates })}
-                  </span>
+                  {/* Nothing to write says it in the sentence above (#1397). */}
+                  {forecast.writing.written > 0 ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t('data.import.skipped', { count: forecast.writing.duplicates })}
+                    </span>
+                  ) : null}
                 </>
               ) : null}
             </span>
@@ -455,6 +458,8 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
               disabled={
                 !ready ||
                 forecast.writing === undefined ||
+                // An import that writes nothing is not on offer (#1397).
+                forecast.writing.written === 0 ||
                 missing.length > 0 ||
                 currencyMissing ||
                 upload.pending
@@ -969,6 +974,7 @@ function FilesBlock({
                       ? t('data.import.files.none')
                       : t('data.import.files.row', {
                           count: own.rows,
+                          span: own.period.from === own.period.to ? 'day' : 'range',
                           from: f.date(own.period.from),
                           to: f.date(own.period.to),
                         })}
@@ -1146,6 +1152,7 @@ function covers(
   if (forecast.period === null) return t('data.import.file.rows', { count: forecast.rows })
   return t('data.import.file.covers', {
     count: forecast.rows,
+    span: forecast.period.from === forecast.period.to ? 'day' : 'range',
     from: f.date(forecast.period.from),
     to: f.date(forecast.period.to),
     symbols: forecast.symbols.length,
@@ -1176,6 +1183,7 @@ function foreseen(
       : receiptMessage({
           kind: 'import.forecast',
           count: writing.written,
+          duplicates: writing.duplicates,
           from: f.date(writing.period.from),
           to: f.date(writing.period.to),
           accounts: writing.accounts.length,
