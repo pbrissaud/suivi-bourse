@@ -4426,7 +4426,7 @@ def test_health_names_each_job_with_its_last_pass_and_its_verdict(tmp_path):
     assert body['status'] == 'ok'
     assert body['jobs']['scrape'] == {
         'status': 'ok', 'at': '2026-08-05T15:00:00+00:00', 'verdict': 'open',
-        'held': 1, 'attention': []}
+        'held': 1, 'closed': 0, 'attention': []}
     assert body['jobs']['backfill']['verdict'] == 'complete'
     assert body['jobs']['backfill']['complete'] == 1
     assert body['jobs']['backfill']['in_scope'] == 1

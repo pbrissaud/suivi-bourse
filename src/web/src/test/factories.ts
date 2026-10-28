@@ -1140,7 +1140,7 @@ export function aHealth(overrides: Partial<HealthState> = {}): HealthState {
 
 export function aHealthJobs(overrides: Partial<HealthJobs> = {}): HealthJobs {
   return {
-    scrape: { status: 'ok', at: NOW, verdict: 'open', held: 3, attention: [] },
+    scrape: { status: 'ok', at: NOW, verdict: 'open', held: 3, closed: 0, attention: [] },
     backfill: {
       status: 'ok',
       at: NOW,
@@ -1191,6 +1191,7 @@ export function aFrozenScrape(): HealthState {
         at: '2026-02-24T17:35:00.000Z',
         verdict: 'frozen',
         held: 3,
+        closed: 0,
         attention: ['ZETA'],
       },
     }),

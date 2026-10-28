@@ -277,6 +277,8 @@ function verdictOf(key: JobKey, jobs: HealthJobs): [MessageKey, MessageValues] {
       {
         verdict: job.verdict,
         held: job.held,
+        polled: job.held - job.closed,
+        closed: job.closed,
         count: job.attention.length,
         symbols: job.attention.join(', '),
       },

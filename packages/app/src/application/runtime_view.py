@@ -430,6 +430,7 @@ def health_scrape(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
         'at': instants.iso(max(passes)) if passes else None,
         'verdict': verdict,
         'held': len(held),
+        'closed': sum(1 for symbol in held if symbol.pill == PILL_CLOSED),
         'attention': sorted(symbol.symbol for symbol in held
                             if symbol.pill in _SCRAPE_ATTENTION),
     }
