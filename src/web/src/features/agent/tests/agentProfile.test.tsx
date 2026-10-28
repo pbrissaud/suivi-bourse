@@ -131,7 +131,7 @@ describe('the proposal card (5A)', () => {
     )
     const { user, main } = await openPage()
 
-    expect(await within(main).findByText(/^Je note : TMI 30\s% \?$/)).toBeInTheDocument()
+    expect(await within(main).findByText(/^Retenir pour la suite : TMI 30\s%$/)).toBeInTheDocument()
     expect(asked).toEqual([ID])
     threadWithProposal(aProposal('merged'))
     await user.click(within(main).getByRole('button', { name: 'Confirmer' }))
@@ -231,7 +231,7 @@ describe('the proposal card (5A)', () => {
     const { main } = await openPage()
 
     expect(
-      await within(main).findByText(/^Je note : revenu de 54\s321,00\s€ \?$/),
+      await within(main).findByText(/^Retenir pour la suite : revenu de 54\s321,00\s€$/),
     ).toBeInTheDocument()
   })
 
@@ -247,7 +247,7 @@ describe('the proposal card (5A)', () => {
     expect(
       await within(main).findByText('Proposition d’un fait pour votre profil.'),
     ).toBeInTheDocument()
-    expect(within(main).queryByText(/Je note/)).not.toBeInTheDocument()
+    expect(within(main).queryByText(/Retenir pour la suite/)).not.toBeInTheDocument()
     expect(asked).toEqual([])
   })
 
@@ -259,7 +259,7 @@ describe('the proposal card (5A)', () => {
     expect(
       await within(main).findByText('Proposition d’un fait pour votre profil.'),
     ).toBeInTheDocument()
-    expect(within(main).queryByText(/Je note/)).not.toBeInTheDocument()
+    expect(within(main).queryByText(/Retenir pour la suite/)).not.toBeInTheDocument()
   })
 })
 

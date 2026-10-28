@@ -462,9 +462,7 @@ describe('the import over a populated ledger (#1278)', () => {
 
     fireEvent.dragOver(table, dragOf([aFile()]))
     // While a file is over the table, it says what dropping it does.
-    expect(
-      screen.getByText(/Déposez ici : vous verrez ce que les fichiers feraient/),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Déposez ici')).toBeInTheDocument()
 
     fireEvent.drop(table, dragOf([aFile()]))
 
@@ -507,8 +505,8 @@ describe('an install that has imported nothing', () => {
       }),
     )
     renderImports({ events: [] })
-    const band = (await screen.findByText(/Déposez un ou plusieurs fichiers \.csv ou \.xlsx/))
-      .parentElement?.parentElement as HTMLElement
+    const band = (await screen.findByText(/Vous verrez ce que l’import ferait/)).parentElement
+      ?.parentElement as HTMLElement
     // No export beside it, and no toolbar: the band is the page.
     expect(within(band).queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument()
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()

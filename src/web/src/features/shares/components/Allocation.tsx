@@ -77,19 +77,16 @@ export function AllocationScope({
   className?: string
 }) {
   const { t } = useI18n()
-  if (slices.length === 0) return null
   const folded = foldedCount(slices)
-  const placed = folded === 0 ? slices.length : slices.length - 1 + folded
+  // Nothing folded: the list under it already counts itself (#1412).
+  if (slices.length === 0 || folded === 0) return null
+  const placed = slices.length - 1 + folded
   const top = slices.length - 1
   return (
     <span className={className}>
       {unit === 'lines'
-        ? folded === 0
-          ? t('shares.allocation.scope.all', { lines: placed })
-          : t('shares.allocation.scope', { lines: placed, top, folded })
-        : folded === 0
-          ? t('dashboard.allocation.scope.accounts.all', { accounts: placed })
-          : t('dashboard.allocation.scope.accounts', { accounts: placed, top, folded })}
+        ? t('shares.allocation.scope', { lines: placed, top, folded })
+        : t('dashboard.allocation.scope.accounts', { accounts: placed, top, folded })}
     </span>
   )
 }

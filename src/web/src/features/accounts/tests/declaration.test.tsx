@@ -118,7 +118,6 @@ describe('the form loses `currency`', () => {
     for (const absent of ['Devise', 'Currency', 'Devise du compte']) {
       expect(within(panel).queryByLabelText(absent)).not.toBeInTheDocument()
     }
-    expect(panel).toHaveTextContent(/n’a pas de devise propre/)
   })
 
   it('declares the account and takes the panel away', async () => {
@@ -313,7 +312,9 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // since #916 it is the whole of what the panel can change: there is no
     // second column left, so nothing can make the rename conditional on
     // answering a second question.
-    const { user } = renderAccounts(noAccountsDeclared(), [])
+    const { user } = renderAccounts(noAccountsDeclared(), [
+      anEvent({ account: DEFAULT_ACCOUNT_ID }),
+    ])
     const panel = await openPanel(user, 'Non affecté')
 
     let patched: unknown = null
@@ -356,11 +357,13 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
 describe('the declaration is reachable at every N', () => {
   it('is there at N = 1, which is what the true first run is', async () => {
     // Absent, it left the install with a page and no file unable to declare a
-    // first account at all.
+    // first account at all. With nothing recorded either, the page is empty
+    // and says so, rather than opening a « Non affecté » nobody made (#1435).
     renderAccounts(noAccountsDeclared(), [])
 
-    expect(await detail('Non affecté')).toBeInTheDocument()
-    expect(within(rail()).getAllByRole('link')).toHaveLength(1)
+    expect(await screen.findByText('Aucun compte déclaré')).toBeInTheDocument()
+    expect(screen.getByText(/ni PEA ni compte-titres/)).toBeInTheDocument()
+    expect(screen.queryByText('Non affecté')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
   })
 

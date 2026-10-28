@@ -458,19 +458,16 @@ describe('no range control, and one rate in the head (#1112)', () => {
     expect(within(detail).queryByRole('group', { name: 'perf' })).not.toBeInTheDocument()
   })
 
-  it('states on the drawing itself the extent it covers', async () => {
-    // What is drawn is the account's history end to end.
+  it('draws the account’s curve with no caption restating its extent (#1412)', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
 
-    await waitFor(() =>
-      expect(detail).toHaveTextContent('Dessiné sur toute l’histoire de ce compte'),
-    )
     expect(
       within(detail).getByRole('region', {
         name: 'Valeur face à ce que vous avez versé',
       }),
     ).toBeInTheDocument()
+    expect(detail).not.toHaveTextContent('Dessiné sur toute l’histoire de ce compte')
   })
 
   it('draws nothing where the account has no value to draw', async () => {
@@ -489,7 +486,7 @@ describe('no range control, and one rate in the head (#1112)', () => {
 })
 
 describe('an account with nothing recorded says what to do', () => {
-  it('replaces the head with one empty state and its two ways forward', async () => {
+  it('replaces the head with one empty state and its one way forward (#1435)', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))))
     const { user } = renderAccounts(
       [anAccountWithoutSeries(), ...defaultAccounts().slice(1)],
@@ -501,13 +498,10 @@ describe('an account with nothing recorded says what to do', () => {
     expect(within(detail).getByText('Rien d’enregistré sur ce compte')).toBeVisible()
     expect(within(detail).getByText(/Importez le fichier de votre courtier/)).toBeVisible()
     expect(
-      within(detail).getByRole('link', { name: 'Saisir un événement' }).getAttribute('href'),
-    ).toContain('open=event')
-    expect(
-      within(detail).getByRole('link', {
-        name: 'Importer depuis le grand livre',
-      }),
-    ).toBeVisible()
+      within(detail).getByRole('link', { name: 'Aller au grand livre' }).getAttribute('href'),
+    ).toBe('/ledger')
+    const empty = detail.querySelector('[data-empty]') as HTMLElement
+    expect(within(empty).getAllByRole('link')).toHaveLength(1)
     // Name row stays; head, reason line and figures row go.
     expect(within(detail).getByRole('button', { name: /Modifier/ })).toBeInTheDocument()
     expect(within(detail).queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
@@ -768,7 +762,7 @@ describe('the detail reads like the dashboard’s head (#1277)', () => {
       return found
     })
 
-    for (const name of ['Dividendes encaissés', 'Frais cumulés', 'Impôt projeté']) {
+    for (const name of ['Dividendes encaissés', 'Frais de virement', 'Impôt projeté']) {
       expect(within(figures).getByRole('group', { name })).toBeInTheDocument()
     }
     expect(figures.className).toContain('lg:auto-cols-fr')
@@ -783,14 +777,16 @@ describe('the detail reads like the dashboard’s head (#1277)', () => {
         name: /^(Dividendes|Frais|Impôt)/,
       }),
     ).toHaveLength(2)
-    expect(within(figures).queryByRole('group', { name: 'Frais cumulés' })).not.toBeInTheDocument()
+    expect(
+      within(figures).queryByRole('group', { name: 'Frais de virement' }),
+    ).not.toBeInTheDocument()
     zeroFees.unmount()
 
     const noModel = renderAccounts()
     detail = await open(noModel.user, 'Alpha')
     figures = await waitFor(() => row(detail, 'figures') as HTMLElement)
     expect(within(figures).queryByRole('group', { name: 'Impôt projeté' })).not.toBeInTheDocument()
-    expect(within(figures).getByRole('group', { name: 'Frais cumulés' })).toBeInTheDocument()
+    expect(within(figures).getByRole('group', { name: 'Frais de virement' })).toBeInTheDocument()
   })
 
   it('has no figures row while the positions are in flight, and says one refusal if refused', async () => {

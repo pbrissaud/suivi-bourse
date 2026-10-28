@@ -191,7 +191,6 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
       }
     >
       <div className="space-y-6">
-        <p className="max-w-prose text-xs text-muted-foreground">{t('settings.agent.note')}</p>
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">{t('settings.agent.step.provider')}</legend>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

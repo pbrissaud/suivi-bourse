@@ -182,7 +182,7 @@ describe('the comparison', () => {
 
     // The load-bearing rule: a gap computed over half a series is a **wrong**
     // number, not a short one — −38 % that repairs itself an hour later.
-    expect(await screen.findByText(/Reconstitution de l’historique de CW8.PA/)).toBeInTheDocument()
+    expect(await screen.findByText(/Reconstitution de l’historique/)).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
   })
@@ -198,7 +198,7 @@ describe('the comparison', () => {
     // The series is complete and the ratios behind it are not, so a replay
     // counting units could walk through a split it cannot see. Same wait, same
     // panel: a second explanation for one wait is one explanation too many.
-    expect(await screen.findByText(/Reconstitution de l’historique de CW8.PA/)).toBeInTheDocument()
+    expect(await screen.findByText(/Reconstitution de l’historique/)).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
   })
 
@@ -210,8 +210,8 @@ describe('the comparison', () => {
     // Named for what it is a reference **for**: *Référence* alone is the page's
     // own title, and a control sharing its page's name says nothing.
     expect(screen.getByRole('combobox', { name: 'Référence de comparaison' })).toBeInTheDocument()
-    // And the wait is announced before it is discovered.
-    expect(screen.getByText(/la page se remplira toute seule/)).toBeInTheDocument()
+    // The wait is said where it happens, by the rebuild panel (#1412).
+    expect(screen.queryByText(/la page se remplira toute seule/)).not.toBeInTheDocument()
   })
 
   it('keeps the picker on the first row while the fund is rebuilt', async () => {
@@ -223,7 +223,7 @@ describe('the comparison', () => {
     })
 
     const select = await picker()
-    const wait = await screen.findByText(/Reconstitution de l’historique de CW8.PA/)
+    const wait = await screen.findByText(/Reconstitution de l’historique/)
     expect(select.compareDocumentPosition(wait) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
@@ -422,12 +422,16 @@ describe('the contract a non-visual reader gets', () => {
       /[\u202f\u00a0]/g,
       ' ',
     )
-    expect(said).toContain('Votre portefeuille et MSCI World, du 2 janv. 2024 au 5 janv. 2024')
-    expect(said).toContain('Votre portefeuille part de 1 000,00 €, MSCI World de 1 000,00 €')
+    expect(said).toContain(
+      'Votre portefeuille et l’indice MSCI World, du 2 janv. 2024 au 5 janv. 2024',
+    )
+    expect(said).toContain(
+      'Votre portefeuille part de 1 000,00 €, l’indice MSCI World de 1 000,00 €',
+    )
     expect(said).toContain('plus haut 1 200,00 € le 3 janv. 2024')
     expect(said).toContain('plus bas 900,00 € le 4 janv. 2024')
     // The crossings are this screen's subject: above, above, below, above.
-    expect(said).toContain('croise MSCI World 2 fois, la dernière le 5 janv. 2024')
+    expect(said).toContain('croise l’indice MSCI World 2 fois, la dernière le 5 janv. 2024')
     // **The arrival is never stated.** The head carries today, on the live
     // instant, and a second figure for the same day would contradict it (#1051).
     expect(said).not.toContain('1 050,00')
@@ -580,7 +584,7 @@ describe('each account over its own period', () => {
 
     // Nothing replayed at all is a different emptiness, and it keeps its way out.
     expect(await screen.findByText(/Enregistrez vos premiers événements/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Ouvrir le grand livre' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toBeInTheDocument()
   })
 
   // #1207: four causes, and only one of them is an empty ledger.
@@ -601,7 +605,7 @@ describe('each account over its own period', () => {
 
     expect(await screen.findByText(title)).toBeInTheDocument()
     expect(screen.getByText(body)).toBeInTheDocument()
-    expect(Boolean(screen.queryByRole('link', { name: 'Ouvrir le grand livre' }))).toBe(link)
+    expect(Boolean(screen.queryByRole('link', { name: 'Aller au grand livre' }))).toBe(link)
     if (reason !== undefined && reason !== 'from_a_newer_server') {
       expect(screen.queryByText(/Enregistrez vos premiers événements/)).not.toBeInTheDocument()
     }
@@ -761,7 +765,7 @@ describe('the page sits on the ground (#1273)', () => {
     renderBenchmark({ state: 'rebuilding', reference: 'CW8.PA', index: 'MSCI World', rebuild })
 
     const section = await screen.findByRole('region', {
-      name: /Reconstitution de l’historique de CW8.PA/,
+      name: /Reconstitution de l’historique/,
     })
     expect(within(section).getByRole('progressbar')).toBeInTheDocument()
     expectNoBox()

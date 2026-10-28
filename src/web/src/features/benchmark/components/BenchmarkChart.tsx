@@ -196,8 +196,9 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
                 // swatch beside it and one line to make its claim; inside a
                 // spoken sentence that clause comes back three times and
                 // buries the figures. *Same money invested* is already said
-                // once, by the section's title above.
-                { name: index, key: 'reference' },
+                // once, by the section's title above. With its article, so the
+                // sentence reads « croise l’indice CAC 40 » (#1434).
+                { name: t('benchmark.chart.reading.theirs', { index }), key: 'reference' },
               ]}
               format={currency === null ? null : (value) => f.currency(value, currency)}
             />

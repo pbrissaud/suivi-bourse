@@ -138,9 +138,8 @@ describe('ICU is the format, and it is needed', () => {
     for (const state of ['attention', 'unreachable'] as const) {
       for (const key of ['notification.health.title', 'notification.health.body'] as const) {
         for (const language of ['fr', 'en'] as const) {
-          expect(formatMessage(language, key, { state }), `${language}:${key}:${state}`).not.toBe(
-            '',
-          )
+          const values = { state, job: 'none', at: 'none' }
+          expect(formatMessage(language, key, values), `${language}:${key}:${state}`).not.toBe('')
         }
       }
     }
@@ -149,15 +148,15 @@ describe('ICU is the format, and it is needed', () => {
     // them: English has **job** for the three of them, and French has no crisp
     // equivalent — so the French sentence names them, which is a decision and
     // not a longer translation.
-    expect(formatMessage('en', 'notification.health.title', { state: 'attention' })).toBe(
-      'A job needs a look',
-    )
-    expect(formatMessage('fr', 'notification.health.title', { state: 'attention' })).toBe(
-      'Quelque chose s’est arrêté',
-    )
-    expect(formatMessage('fr', 'notification.health.body', { state: 'attention' })).toContain(
-      'Un relevé, une reconstruction ou un calcul de performance',
-    )
+    expect(
+      formatMessage('en', 'notification.health.title', { state: 'attention', job: 'none' }),
+    ).toBe('A job needs a look')
+    expect(
+      formatMessage('fr', 'notification.health.title', { state: 'attention', job: 'none' }),
+    ).toBe('Quelque chose s’est arrêté')
+    expect(
+      formatMessage('fr', 'notification.health.body', { state: 'attention', at: 'none' }),
+    ).toContain('Un relevé, une reconstruction ou un calcul de performance')
   })
 
   it('pluralises per language rather than per string', () => {

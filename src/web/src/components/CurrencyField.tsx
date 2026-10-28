@@ -45,9 +45,21 @@ interface CurrencyFieldProps {
   fixed?: boolean
   /** Whether the reader is told a locale suggested this. Modal only. */
   suggested?: boolean
+  /**
+   * Whether the field says, under itself, that the answer is final. The modal
+   * says it beside the button that saves instead (#1435), so once.
+   */
+  finality?: boolean
 }
 
-export function CurrencyField({ id, value, onChange, fixed, suggested }: CurrencyFieldProps) {
+export function CurrencyField({
+  id,
+  value,
+  onChange,
+  fixed,
+  suggested,
+  finality = true,
+}: CurrencyFieldProps) {
   const { t } = useI18n()
 
   // The answer, and no field around it: what a reader can do here is read it.
@@ -97,7 +109,7 @@ export function CurrencyField({ id, value, onChange, fixed, suggested }: Currenc
       {suggested ? (
         <p className="text-xs text-muted-foreground">{t('currency.suggested')}</p>
       ) : null}
-      {fixed === undefined ? null : (
+      {fixed === undefined || !finality ? null : (
         <p className="text-xs text-muted-foreground">{t('currency.untilAnswered')}</p>
       )}
     </div>

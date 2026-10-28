@@ -24,7 +24,8 @@ export function SettingsSection({
   /** The anchor: `/settings#agent` lands on it, with focus. */
   id: string
   title: string
-  summary: string
+  /** One sentence, only where the title and the rows do not already say it. */
+  summary?: string
   read?: SectionRead
   children: ReactNode
 }) {
@@ -41,7 +42,7 @@ export function SettingsSection({
         <h2 id={heading} className="text-2xl font-semibold">
           {title}
         </h2>
-        <p className="label mt-1 text-muted-foreground">{summary}</p>
+        {summary ? <p className="label mt-1 text-muted-foreground">{summary}</p> : null}
       </header>
       <div className="min-w-0">
         {read.kind === 'pending' ? (

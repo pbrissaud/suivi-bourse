@@ -40,10 +40,10 @@
  *    to take that knowledge to another page and come back. The offer is an
  *    offer: the button opens a form, and the passage is satisfied without it.
  *
- * **One more way in, and it is a gesture** (#1262): `/?open=first-run`, linked
- * from the empty dashboard. The walk is otherwise lost on a reload once the
- * question is answered — the predicate is false and the mark is not yet written
- * — and storing the passage would add a third mark value for one click saved.
+ * **One more way in, and it is a gesture** (#1262): `/?open=first-run`, armed
+ * from the palette since #1435 left the empty dashboard one action. The walk
+ * is otherwise lost on a reload once the question is answered — the predicate
+ * is false and the mark is not yet written — and storing the passage would add a third mark value for one click saved.
  * The parameter is spent on arrival, so a reload does not open it twice.
  *
  * Six things about it are decisions:
@@ -263,8 +263,16 @@ export function FirstRun() {
             {t('firstRun.title')}
           </DialogTitle>
           {/* Three sentences on what the app *is*, and not one rule of
-              calculation: the rules are read beside the figures they govern. */}
-          <DialogDescription id="first-run-what" className="space-y-1 leading-relaxed text-pretty">
+              calculation: the rules are read beside the figures they govern.
+              Shown on the first passage only (#1434): read once, they stay the
+              dialog's description for a screen reader. */}
+          <DialogDescription
+            id="first-run-what"
+            className={cn(
+              'space-y-1 leading-relaxed text-pretty',
+              passage !== PASSAGES[0] && 'sr-only',
+            )}
+          >
             <span className="block">{t('firstRun.what.ledger')}</span>
             <span className="block">{t('firstRun.what.quotes')}</span>
             <span className="block">{t('firstRun.what.walk')}</span>
@@ -329,6 +337,9 @@ export function FirstRun() {
                   // and the reservation would then be about a code the
                   // browser never named.
                   suggested={suggestion !== null && choice === suggestion}
+                  // Said beside « Enregistrer et continuer », the gesture it is
+                  // about (#1435), and not a second time here.
+                  finality={false}
                 />
                 {!fixed && !choice ? (
                   <p className="text-xs text-muted-foreground">
@@ -414,9 +425,6 @@ export function FirstRun() {
               <h3 className="text-lg font-semibold tracking-tight">
                 {t('firstRun.pass.events.title')}
               </h3>
-              <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
-                {t('firstRun.pass.events.body')}
-              </p>
               <EntryPair
                 entries={[
                   {
@@ -451,7 +459,10 @@ export function FirstRun() {
             where *Revenir* sits on the later ones. */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
           {back === null ? (
-            <span className="text-xs text-muted-foreground">{t('firstRun.escape')}</span>
+            // A key to press means nothing on a touch screen (#1412).
+            <span className="text-xs text-muted-foreground pointer-coarse:invisible">
+              {t('firstRun.escape')}
+            </span>
           ) : (
             <Button
               type="button"
@@ -463,7 +474,10 @@ export function FirstRun() {
             </Button>
           )}
           {passage === 'settings' && !fixed ? (
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center justify-end gap-2.5">
+              {/* The answer's finality, beside the one button that makes it
+                  final (#1435). */}
+              <p className="text-xs text-muted-foreground">{t('firstRun.pass.settings.final')}</p>
               <Button
                 type="button"
                 variant="ghost"

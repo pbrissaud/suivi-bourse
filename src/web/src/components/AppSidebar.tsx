@@ -184,7 +184,7 @@ function BuildLine() {
           .filter(Boolean)
           .join(' · ')}
       >
-        {t('nav.version')} <span className="font-mono">{shown}</span>
+        {t('nav.version')} <span className="tabular">{shown}</span>
       </p>
       {latest ? (
         <a

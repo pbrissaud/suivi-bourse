@@ -304,7 +304,7 @@ describe('the bell is the one global indicator (#829)', () => {
 
     // The card the sidebar's own used to be: the same sentence, in the one
     // place that survives the three sidebar states.
-    expect(within(panel).getByText('Quelque chose s’est arrêté')).toBeInTheDocument()
+    expect(within(panel).getByText('Le relevé des cours s’est arrêté')).toBeInTheDocument()
     // Health is **repaired, never dismissed**: a link, and no acknowledgement.
     expect(within(panel).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
   })

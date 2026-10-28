@@ -347,17 +347,12 @@ export function AccountDetail({
           <EmptyState
             title={t('accounts.bare.title')}
             description={t('accounts.bare.body')}
+            // One action (#1435), the one every empty page offers: the
+            // ledger imports a file and records an event.
             action={
-              <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
-                <Button asChild>
-                  <Link to="/ledger" search={{ open: 'event' }}>
-                    {t('palette.action.event')}
-                  </Link>
-                </Button>
-                <Link to="/ledger" className="text-sm text-primary underline underline-offset-4">
-                  {t('accounts.bare.import')}
-                </Link>
-              </div>
+              <Link to="/ledger" className="font-medium underline underline-offset-4">
+                {t('empty.toLedger')}
+              </Link>
             }
           />
         ) : (

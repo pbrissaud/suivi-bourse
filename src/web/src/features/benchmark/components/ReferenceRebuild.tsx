@@ -37,7 +37,8 @@ export function ReferenceRebuild({ rebuild }: { rebuild: BenchmarkRebuild }) {
     rebuild.ratio === null ? null : rebuild.ratio >= 1 ? 100 : Math.floor(rebuild.ratio * 100)
 
   return (
-    <Section title={t('benchmark.rebuild.title', { symbol: rebuild.symbol })}>
+    // The fund is named once, by the picker right above (#1434).
+    <Section title={t('benchmark.rebuild.title')}>
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
           {rebuild.reached === null

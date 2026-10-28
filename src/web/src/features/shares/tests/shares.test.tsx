@@ -1220,8 +1220,8 @@ describe('the allocation', () => {
     expect(section.closest('[data-slot="card"]')).toBeNull()
     expect(section.querySelector('[data-slot="card"]')).toBeNull()
     expect(within(section).getAllByRole('listitem').length).toBeLessThanOrEqual(5)
-    // No total on the title row: the scope line is what sits there.
-    expect(section.firstElementChild).toHaveTextContent('Répartition3 lignes en portefeuille')
+    // No total on the title row, and no count of a list that counts itself (#1412).
+    expect(section.firstElementChild).toHaveTextContent(/^Répartition$/)
   })
 
   it('names every line in the slices’ own order, with its share', async () => {

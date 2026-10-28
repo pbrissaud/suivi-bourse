@@ -39,13 +39,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { AccountsResponse } from '@/features/accounts/lib/api'
 import {
   dataApi,
@@ -559,12 +553,16 @@ export function EventForm({
         close()
       }}
     >
-      <SheetContent ref={setPanel} className="w-full gap-6 overflow-y-auto sm:max-w-md">
+      <SheetContent
+        ref={setPanel}
+        // No subtitle: the first label already asks what happened (#1412).
+        aria-describedby={undefined}
+        className="w-full gap-6 overflow-y-auto sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle>
             {t(event === null ? 'data.form.create.title' : 'data.form.edit.title')}
           </SheetTitle>
-          <SheetDescription>{t('data.form.description')}</SheetDescription>
         </SheetHeader>
 
         <form

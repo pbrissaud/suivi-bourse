@@ -151,10 +151,6 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
           />
           {t('accounts.detail.curve.contributed')}
         </li>
-        {/* The span, at the end of the row the maquette puts it on. `ml-auto`
-            and never a third legend entry: it names no mark on the chart, it
-            names the extent of both. */}
-        <li className="sm:ml-auto">{t('accounts.detail.curve.period')}</li>
       </ul>
     </section>
   )

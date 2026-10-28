@@ -32,13 +32,7 @@ import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { PriceChart } from '@/features/shares/components/PriceChart'
 import { ShareEvents } from '@/features/shares/components/ShareEvents'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   Table,
   TableBody,
@@ -182,6 +176,8 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onClose())}>
       <SheetContent
+        // No description: the sheet's title and contents say what it is (#1434).
+        aria-describedby={undefined}
         className="w-full gap-5 overflow-y-auto sm:max-w-120"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
@@ -192,7 +188,6 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           <SheetTitle ref={title} tabIndex={-1}>
             {row.name ?? row.symbol}
           </SheetTitle>
-          <SheetDescription>{t('shares.sheet.description')}</SheetDescription>
         </SheetHeader>
 
         <div className="space-y-8 px-4 pb-8">

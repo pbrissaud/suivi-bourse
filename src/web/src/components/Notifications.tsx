@@ -171,6 +171,8 @@ export function Notifications() {
     advisories: advisories.data ?? null,
     currencyUnanswered: currencyUnanswered(config.data?.settings),
     list: f.list,
+    jobs: health.data?.jobs ?? null,
+    dateTime: f.dateTime,
   })
 
   // One sentence for a read that did not answer, and the health read is the
@@ -356,7 +358,6 @@ export function Notifications() {
           {pending || failure !== null || count > 0 ? null : (
             <div className="px-3 py-10 text-center">
               <p className="text-sm">{t('notification.empty.title')}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t('notification.empty.body')}</p>
             </div>
           )}
         </div>

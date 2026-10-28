@@ -50,6 +50,7 @@ import {
   reassignmentOf,
   removalOf,
   DEFAULT_ACCOUNT_ID,
+  isSeededOnly,
 } from '@/features/accounts/lib/accounts'
 import { accountOf } from '@/features/data/lib/ledger'
 import { type Account, accountsApi, type PerfPoint } from '@/features/accounts/lib/api'
@@ -145,6 +146,18 @@ export default function AccountsPage() {
   // `??
   const offer = reassignmentOf(accounts.data, ledger ?? [])
 
+  // **Nothing declared and nothing recorded** (#1435): the seeded row alone is
+  // an implementation detail, so the page says it is empty instead of opening
+  // a « Non affecté » nobody made. `null` while the ledger is in flight; a
+  // refused ledger read falls through to the detail, which says so.
+  const untouched = !declared.every(isSeededOnly)
+    ? false
+    : ledger !== null
+      ? ledger.length === 0
+      : events.isError
+        ? false
+        : null
+
   // **The page's name, and nothing beside it** (#787).
   //
   // It carried *« Chiffres arrêtés au 22 août 2026 »* since #721, on the
@@ -200,6 +213,16 @@ export default function AccountsPage() {
         <EmptyState
           title={t('accounts.empty.title')}
           description={t('accounts.empty.body')}
+          action={
+            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+              {t('accounts.new')}
+            </Button>
+          }
+        />
+      ) : untouched === null ? null : untouched ? (
+        <EmptyState
+          title={t('accounts.empty.title')}
+          description={t('accounts.empty.none')}
           action={
             <Button type="button" variant="outline" onClick={() => setEditing(null)}>
               {t('accounts.new')}
