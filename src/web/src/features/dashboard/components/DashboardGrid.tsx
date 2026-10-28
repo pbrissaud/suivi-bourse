@@ -448,7 +448,7 @@ export function DashboardGrid({
             'flex flex-wrap items-center justify-between gap-x-4 gap-y-2',
             // Under 768 px the column is long, and « Terminé » must stay in
             // reach while the cards at the bottom are arranged (15A).
-            columns === 1 && 'sticky top-0 z-10 bg-background py-2',
+            columns === 1 && 'sticky top-14 z-10 bg-background py-2',
           )}
         >
           <h2 tabIndex={-1} data-edit-title className="text-2xl font-semibold outline-none">

@@ -31,6 +31,7 @@
  * 200 px, the width DESIGN.md always set, and its brand row is 56 px tall,
  * level with the header bar.
  */
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
@@ -54,6 +55,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
 import { api } from '@/lib/api'
@@ -90,6 +92,10 @@ export const ADMINISTRATION: Entry[] = [
 export function AppSidebar() {
   const t = useT()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  // The phone drawer is a modal over the page: once a page is chosen — by an
+  // entry or by Back — it has done its job (#1375).
+  const { setOpenMobile } = useSidebar()
+  useEffect(() => setOpenMobile(false), [pathname, setOpenMobile])
 
   // **The eight entries are eight, at every N.** The accounts entry used to
   // disappear at one account, and the argument was the page's own: comparing
@@ -214,6 +220,9 @@ function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
   const t = useT()
   const { chat } = useAgentChat()
   const link = pageLink(entry, chat, pathname)
+  // The pathname effect misses the entry of the page already shown: the route
+  // does not change, so the click closes the drawer itself.
+  const { setOpenMobile } = useSidebar()
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -223,7 +232,7 @@ function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
         // entries light up at once.
         isActive={entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)}
       >
-        <Link {...link}>
+        <Link {...link} onClick={() => setOpenMobile(false)}>
           <entry.icon />
           <span>{t(entry.label)}</span>
         </Link>
