@@ -732,7 +732,7 @@ describe('the file handed over', () => {
     }
   })
 
-  it('says a file that wrote nothing wrote nothing, and states no period', async () => {
+  it('says a file with nothing in it writes nothing, states no period, and offers no import', async () => {
     // *0 événements écrits, du — au —* would state a period the file does not
     // carry, and no plural rule can invent the two days that are missing.
     server.use(
@@ -761,15 +761,13 @@ describe('the file handed over', () => {
     expect(
       await screen.findByText('vide.csv ne porte aucun événement : il n’y a rien à écrire.'),
     ).toBeInTheDocument()
-
-    await user.click(windowImportNow())
-
-    expect(
-      await screen.findByText('vide.csv ne portait aucun événement : rien n’a été écrit.'),
-    ).toBeInTheDocument()
+    // An import that writes nothing is not on offer, and no skipped count is
+    // said about it (#1397).
+    expect(windowImportNow()).toBeDisabled()
+    expect(screen.queryByText('aucun doublon sauté')).not.toBeInTheDocument()
   })
 
-  it('reads a refusal by its type, and never by the sentence the server wrote', async () => {
+  it('reads a refusal by its type, and says the reason the server gave (#1377)', async () => {
     server.use(
       http.post(ROUTES.eventsImport, () =>
         HttpResponse.json(
@@ -791,9 +789,9 @@ describe('the file handed over', () => {
     expect(
       await screen.findByText(/L’application a refusé ce fichier et n’a rien écrit/),
     ).toBeInTheDocument()
-    // The server's own sentence is a diagnostic for a log, and English: it is
-    // carried, and rendered nowhere.
-    expect(screen.queryByText(/is not declared/)).not.toBeInTheDocument()
+    // The reason is what names the column, the row or the value to repair, and
+    // the docs promise it.
+    expect(screen.getByText(/« account 'pea' is not declared »/)).toBeInTheDocument()
   })
 
   it('names the security when the file sells shares the ledger does not hold', async () => {
@@ -2204,12 +2202,7 @@ describe('several files, one batch (#1266)', () => {
         'Ces 2 fichiers ne portent aucun événement : il n’y a rien à écrire.',
       ),
     ).toBeInTheDocument()
-
-    await user.click(windowImportNow())
-
-    expect(
-      await screen.findByText('Ces 2 fichiers ne portaient aucun événement : rien n’a été écrit.'),
-    ).toBeInTheDocument()
+    expect(windowImportNow()).toBeDisabled()
   })
 
   it('sends one currency answer for the whole batch', async () => {

@@ -99,7 +99,10 @@ export function ShareEvents({
                   <span>{t(TYPE_LABEL[event.event_type])}</span>
                   {fields.quantity ? (
                     <span className="tabular">
-                      {t('shares.events.quantity', { quantity: f.quantity(event.quantity) })}
+                      {t('shares.events.quantity', {
+                        count: event.quantity ?? 0,
+                        quantity: f.quantity(event.quantity),
+                      })}
                     </span>
                   ) : null}
                   {fields.unitPrice !== 'none' && event.unit_price !== null ? (

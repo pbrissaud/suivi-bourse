@@ -419,7 +419,7 @@ export function Ledger({
                     <a
                       download="suivi-bourse-template.csv"
                       href={templateHref()}
-                      className="text-primary underline-offset-4 hover:underline"
+                      className="text-primary underline underline-offset-4"
                     >
                       {t('data.empty.file.template')}
                     </a>
@@ -427,7 +427,7 @@ export function Ledger({
                       href={docsPageHref(language, 'import-your-events', 'format')}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-primary underline-offset-4 hover:underline"
+                      className="text-primary underline underline-offset-4"
                     >
                       {t('data.empty.file.docs')}
                     </a>

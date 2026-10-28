@@ -82,8 +82,8 @@ import type { LedgerEvent, LedgerEventType } from '@/features/data/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
-  FIELDS,
   accountOf,
+  cashFlow,
   identityOf,
   isEditable,
   rowKey,
@@ -294,15 +294,16 @@ export function LedgerTable({
       {
         id: 'amount',
         header: () => t('data.column.amount'),
-        // A trade has no amount, so below the quantity column's threshold the figure
-        // that column would have shown stands in; from there the cell keeps its dash
-        // and the quantity is read in its own column (#1355).
+        // Every row that moves cash has its amount (#1425). A grant moves none, so
+        // below the quantity column's threshold its `× quantity` stands in; from
+        // there the cell keeps its dash and the quantity is read in its own column
+        // (#1355).
         cell: ({ row }) => {
           const event = row.original
           const figure = <EventFigure event={event} currency={currency} />
           return (
             <span className="tabular">
-              {FIELDS[event.event_type].amount ? (
+              {cashFlow(event) !== null ? (
                 figure
               ) : (
                 <>
@@ -411,14 +412,17 @@ export function TypePill({ type }: { type: LedgerEventType }) {
 }
 
 /**
- * The figure the type declares (`FIELDS`): an amount, else `× quantity` in muted
- * text. Never a total composed out of the other fields — a purchase states a
- * quantity and a transfer an amount, and the two do not share a rendering:
- * `× 0,1661` beside `10,20 €` is a quantity, a bare `0,1661` is read as money.
+ * The event's amount (`cashFlow`, #1425): the cash that entered or left the
+ * account, fees in, its direction **in its sign** and never in a colour — the
+ * sign is fixed by the type. A grant moves no cash and shows `× quantity` in
+ * muted text: `× 0,1661` beside `10,20 €` is a quantity, a bare `0,1661` is
+ * read as money. One component, so the ledger, its phone list and an
+ * account's last events say the same figure.
  */
 export function EventFigure({ event, currency }: { event: LedgerEvent; currency: string | null }) {
   const f = useFormatters()
-  if (FIELDS[event.event_type].amount) return <>{f.currency(event.amount, currency)}</>
+  const cash = cashFlow(event)
+  if (cash !== null) return <>{f.signedCurrency(cash, currency)}</>
   if (event.quantity === null) return <>{ABSENT}</>
   return (
     <span className="text-muted-foreground">{`\u00d7\u00a0${f.quantity(event.quantity)}`}</span>

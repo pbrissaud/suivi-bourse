@@ -54,6 +54,31 @@ export const FIELDS: Record<LedgerEventType, FieldSet> = {
 }
 
 /**
+ * **An event's amount, one definition** (#1425): the cash that entered (+) or
+ * left (−) the account, fees in — what the server's aggregator books. A buy is
+ * `−(quantity × price + fee)`, a sale `quantity × price − fee`. `null` for a
+ * grant, which moves shares and no cash, and for a row missing a figure.
+ */
+export function cashFlow(event: LedgerEvent): number | null {
+  const fee = event.fee ?? 0
+  const traded =
+    event.quantity !== null && event.unit_price !== null ? event.quantity * event.unit_price : null
+  switch (event.event_type) {
+    case 'BUY':
+      return traded === null ? null : -(traded + fee)
+    case 'SELL':
+      return traded === null ? null : traded - fee
+    case 'DIVIDEND':
+    case 'DEPOSIT':
+      return event.amount === null ? null : event.amount - fee
+    case 'WITHDRAWAL':
+      return event.amount === null ? null : -(event.amount + fee)
+    case 'GRANT':
+      return null
+  }
+}
+
+/**
  * The identity column, for both families at once: the ticker in first rank and
  * the label in second when both exist, the label alone on a transfer.
  */

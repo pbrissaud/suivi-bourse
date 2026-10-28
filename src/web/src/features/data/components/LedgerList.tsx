@@ -6,13 +6,13 @@
  * trapped in a nested scroller. This list sits in the page's flow instead, with
  * no card and no scroll box of its own, and draws what a phone reader scans for:
  *
- *     ☐  AAPL                           × 3
+ *     ☐  AAPL                    −1 627,35 €
  *        12/03/2026 · Achat             [compte]
- *     ☐  Virement                  1 000,00 €
+ *     ☐  Virement                 +1 000,00 €
  *        12/03/2026 · Dépôt             [compte]
  *
- * The figure is the one the type declares: an amount for a transfer or a
- * dividend, `× quantity` for a trade (`EventFigure`, #1355).
+ * The figure is the event's amount, the cash it moved, and `× quantity` for a
+ * grant, which moves none (`EventFigure`, #1355, #1425).
  *
  * Quantity, unit price, fee and the label under a ticker are not drawn; they
  * live in `EventForm`, one tap away. It takes the table's props and its

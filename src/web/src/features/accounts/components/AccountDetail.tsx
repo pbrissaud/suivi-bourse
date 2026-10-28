@@ -744,12 +744,8 @@ export function AccountDetail({
                         {t(TYPE_LABEL[event.event_type])} · {f.date(event.date)}
                       </span>
                     </span>
-                    {/* The field the **type** declares, and never a total composed
-                      out of the others: a purchase states a quantity and a
-                      transfer an amount, so the one that is a figure of the row
-                      is the one rendered — and the two do not share a
-                      rendering. `× 0,1661` beside `10,20 €` is a quantity; a
-                      bare `0,1661` in the same column is read as money. */}
+                    {/* The ledger's own amount, the cash the event moved
+                      (#1425): one component, so the two pages agree. */}
                     <span className="tabular shrink-0">
                       <EventFigure event={event} currency={currency} />
                     </span>
