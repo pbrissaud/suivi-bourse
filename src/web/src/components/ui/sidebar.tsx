@@ -189,6 +189,13 @@ function Sidebar({
             } as React.CSSProperties
           }
           side={side}
+          // No `SheetTrigger` here: the header's trigger opens the drawer from
+          // outside the Sheet, so Radix has nothing to hand focus back to and it
+          // falls to `<body>`. Return it to the trigger explicitly (#1375).
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            document.querySelector<HTMLElement>('[data-sidebar="trigger"]')?.focus()
+          }}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>{t('sidebar.drawer.title')}</SheetTitle>

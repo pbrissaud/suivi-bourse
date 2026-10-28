@@ -217,6 +217,20 @@ describe('the navigation, eight entries in six and two', () => {
       expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument(),
     )
   })
+
+  it('closes on the entry of the page already shown, focus back on the toggle', async () => {
+    setViewportWidth(390)
+    const { user } = renderApp({ url: '/ledger' })
+    const toggle = await screen.findByRole('button', { name: 'Afficher ou masquer la navigation' })
+
+    await user.click(toggle)
+    const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
+    await user.click(within(drawer).getByRole('link', { name: 'Grand livre' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument(),
+    )
+    await waitFor(() => expect(toggle).toHaveFocus())
+  })
 })
 
 describe('the bell is the one global indicator (#829)', () => {

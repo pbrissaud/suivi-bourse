@@ -220,6 +220,9 @@ function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
   const t = useT()
   const { chat } = useAgentChat()
   const link = pageLink(entry, chat, pathname)
+  // The pathname effect misses the entry of the page already shown: the route
+  // does not change, so the click closes the drawer itself.
+  const { setOpenMobile } = useSidebar()
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -229,7 +232,7 @@ function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
         // entries light up at once.
         isActive={entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)}
       >
-        <Link {...link}>
+        <Link {...link} onClick={() => setOpenMobile(false)}>
           <entry.icon />
           <span>{t(entry.label)}</span>
         </Link>
