@@ -23,6 +23,7 @@ import {
   refusedWith,
   type IssuedToken,
 } from '@/features/auth/lib/api'
+import { SectionUnread, type SectionRead } from '@/features/settings/components/SettingsSection'
 import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
@@ -31,7 +32,12 @@ type Card = 'enable' | 'disable' | 'change' | 'regenerate'
 
 const PIN = /^[0-9]{6}$/
 
-export function AccessBlock() {
+/**
+ * `read` is the settings read its neighbours stand on: while the app does not
+ * answer, whether a code is set cannot be told, so neither the switch nor the
+ * sentence is drawn (#1418).
+ */
+export function AccessBlock({ read }: { read: SectionRead }) {
   const { t } = useI18n()
   const f = useFormatters()
   const { status, update, signedOut } = useAuth()
@@ -57,6 +63,14 @@ export function AccessBlock() {
       {opened}
     </div>
   )
+
+  if (read.kind === 'failed') {
+    return (
+      <Section title={t('settings.access.title')}>
+        <SectionUnread read={read} />
+      </Section>
+    )
+  }
 
   return (
     <Section
