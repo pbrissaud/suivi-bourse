@@ -254,7 +254,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
         }
       />
       {shown === null ? null : (
-        <p className="max-w-prose text-base leading-relaxed">
+        <p className="max-w-prose text-prose">
           {signOf(shown) === 'zero'
             ? t('benchmark.verdict.equal', { index })
             : t(signOf(shown) === 'gain' ? 'benchmark.verdict.ahead' : 'benchmark.verdict.behind', {
@@ -276,7 +276,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
       <div data-row="returns" className="flex flex-wrap gap-x-10 gap-y-4">
         <div className="w-56 max-w-full">
           <Stat
-            size="figure"
+            size="term"
             label={t('benchmark.term.yours')}
             value={points(f, data.portfolio_return)}
             valueClassName={signClass(data.portfolio_return ?? null, POINTS_DECIMALS)}
@@ -284,17 +284,10 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
             <ShareBar
               share={magnitude(data.portfolio_return)}
               scale={scale}
-              // The sign's colour, as on the per-account bars: a loss drawn in
-              // the gain's green read as a gain (#1112), and a return that reads
-              // `0,0 %` takes neither (#1286).
-              fill={
-                {
-                  gain: 'var(--gain)',
-                  loss: 'var(--loss)',
-                  zero: 'var(--muted-foreground)',
-                  absent: 'var(--muted-foreground)',
-                }[signOf(data.portfolio_return ?? null, POINTS_DECIMALS)]
-              }
+              // Neutral like the reference's: `gain` and `loss` colour a
+              // figure's sign and digits, never a bar (#1429). The sign is the
+              // written return's, in its colour.
+              fill="var(--muted-foreground)"
               size="block"
               className="mt-1.5"
             />
@@ -302,7 +295,7 @@ function Head({ data, currency }: { data: BenchmarkResponse; currency: string | 
         </div>
         <div className="w-56 max-w-full">
           <Stat
-            size="figure"
+            size="term"
             label={t('benchmark.term.theirs')}
             value={points(f, data.reference_return)}
             valueClassName={signClass(data.reference_return ?? null, POINTS_DECIMALS)}

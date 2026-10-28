@@ -119,11 +119,13 @@ const FLOOR_PERCENT = 15
  * The observed months as columns, oldest on the left, **right-aligned in
  * twelve slots**: a ledger four months old fills the last four and leaves the
  * rest empty, so the strip says *twelve is the window* on a young ledger too.
- * The **current month** is the one column in the ink (`--primary`), the
- * others a quiet grey: the month still being bought in is the one the reader
- * compares against the eleven before it. An observed month with no purchase is a
- * tick on the baseline, which is a fact about the rhythm and not a gap in the
- * drawing. Each column names its month and its amount, for a pointer and for a
+ * The **current month** is the one column in `--foreground`, the others
+ * `--muted-foreground`: the month still being bought in is the one the reader
+ * compares against the eleven before it. Both at full opacity, so each mark
+ * keeps 3:1 on the plane (WCAG 1.4.11), and never `--primary`, the ink of
+ * interaction (#1429, #1431). An observed month with no purchase is a dashed
+ * `--border` stub on the baseline, which is a fact about the rhythm and not a
+ * gap in the drawing. Each column names its month and its amount, for a pointer and for a
  * screen reader alike.
  *
  * **One month does not set the scale for the other eleven** (#1152). Scaled to
@@ -188,7 +190,7 @@ function MonthStrip({
               <span className="sr-only">{said}</span>
               <span aria-hidden className="flex w-full max-w-10 flex-1 items-end">
                 {one.amount === null ? (
-                  <span className="block h-0.5 w-full bg-muted-foreground/35" />
+                  <span className="block h-1.5 w-full border border-dashed border-border" />
                 ) : (
                   <Bar amount={one.amount} scaleTop={scaleTop} current={one.month === current} />
                 )}
@@ -218,8 +220,8 @@ function Bar({
   return (
     <span
       data-capped={capped ? '' : undefined}
-      className={`block w-full rounded-t-[3px] ${capped ? 'relative ' : ''}${
-        current ? 'bg-primary' : 'bg-muted-foreground/40'
+      className={`block w-full ${capped ? 'relative ' : ''}${
+        current ? 'bg-foreground' : 'bg-muted-foreground'
       }`}
       style={{
         height: capped ? '100%' : `${Math.max(FLOOR_PERCENT, (amount / scaleTop) * 100 || 0)}%`,

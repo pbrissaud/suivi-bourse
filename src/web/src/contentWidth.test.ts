@@ -198,6 +198,7 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
       'components/FirstRun.tsx': 'the first-run declare button',
       'features/dashboard/components/DashboardGrid.tsx': 'a free grid slot',
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
+      'features/dashboard/components/InvestmentRhythm.tsx': 'a month with no purchase (a drawing)',
       'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',
     }
     expect(holding(/(?:border|outline)-(?:\[[^\]]*\] )?dashed/).sort()).toEqual(

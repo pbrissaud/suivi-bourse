@@ -420,11 +420,13 @@
      `aria-label` alone. `--input` is the preset's *empty half of a control*,
      and it is the neutral that separates most from the card on both grounds
      in Atelier. The element stays native: the figure is *announced*, and this is its
-     rendering. */
+     rendering. The fill is `--muted-foreground`, a weight bar's colour: `--primary`
+     is for interaction, and a bar in it reads as a control (#1429). Fully
+     rounded like `ShareBar`, the one radius the scale has for a 6 px bar. */
   progress {
     appearance: none;
     border: 0;
-    border-radius: calc(var(--radius) / 2);
+    border-radius: 9999px;
     overflow: hidden;
     background-color: var(--input);
   }
@@ -436,7 +438,7 @@
     background-color: var(--input);
   }
   progress::-webkit-progress-value {
-    background-color: var(--primary);
+    background-color: var(--muted-foreground);
   }
   /* Chromium's blue clear × on `type="search"` (#1388): the one blue thing in
      Atelier, and in the palette a second cross beside the dialog's close. The
@@ -445,6 +447,6 @@
     appearance: none;
   }
   progress::-moz-progress-bar {
-    background-color: var(--primary);
+    background-color: var(--muted-foreground);
   }
 }

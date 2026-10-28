@@ -57,16 +57,17 @@ describe('the controls the browser paints itself', () => {
 
   it('draws the one progress bar from the tokens, both halves of it', () => {
     const source = read()
-    // The value is the accent's; the track is the half `accent-color` does not
-    // reach, and it is the one that broke on the light ground.
+    // The value is a weight bar's neutral, never the ink of interaction (#1429);
+    // the track is the half `accent-color` does not reach, and it is the one
+    // that broke on the light ground.
     expect(source).toMatch(
       /progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--input\)/,
     )
     expect(source).toMatch(
-      /progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--primary\)/,
+      /progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--muted-foreground\)/,
     )
     expect(source).toMatch(
-      /progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--primary\)/,
+      /progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--muted-foreground\)/,
     )
   })
 
