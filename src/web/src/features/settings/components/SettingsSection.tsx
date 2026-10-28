@@ -28,7 +28,6 @@ export function SettingsSection({
   read?: SectionRead
   children: ReactNode
 }) {
-  const { t } = useI18n()
   const heading = `${id}-title`
   return (
     <section
@@ -47,19 +46,27 @@ export function SettingsSection({
         {read.kind === 'pending' ? (
           <div aria-hidden className="h-24 rounded-section bg-muted" />
         ) : read.kind === 'failed' ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-base text-muted-foreground">
-              {t(read.failure.message, read.failure.values)}
-            </p>
-            <Button variant="outline" className="max-md:h-11" onClick={read.retry}>
-              {t('settings.section.retry')}
-            </Button>
-          </div>
+          <SectionUnread read={read} />
         ) : (
           children
         )}
       </div>
     </section>
+  )
+}
+
+/** What a section says in place of its rows when its read failed. */
+export function SectionUnread({ read }: { read: Extract<SectionRead, { kind: 'failed' }> }) {
+  const { t } = useI18n()
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-base text-muted-foreground">
+        {t(read.failure.message, read.failure.values)}
+      </p>
+      <Button variant="outline" className="max-md:h-11" onClick={read.retry}>
+        {t('settings.section.retry')}
+      </Button>
+    </div>
   )
 }
 

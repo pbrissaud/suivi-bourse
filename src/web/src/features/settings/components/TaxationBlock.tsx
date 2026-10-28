@@ -66,7 +66,13 @@ export function TaxationBlock() {
     <Section
       title={t('settings.taxation')}
       aside={
-        <Button type="button" variant="outline" size="sm" onClick={() => setEditing(null)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="max-md:h-11"
+          onClick={() => setEditing(null)}
+        >
           {t('settings.taxation.new')}
         </Button>
       }

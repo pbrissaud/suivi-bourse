@@ -102,6 +102,32 @@ describe('the page', () => {
 
     await waitFor(() => expect(block('Avancé')).toHaveFocus())
   })
+
+  it('marks only the section in the address as current in the index (#1410)', async () => {
+    await openSettings(undefined, undefined, undefined, '/settings#advanced')
+    const index = await screen.findByRole('navigation', { name: 'Sections des réglages' })
+
+    await waitFor(() =>
+      expect(
+        within(index)
+          .getAllByRole('link')
+          .filter((link) => link.getAttribute('aria-current') === 'page')
+          .map((link) => link.textContent),
+      ).toEqual(['Avancé']),
+    )
+  })
+
+  it('lands again on the section already in the address (#1358)', async () => {
+    const { user } = await openSettings(undefined, undefined, undefined, '/settings#advanced')
+    await waitFor(() => expect(block('Avancé')).toHaveFocus())
+    const index = screen.getByRole('navigation', { name: 'Sections des réglages' })
+    const link = within(index).getByRole('link', { name: 'Avancé' })
+    link.focus()
+
+    await user.click(link)
+
+    await waitFor(() => expect(block('Avancé')).toHaveFocus())
+  })
 })
 
 describe('the device section', () => {
@@ -338,7 +364,7 @@ describe('a number saves itself', () => {
     await user.type(field, '99999{Enter}')
 
     expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
-      '3 650 au plus. Enregistré : 365.',
+      '3 650 au plus. Valeur en place : 365.',
     )
     expect(field).toHaveValue(99999)
     expect(field).toHaveAttribute('aria-invalid', 'true')
@@ -366,7 +392,7 @@ describe('a number saves itself', () => {
     await user.type(field, '300{Enter}')
 
     expect((await within(block('Avancé')).findByRole('alert')).textContent).toBe(
-      'Non enregistré : l’application ne répond pas. Enregistré : 120.',
+      'Non enregistré : l’application ne répond pas. Valeur en place : 120.',
     )
     expect(field).toHaveValue(300)
 
@@ -456,7 +482,7 @@ describe('a number saves itself', () => {
     await user.type(field, '0{Enter}')
 
     expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
-      '1 au moins. Enregistré : 365.',
+      '1 au moins. Valeur en place : 365.',
     )
   })
 
@@ -612,8 +638,11 @@ describe('an unreadable store', () => {
     server.use(problemHandler(ROUTES.config, UNAVAILABLE))
     renderApp({ url: '/settings' })
 
-    expect(await screen.findAllByRole('button', { name: 'Réessayer' })).toHaveLength(2)
+    expect(await screen.findAllByRole('button', { name: 'Réessayer' })).toHaveLength(3)
     expect(within(block('Portefeuille')).queryByLabelText('Devise de base')).toBeNull()
+    // Whether a code is set cannot be told either (#1418).
+    expect(screen.queryByRole('switch', { name: 'Code d’accès' })).toBeNull()
+    expect(within(block('Accès')).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
     expect(block('Sur cet appareil')).toBeInTheDocument()
     expect(screen.queryByLabelText('Cadence de relevé')).not.toBeInTheDocument()
   })
@@ -896,6 +925,24 @@ describe('taxation', () => {
 })
 
 describe('importing a taxation model', () => {
+  const REFUSED = {
+    type: PROBLEM_TYPES.providerRefused,
+    title: 'Provider refused',
+    status: 502,
+    detail: 'taxation-registry: GitHub answered 403',
+    provider: 'taxation-registry',
+    reason: 'refused',
+  }
+
+  function registryRefusing(problem: typeof REFUSED) {
+    return http.post(ROUTES.taxationRegistry, () =>
+      HttpResponse.json(problem, {
+        status: problem.status,
+        headers: { 'Content-Type': 'application/problem+json' },
+      }),
+    )
+  }
+
   async function openImport() {
     const view = await openSettings()
     const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
@@ -1054,7 +1101,7 @@ describe('importing a taxation model', () => {
     const { user, taxation } = await openImport()
 
     expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Registre injoignable : OSError: HTTP 503',
+      'Le registre a refusé : OSError: HTTP 503',
     )
     expect(taxation).toHaveTextContent('Vous pouvez aussi écrire un modèle.')
     expect(within(taxation).getByRole('button', { name: 'Nouveau modèle' })).toBeEnabled()
@@ -1062,6 +1109,30 @@ describe('importing a taxation model', () => {
     await user.click(within(taxation).getByRole('button', { name: 'Réessayer' }))
     await waitFor(() => expect(within(taxation).queryByRole('alert')).toBeNull())
     expect(answer).toBe(2)
+    // The button went away while reading: focus comes back to the field, on the open list.
+    const field = within(taxation).getByLabelText('Importer pour mon pays')
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('keeps focus on the field when the registry refuses again', async () => {
+    server.use(registryRefusing(REFUSED))
+    const { user, taxation } = await openImport()
+
+    await user.click(await within(taxation).findByRole('button', { name: 'Réessayer' }))
+
+    const field = within(taxation).getByLabelText('Importer pour mon pays')
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(await within(taxation).findByRole('alert')).toBeInTheDocument()
+  })
+
+  it('says the registry refused, in a sentence that stands alone without a reason', async () => {
+    server.use(registryRefusing({ ...REFUSED, detail: '' }))
+    const { taxation } = await openImport()
+
+    expect((await within(taxation).findByRole('alert')).textContent).toBe(
+      'Le registre a refusé la demande.',
+    )
   })
 
   it('blames the app, not the registry, when the app does not answer', async () => {

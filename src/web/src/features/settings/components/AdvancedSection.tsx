@@ -119,7 +119,8 @@ function DialRow({
           className="tabular h-9.5 w-27 rounded-lg bg-background max-md:h-11"
           {...dial.field}
         />
-        {known ? <span className="text-xs text-muted-foreground">{t(known.unit)}</span> : null}
+        {/* One width for every unit, so the inputs line up whatever theirs (#1359). */}
+        <span className="w-16 text-xs text-muted-foreground">{known ? t(known.unit) : null}</span>
       </div>
     </SettingRow>
   )

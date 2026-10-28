@@ -147,9 +147,11 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
     failure === null
       ? null
       : registry.isError
-        ? registryRefusal !== null
-          ? t('settings.taxation.import.failed', { reason: registryRefusal.said })
-          : t(problemMessageKey(failure))
+        ? registryRefusal === null
+          ? t(problemMessageKey(failure))
+          : registryRefusal.said === ''
+            ? t('settings.taxation.import.refused')
+            : t('settings.taxation.import.failed', { reason: registryRefusal.said })
         : problemSentence(t, failure)
   const carriers =
     replacing === null
@@ -199,7 +201,11 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => void registry.refetch()}
+                className="max-md:h-11"
+                // The refetch unmounts this button (the error is cleared while
+                // it reads), so focus goes back to the field once it settles:
+                // onto the open list, or onto the field the error describes.
+                onClick={() => void registry.refetch().then(focusField)}
               >
                 {t('settings.taxation.import.retry')}
               </Button>

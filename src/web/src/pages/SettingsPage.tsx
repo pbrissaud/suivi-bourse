@@ -30,6 +30,13 @@ const SECTIONS = [
   { id: 'advanced', title: 'settings.advanced.title' },
 ] as const satisfies readonly { id: string; title: MessageKey }[]
 
+/** Scroll to a section and focus it, so a keyboard lands where the eye does. */
+function land(id: string) {
+  const element = document.getElementById(id)
+  element?.scrollIntoView()
+  element?.focus({ preventScroll: true })
+}
+
 /** What the owner sets. What the installation reports is on `/system`. */
 export default function SettingsPage() {
   const { t } = useI18n()
@@ -72,10 +79,7 @@ export default function SettingsPage() {
   const target = SECTIONS.findIndex((section) => section.id === hash)
   const landed = target >= 0 && SECTIONS.slice(0, target + 1).every(({ id }) => settled[id])
   useEffect(() => {
-    if (!landed) return
-    const element = document.getElementById(hash)
-    element?.scrollIntoView()
-    element?.focus({ preventScroll: true })
+    if (landed) land(hash)
   }, [hash, landed])
 
   return (
@@ -91,7 +95,14 @@ export default function SettingsPage() {
             key={id}
             to="/settings"
             hash={id}
-            className="inline-flex min-h-11 items-center text-base whitespace-nowrap text-muted-foreground hover:text-foreground"
+            // Only the section in the address is the current one (#1410).
+            activeOptions={{ includeHash: true }}
+            // Its hash is already there, so nothing changes for the effect to
+            // see: land on it from here (#1358).
+            onClick={() => {
+              if (id === hash) land(id)
+            }}
+            className="inline-flex min-h-11 items-center text-base whitespace-nowrap text-muted-foreground hover:text-foreground aria-[current=page]:text-foreground"
           >
             {t(title)}
           </Link>
@@ -114,7 +125,7 @@ export default function SettingsPage() {
           ) : null}
         </div>
         <div id="security" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
-          <AccessBlock />
+          <AccessBlock read={settingsRead} />
         </div>
         <div id="taxation" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
           <TaxationBlock />
