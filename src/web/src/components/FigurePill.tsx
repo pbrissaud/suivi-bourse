@@ -3,9 +3,6 @@ import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { MONEY_DECIMALS, signClass, signOf } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
-export const PILL =
-  'tabular inline-flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1 text-sm font-medium'
-
 /**
  * The arrow of the sign and the text, both in the sign's colour. **Its figure
  * carries the sign, not its ground** (#1149, reversing the tint of #831):
@@ -14,8 +11,8 @@ export const PILL =
  * legible without the hue. A **zero** takes no arrow and the colour of text: it
  * is a figure, not a direction, and `lib/sign.ts` is what says so.
  *
- * The accounts page sets it in a `PILL`; the dashboard's head sets it bare, on
- * the ground (#1280).
+ * Both heads, the dashboard's and the account's, set it bare, on the ground
+ * (#1280, #1432).
  *
  * `decimals` is the precision `text` is written at (#1286): a figure that rounds
  * to zero is a zero, whatever its raw sign.

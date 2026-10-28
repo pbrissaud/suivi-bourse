@@ -46,6 +46,11 @@ interface StatProps {
    * the whole reason this primitive exists is that the prototype had four.
    */
   align?: 'start' | 'center'
+  /**
+   * The label is said to a screen reader only — where a heading right above
+   * already names the figure, as the account's name does its value (#1432).
+   */
+  labelHidden?: boolean
 }
 
 /**
@@ -82,6 +87,7 @@ export function Stat({
   valueClassName,
   size = 'stat',
   align = 'start',
+  labelHidden = false,
 }: StatProps) {
   return (
     <div
@@ -89,7 +95,13 @@ export function Stat({
       aria-label={label}
       className={cn('min-w-0 space-y-1', align === 'center' && 'text-center')}
     >
-      <div className={cn('flex items-center gap-1.5', align === 'center' && 'justify-center')}>
+      <div
+        className={cn(
+          'flex items-center gap-1.5',
+          align === 'center' && 'justify-center',
+          labelHidden && 'sr-only',
+        )}
+      >
         <span className={cn(LABELS[size], 'text-muted-foreground')}>{label}</span>
         {explain}
       </div>

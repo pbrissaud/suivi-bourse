@@ -13,9 +13,9 @@
  *    shares page carries and for the same three reasons: it survives a reload,
  *    it can be handed to somebody else, and the way out is the browser's own
  *    back button. An id naming nothing falls back to the first declared account
- *    rather than to an empty page.
- *  - **One mention of the date**, at the level of the page — the money figures
- *    are a **day**, and a page of money with no date reads as *now*. The window
+ *    rather than to an empty page, and the URL is rewritten to it (#1409).
+ *  - **One mention of the date**, at the level of the page — the header's
+ *    « Cours au … », as on the dashboard and the shares page (#1430). The window
  *    is not written in words anywhere: the detail's range control carries it,
  *    and a sentence repeating it would be a second announcer.
  *  - **A failed read is said where its content would have been** (#829). There
@@ -60,12 +60,14 @@ import { settingsApi } from '@/features/settings/lib/api'
 import { type Position, sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
+import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function AccountsPage() {
   const { t } = useI18n()
+  const f = useFormatters()
   const { account, open } = useSearch({ from: '/accounts' })
   const navigate = useNavigate()
   // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
@@ -106,6 +108,15 @@ export default function AccountsPage() {
   const declared = accounts.data?.accounts ?? []
   const rows = buildAccountRows(declared)
   const opened = chooseAccount(rows, account)
+
+  // **An id naming nothing is rewritten to the account shown** (#1409). The
+  // fallback stays, but a URL still naming the stale id put the first
+  // account's figures under an address that says otherwise.
+  const openedId = opened?.id
+  useEffect(() => {
+    if (account == null || openedId === undefined || openedId === account) return
+    void navigate({ to: '/accounts', search: { account: openedId }, replace: true })
+  }, [account, openedId, navigate])
 
   // **One read per opened account, and only for the one that is open.** The
   // series is some two and a half thousand days long, and the bar owes it
@@ -158,30 +169,22 @@ export default function AccountsPage() {
         ? false
         : null
 
-  // **The page's name, and nothing beside it** (#787).
-  //
-  // It carried *« Chiffres arrêtés au 22 août 2026 »* since #721, on the
-  // argument that these figures are a **day** and that a page of money with no
-  // date reads as *now*. The argument was right about the risk and wrong about
-  // the answer, because the product answers it better elsewhere — and since
-  // #829 it answers it in **one** place, which is the bell:
-  //
-  //  - its **icon carries the health colour**, so whether the installation is
-  //    reading quotes and rebuilding history on its cadence is one glance;
-  //  - its **panel** holds the reconstruction as a pinned card, saying that it
-  //    is running and how far it has got — the sentence the retired band used
-  //    to carry across the top of this page.
-  //
-  // Between them there is no state left for the date to report. The perf cycle
-  // writes today's row every two minutes while the scheduler runs — weekends
-  // included, the series being daily — so with the bell green and no
-  // reconstruction card the day *is* today, on every install, always. A mention
-  // that is constant is not a safeguard; it is a word in the one line that
-  // carries the page's name, and on a phone it took that name down with it.
-  //
-  // What remains true is the risk it named. What answers it now is the bell,
-  // which is the surface built for exactly that question.
-  usePageHeading(t('page.accounts'))
+  // **The page's name and the instant its quotes are of** (#1430), the
+  // dashboard's and the shares page's own subtitle: every figure here is priced
+  // off them. #787 dropped a date here because on a phone it took the name
+  // down with it; the header now wraps the subtitle under the name instead.
+  // Nothing is dated while nothing has been quoted.
+  const pricedAt = (heldPositions ?? []).reduce<string | null>(
+    (newest, position) =>
+      position.price?.at != null && (newest === null || position.price.at > newest)
+        ? position.price.at
+        : newest,
+    null,
+  )
+  usePageHeading(
+    t('page.accounts'),
+    pricedAt === null ? null : t('shares.pricedAt', { date: f.dateTime(pricedAt) }),
+  )
 
   // **The band's sentence, one floor down** (#829). With no reporting currency
   // nothing is converted and the perf job writes nothing at all, so this page

@@ -239,8 +239,10 @@ describe('which account is open', () => {
   it('falls back to the first declared account rather than to an empty page', async () => {
     // An id naming nothing is what a bookmark becomes when an account is
     // renamed away or an import revoked.
-    renderAccounts(defaultAccounts(), '/accounts?account=gone')
+    const { router } = renderAccounts(defaultAccounts(), '/accounts?account=gone')
     await settled('Alpha')
+    // …and the URL says so, rather than naming the stale id over Alpha (#1409).
+    await waitFor(() => expect(router.state.location.href).toBe('/accounts?account=alpha'))
   })
 
   it('says which one is open, and not with a colour alone', async () => {

@@ -2,7 +2,7 @@
  * One account, read in depth.
  *
  * What eight columns could never hold: the value and the cash under it, the gain
- * and the money-weighted rate as pills, the curve, the dividends and fees this
+ * on its own line and the money-weighted rate, the curve, the dividends and fees this
  * account has paid, the lines it holds and the last events that name it. It
  * reads like the dashboard's head (#1277): the value is the page's one hero, on
  * the ground, and only the reassignment — a decision — is a card.
@@ -48,7 +48,7 @@ import { Refusal } from '@/components/Refusal'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
-import { PILL, SignedFigure } from '@/components/FigurePill'
+import { SignedFigure } from '@/components/FigurePill'
 import { Stat } from '@/components/Stat'
 import { ShareBar } from '@/components/ShareBar'
 import { EventFigure, TYPE_LABEL } from '@/features/data/components/LedgerTable'
@@ -305,7 +305,7 @@ export function AccountDetail({
       {reassignment.kind === 'standing' ? <Reassignment offer={reassignment} /> : null}
 
       {/* **The head sits on the ground, not in a card** (#1277, DESIGN.md): the
-          value, its pills and the curve are the page's first object without a
+          value, its figures and the curve are the page's first object without a
           box to say so, exactly as on the dashboard. `mb-10` doubles the page's
           20 px rhythm, so the first section stands 40 px off the figures row,
           the one large gap the layout allows there. The section carries the
@@ -365,8 +365,11 @@ export function AccountDetail({
             <Stat
               size="head"
               label={t('accounts.figure.totalValue')}
+              // **One label over the hero, as on the dashboard** (#1432): the
+              // account's name right above already says whose value it is.
+              labelHidden
               // A value is not a direction: it is set in the colour of text, and the
-              // sign lives on the pills under it.
+              // sign lives on the figures under it.
               value={
                 valued ? (
                   f.currency(row.total_value, currency)
@@ -414,32 +417,46 @@ export function AccountDetail({
                       </span>
                     </span>
                   </p>
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span role="group" aria-label={t('accounts.figure.gain')} className={PILL}>
-                      {/* The figure and its words are two nodes: the unit follows the
-                  totals read, and a sentence composed around a bare amount
-                  would be said, for a moment, about a figure with no unit. */}
-                      <SignedFigure
-                        amount={row.gain_absolu}
-                        text={f.signedCurrency(row.gain_absolu, currency)}
-                      />
-                      <span className="text-muted-foreground">{t('accounts.gain.pill')}</span>
-                      <Explain
-                        figure={t('accounts.figure.gain')}
-                        body="accounts.detail.gainTotal.explain"
-                        anchor="total-gain"
-                      />
+                  {/* **The dashboard's head, no pills** (#1280, #1432): the total
+                  gain on its own line on the Section title rung, then one plain
+                  row with the IRR. Pills read as filter chips. The figure and
+                  its words are two nodes: the unit follows the totals read. */}
+                  <p
+                    role="group"
+                    aria-label={t('accounts.figure.gain')}
+                    className="tabular flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold"
+                  >
+                    <SignedFigure
+                      amount={row.gain_absolu}
+                      text={f.signedCurrency(row.gain_absolu, currency)}
+                      className="font-semibold"
+                      arrowClassName="size-5"
+                    />
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {t('accounts.gain.pill')}
                     </span>
+                    <Explain
+                      figure={t('accounts.figure.gain')}
+                      body="accounts.detail.gainTotal.explain"
+                      anchor="total-gain"
+                    />
+                  </p>
+                  <div className="tabular flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">
                     {/* **The one rate on this screen, the annualised IRR** (#1112). The
                 TWR went into its bubble, which says why the two differ: three
                 rates on one head read as three answers to one question. A null
-                IRR keeps its pill, with the em dash. */}
-                    <span role="group" aria-label={t('accounts.figure.xirr')} className={PILL}>
+                IRR keeps its place, with the em dash. */}
+                    <span
+                      role="group"
+                      aria-label={t('accounts.figure.xirr')}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                    >
                       <span className="text-muted-foreground">{t('accounts.figure.xirr')}</span>
                       <SignedFigure
                         amount={row.xirr}
                         text={f.percent(row.xirr)}
                         decimals={RATIO_DECIMALS}
+                        className="font-medium"
                       />
                       {row.xirr == null ? null : (
                         <span className="text-xs font-normal text-muted-foreground">
@@ -469,7 +486,7 @@ export function AccountDetail({
               )}
             </Stat>
 
-            {/* The curve, full width under the pills. Nothing at all while the
+            {/* The curve, full width under the figures. Nothing at all while the
             series is in flight, and the reason in its place where the read
             refused. The legend states the extent it was drawn over, which is the
             account's whole history: a curve with no stated span beside a total
@@ -530,19 +547,16 @@ export function AccountDetail({
                   so the dividends divide it too rather than acquiring a base of
                   their own. */}
                   {/* Gone with a truncated row: its contribution is the
-                  denominator, and it is cut like everything else (#1285). */}
+                  denominator, and it is cut like everything else (#1285).
+                  Phrased as the fees' line beside it, « x % du versé » (#1432). */}
                   {!valued ? null : (
-                    <p
-                      role="group"
-                      aria-label={t('accounts.detail.dividends.onContributed')}
-                      className="flex items-baseline gap-1.5 text-xs text-muted-foreground"
-                    >
-                      <span>{t('accounts.detail.dividends.onContributed')}</span>
-                      <span className="tabular">
-                        {dividendsOnContributed === null
-                          ? ABSENT
-                          : f.percentPoints(dividendsOnContributed * 100)}
-                      </span>
+                    <p className="tabular text-xs text-muted-foreground">
+                      {t('accounts.detail.dividends.onContributed', {
+                        percent:
+                          dividendsOnContributed === null
+                            ? ABSENT
+                            : f.percentPoints(dividendsOnContributed * 100),
+                      })}
                     </p>
                   )}
                 </Stat>
@@ -700,7 +714,26 @@ export function AccountDetail({
                 {payers.map((payer) => (
                   <li key={payer.symbol} className="flex flex-col gap-1 py-2 text-sm">
                     <span className="flex items-baseline gap-3">
-                      <span className="min-w-0 flex-1 truncate font-medium">{payer.symbol}</span>
+                      {/* Named as the holdings above name a line, and a sold one
+                          says so (#1432): a ticker alone, of a line no longer
+                          held, said nothing about either. `flex-wrap`: on a
+                          phone the ticker and « soldée » drop under the name
+                          rather than run into the amount. */}
+                      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                        <span className="min-w-0 truncate font-medium">
+                          {payer.name ?? payer.symbol}
+                        </span>
+                        {payer.name === null ? null : (
+                          <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                            {payer.symbol}
+                          </span>
+                        )}
+                        {payer.closed ? (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {t('accounts.detail.payers.closed')}
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="tabular shrink-0">{f.currency(payer.amount, currency)}</span>
                       <span className="tabular w-16 shrink-0 text-right text-muted-foreground">
                         {f.percentPoints(payer.share * 100)}
