@@ -716,8 +716,10 @@ export function AccountDetail({
                     <span className="flex items-baseline gap-3">
                       {/* Named as the holdings above name a line, and a sold one
                           says so (#1432): a ticker alone, of a line no longer
-                          held, said nothing about either. */}
-                      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                          held, said nothing about either. `flex-wrap`: on a
+                          phone the ticker and « soldée » drop under the name
+                          rather than run into the amount. */}
+                      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
                         <span className="min-w-0 truncate font-medium">
                           {payer.name ?? payer.symbol}
                         </span>
