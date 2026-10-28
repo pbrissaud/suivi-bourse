@@ -155,8 +155,11 @@ export function AllocationBars({
     <ul
       aria-label={title}
       style={{ '--bars-rows': Math.ceil(slices.length / 2) } as CSSProperties}
+      // `grid-cols-1` is not decoration (#1374): the implicit track is `auto`,
+      // so a long name took it to its max-content and `truncate` never applied,
+      // widening the page past a phone (`lint/grid-base-columns.grit`).
       className={cn(
-        'grid gap-x-6 gap-y-2 text-sm',
+        'grid grid-cols-1 gap-x-6 gap-y-2 text-sm',
         columns === 2 &&
           'md:grid-flow-col md:grid-cols-2 md:[grid-template-rows:repeat(var(--bars-rows),auto)]',
       )}

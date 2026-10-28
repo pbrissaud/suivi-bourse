@@ -557,6 +557,10 @@ export function distinctSymbols(positions: readonly Position[]): number {
 /** One security, and what it has paid this account since it opened. */
 interface DividendPayer {
   symbol: string
+  /** The security's name, as every other list writes it (#1432). */
+  name: string | null
+  /** No line of it is held any more: it paid while it was. */
+  closed: boolean
   /** Cash in hand, in the reporting currency — `position.dividends`. */
   amount: number
   /** Its share of what the account has been paid, `0`…`1`. */
@@ -590,18 +594,23 @@ interface DividendPayer {
  * meaningless, so it is refused outright and the list comes back empty.
  */
 export function dividendPayers(positions: readonly Position[]): DividendPayer[] {
-  const paid = new Map<string, number>()
+  const paid = new Map<string, { amount: number; name: string | null; closed: boolean }>()
   for (const position of positions) {
     if (position.dividends <= 0) continue
-    paid.set(position.symbol, (paid.get(position.symbol) ?? 0) + position.dividends)
+    const one = paid.get(position.symbol)
+    paid.set(position.symbol, {
+      amount: (one?.amount ?? 0) + position.dividends,
+      name: one?.name ?? position.name,
+      closed: (one?.closed ?? true) && position.quantity === 0,
+    })
   }
 
   let whole = 0
-  for (const amount of paid.values()) whole += amount
+  for (const { amount } of paid.values()) whole += amount
   if (whole <= 0) return []
 
   return [...paid.entries()]
-    .map(([symbol, amount]) => ({ symbol, amount, share: amount / whole }))
+    .map(([symbol, one]) => ({ symbol, ...one, share: one.amount / whole }))
     .sort((a, b) =>
       a.amount === b.amount ? a.symbol.localeCompare(b.symbol) : b.amount - a.amount,
     )

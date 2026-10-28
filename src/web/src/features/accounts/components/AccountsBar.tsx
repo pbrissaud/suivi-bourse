@@ -105,63 +105,68 @@ export function AccountsBar({
     <div
       role="group"
       aria-label={t('accounts.rail.label')}
-      className="sticky top-14 z-10 -mt-1.5 flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5"
+      className="sticky top-14 z-10 -mt-1.5 flex items-center gap-1 border-b bg-background py-2.5"
     >
-      {rows.map((row, index) => {
-        const share = allValued ? (weights.get(row.id) ?? null) : null
-        const isOpen = row.id === selected
-        return (
-          <Link
-            key={row.id}
-            ref={isOpen ? open : undefined}
-            to="/accounts"
-            search={{ account: row.id }}
-            aria-current={isOpen ? 'true' : undefined}
-            className={cn(CHIP, 'text-muted-foreground', isOpen && 'bg-muted text-foreground')}
-          >
-            <span
-              aria-hidden
-              className="inline-block size-2.25 shrink-0 rounded-xs"
-              style={{ backgroundColor: accountColour(index) }}
-            />
-            <span className="max-w-56 truncate text-sm font-semibold whitespace-nowrap">
-              {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
-            </span>
-            <span className="tabular text-sm whitespace-nowrap">
-              {readings[index] === 'valued' ? f.currency(accountWorth(row), currency) : ABSENT}
-            </span>
-            <span className="tabular text-xs whitespace-nowrap">
-              {share === null ? ABSENT : f.percentPoints(share * 100)}
-            </span>
-          </Link>
-        )
-      })}
+      {/* **The chips scroll, the declaration does not** (#1408). Inside the
+          scroller, four accounts were enough to push the button past the edge,
+          where nothing said it existed. */}
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden">
+        {rows.map((row, index) => {
+          const share = allValued ? (weights.get(row.id) ?? null) : null
+          const isOpen = row.id === selected
+          return (
+            <Link
+              key={row.id}
+              ref={isOpen ? open : undefined}
+              to="/accounts"
+              search={{ account: row.id }}
+              aria-current={isOpen ? 'true' : undefined}
+              className={cn(CHIP, 'text-muted-foreground', isOpen && 'bg-muted text-foreground')}
+            >
+              <span
+                aria-hidden
+                className="inline-block size-2.25 shrink-0 rounded-xs"
+                style={{ backgroundColor: accountColour(index) }}
+              />
+              <span className="max-w-56 truncate text-sm font-semibold whitespace-nowrap">
+                {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+              </span>
+              <span className="tabular text-sm whitespace-nowrap">
+                {readings[index] === 'valued' ? f.currency(accountWorth(row), currency) : ABSENT}
+              </span>
+              <span className="tabular text-xs whitespace-nowrap">
+                {share === null ? ABSENT : f.percentPoints(share * 100)}
+              </span>
+            </Link>
+          )
+        })}
 
-      {/* The one population the promise *your declared accounts* does not cover,
+        {/* The one population the promise *your declared accounts* does not cover,
           and the only way to repair it. It leads to the **seeded account's own
           detail**, where the offer stands: the link owes its reader the gesture
           and not the page (#725). */}
-      {offer.kind === 'none' ? null : offer.kind === 'standing' ? (
-        <Link
-          to="/accounts"
-          search={{ account: DEFAULT_ACCOUNT_ID }}
-          className={cn(CHIP, 'text-xs whitespace-nowrap underline underline-offset-4')}
-        >
-          {t('accounts.default.reassign')}
-        </Link>
-      ) : (
-        // **Where nothing is declared yet the gesture *is* the declaration**, so
-        // this one opens the panel instead of leading anywhere: there is no list
-        // of accounts to assign to, and the account the reader is about to create
-        // is the only answer the question can have. A button, not a link.
-        <button
-          type="button"
-          onClick={onDeclare}
-          className={cn(CHIP, 'text-xs whitespace-nowrap underline underline-offset-4')}
-        >
-          {t('accounts.default.reassign')}
-        </button>
-      )}
+        {offer.kind === 'none' ? null : offer.kind === 'standing' ? (
+          <Link
+            to="/accounts"
+            search={{ account: DEFAULT_ACCOUNT_ID }}
+            className={cn(CHIP, 'text-xs whitespace-nowrap underline underline-offset-4')}
+          >
+            {t('accounts.default.reassign')}
+          </Link>
+        ) : (
+          // **Where nothing is declared yet the gesture *is* the declaration**, so
+          // this one opens the panel instead of leading anywhere: there is no list
+          // of accounts to assign to, and the account the reader is about to create
+          // is the only answer the question can have. A button, not a link.
+          <button
+            type="button"
+            onClick={onDeclare}
+            className={cn(CHIP, 'text-xs whitespace-nowrap underline underline-offset-4')}
+          >
+            {t('accounts.default.reassign')}
+          </button>
+        )}
+      </div>
 
       {/* **A dashed outline and a plus** (#838): the drawing marks the gesture
           that *adds an account to this bar* as the outline of the chip it would
@@ -171,11 +176,13 @@ export function AccountsBar({
         onClick={onDeclare}
         className={cn(
           CHIP,
-          'border border-dashed text-sm whitespace-nowrap text-muted-foreground hover:border-primary hover:text-primary md:ml-auto',
+          'border border-dashed text-sm whitespace-nowrap text-muted-foreground hover:border-primary hover:text-primary justify-center pointer-coarse:min-w-11',
         )}
       >
         <Plus aria-hidden className="size-3.5" />
-        {t('accounts.new')}
+        {/* Under 768 px the plus alone, so the chips keep the row (#1430); the
+            name stays the button's accessible name. */}
+        <span className="sr-only md:not-sr-only">{t('accounts.new')}</span>
       </button>
     </div>
   )

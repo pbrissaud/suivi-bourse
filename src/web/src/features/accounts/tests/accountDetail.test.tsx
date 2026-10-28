@@ -255,9 +255,8 @@ describe('the five blocks', () => {
     // the two rates on this page already divide — a third base would be a
     // second denominator for one page to explain. And it wears no sign: a share
     // is not a change (`lib/format.ts`).
-    expect(await within(detail).findByRole('group', { name: 'Sur le versé' })).toHaveTextContent(
-      /^Sur le versé1,69\s?%$/,
-    )
+    // Phrased as the fees' line beside it, « x % du versé » (#1432).
+    expect(await within(detail).findByText(/^1,69\s?% du versé$/)).toBeInTheDocument()
   })
 
   it('says nothing to compute where nothing was ever paid in', async () => {
@@ -267,7 +266,9 @@ describe('the five blocks', () => {
     const detail = await open(user, 'Gamma')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
-    expect(within(detail).getByRole('group', { name: 'Sur le versé' })).toHaveTextContent('—')
+    expect(within(detail).getByRole('group', { name: /Dividendes/ })).toHaveTextContent(
+      '— du versé',
+    )
   })
 
   it('names the securities that pay the dividends, and states their extent', async () => {
@@ -285,6 +286,11 @@ describe('the five blocks', () => {
     expect(rows[0]).toHaveTextContent(/71,43\s?%/)
     expect(rows[1]).toHaveTextContent(/ZZD/)
     expect(rows[1]).toHaveTextContent(/28,57\s?%/)
+    // Named as every other list names a security, and the sold line says so
+    // (#1432).
+    expect(rows[1]).toHaveTextContent(/Zeta Delta/)
+    expect(rows[1]).toHaveTextContent(/soldée/)
+    expect(rows[0]).not.toHaveTextContent(/soldée/)
     // **Its own extent, and not the range control's**: `position.dividends` is
     // a lifetime total, so a block sitting silently under that control would
     // borrow a window it does not obey.
@@ -915,7 +921,7 @@ describe('a row cut before today during a first rebuild (#1285)', () => {
     // curve (a true history) and the lines' list.
     const dividends = within(detail).getByRole('group', { name: /Dividendes/ })
     expect(dividends).toHaveTextContent(/25,00/)
-    expect(within(detail).queryByRole('group', { name: 'Sur le versé' })).not.toBeInTheDocument()
+    expect(dividends).not.toHaveTextContent(/du versé/)
     await waitFor(() => expect(detail.querySelector('figure')).not.toBeNull())
     expect(within(detail).getByRole('list', { name: 'Titres du compte' })).toBeVisible()
   })
@@ -929,7 +935,7 @@ describe('a row cut before today during a first rebuild (#1285)', () => {
       /(777|666),00/,
     )
     // The figures the other test asserts gone are really there to be dropped.
-    expect(within(detail).getByRole('group', { name: 'Sur le versé' })).toBeInTheDocument()
+    expect(within(detail).getByRole('group', { name: /Dividendes/ })).toHaveTextContent(/du versé/)
     expect(within(detail).getByRole('group', { name: /Frais/ })).toBeInTheDocument()
     expect(within(detail).getByText(/Impôt projeté/)).toBeInTheDocument()
     expect(within(detail).getByRole('group', { name: 'Titres' })).toBeInTheDocument()

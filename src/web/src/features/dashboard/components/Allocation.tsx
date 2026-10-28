@@ -123,8 +123,15 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
         full ? (
           selector
         ) : empty ? null : (
-          <span className="tabular text-2xl font-semibold">
-            {f.currency(split.total, currency)}
+          // **Named, because it is not the hero** (#1426): it sums the
+          // securities only, so a bare amount a few rows under the portfolio's
+          // value read as a second value of it. The name is also the basis
+          // every share in the list divides, by security or by account.
+          <span className="flex items-baseline gap-2">
+            <span className="label">{t('shares.allocation.total')}</span>
+            <span className="tabular text-2xl font-semibold">
+              {f.currency(split.total, currency)}
+            </span>
           </span>
         )
       }

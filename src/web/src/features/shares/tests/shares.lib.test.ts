@@ -517,6 +517,31 @@ describe('the allocation', () => {
     expect(slices.reduce((sum, slice) => sum + slice.share, 0)).toBeCloseTo(1, 10)
   })
 
+  it('folds the smallest lines, never one bigger than a line it names (#1426)', () => {
+    // The canvas named Air Liquide (8,4 %) and folded the Euro Stoxx 50
+    // (9,0 %). Handed out of order, the 9,0 line sits between two named ones
+    // by weight and has to be named; the 8,4 one goes into the fold.
+    const values: [string, number][] = [
+      ['CW8', 50],
+      ['PUST', 20],
+      ['TTE', 12],
+      ['AI', 8.4],
+      ['C50', 9],
+      ['ORA', 0.6],
+    ]
+    const { slices } = allocation(
+      allocationRows(
+        values.map(([symbol, price]) =>
+          aPosition({ symbol, name: symbol, quantity: 1, cost_basis: 1, price }),
+        ),
+      ),
+    )
+
+    expect(slices.map((slice) => slice.symbol)).toEqual(['CW8', 'PUST', 'TTE', 'C50', null])
+    expect(slices[4].count).toBe(2)
+    expect(slices[4].value).toBeCloseTo(9, 10)
+  })
+
   it('folds only past five lines, and draws all five where there are five', () => {
     // At exactly the cap there is nothing to gain by hiding one line behind a
     // word — the drawing's own rule, and the one place the fold is *not* the
