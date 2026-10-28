@@ -27,11 +27,7 @@ export function DeviceSection() {
   const languageId = settingFieldId('language')
 
   return (
-    <SettingsSection
-      id="device"
-      title={t('settings.device.title')}
-      summary={t('settings.device.summary')}
-    >
+    <SettingsSection id="device" title={t('settings.device.title')}>
       <SettingRow label={t('settings.device.theme')}>
         <Segmented
           mode="radio"

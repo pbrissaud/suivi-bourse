@@ -183,7 +183,7 @@ export function LineText({ line, detailed = false }: { line: Line; detailed?: bo
         ? f.number(line.amount, 2)
         : null
   const parts = [
-    f.day(line.date),
+    f.date(line.date),
     t(TYPE_LABEL[line.event_type as LedgerEventType]),
     line.symbol,
     what,

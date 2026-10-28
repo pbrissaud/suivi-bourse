@@ -564,7 +564,6 @@ export function UploadZone({ upload, compact = false, label }: UploadZoneProps) 
       <Upload aria-hidden className="size-5.5 shrink-0 text-primary" />
       <div className="min-w-0 flex-1 basis-55">
         <p className="text-md font-medium">{t('data.drop.title')}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t('data.drop.body')}</p>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2.5">{picker}</div>
     </div>

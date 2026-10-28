@@ -29,7 +29,7 @@
  * a channel and the card is a sentence, and two cards about one reconstruction
  * is the defect the banner-and-badge rule existed against.
  */
-import type { Advisory, InstallationFact } from '@/lib/api'
+import type { Advisory, HealthJobs, InstallationFact } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 import { factGesture, factText, type ListFormatter } from '@/lib/installationFacts'
 import type { InstallationState } from '@/lib/status'
@@ -253,6 +253,24 @@ interface NotificationsInput {
   currencyUnanswered: boolean | undefined
   /** How an enumeration is rendered, injected so this module stays pure. */
   list: ListFormatter
+  /**
+   * The health read's jobs, so an `attention` card names the job that stopped
+   * and its last pass (#1434). Absent or `null`, the card stays generic.
+   */
+  jobs?: HealthJobs | null
+  /** How an instant is rendered, injected for the same reason as `list`. */
+  dateTime?: (value: string) => string
+}
+
+/** The first job that needs a look, in the order the System page lists them. */
+function stalledJob(
+  jobs: HealthJobs | null | undefined,
+): { job: keyof HealthJobs; at: string | null } | null {
+  if (!jobs) return null
+  for (const job of ['scrape', 'backfill', 'performance'] as const) {
+    if (jobs[job].status === 'attention') return { job, at: jobs[job].at }
+  }
+  return null
 }
 
 /**
@@ -270,13 +288,23 @@ export function notifications(input: NotificationsInput): Entry[] {
   // installation fact below, `ok` and `unknown` are not entries at all: a panel
   // that listed *everything is fine* would count it in the badge.
   if (input.health === 'attention' || input.health === 'unreachable') {
+    const stalled = input.health === 'attention' ? stalledJob(input.jobs) : null
+    const at =
+      stalled === null
+        ? 'none'
+        : stalled.at === null
+          ? 'never'
+          : (input.dateTime?.(stalled.at) ?? stalled.at)
     entries.push({
       id: `health:${input.health}`,
       register: 'health',
       subject: 'health',
       pinned: true,
-      title: { key: 'notification.health.title', values: { state: input.health } },
-      body: { key: 'notification.health.body', values: { state: input.health } },
+      title: {
+        key: 'notification.health.title',
+        values: { state: input.health, job: stalled?.job ?? 'none' },
+      },
+      body: { key: 'notification.health.body', values: { state: input.health, at } },
       at: null,
       // Health is **repaired, never dismissed** — so it offers a link and no
       // acknowledgement, and the link goes where the jobs and the store are.

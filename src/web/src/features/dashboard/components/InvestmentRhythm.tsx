@@ -76,10 +76,7 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
     }
     if (rhythm.monthly_amount === null) {
       return (
-        <EmptyState
-          title={t('dashboard.rhythm.empty', { observed: rhythm.months_observed })}
-          description={t('dashboard.rhythm.empty.body')}
-        />
+        <EmptyState title={t('dashboard.rhythm.empty', { observed: rhythm.months_observed })} />
       )
     }
 

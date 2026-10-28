@@ -634,10 +634,8 @@ export function Ledger({
                            *the end of the ledger*, said over a
                             reduced table, is the sentence that record refuses
                             by name. */}
-                      {t('data.ledger.end', {
-                        count: page.total,
-                        reduced: reduces(filters) ? 'yes' : 'no',
-                      })}
+                      {/* The count is the toolbar's, said once (#1412). */}
+                      {t('data.ledger.end', { reduced: reduces(filters) ? 'yes' : 'no' })}
                     </p>
                   ) : (
                     <>

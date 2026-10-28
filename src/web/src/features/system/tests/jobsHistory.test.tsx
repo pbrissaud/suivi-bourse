@@ -154,7 +154,7 @@ describe('the job history (#1236)', () => {
     expect(
       within(region).queryByRole('listbox', { name: 'Relevé des cours · F' }),
     ).not.toBeInTheDocument()
-    await user.click(within(region).getByRole('button', { name: 'Voir les 2 autres' }))
+    await user.click(within(region).getByRole('button', { name: 'Voir les 2 autres titres' }))
     expect(
       within(region).getByRole('listbox', { name: 'Relevé des cours · F' }),
     ).toBeInTheDocument()

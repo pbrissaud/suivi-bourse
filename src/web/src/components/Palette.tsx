@@ -332,7 +332,8 @@ export function Palette() {
 }
 
 /**
- * The two gestures the palette **arms**, and no third.
+ * The gestures the palette **arms**. The first-run walk joined them with #1435,
+ * when the empty dashboard kept one action and its link to the walk left.
  *
  * An entry named after a gesture has to make it: *Saisir un événement* landing
  * the reader on the data page with the form shut would be a page entry wearing
@@ -352,6 +353,12 @@ const ACTIONS = [
     keywords: 'palette.action.account.keywords',
     icon: Plus,
     go: { to: '/accounts', search: { open: 'account' } },
+  },
+  {
+    label: 'palette.action.firstRun',
+    keywords: 'palette.action.firstRun.keywords',
+    icon: Plus,
+    go: { to: '/', search: { open: 'first-run' } },
   },
 ] as const
 // The literals are held by `t()` itself: a key that is in neither catalogue

@@ -186,7 +186,8 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
 - **One word per thing**, everywhere: the three return measures of *Return figures*
   below, and one term per page, action and figure across the app, the docs and the agent.
 - **Numbers in the French locale:** `2 800,00 €`, `+3,22 %`, `−5,00 €` (a real minus,
-  U+2212), compact axis amounts `17,5 k€`, dates `2 mars 2026`.
+  U+2212), compact axis amounts `17,5 k€`, dates `2 mars 2026` (`02/03/2026` in a
+  table's date column, see *Return figures*).
 - **An emptiness says why** and what will fill it (« Aucun événement », « Aucune devise
   de base », « Lecture impossible »). It is never said over a read still in flight.
 - No emoji, no exclamation marks, no uppercase letter-spaced overlines, no kicker above a
@@ -412,6 +413,22 @@ ratio, not per year). "TWR", "index" and "base 100" are not words for the reader
 that does not count from the first deposit states its period in words. Two returns of
 opposite signs on one screen carry the sentence that explains them. The *Performance* curve
 is in percent from the start of the visible window, never in base 100.
+
+**The other terms, one word each (#1433):**
+
+- *Frais* / *Fee*: the fee on one event (the ledger's column, the event form, an agent
+  proposal). *Frais de virement* / *Fees on transfers*: the sum of the fees on deposits
+  and withdrawals, the gain's fourth term (the dashboard's breakdown, an account's head).
+  A buy's or a sale's fee sits in the cost and the realised gain, never a figure of its own.
+- *Aujourd'hui* / *Today*: the day's move, in the hero's row and over the movers.
+- *Liquidités* / *cash*: the money an account holds uninvested; never « cash » in French.
+- Dates: `2 mars 2026`, the locale's medium form (`1ᵉʳ oct. 2026`), in prose, headings,
+  receipts and agent proposals; `02/03/2026` in a table's date column only, where the
+  digits line up.
+- A security is named by the symbol the owner recorded (`CW8.PA`), beside its name where
+  it has one; the movers' badge cuts it to `CW8`. A page names the fund it is about once.
+- *Aller au grand livre* / *Go to the ledger*: the one link an empty page offers to the
+  ledger.
 
 ## Elevation & Depth
 

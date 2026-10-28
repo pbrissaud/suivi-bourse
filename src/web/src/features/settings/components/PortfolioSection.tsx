@@ -18,17 +18,11 @@ export function PortfolioSection({ read }: { read: SectionRead }) {
   const id = settingFieldId(CURRENCY_KEY)
 
   return (
-    <SettingsSection
-      id="portfolio"
-      title={t('settings.portfolio.title')}
-      summary={t('settings.portfolio.summary')}
-      read={read}
-    >
+    <SettingsSection id="portfolio" title={t('settings.portfolio.title')} read={read}>
       <SettingRow
         // Once fixed the value is a sentence, not a field: nothing to point a label at.
         id={fixed ? undefined : id}
         label={t('settings.base_currency')}
-        description={t('settings.base_currency.hint')}
         state={dial.state}
       >
         <div className="max-w-72">

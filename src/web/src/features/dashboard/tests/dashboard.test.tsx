@@ -189,7 +189,7 @@ describe('the value is the hero (direction 1a)', () => {
     expect(card.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/300,00/)
     expect(card.getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(/50,00/)
     expect(card.getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/25,00/)
-    expect(card.getByRole('group', { name: 'Frais de versement' })).toHaveTextContent(/5,00/)
+    expect(card.getByRole('group', { name: 'Frais de virement' })).toHaveTextContent(/5,00/)
     expect(card.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
   })
 
@@ -251,7 +251,7 @@ describe('the gain is computed, never read', () => {
     )
     expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
     expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
-    expect(figure('Frais de versement')).toHaveTextContent(/5,00/)
+    expect(figure('Frais de virement')).toHaveTextContent(/5,00/)
 
     // A total and its terms never share a line: the terms are not inside the
     // head's group, or the form would invite adding them to it.
@@ -296,8 +296,8 @@ describe('the gain is computed, never read', () => {
 
     // Three terms, and the gain is their sum — not `370,00 − 0,00` written out.
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/375,00/)
-    expect(screen.queryByRole('group', { name: 'Frais de versement' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Frais de versement')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Frais de virement' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Frais de virement')).not.toBeInTheDocument()
   })
 })
 
@@ -311,7 +311,7 @@ describe('the breakdown is a statement, with no drawing and no window (#1175)', 
     'Plus-value latente',
     'Plus-value réalisée',
     'Dividendes reçus',
-    'Frais de versement',
+    'Frais de virement',
   ]
   /** `+1 234,56 €` → 1234.56, whatever spaces and minus sign `fr-FR` writes. */
   const amountOf = (text: string) =>
@@ -354,7 +354,7 @@ describe('the breakdown is a statement, with no drawing and no window (#1175)', 
     renderApp()
     const card = await breakdown()
 
-    expect(within(card).getByRole('group', { name: 'Frais de versement' })).toHaveTextContent(/—/)
+    expect(within(card).getByRole('group', { name: 'Frais de virement' })).toHaveTextContent(/—/)
     expect(within(card).getByRole('group', { name: 'Gain total' })).toHaveTextContent(/—/)
   })
 
@@ -581,7 +581,7 @@ describe('the two periods of the total', () => {
       'Plus-value latente',
       'Plus-value réalisée',
       'Dividendes reçus',
-      'Frais de versement',
+      'Frais de virement',
     ]) {
       expect(figure(term)).not.toHaveTextContent(/Aujourd’hui|janvier/)
     }
@@ -620,7 +620,7 @@ describe('the two periods of the total', () => {
 
     const head = await hero()
     expect(head).toHaveTextContent(/370,00/)
-    await waitFor(() => expect(screen.queryByText(/Aujourd’hui/)).not.toBeInTheDocument())
+    await waitFor(() => expect(head).not.toHaveTextContent(/Aujourd’hui/))
     expect(head).toHaveTextContent(/Depuis le 1ᵉʳ janvier\+40,69\D?€/)
   })
 })
@@ -1058,7 +1058,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     )
     expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
     expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
-    expect(figure('Frais de versement')).toHaveTextContent(/5,00/)
+    expect(figure('Frais de virement')).toHaveTextContent(/5,00/)
   }
 
   it('names a failed portfolio series, and the chart alone goes', async () => {
@@ -1183,10 +1183,12 @@ describe('the statistics shrink instead of filling with dashes', () => {
     renderApp()
 
     expect(await screen.findByText('Aucun événement')).toBeInTheDocument()
-    const ledger = screen.getByRole('link', { name: 'Aller au grand livre' })
-    const resume = screen.getByRole('link', { name: 'Revoir la mise en route' })
-    expect(resume).toHaveAttribute('href', '/?open=first-run')
-    expect(ledger.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // One action (#1435): the ledger, and no second link beside it.
+    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toHaveAttribute(
+      'href',
+      '/ledger',
+    )
+    expect(screen.queryByRole('link', { name: 'Revoir la mise en route' })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
   })
 })
@@ -1733,7 +1735,8 @@ describe('the allocation card (#1206)', () => {
     expect(titleRow).toHaveTextContent(/2\D?300,00/)
     expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
     expect(within(card).getAllByRole('listitem')).toHaveLength(3)
-    expect(card).toHaveTextContent('3 lignes en portefeuille')
+    // Nothing folded: the list counts itself (#1412).
+    expect(card).not.toHaveTextContent(/en portefeuille/)
 
     // The selector swaps the slot: pressed, not a radio, and the total holds.
     const bySecurity = within(card).getByRole('button', { name: 'Titre' })
@@ -1743,7 +1746,7 @@ describe('the allocation card (#1206)', () => {
     expect(byAccount).toHaveAttribute('aria-pressed', 'true')
     const legend = within(card).getByRole('list', { name: 'Répartition' })
     expect(within(legend).getByText('alpha')).toBeInTheDocument()
-    expect(card).toHaveTextContent('3 comptes en portefeuille')
+    expect(card).not.toHaveTextContent(/en portefeuille/)
     expect(titleRow).toHaveTextContent(/2\D?300,00/)
   })
 
@@ -2071,7 +2074,11 @@ describe('the movers', () => {
 
     // Undated (#1142): each line has its own previous close, and on a weekend a
     // stock's and a 24/7 line's are not on the same day.
-    expect(await screen.findAllByText('Depuis la clôture précédente')).toHaveLength(1)
+    expect(
+      await within(await screen.findByRole('region', { name: 'Mouvements' })).findAllByText(
+        'Aujourd’hui',
+      ),
+    ).toHaveLength(1)
   })
 })
 
@@ -2102,7 +2109,7 @@ describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
     renderApp()
     const movers = await screen.findByRole('region', { name: 'Mouvements' })
     const titleRow = within(movers).getByRole('heading', { name: 'Mouvements' }).parentElement!
-    expect(titleRow).toHaveTextContent(/Depuis la clôture précédente/)
+    expect(titleRow).toHaveTextContent(/Aujourd’hui/)
   })
 })
 
@@ -2268,7 +2275,9 @@ describe('the time announcers', () => {
     // The page's own mention of when its prices were read, and the movers'
     // reference close — a *different* instant, and the subject of that block.
     expect(await screen.findByText(/Cours au 2 mars 2026/)).toBeInTheDocument()
-    expect(screen.getAllByText(/Depuis la clôture/)).toHaveLength(1)
+    expect(
+      within(screen.getByRole('region', { name: 'Mouvements' })).getAllByText('Aujourd’hui'),
+    ).toHaveLength(1)
     // The two transitory ones are absent here: the reconstruction is over, so
     // the base date is not news and the notifications panel raises no card for
     // it (#829).
@@ -2346,7 +2355,9 @@ describe('the four states of the page', () => {
     // about the same portfolio, is on the shares page and says it there.
     expect(await screen.findByText('Rien à comparer')).toBeInTheDocument()
     // Nothing is compared, so the block names no close it compares against.
-    expect(screen.queryByText('Depuis la clôture précédente')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole('region', { name: 'Mouvements' })).queryByText('Aujourd’hui'),
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -2609,7 +2620,7 @@ describe('the comparison card (#1205)', () => {
     const region = await card('Face au MSCI World')
 
     expect(region).toHaveTextContent(body)
-    expect(Boolean(within(region).queryByRole('link', { name: 'Ouvrir le grand livre' }))).toBe(
+    expect(Boolean(within(region).queryByRole('link', { name: 'Aller au grand livre' }))).toBe(
       ledger,
     )
   })

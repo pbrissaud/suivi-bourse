@@ -86,7 +86,7 @@ describe('the panel holds three registers under four subjects', () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     await openPanel({ facts: [] })
 
-    const health = card('Quelque chose s’est arrêté')
+    const health = card('Le relevé des cours s’est arrêté')
     expect(within(health).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
     expect(within(health).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
   })
@@ -161,9 +161,7 @@ describe('the control that clears says what it clears', () => {
     expect(within(panel()).getByRole('button', { name: /acquitter/i })).toBeDisabled()
     // Greyed out with nothing to explain itself is the form the account
     // refusals already refuse: the reason is said, in words.
-    expect(panel().textContent).toContain(
-      'Rien à acquitter : ces 2 constats se terminent d’eux-mêmes.',
-    )
+    expect(panel().textContent).toContain('Ces 2 constats se terminent d’eux-mêmes.')
   })
 
   it('clears every acknowledgeable one in a single gesture', async () => {
@@ -210,7 +208,7 @@ describe('nothing to report is said of the panel, or it is not said', () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     await openPanel({ facts: [], advisories: [] })
 
-    await within(panel()).findByText('Quelque chose s’est arrêté')
+    await within(panel()).findByText('Le relevé des cours s’est arrêté')
     expect(within(panel()).queryByText('Rien à signaler')).not.toBeInTheDocument()
   })
 
@@ -269,7 +267,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     server.use(http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])))
     renderApp({ url: '/accounts' })
 
-    const chip = await screen.findByText('25 % de cash')
+    const chip = await screen.findByText('25 % de liquidités')
     // It sits on the name row of the open account's detail (#1277).
     const nameRow = chip.parentElement as HTMLElement
     expect(nameRow).toHaveTextContent('Alpha')
@@ -281,7 +279,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     renderApp({ url: '/accounts' })
 
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
-    expect(screen.queryByText(/% de cash/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/% de liquidités/)).not.toBeInTheDocument()
   })
 
   it('keeps the chip when the panel’s card is acknowledged, the condition standing', async () => {
@@ -308,7 +306,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     )
     const { user } = renderApp({ url: '/accounts' })
 
-    expect(await screen.findByText('25 % de cash')).toBeInTheDocument()
+    expect(await screen.findByText('25 % de liquidités')).toBeInTheDocument()
 
     await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
@@ -319,7 +317,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
       expect(within(panel).queryByText(/de liquidités non investies/)).not.toBeInTheDocument(),
     )
     // …and the reading stays, because the condition does.
-    expect(screen.getByText('25 % de cash')).toBeInTheDocument()
+    expect(screen.getByText('25 % de liquidités')).toBeInTheDocument()
   })
 })
 

@@ -20,7 +20,7 @@ export function NothingToCompare({ reason }: { reason: BenchmarkResponse['reason
   const { t } = useI18n()
   const toLedger = (
     <Link to="/ledger" className="font-medium underline underline-offset-4">
-      {t('benchmark.empty.noEvents.link')}
+      {t('empty.toLedger')}
     </Link>
   )
   switch (reason) {

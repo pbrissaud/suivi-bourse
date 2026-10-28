@@ -303,7 +303,9 @@ describe('the currency itself', () => {
     await firstRun()
 
     await waitFor(() =>
-      expect(within(modal()).getByText(/Une fois choisie, elle est fixée/)).toBeInTheDocument(),
+      expect(
+        within(modal()).getByText('Une fois enregistrée, elle ne se change plus.'),
+      ).toBeInTheDocument(),
     )
     expect(within(modal()).queryByText(/^Fixée /)).not.toBeInTheDocument()
   })
@@ -328,7 +330,9 @@ describe('the currency itself', () => {
     // left is the answer and the sentence that says it cannot be taken back.
     renderApp({ url: '/settings' })
 
-    expect(await screen.findByText(/elle ne peut plus changer/)).toBeInTheDocument()
+    expect(
+      await screen.findByText('Vos montants sont enregistrés dans cette devise.'),
+    ).toBeInTheDocument()
     expect(screen.queryByLabelText('Devise de base')).not.toBeInTheDocument()
     expect(screen.getByText('Devise de base')).toBeInTheDocument()
   })
@@ -778,7 +782,7 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     // entrance away — and the sentence names no folder, there being none left
     // to name.
     expect(
-      pair.getByText(/Remettez à l’application un ou plusieurs .csv ou .xlsx/),
+      pair.getByText(/Un ou plusieurs fichiers .csv ou .xlsx de vos événements/),
     ).toBeInTheDocument()
     expect(pair.queryByText(/\/import/)).not.toBeInTheDocument()
     // No primary action: a filled button beside an outlined one is a
@@ -934,7 +938,7 @@ function anEmptyLedger() {
 }
 
 describe('the walk can be found again', () => {
-  it('leads back to the accounts from the empty dashboard after a reload past the first passage', async () => {
+  it('leads back to the accounts from the palette after a reload past the first passage', async () => {
     const { user, unmount } = await firstRun({ browserLanguages: ['fr-FR'] })
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
     expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
@@ -947,12 +951,14 @@ describe('the walk can be found again', () => {
     await screen.findByText('Aucun événement')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    await again.user.click(screen.getByRole('link', { name: 'Revoir la mise en route' }))
+    // The empty dashboard keeps one action (#1435): the walk is the palette's.
+    await again.user.click(screen.getByRole('button', { name: /^Rechercher/ }))
+    await again.user.click(await screen.findByRole('button', { name: 'Revoir la mise en route' }))
     expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
     expect(within(modal()).getByText('Passage 2 sur 3')).toBeInTheDocument()
   })
 
-  it('reopens a walk closed by mistake, from the same link', async () => {
+  it('reopens a walk closed by mistake, from the palette', async () => {
     anEmptyLedger()
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
@@ -961,7 +967,8 @@ describe('the walk can be found again', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('answered')
 
-    await user.click(await screen.findByRole('link', { name: 'Revoir la mise en route' }))
+    await user.click(await screen.findByRole('button', { name: /^Rechercher/ }))
+    await user.click(await screen.findByRole('button', { name: 'Revoir la mise en route' }))
     expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
   })
 

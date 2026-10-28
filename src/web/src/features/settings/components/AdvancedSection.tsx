@@ -24,8 +24,11 @@ const UPDATE_CHECK = 'update_check'
  */
 const NOT_A_DIAL = new Set(['benchmark_symbol', UPDATE_CHECK, CURRENCY_KEY])
 
-/** What each known dial is called, how it is explained and in what unit. An unknown one falls back to its key and the registry's own doc. */
-const DIALS: Record<string, { label: MessageKey; hint: MessageKey; unit: MessageKey }> = {
+/**
+ * What each known dial is called, how it is explained and in what unit. An unknown one falls back to its key and the registry's own doc.
+ * A dial whose label already says what it does carries no hint (#1412).
+ */
+const DIALS: Record<string, { label: MessageKey; hint?: MessageKey; unit: MessageKey }> = {
   regular_interval: {
     label: 'settings.regular_interval',
     hint: 'settings.regular_interval.hint',
@@ -33,17 +36,14 @@ const DIALS: Record<string, { label: MessageKey; hint: MessageKey; unit: Message
   },
   backfill_interval: {
     label: 'settings.backfill_interval',
-    hint: 'settings.backfill_interval.hint',
     unit: 'settings.unit.seconds',
   },
   backfill_delay: {
     label: 'settings.backfill_delay',
-    hint: 'settings.backfill_delay.hint',
     unit: 'settings.unit.seconds',
   },
   backfill_chunk_days: {
     label: 'settings.backfill_chunk_days',
-    hint: 'settings.backfill_chunk_days.hint',
     unit: 'settings.unit.days',
   },
   staleness_horizon: {
@@ -100,7 +100,7 @@ function DialRow({
       state={dial.state}
       description={
         <>
-          <p>{known ? t(known.hint) : setting.doc}</p>
+          {known ? known.hint ? <p>{t(known.hint)}</p> : null : <p>{setting.doc}</p>}
           {reach ? (
             <p>{t('settings.cadence.reach', { now: reach.now, later: reach.atMarketOpen })}</p>
           ) : null}

@@ -45,13 +45,7 @@ import {
 } from '@/features/accounts/components/TaxationModelField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   declaredLabel,
   DEFAULT_ACCOUNT_LABEL,
@@ -333,12 +327,14 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
 
   return (
     <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-md">
+      <SheetContent
+        aria-describedby={undefined}
+        className="w-full gap-6 overflow-y-auto sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle>
             {t(account === null ? 'accounts.form.create.title' : 'accounts.form.edit.title')}
           </SheetTitle>
-          <SheetDescription>{t('accounts.form.description')}</SheetDescription>
         </SheetHeader>
 
         <form

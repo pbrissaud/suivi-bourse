@@ -282,7 +282,7 @@ export default function SharesPage() {
             description={t('shares.empty.body')}
             action={
               <Link to="/ledger" className="font-medium underline underline-offset-4">
-                {t('shares.empty.link')}
+                {t('empty.toLedger')}
               </Link>
             }
           />

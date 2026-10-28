@@ -110,11 +110,12 @@ export function JobsBlock({
               <div key={key} className="py-2.5">
                 <div className="flex flex-wrap items-baseline gap-x-3">
                   <dt>{t(JOB_NAMES[key])}</dt>
-                  <dd className="tabular ml-auto text-xs text-muted-foreground">
-                    {rows[key].at === null
-                      ? t('settings.jobs.never')
-                      : format.dateTime(rows[key].at)}
-                  </dd>
+                  {/* No pass, no instant: the verdict under it says so, once (#1412). */}
+                  {rows[key].at === null ? null : (
+                    <dd className="tabular ml-auto text-xs text-muted-foreground">
+                      {format.dateTime(rows[key].at)}
+                    </dd>
+                  )}
                 </div>
                 <dd className={cn('mt-0.5 text-xs', JOB_TONE[rows[key].status])}>
                   {t(...verdictOf(key, rows))}

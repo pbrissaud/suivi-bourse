@@ -45,8 +45,6 @@ interface ReferenceSelectProps {
   offered: readonly OfferedBenchmark[]
   /** The references whose series this install already holds. */
   downloaded: readonly string[]
-  /** Under the control from the start — the wait is announced, not discovered. */
-  hint?: boolean
   /** The trigger's width where the default `sm:w-96` is too wide for its row. */
   triggerClassName?: string
 }
@@ -55,7 +53,6 @@ export function ReferenceSelect({
   value,
   offered,
   downloaded,
-  hint = false,
   triggerClassName,
 }: ReferenceSelectProps) {
   const { t } = useI18n()
@@ -110,10 +107,6 @@ export function ReferenceSelect({
       </Select>
 
       {write.error ? <Refusal>{t(problemMessageKey(write.error))}</Refusal> : null}
-
-      {hint ? (
-        <p className="max-w-prose text-xs text-muted-foreground">{t('benchmark.select.hint')}</p>
-      ) : null}
     </div>
   )
 }

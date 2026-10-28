@@ -127,7 +127,8 @@ describe('the jobs', () => {
     )
     const jobs = await screen.findByRole('region', { name: 'Tâches' })
 
-    expect(jobs).toHaveTextContent('Jamais')
+    // Said once, by the verdict, and not again as « Jamais » beside it (#1412).
+    expect(jobs).toHaveTextContent(/Calcul de la performance\s*Pas encore exécuté\./)
   })
 
   it('do not exist while the health read is in flight', async () => {

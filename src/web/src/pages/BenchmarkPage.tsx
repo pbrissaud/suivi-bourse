@@ -139,9 +139,7 @@ export default function BenchmarkPage() {
         description={t('benchmark.empty.body')}
         // The one way out **is** the selector: this empty state's action is the
         // control itself, not a link to somewhere the control lives.
-        action={
-          <ReferenceSelect hint value={null} offered={data.offered} downloaded={data.consulted} />
-        }
+        action={<ReferenceSelect value={null} offered={data.offered} downloaded={data.consulted} />}
       />
     )
   }

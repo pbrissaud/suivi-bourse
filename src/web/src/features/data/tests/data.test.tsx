@@ -686,7 +686,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(85))
     // The control goes with the rows it was promising: there are none left.
     expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
-    expect(screen.getByText('Fin du grand livre · 85 événements')).toBeInTheDocument()
+    expect(screen.getByText('Fin du grand livre')).toBeInTheDocument()
   })
 
   it('says the end straight away on a ledger shorter than one packet', async () => {
@@ -694,7 +694,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     expect(rowsOf(ledger())).toHaveLength(4)
-    expect(screen.getByText('Fin du grand livre · 4 événements')).toBeInTheDocument()
+    expect(screen.getByText('Fin du grand livre')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
   })
 
@@ -734,7 +734,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     // **Of the reduction, never of the store** (#834): *the end of
     // the ledger* said over three rows out of a hundred and twenty-three is the
     // sentence that record refuses by name.
-    expect(screen.getByText('Fin des résultats · 3 événements')).toBeInTheDocument()
+    expect(screen.getByText('Fin des résultats')).toBeInTheDocument()
     expect(screen.queryByText(/Fin du grand livre/)).not.toBeInTheDocument()
   })
 })
@@ -796,7 +796,7 @@ describe('a reduction in force always has the chip that releases it', () => {
     // is what makes forty rows arriving a change with a sound.
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(50))
     expect(document.activeElement).not.toBe(document.body)
-    expect(document.activeElement).toHaveTextContent('Fin du grand livre · 50 événements')
+    expect(document.activeElement).toHaveTextContent('Fin du grand livre')
     expect(document.activeElement).toHaveAttribute('aria-live', 'polite')
   })
 })
@@ -1004,7 +1004,7 @@ describe('deleting the ticked rows (#1113)', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     await pickType(user, /^Buy/)
     expect(await screen.findByText('2 filtered events')).toBeInTheDocument()
-    expect(screen.getByText('End of the results · 2 events')).toBeInTheDocument()
+    expect(screen.getByText('End of the results')).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/reduction/i)
   })
 
@@ -1411,7 +1411,7 @@ describe('the create form, which is the onboarding', () => {
 
     // On the date, the sentence arrives while it can still change a behaviour.
     await user.click(bubbles[0])
-    expect(await screen.findByText(/calculés à partir de ces dates/)).toBeInTheDocument()
+    expect(await screen.findByText(/se calculent à partir de ces dates/)).toBeInTheDocument()
   })
 
   it('says what an empty grant price means, where the reader is leaving it empty', async () => {
@@ -1837,7 +1837,7 @@ describe('the page in English', () => {
     // The reveal speaks English too, and the English is the source.
     expect(await openMenu(user, 'Type')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All types · 4 events' })).toBeInTheDocument()
-    expect(screen.getByText('The end of the ledger · 4 events')).toBeInTheDocument()
+    expect(screen.getByText('The end of the ledger')).toBeInTheDocument()
   })
 })
 
