@@ -3,24 +3,38 @@
 name: SuiviBourse
 description: A warm, tidy workshop where you read how you invest — what you put in, how regularly, where it went, what it cost — and whether it is building wealth.
 colors:
-  background: "oklch(0.975 0.008 85)"
-  surface: "oklch(0.995 0.004 85)"
-  tint: "oklch(0.945 0.014 85)"
-  text: "oklch(0.22 0.02 60)"
-  text-muted: "oklch(0.5 0.02 60)"
-  rule: "oklch(0.9 0.012 85)"
-  primary: "oklch(0.30 0.03 60)"
-  gain: "oklch(0.48 0.10 164)"
-  on-primary: "oklch(0.995 0.004 85)"
-  dark-background: "oklch(0.17 0.012 60)"
-  dark-surface: "oklch(0.205 0.012 60)"
-  dark-tint: "oklch(0.23 0.014 60)"
-  dark-text: "oklch(0.95 0.008 85)"
-  dark-text-muted: "oklch(0.68 0.015 70)"
-  dark-rule: "oklch(0.3 0.012 60)"
+  background: "oklch(0.9741 0.0074 80.7212)"
+  foreground: "oklch(0.2193 0.0208 56.376)"
+  card: "oklch(0.9947 0.0045 78.2986)"
+  muted: "oklch(0.9445 0.0132 82.4018)"
+  muted-foreground: "oklch(0.5003 0.0199 61.6482)"
+  border: "oklch(0.9012 0.0129 86.8337)"
+  input: "oklch(0.8207 0.0145 88.7)"
+  accent: "oklch(0.92 0.0145 84.5845)"
+  primary: "oklch(0.3 0.03 60)"
+  primary-foreground: "oklch(0.9947 0.0045 78.2986)"
+  destructive: "oklch(0.5498 0.2096 25.1372)"
+  gain: "oklch(0.4825 0.1032 163.7504)"
+  chart-1: "oklch(0.5 0.14 255)"
+  chart-3: "oklch(0.47 0.16 305)"
+  chart-4: "oklch(0.58 0.09 215)"
+  chart-5: "oklch(0.38 0.06 45)"
+  dark-background: "oklch(0.1687 0.0117 60.5255)"
+  dark-foreground: "oklch(0.95 0.0074 80.7208)"
+  dark-card: "oklch(0.2047 0.0112 60.7853)"
+  dark-muted: "oklch(0.2287 0.0145 57.4561)"
+  dark-muted-foreground: "oklch(0.68 0.0142 71.2595)"
+  dark-border: "oklch(0.2982 0.0113 55.9114)"
+  dark-input: "oklch(0.3614 0.0141 62.9858)"
+  dark-accent: "oklch(0.265 0.0141 67.1532)"
   dark-primary: "oklch(0.92 0.012 80)"
-  dark-gain: "oklch(0.80 0.13 165)"
-  dark-on-primary: "oklch(0.17 0.012 60)"
+  dark-primary-foreground: "oklch(0.1687 0.0117 60.5255)"
+  dark-destructive: "oklch(0.7008 0.1902 25.1101)"
+  dark-gain: "oklch(0.8001 0.1297 165.0822)"
+  dark-chart-1: "oklch(0.7 0.12 255)"
+  dark-chart-3: "oklch(0.66 0.15 305)"
+  dark-chart-4: "oklch(0.82 0.06 220)"
+  dark-chart-5: "oklch(0.55 0.08 50)"
 typography:
   hero:
     fontFamily: Geist
@@ -62,47 +76,51 @@ typography:
     fontSize: 12px
     lineHeight: 16px
     letterSpacing: 0em
-  mono:
-    fontFamily: Geist Mono
+  table:
+    fontFamily: Geist
     fontSize: 13px
-    fontFeature: tnum
+    lineHeight: 18px
+  ticker:
+    fontFamily: Geist Mono
+    fontSize: 11px
+    lineHeight: 16px
 rounded:
-  sm: 8px
-  md: 14px
-  lg: 18px
+  md: 8px
+  card: 14px
+  section: 18px
   full: 9999px
 spacing:
   xs: 4px
   sm: 8px
   md: 12px
   base: 16px
-  section-gap: 20px
+  section: 20px
   lg: 24px
   xl: 32px
   2xl: 40px
   3xl: 64px
 components:
   section:
-    backgroundColor: "{colors.tint}"
-    rounded: "{rounded.lg}"
+    backgroundColor: "{colors.muted}"
+    rounded: "{rounded.section}"
     padding: 20px 24px
   card:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.md}"
+    backgroundColor: "{colors.card}"
+    rounded: "{rounded.card}"
     padding: 14px
   button-primary:
     backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-primary}"
-    rounded: "{rounded.sm}"
+    textColor: "{colors.primary-foreground}"
+    rounded: "{rounded.md}"
   button-secondary:
-    borderColor: "{colors.rule}"
-    textColor: "{colors.text}"
-    rounded: "{rounded.sm}"
+    borderColor: "{colors.border}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.md}"
   chip:
-    borderColor: "{colors.rule}"
+    borderColor: "{colors.border}"
     rounded: "{rounded.full}"
   agent-thread-column:
-    backgroundColor: "{colors.tint}"
+    backgroundColor: "{colors.muted}"
     width: 240px
   sidebar:
     width: 200px
@@ -133,6 +151,11 @@ reading among others. Release 5.3 adds an agent page, `/agent` (Vercel AI SDK, `
 **Mode per surface:** every screen is Operate (an app UI: finish a task, read figures).
 The website under `website/` is out of scope for this file.
 
+**Page names:** this file names the pages in English; the interface, the mockups and the
+issues use the French ones. Dashboard = *Tableau de bord*, Shares = *Titres*, Accounts =
+*Comptes*, Ledger = *Grand livre*, Benchmark = *Référence*, Agent = *Agent*, System =
+*Système*, Settings = *Réglages*.
+
 **Reference sites (studied 10/10/2026):** wealthfolio.app (cream ground, italic serif,
 the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesight.com
 (classic holdings table). Direction chosen against three rendered alternatives
@@ -147,16 +170,45 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
   chart hues to tell the parts of a drawing apart.
 - Avoid unnecessary supporting text, descriptive copy, and redundant UI microcopy
 
+## Content
+
+- **French first, in the reader's words.** Interface copy is French, in sentence case,
+  with no jargon: « Valeur du portefeuille », « de gain total », « Saisir un événement »,
+  « Cours au 2 mars 2026, 13:00 ». English mirrors it in the same register.
+- **Say less.** No supporting text, descriptive copy or microcopy that repeats what the
+  screen already shows. A label names; a figure answers; a fact is said once, where it is
+  decided.
+- **Verbs on actions, the past on receipts.** A button says what happens (« Déclarer un
+  compte », « Importer »); its toast says it happened (« Événement enregistré »).
+- **Errors say what and how to fix**, beside the control that earned them, without
+  apology: « Cette vente dépasse les 10 titres ZZA détenus au 10/02/2026. Corrigez la
+  quantité ou la date. »
+- **One word per thing**, everywhere: the three return measures of *Return figures*
+  below, and one term per page, action and figure across the app, the docs and the agent.
+- **Numbers in the French locale:** `2 800,00 €`, `+3,22 %`, `−5,00 €` (a real minus,
+  U+2212), compact axis amounts `17,5 k€`, dates `2 mars 2026`.
+- **An emptiness says why** and what will fill it (« Aucun événement », « Aucune devise
+  de base », « Lecture impossible »). It is never said over a read still in flight.
+- No emoji, no exclamation marks, no uppercase letter-spaced overlines, no kicker above a
+  heading.
+
 ## Colors
 
 **Strategy:** restrained. Warm neutrals carry the page and a warm ink owns action. Mint is
 the colour of a gain and red the colour of a loss, and they colour only signs and figures.
 The chart hues tell categories apart inside a drawing.
 
+**Names:** the colours are named as the theme's tokens are, the standard shadcn names
+that `atelier.json`, `index.css` and the design system use. Earlier revisions of this file
+called them `tint` (now `muted`, the section plane), `surface` (`card`), `text`
+(`foreground`), `text-muted` (`muted-foreground`), `rule` (`border`) and `on-primary`
+(`primary-foreground`). `gain` is the role of `chart-2`. The front matter's values are
+`atelier.json`'s (`stylesheet.test.ts` holds them within 0.01 ΔE_ok).
+
 **Light or dark:** both ship. The use scene is a person checking their own money at a
 desk or on a phone, often in the evening: light is the default, dark follows the
 system setting. Dark keeps the hierarchy by stepping the same warm neutrals (background,
-surface, tint) rather than inverting lightness, and lifts the ink and the mint so they
+card, muted) rather than inverting lightness, and lifts the ink and the mint so they
 keep their contrast.
 
 - `primary`, the ink, is the colour of interaction: primary buttons, focus rings, the caret,
@@ -174,14 +226,14 @@ keep their contrast.
 - The dashboard's *Performance* curve is the one drawing coloured by its sign: `gain` above
   the 0 % line, `loss` below it, split exactly at zero. The 0 % line and the axis carry the
   same information without colour. Both colours are the `--gain` and `--loss` tokens.
-- `tint` is the section plane; `surface` is reserved for cards and inputs that sit on it.
-- `rule` separates rows inside a section, or in a page's own table, and nothing else.
+- `muted` is the section plane; `card` is reserved for cards and inputs that sit on it.
+- `border` separates rows inside a section, or in a page's own table, and nothing else.
 - A job's history bar (System page, #1236) is the one place a status colours a mark: an
   hour with a failed pass is `destructive` with ✕, one that needs a look `foreground`
-  with ▲, a good one `text-muted`; an idle hour is a `rule` stub, an hour with no pass a
-  dashed `rule` outline; an hour before the process started draws nothing. The glyph
+  with ▲, a good one `muted-foreground`; an idle hour is a `border` stub, an hour with no pass a
+  dashed `border` outline; an hour before the process started draws nothing. The glyph
   carries the meaning, the colour repeats it.
-- Secondary text on a tinted plane uses `text-muted`, which is derived from the same
+- Secondary text on a tinted plane uses `muted-foreground`, which is derived from the same
   warm hue, never a neutral gray.
 - Gain is `chart-2` and loss is `destructive`: `--gain` and `--loss` point at them. Nothing
   else reads `chart-2`, so on Atelier the colour of a gain is not the colour of an action
@@ -190,10 +242,13 @@ keep their contrast.
   together. The +/− sign and the 0 % line carry the direction either way.
 - A category in a drawing (an allocation slice, an account's identity) takes a chart hue:
   `chart-1`, `chart-3`, `chart-4`, `chart-5` in that order, and `muted-foreground` for a
-  fold. On Atelier, each clears 3:1 against `background`, `tint` and `surface` on both
+  fold. On Atelier, each clears 3:1 against `background`, `muted` and `card` on both
   grounds, and two neighbours on the ring are at least 0.12 ΔE_ok apart
   (`src/web/src/palette.test.ts`). Slices are separated by a 2 px `background` gap and each
   is named in its legend, so a theme with weaker chart hues still reads.
+- A mark that carries information in a drawing (a bar, a curve, a slice, a month of the
+  rhythm strip) keeps 3:1 against the plane it sits on (WCAG 1.4.11). It is drawn at full
+  opacity: a token at partial opacity is a new colour that no test measures.
 - A status, an event's kind and a fixed-sign figure carry no hue: an event marker is
   `foreground`, a ledger type is a `muted` pill, a job that ran well is `foreground` with
   its glyph.
@@ -223,13 +278,21 @@ shipped face would cost every screen for no reader benefit.
 - **Term (16/24, 600):** a term under a figure (a sheet's price, average cost, quantity; the
   benchmark's two returns). A figure inside a line takes its line's size.
 - **Prose (15/22):** the agent's answers and any explanatory paragraph.
-- **Body (14/20):** controls, table text, labels in forms. Below the usual 16 px rule
+- **Body (14/20):** controls and labels in forms. Below the usual 16 px rule
   on purpose: this is a dense tool UI; long reading text uses Prose.
-- **Label (12/16, 500):** meta and column headers, `text-muted`, never letter-spaced.
-- **Mono (13, `tnum`):** every figure, in a table or not, is Geist with
+- **Table (13/18):** the cells of a table and the dense lines that read like one (a
+  ruled list on a phone). `text-sm` in the app,
+  `.table-text` in the design system.
+- **Label (12/16, 500):** meta and column headers, `muted-foreground`, never letter-spaced.
+- **Mono, the Ticker rung (11/16, Geist Mono):** every figure, in a table or not, is Geist with
   `font-variant-numeric: tabular-nums` (#1281, which reverses the table half of #838).
-  Geist Mono is for identifiers: tickers and account ids, 11 to 12 px. Mono in the middle
-  of a sentence is a bug.
+  Geist Mono is for identifiers only: tickers and account ids, at 11 px beside the name
+  they identify. Mono in the middle of a sentence, on a figure or on a version number is
+  a bug.
+
+These ten rungs are the whole ladder: a size that is not one of them is a bug, in the app
+and in a mockup alike. A mockup names the rung (the design system's `.section-title`,
+`.prose`, `.table-text`…) rather than writing a literal size.
 
 ## Layout
 
@@ -245,7 +308,7 @@ shipped face would cost every screen for no reader benefit.
 
   The widths are tokens in `index.css` (`--container-column`, `--container-settings`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - A table's totals are its last row, under the columns they sum (#1281).
-- A table page's table sits on the background, with no plane and no frame (#1273). The header, the `rule` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
+- A table page's table sits on the background, with no plane and no frame (#1273). The header, the `border` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
 - **< 768 px:** single column.
 - Under 768 px the Shares table is a list on the background (#1338): one ruled item per held line, the name and valuation on the first line, the ticker and the latent gain on the second, the totals as four ruled rows, and a sort select with a direction button in the toolbar. The closed lines and the sheet's per-account breakdown are lists too.
 - A table page has no side panel: its filters are a toolbar above the table, its
@@ -254,16 +317,16 @@ shipped face would cost every screen for no reader benefit.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
   flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
   below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).
-- The accounts page: the accounts are a sticky bar of chips over the detail, at every width, each chip naming the account, its value and its share. The detail reads like the dashboard's head (the account value as the hero, a line naming its cash and net contribution, the gain and IRR pills, the curve), then one row of secondary figures on the Figure rung, then its sections. Every row of the detail is shared equally by the blocks present, so an absent block never leaves a hole.
+- The accounts page: the accounts are a sticky bar of chips over the detail, at every width, each chip naming the account, its value and its share. The detail reads like the dashboard's head (one label, the account value as the hero, a line naming its cash and net contribution, the total gain on its own line, then one plain row with the IRR, the curve; no pills, as on the dashboard since #1280), then one row of secondary figures on the Figure rung, then its sections. Every row of the detail is shared equally by the blocks present, so an absent block never leaves a hole.
 - **Rhythm:** 20 px between sections, 24 px around the content, 12 px between a section
   title and its content. Large gaps (40, 64) only separate the hero from the first
   section and the page from its footer.
 
 ### The section (replaces "everything is a card")
 
-A section is a tinted plane: `tint` background, `rounded.lg`, padding 20 px 24 px, no
+A section is a tinted plane: `muted` background, `rounded.section`, padding 20 px 24 px, no
 border, no shadow of its own. Its first row holds the title on the left and the section's own
-subtotal on the right, like a line of a statement. Rows inside are separated by `rule`.
+subtotal on the right, like a line of a statement. Rows inside are separated by `border`.
 
 A section never contains another section. A long page is a sequence of sections; the
 dashboard alone lays its sections out on a grid the owner arranges (below).
@@ -298,7 +361,7 @@ followed by "· N nouvelles cartes disponibles" when a card is new): the
 link's line gives way to a bar opening at the top of the grid, the title "Modifier le tableau de bord" in Section title on
 the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on the
 right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the end of
-its own title row, a 28 px ghost button (44 px on touch), `text-muted` turning
+its own title row, a 28 px ghost button (44 px on touch), `muted-foreground` turning
 `foreground` on hover and focus. On a desktop with a fine pointer, a ⠿ drag handle with
 the same look (and `cursor: grab`) sits before the title; dragging follows the menu's
 rule (a full section lands between two rows, a half takes another half's place) and
@@ -306,7 +369,7 @@ keeps every section's width until the drop. Phones have the menu only. The secti
 content is inert; the hero is neither dimmed nor movable. Hidden sections are listed in
 a "Cartes masquées" section under the grid, a chip "Nouveau" on the ones a release
 added. The empty half beside a half-only section shows "Place libre" in Label on a 1 px
-dashed `rule` outline, in edit mode only. Resetting is confirmed in a card (a
+dashed `border` outline, in edit mode only. Resetting is confirmed in a card (a
 destructive confirmation).
 
 An account section reads like a statement and ends with the net:
@@ -353,42 +416,55 @@ is in percent from the start of the visible window, never in base 100.
 ## Elevation & Depth
 
 Flat. Atelier's shadow opacity is 0, so depth comes from the step between
-`background`, `tint` and `surface`, not from shadows. Components still carry shadcn's
+`background`, `muted` and `card`, not from shadows. Components still carry shadcn's
 `shadow-*` utilities (a card `shadow-sm`, a menu `shadow-md`), so a replacement theme's
 shadows show. Atelier draws none. No zero-offset glow, in either theme.
 
 ## Shapes
 
-- `rounded.lg` (18 px): sections.
-- `rounded.md` (14 px): cards. A card sits on a section, so 18 − 4 keeps the curves
+- `rounded.section` (18 px): sections.
+- `rounded.card` (14 px): cards. A card sits on a section, so 18 − 4 keeps the curves
   concentric.
-- `rounded.sm` (8 px): buttons, inputs, menus.
+- `rounded.md` (8 px): buttons, inputs, menus.
 - `rounded.full`: chips only.
-- A dashed `rule` outline marks a place where something can be put (a free grid slot, a
+- In code these are `--radius-section`, `--radius-card` and `--radius-md`, all derived from
+  the theme's `--radius`; a mockup uses them and no other radius.
+- A dashed `border` outline marks a place where something can be put (a free grid slot, a
   drop zone, the slot for a new account). An empty state is text on its plane, never
   outlined. Marks inside a drawing (a chart's grid and curves, a job hour with no pass)
   are exempt.
+
+## Iconography
+
+- Lucide icons, 16 px in controls and navigation, stroke 2, coloured by the text they sit
+  with (`currentColor`). No emoji.
+- The navigation's set, one icon per page and reused wherever that page's object appears
+  (the palette, the first run): LayoutDashboard (Dashboard), CircleDollarSign (Shares),
+  Wallet (Accounts), Database (Ledger), Scale (Benchmark), Sparkles (Agent), Server
+  (System), Settings (Settings).
+- An icon-only button carries an `aria-label`; a decorative icon is `aria-hidden`.
+- The product's mark is #1337's to settle; until then, the sidebar's ink tile.
 
 ## Components
 
 - **Section:** see Layout. No hover state; the section itself is not interactive. In
   the dashboard's edit mode its title row carries the ⋯ menu (see The dashboard grid).
-- **Card:** `surface`, `rounded.md`, 14 px padding. Allowed only for something the
+- **Card:** `card`, `rounded.card`, 14 px padding. Allowed only for something the
   user decides (an agent proposal, a profile fact to confirm, a first-run step, a
   destructive confirmation) or selects (an account tile). Never a card inside a card.
   A decided proposal loses its buttons **and its frame**: one status line (decision 5A).
 - **Weight bar:** a 6 px `muted-foreground` bar with its percentage in Label, inside holding
   rows and in a legend drawn without a ring (the dashboard's allocation at half width). In
   an account's own rows it takes the account's identity hue.
-- **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `text-muted`, tabular numerals; no axis line, no tick mark; the dashed `rule` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
-- **Buttons:** primary (filled `primary`), secondary (outlined `rule`), both 32 px high,
+- **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `muted-foreground`, tabular numerals; no axis line, no tick mark; the dashed `border` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
+- **Buttons:** primary (filled `primary`), secondary (outlined `border`), both 32 px high,
   44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
   opacity, no pointer events, the reason given in text next to it. A submit disabled only
   because its own field is empty needs no sentence: the field's placeholder says what to enter.
 - **Chips (agent profile facts):** outlined, Label size; each opens a popover with
   the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
 - **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
-  "Nouveau fil" and "Fils récents" head the `tint` thread rail (a `rule` on its right, no radius) from 1 024 px, and are
+  "Nouveau fil" and "Fils récents" head the `muted` thread rail (a `border` on its right, no radius) from 1 024 px, and are
   the header's buttons below. Tool calls are one muted shadcn `trace` line in plain
   words, shimmering while the call runs; its chevron opens the raw call in a `code-block`, its JSON
   coloured by shiki (2A). The CIF line "Simulations à partir de vos données
@@ -400,9 +476,9 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   line). While a turn streams, one thing moves at a time: a running tool line, the pending
   line "Préparation de la réponse…" (a running trace line, no chevron), or the growing text.
 - **PIN screen and Accès block (#1203):** the PIN screen is a single 360 px column on a
-  `tint` plane (`rounded.lg`, no border, no shadow) centred on `background`: the product
-  name in Label `text-muted`, the heading "Entrez votre code" in Section title, six 44 px
-  slots (`surface`, 1 px `rule`, `rounded.sm`, a dot for a filled slot) in one real
+  `muted` plane (`rounded.section`, no border, no shadow) centred on `background`: the product
+  name in Label `muted-foreground`, the heading "Entrez votre code" in Section title, six 44 px
+  slots (`card`, 1 px `border`, `rounded.md`, a dot for a filled slot) in one real
   numeric input, and a full-width 44 px primary "Déverrouiller". The code is sent at the
   sixth digit; a wrong code clears the slots and says so in `destructive`; a throttled
   wait counts down from `Retry-After`, announced at its start and end only. "Code
@@ -411,11 +487,25 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   narrows to 4 px. A session that ends inside the app opens the same form in a modal,
   non-dismissable dialog over the mounted page. The *Accès* settings section carries a
   `Switch` in its title row that flips only once its card's action succeeds; with the PIN
-  on, three `rule`-separated rows (Code, Jeton MCP, Cet appareil) each open a `surface`
+  on, three `border`-separated rows (Code, Jeton MCP, Cet appareil) each open a `card`
   card under them, one at a time, Escape closing it — except the token card, which only
   "J'ai copié le jeton" closes.
 - **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings
-  are `primary`; scrollbars are thin and use `rule`.
+  are `primary`; scrollbars are thin and use `border`.
+
+## States
+
+Every block ships its four states:
+
+- **Nominal.**
+- **In flight:** the block holds its place as an empty plane, with nothing in it (#795).
+- **Empty:** an `EmptyState`, a title, why, and **one** action, as text on its plane
+  (never outlined).
+- **Failed:** « Lecture impossible » where the content would have been, never a band; the
+  outage toast echoes the bell.
+
+Figures from a failed recompute carry one `StaleFigures` sentence above the page. A
+refused write shows a `Refusal` beside its button and keeps what was typed.
 
 ## Do's and Don'ts
 
@@ -483,3 +573,4 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 | 2026-10-20 | The dashboard's composition (#1280) | Seen on screen, four equal pills read as filter chips and the total gain weighed no more than today's move: it takes its own line, the other three become a plain row. The chart's reading, legend and range share one bar; the edit link closes the grid; the rhythm's strip fills its row. A fresh install now shows the allocation and keeps the benchmark hidden without "Nouveau" (a `hiddenByDefault` flag, apart from `arrivesHidden`, which concerns saved layouts only); the movers go half. Saved layouts are untouched. Three-track packing is #1325. |
 | 2026-10-20 | Tables sit on the page background; the Benchmark head sits on the ground; markers merge (#1273) | Seen on screen, the Shares and Ledger tables in a white bordered card, the Benchmark head, chart and rebuild status in cards, and the share sheet's three gain terms in boxes broke the rule that a card is for a decision. The owner's choices: a page's own table has no plane and no frame (the closed shares become a disclosure row under the total); the Benchmark head reads like the dashboard's, on the ground, with its chart, rebuild status and per-account table as sections; the sheet's terms are a row of Label over figure. Days that land on one plotted point, or within 0.04 of the plot, share one marker whose click selects the lines of all its days. `lint/card-for-decisions.grit` keeps the `Card` for decisions. |
 | 2026-10-20 | Four figure rungs, a dashed outline for a place to put something, dark neutrals pinned (#1284) | The re-audit still counted six standalone figure sizes and figures in Geist Mono. Hero 60, Figure 28, Section title 20 (`Stat`'s `stat` moves from 19) and a named Term 16 are the whole ladder; a figure inside a line takes its line's size. A dashed outline meant both "empty" and "put something here": the empty state loses its border. The dark neutrals already matched the warm values above (within 0.005 ΔE_ok), so the tokens stay and CI now checks every colour on both grounds, with a warmth threshold on the dark ones. |
+| 2026-10-28 | DESIGN.md speaks the tokens' names and states what the design system said alone (#1436) | The UX/UI review of the Design canvas found DESIGN.md, the design system README and the canvas disagreeing. The colours take the shadcn names `atelier.json` uses, with `atelier.json`'s values, plus `input`, `accent`, `destructive` and the chart hues; the radii and the section gap take the tokens' names (`rounded.md` was 14 px here and 8 px in the tokens); the `mono` rung becomes `ticker` (11/16) and the ladder gains `table` (13/18), both already in the app; the accounts head loses its pills, as the dashboard did in #1280; *Content*, *Iconography* and *States* come over from the design system README; a page-name glossary and a 3:1 rule for marks in a drawing are added. The decisions #1436 lists (the mark, the account statement, the pill radius, the Settings anatomy against #1279, the field border's contrast) are left to the owner. |
