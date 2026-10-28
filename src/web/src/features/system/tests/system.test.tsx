@@ -108,6 +108,23 @@ describe('the jobs', () => {
     expect(jobs).not.toHaveTextContent('frozen')
   })
 
+  it('mark a state to check with the ▲ glyph, not a dot of one colour for both (#1429)', async () => {
+    await openSystem(undefined, aFrozenScrape())
+    const check = within(await screen.findByRole('region', { name: 'Tâches' })).getByText(
+      'À vérifier.',
+    )
+    expect(check).toHaveTextContent(/^▲À vérifier\.$/)
+    expect(check.querySelector('.rounded-full')).toBeNull()
+  })
+
+  it('draw no glyph when everything works', async () => {
+    await openSystem()
+    const fine = within(await screen.findByRole('region', { name: 'Tâches' })).getByText(
+      'Tout fonctionne.',
+    )
+    expect(fine).toHaveTextContent(/^Tout fonctionne\.$/)
+  })
+
   it('say a stopped scheduler', async () => {
     await openSystem(undefined, aHealth({ status: 'attention', scheduler_running: false }))
     const jobs = await screen.findByRole('region', { name: 'Tâches' })

@@ -221,7 +221,7 @@ export function JobHistogram({
                       : undefined
                   }
                   className={cn(
-                    'block rounded-[1px]',
+                    'block',
                     tone === 'ok' && 'bg-muted-foreground',
                     tone === 'attention' && 'bg-foreground',
                     tone === 'error' && 'bg-destructive',

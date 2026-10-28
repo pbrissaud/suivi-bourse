@@ -22,9 +22,9 @@ export function ContentHeader() {
 
   return (
     // 56 px tall and padded like the page under it — the drawing gives the bar
-    // and the content column one gutter, 14 px on a phone, 20 from `md` and 28
+    // and the content column one gutter, 14 px on a phone, 20 from `md` and 24
     // from `lg`, so nothing in the header hangs off what is below it.
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-3.5 md:px-5 lg:px-7">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-3.5 md:px-5 lg:px-6">
       {/* No `aria-label` here: the trigger names itself from `header.toggleSidebar`
           — the vendored English was fixed in the component rather than covered
           over at this one call site, which left the rail and the drawer speaking

@@ -118,12 +118,12 @@ export function Shell() {
             centring a column that fills its parent does nothing, and what it
             centred in was never the viewport. */}
           {/* The page's gutter is the header's, and it is the drawing's ladder:
-            14 px on a phone, 20 from `md`, 28 from `lg`. `scroll-mt-14` keeps
+            14 px on a phone, 20 from `md`, 24 from `lg`. `scroll-mt-14` keeps
             the skip link's target below the sticky 56 px header (#1411). */}
           <div
             id="content"
             tabIndex={-1}
-            className="w-full scroll-mt-14 p-3.5 outline-none md:p-5 lg:p-7"
+            className="w-full scroll-mt-14 p-3.5 outline-none md:p-5 lg:p-6"
           >
             <Outlet />
           </div>

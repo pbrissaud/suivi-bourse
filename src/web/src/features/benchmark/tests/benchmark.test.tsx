@@ -69,21 +69,25 @@ describe('the comparison', () => {
     expect(screen.queryByText('+6,4 %')).not.toBeInTheDocument()
   })
 
-  it('draws your return in the colour of its sign (#1112)', async () => {
-    const fillOf = () =>
+  it('colours your return’s figure by its sign and leaves both bars neutral (#1429)', async () => {
+    const yours = () => screen.getByRole('group', { name: 'Votre portefeuille' })
+    const fillOf = (name: string) =>
       screen
-        .getByRole('group', { name: 'Votre portefeuille' })
+        .getByRole('group', { name })
         .querySelector('[data-share-bar] > span')
         ?.getAttribute('style')
 
     const { unmount } = renderBenchmark(ready())
     await head()
-    expect(fillOf()).toContain('var(--gain)')
+    expect(within(yours()).getByText('+11,2 %')).toHaveClass('text-gain')
+    expect(fillOf('Votre portefeuille')).toContain('var(--muted-foreground)')
+    expect(fillOf('La référence')).toContain('var(--muted-foreground)')
     unmount()
 
     renderBenchmark(ready({ portfolio_return: -0.05, gap_gross: -1200 }))
     await head()
-    expect(fillOf()).toContain('var(--loss)')
+    expect(within(yours()).getByText(/5,0 %/)).toHaveClass('text-loss')
+    expect(fillOf('Votre portefeuille')).toContain('var(--muted-foreground)')
   })
 
   it('says the gap was made with the same money invested, which is the whole claim', async () => {

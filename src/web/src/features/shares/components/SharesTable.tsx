@@ -139,7 +139,8 @@ function ColumnHead({ label, column, sort, onSort, numeric, className }: ColumnH
         <button
           type="button"
           onClick={() => onSort(column)}
-          className="inline-flex items-center gap-1 rounded underline-offset-4 hover:underline"
+          // 44 px on touch (DESIGN.md › Buttons), and DESIGN.md's 2 px ring.
+          className="inline-flex items-center gap-1 rounded underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:min-h-11"
         >
           {t(label)}
           {inForce ? <Arrow className="size-3" aria-hidden /> : null}

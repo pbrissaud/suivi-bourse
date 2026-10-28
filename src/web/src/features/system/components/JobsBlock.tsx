@@ -21,12 +21,6 @@ const JOB_TONE: Record<HealthStatus, string> = {
   unknown: 'text-muted-foreground',
 }
 
-const JOB_DOT: Record<HealthStatus, string> = {
-  ok: 'bg-foreground',
-  attention: 'bg-attention',
-  unknown: 'bg-muted-foreground',
-}
-
 const JOB_KEYS = ['scrape', 'backfill', 'performance'] as const
 
 type JobKey = (typeof JOB_KEYS)[number]
@@ -82,8 +76,14 @@ export function JobsBlock({
     <Section
       title={t('settings.jobs')}
       aside={
-        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span aria-hidden className={cn('size-2 rounded-full', JOB_DOT[health.status])} />
+        // The glyph carries the state as the history bar's does; a dot would
+        // be one colour for both, `attention` aliasing `foreground` (#1429).
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {health.status === 'attention' ? (
+            <span aria-hidden className="text-foreground">
+              ▲
+            </span>
+          ) : null}
           {t('settings.jobs.state', { state: health.status })}
         </span>
       }
