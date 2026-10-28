@@ -187,14 +187,21 @@ describe('index.css says what DESIGN.md says about the colours', () => {
   /** DESIGN.md's colour names and the token of block 1 each one is drawn with. */
   const TOKENS = {
     background: '--background',
-    surface: '--card',
-    tint: '--muted',
-    text: '--foreground',
-    'text-muted': '--muted-foreground',
-    rule: '--border',
+    foreground: '--foreground',
+    card: '--card',
+    muted: '--muted',
+    'muted-foreground': '--muted-foreground',
+    border: '--border',
+    input: '--input',
+    accent: '--accent',
     primary: '--primary',
-    'on-primary': '--primary-foreground',
+    'primary-foreground': '--primary-foreground',
+    destructive: '--destructive',
     gain: '--chart-2',
+    'chart-1': '--chart-1',
+    'chart-3': '--chart-3',
+    'chart-4': '--chart-4',
+    'chart-5': '--chart-5',
   } as const
 
   it('DESIGN.md states every colour of the preset, on both grounds', () => {
