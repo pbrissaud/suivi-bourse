@@ -762,7 +762,7 @@
   "settings.jobs.unfolded": "Job status unreadable. Check the logs.",
   "settings.jobs.never": "Never",
   "settings.jobs.scrape": "Price polling",
-  "settings.jobs.scrape.verdict": "{verdict, select, open {{held, plural, one {# security polled} other {# securities polled}}, markets open.} closed {{held, plural, one {# security held} other {# securities held}}, markets closed.} frozen {Frozen prices: {symbols}.} failing {No price for {symbols}.} backoff {{symbols} failing, retries spaced out.} write_failed {Could not save: {symbols}.} other {{held, plural, one {# security held} other {# securities held}}.}}",
+  "settings.jobs.scrape.verdict": "{verdict, select, open {{closed, plural, =0 {{polled, plural, one {# security polled} other {# securities polled}}, markets open.} one {{polled, plural, one {# security polled} other {# securities polled}}, # waiting for its market to open.} other {{polled, plural, one {# security polled} other {# securities polled}}, # waiting for their market to open.}}} closed {{held, plural, one {# security held} other {# securities held}}, markets closed.} frozen {Frozen prices: {symbols}.} failing {No price for {symbols}.} backoff {{symbols} failing, retries spaced out.} write_failed {Could not save: {symbols}.} other {{held, plural, one {# security held} other {# securities held}}.}}",
   "settings.jobs.backfill": "History rebuild",
   "settings.jobs.backfill.verdict": "{verdict, select, complete {Complete ({scope, plural, one {# series} other {# series}}).} running {{complete, number} of {scope, number} series complete.} failing {Stuck on {symbols}.} unconvertible {{symbols}: cannot convert to the base currency.} other {Not run yet.}}",
   "settings.jobs.performance": "Performance calculation",

@@ -671,7 +671,7 @@ interface HealthJob {
 
 export interface HealthJobs {
   /** Held symbols only: a sold line keeps no scrape job and no record. */
-  scrape: HealthJob & { held: number; attention: string[] }
+  scrape: HealthJob & { held: number; closed: number; attention: string[] }
   /** `complete`/`in_scope` ride beside the verdict: *is it advancing* is a pair
    * of numbers and not a word. */
   backfill: HealthJob & { complete: number; in_scope: number; attention: string[] }

@@ -847,6 +847,40 @@ def test_a_healthy_process_reports_no_errors():
 
 
 # ===================================================================== #
+# The scrape line of /health (#1357)
+# ===================================================================== #
+
+def _scrape_line(**records):
+    shares = [_share(symbol=symbol) for symbol in records]
+    return runtime_view.health_scrape(runtime_view.build_symbols(
+        shares, records, {}, {}, NOW))
+
+
+def _closed_pass(symbol):
+    return _scrape(symbol=symbol, market_state='CLOSED', closed=True,
+                   verdict=runtime_state.SCRAPE_CLOSED)
+
+
+def test_the_scrape_line_counts_the_symbols_waiting_for_their_market():
+    line = _scrape_line(AAPL=_scrape(), ASML=_closed_pass('ASML'),
+                        SAP=_closed_pass('SAP'))
+
+    assert (line['verdict'], line['held'], line['closed']) == ('open', 3, 2)
+
+
+def test_the_scrape_line_counts_none_closed_when_every_market_is_open():
+    line = _scrape_line(AAPL=_scrape(), BTC=_scrape(symbol='BTC'))
+
+    assert (line['verdict'], line['held'], line['closed']) == ('open', 2, 0)
+
+
+def test_a_symbol_never_scraped_is_not_waiting_for_its_market():
+    line = _scrape_line(AAPL=_scrape(), ASML=None)
+
+    assert (line['verdict'], line['held'], line['closed']) == ('open', 2, 0)
+
+
+# ===================================================================== #
 # The recorder
 # ===================================================================== #
 

@@ -96,6 +96,7 @@ describe('the bell’s colour is a state, never a count', () => {
           at: NOW,
           verdict: 'frozen',
           held: 3,
+          closed: 0,
           attention: ['ZETA'],
         },
         backfill: {

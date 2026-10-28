@@ -125,6 +125,34 @@ describe('the jobs', () => {
     expect(fine).toHaveTextContent(/^Tout fonctionne\.$/)
   })
 
+  it('says how many held symbols wait for their market (#1357)', async () => {
+    await openSystem(
+      undefined,
+      aHealth({
+        jobs: aHealthJobs({
+          scrape: { status: 'ok', at: null, verdict: 'open', held: 13, closed: 12, attention: [] },
+        }),
+      }),
+    )
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
+
+    expect(jobs).toHaveTextContent('1 titre relevé, 12 attendent l’ouverture de leur marché.')
+  })
+
+  it('keeps the plain sentence when every market is open (#1357)', async () => {
+    await openSystem(
+      undefined,
+      aHealth({
+        jobs: aHealthJobs({
+          scrape: { status: 'ok', at: null, verdict: 'open', held: 13, closed: 0, attention: [] },
+        }),
+      }),
+    )
+    const jobs = await screen.findByRole('region', { name: 'Tâches' })
+
+    expect(jobs).toHaveTextContent('13 titres relevés, marchés ouverts.')
+  })
+
   it('say a stopped scheduler', async () => {
     await openSystem(undefined, aHealth({ status: 'attention', scheduler_running: false }))
     const jobs = await screen.findByRole('region', { name: 'Tâches' })
