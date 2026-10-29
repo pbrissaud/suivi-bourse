@@ -46,6 +46,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
+import { Mark } from '@/components/Mark'
 import {
   Sidebar,
   SidebarContent,
@@ -107,20 +108,14 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       {/* 56 px tall, level with the header bar, and the wordmark centred in it.
-          Folded to the rail the padding meets in the middle, the badge being
+          Folded to the rail the padding meets in the middle, the mark being
           the only thing left. */}
       <SidebarHeader className="h-14 justify-center gap-0 px-5 py-0 group-data-[collapsible=icon]:px-3">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          {/* The mark, which the app had nowhere: an ink tile carrying the
-              product's initial, and the one place the brand is stated rather
-              than spelled. It survives the fold where the wordmark cannot. */}
-          <span
-            aria-hidden
-            className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary text-lg font-bold text-sidebar-primary-foreground"
-          >
-            {t('app.name').slice(0, 1)}
-          </span>
-          <span className="truncate text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+          {/* The mark (#1337): the one place the brand is drawn rather than
+              spelled, and what survives the fold where the wordmark cannot. */}
+          <Mark size={28} />
+          <span className="truncate text-base font-semibold group-data-[collapsible=icon]:hidden">
             {t('app.name')}
           </span>
         </div>
