@@ -76,10 +76,11 @@ def http_url(env: Mapping[str, str], name: str, default: str) -> str:
     try:
         parts = urlsplit(raw)
         parts.port  # raises on a bad port
-        valid = (parts.scheme in ('http', 'https') and bool(parts.hostname)
-                 and parts.username is None and parts.password is None
-                 and '?' not in raw and '#' not in raw and '\\' not in raw
-                 and not any(c.isspace() or not c.isprintable() for c in raw))
+        absolute = parts.scheme in ('http', 'https') and bool(parts.hostname)
+        bare = parts.username is None and parts.password is None
+        plain = not any(c in raw for c in '?#\\')
+        clean = not any(c.isspace() or not c.isprintable() for c in raw)
+        valid = absolute and bare and plain and clean
     except ValueError:  # e.g. an unclosed IPv6 bracket
         valid = False
     if not valid:
