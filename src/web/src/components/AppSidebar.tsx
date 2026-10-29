@@ -116,7 +116,7 @@ export function AppSidebar() {
               spelled, and what survives the fold where the wordmark cannot —
               which stays for a screen reader, as `sr-only`. */}
           <Mark size={28} />
-          <span className="truncate text-base font-semibold group-data-[collapsible=icon]:sr-only">
+          <span className="truncate text-lg font-semibold group-data-[collapsible=icon]:sr-only">
             {t('app.name')}
           </span>
         </div>
