@@ -91,7 +91,8 @@ export const PROBLEM_TYPES = {
    * point: the detail is the provider's own sentence (`Anthropic: invalid
    * x-api-key`), the key masked, and the reader acts on it at the provider's,
    * where those words mean something. It carries `provider` and `reason`
-   * (`key`, `quota`, `rate_limit`, `address`, `overloaded`, `unreachable`, `unreadable`, `refused`); read it through
+   * (`key`, `quota`, `rate_limit`, `address`, `overloaded`, `unreachable`, `unreadable`, `refused`, and `unpublished` for the tax registry's 404, which
+   * `TaxationImport` words itself); read it through
    * `providerRefusal` below. Its `reason` is translated by `RefusalNotice`, and
    * the detail stays behind a disclosure (#1269).
    */

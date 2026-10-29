@@ -111,10 +111,9 @@ def import_events():
         return bad_request("amounts_in is either 'base' or 'quote'")
 
     try:
-        parsed = uploads.merge([
-            uploads.read(part.filename or '', part.stream,
-                         current_runtime().documentation_url)
-            for part in sent])
+        root = current_runtime().documentation_url
+        parsed = uploads.merge([uploads.read(part.filename or '', part.stream, root)
+                                for part in sent])
         correspondence = uploads.mapping(request.args.get('map'),
                                          request.args.getlist('declare'))
         write_repeats = _write_repeats()

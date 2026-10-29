@@ -195,7 +195,11 @@ def test_the_documentation_root_is_kept_without_its_trailing_slash(value, root):
     assert boot_env.read({'SB_DOCUMENTATION_URL': value}).documentation_url == root
 
 
-@pytest.mark.parametrize('value', ['docs.example', '/suivi-bourse', 'ftp://docs.example', 'https://', '//docs.example', 'http://[::1'])
+@pytest.mark.parametrize('value', [
+    'docs.example', '/suivi-bourse', 'ftp://docs.example', 'https://', '//docs.example', 'http://[::1',
+    'https://' + 'user:pw' + '@docs.lan/x', 'https://docs.lan/x?a=1', 'https://docs.lan/x?', 'https://docs.lan/x#f',
+    'https://docs.lan/#', 'http://docs.lan:99999', 'http://docs.lan:abc', 'http://ho st/x',
+    'https://docs.lan/a b', 'https://docs.lan\\@evil.example'])
 def test_a_documentation_root_that_is_not_an_absolute_http_url_names_the_variable(value):
     with pytest.raises(ValueError, match='SB_DOCUMENTATION_URL'):
         boot_env.read({'SB_DOCUMENTATION_URL': value})
@@ -203,3 +207,9 @@ def test_a_documentation_root_that_is_not_an_absolute_http_url_names_the_variabl
 
 def test_the_documentation_root_is_read_so_never_reported_as_unread():
     assert boot_env.unread({'SB_DOCUMENTATION_URL': 'https://x.example'}) == ()
+
+
+def test_a_rejected_documentation_root_never_logs_its_credentials():
+    with pytest.raises(ValueError) as caught:
+        boot_env.read({'SB_DOCUMENTATION_URL': 'ftp://' + 'user:secret' + '@docs.lan'})
+    assert 'secret' not in str(caught.value)

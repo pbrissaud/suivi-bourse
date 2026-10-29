@@ -1,4 +1,5 @@
 """What the environment still says (store, port, log level, the PIN's two), and the names it no longer says."""
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
@@ -65,16 +66,27 @@ def directory(env: Mapping[str, str], name: str, default: str) -> Path:
 
 
 def http_url(env: Mapping[str, str], name: str, default: str) -> str:
-    """Read an absolute http(s) URL without its trailing ``/``, failing with a message that names it."""
+    """Read an absolute http(s) URL without its trailing ``/``, failing with a message that names it.
+
+    Plain origin plus optional path only: the root is published to the browser and
+    ``/taxation.json`` is appended to it, so credentials, a query, a fragment,
+    whitespace or a backslash (parsed differently by Python and by browsers) are refused.
+    """
     raw = text(env, name, default).rstrip('/')
     try:
         parts = urlsplit(raw)
-        valid = parts.scheme in ('http', 'https') and bool(parts.hostname)
+        parts.port  # raises on a bad port
+        valid = (parts.scheme in ('http', 'https') and bool(parts.hostname)
+                 and parts.username is None and parts.password is None
+                 and '?' not in raw and '#' not in raw and '\\' not in raw
+                 and not any(c.isspace() or not c.isprintable() for c in raw))
     except ValueError:  # e.g. an unclosed IPv6 bracket
         valid = False
     if not valid:
+        shown = re.sub(r'(?<=//)[^/@]*@', '', raw)  # a rejected value is logged: no credentials in it
         raise ValueError(
-            f"Invalid value for {name}: {raw!r} is not an absolute http(s) URL")
+            f"Invalid value for {name}: {shown!r} is not an absolute http(s) URL "
+            f"(no credentials, query, fragment or whitespace)")
     return raw
 
 

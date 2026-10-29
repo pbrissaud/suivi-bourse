@@ -64,8 +64,12 @@ describe('the documentation root', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children)
-    return renderHook(() => useDocs().docsHref('fr', 'xirr'), { wrapper })
+    return { client, ...renderHook(() => useDocs().docsHref('fr', 'xirr'), { wrapper }) }
   }
+
+  // The runtime query has answered (or failed): what is read next is its verdict, not the wait for it.
+  const settled = (client: QueryClient) =>
+    waitFor(() => expect(client.getQueryState(['runtime'])?.fetchStatus).toBe('idle'))
 
   it('is the default while the runtime has not answered', () => {
     const { result } = hook()
@@ -82,16 +86,20 @@ describe('the documentation root', () => {
     await waitFor(() => expect(result.current).toBe(`${ROOT}/fr/docs/v5/read-your-figures#xirr`))
   })
 
-  it('keeps the default when the runtime fails or names a relative root', async () => {
+  it('keeps the default when the runtime fails', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json({}, { status: 500 })))
-    const failing = hook()
-    await waitFor(() => expect(failing.result.current).toContain('pbrissaud.github.io'))
+    const { client, result } = hook()
+    await waitFor(() => expect(client.getQueryState(['runtime'])?.status).toBe('error'))
+    expect(result.current).toContain('https://pbrissaud.github.io/suivi-bourse/')
+  })
 
+  it('keeps the default when the runtime names a relative root', async () => {
     server.use(
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ documentation_url: '/docs' }))),
     )
-    const relative = hook()
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(relative.result.current).toContain('https://pbrissaud.github.io/suivi-bourse/')
+    const { client, result } = hook()
+    await waitFor(() => expect(client.getQueryState(['runtime'])?.status).toBe('success'))
+    await settled(client)
+    expect(result.current).toContain('https://pbrissaud.github.io/suivi-bourse/')
   })
 })

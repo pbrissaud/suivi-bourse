@@ -20,7 +20,6 @@
  * failure a broken-link check cannot catch, so the list lives here too.
  */
 import { useQuery } from '@tanstack/react-query'
-import { useCallback } from 'react'
 
 import { api } from '@/lib/api'
 import type { Language } from '@/lib/i18n'
@@ -98,14 +97,9 @@ export function useDocs() {
     // Fixed for the life of the process: a bubble mounting must not re-read the runtime.
     staleTime: Number.POSITIVE_INFINITY,
   })
-  const href = useCallback(
-    (language: Language, anchor: DocsAnchor) => docsHref(language, anchor, origin),
-    [origin],
-  )
-  const pageHref = useCallback(
-    (language: Language, page: string, anchor: string) =>
+  return {
+    docsHref: (language: Language, anchor: DocsAnchor) => docsHref(language, anchor, origin),
+    docsPageHref: (language: Language, page: string, anchor: string) =>
       docsPageHref(language, page, anchor, origin),
-    [origin],
-  )
-  return { docsHref: href, docsPageHref: pageHref }
+  }
 }
