@@ -1022,6 +1022,19 @@ def test_the_payload_says_whether_the_reconstruction_still_has_windows():
 
 
 
+def test_the_payload_carries_the_documentation_root():
+    """#1446: the front builds every docs link from it; the default when none is passed."""
+    payload = runtime_view.build_runtime(
+        shares=[_share()], scrape={}, backfill={}, next_runs={},
+        ingest=None, perf=None, now=NOW)
+    assert payload['documentation_url'] == 'https://pbrissaud.github.io/suivi-bourse'
+
+    payload = runtime_view.build_runtime(
+        shares=[_share()], scrape={}, backfill={}, next_runs={},
+        ingest=None, perf=None, now=NOW, documentation_url='https://docs.example.net/x')
+    assert payload['documentation_url'] == 'https://docs.example.net/x'
+
+
 def test_a_runtime_that_named_no_store_publishes_no_path():
     """``path: null`` and never an empty string (issue #724). A runtime built
     with no store — a test harness, a process that failed before it opened one —

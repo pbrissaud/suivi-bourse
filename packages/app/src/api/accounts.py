@@ -275,9 +275,11 @@ def read_taxation_registry():
     store. Nothing is stored; a pick is a ``POST /taxation-models`` (#1290).
     """
     try:
-        items = taxation_registry.fetch(current_app.config['TAXATION_REGISTRY_FETCH'])
+        items = taxation_registry.fetch(current_app.config['TAXATION_REGISTRY_FETCH'],
+                                        current_runtime().documentation_url)
     except taxation_registry.FetchFailed as exc:
-        return provider_refused(f'taxation-registry: {exc.reason}', 'taxation-registry', 'unreachable')
+        return provider_refused(f'taxation-registry: {exc.reason}', 'taxation-registry',
+                                'unpublished' if exc.unpublished else 'unreachable')
     return jsonify({'items': items})
 
 

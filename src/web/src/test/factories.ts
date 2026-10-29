@@ -1098,6 +1098,7 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     // the stamp): the default is what an owner who pulled a tag runs, and the
     // three other states are what a test asks for by name.
     build: { version: '5.0.0', revision: '8f0a02e1c0ffee00', source: 'release' },
+    documentation_url: 'https://pbrissaud.github.io/suivi-bourse',
     symbols: defaultPositions().map((position, index) => ({
       symbol: position.symbol,
       next_run: NOW,

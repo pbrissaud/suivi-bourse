@@ -23,7 +23,10 @@ MAX_BODY_BYTES = MAX_UPLOAD_BYTES + 64 * 1024
 
 LEGACY_FILENAMES = ('config.yaml', 'settings.yaml')
 
-MIGRATION_PAGE = 'https://pbrissaud.github.io/suivi-bourse/docs/v5/coming-from-v4'
+
+def migration_page(root: str) -> str:
+    """Where the documentation site, at ``root``, tells how to leave a v4 file behind."""
+    return f'{root}/docs/v5/coming-from-v4'
 
 
 class UploadRefused(Exception):
@@ -126,11 +129,11 @@ def too_large_detail() -> str:
             f"export a narrower range, or split it")
 
 
-def read(filename: str, stream) -> Upload:
+def read(filename: str, stream, root: str) -> Upload:
     """One uploaded file as the events it declares, or a named refusal."""
     name = Path(filename or '').name
     try:
-        return _read(name, stream)
+        return _read(name, stream, root)
     except UploadRefused as exc:
         exc.file = name or None
         raise
@@ -164,13 +167,13 @@ def merge(files: Sequence[Upload]) -> Batch:
                  origin=[n for _, n in tagged], declared_currency=declared)
 
 
-def _read(name: str, stream) -> Upload:
+def _read(name: str, stream, root: str) -> Upload:
     if name.lower() in LEGACY_FILENAMES:
         logger.warning(f"Refused {name}: a v4 configuration file")
         raise UploadRefused(
             f"{name} is a v4 configuration file and this version does not read "
             f"one: a portfolio is a dated event ledger and nothing else. "
-            f"Describe those positions as dated events — {MIGRATION_PAGE}")
+            f"Describe those positions as dated events — {migration_page(root)}")
 
     suffix = Path(name).suffix.lower()
     if suffix not in IMPORT_SUFFIXES:
@@ -295,7 +298,7 @@ def _parse(path: Path, name: str) -> Upload:
 
 
 __all__ = [
-    'MAX_UPLOAD_BYTES', 'MAX_BODY_BYTES', 'MIGRATION_PAGE', 'LEGACY_FILENAMES',
+    'MAX_UPLOAD_BYTES', 'MAX_BODY_BYTES', 'migration_page', 'LEGACY_FILENAMES',
     'IMPORT_SUFFIXES',
     'AccountMapping', 'Batch', 'FileAccount', 'FileSummary',
     'Receipt', 'Upload', 'UploadRefused', 'UploadTooLarge',

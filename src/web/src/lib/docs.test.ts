@@ -2,9 +2,16 @@
  * The link contract. It is one string, and both of its
  * moving parts are the kind that fails silently.
  */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
+import { HttpResponse, http } from 'msw'
+import { createElement, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { DOCS_ANCHORS, docsHref } from '@/lib/docs'
+import { ROUTES } from '@/lib/api'
+import { DOCS_ANCHORS, docsHref, docsOrigin, docsPageHref, useDocs } from '@/lib/docs'
+import { server } from '@/test/server'
+import { aRuntime } from '@/test/factories'
 
 describe('the documentation link', () => {
   it('carries the version, frozen at the major', () => {
@@ -30,5 +37,61 @@ describe('the documentation link', () => {
       expect(docsHref('fr', anchor)).toContain('/docs/v5/read-your-figures#')
     }
     expect(new Set(DOCS_ANCHORS).size).toBe(DOCS_ANCHORS.length)
+  })
+})
+
+describe('the documentation root', () => {
+  const ROOT = 'https://docs.example.net/suivi-bourse'
+
+  it('replaces the default origin, in English and in French, version and anchor unchanged', () => {
+    expect(docsHref('en', 'xirr', ROOT)).toBe(`${ROOT}/docs/v5/read-your-figures#xirr`)
+    expect(docsPageHref('fr', 'settings', 'agent', ROOT)).toBe(`${ROOT}/fr/docs/v5/settings#agent`)
+  })
+
+  it('accepts a host root and a LAN http address, and drops a trailing slash', () => {
+    expect(docsOrigin('https://docs-staging.example.net')).toBe('https://docs-staging.example.net')
+    expect(docsOrigin('http://nas.lan:8000/docs/')).toBe('http://nas.lan:8000/docs')
+  })
+
+  it.each([undefined, null, '', '  ', '/suivi-bourse', 'docs.example', 'ftp://docs.example'])(
+    'refuses %j and falls back to the default',
+    (value) => {
+      expect(docsOrigin(value)).toBe('https://pbrissaud.github.io/suivi-bourse')
+    },
+  )
+
+  function hook() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children)
+    return renderHook(() => useDocs().docsHref('fr', 'xirr'), { wrapper })
+  }
+
+  it('is the default while the runtime has not answered', () => {
+    const { result } = hook()
+    expect(result.current).toBe(
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#xirr',
+    )
+  })
+
+  it('follows the runtime answer', async () => {
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ documentation_url: ROOT }))),
+    )
+    const { result } = hook()
+    await waitFor(() => expect(result.current).toBe(`${ROOT}/fr/docs/v5/read-your-figures#xirr`))
+  })
+
+  it('keeps the default when the runtime fails or names a relative root', async () => {
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json({}, { status: 500 })))
+    const failing = hook()
+    await waitFor(() => expect(failing.result.current).toContain('pbrissaud.github.io'))
+
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ documentation_url: '/docs' }))),
+    )
+    const relative = hook()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(relative.result.current).toContain('https://pbrissaud.github.io/suivi-bourse/')
   })
 })

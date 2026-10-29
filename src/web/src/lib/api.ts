@@ -592,6 +592,8 @@ export interface RuntimeState {
   scheduler_running: boolean
   store: RuntimeStore
   build: RuntimeBuild
+  /** The documentation site's root, from `SB_DOCUMENTATION_URL`: every docs link hangs off it. */
+  documentation_url: string
   /**
    * The backfill still has windows to cover. It is here rather than beside the
    * figures because it is a fact about *this process*, and rule four of the map

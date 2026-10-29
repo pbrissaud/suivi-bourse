@@ -24,7 +24,7 @@ import {
   type TaxationRegistryItem,
 } from '@/features/accounts/lib/api'
 import { declaredLabel } from '@/features/accounts/lib/accounts'
-import { docsPageHref } from '@/lib/docs'
+import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey, problemSentence, providerRefusal } from '@/lib/problem'
 
@@ -46,6 +46,7 @@ function ownCountry(): string | null {
 
 export function TaxationImport({ catalogue, accounts, onImported }: TaxationImportProps) {
   const { t, language } = useI18n()
+  const { docsPageHref } = useDocs()
   const queryClient = useQueryClient()
   const [asked, setAsked] = useState(false)
   const [query, setQuery] = useState('')
@@ -149,9 +150,11 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
       : registry.isError
         ? registryRefusal === null
           ? t(problemMessageKey(failure))
-          : registryRefusal.said === ''
-            ? t('settings.taxation.import.refused')
-            : t('settings.taxation.import.failed', { reason: registryRefusal.said })
+          : registryRefusal.reason === 'unpublished'
+            ? t('settings.taxation.import.unpublished')
+            : registryRefusal.said === ''
+              ? t('settings.taxation.import.refused')
+              : t('settings.taxation.import.failed', { reason: registryRefusal.said })
         : problemSentence(t, failure)
   const carriers =
     replacing === null

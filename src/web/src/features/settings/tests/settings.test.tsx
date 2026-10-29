@@ -1135,6 +1135,23 @@ describe('importing a taxation model', () => {
     )
   })
 
+  it('says the documentation site publishes no registry yet on a 404, and keeps Retry', async () => {
+    server.use(
+      registryRefusing({
+        ...REFUSED,
+        detail:
+          'taxation-registry: HTTPError: HTTP Error 404 (https://docs.example.net/taxation.json)',
+        reason: 'unpublished',
+      }),
+    )
+    const { taxation } = await openImport()
+
+    expect((await within(taxation).findByRole('alert')).textContent).toBe(
+      'Le site de documentation ne publie pas encore de registre fiscal pour cette version.',
+    )
+    expect(within(taxation).getByRole('button', { name: 'Réessayer' })).toBeEnabled()
+  })
+
   it('blames the app, not the registry, when the app does not answer', async () => {
     let answer = 0
     server.use(
