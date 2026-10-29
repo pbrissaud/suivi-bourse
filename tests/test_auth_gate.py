@@ -109,7 +109,8 @@ def test_without_a_credential_only_the_allowlist_reaches_the_app(opened):
         async with client(gate) as c:
             return {(m, p): await c.request(m, p) for m, p in (
                 ('GET', '/health'), ('GET', '/api/theme.css'),
-                ('GET', '/assets/index-abc.js'),
+                ('GET', '/assets/index-abc.js'), ('GET', '/favicon.svg'),
+                ('GET', '/favicon-32.png'), ('GET', '/apple-touch-icon.png'),
                 ('GET', '/api/positions'), ('POST', '/api/events'),
                 ('GET', '/api/agent/threads'), ('POST', '/api/agent/chat'),
                 ('POST', '/mcp'), ('GET', '/mcp'),
@@ -119,7 +120,9 @@ def test_without_a_credential_only_the_allowlist_reaches_the_app(opened):
     answers = run(work)
 
     assert inner.reached == [('GET', '/health'), ('GET', '/api/theme.css'),
-                             ('GET', '/assets/index-abc.js')]
+                             ('GET', '/assets/index-abc.js'),
+                             ('GET', '/favicon.svg'), ('GET', '/favicon-32.png'),
+                             ('GET', '/apple-touch-icon.png')]
     for key in (('GET', '/'), ('GET', '/agent'), ('GET', '/agent/abc'),
                 ('GET', '/some-future-page')):
         assert answers[key].status_code == 200

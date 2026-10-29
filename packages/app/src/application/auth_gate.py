@@ -143,7 +143,12 @@ class Gate:
             return
 
         reading = scope.get('method') in ('GET', 'HEAD')
-        public = path in ('/health', '/api/theme.css') or path.startswith('/assets/')
+        # The product's icons (#1337) are read by the browser's tab before the
+        # PIN screen has a session: without them it caches the index page as
+        # the favicon and keeps it after login.
+        public = path.startswith('/assets/') or path in (
+            '/health', '/api/theme.css', '/favicon.svg', '/favicon-32.png',
+            '/apple-touch-icon.png')
         if reading and public:
             await self.inner(scope, receive, send)
             return
