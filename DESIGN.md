@@ -460,7 +460,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   Wallet (Accounts), Database (Ledger), Scale (Benchmark), Sparkles (Agent), Server
   (System), Settings (Settings).
 - An icon-only button carries an `aria-label`; a decorative icon is `aria-hidden`.
-- The product's mark is #1337's to settle; until then, the sidebar's ink tile.
+- The product's mark is drawn in Components › Mark, not from Lucide (#1337).
 
 ## Components
 
@@ -507,6 +507,17 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   on, three `border`-separated rows (Code, Jeton MCP, Cet appareil) each open a `card`
   card under them, one at a time, Escape closing it — except the token card, which only
   "J'ai copié le jeton" closes.
+- **Mark (#1337):** a 28 px `sidebar-primary` tile, its corners 8/28 of its side (the buttons' `md` at 28 px, scaling with the mark), where the value (a solid line
+  ending on a dot) rises away from the net contributions (dotted, 60 %), both strokes in
+  `sidebar-primary-foreground`: the dashboard chart in one gesture, the gap between the two
+  being the wealth built. It owns no colour, so a replacement theme repaints it. Under 24 px
+  the strokes thicken and the contributions become a faint solid line (45 %), dots not
+  reading there. It heads the sidebar beside the wordmark ("SuiviBourse", Term rung) and
+  stands alone in the folded 64 px rail. The favicon (`favicon.svg`, 32 px and 180 px PNGs)
+  is drawn from the small variant; a tab reads no CSS variable, so it keeps Atelier's ink
+  (with a dark variant in an `@media (prefers-color-scheme: dark)`, which follows the operating
+  system's scheme, not the browser's tab bar or the app's own) and does not follow an imported
+  theme.
 - **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings
   are `primary`; scrollbars are thin and use `border`.
 
@@ -591,3 +602,4 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 | 2026-10-20 | Tables sit on the page background; the Benchmark head sits on the ground; markers merge (#1273) | Seen on screen, the Shares and Ledger tables in a white bordered card, the Benchmark head, chart and rebuild status in cards, and the share sheet's three gain terms in boxes broke the rule that a card is for a decision. The owner's choices: a page's own table has no plane and no frame (the closed shares become a disclosure row under the total); the Benchmark head reads like the dashboard's, on the ground, with its chart, rebuild status and per-account table as sections; the sheet's terms are a row of Label over figure. Days that land on one plotted point, or within 0.04 of the plot, share one marker whose click selects the lines of all its days. `lint/card-for-decisions.grit` keeps the `Card` for decisions. |
 | 2026-10-20 | Four figure rungs, a dashed outline for a place to put something, dark neutrals pinned (#1284) | The re-audit still counted six standalone figure sizes and figures in Geist Mono. Hero 60, Figure 28, Section title 20 (`Stat`'s `stat` moves from 19) and a named Term 16 are the whole ladder; a figure inside a line takes its line's size. A dashed outline meant both "empty" and "put something here": the empty state loses its border. The dark neutrals already matched the warm values above (within 0.005 ΔE_ok), so the tokens stay and CI now checks every colour on both grounds, with a warmth threshold on the dark ones. |
 | 2026-10-28 | DESIGN.md speaks the tokens' names and states what the design system said alone (#1436) | The UX/UI review of the Design canvas found DESIGN.md, the design system README and the canvas disagreeing. The colours take the shadcn names `atelier.json` uses, with `atelier.json`'s values, plus `input`, `accent`, `destructive` and the chart hues; the radii and the section gap take the tokens' names (`rounded.md` was 14 px here and 8 px in the tokens); the `mono` rung becomes `ticker` (11/16) and the ladder gains `table` (13/18), both already in the app; the accounts head loses its pills, as the dashboard did in #1280; *Content*, *Iconography* and *States* come over from the design system README; a page-name glossary and a 3:1 rule for marks in a drawing are added. The decisions #1436 lists (the mark, the account statement, the pill radius, the Settings anatomy against #1279, the field border's contrast) are left to the owner. |
+| 2026-10-29 | The product's mark: the value rising away from the contributions (#1337) | The letter in a tile read like a starter template. The drawing reuses the one image the app already has, the dashboard chart (value over contributions), chosen over a monogram or rising bars; it takes the sidebar's tokens so a theme repaints it. The favicon is the one copy that cannot follow a theme and keeps Atelier's ink. |
