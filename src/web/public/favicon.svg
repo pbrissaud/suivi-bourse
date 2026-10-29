@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.6">
   <style>
-    .tile { fill: oklch(0.3 0.03 60) }
-    .ink { stroke: oklch(0.9947 0.0045 78.2986) }
-    .dot { fill: oklch(0.9947 0.0045 78.2986) }
+    /* hex first, for a browser that does not read oklch() and would drop the line */
+    .tile { fill: #392a1e; fill: oklch(0.3 0.03 60) }
+    .ink { stroke: #fffdfa; stroke: oklch(0.9947 0.0045 78.2986) }
+    .dot { fill: #fffdfa; fill: oklch(0.9947 0.0045 78.2986) }
     @media (prefers-color-scheme: dark) {
-      .tile { fill: oklch(0.92 0.012 80) }
-      .ink { stroke: oklch(0.1687 0.0117 60.5255) }
-      .dot { fill: oklch(0.1687 0.0117 60.5255) }
+      .tile { fill: #e9e4dc; fill: oklch(0.92 0.012 80) }
+      .ink { stroke: #130e0a; stroke: oklch(0.1687 0.0117 60.5255) }
+      .dot { fill: #130e0a; fill: oklch(0.1687 0.0117 60.5255) }
     }
   </style>
   <rect class="tile" width="28" height="28" rx="8" />

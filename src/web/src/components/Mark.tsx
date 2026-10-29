@@ -12,8 +12,11 @@
  * Under 24 px dots stop reading: the strokes thicken, the contributions become a
  * faint solid line, and the favicon is drawn from this variant.
  */
+/** Under this many pixels dots stop reading and the heavy variant takes over. */
+const SMALL_BELOW = 24
+
 export function Mark({ size = 28 }: { size?: number }) {
-  const small = size < 24
+  const small = size < SMALL_BELOW
   return (
     <svg
       aria-hidden
@@ -33,7 +36,7 @@ export function Mark({ size = 28 }: { size?: number }) {
         d="M7 21 21 18"
         strokeOpacity={small ? 0.45 : 0.6}
         strokeDasharray={small ? undefined : '0.1 3.2'}
-        strokeWidth={small ? 2.6 : 2}
+        strokeWidth={small ? undefined : 2}
       />
       <path d="M7 21 12.5 14.5 15.5 16 21 8" />
       <circle cx="21" cy="8" r={small ? 2.6 : 2.2} fill="currentColor" stroke="none" />

@@ -113,9 +113,10 @@ export function AppSidebar() {
       <SidebarHeader className="h-14 justify-center gap-0 px-5 py-0 group-data-[collapsible=icon]:px-3">
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
           {/* The mark (#1337): the one place the brand is drawn rather than
-              spelled, and what survives the fold where the wordmark cannot. */}
+              spelled, and what survives the fold where the wordmark cannot —
+              which stays for a screen reader, as `sr-only`. */}
           <Mark size={28} />
-          <span className="truncate text-base font-semibold group-data-[collapsible=icon]:hidden">
+          <span className="truncate text-base font-semibold group-data-[collapsible=icon]:sr-only">
             {t('app.name')}
           </span>
         </div>

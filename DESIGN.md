@@ -507,7 +507,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   on, three `border`-separated rows (Code, Jeton MCP, Cet appareil) each open a `card`
   card under them, one at a time, Escape closing it — except the token card, which only
   "J'ai copié le jeton" closes.
-- **Mark (#1337):** a 28 px `sidebar-primary` tile, radius `md`, where the value (a solid line
+- **Mark (#1337):** a 28 px `sidebar-primary` tile, its corners 8/28 of its side (the buttons' `md` at 28 px, scaling with the mark), where the value (a solid line
   ending on a dot) rises away from the net contributions (dotted, 60 %), both strokes in
   `sidebar-primary-foreground`: the dashboard chart in one gesture, the gap between the two
   being the wealth built. It owns no colour, so a replacement theme repaints it. Under 24 px
@@ -515,8 +515,9 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   reading there. It heads the sidebar beside the wordmark ("SuiviBourse", Term rung) and
   stands alone in the folded 64 px rail. The favicon (`favicon.svg`, 32 px and 180 px PNGs)
   is drawn from the small variant; a tab reads no CSS variable, so it keeps Atelier's ink
-  (with a dark variant in an `@media (prefers-color-scheme: dark)`) and does not follow an
-  imported theme.
+  (with a dark variant in an `@media (prefers-color-scheme: dark)`, which follows the operating
+  system's scheme, not the browser's tab bar or the app's own) and does not follow an imported
+  theme.
 - **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings
   are `primary`; scrollbars are thin and use `border`.
 
