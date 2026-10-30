@@ -2482,7 +2482,8 @@ describe('the comparison card (#1205)', () => {
       state: 'ready',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      consulted: ['CW8.PA'],
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
       covered_from: '2019-03-04',
       covered_to: '2026-09-17',
       ended: null,
@@ -2593,7 +2594,7 @@ describe('the comparison card (#1205)', () => {
     renderCard({ state: 'no_reference' })
     const region = await card('Face à l’indice')
 
-    expect(within(region).getByText('Aucune référence choisie')).toBeInTheDocument()
+    expect(within(region).getByText('Aucune référence suivie')).toBeInTheDocument()
     expect(within(region).getByRole('link', { name: 'Choisir un indice' })).toHaveAttribute(
       'href',
       '/benchmark',
@@ -2611,7 +2612,7 @@ describe('the comparison card (#1205)', () => {
       )
       const region = await card('Face au MSCI World')
 
-      expect(region).toHaveTextContent('Reconstitution de l’historique')
+      expect(region).toHaveTextContent('MSCI World en cours de téléchargement')
       expect(region).not.toHaveTextContent(/4\D?212/)
     },
   )

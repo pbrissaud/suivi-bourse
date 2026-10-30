@@ -103,28 +103,29 @@ READY = 'ready'
 
 def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     """The whole screen's payload: the reference, the verdict, and the period."""
-    symbol = store.setting('benchmark_symbol')
-    if not symbol:
+    following = followed(store)
+    if not following:
         return {'state': NO_REFERENCE, 'reference': None,
-                'offered': _offered(),
-                'consulted': ledger.consulted_benchmarks(store)}
+                'offered': _offered(), 'followed': [], 'ready': []}
+
+    # **The displayed reference is never one the page cannot back.** The
+    # owner's choice if it is ready, else the first ready one the owner
+    # follows; with none ready, the one being downloaded, so the bar names it.
+    done = [symbol for symbol, finished
+            in readiness(store, snapshot, following, now).items() if finished]
+    chosen = store.setting('benchmark_symbol')
+    symbol = (chosen if chosen in done else done[0] if done
+              else next(iter(following)))
 
     offered = benchmarks.offered(symbol)
     head: Dict[str, Any] = {
         'reference': symbol,
-        # An off-list value is rendered, never dropped: `PUT /api/settings`
-        # stays open, and a reference that disappears from its own selector is
-        # one the owner cannot switch away from.
         'index': offered.index if offered else None,
         'inception': instants.iso(offered.inception) if offered else None,
         'offered': _offered(),
-        # **Which of the five this install already holds a series for.** The
-        # consulted list and not a scan of `price_point`, because that list is
-        # exactly what #760 keeps alive so switching back is instant — and the
-        # selector's *déjà téléchargé* column is the only thing that makes the
-        # promise visible. Without it every switch is a coin flip between
-        # instant and a two-hour rebuild.
-        'consulted': ledger.consulted_benchmarks(store),
+        # What the picker proposes (`ready`) out of what is followed.
+        'followed': following,
+        'ready': done,
     }
 
     # No tracked window means an empty ledger: `tracked_windows` anchors the
@@ -138,12 +139,12 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
 
     if symbol not in quotes.terminal_symbols(store, {symbol: window}, now):
         return {**head, 'state': REBUILDING,
-                'rebuild': _rebuild(store, symbol, offered, now)}
+                'rebuild': _rebuild(store, symbol, window[0], now)}
 
     prices = quotes.price_series(store, symbol)
     if not prices:
         return {**head, 'state': REBUILDING,
-                'rebuild': _rebuild(store, symbol, offered, now)}
+                'rebuild': _rebuild(store, symbol, window[0], now)}
 
     # **An empty split history is not the same as none, and the difference is
     # invisible in the figure.** A store that fetched this symbol before #760
@@ -155,7 +156,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     # at all until the next fetch establishes the history.
     if not quotes.splits_were_read(store, symbol):
         return {**head, 'state': SPLITS_UNKNOWN,
-                'rebuild': _rebuild(store, symbol, offered, now)}
+                'rebuild': _rebuild(store, symbol, window[0], now)}
 
     replayed, opened, merged, why = _by_account(store, snapshot, prices, symbol)
     if not replayed:
@@ -180,28 +181,113 @@ def _offered() -> List[Dict[str, Any]]:
             for entry in benchmarks.BENCHMARKS]
 
 
-def _rebuild(store, symbol: str, offered, now: datetime) -> Dict[str, Any]:
+def followed(store) -> List[str]:
+    """The references the owner follows, in the order they were turned on."""
+    return [symbol for symbol in store.setting('benchmark_symbols')
+            if symbol in benchmarks.BY_SYMBOL]
+
+
+def readiness(store, snapshot, symbols: List[str], now: datetime
+              ) -> Dict[str, bool]:
+    """``{symbol: complete}`` — the one gate every consumer reads (#1312).
+
+    **Complete is the comparison's own gate and not ``ratio == 1``.** The
+    backfill stops at the ledger's first day (`tracked_windows`) while the ratio
+    is measured against the fund's inception, so a ledger starting in 2015 would
+    never see a 2009 fund at 100 %. Terminal, priced, and its splits read: the
+    three facts `comparison` already refuses to go on without.
+    """
+    windows = snapshot.tracked_windows(*symbols)
+    terminal = quotes.terminal_symbols(
+        store, {symbol: windows[symbol] for symbol in symbols
+                if symbol in windows}, now)
+    return {symbol: all((symbol in terminal,
+                         quotes.has_converted_price(store, symbol),
+                         quotes.splits_were_read(store, symbol)))
+            for symbol in symbols}
+
+
+def ready(store, snapshot, symbol: str, now: datetime) -> bool:
+    """Whether ``symbol`` can be compared against right now."""
+    return readiness(store, snapshot, [symbol], now)[symbol]
+
+
+def downloads(store, snapshot, now: datetime
+              ) -> Tuple[List[str], Optional[str]]:
+    """``(complete followed ETFs, the one being downloaded)`` for the backfill.
+
+    **One at a time, in the order they were turned on.** The first incomplete
+    ETF is the only one the backward pass works on; the complete ones keep their
+    forward pass so they stay current.
+    """
+    following = followed(store)
+    done = readiness(store, snapshot, following, now)
+    return ([symbol for symbol in following if done[symbol]],
+            next((symbol for symbol in following if not done[symbol]), None))
+
+
+def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
+    """Each offered ETF's state and progress. No replay: a few indexed reads.
+
+    ``waiting`` says why a followed, incomplete ETF is not moving: ``no_events``
+    when the ledger has no first day to download toward, ``queued`` (with the
+    one it waits ``after``) when another is being downloaded first.
+
+    An unfollowed ETF holding a series is either ``kept`` (consulted: the purge
+    spares it) or ``freed`` (the owner stopped keeping it: it goes at the next
+    purge).
+    """
+    following = followed(store)
+    done = readiness(store, snapshot, following, now)
+    windows = snapshot.tracked_windows(*following)
+    kept = ledger.consulted_benchmarks(store)
+    current = next((symbol for symbol in following if not done[symbol]), None)
+
+    rows = []
+    for entry in benchmarks.BENCHMARKS:
+        symbol = entry.symbol
+        is_followed = symbol in following
+        row = {'symbol': symbol, 'index': entry.index,
+               'inception': instants.iso(entry.inception),
+               'followed': is_followed, 'ready': done.get(symbol, False),
+               'kept': False, 'freed': False, 'waiting': None, 'after': None,
+               'reached': None, 'target': None, 'ratio': None}
+        if not is_followed and quotes.oldest_ts(store, symbol) is not None:
+            row['kept'] = symbol in kept
+            row['freed'] = symbol not in kept
+        if is_followed and not row['ready']:
+            window = windows.get(symbol)
+            if window is None:
+                row['waiting'] = NO_EVENTS
+            else:
+                row.update(_rebuild(store, symbol, window[0], now))
+                if symbol != current:
+                    row['waiting'], row['after'] = 'queued', current
+        rows.append(row)
+    return rows
+
+
+def _rebuild(store, symbol: str, first_day: date, now: datetime
+             ) -> Dict[str, Any]:
     """The rebuild bar, **fed from the store** and not from the recorder.
 
     `runtime_view.backfill_progress` reads `runtime_state.Recorder`, a dict this
     process holds and loses on restart — so a bar built from it is empty on
     every boot, on a job that runs for hours. The three facts here are all
     persisted: where the backward pass has reached (`price_point`), where it is
-    heading (the fund's inception, or the oldest day the pass has tried), and
-    today.
+    heading, and today.
+
+    **Where it is heading is the later of the fund's inception and the ledger's
+    first day** (#1312): the backfill stops there, so a target further back
+    would hold the bar short of a download that is finished.
 
     No promised duration. `RebuildBlock` already refuses to name an hour, and a
     mute symbol backing off to twenty-four hours is the reason.
     """
     reached = quotes.oldest_ts(store, symbol)
     reached_day = reached.date() if reached is not None else None
-    # **Only an offered fund has a target.** `oldest_window_tried` is where the
-    # backward pass has got to, not where it is going: it moves with `reached`,
-    # so a ratio taken against it reads full from the first chunk and stays
-    # there. An owner who set an off-list ticker through `PUT /api/settings`
-    # would watch a finished bar wait for a figure that is hours away. No
-    # target, no bar, and the panel says how far back it has got instead.
-    target = offered.inception if offered else None
+    offered = benchmarks.offered(symbol)
+    target = max(offered.inception, first_day) if offered else None
     today = now.date()
 
     ratio = None
@@ -538,6 +624,7 @@ def _series(result, accounts: Dict[str, Tuple[Dict[date, Any], date]]
             for snap in result.series]
 
 
-__all__ = ['comparison', 'NO_REFERENCE', 'REBUILDING', 'NOTHING_TO_COMPARE',
+__all__ = ['comparison', 'followed', 'readiness', 'ready', 'downloads',
+           'references', 'NO_REFERENCE', 'REBUILDING', 'NOTHING_TO_COMPARE',
            'SPLITS_UNKNOWN', 'READY', 'NO_EVENTS', 'NOT_COMPUTED',
            'NOTHING_HELD', 'NO_RATE_ON_SEED']

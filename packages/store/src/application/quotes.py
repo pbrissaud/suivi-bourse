@@ -162,6 +162,13 @@ def splits_were_read(store, symbol: str) -> bool:
     return bool(rows) and rows[0][0] is not None
 
 
+def has_converted_price(store, symbol: str) -> bool:
+    """Is there at least one close of ``symbol`` a comparison could use?"""
+    return bool(store.query(
+        'SELECT 1 FROM price_point '
+        ' WHERE symbol = ? AND price_converted IS NOT NULL LIMIT 1', [symbol]))
+
+
 def record_splits(store, symbol: str, splits: Mapping[date, float]) -> int:
     """Rewrite one symbol's **whole** split history. Returns rows written.
 
@@ -548,6 +555,7 @@ __all__ = [
     'read_splits', 'record_splits', 'splits_were_read',
     'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
+    'has_converted_price',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
     'record_forward_window_tried', 'newest_window_tried',
     'forget_oldest_stored',

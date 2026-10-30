@@ -23,6 +23,7 @@ RELEASED = (
     'add_event_amounts_currency',
     'add_agent_model_name',
     'add_agent_thinking',
+    'follow_the_references',
 )
 
 
@@ -115,3 +116,46 @@ def test_the_amounts_currency_step_adds_a_null_column_and_keeps_rows(tmp_path):
             == [(1, 150.0, None)]
     finally:
         opened.close()
+
+
+def _migrated(tmp_path, settings):
+    """A store at the step before ours, holding ``settings``, then opened."""
+    path = tmp_path / 'follow.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        "DELETE FROM schema_step WHERE step = 'follow_the_references'")
+    connection.execute('DELETE FROM setting WHERE key LIKE ?', ['benchmark_%'])
+    for key, value in settings.items():
+        connection.execute(
+            'INSERT INTO setting (key, value) VALUES (?, ?)', [key, value])
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        return dict(opened.query(
+            "SELECT key, value FROM setting WHERE key LIKE 'benchmark_%'"))
+    finally:
+        opened.close()
+
+
+def test_an_install_follows_its_reference_first_then_every_consulted_one(
+        tmp_path):
+    rows = _migrated(tmp_path, {'benchmark_symbol': 'CSPX.AS',
+                                'benchmark_consulted': 'CW8.PA,CSPX.AS,C40.PA'})
+
+    assert rows['benchmark_symbols'] == 'CSPX.AS,CW8.PA,C40.PA'
+    assert rows['benchmark_symbol'] == 'CSPX.AS'
+    assert rows['benchmark_consulted'] == 'CSPX.AS,CW8.PA,C40.PA'
+
+
+def test_an_off_list_reference_is_cleared_and_not_followed(tmp_path):
+    rows = _migrated(tmp_path, {'benchmark_symbol': 'WPEA.PA',
+                                'benchmark_consulted': 'CW8.PA'})
+
+    assert rows['benchmark_symbol'] == ''
+    assert rows['benchmark_symbols'] == 'CW8.PA'
+
+
+def test_an_install_that_compared_against_nothing_gets_no_row(tmp_path):
+    assert _migrated(tmp_path, {}) == {}

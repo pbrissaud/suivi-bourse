@@ -270,10 +270,14 @@ def _observe_benchmark_never_priced(opened, now: datetime) -> List[Advisory]:
     ticker on its first network outage, which is the accusation this refuses to
     make.
     """
-    symbol = opened.setting('benchmark_symbol')
-    if not symbol:
-        return []
+    standing: List[Advisory] = []
+    for symbol in opened.setting('benchmark_symbols'):
+        standing.extend(_never_priced(opened, symbol, now))
+    return standing
 
+
+def _never_priced(opened, symbol: str, now: datetime) -> List[Advisory]:
+    """One followed reference, checked as :func:`_observe_benchmark_never_priced` says."""
     tried = opened.query(
         'SELECT 1 FROM symbol_quote q '
         'WHERE q.symbol = ? AND q.oldest_window_tried IS NOT NULL '

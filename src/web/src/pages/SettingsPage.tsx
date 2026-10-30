@@ -10,6 +10,7 @@ import { AdvancedSection } from '@/features/settings/components/AdvancedSection'
 import { AgentBlock } from '@/features/settings/components/AgentBlock'
 import { DeviceSection } from '@/features/settings/components/DeviceSection'
 import { PortfolioSection } from '@/features/settings/components/PortfolioSection'
+import { REFERENCES_HASH } from '@/features/settings/components/ReferencesRow'
 import type { SectionRead } from '@/features/settings/components/SettingsSection'
 import { TaxationBlock } from '@/features/settings/components/TaxationBlock'
 import { ThemeBlock } from '@/features/settings/components/ThemeBlock'
@@ -76,11 +77,13 @@ export default function SettingsPage() {
     advanced: settingsRead.kind !== 'pending',
   }
   const hash = useLocation({ select: (location) => location.hash })
-  const target = SECTIONS.findIndex((section) => section.id === hash)
+  // The references sheet is opened by its own address, under Portfolio (#1312).
+  const anchor = hash === REFERENCES_HASH ? 'portfolio' : hash
+  const target = SECTIONS.findIndex((section) => section.id === anchor)
   const landed = target >= 0 && SECTIONS.slice(0, target + 1).every(({ id }) => settled[id])
   useEffect(() => {
-    if (landed) land(hash)
-  }, [hash, landed])
+    if (landed) land(anchor)
+  }, [anchor, landed])
 
   return (
     <div className="max-w-settings">

@@ -733,8 +733,8 @@ def test_a_store_that_cannot_answer_is_an_error_and_never_an_empty_payload(tmp_p
     runtime, opened = build_runtime(tmp_path, events=LEDGER, break_store=True)
     # A reference named, or the benchmark answers "no reference" before it
     # touches the tables that are gone and the fault is never reached (#1270).
-    opened.execute("INSERT INTO setting (key, value) "
-                   "VALUES ('benchmark_symbol', 'CW8.PA')")
+    opened.execute("INSERT INTO setting (key, value) VALUES "
+                   "('benchmark_symbol', 'CW8.PA'), ('benchmark_symbols', 'CW8.PA')")
 
     result = call(runtime, tool)
 
@@ -940,8 +940,8 @@ def benchmark_runtime(tmp_path, state):
               unit_price=1.0)]
     runtime, opened = build_runtime(tmp_path, events=events)
     if state != 'no_reference':
-        opened.execute("INSERT INTO setting (key, value) "
-                       "VALUES ('benchmark_symbol', 'CW8.PA')")
+        opened.execute("INSERT INTO setting (key, value) VALUES "
+                       "('benchmark_symbol', 'CW8.PA'), ('benchmark_symbols', 'CW8.PA')")
     if state == 'ready':
         _quote_the_reference(opened, first=(today - timedelta(days=90)).isoformat(),
                              last=today.isoformat())
@@ -1166,8 +1166,8 @@ def rich_runtime(tmp_path):
     # A reference named and quoted, for the benchmark to land on "ready": the
     # pea's curve is written a day at a time, and the last close of the fund
     # waits for its rate, so `ended` carries a value too (#1270).
-    opened.execute("INSERT INTO setting (key, value) "
-                   "VALUES ('benchmark_symbol', 'CW8.PA')")
+    opened.execute("INSERT INTO setting (key, value) VALUES "
+                   "('benchmark_symbol', 'CW8.PA'), ('benchmark_symbols', 'CW8.PA')")
     _quote_the_reference(opened, first=(today - timedelta(days=420)).isoformat(),
                          last=(today - timedelta(days=1)).isoformat())
     quotes.record_history(opened, 'CW8.PA', [

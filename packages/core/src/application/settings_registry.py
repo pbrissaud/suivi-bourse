@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from application import benchmarks
 
 NEXT_CYCLE = 'next_cycle'
 
@@ -16,6 +18,8 @@ CURRENCY = 'currency'
 SYMBOL = 'symbol'
 
 BOOLEAN = 'boolean'
+
+SYMBOLS = 'symbols'
 
 
 class InvalidSetting(ValueError):
@@ -55,6 +59,12 @@ def _currency(raw: str) -> str:
     return str(raw).strip().upper()
 
 
+def _symbols(raw: str) -> List[str]:
+    """A comma-separated row, as the list it stores."""
+    return [part.strip().upper() for part in str(raw).split(',')
+            if part.strip()]
+
+
 _ONE_DAY = 86400
 
 SETTINGS: Tuple[SettingSpec, ...] = (
@@ -87,11 +97,14 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         attribute='base_currency', required=True),
     SettingSpec(
         'benchmark_symbol', None, SYMBOL, _currency, NEXT_CYCLE,
-        'A reference ticker the portfolio is compared against, typically an '
-        'accumulating broad-market ETF. It is followed because it is named '
-        'here, not because it is held: no acquisition event is needed, and the '
-        'backfill keeps its series current all the same. Optional — blank '
-        'means no comparison.'),
+        'The reference the Benchmark page displays: one of the followed ETFs '
+        'whose history is complete, or blank for the first of them.'),
+    SettingSpec(
+        'benchmark_symbols', None, SYMBOLS, _symbols, NEXT_CYCLE,
+        'The reference ETFs followed, a subset of the offered list. Their '
+        'history is downloaded in the background, one at a time, in the order '
+        'they were turned on; the Benchmark page offers the complete ones. '
+        'Unfollowing one keeps its series. Optional: none means no comparison.'),
     SettingSpec(
         'update_check', 'true', BOOLEAN, _bool, NEXT_CYCLE,
         'Whether the server asks api.github.com, at most every 6 hours, if a '
@@ -121,6 +134,8 @@ def required_keys() -> Tuple[str, ...]:
 def default_for(key: str):
     """The code's value for ``key``, parsed. ``None`` when it has no default."""
     spec = spec_for(key)
+    if spec.kind == SYMBOLS:
+        return []  # a list is never absent: nothing followed is an empty one
     return None if spec.default is None else spec.parse(spec.default)
 
 
@@ -143,6 +158,8 @@ def validate(key: str, value: Any):
     except KeyError:
         raise InvalidSetting(key, f"Unknown setting {key!r}") from None
 
+    if spec.kind == SYMBOLS:
+        return _validate_symbols(spec, value)
     if value is None or (isinstance(value, str) and not value.strip()):
         # A dial with neither a default nor an obligation is the one kind that
         # can be *unset*, and emptying its field is how that is said. ``resolve``
@@ -168,15 +185,32 @@ def validate(key: str, value: Any):
     elif spec.kind == CURRENCY:
         parsed = _validate_currency(spec, value)
     elif spec.kind == SYMBOL:
-        # Shape is not checked: nothing in this repository constrains a
-        # ticker's form, so a grammar invented here would refuse a reference
-        # the ledger takes as a holding. A ticker no market knows is caught by
-        # `benchmark_never_priced`, which also catches the typo that is a
-        # perfectly well-shaped ticker.
         parsed = spec.parse(value)
+        if parsed not in benchmarks.BY_SYMBOL:
+            raise InvalidSetting(
+                spec.key, f"{spec.key} must be one of the offered references, "
+                          f"got {value!r}")
     else:
         raise InvalidSetting(key, f"{key} has no validator for kind {spec.kind!r}")
 
+    return parsed
+
+
+def _validate_symbols(spec: SettingSpec, value: Any) -> List[str]:
+    """A list of offered references, each once, in the order given."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise InvalidSetting(spec.key, f"{spec.key} must be a list of symbols")
+    parsed: List[str] = []
+    for item in value:
+        symbol = spec.parse(item) if isinstance(item, str) else []
+        if len(symbol) != 1 or symbol[0] not in benchmarks.BY_SYMBOL:
+            raise InvalidSetting(
+                spec.key, f"{spec.key} may only name offered references, "
+                          f"got {item!r}")
+        if symbol[0] not in parsed:
+            parsed.append(symbol[0])
     return parsed
 
 
@@ -221,6 +255,8 @@ def stored_form(key: str, value: Any) -> str:
     if value is None:
         return ''  # an unset dial, stored as the blank ``resolve`` reads back
     spec = spec_for(key)
+    if spec.kind == SYMBOLS:
+        return ','.join(value)
     if spec.kind == BOOLEAN:
         return 'true' if value else 'false'
     return str(int(value)) if spec.kind == INTEGER else str(value)
@@ -228,7 +264,7 @@ def stored_form(key: str, value: Any) -> str:
 
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
-    'INTEGER', 'CURRENCY', 'SYMBOL', 'BOOLEAN',
+    'INTEGER', 'CURRENCY', 'SYMBOL', 'SYMBOLS', 'BOOLEAN',
     'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
     'spec_for', 'seeded_defaults', 'required_keys', 'default_for', 'defaults',
     'resolve', 'validate', 'stored_form',

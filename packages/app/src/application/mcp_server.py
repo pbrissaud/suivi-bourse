@@ -718,7 +718,7 @@ class BenchmarkComparison(TypedDict):
 
 #: The selector's lists and the daily curve: screen furniture, and a year of
 #: curve is ~365 points — tokens with no answer in them (#1270).
-_COMPARISON_OMITS = ('series', 'offered', 'consulted')
+_COMPARISON_OMITS = ('series', 'offered', 'followed', 'ready')
 
 
 class PositionAfter(TypedDict):

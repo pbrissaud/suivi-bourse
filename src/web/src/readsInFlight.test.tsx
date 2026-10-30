@@ -72,6 +72,8 @@ const WRITE_ONLY_ROUTES = [
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
+  // Keep or release an unfollowed ETF's series: a gesture on one ETF (#1312).
+  'benchmarkReference',
   // The agent's key is written and forgotten, never read; the connection
   // test answers the reader's own press, and its answer is a receipt (#1115).
   'agentKey',

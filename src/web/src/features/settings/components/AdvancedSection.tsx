@@ -19,10 +19,10 @@ const UPDATE_CHECK = 'update_check'
 
 /**
  * Registry dials this section leaves out. The currency has its own row in
- * Portfolio; the benchmark is chosen on the comparison page, which says what
- * fetching its history costs (#760); the release check is a switch (#1237).
+ * Portfolio; the benchmark is chosen on the comparison page and the followed
+ * ones in Portfolio (#1312); the release check is a switch (#1237).
  */
-const NOT_A_DIAL = new Set(['benchmark_symbol', UPDATE_CHECK, CURRENCY_KEY])
+const NOT_A_DIAL = new Set(['benchmark_symbol', 'benchmark_symbols', UPDATE_CHECK, CURRENCY_KEY])
 
 /**
  * What each known dial is called, how it is explained and in what unit. An unknown one falls back to its key and the registry's own doc.

@@ -173,7 +173,7 @@ class ConfigSnapshot:
         return carrying.holding_windows(
             self.events, carrying.held_symbols(self.shares))
 
-    def tracked_windows(self, benchmark: Optional[str] = None
+    def tracked_windows(self, *references: str
                         ) -> Dict[str, Tuple[date, Optional[date]]]:
         """The whole perimeter the backfill walks: held, plus merely **named**.
 
@@ -191,7 +191,7 @@ class ConfigSnapshot:
                                      │             └─► valuation, totals,
                                      │                 positions, perf_job
                                      ▼
-            benchmark  ────►  tracked_windows()    tracked: held + named
+            references ────►  tracked_windows()    tracked: held + named
                                                    ├─► backfill
                                                    └─► benchmark_view (#760)
 
@@ -207,9 +207,11 @@ class ConfigSnapshot:
         share.
         """
         windows = self.backfill_windows()
-        if not benchmark or benchmark in windows or not self.events:
+        if not self.events:
             return windows
-        return {**windows, benchmark: (min(e.date for e in self.events), None)}
+        first_day = min(e.date for e in self.events)
+        return {**{reference: (first_day, None) for reference in references
+                   if reference and reference not in windows}, **windows}
 
     def first_acquisition_date(self, symbol: str) -> Optional[date]:
         """Date of the earliest ``BUY`` **or ``GRANT``** for ``symbol``, or ``None``."""

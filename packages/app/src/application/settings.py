@@ -1,6 +1,6 @@
 """The settings write path — the store's ``setting`` table (issue #701)."""
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from application import ledger
 from application import settings_registry
@@ -45,8 +45,15 @@ def describe(store) -> List[Dict[str, Any]]:
     return described
 
 
-def save(store, values: Mapping[str, Any]) -> Tuple[Change, ...]:
-    """Validate the whole body, write what moved, and say what moved."""
+def save(store, values: Mapping[str, Any],
+         is_ready: Optional[Callable[[str], bool]] = None
+         ) -> Tuple[Change, ...]:
+    """Validate the whole body, write what moved, and say what moved.
+
+    ``is_ready`` is the comparison's gate (#1312): given, it refuses a
+    ``benchmark_symbol`` whose history is not complete. The followed-list
+    invariant needs no store beyond this one and always holds.
+    """
     if not values:
         raise settings_registry.InvalidSetting(
             '', 'No setting was named; a write with nothing to write is a mistake')
@@ -58,6 +65,8 @@ def save(store, values: Mapping[str, Any]) -> Tuple[Change, ...]:
     pending = [(key, value) for key, value in validated.items()
                if current.get(key) != value]
     _refuse_a_reinterpretation(store, current, dict(pending))
+    pending = list(_keep_the_chosen_reference_followed(
+        current, dict(pending), is_ready).items())
 
     changes: List[Change] = []
     with store.transaction():
@@ -67,38 +76,48 @@ def save(store, values: Mapping[str, Any]) -> Tuple[Change, ...]:
                 'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
                 [key, settings_registry.stored_form(key, value)])
             changes.append(Change(key, current.get(key), value))
-        _remember_the_reference(store, current, dict(pending))
+        _remember_the_references(store, dict(pending))
     return tuple(changes)
 
 
-def _remember_the_reference(store, current, pending) -> None:
-    """Keep the series of a reference that is being switched away from (#760).
+def _keep_the_chosen_reference_followed(current, pending, is_ready
+                                        ) -> Dict[str, Any]:
+    """The displayed reference is always a followed one (#1312).
+
+    A choice outside the followed list, or not complete yet, is refused; and
+    dropping the displayed ETF from the list clears the choice with it, so the
+    page falls back instead of showing a reference nobody follows.
+    """
+    following = pending.get('benchmark_symbols', current['benchmark_symbols'])
+    chosen = pending.get('benchmark_symbol', current['benchmark_symbol'])
+    if 'benchmark_symbol' in pending and chosen:
+        if chosen not in following:
+            raise settings_registry.InvalidSetting(
+                'benchmark_symbol',
+                f"{chosen} is not followed; follow it first")
+        if is_ready is not None and not is_ready(chosen):
+            raise settings_registry.InvalidSetting(
+                'benchmark_symbol',
+                f"{chosen} is still being downloaded; it can be displayed "
+                f"once its history is complete")
+    elif chosen and chosen not in following:
+        pending['benchmark_symbol'] = None
+    return pending
+
+
+def _remember_the_references(store, pending) -> None:
+    """Keep the series of every ETF the owner follows (#760, #1312).
 
     ``ledger.orphan_symbols`` protects the reference the dial points at *right
-    now*, so the moment the dial moves the previous one is an orphan and the
-    next purge takes the history the backfill spent hours on. Both go in the
-    consulted list: the new one because it is about to be fetched, and the old
-    one because it has been — including the one chosen before this list
-    existed, which is in no list and would otherwise be lost on its first
-    switch.
+    now* and the consulted ones, so a followed ETF goes in the consulted list in
+    the write itself: one not recorded a moment after it was followed is one the
+    purge can catch in between. **Unfollowing never forgets** — the series stays
+    until ``forget_consulted_benchmark`` is asked for, by name.
 
-    **Emptying the field is the opposite gesture and is left alone.** #982 made
-    a blank the one route for retiring a reference, and the only way the owner
-    ever gets those years of closes back off their disk; protecting what it
-    releases would fossilise every ticker ever typed. So a switch keeps both,
-    and a blank forgets.
-
-    Inside the write transaction on purpose. A reference remembered a moment
-    after the dial moved is a reference the purge can catch in between.
+    Inside the write transaction on purpose.
     """
-    if 'benchmark_symbol' not in pending:
-        return
-    chosen = pending['benchmark_symbol']
-    previous = current.get('benchmark_symbol')
-    if chosen:
-        ledger.record_consulted_benchmark(store, chosen, previous)
-    elif previous:
-        ledger.forget_consulted_benchmark(store, previous)
+    if 'benchmark_symbols' in pending:
+        ledger.record_consulted_benchmark(store, *pending['benchmark_symbols'])
 
 
 def _refuse_a_reinterpretation(store, current, pending) -> None:

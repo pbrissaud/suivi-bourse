@@ -1,10 +1,12 @@
 """The dials under ``/api``, and the dashboard layout and theme they sit beside."""
 import json
+from datetime import datetime, timezone
 
 import duckdb
 from flask import Blueprint, Response, current_app, jsonify
 from logfmt_logger import getLogger
 
+from application import benchmark_view
 from application import dashboard_layout
 from application import settings as settings_module
 from application import settings_registry
@@ -42,9 +44,13 @@ def put_settings():
         return bad_request("a JSON object is required")
 
     runtime = current_runtime()
+    snapshot = runtime.config_manager.current()
+    now = datetime.now(timezone.utc)
     try:
         with runtime.config_manager.writing() as opened:
-            changes = settings_module.save(opened, body)
+            changes = settings_module.save(
+                opened, body, lambda symbol: benchmark_view.ready(
+                    opened, snapshot, symbol, now))
     except settings_registry.InvalidSetting as exc:
         return unprocessable(str(exc), key=exc.key or None)
 

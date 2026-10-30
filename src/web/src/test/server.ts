@@ -43,6 +43,7 @@ import {
   aStore,
   aTaxationCatalogue,
   aBenchmark,
+  aBenchmarkReferences,
   aRegistryItem,
   aTaxationModel,
   aTotalsPayload,
@@ -248,6 +249,7 @@ export function defaultHandlers() {
     // and what the shell's walk meets on this route. A test comparing anything
     // asks for the payload by name, exactly as it asks for an orphan.
     http.get(ROUTES.benchmark, () => HttpResponse.json(aBenchmark())),
+    http.get(ROUTES.benchmarkReferences, () => HttpResponse.json(aBenchmarkReferences())),
     http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
     // **And nothing to advise on, by default** (#829). An advisory is an audit
     // on the *data*, and the default portfolio is one nothing is wrong with —
