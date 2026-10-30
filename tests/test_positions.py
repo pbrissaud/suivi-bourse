@@ -12,9 +12,12 @@ that a method was called — the ticket's rules are rules about *rows*:
 4. and no other module in the app writes either table.
 """
 
+from datetime import date
+
 import pytest
 
 from application import entries
+from application import main
 from application import ledger
 from application import positions
 from application.events.loader import EventLoader
@@ -169,3 +172,39 @@ def test_a_ledger_that_cannot_be_replayed_writes_no_position(store, tmp_path):
     assert positions.read_positions(store) == before
 
 
+# --------------------------------------------------------------------------- #
+# A future-dated event does not count today (#1459)
+# --------------------------------------------------------------------------- #
+
+FUTURE_CSV = EVENTS_CSV + (
+    "2027-12-31,BUY,AAPL,Apple Inc,5,200.00,,,Dated ahead\n"
+    "2027-12-31,BUY,MSFT,Microsoft,3,400.00,,,Not held yet\n"
+    "2027-12-31,DEPOSIT,,,,,,1000.00,Not paid yet\n"
+)
+
+
+def test_a_future_dated_event_stays_out_of_todays_positions(
+        store, tmp_path, monkeypatch):
+    monkeypatch.setattr(main, '_today', lambda: date(2026, 10, 30))
+
+    _manager(store, tmp_path, FUTURE_CSV).current()
+
+    (row,) = positions.read_positions(store)
+    assert (row['symbol'], row['quantity']) == ('AAPL', 10.0)
+    assert positions.read_account_states(store)['default'].cash_balance == (
+        pytest.approx(1499.9))
+
+
+def test_the_day_it_is_dated_the_future_event_counts(
+        store, tmp_path, monkeypatch):
+    """No write happens on that day: the turn of the day is what replays."""
+    monkeypatch.setattr(main, '_today', lambda: date(2027, 12, 30))
+    manager = _manager(store, tmp_path, FUTURE_CSV)
+    manager.current()
+
+    monkeypatch.setattr(main, '_today', lambda: date(2027, 12, 31))
+    manager.reload()
+
+    assert {r['symbol']: r['quantity']
+            for r in positions.read_positions(store)} == {
+                'AAPL': 15.0, 'MSFT': 3.0}
