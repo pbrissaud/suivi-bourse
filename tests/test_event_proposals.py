@@ -13,6 +13,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from api import create_app
 from application import accounts as accounts_module
 from application import agent, entries, event_proposals, ledger, proposals
+from application import statements
 from application.events.schemas import Event, EventType
 from test_agent_routes import chunks, post, run, scripted, switched_on
 from test_mcp_server import build_runtime, call, payload
@@ -64,6 +65,7 @@ def the_only_proposal(opened):
     (batch(BUY, {**BUY, 'event_type': 'BUYY'}), 'line 2 (event_type)'),
     (batch(BUY, {**BUY, 'account': 'boursorama'}), "line 2 (account)"),
     (batch({**BUY, 'mark': 'statement'}), 'line 1 (mark)'),
+    (batch({**BUY, 'marks': ['statement']}), 'line 1 (marks)'),
     (json.dumps([BUY] * (event_proposals.EVENTS_MAX + 1)), 'events_json'),
     (batch({**BUY, 'event_type': 'SELL', 'quantity': 99}), 'line 1 (quantity)'),
 ])
@@ -405,6 +407,17 @@ def test_no_tool_merges_ignores_or_reproposes(runtime):
         'propose_events', 'propose_profile_fact'}
 
 
+@pytest.mark.parametrize('member', ['mark', 'marks'])
+def test_the_tool_refuses_a_mark_the_agent_proposes(runtime, member):
+    from test_mcp_server import _text
+    answer = call(runtime, 'propose_events', {
+        'title': 'Achat CW8', 'events_json': batch({**BUY, member: ['gap']})})
+
+    assert answer.is_error is True
+    assert f'line 1 ({member})' in _text(answer)
+    assert count(runtime.store, 'proposal') == 0
+
+
 def test_the_tool_answers_through_mcp_directly(runtime):
     answer = payload(call(runtime, 'propose_events',
                           {'title': 'Achat CW8', 'events_json': batch()}))
@@ -456,3 +469,196 @@ def test_a_number_too_large_for_a_float_is_refused_in_words(opened):
 
     with pytest.raises(event_proposals.InvalidProposal, match=r'line 1 \(amount\)'):
         event_proposals.propose(opened, 'x', huge, NOW)
+
+
+# ------------------------------------------------------ a broker statement --
+
+def line(name='AMUNDI MSCI WORLD', **members):
+    return statements.ExtractedLine(name=name, **members)
+
+
+def statement_of(opened, *lines, kind='positions', as_of=date(2026, 6, 30),
+                 search=lambda query: [{'symbol': 'CW8.PA'}], **members):
+    return statements.resolve(opened, 'cto', statements.Extraction(
+        kind=kind, as_of=as_of, lines=list(lines), **members), search)
+
+
+def propose_statement_now(opened, *lines, **members):
+    return event_proposals.propose_statement(
+        opened, 'Relevé Boursorama', statement_of(opened, *lines, **members),
+        datetime.now(timezone.utc))
+
+
+def aapl_and(*lines):
+    return (line('APPLE', ticker='AAPL', quantity=5), *lines)
+
+
+def test_a_statement_proposal_stores_the_extraction_and_no_event(opened):
+    before = count(opened, 'event')
+
+    proposal_id = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=512.4)))
+
+    payload_ = json.loads(opened.query('SELECT payload FROM proposal')[0][0])
+    assert 'events' not in payload_ and payload_['stamp'] == ledger.stamp(opened)
+    assert payload_['statement']['lines'][1]['symbol'] == 'CW8.PA'
+    assert count(opened, 'event') == before
+    assert proposal_id
+
+
+def test_a_statement_proposal_reads_with_marks_and_its_facts(http, opened):
+    proposal_id = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=512.4)))
+
+    [read] = http.get(f'/api/agent/proposals?ids={proposal_id}').get_json()['proposals']
+
+    assert read['count'] == 1 and read['status'] == 'ready'
+    assert read['events'][0]['marks'] == ['statement', 'gap']
+    assert read['events'][0]['price_source'] == 'statement'
+    assert read['statement'] == {
+        'kind': 'positions', 'as_of': '2026-06-30', 'dropped': 0,
+        'unresolved': [], 'pending_held': 0, 'total_check': None}
+
+
+def test_a_statement_previews_its_gap_and_merges_it(http, opened):
+    proposal_id = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=512.4)))
+
+    preview = http.post(f'/api/agent/proposals/{proposal_id}/preview')
+
+    assert preview.status_code == 200
+    body = preview.get_json()
+    assert body['rows'] == 1 and body['written'] == 1
+    assert body['statement']['lines'][0]['marks'] == ['statement', 'gap']
+    assert count(opened, 'event') == 1
+    merged = http.post(f'/api/agent/proposals/{proposal_id}/merge')
+    assert merged.status_code == 201 and count(opened, 'event') == 2
+    [written] = [e for e in http.get('/api/events').get_json()
+                 if e['symbol'] == 'CW8.PA']
+    assert written['quantity'] == 12 and written['date'] == '2026-06-30'
+    assert written['unit_price'] == 512.4 and written['amount'] is None
+
+
+def test_an_unresolved_line_previews_but_blocks_the_merge_until_chosen(http, opened):
+    proposal_id = propose_statement_now(
+        opened, *aapl_and(line(isin='FR0010315770', quantity=12,
+                               unit_price=512.4)), search=lambda query: [])
+    base = f'/api/agent/proposals/{proposal_id}'
+
+    preview = http.post(f'{base}/preview').get_json()
+    refused = http.post(f'{base}/merge')
+
+    assert preview['statement']['unresolved'] == [
+        {'n': 2, 'name': 'AMUNDI MSCI WORLD', 'isin': 'FR0010315770'}]
+    assert preview['rows'] == 0
+    assert refused.status_code == 422
+    assert refused.get_json()['detail'] == (
+        'line 2 (symbol): choose the title for "AMUNDI MSCI WORLD" '
+        '(FR0010315770)')
+    chosen = {'symbols': {'2': 'CW8.PA'}}
+    assert http.post(f'{base}/preview', json=chosen).get_json()['rows'] == 1
+    assert http.post(f'{base}/merge', json=chosen).status_code == 201
+    assert 'CW8.PA' in [e['symbol'] for e in http.get('/api/events').get_json()]
+
+
+def test_a_gap_without_a_price_is_refused_until_one_is_typed(http, opened):
+    proposal_id = propose_statement_now(
+        opened, *aapl_and(line(isin='FR0010315770', quantity=12)))
+    base = f'/api/agent/proposals/{proposal_id}'
+
+    preview = http.post(f'{base}/preview').get_json()
+    refused = http.post(f'{base}/merge')
+
+    assert preview['statement']['lines'][0]['price_source'] is None
+    assert preview['statement']['lines'][0]['unit_price'] is None
+    assert refused.status_code == 422 and 'type a price' in refused.get_json()['detail']
+    typed = {'prices': {'CW8.PA': 530.5}}
+    assert http.post(f'{base}/merge', json=typed).status_code == 201
+    [written] = [e for e in http.get('/api/events').get_json()
+                 if e['symbol'] == 'CW8.PA']
+    assert written['unit_price'] == 530.5
+
+
+@pytest.mark.parametrize('edits, key', [
+    ({'prices': {'AAPL': 5}}, 'prices'),
+    ({'symbols': {'1': 'AAPL'}}, 'symbols'),
+    ({'tickers': {}}, 'tickers'),
+    ({'prices': [5]}, 'prices'),
+])
+def test_an_edit_that_changes_nothing_it_may_is_a_422_naming_the_key(
+        http, opened, edits, key):
+    proposal_id = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=1.0)))
+
+    answer = http.post(f'/api/agent/proposals/{proposal_id}/preview', json=edits)
+
+    assert answer.status_code == 422 and answer.get_json()['key'] == key
+
+
+def test_a_body_that_is_not_an_object_is_refused(http, opened):
+    proposal_id = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=1.0)))
+
+    answer = http.post(f'/api/agent/proposals/{proposal_id}/preview',
+                       data='[1]', content_type='application/json')
+
+    assert answer.status_code == 422
+
+
+def test_operations_that_differ_only_by_the_fee_are_duplicates(http, opened):
+    entries.create(opened, Event(
+        date(2026, 3, 3), EventType.BUY, 'CW8.PA', 'Amundi MSCI World',
+        quantity=2, unit_price=510.0, amount=1020.0, fee=0.0, account='cto'))
+    proposal_id = propose_statement_now(opened, line(
+        ticker='CW8.PA', date=date(2026, 3, 3), event_type='BUY', quantity=2,
+        unit_price=510.0, amount=1020.0, fee=1.5), kind='operations', as_of=None)
+
+    preview = http.post(f'/api/agent/proposals/{proposal_id}/preview').get_json()
+    merged = http.post(f'/api/agent/proposals/{proposal_id}/merge')
+
+    assert preview['duplicates'] == 1 and preview['written'] == 0
+    assert merged.get_json()['written'] == 0 and count(opened, 'event') == 2
+
+
+def test_rekind_makes_a_new_proposal_of_the_other_kind_and_ignores_the_old(
+        http, opened):
+    old = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=512.4)))
+
+    answer = http.post(f'/api/agent/proposals/{old}/rekind')
+
+    assert answer.status_code == 200
+    new = answer.get_json()['proposal']
+    assert new['id'] != old and new['status'] == 'ready'
+    assert new['statement']['kind'] == 'operations'
+    assert dict(opened.query('SELECT id, status FROM proposal')) == {
+        old: 'ignored', new['id']: 'ready'}
+
+
+def test_rekind_to_positions_needs_a_day(http, opened):
+    old = propose_statement_now(opened, line(
+        ticker='CW8.PA', date=date(2026, 3, 3), event_type='BUY', quantity=2,
+        unit_price=510.0), kind='operations', as_of=None)
+
+    answer = http.post(f'/api/agent/proposals/{old}/rekind')
+
+    assert answer.status_code == 422 and 'gives no date' in answer.get_json()['detail']
+    assert opened.query('SELECT status FROM proposal') == [('ready',)]
+
+
+def test_an_agents_proposal_cannot_be_reread_as_a_statement(http, opened):
+    proposal_id = propose_now(opened)
+
+    assert http.post(f'/api/agent/proposals/{proposal_id}/rekind').status_code == 422
+
+
+def test_repropose_keeps_a_statement_and_stamps_it_afresh(http, opened):
+    old = propose_statement_now(opened, *aapl_and(
+        line(isin='FR0010315770', quantity=12, unit_price=512.4)))
+    entries.create(opened, Event(date(2026, 2, 1), EventType.DEPOSIT, amount=10.0,
+                                 account='cto'))
+
+    new = http.post(f'/api/agent/proposals/{old}/repropose').get_json()['proposal']
+
+    assert new['status'] == 'ready' and new['statement']['kind'] == 'positions'
+    assert http.post(f"/api/agent/proposals/{new['id']}/merge").status_code == 201

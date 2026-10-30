@@ -263,6 +263,9 @@
           "const": "events",
           "type": "string"
         },
+        "statement": {
+          "$ref": "#/$defs/StatementFacts"
+        },
         "status": {
           "enum": [
             "ready",
@@ -743,15 +746,51 @@
             }
           ]
         },
-        "mark": {
-          "enum": [
-            "statement",
-            "gap",
-            "estimated_price"
-          ],
-          "type": "string"
+        "isin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "marks": {
+          "items": {
+            "enum": [
+              "statement",
+              "gap",
+              "estimated_price"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price_source": {
           "anyOf": [
             {
               "type": "string"
@@ -804,6 +843,113 @@
         "notes"
       ],
       "title": "ProposedLine",
+      "type": "object"
+    },
+    "StatementFacts": {
+      "description": "What a statement proposal says beyond its lines (#1120).",
+      "properties": {
+        "as_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dropped": {
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "positions",
+            "operations"
+          ],
+          "type": "string"
+        },
+        "pending_held": {
+          "type": "integer"
+        },
+        "total_check": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TotalCheck"
+            },
+            {
+              "const": "unverifiable",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unresolved": {
+          "items": {
+            "$ref": "#/$defs/UnresolvedLine"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "as_of",
+        "dropped",
+        "unresolved",
+        "pending_held",
+        "total_check"
+      ],
+      "title": "StatementFacts",
+      "type": "object"
+    },
+    "TotalCheck": {
+      "description": "The total the statement states, against the lines read.",
+      "properties": {
+        "gap_pct": {
+          "type": "number"
+        },
+        "read": {
+          "type": "number"
+        },
+        "stated": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "stated",
+        "read",
+        "gap_pct"
+      ],
+      "title": "TotalCheck",
+      "type": "object"
+    },
+    "UnresolvedLine": {
+      "description": "A statement line still waiting for the owner to choose its title.",
+      "properties": {
+        "isin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "n": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "name",
+        "isin"
+      ],
+      "title": "UnresolvedLine",
       "type": "object"
     }
   },

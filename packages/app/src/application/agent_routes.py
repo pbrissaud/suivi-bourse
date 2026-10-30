@@ -12,7 +12,9 @@ store reads in worker threads of its own.
 """
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 import anyio
 from logfmt_logger import getLogger
@@ -21,10 +23,22 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from application import accounts as accounts_module
 from application import agent
 from application import agent_threads
+from application import event_proposals
+from application import instants
+from application import market
+from application import proposals
+from application import statements
 from pydantic_ai import capture_run_messages
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
+from pydantic_ai.exceptions import (
+    ModelAPIError, ModelHTTPError, UnexpectedModelBehavior,
+)
+from pydantic_ai.messages import (
+    ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter, VercelAIEventStream
 from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
 
@@ -43,6 +57,9 @@ NOT_REMOVED = 'The conversation could not be deleted: {}'
 
 #: A turn is one typed question; nothing a person types comes near this.
 MAX_BODY = 256 * 1024
+#: A statement is at most 50 000 characters (`statements.TEXT_MAX`) and a name.
+MAX_STATEMENT_BODY = 64 * 1024
+NAME_MAX = 120
 
 
 @dataclass
@@ -337,14 +354,195 @@ def build_app(runtime, mcp) -> Starlette:
             return _error(404, 'No conversation has this id.')
         return Response(status_code=204)
 
+    async def statement(request):
+        """A broker statement read by a model with no tool, as a proposal (#1120).
+
+        **The raw text goes to the extractor and nowhere else**: not logged, not
+        stored, not in the thread. What the main agent's thread gets is the four
+        messages of a ``propose_events`` call the app made itself.
+        """
+        settings = await anyio.to_thread.run_sync(config)
+        if not settings['enabled']:
+            return _error(404, OFF)
+        if request.headers.get('content-type', '').split(';')[0].strip() \
+                != 'application/json':
+            return _error(415, 'A statement is a JSON body.')
+        body = bytearray()
+        async for piece in request.stream():
+            body.extend(piece)
+            if len(body) > MAX_STATEMENT_BODY:
+                return _error(
+                    413, f'A statement is at most {MAX_STATEMENT_BODY} bytes.')
+        try:
+            raw = json.loads(bytes(body))
+        except ValueError:
+            return _error(400, 'A statement is a JSON object.')
+        if not isinstance(raw, dict):
+            return _error(400, 'A statement is a JSON object.')
+        thread_id = raw.get('thread_id')
+        if not agent_threads.valid_id(thread_id):
+            return _error(
+                400, "'thread_id' is 1 to 64 letters, digits, '_' or '-'.")
+        text, name = raw.get('text'), raw.get('name')
+        text = text.strip() if isinstance(text, str) else ''
+        if not 1 <= len(text) <= statements.TEXT_MAX:
+            return _error(
+                400, f"'text' is 1 to {statements.TEXT_MAX} characters.")
+        name = name.strip() if isinstance(name, str) else ''
+        if not 1 <= len(name) <= NAME_MAX or not name.isprintable():
+            return _error(400, f"'name' is one line of 1 to {NAME_MAX} characters.")
+        account = raw.get('account')
+        if not isinstance(account, str):
+            return _error(400, "'account' is an account id.")
+        if raw.get('provider') != settings['provider']:
+            return _error(
+                409, 'The configured provider is no longer the one this '
+                     'statement was to be sent to.')
+        if thread_id in running:
+            return _error(409, BUSY)
+        running.add(thread_id)
+        try:
+            return await _read_statement(
+                settings, thread_id, account, name, text)
+        finally:
+            running.discard(thread_id)
+
+    async def _read_statement(settings, thread_id, account, name, text):
+        """The held-thread half of :func:`statement`, off the loop where it blocks."""
+        directory = root()
+        label = agent.PROVIDERS[settings['provider']]
+
+        def known():
+            """The account must exist and the thread must be readable."""
+            agent_threads.messages(agent_threads.read(directory, thread_id))
+            return account in accounts_module.account_ids(
+                runtime.store.reader())
+        try:
+            if not await anyio.to_thread.run_sync(known):
+                return _error(422, f"No account '{account}' is declared.")
+        except ValueError as exc:
+            logger.error(f"agent thread {directory / thread_id}.json: {exc}")
+            return _error(409, UNREADABLE.format(exc))
+
+        try:
+            model = await anyio.to_thread.run_sync(
+                agent.build_model, settings)
+            extraction = await statements.extract(model, text)
+        except ModelAPIError as exc:
+            http = exc if isinstance(exc, ModelHTTPError) else None
+            # The status and nothing else: a body may quote the statement.
+            logger.warning(
+                f"agent statement failed: {label}: "
+                f"{http.status_code if http else type(exc).__name__}")
+            said = agent.said(http.body if http else None, str(exc),
+                              settings['api_key'])
+            return _error(502, f'{label}: {said}')
+        except TimeoutError:
+            logger.warning(f"agent statement failed: {label}: timeout")
+            return _error(
+                502, f'{label} did not answer within '
+                     f'{statements.EXTRACTION_TIMEOUT} seconds.')
+        except (UnexpectedModelBehavior, ValidationError) as exc:
+            logger.warning(f"agent statement unreadable: {type(exc).__name__}")
+            return _error(
+                422, 'The model did not return a statement the app can read; '
+                     'try again, or paste the part that lists the lines.')
+        except Exception as exc:
+            # The type and nothing else: whatever failed had the text in hand.
+            logger.error(f"agent statement failed: {type(exc).__name__}")
+            return _error(502, f'{label} could not be asked.')
+
+        def record():
+            """The ticker of each line, the proposal, and the four messages."""
+            statement = statements.resolve(
+                runtime.store.reader(), account, extraction,
+                market.search_securities)
+            now = datetime.now(timezone.utc)
+            with runtime.config_manager.writing() as opened:
+                proposal_id = event_proposals.propose_statement(
+                    opened, _title_of(name, statement['as_of']), statement, now)
+                [card] = event_proposals.read(opened, [proposal_id], now)
+            stored = agent_threads.read(directory, thread_id)
+            history = agent_threads.answered(
+                agent_threads.messages(stored),
+                bool((stored or {}).get('failed')))
+            asked = f'Relevé « {name} » donné pour le compte {account}.'
+            kept = agent_threads.saved(
+                stored, thread_id, agent_threads.title_of(asked),
+                history + _statement_messages(card, asked, now),
+                settings['provider'], settings['model'])
+            agent_threads.write(directory, kept)
+            logger.info(
+                f"agent statement: {settings['provider']} {settings['model']} "
+                f"kind={statement['kind']} lines={len(statement['lines'])} "
+                f"dropped={statement['dropped']}")
+            return card
+        try:
+            card = await anyio.to_thread.run_sync(record)
+        except event_proposals.InvalidProposal as exc:
+            return _error(422, str(exc))
+        except statements.InvalidStatement as exc:
+            return _error(422, str(exc))
+        except OSError as exc:
+            logger.error(f"agent thread {directory / thread_id}.json: {exc}")
+            return _error(500, NOT_SAVED.format(_reason(exc)))
+        return JSONResponse({'proposal': card, 'thread_id': thread_id},
+                            status_code=201)
+
     return Starlette(routes=[
         Route('/api/agent/chat', turn, methods=['POST']),
+        Route('/api/agent/statements', statement, methods=['POST']),
         Route('/api/agent/threads', threads, methods=['GET']),
         # `:path` so an id holding a '/' reaches the check and is refused by
         # name, rather than matching no route at all.
         Route('/api/agent/threads/{thread_id:path}', thread, methods=['GET']),
         Route('/api/agent/threads/{thread_id:path}', forget, methods=['DELETE']),
     ])
+
+
+def _title_of(name: str, as_of: Optional[str]) -> str:
+    """``Relevé Boursorama 30/06/2026``, cut to what a title holds."""
+    day = ''
+    if as_of:
+        year, month, dom = as_of.split('-')
+        day = f' {dom}/{month}/{year}'
+    return (f'Relevé {name}'[:event_proposals.TITLE_MAX - len(day)] + day)
+
+
+#: The line members the thread keeps: never a name or a note, which a
+#: statement may have written to steer a model.
+_THREAD_LINE = ('date', 'event_type', 'account', 'symbol', 'quantity',
+                'unit_price', 'fee', 'amount', 'marks')
+
+
+def _statement_messages(card: dict, asked: str, now: datetime) -> list:
+    """The four messages of a ``propose_events`` call the app made itself."""
+    call_id = f'statement_{uuid4().hex}'
+    kept = [line for line in card['events']
+            if line['symbol'] or line['event_type'] in ('DEPOSIT', 'WITHDRAWAL')]
+    events = [{key: line[key] for key in _THREAD_LINE if key in line}
+              for line in kept]
+    return [
+        ModelRequest(parts=[UserPromptPart(content=asked)]),
+        ModelResponse(parts=[ToolCallPart(
+            'propose_events',
+            {'title': card['title'],
+             'events_json': json.dumps(events, ensure_ascii=False)},
+            tool_call_id=call_id)]),
+        ModelRequest(parts=[ToolReturnPart(
+            'propose_events',
+            {'proposal_id': card['id'], 'title': card['title'],
+             'count': card['count'], 'status': 'ready',
+             'created_at': card['created_at'],
+             'expires_at': instants.iso(now + proposals.EXPIRY),
+             'preview_url': f"/ledger?proposal={card['id']}",
+             'note': "Extrait d'un relevé par l'app, validé côté serveur ; "
+                     "le propriétaire revoit et fusionne."},
+            tool_call_id=call_id)]),
+        ModelResponse(parts=[TextPart(
+            f"J'ai lu le relevé : {card['count']} événements proposés, "
+            f"à revoir avant fusion.")]),
+    ]
 
 
 def _reason(exc: OSError) -> str:

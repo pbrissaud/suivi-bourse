@@ -400,3 +400,16 @@ def build_agent(model, mcp, *, thinking: str):
     from pydantic_ai.settings import ModelSettings
     return Agent(model, toolsets=[MCPToolset(mcp)], instructions=SYSTEM_PROMPT,
                  model_settings=ModelSettings(cache=True, thinking=thinking))
+
+
+def build_extractor(model, output_type, instructions: str):
+    """An agent that reads a text and answers ``output_type``, **with no tool**.
+
+    The statement of #1120 goes to this one and to no other: whatever the text
+    asks for, nothing here can act on it. ``thinking='low'``: it copies, it
+    does not reason.
+    """
+    from pydantic_ai import Agent
+    from pydantic_ai.settings import ModelSettings
+    return Agent(model, output_type=output_type, instructions=instructions,
+                 model_settings=ModelSettings(thinking='low'))

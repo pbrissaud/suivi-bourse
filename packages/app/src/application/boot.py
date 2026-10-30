@@ -24,6 +24,8 @@ AGENT_CHAT_PATH = '/api/agent/chat'
 
 AGENT_THREADS_PATH = '/api/agent/threads'
 
+AGENT_STATEMENTS_PATH = '/api/agent/statements'
+
 NO_HOST_ALLOWLIST = TransportSecuritySettings(
     enable_dns_rebinding_protection=False)
 
@@ -114,7 +116,8 @@ def _is_mcp(path: str) -> bool:
 def _is_agent(path: str) -> bool:
     """Is this path the in-app agent's? ``/api/agent/config`` is Flask's."""
     return any(path == prefix or path.startswith(prefix + '/')
-               for prefix in (AGENT_CHAT_PATH, AGENT_THREADS_PATH))
+               for prefix in (AGENT_CHAT_PATH, AGENT_THREADS_PATH,
+                              AGENT_STATEMENTS_PATH))
 
 
 def serve(app, environment: boot_env.BootEnvironment,

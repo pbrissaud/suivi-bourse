@@ -182,6 +182,8 @@ def test_agents_is_still_flask_s(runtime):
     ('/api/agent/chat', True),
     ('/api/agent/threads', True),
     ('/api/agent/threads/x', True),
+    ('/api/agent/statements', True),
+    ('/api/agent/proposals', False),
     ('/api/agent/config', False),
     ('/api/agent/key', False),
     ('/agent', False),
@@ -189,7 +191,7 @@ def test_agents_is_still_flask_s(runtime):
     ('/api/agent/chatx', False),
     ('/api/agent/threadsx', False),
 ])
-def test_only_the_chat_and_the_threads_are_the_agent_s(path, mine):
+def test_only_the_chat_the_threads_and_the_statements_are_the_agent_s(path, mine):
     assert boot._is_agent(path) is mine
 
 
