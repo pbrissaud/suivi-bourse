@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
 import { ROUTES } from '@/lib/api'
-import { aBenchmark } from '@/test/factories'
+import { aBenchmark, aBenchmarkReferences } from '@/test/factories'
 import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -37,7 +37,8 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
     reference: 'CW8.PA',
     index: 'MSCI World',
     inception: '2009-06-16',
-    consulted: ['CW8.PA'],
+    followed: ['CW8.PA'],
+    ready: ['CW8.PA'],
     covered_from: '2009-06-16',
     covered_to: '2026-09-17',
     ended: null,
@@ -131,7 +132,7 @@ describe('the comparison', () => {
       covered_to: '2026-09-17',
       rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 },
     })
-    await picker()
+    await screen.findByRole('region', { name: /MSCI World en cours de téléchargement/ })
     expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
     unmount()
 
@@ -140,7 +141,8 @@ describe('the comparison', () => {
       reason: 'no_events',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      consulted: ['CW8.PA'],
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
       covered_from: '2009-06-16',
       covered_to: '2026-09-17',
     })
@@ -186,8 +188,8 @@ describe('the comparison', () => {
 
     // The load-bearing rule: a gap computed over half a series is a **wrong**
     // number, not a short one — −38 % that repairs itself an hour later.
-    expect(await screen.findByText(/Reconstitution de l’historique/)).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
+    expect(await screen.findByText(/MSCI World en cours de téléchargement/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /Écart avec/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
   })
 
@@ -202,47 +204,91 @@ describe('the comparison', () => {
     // The series is complete and the ratios behind it are not, so a replay
     // counting units could walk through a split it cannot see. Same wait, same
     // panel: a second explanation for one wait is one explanation too many.
-    expect(await screen.findByText(/Reconstitution de l’historique/)).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
+    expect(await screen.findByText(/MSCI World en cours de téléchargement/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /Écart avec/ })).not.toBeInTheDocument()
   })
 
-  it('offers the selector as the empty state’s own action', async () => {
+  it('sends the owner to the references when nothing is followed', async () => {
     renderBenchmark()
 
-    expect(await screen.findByText('Aucune référence choisie')).toBeInTheDocument()
-    // The one way out **is** the control, not a link to where the control is.
-    // Named for what it is a reference **for**: *Référence* alone is the page's
-    // own title, and a control sharing its page's name says nothing.
-    expect(screen.getByRole('combobox', { name: 'Référence de comparaison' })).toBeInTheDocument()
-    // The wait is said where it happens, by the rebuild panel (#1412).
-    expect(screen.queryByText(/la page se remplira toute seule/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Aucune référence suivie')).toBeInTheDocument()
+    // One primary button, to the sheet that follows them — and no picker, since
+    // there is nothing to pick from.
+    expect(screen.getByRole('link', { name: 'Choisir les références' })).toHaveAttribute(
+      'href',
+      '/settings#portfolio-references',
+    )
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    // No numbered steps and no promised duration.
+    expect(screen.queryByText(/minutes/)).not.toBeInTheDocument()
   })
 
-  it('keeps the picker on the first row while the fund is rebuilt', async () => {
+  it('names the fund being downloaded, with its bar and a way to the sheet', async () => {
     renderBenchmark({
       state: 'rebuilding',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 },
+      followed: ['CW8.PA'],
+      ready: [],
+      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.555 },
     })
 
-    const select = await picker()
-    const wait = await screen.findByText(/Reconstitution de l’historique/)
-    expect(select.compareDocumentPosition(wait) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const section = await screen.findByRole('region', {
+      name: 'MSCI World en cours de téléchargement',
+    })
+    // Floored, not rounded: 55,5 % is 55.
+    expect(
+      within(section).getByText('Remonté jusqu’à mars 2014, sur juin 2009 · 55 %'),
+    ).toBeInTheDocument()
+    expect(within(section).getByRole('progressbar')).toHaveAttribute('value', '55')
+    expect(within(section).getByRole('link', { name: 'Gérer les références' })).toHaveAttribute(
+      'href',
+      '/settings#portfolio-references',
+    )
+    // Nothing to pick while nothing is ready.
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('keeps the picker on the first row with nothing to compare', async () => {
-    renderBenchmark({
-      state: 'nothing_to_compare',
-      reason: 'no_events',
-      reference: 'CW8.PA',
-      index: 'MSCI World',
-      consulted: ['CW8.PA'],
-    })
+  it('offers only the followed funds whose history is complete', async () => {
+    const { user } = renderBenchmark(
+      ready({ followed: ['CW8.PA', 'CSPX.AS', 'C40.PA'], ready: ['CW8.PA', 'CSPX.AS'] }),
+    )
 
-    const select = await picker()
-    const empty = await screen.findByText(/Enregistrez vos premiers événements/)
-    expect(select.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(await picker())
+
+    const options = await screen.findAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      expect.stringContaining('MSCI World · CW8'),
+      expect.stringContaining('S&P 500 · CSPX'),
+    ])
+    // The « déjà téléchargé » column is gone; the inception stays.
+    expect(screen.queryByText(/déjà téléchargé|à reconstituer/)).not.toBeInTheDocument()
+    expect(options[0]).toHaveTextContent('depuis 2009')
+  })
+
+  it('says what is still downloading under the picker, never inside the menu', async () => {
+    server.use(
+      http.get(ROUTES.benchmarkReferences, () =>
+        HttpResponse.json(
+          aBenchmarkReferences({
+            'CW8.PA': { followed: true, ready: true },
+            'C40.PA': {
+              followed: true,
+              reached: '2013-03-01',
+              target: '2008-01-02',
+              ratio: 0.62,
+            },
+          }),
+        ),
+      ),
+    )
+    renderBenchmark(ready({ followed: ['CW8.PA', 'C40.PA'], ready: ['CW8.PA'] }))
+
+    expect(await screen.findByText(/CAC 40 en téléchargement, 62 %/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Gérer les références' })).toHaveAttribute(
+      'href',
+      '/settings#portfolio-references',
+    )
   })
 })
 
@@ -583,7 +629,8 @@ describe('each account over its own period', () => {
       reason: 'no_events',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      consulted: ['CW8.PA'],
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
     })
 
     // Nothing replayed at all is a different emptiness, and it keeps its way out.
@@ -604,7 +651,8 @@ describe('each account over its own period', () => {
       reason: reason as BenchmarkResponse['reason'],
       reference: 'CW8.PA',
       index: 'MSCI World',
-      consulted: ['CW8.PA'],
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
     })
 
     expect(await screen.findByText(title)).toBeInTheDocument()
@@ -707,7 +755,8 @@ describe('the rows as the breakdown of the head', () => {
       reason: 'no_rate_on_seed',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      consulted: ['CW8.PA'],
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
       per_account: OWN,
     })
 
@@ -769,7 +818,7 @@ describe('the page sits on the ground (#1273)', () => {
     renderBenchmark({ state: 'rebuilding', reference: 'CW8.PA', index: 'MSCI World', rebuild })
 
     const section = await screen.findByRole('region', {
-      name: /Reconstitution de l’historique/,
+      name: /MSCI World en cours de téléchargement/,
     })
     expect(within(section).getByRole('progressbar')).toBeInTheDocument()
     expectNoBox()
@@ -781,7 +830,8 @@ describe('the page sits on the ground (#1273)', () => {
       reason: 'no_events',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      consulted: ['CW8.PA'],
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
       per_account,
     })
 

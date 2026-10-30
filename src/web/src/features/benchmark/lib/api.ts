@@ -7,7 +7,7 @@
  * no page test.
  */
 
-import { get, ROUTES } from '@/lib/api'
+import { get, ROUTES, send } from '@/lib/api'
 
 // ------------------------------------------------------------------------- //
 // The comparison against a reference (#760)
@@ -23,6 +23,35 @@ export interface OfferedBenchmark {
    * click. A 2024 fund silently drops eleven years of a 2013 owner's history.
    */
   inception: string
+}
+
+/**
+ * One offered ETF, as the progress read publishes it (#1312): is it followed,
+ * is its history complete, and how far has the download got.
+ *
+ * `ready` is the comparison's own gate and not `ratio === 1`: the download
+ * stops at the ledger's first day, while the ratio is measured to the fund's
+ * inception, so a late ledger never sees an old fund at 100 %.
+ */
+export interface BenchmarkReference {
+  symbol: string
+  index: string
+  /** The fund's first quoted day. */
+  inception: string
+  followed: boolean
+  ready: boolean
+  /** Not followed, and its series is spared by the purge. */
+  kept: boolean
+  /** Not followed, and the owner stopped keeping it: it goes at the next purge. */
+  freed: boolean
+  /** Why a followed, incomplete ETF is not moving: `no_events`, or `queued` after another. */
+  waiting: 'no_events' | 'queued' | null
+  /** The symbol it queues behind, on `queued`. */
+  after: string | null
+  reached: string | null
+  /** The later of its inception and the ledger's first day. */
+  target: string | null
+  ratio: number | null
 }
 
 /** The reconstruction bar, fed from the store and never from the recorder. */
@@ -90,14 +119,10 @@ export interface BenchmarkResponse {
   index?: string | null
   inception?: string | null
   offered: OfferedBenchmark[]
-  /**
-   * The references this install already holds a series for — the *déjà
-   * téléchargé* column, and the only thing that makes #760's promise visible:
-   * the series of an offered reference already consulted is kept alive so
-   * switching back is instant. Offered ones only (#1034): a reference this
-   * list can no longer propose is one nothing will ever switch back to.
-   */
-  consulted: string[]
+  /** The ETFs the owner follows, in the order they were turned on (#1312). */
+  followed: string[]
+  /** The followed ones whose history is complete: what the picker proposes. */
+  ready: string[]
   rebuild?: BenchmarkRebuild
   covered_from?: string
   covered_to?: string
@@ -127,4 +152,12 @@ export interface BenchmarkResponse {
 
 export const benchmarkApi = {
   benchmark: () => get<BenchmarkResponse>(ROUTES.benchmark),
+  references: () => get<BenchmarkReference[]>(ROUTES.benchmarkReferences),
+  /** Keep (`true`) or stop keeping (`false`) an unfollowed ETF's series. */
+  keep: (symbol: string, kept: boolean) =>
+    send<BenchmarkReference[]>(
+      ROUTES.benchmarkReference.replace(':symbol', encodeURIComponent(symbol)),
+      'PUT',
+      { kept },
+    ),
 }

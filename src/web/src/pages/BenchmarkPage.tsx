@@ -43,7 +43,6 @@
  */
 import { useQuery } from '@tanstack/react-query'
 
-import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { ShareBar } from '@/components/ShareBar'
@@ -51,6 +50,7 @@ import { Stat } from '@/components/Stat'
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
 import { BenchmarkChart } from '@/features/benchmark/components/BenchmarkChart'
+import { NothingFollowed } from '@/features/benchmark/components/NothingFollowed'
 import { NothingToCompare } from '@/features/benchmark/components/NothingToCompare'
 import { ReferenceRebuild } from '@/features/benchmark/components/ReferenceRebuild'
 import { ReferenceSelect } from '@/features/benchmark/components/ReferenceSelect'
@@ -133,35 +133,30 @@ export default function BenchmarkPage() {
   const currency = data.base_currency
 
   if (data.state === 'no_reference') {
-    return (
-      <EmptyState
-        title={t('benchmark.empty.title')}
-        description={t('benchmark.empty.body')}
-        // The one way out **is** the selector: this empty state's action is the
-        // control itself, not a link to somewhere the control lives.
-        action={<ReferenceSelect value={null} offered={data.offered} downloaded={data.consulted} />}
-      />
-    )
+    return <NothingFollowed />
   }
 
   // The content's first row in every state that offers it (#1282). The trigger's
-  // own `aria-label` names it; the visible word is for the eye.
-  const controls = (
-    <div className="flex items-center gap-2.5">
-      <span aria-hidden className="text-sm whitespace-nowrap text-muted-foreground">
-        {t('benchmark.select.compare')}
-      </span>
-      {/* The trigger takes the rest of the line under 640 px. */}
-      <div className="min-w-0 flex-1 sm:flex-none">
-        <ReferenceSelect
-          value={data.reference}
-          offered={data.offered}
-          downloaded={data.consulted}
-          triggerClassName="sm:w-auto sm:min-w-56"
-        />
+  // own `aria-label` names it; the visible word is for the eye. **It offers the
+  // followed ETFs whose history is complete and nothing else** (#1312): with
+  // none ready there is nothing to pick, and the screen below says why.
+  const pickable = data.offered.filter((entry) => data.ready.includes(entry.symbol))
+  const controls =
+    data.reference === null || pickable.length === 0 ? null : (
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className="text-sm whitespace-nowrap text-muted-foreground">
+          {t('benchmark.select.compare')}
+        </span>
+        {/* The trigger takes the rest of the line under 640 px. */}
+        <div className="min-w-0 flex-1 sm:flex-none">
+          <ReferenceSelect
+            value={data.reference}
+            offered={pickable}
+            triggerClassName="sm:w-auto sm:min-w-56"
+          />
+        </div>
       </div>
-    </div>
-  )
+    )
 
   // Two withheld states, one rendering. `splits_unknown` is a store that
   // fetched this fund before its split ratios were persisted: the series is
@@ -174,7 +169,9 @@ export default function BenchmarkPage() {
     return (
       <div className="space-y-6">
         {controls}
-        {data.rebuild ? <ReferenceRebuild rebuild={data.rebuild} /> : null}
+        {data.rebuild ? (
+          <ReferenceRebuild rebuild={data.rebuild} index={data.index ?? data.reference ?? ''} />
+        ) : null}
       </div>
     )
   }

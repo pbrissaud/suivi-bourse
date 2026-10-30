@@ -336,6 +336,13 @@ function formatMonth(locale: string, year: string, month: number): string {
   return new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }).format(date)
 }
 
+/** A month and its year, long — `mars 2013`, `March 2013` (#1312). */
+function formatMonthYear(locale: string, value: string | number | Date | null | undefined): string {
+  const date = localDay(value)
+  if (date === null) return ABSENT
+  return formatted(locale, date, { month: 'long', year: 'numeric' })
+}
+
 /**
  * An enumeration, in the reader's language (#768).
  *
@@ -398,6 +405,8 @@ export function useFormatters() {
         to: string | number | Date | null | undefined,
       ) => formatDaySpan(locale, from, to),
       month: (year: string, month: number) => formatMonth(locale, year, month),
+      monthYear: (value: string | number | Date | null | undefined) =>
+        formatMonthYear(locale, value),
       list: (items: readonly string[]) => formatList(locale, items),
     }),
     [locale],

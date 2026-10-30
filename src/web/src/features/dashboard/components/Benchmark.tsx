@@ -87,7 +87,7 @@ export function Benchmark({ benchmark, failure = null, width = 'half' }: Benchma
         )
       case 'rebuilding':
       case 'splits_unknown':
-        return data.rebuild ? <ReferenceRebuild rebuild={data.rebuild} /> : null
+        return data.rebuild ? <ReferenceRebuild rebuild={data.rebuild} index={index} /> : null
       case 'nothing_to_compare':
         // The page's sentences, by the server's `reason` (#1207); the accounts
         // that could be compared keep their rows when the total could not.

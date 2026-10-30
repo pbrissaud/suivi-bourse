@@ -84,6 +84,7 @@ import type { AgentConfig } from '@/features/agent/lib/api'
 import type {
   BenchmarkAccountRow,
   BenchmarkResponse,
+  BenchmarkReference,
   OfferedBenchmark,
 } from '@/features/benchmark/lib/api'
 import type {
@@ -1271,6 +1272,17 @@ export function defaultSettings(): SettingDescription[] {
       required: true,
     }),
     aSetting({
+      // The ETFs followed, a list: never absent, empty when nothing is followed (#1312).
+      key: 'benchmark_symbols',
+      value: [],
+      default: [],
+      type: 'symbols',
+      minimum: null,
+      maximum: null,
+      effect: 'next_cycle',
+      stored: false,
+    }),
+    aSetting({
       // Neither a default nor an obligation: the one dial a blank can unset.
       key: 'benchmark_symbol',
       value: null,
@@ -1307,6 +1319,28 @@ export function offeredBenchmarks(): OfferedBenchmark[] {
 }
 
 /**
+ * The five offered ETFs as the progress read publishes them: **none followed**,
+ * the state of a fresh installation. Overrides are applied by symbol.
+ */
+export function aBenchmarkReferences(
+  overrides: Record<string, Partial<BenchmarkReference>> = {},
+): BenchmarkReference[] {
+  return offeredBenchmarks().map((entry) => ({
+    ...entry,
+    followed: false,
+    ready: false,
+    kept: false,
+    freed: false,
+    waiting: null,
+    after: null,
+    reached: null,
+    target: null,
+    ratio: null,
+    ...overrides[entry.symbol],
+  }))
+}
+
+/**
  * The comparison payload — **no reference chosen by default**, which is the
  * state a fresh installation is actually in and the one every other page test
  * meets when the shell walks this route.
@@ -1335,7 +1369,8 @@ export function aBenchmark(overrides: Partial<BenchmarkResponse> = {}): Benchmar
     state: 'no_reference',
     reference: null,
     offered: offeredBenchmarks(),
-    consulted: [],
+    followed: [],
+    ready: [],
     ...overrides,
   }
 }

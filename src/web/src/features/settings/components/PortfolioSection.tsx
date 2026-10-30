@@ -1,4 +1,5 @@
 import { CurrencyField } from '@/components/CurrencyField'
+import { ReferencesRow } from '@/features/settings/components/ReferencesRow'
 import { SettingRow } from '@/features/settings/components/SettingRow'
 import { SettingsSection, type SectionRead } from '@/features/settings/components/SettingsSection'
 import { settingFieldId } from '@/features/settings/lib/installation'
@@ -38,6 +39,7 @@ export function PortfolioSection({ read }: { read: SectionRead }) {
           />
         </div>
       </SettingRow>
+      <ReferencesRow />
     </SettingsSection>
   )
 }

@@ -253,6 +253,13 @@ export const ROUTES = {
    * number that repairs itself an hour later.
    */
   benchmark: '/api/benchmark',
+  /**
+   * Each offered ETF's state and download progress (#1312). Kept apart from the
+   * comparison so it can be polled cheaply: it replays nothing.
+   */
+  benchmarkReferences: '/api/benchmark/references',
+  /** Keep or release an unfollowed ETF's series. */
+  benchmarkReference: '/api/benchmark/references/:symbol',
 } as const
 
 export type RouteName = keyof typeof ROUTES
