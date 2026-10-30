@@ -1827,6 +1827,22 @@ describe('the allocation card (#1206)', () => {
     expect(within(card).getByText('gamma').closest('li')).toHaveTextContent(/600,00/)
   })
 
+  it('at full width, lays the legend in one column, two from xl and three from 3xl (#1325)', async () => {
+    showAllocation('full')
+    renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+    const legend = within(card).getByRole('list', { name: 'Répartition' })
+    const slices = within(legend).getAllByRole('listitem').length
+
+    expect(legend).toHaveClass(
+      'grid-cols-1',
+      'xl:grid-cols-2',
+      '3xl:grid-cols-3',
+      '3xl:[grid-template-rows:repeat(var(--legend-rows-three),auto)]',
+    )
+    expect(legend.style.getPropertyValue('--legend-rows-three')).toBe(String(Math.ceil(slices / 3)))
+  })
+
   it('folds past five accounts into « Autres · N comptes » and counts accounts', async () => {
     showAllocation('half')
     server.use(
@@ -2091,13 +2107,13 @@ describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
     // A card is for something the user decides; nothing on this page is.
     expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(0)
     const sections = container.querySelectorAll('[data-slot="section"]')
-    // The default layout of the dashboard grid (#1280): the allocation and the
-    // gain, then the movers and the rhythm, two to a row.
+    // The default layout of the dashboard grid (#1280): the allocation, the
+    // gain and the rhythm, then the movers (#1325).
     expect([...sections].map((one) => one.querySelector('h2')?.textContent)).toEqual([
       'Répartition',
       'D’où vient le gain',
-      'Mouvements',
       'Rythme d’investissement',
+      'Mouvements',
     ])
     // And never one inside another.
     expect(container.querySelectorAll('[data-slot="section"] [data-slot="section"]')).toHaveLength(

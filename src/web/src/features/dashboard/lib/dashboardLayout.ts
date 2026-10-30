@@ -10,8 +10,13 @@
  *  Placement[]  ◄── moveBlock / withWidth / withHidden (the edit menu)
  *     │ resolveLayout(placements, states, mode, columns)
  *     ▼
- *  Cell[] ── a card and its span, or the empty half beside a half-only card
+ *  Cell[] ── a card and its span, or a free track beside a half-only card
  * ```
+ *
+ * The grid has one track under 768 px, two up to 1 600 px and three from there
+ * (#1325). `columns` only decides how a row is drawn and how far a move
+ * jumps: the stored list, its two widths and its order are the same at every
+ * viewport, and nothing here writes a width because of one.
  *
  * Every function here is pure and takes the registry as a parameter, so a
  * test can describe a card that has not shipped yet.
@@ -42,8 +47,8 @@ export interface Placement<Id extends string = BlockId> {
 export type RenderState = 'pending' | 'renders' | 'nothing'
 
 export type Cell<Id extends string = BlockId> =
-  | { kind: 'block'; id: Id; span: 1 | 2; width: Width; orphan: boolean }
-  | { kind: 'free' }
+  // `span`: 1 is one track, 2 the whole row (two or three tracks wide).
+  { kind: 'block'; id: Id; span: 1 | 2; width: Width; orphan: boolean } | { kind: 'free' }
 
 type Registry<Id extends string> = Record<Id, BlockSpec>
 
@@ -171,17 +176,18 @@ export function mustWrite<Id extends string = BlockId>(
  *
  * - Hidden cards are out. In reading mode a `nothing` card is out too; in edit
  *   mode it keeps its cell, and a `pending` card always keeps its place (D4).
- * - Two consecutive halves share a row. A half alone is drawn full when the
- *   card accepts the full width (its saved width is untouched, and its menu
- *   says why); a half-only card alone keeps its half and leaves the other one
- *   free (decision D11 of the office hours).
+ * - Consecutive halves share a row, two of them at two tracks and up to three
+ *   at three. A half alone is drawn across the row when the card accepts the
+ *   full width (its saved width is untouched, and its menu says why); a
+ *   half-only card keeps its track, and the tracks left in the row are free
+ *   (decision D11 of the office hours, #1325). A full card takes the whole row.
  * - One column (under 768 px) is a column of full cells.
  */
 export function resolveLayout<Id extends string = BlockId>(
   placements: readonly Placement<Id>[],
   states: Readonly<Record<Id, RenderState>>,
   mode: 'read' | 'edit',
-  columns: 1 | 2,
+  columns: 1 | 2 | 3,
   registry: Registry<Id> = DASHBOARD_BLOCKS as unknown as Registry<Id>,
 ): Cell<Id>[] {
   const shown = placements.filter(
@@ -196,12 +202,21 @@ export function resolveLayout<Id extends string = BlockId>(
       orphan: false,
     }))
   }
-  return rowsOf(shown).flatMap((row): Cell<Id>[] => {
-    const [one, two] = row
-    if (two !== undefined) {
+  const perRow = tracksPerRow(columns)
+  return rowsOf(shown, perRow).flatMap((row): Cell<Id>[] => {
+    const [one] = row
+    if (row.length > 1) {
       return [
-        { kind: 'block', id: one.id, span: 1, width: 'half', orphan: false },
-        { kind: 'block', id: two.id, span: 1, width: 'half', orphan: false },
+        ...row.map(
+          (card): Cell<Id> => ({
+            kind: 'block',
+            id: card.id,
+            span: 1,
+            width: 'half',
+            orphan: false,
+          }),
+        ),
+        ...Array.from({ length: perRow - row.length }, (): Cell<Id> => ({ kind: 'free' })),
       ]
     }
     if (one.width === 'full') {
@@ -209,40 +224,47 @@ export function resolveLayout<Id extends string = BlockId>(
     }
     return registry[one.id].widths.includes('full')
       ? [{ kind: 'block', id: one.id, span: 2, width: 'full', orphan: true }]
-      : [{ kind: 'block', id: one.id, span: 1, width: 'half', orphan: false }, { kind: 'free' }]
+      : [
+          { kind: 'block', id: one.id, span: 1, width: 'half', orphan: false },
+          ...Array.from({ length: perRow - 1 }, (): Cell<Id> => ({ kind: 'free' })),
+        ]
   })
 }
 
+/** A phone has one track but keeps the rows of two its moves have always had. */
+function tracksPerRow(columns: 1 | 2 | 3): 2 | 3 {
+  return columns === 3 ? 3 : 2
+}
+
 /**
- * The visible cards grouped as the grid draws them: a pair of halves is one
- * row, a full card (or a lone half) another.
+ * The visible cards grouped as the grid draws them: up to `perRow` consecutive
+ * halves are one row, a full card (or a lone half) another.
  */
-function rowsOf<Id extends string>(visible: readonly Placement<Id>[]): Placement<Id>[][] {
+function rowsOf<Id extends string>(
+  visible: readonly Placement<Id>[],
+  perRow: 2 | 3,
+): Placement<Id>[][] {
   const rows: Placement<Id>[][] = []
-  for (let index = 0; index < visible.length; index++) {
-    const one = visible[index]
-    const next = visible[index + 1]
-    if (one.width === 'half' && next !== undefined && next.width === 'half') {
-      rows.push([one, next])
-      index += 1
-    } else {
-      rows.push([one])
-    }
+  for (const one of visible) {
+    const last = rows.at(-1)
+    if (one.width === 'half' && last?.[0].width === 'half' && last.length < perRow) last.push(one)
+    else rows.push([one])
   }
   return rows
 }
 
 /**
  * *Monter* / *Descendre*, by row (Paul, 11/10/2026): a full card jumps a whole
- * row, so a pair of halves moves as one and is never split by a card passing
- * through; a half swaps with the previous or next half in reading order,
- * skipping the full cards. Hidden cards keep their slots. `null` when there is
+ * row, so a row of halves (a pair, or a triple at three columns) moves as one
+ * and is never split by a card passing through; a half swaps with the previous
+ * or next half in reading order, skipping the full cards. Hidden cards keep their slots. `null` when there is
  * nowhere to go — the menu disables the item.
  */
 export function moveBlock<Id extends string>(
   placements: readonly Placement<Id>[],
   id: Id,
   direction: -1 | 1,
+  columns: 1 | 2 | 3 = 2,
 ): Placement<Id>[] | null {
   const visible = placements.filter((one) => !one.hidden)
   const moving = visible.find((one) => one.id === id)
@@ -250,7 +272,7 @@ export function moveBlock<Id extends string>(
 
   let order: Placement<Id>[]
   if (moving.width === 'full') {
-    const rows = rowsOf(visible)
+    const rows = rowsOf(visible, tracksPerRow(columns))
     const from = rows.findIndex((row) => row.includes(moving))
     const to = from + direction
     if (to < 0 || to >= rows.length) return null
@@ -274,7 +296,7 @@ export function moveBlock<Id extends string>(
  * gesture has no rule of its own.
  *
  * - A full card goes between two rows, `side` of the row holding `overId`;
- *   never into the middle of a pair.
+ *   never into the middle of a row of halves.
  * - A half takes the place of the half it is dropped on. Dropped on a full
  *   card, it takes the place of the nearest half on that `side` of it, as
  *   *Monter* / *Descendre* would skip the full card.
@@ -286,6 +308,7 @@ export function dropBlock<Id extends string>(
   activeId: Id,
   overId: Id,
   side: 'before' | 'after',
+  columns: 1 | 2 | 3 = 2,
 ): Placement<Id>[] | null {
   const visible = placements.filter((one) => !one.hidden)
   const moving = visible.find((one) => one.id === activeId)
@@ -294,9 +317,15 @@ export function dropBlock<Id extends string>(
 
   let order: Placement<Id>[]
   if (moving.width === 'full') {
-    const rows = rowsOf(visible.filter((one) => one !== moving))
-    const at = rows.findIndex((row) => row.includes(over))
-    rows.splice(side === 'before' ? at : at + 1, 0, [moving])
+    // The rows as the menu sees them, with the card still in them: taking it
+    // out first would regroup the halves on either side of it into new rows.
+    const rows = rowsOf(visible, tracksPerRow(columns))
+    const [row] = rows.splice(
+      rows.findIndex((one) => one.includes(moving)),
+      1,
+    )
+    const at = rows.findIndex((one) => one.includes(over))
+    rows.splice(side === 'before' ? at : at + 1, 0, row)
     order = rows.flat()
   } else {
     const target =

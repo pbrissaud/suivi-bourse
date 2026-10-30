@@ -11,7 +11,8 @@
  * the rhythm's twelve months only stretch, so those two are half-only. A card
  * with one width has no width choice in its menu, and so no reason to give.
  *
- * The order of the entries is the default order.
+ * The order of the entries is the default order: three halves fill a row at
+ * three tracks, then the movers take the next one whole (#1325).
  */
 import type { MessageKey } from '@/lib/i18n'
 
@@ -56,18 +57,18 @@ export const DASHBOARD_BLOCKS = {
     width: 'half',
     minHeight: 260,
   },
-  // The full width shows ten lines instead of five.
-  movers: {
-    label: 'dashboard.movers.title',
-    widths: ['half', 'full'],
-    width: 'half',
-    minHeight: 300,
-  },
   rhythm: {
     label: 'dashboard.rhythm.title',
     widths: ['half'],
     width: 'half',
     minHeight: 260,
+  },
+  // The full width shows ten lines instead of five (fifteen across three tracks).
+  movers: {
+    label: 'dashboard.movers.title',
+    widths: ['half', 'full'],
+    width: 'half',
+    minHeight: 300,
   },
   // The full width adds the two curves (#1205).
   benchmark: {

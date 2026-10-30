@@ -5,7 +5,7 @@
  * Driven through the real app with the one faked edge, HTTP: the layout the
  * server answers, and the writes it receives, are what each case states.
  */
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,7 +18,7 @@ import { server } from '@/test/server'
 
 /** What the old default, saved, draws: the arrangement the edit cases move cards through. */
 const SEEN_TITLES = ['D’où vient le gain', 'Rythme d’investissement', 'Mouvements']
-const TITLES = ['Répartition', 'D’où vient le gain', 'Mouvements', 'Rythme d’investissement']
+const TITLES = ['Répartition', 'D’où vient le gain', 'Rythme d’investissement', 'Mouvements']
 
 /** The cards' titles, in the order the grid draws them. */
 function order(container: HTMLElement) {
@@ -209,6 +209,69 @@ describe('the movers by width', () => {
       item.classList.contains('border-t-0') ? [index] : [],
     )
     expect(unruled).toEqual(split ? [0, Math.ceil(count / 2)] : [0])
+  })
+})
+
+describe('the movers across three tracks (#1325)', () => {
+  const lines = Array.from({ length: 20 }, (_, index) =>
+    aMover({ symbol: `Z${index}`, name: `Ligne ${index}`, change_pct: (index + 1) / 100 }),
+  )
+
+  // Columns of five: as many as it takes, three at most, and the first line of each unruled.
+  it.each([
+    [5, 1, [0]],
+    [6, 2, [0, 3]],
+    [11, 3, [0, 4, 8]],
+    [15, 3, [0, 5, 10]],
+    [20, 3, [0, 5, 10]],
+  ])('flows %i lines into %i column(s)', async (count, columns, unruled) => {
+    setViewportWidth(1920)
+    const movers = lines.slice(0, count)
+    server.use(
+      http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload(movers))),
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(movers.map(({ symbol, name }) => aPosition({ symbol, name }))),
+        ),
+      ),
+    )
+    renderApp()
+    const list = await screen.findByRole('list', { name: 'Mouvements' })
+    const items = within(list).getAllByRole('listitem')
+
+    expect(items).toHaveLength(Math.min(count, 15))
+    expect(list.classList.contains(`columns-${columns}`)).toBe(columns > 1)
+    expect(
+      items.flatMap((item, index) => (item.classList.contains('border-t-0') ? [index] : [])),
+    ).toEqual(unruled)
+  })
+})
+
+describe('the movers just under three tracks, and at half width (#1325)', () => {
+  const lines = Array.from({ length: 20 }, (_, index) =>
+    aMover({ symbol: `Z${index}`, name: `Ligne ${index}`, change_pct: (index + 1) / 100 }),
+  )
+
+  it.each([
+    ['full', 1599, 10, 'columns-2'],
+    ['half', 1920, 5, null],
+  ] as const)('keeps a %s card at %i px to %i lines', async (width, viewport, count, columns) => {
+    setViewportWidth(viewport)
+    server.use(
+      layoutOf([{ id: 'movers', width, hidden: false }]),
+      http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload(lines))),
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(lines.map(({ symbol, name }) => aPosition({ symbol, name }))),
+        ),
+      ),
+    )
+    renderApp()
+    const list = await screen.findByRole('list', { name: 'Mouvements' })
+
+    expect(within(list).getAllByRole('listitem')).toHaveLength(count)
+    if (columns !== null) expect(list).toHaveClass(columns)
+    else expect(list).not.toHaveClass('columns-2', 'columns-3')
   })
 })
 
@@ -675,5 +738,102 @@ describe('the comparison card (#1205)', () => {
     const region = await screen.findByRole('region', { name: 'Face au MSCI World' })
 
     expect(Boolean(within(region).queryByText('Même argent investi, jour après jour'))).toBe(curves)
+  })
+})
+
+describe('at three tracks (#1325)', () => {
+  const HALVES = [
+    { id: 'gain-breakdown', width: 'half', hidden: false },
+    { id: 'rhythm', width: 'half', hidden: false },
+    { id: 'allocation', width: 'half', hidden: true },
+    { id: 'movers', width: 'half', hidden: true },
+    { id: 'benchmark', width: 'half', hidden: true },
+  ] as const satisfies DashboardLayout['blocks']
+
+  const cellOf = (title: string) =>
+    screen.getByRole('region', { name: title }).closest('[data-dashboard-grid] > *')
+
+  it('draws three tracks from 1 600 px, the movers across the row, in the default order', async () => {
+    setViewportWidth(1920)
+    const { container } = renderApp()
+    await landed()
+    await screen.findByRole('region', { name: 'Mouvements' })
+
+    expect(container.querySelector('[data-dashboard-grid]')).toHaveClass('3xl:grid-cols-3')
+    expect(order(container)).toEqual(TITLES)
+    expect(cellOf('Mouvements')).toHaveClass('md:col-span-full')
+    expect(cellOf('Rythme d’investissement')).not.toHaveClass('md:col-span-full')
+    expect(screen.queryByText('Place libre')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [HALVES, 1],
+    [[HALVES[0], { ...HALVES[1], hidden: true }, ...HALVES.slice(2)], 2],
+  ])('shows « Place libre » once per free track in edit mode', async (blocks, tracks) => {
+    setViewportWidth(1920)
+    server.use(layoutOf(blocks as DashboardLayout['blocks']))
+    const { user } = renderApp()
+    await user.click(await landed())
+
+    expect(screen.getAllByText('Place libre')).toHaveLength(tracks)
+  })
+
+  it('leaves free tracks blank in reading mode', async () => {
+    setViewportWidth(1920)
+    server.use(layoutOf(HALVES))
+    const { container } = renderApp()
+    await landed()
+    await screen.findByRole('region', { name: 'Rythme d’investissement' })
+
+    expect(screen.queryByText('Place libre')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-dashboard-grid] > [aria-hidden]')).toHaveLength(1)
+  })
+
+  it('offers the drag handles and the width choice', async () => {
+    setViewportWidth(1920)
+    const { user } = renderApp()
+    await user.click(await landed())
+
+    expect(document.querySelectorAll('[data-card-handle]')).toHaveLength(4)
+    await openMenu(user, 'Mouvements')
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
+  })
+
+  it('moves a card by the rows of three, and a width never follows the viewport', async () => {
+    setViewportWidth(1920)
+    server.use(
+      layoutOf([
+        { id: 'movers', width: 'full', hidden: false },
+        { id: 'gain-breakdown', width: 'half', hidden: false },
+        { id: 'rhythm', width: 'half', hidden: false },
+        { id: 'allocation', width: 'half', hidden: false },
+        { id: 'benchmark', width: 'half', hidden: true },
+      ]),
+    )
+    const { user, container } = renderApp()
+    await user.click(await landed())
+    await openMenu(user, 'Mouvements')
+    await user.click(screen.getByRole('menuitem', { name: 'Descendre' }))
+
+    // The row of three halves moves up as one, the full card below it.
+    expect(order(container)).toEqual([
+      'D’où vient le gain',
+      'Rythme d’investissement',
+      'Répartition',
+      'Mouvements',
+    ])
+  })
+
+  it('writes nothing when the viewport crosses 1 600 px', async () => {
+    setViewportWidth(1920)
+    const writes = recordWrites()
+    renderApp()
+    await landed()
+    await screen.findByRole('region', { name: 'Mouvements' })
+
+    act(() => setViewportWidth(1200))
+    act(() => setViewportWidth(1920))
+
+    expect(writes).toEqual([])
   })
 })

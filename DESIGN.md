@@ -305,7 +305,7 @@ and in a mockup alike. A mockup names the rung (the design system's `.section-ti
   - the Settings page is 1 040 px (`max-w-settings`), start-aligned, one sequence of titled sections: from 1 024 px each section is a `220px | 1fr` grid with a 40 px gap, the title and one sentence in the gutter (sticky) and the rows on the right; under 1 024 px it is one column under a one-line anchor index;
   - the agent's conversation is described below (`max-w-column`, `lg:max-w-reading`);
   - a paragraph keeps its measure, 65 characters (`max-w-prose`), inside any of these;
-  - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. The dashboard grid keeps two tracks today; a third track from 1 600 px is planned in #1325.
+  - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. The dashboard grid gains its third track from 1 600 px (#1325).
 
   The widths are tokens in `index.css` (`--container-column`, `--container-settings`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
 - A table's totals are its last row, under the columns they sum (#1281).
@@ -335,15 +335,34 @@ dashboard alone lays its sections out on a grid the owner arranges (below).
 ### The dashboard grid
 
 Under the hero, the dashboard's sections sit on a grid of **two widths**: half or full,
-20 px apart, one column under 768 px. Three tracks from 1 600 px (a half section taking one track and a full section the whole row, so a statement gains a neighbour rather than a longer row) are planned, not shipped: their packing and drag rules are #1325's. It is an ordered list of sections, each with a
+20 px apart, one column under 768 px and three tracks from 1 600 px (a half section takes
+one track and a full section the whole row, so a statement gains a neighbour rather than a
+longer row). It is an ordered list of sections, each with a
 width, never a free two-dimensional placement, so the reading order is the focus order.
+The stored list is the same at every viewport: the track count only decides how it is drawn,
+and no width is ever written because of the screen.
+
+- **Packing (#1325).** Consecutive halves fill a row, two at two tracks and three at three.
+  A row that is not full keeps one track per half; a lone half that accepts the full width is
+  drawn across the row (its menu says why), and every other leftover track is a free cell:
+  blank when reading, a dashed "Place libre" outline per track when editing. A full section,
+  and a lone half drawn full, takes the whole row (`col-span-full`). No `grid-auto-flow:
+  dense`.
+- **Move and drag (#1325).** "Monter" / "Descendre" and the drag are one rule. A full section
+  jumps a whole row (a row of two or three halves moves as one); a half swaps with the
+  previous or next half in reading order, skipping full sections. The drop takes the menu's
+  result and the cards keep the spans they had when the drag began. A phone moves by rows of
+  two, as it always did.
 
 - A section takes the full width only if it **shows more** there (the movers: five
-  lines on half, ten across the full width; the allocation: a one-column legend on
-  half, the ring and the amounts across the full width). A section that would only stretch is
+  lines on half, ten across two tracks, fifteen across three, in columns of five, the first
+  line of each unruled; the allocation: a one-column legend on
+  half, the ring and the amounts across the full width, the legend in one column, two from
+  1 280 px and three from 1 600 px). A section that would only stretch is
   half-only: the gain breakdown and the investment rhythm.
-- The default sections, two to a row: the allocation and the gain breakdown, then the movers
-  (half) and the investment rhythm. The benchmark waits under "Cartes masquées" on a fresh
+- The default sections: the allocation, the gain breakdown and the investment rhythm, then
+  the movers (half). At three tracks that is three halves and the movers across the row; at
+  two, two rows of two. The benchmark waits under "Cartes masquées" on a fresh
   install, without "Nouveau": nothing is new to an owner who arranged nothing. A card that
   arrives later is appended hidden, with "Nouveau", to a layout the owner saved only.
 - The investment rhythm's month strip fills the height its row gives it, between 56 and
@@ -603,3 +622,4 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 | 2026-10-20 | Four figure rungs, a dashed outline for a place to put something, dark neutrals pinned (#1284) | The re-audit still counted six standalone figure sizes and figures in Geist Mono. Hero 60, Figure 28, Section title 20 (`Stat`'s `stat` moves from 19) and a named Term 16 are the whole ladder; a figure inside a line takes its line's size. A dashed outline meant both "empty" and "put something here": the empty state loses its border. The dark neutrals already matched the warm values above (within 0.005 ΔE_ok), so the tokens stay and CI now checks every colour on both grounds, with a warmth threshold on the dark ones. |
 | 2026-10-28 | DESIGN.md speaks the tokens' names and states what the design system said alone (#1436) | The UX/UI review of the Design canvas found DESIGN.md, the design system README and the canvas disagreeing. The colours take the shadcn names `atelier.json` uses, with `atelier.json`'s values, plus `input`, `accent`, `destructive` and the chart hues; the radii and the section gap take the tokens' names (`rounded.md` was 14 px here and 8 px in the tokens); the `mono` rung becomes `ticker` (11/16) and the ladder gains `table` (13/18), both already in the app; the accounts head loses its pills, as the dashboard did in #1280; *Content*, *Iconography* and *States* come over from the design system README; a page-name glossary and a 3:1 rule for marks in a drawing are added. The decisions #1436 lists (the mark, the account statement, the pill radius, the Settings anatomy against #1279, the field border's contrast) are left to the owner. |
 | 2026-10-29 | The product's mark: the value rising away from the contributions (#1337) | The letter in a tile read like a starter template. The drawing reuses the one image the app already has, the dashboard chart (value over contributions), chosen over a monogram or rising bars; it takes the sidebar's tokens so a theme repaints it. The favicon is the one copy that cannot follow a theme and keeps Atelier's ink. |
+| 2026-10-30 | The dashboard's third track (#1325) | Packing, move and drag rules for three tracks: consecutive halves fill rows of three; a lone half that accepts the full width is drawn across the row, other leftover tracks are free cells ("Place libre" in edit mode, one outline per track); a full section takes the whole row and jumps a whole row when moved; the stored list and `LAYOUT_VERSION` are untouched. The default order becomes allocation, gain breakdown, rhythm, movers, so three tracks show three halves then the movers across the row (saved layouts are untouched). The movers show fifteen lines in columns of five across three tracks, the allocation's legend a third column. |

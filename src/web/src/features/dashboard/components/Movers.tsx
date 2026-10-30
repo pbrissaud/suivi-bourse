@@ -8,10 +8,11 @@
  * nothing the shortness does not say.
  *
  * **Five lines on half the width, ten across the full width** (dashboard grid,
- * 11/10/2026). The ten are still that **one** list, numbered, flowing down the
- * left column and then the right: one `<ol>`, laid out by CSS columns, so the
- * reading order and a screen reader's are the ranking. It is not the old split
- * back: the two columns are ranks 1–5 and 6–10, not gains and losses.
+ * 11/10/2026), fifteen across three tracks (#1325). They are still that **one**
+ * list, numbered, flowing down the first column and then the next: one `<ol>`,
+ * laid out by CSS columns, so the reading order and a screen reader's are the
+ * ranking. It is not the old split back: the columns are ranks 1–5, 6–10 and
+ * 11–15, not gains and losses.
  *
  * **A sentence for the rest**, and that sentence is the ticket it was written
  * for: measured on the real portfolio, `500.PA` — the second line of it, at
@@ -40,6 +41,7 @@ import type { Mover } from '@/features/dashboard/lib/api'
 import { MOVERS_ROWS, moversList, tickerBadge } from '@/features/dashboard/lib/dashboard'
 import type { Width } from '@/features/dashboard/lib/dashboardBlocks'
 import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
+import { useTrackCount } from '@/hooks/use-tracks'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/features/shares/lib/shares'
@@ -67,14 +69,19 @@ export function moversRenderState({
 export function Movers({ movers, rows, currency, failure = null, width = 'half' }: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
+  const tracks = useTrackCount()
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
-  const { rows: moved, others, unchanged } = moversList(movers, rows, MOVERS_ROWS[width])
-  // More lines than half the width holds flow into two columns; the first line
-  // of each column carries no rule above it. The columns balance, so the right
-  // one starts half-way. Fewer stay one column across the width (#1145): a
-  // short list split in two left its figures half-way across the section.
-  const twoColumns = width === 'full' && moved.length > MOVERS_ROWS.half
-  const split = twoColumns ? Math.ceil(moved.length / 2) : moved.length
+  const limit =
+    width === 'half' ? MOVERS_ROWS.half : tracks === 3 ? MOVERS_ROWS.wide : MOVERS_ROWS.full
+  const { rows: moved, others, unchanged } = moversList(movers, rows, limit)
+  // Columns of five: more lines than half the width holds flow into as many
+  // columns as it takes, two across two tracks and three across three; the
+  // first line of each column carries no rule above it. The columns balance,
+  // so each starts where the one before ends. Five lines or fewer stay one
+  // column across the width (#1145): a short list split in two left its
+  // figures half-way across the section.
+  const columns = Math.ceil(moved.length / MOVERS_ROWS.half)
+  const perColumn = Math.ceil(moved.length / columns)
   return (
     <Section
       title={t('dashboard.movers.title')}
@@ -91,14 +98,14 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
       ) : (
         <ol
           aria-label={t('dashboard.movers.title')}
-          className={cn(twoColumns && 'columns-2 gap-x-7')}
+          className={cn(columns === 2 && 'columns-2 gap-x-7', columns === 3 && 'columns-3 gap-x-7')}
         >
           {moved.map((mover, index) => (
             <li
               key={mover.symbol}
               className={cn(
                 'flex break-inside-avoid items-center gap-3 border-t py-2.25',
-                (index === 0 || index === split) && 'border-t-0',
+                index % perColumn === 0 && 'border-t-0',
               )}
             >
               {/* The rank is the list's own position, which `<ol>` already
