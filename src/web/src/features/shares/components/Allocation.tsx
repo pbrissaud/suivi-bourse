@@ -305,15 +305,17 @@ export function AllocationFigure({
               {
                 '--legend-rows': Math.ceil(slices.length / 2),
                 '--legend-rows-one': slices.length,
+                '--legend-rows-three': Math.ceil(slices.length / 3),
               } as CSSProperties
             }
             // With amounts, a row holds a name, a sum and a share: two columns
             // beside the ring leave the name a few letters under `xl:`, so it
-            // is one column there (the dashboard's full width, #1206).
+            // is one column there (the dashboard's full width, #1206). Across
+            // the three tracks of 1 600 px and up it is three (#1325).
             className={cn(
               'grid grid-flow-col gap-x-6 gap-y-1.5 text-sm',
               amounts
-                ? 'grid-cols-1 [grid-template-rows:repeat(var(--legend-rows-one),auto)] xl:grid-cols-2 xl:[grid-template-rows:repeat(var(--legend-rows),auto)]'
+                ? 'grid-cols-1 [grid-template-rows:repeat(var(--legend-rows-one),auto)] xl:grid-cols-2 xl:[grid-template-rows:repeat(var(--legend-rows),auto)] 3xl:grid-cols-3 3xl:[grid-template-rows:repeat(var(--legend-rows-three),auto)]'
                 : 'grid-cols-2 [grid-template-rows:repeat(var(--legend-rows),auto)]',
             )}
           >

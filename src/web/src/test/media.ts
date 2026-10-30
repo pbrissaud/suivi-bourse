@@ -10,6 +10,19 @@ type Listener = (event: MediaQueryListEvent) => void
 const listeners = new Map<string, Set<Listener>>()
 let prefersDark = false
 
+/** `(min-width: 100rem)` and `(max-width: 767px)` against `innerWidth`; a rem is 16 px. */
+function matchesWidth(query: string): boolean {
+  const bounds = [...query.matchAll(/\((min|max)-width:\s*([\d.]+)(px|rem)\)/g)]
+  // Any other query (reduced motion, hover…) stays unmatched, as it was.
+  return (
+    bounds.length > 0 &&
+    bounds.every(([, bound, value, unit]) => {
+      const px = Number(value) * (unit === 'rem' ? 16 : 1)
+      return bound === 'min' ? window.innerWidth >= px : window.innerWidth <= px
+    })
+  )
+}
+
 export function installMatchMedia() {
   prefersDark = false
   listeners.clear()
@@ -19,7 +32,7 @@ export function installMatchMedia() {
     const list: MediaQueryList = {
       media: query,
       get matches() {
-        return query.includes('prefers-color-scheme: dark') ? prefersDark : false
+        return query.includes('prefers-color-scheme: dark') ? prefersDark : matchesWidth(query)
       },
       onchange: null,
       addEventListener: (_type: string, listener: Listener) => set.add(listener),
@@ -44,10 +57,10 @@ export function setViewportWidth(width: number) {
     writable: true,
     value: width,
   })
-  // The hook re-reads `innerWidth` when its query changes, which is what a
-  // browser does as the window crosses the breakpoint.
+  // The hooks re-read the width when their query changes, which is what a
+  // browser does as the window crosses a breakpoint.
   for (const [query, set] of listeners) {
-    if (!query.includes('max-width')) continue
+    if (!query.includes('-width')) continue
     for (const listener of set) listener({ media: query } as MediaQueryListEvent)
   }
 }

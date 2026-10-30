@@ -388,9 +388,11 @@ export function timeTicks(
 /**
  * Five lines on half the width, ten across the full width (Paul, 11/10/2026):
  * a card takes the full width only if it shows more there, and the movers'
- * more is the next five. Twenty would be the table one page down.
+ * more is the next five. Twenty would be the table one page down. Across
+ * three tracks (`wide`, from 1 600 px) it is the next five again (#1325): the
+ * lines flow in columns of five.
  */
-export const MOVERS_ROWS = { half: 5, full: 10 } as const
+export const MOVERS_ROWS = { half: 5, full: 10, wide: 15 } as const
 
 /**
  * The ticker as a badge: what comes before the first `.` or `-`, four

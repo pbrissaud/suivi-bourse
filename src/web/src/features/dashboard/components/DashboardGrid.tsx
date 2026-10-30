@@ -55,7 +55,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SectionControlsContext } from '@/components/ui/section'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { useTrackCount } from '@/hooks/use-tracks'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { blockSpec, type BlockId, type Width } from '@/features/dashboard/lib/dashboardBlocks'
 import {
@@ -157,7 +157,7 @@ export function DashboardGrid({
 }) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
-  const columns = useIsMobile() ? 1 : 2
+  const columns = useTrackCount()
   const root = useRef<HTMLDivElement>(null)
 
   const layout = useQuery({ queryKey: LAYOUT_KEY, queryFn: dashboardApi.dashboardLayout })
@@ -261,7 +261,7 @@ export function DashboardGrid({
   // Under 768 px the menu is the way to move a card (15A); a coarse pointer
   // hides the handle in CSS. A save in flight ends the session: nothing more
   // can land in the draft it is writing.
-  const draggable = editing && columns === 2 && !write.isPending
+  const draggable = editing && columns > 1 && !write.isPending
 
   // dnd-kit's live region is mounted only while a card can be dragged: the
   // page keeps its two permanent announcers, and no more.
@@ -318,7 +318,7 @@ export function DashboardGrid({
       // without this, a half swapped away could not be brought home.
       const home = order.indexOf(over) === ids(now.start).indexOf(active)
       const side = order.indexOf(over) < order.indexOf(active) ? 'before' : 'after'
-      next = home ? now.start : (dropBlock(now.start, active, over, side) ?? now.start)
+      next = home ? now.start : (dropBlock(now.start, active, over, side, columns) ?? now.start)
       outcomes.current.set(event, next)
     }
     return next
@@ -532,7 +532,7 @@ export function DashboardGrid({
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
-        <div data-dashboard-grid className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div data-dashboard-grid className="grid grid-cols-1 gap-5 md:grid-cols-2 3xl:grid-cols-3">
           {cells.map((cell, index) => {
             if (cell.kind === 'free') {
               return editing ? (
@@ -556,9 +556,10 @@ export function DashboardGrid({
                 placements={placements}
                 savedWidth={placement.width}
                 orphan={cell.orphan}
-                widthsOffered={columns === 2 && blockSpec(cell.id).widths.length > 1}
+                columns={columns}
+                widthsOffered={columns > 1 && blockSpec(cell.id).widths.length > 1}
                 onMove={(direction) => {
-                  const next = moveBlock(placements, cell.id, direction)
+                  const next = moveBlock(placements, cell.id, direction, columns)
                   if (next === null) return
                   const { position, total } = positionOf(next, cell.id)
                   edit(
@@ -814,7 +815,7 @@ function SortableCell({
     </button>
   ) : null
   return (
-    <div ref={ref} className={cn('flex min-w-0 flex-col', span === 2 && 'md:col-span-2')}>
+    <div ref={ref} className={cn('flex min-w-0 flex-col', span === 2 && 'md:col-span-full')}>
       {children(handle)}
     </div>
   )
@@ -826,6 +827,7 @@ function CardMenu({
   placements,
   savedWidth,
   orphan,
+  columns,
   widthsOffered,
   onMove,
   onWidth,
@@ -836,6 +838,7 @@ function CardMenu({
   placements: Placement[]
   savedWidth: Width
   orphan: boolean
+  columns: 1 | 2 | 3
   widthsOffered: boolean
   onMove: (direction: -1 | 1) => void
   onWidth: (width: Width) => void
@@ -871,13 +874,13 @@ function CardMenu({
         }}
       >
         <DropdownMenuItem
-          disabled={moveBlock(placements, id, -1) === null}
+          disabled={moveBlock(placements, id, -1, columns) === null}
           onSelect={act(() => onMove(-1))}
         >
           {t('dashboard.edit.up')}
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={moveBlock(placements, id, 1) === null}
+          disabled={moveBlock(placements, id, 1, columns) === null}
           onSelect={act(() => onMove(1))}
         >
           {t('dashboard.edit.down')}
