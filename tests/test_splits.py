@@ -69,6 +69,15 @@ def test_the_close_of_the_split_day_itself_is_already_in_the_new_share():
     assert prices[1]['price'] == 12.0
 
 
+def test_a_split_back_close_carries_no_binary_tail():
+    """0.3 × 3 is 0.8999999999999999 in binary, and #1458 is about such tails."""
+    prices = [_point('2024-03-21', 0.3)]
+
+    market_info.as_printed(prices, {date(2024, 3, 22): 3.0})
+
+    assert prices[0]['price'] == 0.9
+
+
 # --------------------------------------------------------------------------- #
 # The edge that reads them
 # --------------------------------------------------------------------------- #

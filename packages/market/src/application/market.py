@@ -5,6 +5,7 @@ import time
 from datetime import date, datetime, timezone, time as time_of_day
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 from logfmt_logger import getLogger
@@ -22,6 +23,23 @@ logger = getLogger("market")
 INTERACTIVE_TIMEOUT_S = 4
 SEARCHED_TYPES = frozenset({'EQUITY', 'ETF', 'MUTUALFUND', 'CRYPTOCURRENCY'})
 SEARCH_LINES = 8
+
+
+def as_quoted(value) -> float:
+    """One close as the venue quoted it, without Yahoo's float32 noise (#1458).
+
+    Yahoo holds its prices in **single precision** and serializes them widened
+    to double, so 173.82 arrives as ``173.82000732421875`` -- and was stored,
+    exported and summed that way. The shortest decimal that reads back to the
+    same float32 is the number Yahoo was given, so it is exact, not rounded.
+    ``rounding=True`` is not the same thing: it rounds to Yahoo's ``priceHint``,
+    and that turns a EUR/USD of 1.1129661 into 1.113.
+
+    A value that is not a float32 is not Yahoo's noise and is kept whole.
+    """
+    value = float(value)
+    narrowed = np.float32(value)
+    return float(str(narrowed)) if float(narrowed) == value else value
 
 
 def latest_quote(symbol: str,
@@ -47,7 +65,7 @@ def latest_quote(symbol: str,
             if valid_close.empty:
                 logger.warning(f"No non-NaN close price for {symbol}, skipping")
                 return None, None
-            last_quote = valid_close.iloc[-1]
+            last_quote = as_quoted(valid_close.iloc[-1])
             info = market_info.live_attributes(
                 ticker.info, getattr(ticker, 'history_metadata', None))
             return last_quote, info
@@ -172,7 +190,7 @@ def price_history(symbol: str, start: datetime, end: datetime,
                 if pd.isna(close):
                     continue
                 ts = bar_instant(idx.to_pydatetime(), interval)
-                prices.append({'timestamp': ts, 'price': float(close)})
+                prices.append({'timestamp': ts, 'price': as_quoted(close)})
 
             if not prices:
                 return prices, None
@@ -210,7 +228,7 @@ def pair_rate(pair: str) -> Optional[float]:
     if history is None or history.empty or 'Close' not in history.columns:
         return None
     closes = history['Close'].dropna()
-    return float(closes.iloc[-1]) if not closes.empty else None
+    return as_quoted(closes.iloc[-1]) if not closes.empty else None
 
 
 def pair_series(pair: str, start: date, end: date) -> Dict[date, float]:
@@ -229,7 +247,7 @@ def pair_series(pair: str, start: date, end: date) -> Dict[date, float]:
         # summer is 23:00Z the day before, so converting first filed a whole
         # pair's series one day early, and every price converted at that rate
         # with it.
-        series[index.to_pydatetime().date()] = float(close)
+        series[index.to_pydatetime().date()] = as_quoted(close)
     return series
 
 
