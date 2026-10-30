@@ -216,7 +216,7 @@ def _line_price(share, holding, selling: str) -> Optional[float]:
     return holding.market_value / holding.quantity
 
 
-def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
+def _usable(models: dict, carried: dict, roster) -> Dict[str, Any]:
     """The declared models this version still accepts, by account id.
 
     **Checked early, which is the whole of it** — not checked fewer times.
@@ -235,7 +235,7 @@ def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
     either way.
     """
     usable: Dict[str, Any] = {}
-    for account in declaration:
+    for account in roster:
         model = models.get(carried.get(account.id))
         if model is None:
             continue
@@ -251,7 +251,7 @@ def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
     return usable
 
 
-def _latent_gains(reader, store, snapshot, now: datetime, declaration,
+def _latent_gains(reader, store, snapshot, now: datetime, roster,
                   usable: dict) -> dict:
     """The per-account assiette — **read only where something reads it**.
 
@@ -264,12 +264,12 @@ def _latent_gains(reader, store, snapshot, now: datetime, declaration,
     use.
     """
     if not any(getattr(usable.get(account.id), 'kind', None)
-               in _NEEDS_POSITIONS for account in declaration):
+               in _NEEDS_POSITIONS for account in roster):
         return {}
     terminal = quotes.terminal_symbols(store, snapshot.backfill_windows(), now)
     return portfolio_view.latent_gains_by_account(
         portfolio_view.build_shares(reader.positions(), terminal),
-        [account.id for account in declaration])
+        [account.id for account in roster])
 
 
 def _with_account_facts(row: dict, carried: dict, opened_on: dict,

@@ -908,8 +908,7 @@ def test_what_the_export_computes_is_rounded_and_what_it_stores_is_not():
     assert held['cost_basis'] == '100.0'
 
 
-def test_with_declared_accounts_default_is_listed_only_if_it_holds_positions(
-        tmp_path):
+def test_with_declared_accounts_default_is_listed_only_if_it_holds_positions():
     """The app's list, plus an undeclared id **only** where it holds something."""
     declared = [Account(id='pea')]
     held = [{'account': 'ghost', 'symbol': 'AI.PA', 'quantity': 1.0}]
@@ -919,6 +918,27 @@ def test_with_declared_accounts_default_is_listed_only_if_it_holds_positions(
     assert [(row['account'], row['symbol']) for row in rows_of(
         events_export.render_portfolio(declared, {}, held, 'EUR'))] == [
         ('ghost', ''), ('ghost', 'AI.PA'), ('pea', '')]
+
+
+def test_a_position_with_nothing_to_round_has_empty_cells():
+    """No price and no quantity: the rounded cells stay empty and nothing raises."""
+    text = events_export.render_portfolio(
+        [Account(id='pea')], {},
+        [{'account': 'pea', 'symbol': 'X', 'quantity': 0.0,
+          'cost_basis': 0.0, 'price': None}], 'EUR')
+
+    (_, held) = rows_of(text)
+    assert held['unit_cost'] == '' and held['market_value'] == ''
+
+
+def test_a_tiny_loss_is_not_written_as_negative_zero():
+    text = events_export.render_portfolio(
+        [Account(id='pea')], {},
+        [{'account': 'pea', 'symbol': 'X', 'quantity': 1.0,
+          'cost_basis': 1.0, 'price': -0.001}], 'EUR')
+
+    (_, held) = rows_of(text)
+    assert held['market_value'] == '0.0'
 
 
 def test_with_nothing_declared_the_default_row_has_no_label(tmp_path):

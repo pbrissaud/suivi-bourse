@@ -3619,6 +3619,17 @@ def test_the_report_names_the_accounts_the_app_names(tmp_path):
     opened.close()
 
 
+def test_an_install_with_nothing_declared_reports_its_seeded_account(tmp_path):
+    """The route's own wiring with no declaration: the seeded row, no label, no figures."""
+    client, opened = build_client_and_store(tmp_path)
+
+    body = client.get('/api/export/portfolio.csv').get_data(as_text=True)
+    rows = list(csv.DictReader(io.StringIO(body)))
+    assert [(row['account'], row['account_label'], row['as_of'],
+             row['cash_balance']) for row in rows] == [('default', '', '', '')]
+    opened.close()
+
+
 def test_the_report_states_the_figures_the_app_states(tmp_path):
     """A priced GRANT counts, a future DEPOSIT does not — in the file too (#1373)."""
     events = (
@@ -3626,7 +3637,7 @@ def test_the_report_states_the_figures_the_app_states(tmp_path):
         "2026-01-02,DEPOSIT,pea,,,,,,9500,\n"
         "2026-02-02,GRANT,pea,AIR.PA,Airbus,1,204.47,,,\n"
         "2026-01-02,DEPOSIT,cto,,,,,,1000,\n"
-        "2027-12-31,DEPOSIT,cto,,,,,,1,\n"
+        "2099-12-31,DEPOSIT,cto,,,,,,1,\n"
     )
     def seed(opened):
         seed_quote(opened, 'AIR.PA', 210.0, currency='EUR',

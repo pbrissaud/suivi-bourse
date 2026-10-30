@@ -233,7 +233,8 @@ def _account_row(account: str, declaration: Optional[Any],
 
 
 def _rounded(value: Optional[float], digits: int) -> Optional[float]:
-    return None if value is None else round(value, digits)
+    """``value`` to ``digits`` places — ``+ 0.0`` so a tiny loss is not ``-0.0``."""
+    return None if value is None else round(value, digits) + 0.0
 
 
 def _position_row(account: str, declaration: Optional[Any],
@@ -253,7 +254,7 @@ def _position_row(account: str, declaration: Optional[Any],
         'cost_basis': position.get('cost_basis'),
         'price': price,
         'market_value': (None if quantity is None or price is None
-                         else round(quantity * price, 2)),
+                         else _rounded(quantity * price, 2)),
         'realized_gain': position.get('realized_gain'),
         'received_dividend': position.get('received_dividend'),
         BASE_CURRENCY_COLUMN: base_currency,

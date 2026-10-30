@@ -346,13 +346,19 @@ spreadsheet:
   A figure appears once — the balance is on the account's row, the valuation on
   the position's — so every money column sums to something true. What repeats is
   the account's name and type, which sum to nothing and let you filter.
+- **The account's figures are the ones the app shows**, for the day the
+  `as_of` column gives (empty on a position's row): same source as the accounts
+  page, so a future-dated deposit is not counted and a valued grant is. The file
+  lists the accounts the app lists; the seeded `default` account only appears if
+  you declared nothing or it holds positions.
 - **A position the app has never seen a price for has no valuation**, and the
   cell is empty rather than zero or a cost standing in for a price. On the page
   that same position is drawn at its cost, under a convention that needs to know
   the app has finished looking for a price; a file states what was observed.
 
-An account nobody has ever moved money in has **empty** cash cells too, and not
-zeros: never having had a cash movement and having a balance of nothing are two
+An account the app has not computed figures for yet — nobody has ever moved money
+in it, or the first pass has not run — has **empty** `as_of` and cash cells too,
+and not zeros: having no figure and having a balance of nothing are two
 different things.
 
 ### The reporting currency
