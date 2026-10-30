@@ -170,6 +170,10 @@ export const ROUTES = {
   agentProposalMerge: '/api/agent/proposals/:id/merge',
   agentProposalIgnore: '/api/agent/proposals/:id/ignore',
   agentProposalRepropose: '/api/agent/proposals/:id/repropose',
+  /** The same extraction read as the other kind of statement (#1120). */
+  agentProposalRekind: '/api/agent/proposals/:id/rekind',
+  /** A broker statement read by a model with no tool, as a proposal (#1120). */
+  agentStatements: '/api/agent/statements',
   /**
    * The PIN (#1203): the gate in front of the whole socket answers these, never
    * Flask. A `401` from one of them is a wrong code, not a session that ended.

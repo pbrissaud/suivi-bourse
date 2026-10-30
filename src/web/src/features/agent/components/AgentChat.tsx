@@ -83,6 +83,7 @@ import {
   toolSentence,
   turnRefusal,
   unreadableFiles,
+  isStatementFile,
 } from '@/features/agent/lib/agentChat'
 import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
@@ -94,6 +95,7 @@ import {
   useProposals,
 } from '@/features/agent/components/AgentProfile'
 import { EventsCard } from '@/features/agent/components/EventsCard'
+import { StatementDialog, type StatementDraftIn } from '@/features/agent/components/StatementDialog'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { agentApi, type AgentConfig } from '@/features/agent/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
@@ -411,7 +413,7 @@ function AgentConversation() {
   // The page's own read, already in the cache: it names the provider a refusal blames.
   const provider =
     useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig }).data?.provider ?? null
-  const { chat, failedOnReload, settle } = useAgentChat()
+  const { chat, failedOnReload, settle, reloadThread } = useAgentChat()
   const threadId = useThreadParam()
   const navigate = useNavigate()
   const { messages, sendMessage, status, error, stop, setMessages, clearError } = useChat({
@@ -421,6 +423,15 @@ function AgentConversation() {
   const notKept = useNotKept(chat.id, error)
   const announcement = useAnnouncement(status, messages)
   const proposals = useProposals(chat.id, messages, busy)
+
+  // A statement wrote a proposal and four messages into the thread on the
+  // server: the thread is read back, and the card appears (#1120).
+  const statementSent = () => {
+    if (threadId === undefined) {
+      void navigate({ to: '/agent/$threadId', params: { threadId: chat.id }, replace: true })
+    }
+    void reloadThread()
+  }
 
   const ask = (text: string) => {
     // The first question gives the thread its address, in place of `/agent`:
@@ -562,7 +573,14 @@ function AgentConversation() {
         {/* Drawn like the answer, or a screen reader reads its asterisks. */}
         <AnswerMarkdown>{announcement}</AnswerMarkdown>
       </div>
-      <Composer busy={busy} onAsk={ask} onStop={() => void stop()} returned={returned} />
+      <Composer
+        busy={busy}
+        threadId={chat.id}
+        onAsk={ask}
+        onStop={() => void stop()}
+        onStatementSent={statementSent}
+        returned={returned}
+      />
     </>
   )
 }
@@ -872,19 +890,25 @@ function sixFigures(_: string, value: unknown): unknown {
 /** The input, *Envoyer* or *Arrêter*, and the CIF line fixed under it (3A). */
 function Composer({
   busy,
+  threadId,
   onAsk,
   onStop,
+  onStatementSent,
   returned,
 }: {
   busy: boolean
+  threadId: string
   onAsk: (text: string) => void
   onStop: () => void
+  onStatementSent: () => void
   /** A question the server refused for want of a session, handed back. */
   returned: { text: string } | null
 }) {
   const { t } = useI18n()
   const [text, setText] = useState('')
   const [refused, setRefused] = useState<string[]>([])
+  // The statement being given, in its box: a dropped file's text, or empty (#1120).
+  const [statement, setStatement] = useState<StatementDraftIn | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const fieldId = useId()
   const hintId = useId()
@@ -909,11 +933,18 @@ function Composer({
 
   // Image or PDF with a text-only model (4A): refused before anything is sent.
   // Every model the agent runs on reads text only (`agent_routes` refuses
-  // any other part), so a file is never sent.
+  // any other part), so a file is never sent. A `.txt` or `.csv` is text: it is
+  // read here and offered as a statement, in a box that asks before it leaves.
   const refuse = (files: FileList) => {
     if (files.length === 0) return false
     if (unreadableFiles(files)) {
       setRefused(Array.from(files, (file) => file.name))
+      return true
+    }
+    if (files.length === 1 && isStatementFile(files[0])) {
+      const file = files[0]
+      setRefused([])
+      void file.text().then((text) => setStatement({ name: file.name, text }))
       return true
     }
     return false
@@ -979,7 +1010,23 @@ function Composer({
           </Button>
         )}
       </form>
-      <div className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+      <StatementDialog
+        draft={statement}
+        threadId={threadId}
+        onClose={() => setStatement(null)}
+        onSent={onStatementSent}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="min-h-11"
+          disabled={busy}
+          onClick={() => setStatement({ name: '', text: '' })}
+        >
+          {t('agent.statement.button')}
+        </Button>
         <p className="text-xs text-muted-foreground">{t('agent.cif')}</p>
         {/* Keys only where there is a keyboard to press them. */}
         <p id={hintId} className="hidden text-xs text-muted-foreground pointer-fine:block">

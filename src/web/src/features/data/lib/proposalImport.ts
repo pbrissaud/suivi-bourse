@@ -20,7 +20,13 @@ import {
   NO_ANSWER,
   repeatsToWrite,
 } from '@/features/data/components/UploadZone'
-import { eventProposalsApi, proposalPath } from '@/features/agent/lib/eventProposals'
+import {
+  editsBody,
+  eventProposalsApi,
+  NO_EDITS,
+  proposalPath,
+  type StatementEdits,
+} from '@/features/agent/lib/eventProposals'
 import type { ImportReceipt } from '@/features/data/lib/api'
 import { ApiProblem, ROUTES, send } from '@/lib/api'
 import { type MessageKey, useI18n } from '@/lib/i18n'
@@ -53,11 +59,12 @@ const preview = (
   answer: Answer,
   writeDuplicates: boolean,
   repeats: readonly number[] = [],
+  edits: StatementEdits = NO_EDITS,
 ) =>
   send<MergedReceipt>(
     proposalPath(ROUTES.agentProposalPreview, id) + query(answer, writeDuplicates, repeats),
     'POST',
-    {},
+    editsBody(edits),
   )
 
 interface Options {
@@ -74,6 +81,8 @@ export function useProposalImport(
   const { t } = useI18n()
   const client = useQueryClient()
   const [answer, setAnswer] = useState<Answer>(NO_ANSWER)
+  // A statement's answers: the server keeps none, so every reading carries them.
+  const [edits, setEdits] = useState<StatementEdits>(NO_EDITS)
   // The forecast on screen, held beside the mutation for the reason
   // `useEventUpload` gives: TanStack empties `data` on every `mutate`.
   const [standing, setStanding] = useState<Forecast | undefined>(undefined)
@@ -107,8 +116,16 @@ export function useProposalImport(
   }
 
   const read = useMutation({
-    mutationFn: async ({ given, proposal }: { given: Answer; proposal: string }) => {
-      const file = await preview(proposal, given, false)
+    mutationFn: async ({
+      given,
+      proposal,
+      edited,
+    }: {
+      given: Answer
+      proposal: string
+      edited: StatementEdits
+    }) => {
+      const file = await preview(proposal, given, false, [], edited)
       // Repeats within one proposal are written whole until the owner says
       // otherwise, as for a file; the census read carries none.
       const repeats = repeatsToWrite(file, given.collapsed)
@@ -116,7 +133,7 @@ export function useProposalImport(
       if (!given.writeDuplicates && repeats.length === 0) return { proposal, forecast }
       // The second reading, as the file's: it is a different ledger to replay.
       try {
-        const writing = await preview(proposal, given, given.writeDuplicates, repeats)
+        const writing = await preview(proposal, given, given.writeDuplicates, repeats, edited)
         return { proposal, forecast: { file, writing, refused: undefined } }
       } catch (refused) {
         return { proposal, forecast: { file, writing: undefined, refused } }
@@ -146,7 +163,7 @@ export function useProposalImport(
         proposalPath(ROUTES.agentProposalMerge, id as string) +
           query(answer, answer.writeDuplicates, repeats, foreign),
         'POST',
-        {},
+        editsBody(edits),
       ),
     onSuccess: (receipt) => {
       // Every figure is downstream of the ledger (`useEventUpload` says why).
@@ -173,19 +190,35 @@ export function useProposalImport(
     started.current = id
     setStanding(undefined)
     setAnswer(NO_ANSWER)
+    setEdits(NO_EDITS)
     resetRead()
     resetWrite()
-    if (id !== undefined) readFirst({ given: NO_ANSWER, proposal: id })
+    if (id !== undefined) readFirst({ given: NO_ANSWER, proposal: id, edited: NO_EDITS })
   }, [id])
 
   const pending = read.isPending || write.isPending
   const held = id !== undefined
 
+  /** An edit is kept, and the proposal is read again under it. */
+  const edit = (next: StatementEdits) => {
+    if (!held || pending) return
+    setEdits(next)
+    read.mutate({ given: answer, proposal: id as string, edited: next })
+  }
+  const pick = (n: number, symbol: string) => {
+    const { [String(n)]: _, ...rest } = edits.symbols
+    edit({ ...edits, symbols: symbol.trim() === '' ? rest : { ...rest, [String(n)]: symbol } })
+  }
+  const price = (symbol: string, value: number | null) => {
+    const { [symbol]: _, ...rest } = edits.prices
+    edit({ ...edits, prices: value === null ? rest : { ...rest, [symbol]: value } })
+  }
+
   return {
     reconsider: (next) => {
       if (!held || pending) return
       setAnswer(next)
-      read.mutate({ given: next, proposal: id as string })
+      read.mutate({ given: next, proposal: id as string, edited: edits })
     },
     commit: () => {
       if (!held || !standing || pending) return
@@ -207,6 +240,13 @@ export function useProposalImport(
     forecast: standing,
     receipt: undefined,
     error: pending ? undefined : (write.error ?? read.error ?? standing?.refused),
-    proposal: held ? { lines: lines.data?.proposals[0]?.events ?? [] } : undefined,
+    proposal: held
+      ? {
+          // A statement's lines are the preview's own: they follow the edits.
+          lines: standing?.file.statement?.lines ?? lines.data?.proposals[0]?.events ?? [],
+          statement: standing?.file.statement,
+          edit: { edits, pick, price },
+        }
+      : undefined,
   }
 }

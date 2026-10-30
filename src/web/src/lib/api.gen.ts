@@ -112,6 +112,7 @@ export interface EventsProposal {
   events: ProposedLine[];
   id: string;
   kind: "events";
+  statement?: StatementFacts;
   status: "ready" | "merged" | "ignored" | "expired" | "stale";
   title: string;
 }
@@ -127,11 +128,51 @@ export interface ProposedLine {
   date: string;
   event_type: string;
   fee: number | null;
-  mark?: "statement" | "gap" | "estimated_price";
+  isin?: string | null;
+  marks?: ("statement" | "gap" | "estimated_price")[];
+  n?: number;
+  name?: string | null;
   notes: string | null;
+  price_source?: string | null;
   quantity: number | null;
   symbol: string | null;
   unit_price: number | null;
+}
+/**
+ * What a statement proposal says beyond its lines (#1120).
+ *
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "StatementFacts".
+ */
+export interface StatementFacts {
+  as_of: string | null;
+  dropped: number;
+  kind: "positions" | "operations";
+  pending_held: number;
+  total_check: TotalCheck | "unverifiable" | null;
+  unresolved: UnresolvedLine[];
+}
+/**
+ * The total the statement states, against the lines read.
+ *
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "TotalCheck".
+ */
+export interface TotalCheck {
+  gap_pct: number;
+  read: number;
+  stated: number;
+}
+/**
+ * A statement line still waiting for the owner to choose its title.
+ *
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "UnresolvedLine".
+ */
+export interface UnresolvedLine {
+  isin: string | null;
+  n: number;
+  name: string;
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema

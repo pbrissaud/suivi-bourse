@@ -7,6 +7,7 @@
  * no page test.
  */
 
+import type { StatementPreview } from '@/features/agent/lib/eventProposals'
 import { download, get, ROUTES, remove, send, upload } from '@/lib/api'
 
 function eventPath(id: string): string {
@@ -188,6 +189,8 @@ interface ImportPeriod {
  * imported.
  */
 export interface ImportReceipt {
+  /** A broker statement's proposal also says what it came to, line by line (#1120). */
+  statement?: StatementPreview
   /** The **first** file's name, kept for `curl` and MCP callers; the front reads `files`. */
   filename: string
   /**
