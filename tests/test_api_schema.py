@@ -20,7 +20,7 @@ def test_the_schema_names_exactly_its_shapes():
         'Positions', 'Price',
         'Confirmed', 'Fact', 'Ignored', 'Profile', 'Project', 'Proposal',
         'ProposalsPayload', 'EventsProposal', 'EventsProposalsPayload',
-        'ProposedLine'}
+        'ProposedLine', 'StatementFacts', 'TotalCheck', 'UnresolvedLine'}
 
 
 def test_a_quantity_is_never_null_and_may_be_nan():

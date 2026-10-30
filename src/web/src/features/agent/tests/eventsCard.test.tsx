@@ -112,9 +112,9 @@ describe('the events card (#1119)', () => {
 
   it('shows the marks, and says “et N autres” past eight lines', async () => {
     const events = [
-      aLine({ mark: 'statement' }),
-      aLine({ mark: 'gap', date: '2026-03-04' }),
-      aLine({ mark: 'estimated_price', date: '2026-03-05' }),
+      aLine({ marks: ['statement'] }),
+      aLine({ marks: ['gap'], date: '2026-03-04' }),
+      aLine({ marks: ['estimated_price'], date: '2026-03-05' }),
       ...Array.from({ length: 7 }, (_, i) => aLine({ date: `2026-04-0${i + 1}` })),
     ]
     threadWith(() => [aProposal('ready', { events })])
@@ -227,5 +227,84 @@ describe('the events card (#1119)', () => {
       'line 1 (quantity): Cannot sell 5 shares',
     )
     expect(within(main).getByRole('button', { name: 'Relancer' })).toBeEnabled()
+  })
+
+  describe('a broker statement (#1120)', () => {
+    const facts = (overrides: Partial<NonNullable<EventsProposal['statement']>> = {}) => ({
+      kind: 'positions' as const,
+      as_of: '2026-06-30',
+      dropped: 0,
+      unresolved: [],
+      pending_held: 0,
+      total_check: null,
+      ...overrides,
+    })
+
+    it('badges every mark of a line, names a title still to choose, and says what was not read', async () => {
+      const events = [
+        aLine({ marks: ['statement', 'gap'], n: 1 }),
+        aLine({ symbol: null, name: 'AMUNDI MSCI WORLD', isin: 'FR0010315770', n: 2 }),
+      ]
+      threadWith(() => [
+        aProposal('ready', {
+          events,
+          statement: facts({
+            dropped: 2,
+            unresolved: [{ n: 2, name: 'AMUNDI MSCI WORLD', isin: 'FR0010315770' }],
+          }),
+        }),
+      ])
+      const { main } = await openPage()
+
+      expect(await within(main).findByText('extrait du relevé')).toBeInTheDocument()
+      expect(within(main).getByText('déduit d’un écart')).toBeInTheDocument()
+      expect(within(main).getByText(/AMUNDI MSCI WORLD · titre à choisir/)).toBeInTheDocument()
+      expect(
+        within(main).getByText('2 lignes du relevé n’ont pas pu être lues'),
+      ).toBeInTheDocument()
+    })
+
+    it('reads the same extraction as the other kind, and shows the new proposal', async () => {
+      threadWith((ids) =>
+        ids[0] === NEXT
+          ? [
+              aProposal('ready', {
+                id: NEXT,
+                title: 'Relevé (opérations)',
+                statement: facts({ kind: 'operations' }),
+              }),
+            ]
+          : [aProposal('ready', { statement: facts() })],
+      )
+      server.use(
+        http.post(ROUTES.agentProposalRekind, () =>
+          HttpResponse.json({
+            proposal: aProposal('ready', {
+              id: NEXT,
+              title: 'Relevé (opérations)',
+              statement: facts({ kind: 'operations' }),
+            }),
+          }),
+        ),
+      )
+      const { user, main } = await openPage()
+
+      await user.click(
+        await within(main).findByRole('button', { name: 'Lire comme relevé d’opérations' }),
+      )
+
+      expect(await within(main).findByText('Relevé (opérations)')).toBeInTheDocument()
+      expect(
+        await within(main).findByRole('button', { name: 'Lire comme relevé de positions' }),
+      ).toBeInTheDocument()
+    })
+
+    it('offers no re-reading for a proposal the agent wrote', async () => {
+      threadWith(() => [aProposal('ready')])
+      const { main } = await openPage()
+
+      await within(main).findByRole('link', { name: 'Revoir et fusionner' })
+      expect(within(main).queryByRole('button', { name: /Lire comme relevé/ })).toBeNull()
+    })
   })
 })

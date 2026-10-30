@@ -83,6 +83,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { LineText } from '@/features/agent/components/EventsCard'
+import { StatementReview } from '@/features/data/components/StatementReview'
 import type { ImportReview } from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
 import {
@@ -152,6 +153,14 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
   const [adoptCurrency, setAdoptCurrency] = useState(true)
   const [amountsIn, setAmountsIn] = useState<AmountsIn | undefined>(undefined)
   const forecast = upload.forecast
+  // The dialog's node: a statement's ticker list is drawn inside it (#1120).
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null)
+  const statement = upload.proposal?.statement
+  // A statement merges only once every line has a ticker and every gap a price.
+  const statementBlocked =
+    statement !== undefined &&
+    (statement.unresolved.length > 0 ||
+      statement.lines.some((line) => line.marks?.includes('gap') && line.unit_price === null))
   const previewed = forecast?.file.filename
   const [lastFile, setLastFile] = useState<string | undefined>(previewed)
   const forgetAnswers = () => {
@@ -289,7 +298,7 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
         if (!open) upload.discard()
       }}
     >
-      <DialogContent className="max-w-2xl">
+      <DialogContent ref={setPanel} className="max-w-2xl">
         <DialogHeader>
           <DialogTitle ref={title} tabIndex={-1}>
             {t('data.import.preview.title')}
@@ -364,6 +373,15 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
                       ))}
                     </ul>
                   </section>
+                ) : null}
+
+                {upload.proposal?.statement && upload.proposal.edit ? (
+                  <StatementReview
+                    statement={upload.proposal.statement}
+                    edit={upload.proposal.edit}
+                    busy={upload.pending}
+                    container={panel}
+                  />
                 ) : null}
 
                 <AccountsBlock
@@ -462,6 +480,7 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
                 forecast.writing.written === 0 ||
                 missing.length > 0 ||
                 currencyMissing ||
+                statementBlocked ||
                 upload.pending
               }
               onClick={() => upload.commit({ declineCurrency: !adoptCurrency })}

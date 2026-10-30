@@ -11,7 +11,9 @@ writes nothing. ``now`` is always injected.
 import json
 import re
 from datetime import datetime
-from typing import Any, List, Literal, NotRequired, Optional, Sequence, TypedDict
+from typing import (
+    Any, List, Literal, NotRequired, Optional, Sequence, TypedDict, Union,
+)
 from uuid import uuid4
 
 from application import accounts as accounts_module
@@ -19,6 +21,7 @@ from application import entries
 from application import instants
 from application import ledger
 from application import proposals
+from application import statements
 from application.event_body import (
     TEXT_FIELDS, InvalidBody, body_of, event_from_body,
 )
@@ -48,7 +51,38 @@ class ProposedLine(TypedDict):
     fee: Optional[float]
     amount: Optional[float]
     notes: Optional[str]
-    mark: NotRequired[Mark]
+    #: Set by the app on a statement's lines, never proposed (#1120).
+    marks: NotRequired[List[Mark]]
+    price_source: NotRequired[Optional[str]]
+    #: A statement's line number, and what it called the title: shown in the
+    #: UI only, never in the thread.
+    n: NotRequired[int]
+    name: NotRequired[Optional[str]]
+    isin: NotRequired[Optional[str]]
+
+
+class UnresolvedLine(TypedDict):
+    """A statement line still waiting for the owner to choose its title."""
+    n: int
+    name: str
+    isin: Optional[str]
+
+
+class TotalCheck(TypedDict):
+    """The total the statement states, against the lines read."""
+    stated: float
+    read: float
+    gap_pct: float
+
+
+class StatementFacts(TypedDict):
+    """What a statement proposal says beyond its lines (#1120)."""
+    kind: Literal['positions', 'operations']
+    as_of: Optional[str]
+    dropped: int
+    unresolved: List[UnresolvedLine]
+    pending_held: int
+    total_check: Union[None, TotalCheck, Literal['unverifiable']]
 
 
 class EventsProposal(TypedDict):
@@ -58,6 +92,8 @@ class EventsProposal(TypedDict):
     status: proposals.Status
     count: int
     events: List[ProposedLine]
+    #: What a statement came to; absent on a proposal the agent wrote.
+    statement: NotRequired[StatementFacts]
     created_at: str
     decided_at: Optional[str]
 
@@ -98,10 +134,11 @@ def parse(events_json: Any) -> List[Event]:
             field='events_json')
     events = []
     for line, body in enumerate(listed, 1):
-        if isinstance(body, dict) and 'mark' in body:
-            raise InvalidProposal(
-                f"line {line} (mark): a mark is set by the app, never "
-                f"proposed; leave it out", line, 'mark')
+        for member in ('mark', 'marks'):
+            if isinstance(body, dict) and member in body:
+                raise InvalidProposal(
+                    f"line {line} ({member}): a mark is set by the app, "
+                    f"never proposed; leave it out", line, member)
         try:
             event = event_from_body(body)
         except InvalidBody as exc:
@@ -121,11 +158,29 @@ def propose(store, title: Any, events_json: Any, now: datetime) -> str:
     return _record(store, _title(title), parse(events_json), now)
 
 
+def propose_statement(store, title: Any, statement: dict,
+                      now: datetime) -> str:
+    """Record a statement's proposal, ``ready``, and its id (#1120).
+
+    Only the validated extraction is stored: the events are derived from it, the
+    owner's edits and the ledger at every read (:func:`reading`).
+    """
+    title = _title(title)
+    _reconciled(store, statement, None)  # refuses what cannot be read at all
+    proposal_id = uuid4().hex
+    proposals.insert(
+        store, KIND,
+        {'title': title, 'statement': statement,
+         'stamp': ledger.stamp(store) or ''},
+        proposal_id, now)
+    return proposal_id
+
+
 def read(store, ids: Sequence[str], now: datetime) -> List[EventsProposal]:
     """The proposals ``ids`` name, in that order; an unknown id is omitted."""
     rows = proposals.fetch(store, KIND, ids)
     current = ledger.stamp(store) or ''
-    return [_shape(rows[i], now, current) for i in ids if i in rows]
+    return [_shape(store, rows[i], now, current) for i in ids if i in rows]
 
 
 def ready(store, proposal_id: str, now: datetime) -> dict:
@@ -133,8 +188,33 @@ def ready(store, proposal_id: str, now: datetime) -> dict:
     return _ready(store, proposal_id, now)
 
 
-def events_of(row: dict) -> List[Event]:
-    return [event_from_body(body) for body in row['events']]
+def reading(store, row: dict, edits: Optional[dict] = None, *,
+            merging: bool = False) -> statements.Reading:
+    """A statement proposal read against the ledger as it is, with the owner's
+    ``edits``. Merging is refused while a line waits for its ticker or a price."""
+    found = _reconciled(store, row['statement'], edits)
+    if merging:
+        for line in found.unresolved:
+            raise InvalidProposal(
+                f"line {line['n']} (symbol): choose the title for "
+                f"\"{line['name']}\" ({line.get('isin') or 'no ISIN'})",
+                line['n'], 'symbol')
+        for drafted in found.unpriced():
+            raise InvalidProposal(
+                f"line {drafted.n or drafted.event.symbol} (unit_price): no "
+                f"close is known for {drafted.event.symbol}; type a price",
+                drafted.n, 'unit_price')
+    return found
+
+
+def events_of(store, row: dict, edits: Optional[dict] = None, *,
+              merging: bool = False) -> List[Event]:
+    """The events a proposal holds: a statement's, derived now; or the agent's."""
+    if 'statement' not in row:
+        return [event_from_body(body) for body in row['events']]
+    return [drafted.event for drafted in reading(
+        store, row, edits, merging=merging).drafted
+        if drafted.event.unit_price is not None]
 
 
 def merge(store, proposal_id: str, now: datetime,
@@ -159,7 +239,8 @@ def ignore(store, proposal_id: str, now: datetime) -> EventsProposal:
         _ready(store, proposal_id, now, allow_stale=True)
         if not proposals.decide(store, KIND, proposal_id, 'ignored', now):
             raise ProposalNotReady('ignored')
-    return _shape(_row(store, proposal_id), now, ledger.stamp(store) or '')
+    return _shape(store, _row(store, proposal_id), now,
+                  ledger.stamp(store) or '')
 
 
 def repropose(store, proposal_id: str, now: datetime) -> str:
@@ -167,7 +248,27 @@ def repropose(store, proposal_id: str, now: datetime) -> str:
     proposal; the old one reads ``ignored``. No model is asked."""
     with store.transaction():
         row = _ready(store, proposal_id, now, allow_stale=True)
-        new_id = _record(store, row['title'], events_of(row), now)
+        if 'statement' in row:
+            new_id = propose_statement(store, row['title'], row['statement'], now)
+        else:
+            new_id = _record(store, row['title'], events_of(store, row), now)
+        proposals.decide(store, KIND, proposal_id, 'ignored', now)
+    return new_id
+
+
+def rekind(store, proposal_id: str, now: datetime) -> str:
+    """The same extraction read as the other kind of statement, as a **new**
+    proposal with no edit carried over; the old one reads ``ignored``. No model
+    is asked."""
+    with store.transaction():
+        row = _ready(store, proposal_id, now, allow_stale=True)
+        if 'statement' not in row:
+            raise InvalidProposal(
+                "only a statement can be read as the other kind", field='kind')
+        other = 'operations' if row['statement']['kind'] == 'positions' \
+            else 'positions'
+        new_id = propose_statement(
+            store, row['title'], {**row['statement'], 'kind': other}, now)
         proposals.decide(store, KIND, proposal_id, 'ignored', now)
     return new_id
 
@@ -248,17 +349,46 @@ def _ready(store, proposal_id: str, now: datetime,
     return row
 
 
-def _shape(row: dict, now: datetime, stamp: str) -> EventsProposal:
-    return {
+def lines_of(found: statements.Reading) -> List[ProposedLine]:
+    """A reading's lines as a card lists them: the events, then the lines still
+    waiting for a ticker (the title they carry is for the UI, never the thread)."""
+    lines = [{**{key: body.get(key) for key in _LISTED},
+              'marks': drafted.marks, 'price_source': drafted.price_source,
+              'n': drafted.n}
+             for drafted in found.drafted
+             for body in [body_of(drafted.event)]]
+    lines += [{'date': line.get('date') or found.as_of or '',
+               'event_type': line.get('event_type') or 'BUY', 'account': None,
+               'symbol': None, 'quantity': line.get('quantity'),
+               'unit_price': line.get('unit_price'), 'fee': line.get('fee'),
+               'amount': line.get('amount'), 'notes': None,
+               'marks': ['statement'], 'n': line['n'], 'name': line['name'],
+               'isin': line.get('isin')} for line in found.unresolved]
+    return lines
+
+
+def _reconciled(store, statement: dict, edits: Optional[dict]):
+    """:func:`statements.reconcile`, its refusals in the proposal's words."""
+    try:
+        return statements.reconcile(store, statement, edits)
+    except statements.InvalidStatement as exc:
+        raise InvalidProposal(str(exc), field=exc.field)
+
+
+def _shape(store, row: dict, now: datetime, stamp: str) -> EventsProposal:
+    shaped = {
         'id': row['id'], 'kind': KIND, 'title': row['title'],
         'status': proposals.status(row, now, stamp),
-        'count': len(row['events']),
-        'events': [{**{key: body.get(key) for key in _LISTED}, **(
-            {'mark': body['mark']} if 'mark' in body else {})}
-            for body in row['events']],
         'created_at': instants.iso(row['created_at']),
         'decided_at': instants.iso(row['decided_at']),
     }
+    if 'statement' not in row:
+        return {**shaped, 'count': len(row['events']), 'events': [
+            {key: body.get(key) for key in _LISTED} for body in row['events']]}
+    found = _reconciled(store, row['statement'], None)
+    lines = lines_of(found)
+    return {**shaped, 'count': len(lines), 'events': lines,
+            'statement': found.facts()}
 
 
 _LISTED = ('date', 'event_type', 'account', 'symbol', 'quantity',

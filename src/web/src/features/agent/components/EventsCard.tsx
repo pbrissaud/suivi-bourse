@@ -51,9 +51,14 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
   const successorFailed = successor.data !== null && next.isError
 
   const decide = useMutation({
-    mutationFn: (again: boolean) =>
-      again ? eventProposalsApi.repropose(shown.id) : eventProposalsApi.ignore(shown.id),
-    onSuccess: ({ proposal: decided }, again) => {
+    mutationFn: (how: 'ignore' | 'repropose' | 'rekind') =>
+      how === 'rekind'
+        ? eventProposalsApi.rekind(shown.id)
+        : how === 'repropose'
+          ? eventProposalsApi.repropose(shown.id)
+          : eventProposalsApi.ignore(shown.id),
+    onSuccess: ({ proposal: decided }, how) => {
+      const again = how !== 'ignore'
       // Written at once: while a later turn streams, the read is disabled and an
       // invalidation alone would leave the buttons standing. A new proposal
       // replaces nothing: the one it came from reads `ignored`.
@@ -108,6 +113,11 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
           {shown.status === 'stale' ? (
             <p className="text-sm text-attention">{t('agent.events.stale')}</p>
           ) : null}
+          {shown.statement && shown.statement.dropped > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('agent.events.dropped', { count: shown.statement.dropped })}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {shown.status === 'ready' ? (
               <>
@@ -120,17 +130,18 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
                   variant="outline"
                   className="min-h-11"
                   disabled={decide.isPending}
-                  onClick={() => decide.mutate(false)}
+                  onClick={() => decide.mutate('ignore')}
                 >
                   {t('agent.events.ignore')}
                 </Button>
+                {rekinds(shown, decide.isPending, () => decide.mutate('rekind'), t)}
               </>
             ) : (
               <>
                 <Button
                   className="min-h-11"
                   disabled={decide.isPending}
-                  onClick={() => decide.mutate(true)}
+                  onClick={() => decide.mutate('repropose')}
                 >
                   {t('agent.events.repropose')}
                 </Button>
@@ -138,10 +149,11 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
                   variant="outline"
                   className="min-h-11"
                   disabled={decide.isPending}
-                  onClick={() => decide.mutate(false)}
+                  onClick={() => decide.mutate('ignore')}
                 >
                   {t('agent.events.ignore')}
                 </Button>
+                {rekinds(shown, decide.isPending, () => decide.mutate('rekind'), t)}
               </>
             )}
           </div>
@@ -158,6 +170,25 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
         </p>
       ) : null}
     </div>
+  )
+}
+
+/** *Lire comme relevé d'opérations / de positions*: only a statement can be read the other way (#1120). */
+function rekinds(
+  proposal: EventsProposal,
+  pending: boolean,
+  onClick: () => void,
+  t: (key: MessageKey) => string,
+) {
+  if (!proposal.statement) return null
+  return (
+    <Button variant="outline" className="min-h-11" disabled={pending} onClick={onClick}>
+      {t(
+        proposal.statement.kind === 'positions'
+          ? 'agent.events.rekind.operations'
+          : 'agent.events.rekind.positions',
+      )}
+    </Button>
   )
 }
 
@@ -183,9 +214,9 @@ export function LineText({ line, detailed = false }: { line: Line; detailed?: bo
         ? f.number(line.amount, 2)
         : null
   const parts = [
-    f.date(line.date),
+    line.date ? f.date(line.date) : null,
     t(TYPE_LABEL[line.event_type as LedgerEventType]),
-    line.symbol,
+    line.symbol ?? (line.name ? `${line.name} · ${t('agent.events.pickTitle')}` : null),
     what,
     detailed && line.fee ? `${t('data.import.proposal.fee')} ${f.number(line.fee, 2)}` : null,
     line.account,
@@ -194,11 +225,11 @@ export function LineText({ line, detailed = false }: { line: Line; detailed?: bo
   return (
     <>
       {parts.join(' · ')}
-      {line.mark ? (
-        <span className="ml-2 rounded-md bg-muted px-2 py-0.5 text-2xs font-medium">
-          {t(`agent.events.mark.${line.mark}`)}
+      {(line.marks ?? []).map((mark) => (
+        <span key={mark} className="ml-2 rounded-md bg-muted px-2 py-0.5 text-2xs font-medium">
+          {t(`agent.events.mark.${mark}`)}
         </span>
-      ) : null}
+      ))}
     </>
   )
 }

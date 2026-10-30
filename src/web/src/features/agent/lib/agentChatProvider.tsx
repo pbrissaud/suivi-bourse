@@ -35,6 +35,8 @@ interface AgentChatValue {
   startThread: () => void
   /** Read a stored thread from the server, then show it. */
   openThread: (id: string) => void
+  /** Read the thread on screen again from the server: a statement wrote messages into it (#1120). */
+  reloadThread: () => Promise<void>
   /** A thread being read: nothing of it is drawn until it lands. */
   opening: { id: string; error: string | null } | null
   /** The thread on screen was read back with its last turn failed, and not asked again since. */
@@ -108,6 +110,12 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     [client, replace],
   )
 
+  const reloadThread = useCallback(async () => {
+    const thread = await agentApi.agentThread(current.current.id)
+    replace(chatFor(client, thread.id, joinAssistantMessages(thread.messages)))
+    void client.invalidateQueries({ queryKey: ['agent-threads'] })
+  }, [client, replace])
+
   const settle = useCallback(() => setFailedOnReload(false), [])
 
   const value = useMemo<AgentChatValue>(
@@ -115,11 +123,12 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       chat,
       startThread,
       openThread: (id) => void openThread(id),
+      reloadThread,
       opening,
       failedOnReload,
       settle,
     }),
-    [chat, startThread, openThread, opening, failedOnReload, settle],
+    [chat, startThread, openThread, reloadThread, opening, failedOnReload, settle],
   )
 
   return <AgentChatContext.Provider value={value}>{children}</AgentChatContext.Provider>

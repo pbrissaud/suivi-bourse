@@ -184,13 +184,15 @@ class Imported:
 def _run_import(parsed, correspondence, *, dry_run: bool,
                 write_duplicates: bool, write_repeats: frozenset,
                 adopt_currency: bool, amounts_in: Optional[str],
-                record=entries.create_many) -> Imported:
+                record=entries.create_many,
+                duplicate_key=entries.content_key) -> Imported:
     """The batch read against the ledger: a dry run, or the write.
 
     ``record(opened, fresh, **how)`` lays the fresh rows down, inside the
     writers' lock, and answers the events written. An import records them with
     :func:`entries.create_many`; a merged proposal (#1119) with its own gesture,
-    which also marks the proposal.
+    which also marks the proposal. ``duplicate_key`` is what makes two lines
+    one: a statement's own (:func:`statements.statement_key`, #1120).
     """
     census = uploads.census(parsed.events)
     runtime = current_runtime()
@@ -217,7 +219,7 @@ def _run_import(parsed, correspondence, *, dry_run: bool,
                              runtime, base)
         fresh, duplicates = entries.split_duplicates(
             opened, rows, write_held=write_duplicates,
-            write_repeats=write_repeats)
+            write_repeats=write_repeats, key=duplicate_key)
         entries.judge(opened, fresh, declaring=settled.declaring,
                       accounts_pending=settled.stated)
         written = len(fresh)
@@ -251,7 +253,7 @@ def _run_import(parsed, correspondence, *, dry_run: bool,
                                     for symbol, code in chosen.items()}
                     fresh, duplicates = entries.split_duplicates(
                         opened, rows, write_held=write_duplicates,
-                        write_repeats=write_repeats)
+                        write_repeats=write_repeats, key=duplicate_key)
                     created = record(
                         opened, fresh,
                         base_currency=declared if adopt_currency else None,

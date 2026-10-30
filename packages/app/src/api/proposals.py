@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from application import entries
 from application import event_proposals
 from application import main
 from application import profile as profile_module
 from application import proposals as proposals_module
+from application import statements
 from application import uploads
 from api.events import (
     IMPORT_REFUSALS, _asked, _receipt_to_dict, _run_import, _write_repeats,
@@ -63,6 +65,15 @@ def ignore_proposal(proposal_id):
         'proposal': event_proposals.ignore(opened, proposal_id, now)})
 
 
+@bp.post('/agent/proposals/<proposal_id>/rekind')
+def rekind_proposal(proposal_id):
+    """The same extraction read as the other kind of statement: a new proposal."""
+    def _other(opened, now):
+        new_id = event_proposals.rekind(opened, proposal_id, now)
+        return {'proposal': event_proposals.read(opened, [new_id], now)[0]}
+    return _decided(proposal_id, _other)
+
+
 @bp.post('/agent/proposals/<proposal_id>/repropose')
 def repropose_proposal(proposal_id):
     """The same events judged against the ledger as it is, as a new proposal."""
@@ -92,6 +103,27 @@ def _not_ready(exc):
     return conflict(f"Cette proposition est {_DECIDED[exc.status]}.")
 
 
+def _edits():
+    """The owner's edits of a statement proposal: ``{"symbols", "prices"}``.
+
+    The body carries edits and nothing else; an empty or missing body is none.
+    Edits are not stored: the page holds them and sends them every time.
+    """
+    body = request.get_json(silent=True) if request.get_data() else {}
+    if not isinstance(body, dict):
+        raise event_proposals.InvalidProposal(
+            "the body is a JSON object of edits", field='body')
+    unknown = sorted(set(body) - {'symbols', 'prices'})
+    if unknown:
+        raise event_proposals.InvalidProposal(
+            f"{unknown[0]}: not an edit a proposal takes", field=unknown[0])
+    for key in body:
+        if not isinstance(body[key], dict):
+            raise event_proposals.InvalidProposal(
+                f"{key}: a JSON object is required", field=key)
+    return body
+
+
 def _import(proposal_id, *, dry_run):
     if not profile_module.is_proposal_id(proposal_id):
         return not_found("no proposal has this id")
@@ -112,15 +144,25 @@ def _import(proposal_id, *, dry_run):
         write_repeats = _write_repeats(request.args.getlist('write_repeat'))
     except uploads.UploadRefused as exc:
         return import_refusal(exc)
+    statement = 'statement' in row
+    try:
+        found = (event_proposals.reading(
+            _store(), row, _edits(), merging=not dry_run)
+            if statement else None)
+    except event_proposals.InvalidProposal as exc:
+        return unprocessable_request(str(exc), key=exc.field)
+    events = ([d.event for d in found.drafted if d.event.unit_price is not None]
+              if statement else event_proposals.events_of(_store(), row))
     parsed = uploads.merge([uploads.Upload(
-        filename=row['title'], events=event_proposals.events_of(row),
-        declared_currency=None)])
+        filename=row['title'], events=events, declared_currency=None)])
     try:
         done = _run_import(
             parsed, uploads.mapping(None), dry_run=dry_run,
             write_duplicates=_asked('write_duplicates'),
             write_repeats=write_repeats, adopt_currency=False,
             amounts_in=amounts_in,
+            duplicate_key=(statements.statement_key if statement
+                           else entries.content_key),
             record=lambda opened, fresh, **how: event_proposals.merge(
                 opened, proposal_id, now, fresh, **how))
     except proposals_module.ProposalNotReady as exc:
@@ -137,6 +179,8 @@ def _import(proposal_id, *, dry_run):
         unverified=done.unverified)
     answer['proposal'] = {'id': proposal_id, 'title': row['title'],
                           'status': 'ready' if dry_run else 'merged'}
+    if statement:
+        answer['statement'] = {**found.facts(), 'lines': event_proposals.lines_of(found)}
     if dry_run:
         return jsonify(answer), 200
     main.replay_after_write(current_runtime())

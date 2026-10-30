@@ -1,7 +1,7 @@
 """The one writer of the ledger, and the gestures a row earns (issues #764, #816)."""
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import AbstractSet, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import AbstractSet, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
@@ -251,7 +251,8 @@ def _amount(value: Optional[float]) -> Optional[float]:
 
 def split_duplicates(store, drafts: Sequence[Event], *,
                      write_held: bool = False,
-                     write_repeats: AbstractSet[int] = frozenset()
+                     write_repeats: AbstractSet[int] = frozenset(),
+                     key: Callable[[Event], Tuple] = content_key
                      ) -> Tuple[List[Event], List[Duplicate]]:
     """One batch (or file), cut in two: what is written, and what is skipped as a duplicate.
 
@@ -260,28 +261,28 @@ def split_duplicates(store, drafts: Sequence[Event], *,
     ``write_repeats`` — then every copy is written. An index that names no such
     first copy is refused: the reader answered for a group this reading lacks.
     """
-    held = {content_key(event): event for event in ledger.read_events(store)}
+    held = {key(event): event for event in ledger.read_events(store)}
     first: Dict[Tuple, int] = {}
     repeated = set()
     fresh: List[Event] = []
     duplicates: List[Duplicate] = []
     for index, draft in enumerate(drafts):
-        key = content_key(draft)
-        if key in held:
+        same = key(draft)
+        if same in held:
             if write_held:
                 fresh.append(draft)
             else:
-                duplicates.append(Duplicate(draft, held=held[key], index=index))
-        elif key in first:
-            repeated.add(first[key])
-            if first[key] in write_repeats:
+                duplicates.append(Duplicate(draft, held=held[same], index=index))
+        elif same in first:
+            repeated.add(first[same])
+            if first[same] in write_repeats:
                 fresh.append(draft)
             else:
                 duplicates.append(
-                    Duplicate(draft, held=None, repeat_of=first[key],
+                    Duplicate(draft, held=None, repeat_of=first[same],
                               index=index))
         else:
-            first[key] = index
+            first[same] = index
             fresh.append(draft)
     unknown = sorted(set(write_repeats) - repeated)
     if unknown:

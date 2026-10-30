@@ -182,6 +182,11 @@ export function unreadableFiles(files: Iterable<File>): boolean {
   return false
 }
 
+/** A `.txt` or `.csv` file: a statement is text, whatever its broker calls it (#1120). */
+export function isStatementFile(file: File): boolean {
+  return /\.(txt|csv)$/i.test(file.name) || file.type === 'text/plain' || file.type === 'text/csv'
+}
+
 /** An example question, as a catalogue key and the values it takes. */
 export interface ExampleQuestion {
   key: MessageKey

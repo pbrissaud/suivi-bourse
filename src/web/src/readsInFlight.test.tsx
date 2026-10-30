@@ -100,6 +100,10 @@ const WRITE_ONLY_ROUTES = [
   'agentProposalMerge',
   'agentProposalIgnore',
   'agentProposalRepropose',
+  // A statement given to the agent (#1120) and its re-reading as the other kind
+  // answer the reader's own press too.
+  'agentProposalRekind',
+  'agentStatements',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them

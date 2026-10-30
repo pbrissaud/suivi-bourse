@@ -9,10 +9,33 @@
 
 import type { UIMessage } from 'ai'
 
+import type { EventsProposal } from '@/lib/api.gen'
 import { authFetch, get, ROUTES, send } from '@/lib/api'
+import type { MessageKey } from '@/lib/i18n'
 
 /** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
 export type AgentProvider = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
+
+/** The sentence that names a provider. */
+export const PROVIDER_NAME: Record<AgentProvider, MessageKey> = {
+  anthropic: 'agent.provider.anthropic',
+  openai: 'agent.provider.openai',
+  openai_compatible: 'agent.provider.openai_compatible',
+  ollama: 'agent.provider.ollama',
+}
+
+/** The most a statement holds, in characters once trimmed (`statements.TEXT_MAX`). */
+export const STATEMENT_MAX = 50_000
+
+/** What `POST /api/agent/statements` takes (#1120). */
+export interface StatementDraft {
+  thread_id: string
+  account: string
+  /** The provider the dialog named: the server answers 409 if it is no longer the configured one. */
+  provider: AgentProvider
+  name: string
+  text: string
+}
 
 /** How hard the analyst thinks, as `agent.THINKING` names the levels (#1191). */
 export type AgentThinking = 'low' | 'medium' | 'high'
@@ -111,6 +134,16 @@ export interface AgentTestResult {
   config: AgentConfig
 }
 
+async function agentSend<T>(path: string, body: unknown): Promise<T> {
+  const response = await authFetch(path, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await agentError(response))
+  return (await response.json()) as T
+}
+
 export const agentApi = {
   agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
   saveAgentConfig: (draft: AgentConfigDraft) => send<AgentConfig>(ROUTES.agentConfig, 'PUT', draft),
@@ -119,4 +152,7 @@ export const agentApi = {
   agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),
   agentThread: (id: string) => agentRead<AgentThread>(agentThreadPath(id)),
   forgetAgentThread: (id: string) => agentForget(agentThreadPath(id)),
+  /** The statement's text goes to the extraction model and nowhere else (#1120). */
+  sendStatement: (draft: StatementDraft) =>
+    agentSend<{ proposal: EventsProposal; thread_id: string }>(ROUTES.agentStatements, draft),
 }

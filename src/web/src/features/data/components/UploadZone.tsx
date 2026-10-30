@@ -76,6 +76,7 @@ import {
   repeatGroups,
   type Correspondence,
 } from '@/features/data/lib/imports'
+import type { StatementEdit, StatementPreview } from '@/features/agent/lib/eventProposals'
 import type { ProposedLine } from '@/lib/api.gen'
 import { receiptMessage } from '@/lib/receipts'
 
@@ -216,7 +217,12 @@ export interface ImportReview {
    * The rows are the agent's proposal and not files (#1119): there is no file
    * to take out of the batch, and the window says whose rows they are.
    */
-  proposal?: { lines: readonly ProposedLine[] }
+  proposal?: {
+    lines: readonly ProposedLine[]
+    /** A broker statement's preview, with the gestures it offers (#1120). */
+    statement?: StatementPreview
+    edit?: StatementEdit
+  }
 }
 
 /** The gesture, held by whoever survives the write it causes. */
