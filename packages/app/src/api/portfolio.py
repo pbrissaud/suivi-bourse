@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request
 
 from application import benchmark_view
+from application import benchmarks
 from application import instants
+from application import ledger
 from application import market
 from application import portfolio_facts
 from application import portfolio_view
@@ -18,6 +20,8 @@ from api.problem import (
 )
 from api.common import (
     DEFAULT_HISTORY_WINDOW,
+    _json_object,
+    current_runtime,
     _reader,
     _snapshot,
     _carried,
@@ -193,3 +197,40 @@ def get_benchmark():
         **benchmark_view.comparison(_store(), _snapshot(),
                                     datetime.now(timezone.utc)),
     })
+
+
+@bp.get('/benchmark/references')
+def get_benchmark_references():
+    """Each offered ETF: followed, complete, and how far its download has got.
+
+    A dedicated route (#1312) because it is polled while a download runs and
+    must stay cheap: no replay, only the store's own anchors.
+    """
+    return jsonify(benchmark_view.references(
+        _store(), _snapshot(), datetime.now(timezone.utc)))
+
+
+@bp.put('/benchmark/references/<symbol>')
+def put_benchmark_reference(symbol):
+    """Keep (``kept: true``) or stop keeping (``false``) an unfollowed ETF's series.
+
+    Stopping puts the series back on the purge list of the System page; it goes
+    at the next purge. Refused for a followed ETF, whose series is in use.
+    """
+    body = _json_object()
+    if body is None or not isinstance(body.get('kept'), bool):
+        return bad_request("a JSON object with a boolean 'kept' is required")
+    if symbol not in benchmarks.BY_SYMBOL:
+        return unprocessable_request(
+            f"{symbol} is not an offered reference", key='symbol')
+    with current_runtime().config_manager.writing() as opened:
+        # Read inside the write, so an ETF followed a moment ago is not forgotten.
+        if symbol in benchmark_view.followed(opened):
+            return unprocessable_request(
+                f"{symbol} is followed; unfollow it first", key='symbol')
+        if body['kept']:
+            ledger.record_consulted_benchmark(opened, symbol)
+        else:
+            ledger.forget_consulted_benchmark(opened, symbol)
+    return jsonify(benchmark_view.references(
+        _store(), _snapshot(), datetime.now(timezone.utc)))

@@ -4077,7 +4077,7 @@ def test_purging_nothing_is_a_success_and_not_a_refusal(tmp_path):
     assert response.get_json() == {'symbols': [], 'points_removed': 0}
 
 
-def _reference_and_a_real_orphan(tmp_path, symbol='CW8.PA'):
+def _reference_and_a_real_orphan(tmp_path, symbol='CW8.PA', follow=True):
     """A store holding two undeclared series: the named reference, and an orphan.
 
     The pair is the whole point. Both are series no event names and no position
@@ -4095,8 +4095,10 @@ def _reference_and_a_real_orphan(tmp_path, symbol='CW8.PA'):
 
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS, seed=seed)
-    assert client.put(
-        '/api/settings', json={'benchmark_symbol': symbol}).status_code == 200
+    if follow:
+        assert client.put(
+            '/api/settings',
+            json={'benchmark_symbols': [symbol]}).status_code == 200
     return client, opened
 
 
@@ -4135,19 +4137,33 @@ def test_the_purge_walks_past_the_reference_and_takes_the_orphan(tmp_path):
         "SELECT count(*) FROM symbol WHERE symbol = 'CW8.PA'")[0][0] == 1
 
 
-def test_a_reference_nobody_names_any_more_is_an_orphan_again(tmp_path):
-    """The exemption follows the dial, and fossilises nothing.
-
-    Emptying the field is how a reference is removed — there is no second
-    route — and what it leaves behind is a series nothing in the installation
-    has a use for. It goes back on the list like any other, which is also the
-    only way the owner ever gets those rows back.
-    """
+def test_unfollowing_a_reference_keeps_its_series(tmp_path):
+    """Unfollowing never forgets (#1312): the series is hours of closes, and
+    turning the ETF back on is instant because it is still there."""
     client, opened = _reference_and_a_real_orphan(tmp_path)
 
     assert client.put(
-        '/api/settings', json={'benchmark_symbol': ''}).status_code == 200
+        '/api/settings', json={'benchmark_symbols': []}).status_code == 200
 
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'ZZORPHAN', 'points': 1}]
+    assert ledger.consulted_benchmarks(opened) == ['CW8.PA']
+
+
+def test_a_reference_nobody_keeps_any_more_is_an_orphan_again(tmp_path):
+    """The exemption follows the owner's gesture, and fossilises nothing.
+
+    « Ne plus conserver l'historique » is the one route that releases a series:
+    it goes back on the list like any other orphan, which is also the only way
+    the owner ever gets those rows back.
+    """
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+    client.put('/api/settings', json={'benchmark_symbols': []})
+
+    forgotten = client.put('/api/benchmark/references/CW8.PA',
+                           json={'kept': False})
+
+    assert forgotten.status_code == 200
     assert client.get('/api/store').get_json()['orphans'] == [
         {'symbol': 'CW8.PA', 'points': 2},
         {'symbol': 'ZZORPHAN', 'points': 1}]
@@ -4157,20 +4173,39 @@ def test_a_reference_nobody_names_any_more_is_an_orphan_again(tmp_path):
         "SELECT count(*) FROM price_point WHERE symbol = 'CW8.PA'")[0][0] == 0
 
 
+def test_a_followed_reference_cannot_be_forgotten(tmp_path):
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+
+    refused = client.put('/api/benchmark/references/CW8.PA',
+                         json={'kept': False})
+
+    assert refused.status_code == 422
+    assert ledger.consulted_benchmarks(opened) == ['CW8.PA']
+
+
+def test_keeping_the_history_again_cancels_the_release(tmp_path):
+    client, opened = _reference_and_a_real_orphan(tmp_path)
+    client.put('/api/settings', json={'benchmark_symbols': []})
+    client.put('/api/benchmark/references/CW8.PA', json={'kept': False})
+
+    assert client.put('/api/benchmark/references/CW8.PA',
+                      json={'kept': True}).status_code == 200
+
+    assert ledger.consulted_benchmarks(opened) == ['CW8.PA']
+
+
 def test_switching_reference_keeps_the_series_of_the_one_left_behind(tmp_path):
     """The fourth reason a symbol survives the purge (#760).
 
-    The third reason is about the dial's **current** value, so the instant it
-    moves the previous reference is an orphan — and #760 keeps up to seven
-    consulted series precisely so switching back is instant rather than a
-    two-hour rebuild. Without this the promise is the opposite of what happens:
-    every switch throws away the history that made switching back worth
-    offering.
+    The third reason is about what is followed **now**, so the instant the list
+    moves the ETF left out is an orphan — and the consulted list keeps it alive
+    precisely so turning it back on is instant rather than a two-hour rebuild.
     """
     client, opened = _reference_and_a_real_orphan(tmp_path)
 
     assert client.put(
-        '/api/settings', json={'benchmark_symbol': 'CSPX.AS'}).status_code == 200
+        '/api/settings',
+        json={'benchmark_symbols': ['CSPX.AS']}).status_code == 200
 
     assert client.get('/api/store').get_json()['orphans'] == [
         {'symbol': 'ZZORPHAN', 'points': 1}]
@@ -4183,55 +4218,57 @@ def test_switching_reference_keeps_the_series_of_the_one_left_behind(tmp_path):
 def test_a_reference_the_offer_no_longer_holds_is_not_kept_alive(tmp_path):
     """The offer is the bound, and it is the only one that lets go (#1034).
 
-    Every other exemption follows something the owner can still move: the dial,
-    an event, a position. The consulted list followed nothing — #760 evicted on
-    an eighth consultation, and an offer of five can never produce one — so the
-    two references #1019 pulled from it each held a slot and a series for good,
-    on a name the selector cannot propose again. Switching back is a click in
-    that selector; what is not in it is not coming back.
+    A consulted row naming a ticker the selector cannot propose again held a
+    slot and a series for good; reading the list confines it to the offer, so
+    that series goes on the purge list like any other orphan.
     """
-    client, opened = _reference_and_a_real_orphan(tmp_path, symbol='PE500.PA')
+    client, opened = _reference_and_a_real_orphan(
+        tmp_path, symbol='PE500.PA', follow=False)
+    opened.execute("INSERT INTO setting (key, value) "
+                   "VALUES ('benchmark_consulted', 'PE500.PA')")
 
-    assert client.put(
-        '/api/settings', json={'benchmark_symbol': 'CW8.PA'}).status_code == 200
+    assert client.put('/api/settings',
+                      json={'benchmark_symbols': ['CW8.PA']}).status_code == 200
 
     assert ledger.consulted_benchmarks(opened) == ['CW8.PA']
     assert client.get('/api/store').get_json()['orphans'] == [
         {'symbol': 'PE500.PA', 'points': 2},
         {'symbol': 'ZZORPHAN', 'points': 1}]
-    assert client.get('/api/benchmark').get_json()['consulted'] == ['CW8.PA']
 
 
-def test_switching_back_and_forth_does_not_lengthen_the_list(tmp_path):
-    """A reference already consulted moves to the front rather than joining twice.
-
-    Otherwise four switches between two references answer with four names, and
-    the *déjà téléchargé* column reads the same entry twice.
-    """
+def test_following_again_does_not_lengthen_the_list(tmp_path):
+    """A reference already consulted moves to the front rather than joining twice."""
     client, opened = _reference_and_a_real_orphan(tmp_path)
 
-    for symbol in ['CSPX.AS', 'CW8.PA', 'CSPX.AS', 'CW8.PA']:
-        client.put('/api/settings', json={'benchmark_symbol': symbol})
+    for symbols in (['CSPX.AS'], ['CW8.PA'], ['CSPX.AS'], ['CW8.PA']):
+        client.put('/api/settings', json={'benchmark_symbols': symbols})
 
     assert ledger.consulted_benchmarks(opened) == ['CW8.PA', 'CSPX.AS']
 
 
-def test_emptying_the_field_releases_the_series_it_was_protecting(tmp_path):
-    """The removal route stays a removal route (#982), consulted list or not.
+def test_a_choice_outside_the_followed_list_or_not_ready_is_a_422(tmp_path):
+    client, _ = _reference_and_a_real_orphan(tmp_path)
 
-    Emptying the field is the only way the owner gets those years of closes off
-    their disk. A switch keeps both references; a blank forgets the one it
-    releases, or the protection would fossilise every ticker ever typed.
-    """
-    client, opened = _reference_and_a_real_orphan(tmp_path)
+    unfollowed = client.put('/api/settings',
+                            json={'benchmark_symbol': 'CSPX.AS'})
+    unfinished = client.put('/api/settings',
+                            json={'benchmark_symbol': 'CW8.PA'})
+    off_list = client.put('/api/settings',
+                          json={'benchmark_symbols': ['PE500.PA']})
 
-    assert client.put(
-        '/api/settings', json={'benchmark_symbol': ''}).status_code == 200
+    assert unfollowed.status_code == 422
+    assert unfinished.status_code == 422     # followed, history still partial
+    assert off_list.status_code == 422
 
-    assert ledger.consulted_benchmarks(opened) == []
-    assert client.get('/api/store').get_json()['orphans'] == [
-        {'symbol': 'CW8.PA', 'points': 2},
-        {'symbol': 'ZZORPHAN', 'points': 1}]
+
+def test_the_progress_read_lists_the_five_with_their_state(tmp_path):
+    client, _ = _reference_and_a_real_orphan(tmp_path)
+
+    rows = client.get('/api/benchmark/references').get_json()
+
+    assert [row['symbol'] for row in rows][:2] == ['CW8.PA', 'CSPX.AS']
+    assert rows[0]['followed'] is True and rows[0]['ready'] is False
+    assert rows[1]['followed'] is False
 
 
 def test_the_store_resource_fails_with_the_store_it_describes(tmp_path):
@@ -6327,7 +6364,7 @@ def test_the_comparison_route_gates_every_figure_on_terminality(tmp_path):
     client, _ = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS, seed=seed)
     assert client.put('/api/settings',
-                      json={'benchmark_symbol': 'CW8.PA'}).status_code == 200
+                      json={'benchmark_symbols': ['CW8.PA']}).status_code == 200
 
     body = client.get('/api/benchmark').get_json()
 
@@ -6361,7 +6398,7 @@ def test_naming_a_reference_still_adds_no_day_to_the_valuation_curve(tmp_path):
 
     client = build_client(tmp_path, events=events, seed=seed)
     assert client.put('/api/settings',
-                      json={'benchmark_symbol': 'CW8.PA'}).status_code == 200
+                      json={'benchmark_symbols': ['CW8.PA']}).status_code == 200
 
     curve = client.get(
         '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()

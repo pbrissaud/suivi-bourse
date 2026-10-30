@@ -1719,7 +1719,7 @@ def test_a_store_failure_never_takes_a_job_with_the_facts(store, mocker):
 
 def _names_a_reference(store, symbol="CW8.PA"):
     """Name a reference ticker, through the write path the settings form uses."""
-    settings_module.save(store, {"benchmark_symbol": symbol})
+    settings_module.save(store, {"benchmark_symbols": [symbol]})
 
 
 def _reference_row(store, symbol="CW8.PA"):
@@ -1801,6 +1801,31 @@ def test_a_reference_nobody_holds_is_still_walked_up_to_today(store, mocker):
     # And it asked Yahoo for the days since the series stops, not for nothing.
     assert any(end.date() >= datetime.now(timezone.utc).date() - timedelta(days=1)
                for start, end in windows)
+
+
+def test_followed_references_download_one_at_a_time_in_click_order(
+        store, mocker):
+    """#1312: the first incomplete ETF is the only one walked backwards.
+
+    A second one waits its turn, so the provider is asked for one history at a
+    time, in the order the owner turned them on. The ready ones keep their
+    forward pass, which is what keeps them current.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events",
+        events=[Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
+                      quantity=10, unit_price=150.0)])
+    settings_module.save(store, {"benchmark_symbols": ["CSPX.AS", "CW8.PA"]})
+    walked = []
+    mocker.patch.object(
+        metrics, "_fetch_historical_data",
+        side_effect=lambda symbol, *_: walked.append(symbol) or [])
+
+    metrics.backfill()
+
+    assert "CSPX.AS" in walked
+    assert "CW8.PA" not in walked
+    assert _reference_row(store, "CW8.PA") == []      # not even declared yet
 
 
 def test_a_reference_that_was_held_and_sold_keeps_its_own_first_day(store, mocker):

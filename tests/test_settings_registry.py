@@ -29,7 +29,7 @@ def test_the_registry_is_the_single_list_of_dials():
     assert [spec.key for spec in registry.SETTINGS] == [
         'regular_interval', 'backfill_interval', 'backfill_delay',
         'backfill_chunk_days', 'staleness_horizon', 'base_currency',
-        'benchmark_symbol', 'update_check',
+        'benchmark_symbol', 'benchmark_symbols', 'update_check',
     ]
     assert set(registry.BY_KEY) == {spec.key for spec in registry.SETTINGS}
 
@@ -74,7 +74,7 @@ def test_every_other_dial_has_a_default_and_it_parses():
     seeded = registry.seeded_defaults()
 
     assert set(seeded) == {spec.key for spec in registry.SETTINGS} - {
-        'base_currency', 'benchmark_symbol'}
+        'base_currency', 'benchmark_symbol', 'benchmark_symbols'}
     assert all(isinstance(registry.default_for(key), int) for key in seeded)
 
 
@@ -224,16 +224,30 @@ def test_a_new_kind_needs_its_branch_or_every_write_to_it_is_a_400():
     assert registry.validate('benchmark_symbol', ' cw8.pa ') == 'CW8.PA'
 
 
-def test_a_ticker_is_taken_as_typed_because_nothing_else_constrains_one():
-    """No grammar is invented here, and that is the decision.
+def test_a_reference_outside_the_offered_list_is_refused():
+    """Off-list is a 422 (#1312): the comparison offers its own list only."""
+    with pytest.raises(registry.InvalidSetting):
+        registry.validate('benchmark_symbol', 'WPEA.PA')
 
-    An event's symbol is stored as typed, so a shape refused on this dial
-    would refuse a reference the ledger takes as a holding. A ticker no market
-    knows is named by ``benchmark_never_priced`` instead — which also catches
-    the typo that happens to be a perfectly well-shaped ticker, and a grammar
-    never would.
-    """
-    assert registry.validate('benchmark_symbol', 'CW8.PA at Paris') == 'CW8.PA AT PARIS'
+
+def test_followed_references_are_a_list_of_offered_ones_each_once():
+    assert registry.spec_for('benchmark_symbols').kind == registry.SYMBOLS
+    assert registry.validate(
+        'benchmark_symbols', ['cspx.as', 'CW8.PA', 'CSPX.AS']) == [
+            'CSPX.AS', 'CW8.PA']
+    assert registry.validate('benchmark_symbols', []) == []
+    assert registry.validate('benchmark_symbols', None) == []
+    assert registry.stored_form('benchmark_symbols', ['CSPX.AS', 'CW8.PA']) == (
+        'CSPX.AS,CW8.PA')
+    assert registry.resolve('benchmark_symbols', 'CSPX.AS,CW8.PA') == [
+        'CSPX.AS', 'CW8.PA']
+    assert registry.resolve('benchmark_symbols', None) == []
+
+
+@pytest.mark.parametrize('value', ['CW8.PA', ['WPEA.PA'], [3], ['CW8.PA,C40.PA']])
+def test_followed_references_refuse_what_is_not_a_list_of_offered_ones(value):
+    with pytest.raises(registry.InvalidSetting):
+        registry.validate('benchmark_symbols', value)
 
 
 @pytest.mark.parametrize('value', [None, '', '   '])

@@ -343,7 +343,7 @@ def test_a_named_reference_is_priced_and_the_curve_never_sees_it(
     before = client.get("/api/positions/history").get_json()["points"]
     assert before, "the curve is empty, so what follows would compare nothing"
 
-    settings.save(opened, {"benchmark_symbol": BENCHMARK})
+    settings.save(opened, {"benchmark_symbols": [BENCHMARK]})
     sb.backfill()
 
     # 1. The series is written, for a symbol no event names.

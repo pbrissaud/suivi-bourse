@@ -22,6 +22,16 @@ NOW = datetime(2024, 3, 1, 18, 0, tzinfo=UTC)
 REFERENCE = 'CW8.PA'
 
 
+def _follow(store, *symbols):
+    """Follow the references, and display the first: what a PUT leaves behind."""
+    symbols = symbols or (REFERENCE,)
+    for key, value in (('benchmark_symbol', symbols[0]),
+                       ('benchmark_symbols', ','.join(symbols))):
+        store.execute("INSERT INTO setting (key, value) VALUES (?, ?) "
+                      "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                      [key, value])
+
+
 def _snapshot(events, accounts=('pea',)):
     return main.ConfigSnapshot(
         shares=[], events=list(events),
@@ -86,8 +96,7 @@ def _invest(day, account, amount, symbol='AAPL'):
 @pytest.fixture
 def named(store):
     """A store with the reference named, quoted and terminal."""
-    store.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', ?)", [REFERENCE])
+    _follow(store)
     _quote_the_reference(store)
     return store
 
@@ -116,8 +125,7 @@ def test_a_reference_still_backfilling_publishes_a_bar_and_no_figure(store):
     it repairs itself an hour later. The figure and the right to display it
     ride on one payload so the two cannot disagree between two reads.
     """
-    store.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', ?)", [REFERENCE])
+    _follow(store)
     store.execute('INSERT INTO symbol (symbol) VALUES (?)', [REFERENCE])
     quotes.record_history(store, REFERENCE, [
         {'timestamp': datetime(2024, 2, 1, tzinfo=UTC), 'price': 100.0,
@@ -129,7 +137,9 @@ def test_a_reference_still_backfilling_publishes_a_bar_and_no_figure(store):
 
     assert payload['state'] == benchmark_view.REBUILDING
     assert payload['rebuild']['symbol'] == REFERENCE
-    assert payload['rebuild']['target'] == '2009-06-16'   # the fund's own
+    # The later of the fund's inception (2009-06-16) and the ledger's first day:
+    # the backfill stops there, so a bar aimed further back never fills.
+    assert payload['rebuild']['target'] == '2024-01-01'
     assert 'gap_gross' not in payload
     assert 'reason' not in payload
 
@@ -184,8 +194,7 @@ def test_written_days_with_nothing_held_name_that_and_not_the_ledger(named):
 
 def test_an_account_seeded_on_a_close_with_no_rate_says_so(store):
     """Path 2c: the only account's seed day carries an unconverted close."""
-    store.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', ?)", [REFERENCE])
+    _follow(store)
     _quote_the_reference(store)
     quotes.record_history(store, REFERENCE, [
         {'timestamp': datetime(2024, 1, 2, tzinfo=UTC), 'price': 100.0,
@@ -395,8 +404,7 @@ def test_a_reference_a_day_behind_ends_the_comparison_on_its_last_close(
     against an index standing still — so the comparison ends on the last day
     both sides were measured, and the period printed under it says so.
     """
-    store.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', ?)", [REFERENCE])
+    _follow(store)
     _quote_the_reference(store, last='2024-02-28')
     _write_curve(store, 'pea', last='2024-02-28', value=1000.0)
     _write_curve(store, 'pea', first='2024-02-29', last='2024-02-29',
@@ -421,8 +429,7 @@ def test_a_trailing_close_awaiting_its_rate_still_says_why_it_ended(store):
     closes alone, the window would end the evening before it and the period
     would read as complete; reaching it, the replay names what it waits for.
     """
-    store.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', ?)", [REFERENCE])
+    _follow(store)
     _quote_the_reference(store, last='2024-02-28')
     quotes.record_history(store, REFERENCE, [
         {'timestamp': datetime(2024, 2, 29, tzinfo=UTC), 'price': 100.0,
@@ -632,34 +639,97 @@ def test_the_fund_is_named_when_the_portfolio_predates_it(named):
     assert payload['covered_from'] == '2024-01-01'
 
 
-def test_an_off_list_reference_gets_no_progress_bar_it_cannot_honour(named):
-    """`PUT /api/settings` stays open, so the screen meets tickers off the list.
+def test_nothing_followed_is_no_reference_even_with_a_displayed_choice_stored(
+        store):
+    """`NO_REFERENCE` means nothing is followed: the choice alone is not enough."""
+    store.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbol', ?)", [REFERENCE])
 
-    `oldest_window_tried` is where the backward pass has **got to**, not where
-    it is going: it moves with the series, so a ratio taken against it reads
-    full from the first chunk and stays there. An owner would watch a finished
-    bar wait for a figure that is hours away. Better no bar than a lying one.
+    payload = benchmark_view.comparison(store, _snapshot([]), NOW)
 
-    Named `WPEA.PA` on purpose: #1019 withdrew it from the list, so an install
-    that had already chosen it lands here. Nothing breaks — the reference is
-    still rendered, and only the bar's target goes missing.
-    """
-    named.execute("INSERT INTO setting (key, value) VALUES "
-                  "('benchmark_symbol', 'WPEA.PA') "
-                  "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-    named.execute("INSERT INTO symbol (symbol) VALUES ('WPEA.PA')")
-    _quote_the_reference(named, first='2024-02-20', last='2024-02-29',
-                         symbol='WPEA.PA')
+    assert payload['state'] == benchmark_view.NO_REFERENCE
+    assert payload['followed'] == [] and payload['ready'] == []
+
+
+def test_the_page_falls_back_to_the_first_ready_followed_reference(named):
+    """The choice that is not ready (or not followed) is not displayed."""
+    _follow(named, 'CSPX.AS', REFERENCE)       # chosen: CSPX.AS, never quoted
     _write_curve(named, 'pea')
 
     payload = benchmark_view.comparison(
         named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
 
-    assert payload['index'] is None          # off the list, and rendered anyway
+    assert payload['reference'] == REFERENCE
+    assert payload['followed'] == ['CSPX.AS', REFERENCE]
+    assert payload['ready'] == [REFERENCE]
+    assert payload['state'] == benchmark_view.READY
+
+
+def test_followed_with_none_ready_names_the_one_being_downloaded(store):
+    _follow(store, 'CSPX.AS', REFERENCE)
+
+    payload = benchmark_view.comparison(
+        store, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
     assert payload['state'] == benchmark_view.REBUILDING
-    assert payload['rebuild']['target'] is None
-    assert payload['rebuild']['ratio'] is None
-    assert payload['rebuild']['reached'] == '2024-02-20'
+    assert payload['reference'] == 'CSPX.AS'
+    assert payload['ready'] == []
+
+
+def test_followed_on_an_empty_ledger_has_nothing_to_compare(store):
+    _follow(store)
+
+    payload = benchmark_view.comparison(store, _snapshot([]), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NO_EVENTS
+
+
+def test_complete_is_the_comparison_gate_and_not_a_full_ratio(named):
+    """A ledger starting in 2024 completes a fund quoted since 2009."""
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
+
+    assert benchmark_view.ready(named, snapshot, REFERENCE, NOW) is True
+    assert benchmark_view.ready(named, snapshot, 'CSPX.AS', NOW) is False
+    # And not before the splits were read, even on a terminal, priced series.
+    named.execute('UPDATE symbol_quote SET splits_read_at = NULL '
+                  'WHERE symbol = ?', [REFERENCE])
+    assert benchmark_view.ready(named, snapshot, REFERENCE, NOW) is False
+
+
+def test_downloads_run_one_at_a_time_in_the_order_they_were_turned_on(named):
+    _follow(named, 'CSPX.AS', REFERENCE, 'C40.PA')
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
+
+    complete, downloading = benchmark_view.downloads(named, snapshot, NOW)
+
+    assert complete == [REFERENCE]
+    assert downloading == 'CSPX.AS'      # not C40.PA, which waits its turn
+
+
+def test_the_references_say_why_an_incomplete_one_is_not_moving(named):
+    _follow(named, 'CSPX.AS', REFERENCE, 'C40.PA')
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
+
+    rows = {row['symbol']: row
+            for row in benchmark_view.references(named, snapshot, NOW)}
+
+    assert list(rows) == ['CW8.PA', 'CSPX.AS', 'MSE.PA', 'C40.PA', 'AEEM.PA']
+    assert rows[REFERENCE]['ready'] and rows[REFERENCE]['waiting'] is None
+    assert rows['CSPX.AS']['waiting'] is None and not rows['CSPX.AS']['ready']
+    assert rows['C40.PA']['waiting'] == 'queued'
+    assert rows['C40.PA']['after'] == 'CSPX.AS'
+    assert rows['MSE.PA']['followed'] is False
+    assert rows['MSE.PA']['waiting'] is None
+
+
+def test_an_empty_ledger_downloads_nothing_and_says_so(store):
+    _follow(store)
+
+    rows = benchmark_view.references(store, _snapshot([]), NOW)
+
+    assert rows[0]['waiting'] == benchmark_view.NO_EVENTS
+    assert rows[0]['ratio'] is None
 
 
 def test_a_withdrawal_one_account_could_not_fund_is_funded_by_the_others(
@@ -923,3 +993,21 @@ def test_an_account_opened_on_a_closed_market_enters_at_its_own_price(named):
         rows['pea']['reference_value'] + 500.0)
     assert sum(row['gap_gross'] for row in payload['per_account']) == (
         pytest.approx(payload['gap_gross']))
+
+
+def test_an_unfollowed_series_is_kept_until_the_owner_stops_keeping_it(named):
+    from application import ledger
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
+    named.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbols', '')  ON CONFLICT (key) "
+                  "DO UPDATE SET value = excluded.value")
+    ledger.record_consulted_benchmark(named, REFERENCE)
+
+    row = benchmark_view.references(named, snapshot, NOW)[0]
+    assert (row['followed'], row['kept'], row['freed']) == (False, True, False)
+
+    ledger.forget_consulted_benchmark(named, REFERENCE)
+    row = benchmark_view.references(named, snapshot, NOW)[0]
+    assert (row['kept'], row['freed']) == (False, True)
+    # Nothing downloaded, nothing to keep or to release.
+    assert benchmark_view.references(named, snapshot, NOW)[1]['freed'] is False

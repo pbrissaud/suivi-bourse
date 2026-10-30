@@ -5,6 +5,7 @@ module above the store is declared here, so the store imports none of them.
 """
 from logfmt_logger import getLogger
 
+from application import benchmarks
 from application import entries
 from application import store_steps
 
@@ -64,6 +65,45 @@ def _add_agent_thinking(connection) -> None:
                            "VARCHAR DEFAULT 'low'")
 
 
+def _follow_the_references(connection) -> None:
+    """Follow what the install already compares against (#1312).
+
+    The displayed ``benchmark_symbol`` first, then every ``benchmark_consulted``
+    reference, newest first: the series the owner already holds, and so the
+    ones that cost nothing to offer. An off-list ``benchmark_symbol`` (a ticker
+    typed through ``PUT /api/settings`` before the list closed) is refused now
+    and cleared here, with a line to say so. A step is a one-way, idempotent
+    write: a store that already holds ``benchmark_symbols`` keeps its own, and
+    one that compared against nothing gets no row.
+    """
+    def stored(key):
+        row = connection.execute(
+            'SELECT value FROM setting WHERE key = ?', [key]).fetchone()
+        return row[0] if row and row[0] else ''
+
+    if connection.execute(
+            "SELECT 1 FROM setting WHERE key = 'benchmark_symbols'").fetchone():
+        return
+    chosen = stored('benchmark_symbol').strip().upper()
+    if chosen and chosen not in benchmarks.BY_SYMBOL:
+        logger.warning(f'Cleared the off-list reference {chosen}: the '
+                       f'comparison now offers its own list only')
+        connection.execute(
+            "UPDATE setting SET value = '' WHERE key = 'benchmark_symbol'")
+        chosen = ''
+    followed = []
+    for symbol in [chosen, *stored('benchmark_consulted').split(',')]:
+        if symbol in benchmarks.BY_SYMBOL and symbol not in followed:
+            followed.append(symbol)
+    if not followed:
+        return
+    for key in ('benchmark_symbols', 'benchmark_consulted'):
+        connection.execute(
+            'INSERT INTO setting (key, value) VALUES (?, ?) '
+            'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+            [key, ','.join(followed)])
+
+
 #: Every step, oldest first, under the names stores in the wild already carry.
 #: The rules of :data:`store_steps.STEPS` hold over this list as a whole: a name is an
 #: identity forever, and a new step — the store's own included — is appended
@@ -73,6 +113,7 @@ STEPS = store_steps.STEPS + (
     ('add_event_amounts_currency', store_steps._add_event_amounts_currency),
     ('add_agent_model_name', _add_agent_model_name),
     ('add_agent_thinking', _add_agent_thinking),
+    ('follow_the_references', _follow_the_references),
 )
 
 __all__ = ['STEPS']

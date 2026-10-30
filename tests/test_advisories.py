@@ -567,7 +567,7 @@ def _tracked(opened, symbol: str = BENCHMARK) -> None:
     against a hand-inserted ledger would be read against a shape the product
     cannot produce.
     """
-    settings.save(opened, {'benchmark_symbol': symbol})
+    settings.save(opened, {'benchmark_symbols': [symbol]})
     entries.declare_symbol(opened, symbol)
     _account(opened, 'main', 'Main')
     entries.create(opened, Event(LEDGER_ORIGIN, EventType.DEPOSIT,
@@ -661,7 +661,7 @@ def test_an_empty_ledger_tracks_no_reference_and_accuses_none(store):
     The same silence ``ConfigSnapshot.tracked_windows`` keeps on an empty
     ledger, reached here by the ``COALESCE`` falling to ``NULL``.
     """
-    settings.save(store, {'benchmark_symbol': BENCHMARK})
+    settings.save(store, {'benchmark_symbols': [BENCHMARK]})
     entries.declare_symbol(store, BENCHMARK)
     quotes.record_window_tried(store, BENCHMARK, date(2020, 1, 1))
 

@@ -10,6 +10,7 @@ intention of writing as the writing itself.
 
 import pytest
 
+from application import ledger
 from application import settings
 from application import settings_registry
 
@@ -219,9 +220,11 @@ def test_the_required_mark_travels_with_the_dial_it_belongs_to(store):
 # --------------------------------------------------------------------- #
 
 def test_a_benchmark_is_named_like_any_other_dial(store):
-    changes = settings.save(store, {'benchmark_symbol': 'cw8.pa'})
+    changes = settings.save(store, {'benchmark_symbols': ['CW8.PA'],
+                                    'benchmark_symbol': 'cw8.pa'})
 
     assert [(c.key, c.before, c.after) for c in changes] == [
+        ('benchmark_symbols', [], ['CW8.PA']),
         ('benchmark_symbol', None, 'CW8.PA')]
     assert settings.read_all(store)['benchmark_symbol'] == 'CW8.PA'
 
@@ -234,7 +237,8 @@ def test_emptying_the_field_removes_the_benchmark_through_the_write_path(store):
     the round trip through the one write route there is lands back on
     *unanswered*, and ``describe`` says so to the form.
     """
-    settings.save(store, {'benchmark_symbol': 'CW8.PA'})
+    settings.save(store, {'benchmark_symbols': ['CW8.PA'],
+                          'benchmark_symbol': 'CW8.PA'})
 
     changes = settings.save(store, {'benchmark_symbol': ''})
 
@@ -273,3 +277,43 @@ def test_the_currency_cannot_be_emptied_the_way_the_benchmark_can(store):
         settings.save(store, {'base_currency': ''})
 
     assert settings.read_all(store)['base_currency'] == 'EUR'
+
+
+# --------------------------------------------------------------------- #
+# The followed references (issue #1312)
+# --------------------------------------------------------------------- #
+
+def test_the_displayed_reference_must_be_followed(store):
+    with pytest.raises(settings_registry.InvalidSetting):
+        settings.save(store, {'benchmark_symbol': 'CW8.PA'})
+
+
+def test_the_displayed_reference_must_be_ready_when_the_gate_is_given(store):
+    settings.save(store, {'benchmark_symbols': ['CW8.PA', 'C40.PA']})
+
+    with pytest.raises(settings_registry.InvalidSetting):
+        settings.save(store, {'benchmark_symbol': 'C40.PA'},
+                      is_ready=lambda symbol: symbol == 'CW8.PA')
+    settings.save(store, {'benchmark_symbol': 'CW8.PA'},
+                  is_ready=lambda symbol: symbol == 'CW8.PA')
+    assert settings.read_all(store)['benchmark_symbol'] == 'CW8.PA'
+
+
+def test_unfollowing_the_displayed_reference_clears_the_choice_and_keeps_its_series(
+        store):
+    settings.save(store, {'benchmark_symbols': ['CW8.PA', 'C40.PA'],
+                          'benchmark_symbol': 'C40.PA'})
+
+    changes = settings.save(store, {'benchmark_symbols': ['CW8.PA']})
+
+    assert {c.key: c.after for c in changes} == {
+        'benchmark_symbols': ['CW8.PA'], 'benchmark_symbol': None}
+    assert settings.read_all(store)['benchmark_symbol'] is None
+    # Unfollowing never forgets: the series is still protected from the purge.
+    assert ledger.consulted_benchmarks(store) == ['CW8.PA', 'C40.PA']
+
+
+def test_following_records_the_etf_as_consulted_in_the_same_write(store):
+    settings.save(store, {'benchmark_symbols': ['CSPX.AS']})
+
+    assert ledger.consulted_benchmarks(store) == ['CSPX.AS']

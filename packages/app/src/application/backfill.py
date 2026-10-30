@@ -4,6 +4,7 @@ import time
 from datetime import date, datetime, timezone, timedelta, time as time_of_day
 from typing import Dict, List, Optional, Set, Tuple
 
+from application import benchmark_view
 from application import carrying
 from application import entries
 from application import fx
@@ -93,8 +94,13 @@ class BackfillWorkload:
         # the *ledger* and is cached on it, so a reference named between two
         # cycles would not be seen until an event moved. Its effect is
         # `next_cycle`, and this is that cycle.
-        benchmark = self.facade.config_manager.store.setting('benchmark_symbol')
-        windows = snapshot.tracked_windows(benchmark)
+        # The followed ETFs (#1312), one download at a time: every complete one
+        # keeps its forward pass, and only the first incomplete one is walked
+        # backwards, in the order the owner turned them on.
+        complete, downloading = benchmark_view.downloads(
+            self.facade.config_manager.store, snapshot, now)
+        references = complete + ([downloading] if downloading else [])
+        windows = snapshot.tracked_windows(*references)
 
         self.facade._collapse_to_ladder(now)
 
@@ -107,18 +113,19 @@ class BackfillWorkload:
 
         held = carrying.held_symbols(snapshot.shares)
 
-        if benchmark:
+        if references:
             # A quote references a `symbol` row, and no event will ever create
-            # this one. Idempotent, so it also converges from a restored store.
+            # these. Idempotent, so it also converges from a restored store.
             with self.facade.config_manager.writing() as opened:
-                entries.declare_symbol(opened, benchmark)
+                for reference in references:
+                    entries.declare_symbol(opened, reference)
 
         repaired_count = 0
 
         for symbol in sorted(windows):
             written, repaired = self.facade._backfill_symbol(
                 symbol, windows[symbol],
-                symbol in held or symbol == benchmark, now)
+                symbol in held or symbol in references, now)
             backfilled_count += written
             repaired_count += repaired
 
