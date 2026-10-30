@@ -928,6 +928,7 @@ source = { editable = "packages/market" }
 dependencies = [
     { name = "core" },
     { name = "logfmt-logger" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "urllib3" },
     { name = "yfinance" },
@@ -937,6 +938,7 @@ dependencies = [
 requires-dist = [
     { name = "core", editable = "packages/core" },
     { name = "logfmt-logger", specifier = "==0.1.2" },
+    { name = "numpy", specifier = ">=2.0.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "urllib3", specifier = "==2.8.0" },
     { name = "yfinance", specifier = "==1.7.0" },

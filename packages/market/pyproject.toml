@@ -8,6 +8,7 @@ dependencies = [
     "core",
     "yfinance==1.7.0",
     "pandas>=2.0.0",       # NaN-safe close prices (also required by yfinance)
+    "numpy>=2.0.0",        # float32 closes read back as quoted (#1458)
     "urllib3==2.8.0",
     "logfmt-logger==0.1.2",
 ]

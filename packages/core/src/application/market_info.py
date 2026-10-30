@@ -2,6 +2,7 @@
 
 import math
 from datetime import date
+from decimal import Decimal
 from typing import Mapping, MutableMapping, Optional, Sequence
 
 
@@ -140,6 +141,10 @@ def as_printed(prices: Sequence[MutableMapping],
         if price is None:
             continue
         day = point['timestamp'].date()
-        point['price'] = price * math.prod(
-            ratio for split_day, ratio in ratios if split_day > day)
+        # In decimal, from each number's shortest repr: in binary 0.3 × 3 is
+        # 0.8999999999999999, the kind of tail #1458 took out of the closes.
+        point['price'] = float(Decimal(repr(price)) * math.prod(
+            (Decimal(repr(ratio))
+             for split_day, ratio in ratios if split_day > day),
+            start=Decimal(1)))
     return prices
