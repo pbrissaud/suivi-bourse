@@ -139,6 +139,8 @@ interface Drag {
   shown: Placement[]
   /** The spans and widths the drag began with, frozen until the drop. */
   frozen: Map<BlockId, { span: 1 | 2; width: Width }>
+  /** The tracks the drag began with: a window crossing 1 600 px mid-drag must not regroup the rows under it. */
+  columns: 1 | 2 | 3
 }
 
 export function DashboardGrid({
@@ -318,7 +320,7 @@ export function DashboardGrid({
       // without this, a half swapped away could not be brought home.
       const home = order.indexOf(over) === ids(now.start).indexOf(active)
       const side = order.indexOf(over) < order.indexOf(active) ? 'before' : 'after'
-      next = home ? now.start : (dropBlock(now.start, active, over, side, columns) ?? now.start)
+      next = home ? now.start : (dropBlock(now.start, active, over, side, now.columns) ?? now.start)
       outcomes.current.set(event, next)
     }
     return next
@@ -388,6 +390,7 @@ export function DashboardGrid({
 
   function onDragStart() {
     track({
+      columns,
       start: placements,
       shown: placements,
       frozen: new Map(
@@ -410,7 +413,8 @@ export function DashboardGrid({
     track(null)
     const id = operation.source?.id as BlockId | undefined
     // The grid went under 768 px, or the session ended, under the pointer.
-    if (now === null || id === undefined || !draggable) return
+    // Or the window crossed 1 600 px, and the rows it was dragged through are gone.
+    if (now === null || id === undefined || !draggable || now.columns !== columns) return
     const handle: FocusTarget = { kind: 'handle', id }
     if (canceled) {
       setFocus(handle)

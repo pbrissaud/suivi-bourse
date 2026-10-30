@@ -247,6 +247,34 @@ describe('the movers across three tracks (#1325)', () => {
   })
 })
 
+describe('the movers just under three tracks, and at half width (#1325)', () => {
+  const lines = Array.from({ length: 20 }, (_, index) =>
+    aMover({ symbol: `Z${index}`, name: `Ligne ${index}`, change_pct: (index + 1) / 100 }),
+  )
+
+  it.each([
+    ['full', 1599, 10, 'columns-2'],
+    ['half', 1920, 5, null],
+  ] as const)('keeps a %s card at %i px to %i lines', async (width, viewport, count, columns) => {
+    setViewportWidth(viewport)
+    server.use(
+      layoutOf([{ id: 'movers', width, hidden: false }]),
+      http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload(lines))),
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(lines.map(({ symbol, name }) => aPosition({ symbol, name }))),
+        ),
+      ),
+    )
+    renderApp()
+    const list = await screen.findByRole('list', { name: 'Mouvements' })
+
+    expect(within(list).getAllByRole('listitem')).toHaveLength(count)
+    if (columns !== null) expect(list).toHaveClass(columns)
+    else expect(list).not.toHaveClass('columns-2', 'columns-3')
+  })
+})
+
 describe('edit mode', () => {
   // The arrangement these cases move cards through: the old default, saved.
   beforeEach(() => {

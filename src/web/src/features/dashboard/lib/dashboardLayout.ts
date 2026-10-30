@@ -256,8 +256,8 @@ function rowsOf<Id extends string>(
 /**
  * *Monter* / *Descendre*, by row (Paul, 11/10/2026): a full card jumps a whole
  * row, so a row of halves (a pair, or a triple at three columns) moves as one
- * and is never split by a card passing through; a half swaps with the previous or next half in reading order,
- * skipping the full cards. Hidden cards keep their slots. `null` when there is
+ * and is never split by a card passing through; a half swaps with the previous
+ * or next half in reading order, skipping the full cards. Hidden cards keep their slots. `null` when there is
  * nowhere to go — the menu disables the item.
  */
 export function moveBlock<Id extends string>(

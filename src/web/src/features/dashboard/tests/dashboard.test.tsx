@@ -1834,7 +1834,12 @@ describe('the allocation card (#1206)', () => {
     const legend = within(card).getByRole('list', { name: 'Répartition' })
     const slices = within(legend).getAllByRole('listitem').length
 
-    expect(legend).toHaveClass('grid-cols-1', 'xl:grid-cols-2', '3xl:grid-cols-3')
+    expect(legend).toHaveClass(
+      'grid-cols-1',
+      'xl:grid-cols-2',
+      '3xl:grid-cols-3',
+      '3xl:[grid-template-rows:repeat(var(--legend-rows-three),auto)]',
+    )
     expect(legend.style.getPropertyValue('--legend-rows-three')).toBe(String(Math.ceil(slices / 3)))
   })
 
