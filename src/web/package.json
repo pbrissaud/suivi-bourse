@@ -50,7 +50,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "axe-core": "^4.14.0",
     "jsdom": "^30.0.1",
-    "json-schema-to-typescript": "^15.0.4",
+    "json-schema-to-typescript": "^16.0.0",
     "msw": "^3.0.0",
     "shadcn": "^4.21.5",
     "tailwindcss": "^4.3.3",
