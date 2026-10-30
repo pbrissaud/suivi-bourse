@@ -3546,14 +3546,13 @@ def test_the_accounts_and_their_positions_are_reachable_over_http(tmp_path):
     body = response.get_data(as_text=True)
     assert body.splitlines()[0].split(',') == \
         list(events_export.PORTFOLIO_COLUMNS)
-    # The declared account with its holding under it, and the seeded row that
-    # every install owns whether or not anything was ever put in it.
+    # The declared account with its holding under it: the app's own list, so
+    # the seeded row nobody uses is not there (#1373).
     rows = list(csv.DictReader(io.StringIO(body)))
     assert [(row['account'], row['symbol']) for row in rows] == [
-        ('default', ''), ('pea', ''), ('pea', 'AAPL'),
+        ('pea', ''), ('pea', 'AAPL'),
     ]
-    assert rows[1]['account_label'] == 'PEA Boursorama'
-    assert rows[1]['cash_balance'] != '' and rows[2]['cash_balance'] == ''
+    assert rows[0]['account_label'] == 'PEA Boursorama'
     opened.close()
 
 
@@ -3602,29 +3601,59 @@ def test_the_report_does_not_resurrect_the_accounts_declaration(tmp_path):
     opened.close()
 
 
-def test_the_report_reads_the_store_and_not_the_published_snapshot(tmp_path):
-    """A backup is of what is stored, and so is the report beside it (#658).
+def test_the_report_names_the_accounts_the_app_names(tmp_path):
+    """The file and ``/api/accounts`` share one list (#1373, was #658).
 
-    The two hold the same rows on the common path and part exactly where it
-    matters: a snapshot the validator refused leaves the previous one standing,
-    so a file taken from it would hand back a portfolio from before the last
-    write. The discriminator is written here rather than described — an account
-    is declared **in the store** and nothing is republished, so
-    ``GET /api/accounts``, which reads the publication, has not heard of it while
-    the file already names it.
+    An account declared **in the store** and not yet published is in neither:
+    the report reads the app's list, so the two cannot part.
     """
     client, opened = build_client_and_store(
         tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
 
     accounts_module.create_account(opened, 'cto', 'Compte-titres')
 
-    served = client.get('/api/accounts').get_json()
-    assert 'cto' not in [row['id'] for row in served['accounts']]
-
+    served = [row['id'] for row in client.get('/api/accounts').get_json()['accounts']]
     body = client.get('/api/export/portfolio.csv').get_data(as_text=True)
     rows = list(csv.DictReader(io.StringIO(body)))
-    assert ('cto', 'Compte-titres') in [
-        (row['account'], row['account_label']) for row in rows]
+    assert [row['account'] for row in rows if not row['symbol']] == served
+    opened.close()
+
+
+def test_the_report_states_the_figures_the_app_states(tmp_path):
+    """A priced GRANT counts, a future DEPOSIT does not — in the file too (#1373)."""
+    events = (
+        "date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes\n"
+        "2026-01-02,DEPOSIT,pea,,,,,,9500,\n"
+        "2026-02-02,GRANT,pea,AIR.PA,Airbus,1,204.47,,,\n"
+        "2026-01-02,DEPOSIT,cto,,,,,,1000,\n"
+        "2027-12-31,DEPOSIT,cto,,,,,,1,\n"
+    )
+    def seed(opened):
+        seed_quote(opened, 'AIR.PA', 210.0, currency='EUR',
+                   at=datetime.now(timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client, opened = build_client_and_store(
+        tmp_path, accounts="id,type,label\npea,PEA,PEA\ncto,CTO,CTO\n",
+        events=events, seed=seed)
+    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+
+    served = {row['id']: row
+              for row in client.get('/api/accounts').get_json()['accounts']}
+    body = client.get('/api/export/portfolio.csv').get_data(as_text=True)
+    filed = {row['account']: row for row in csv.DictReader(io.StringIO(body))
+             if not row['symbol']}
+
+    assert float(filed['pea']['net_contributed']) == pytest.approx(9704.47)
+    assert float(filed['cto']['cash_balance']) == pytest.approx(1000)
+    assert float(filed['cto']['net_contributed']) == pytest.approx(1000)
+    for account, row in filed.items():
+        for column in ('cash_balance', 'net_contributed'):
+            assert float(row[column]) == pytest.approx(served[account][column])
+        assert row['as_of'] == served[account]['as_of']
     opened.close()
 
 

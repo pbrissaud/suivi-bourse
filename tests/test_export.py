@@ -17,20 +17,23 @@ are the same ledger.
 import csv
 import io
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
+from conftest import PerfConfigManager
+
+from application import account_facts
 from application import accounts as accounts_module
 from application import entries
 from application import ledger
 from application import main
-from application import positions as positions_module
 from application import settings_registry
 from application import workloads
 from application import store as store_module
 from application.events import export as events_export
 from application.events.loader import BASE_CURRENCY_COLUMN, EventLoader, EventLoaderError
-from application.events.schemas import Event, EventType
+from application.events.schemas import Account, Event, EventType
 from application.store_reads import PortfolioReader
 
 #: A ledger with something of every shape in it: two accounts, a valued grant
@@ -141,16 +144,22 @@ def export_of(opened):
 
 
 def portfolio_of(opened):
-    """The accounts-and-positions file, by the route's own three reads (#836).
+    """The accounts-and-positions file, by the route's own reads (#836, #1373).
 
-    All three are queries on the open store and none of them is the published
-    snapshot, which is the criterion — a backup, and a report beside it, are of
-    what is *stored*.
+    The accounts are the app's list and their figures the **performance
+    cache's** newest row, which is what ``/api/accounts`` reads. The pass is
+    driven here because the install only publishes: nothing has run it yet.
     """
+    workloads_ = workloads.Workloads(PerfConfigManager(opened))
+    workloads_.base_currency = 'EUR'
+    workloads_.update_account_metrics()
+    reader = PortfolioReader(opened)
+    snapshot = SimpleNamespace(
+        accounts=accounts_module.declared_portfolio(opened))
     return events_export.render_portfolio(
-        accounts_module.read_accounts(opened),
-        positions_module.read_account_states(opened),
-        PortfolioReader(opened).positions(),
+        account_facts.declaration(opened, snapshot),
+        {row['account']: row for row in reader.latest_account_metrics()},
+        reader.positions(),
         opened.setting('base_currency'))
 
 
@@ -785,7 +794,6 @@ def test_the_report_states_each_account_then_the_positions_under_it(tmp_path):
 
     assert [(row['account'], row['symbol']) for row in rows] == [
         ('cto', ''), ('cto', 'MC.PA'),
-        ('default', ''),
         ('pea', ''), ('pea', 'AI.PA'),
     ]
 
@@ -835,22 +843,92 @@ def test_a_figure_appears_once_and_a_name_repeats(tmp_path):
     assert account['quantity'] == '' and account['market_value'] == ''
 
 
-def test_an_account_with_no_cash_ledger_has_empty_cells_never_zeros(tmp_path):
-    """``0.00`` and *no cash has ever moved here* are two states.
+def test_an_account_with_no_metrics_row_has_empty_cells_never_zeros(tmp_path):
+    """``0.00`` and *nothing has been computed here* are two states.
 
     The seeded ``default`` account is the one every install owns and nobody has
-    used, so the store holds no ``account_state`` row for it — and the file says
-    so with an empty cell rather than with a balance of nothing.
+    used, so the performance cache holds no row for it — and the file says so
+    with empty cells rather than with a balance of nothing (#1373).
     """
-    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
-                                         'accounts.csv': _ACCOUNTS},
-                        currency='EUR')
-    rows = {(row['account'], row['symbol']): row
-            for row in rows_of(portfolio_of(opened))}
+    opened = empty_store(tmp_path / 'a')
+    rows = rows_of(portfolio_of(opened))
     opened.close()
 
-    assert rows[('default', '')]['cash_balance'] == ''
-    assert rows[('default', '')]['net_contributed'] == ''
+    assert rows[0]['account'] == 'default'
+    assert rows[0]['as_of'] == ''
+    assert rows[0]['cash_balance'] == ''
+    assert rows[0]['net_contributed'] == ''
+
+
+def test_a_missing_or_null_figure_is_an_empty_cell():
+    """No row, or a row whose field is ``NULL``: the matching cells are empty."""
+    text = events_export.render_portfolio(
+        [Account(id='pea'), Account(id='cto')],
+        {'cto': {'day': date(2026, 1, 5), 'cash_balance': None,
+                 'net_contributed': 12.5}},
+        [], 'EUR')
+
+    rows = {row['account']: row for row in rows_of(text)}
+    assert (rows['pea']['as_of'], rows['pea']['cash_balance'],
+            rows['pea']['net_contributed']) == ('', '', '')
+    assert (rows['cto']['as_of'], rows['cto']['cash_balance'],
+            rows['cto']['net_contributed']) == ('2026-01-05', '', '12.5')
+
+
+def test_the_account_row_carries_the_metrics_row_and_its_day():
+    """``as_of`` follows the label, and the figures are the cache's own."""
+    text = events_export.render_portfolio(
+        [Account(id='pea')],
+        {'pea': {'day': date(2026, 2, 3), 'cash_balance': 9500.0,
+                 'net_contributed': 9704.47}},
+        [{'account': 'pea', 'symbol': 'AIR.PA', 'quantity': 1.0,
+          'cost_basis': 204.47, 'price': 204.47}],
+        'EUR')
+
+    header = text.splitlines()[0].split(',')
+    assert header[:3] == ['account', 'account_label', 'as_of']
+    account, position = rows_of(text)
+    assert (account['as_of'], account['cash_balance'],
+            account['net_contributed']) == ('2026-02-03', '9500.0', '9704.47')
+    assert position['as_of'] == ''
+
+
+def test_what_the_export_computes_is_rounded_and_what_it_stores_is_not():
+    """``market_value`` to the cent, ``unit_cost`` to four places (#1373)."""
+    text = events_export.render_portfolio(
+        [Account(id='pea')], {},
+        [{'account': 'pea', 'symbol': 'AI.PA', 'quantity': 3.0,
+          'cost_basis': 100.0, 'price': 173.82000732421875}],
+        'EUR')
+
+    (_, held) = rows_of(text)
+    assert held['market_value'] == '521.46'
+    assert held['unit_cost'] == '33.3333'
+    assert held['price'] == '173.82000732421875'
+    assert held['cost_basis'] == '100.0'
+
+
+def test_with_declared_accounts_default_is_listed_only_if_it_holds_positions(
+        tmp_path):
+    """The app's list, plus an undeclared id **only** where it holds something."""
+    declared = [Account(id='pea')]
+    held = [{'account': 'ghost', 'symbol': 'AI.PA', 'quantity': 1.0}]
+
+    assert [row['account'] for row in rows_of(
+        events_export.render_portfolio(declared, {}, [], 'EUR'))] == ['pea']
+    assert [(row['account'], row['symbol']) for row in rows_of(
+        events_export.render_portfolio(declared, {}, held, 'EUR'))] == [
+        ('ghost', ''), ('ghost', 'AI.PA'), ('pea', '')]
+
+
+def test_with_nothing_declared_the_default_row_has_no_label(tmp_path):
+    """The seeded English label is not a name anybody gave it."""
+    opened = empty_store(tmp_path / 'a')
+    rows = rows_of(portfolio_of(opened))
+    opened.close()
+
+    assert [(row['account'], row['account_label']) for row in rows] == [
+        ('default', '')]
 
 
 def test_the_valuation_is_the_quantity_at_the_observed_price(tmp_path):

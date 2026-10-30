@@ -73,10 +73,18 @@ def test_a_replay_writes_the_position_row(store, tmp_path):
     }
 
 
+def _account_states(store):
+    """What the replay wrote to ``account_state``, keyed by account."""
+    return {account: CashState(cash_balance=cash, net_contributed=net)
+            for account, cash, net in store.query(
+                'SELECT account, cash_balance, net_contributed '
+                'FROM account_state')}
+
+
 def test_a_replay_writes_the_account_state(store, tmp_path):
     _manager(store, tmp_path).current()
 
-    states = positions.read_account_states(store)
+    states = _account_states(store)
     assert states == {'default': CashState(cash_balance=pytest.approx(1499.9),
                                            net_contributed=3000.0)}
 
@@ -100,7 +108,7 @@ def test_an_account_with_no_cash_event_has_no_state_row(store, tmp_path):
     )
     _manager(store, tmp_path, no_cash).current()
 
-    assert positions.read_account_states(store) == {}
+    assert _account_states(store) == {}
     assert len(positions.read_positions(store)) == 1
 
 
@@ -122,7 +130,7 @@ def test_emptying_the_ledger_takes_the_positions_with_it(store, tmp_path):
     manager.replay()
 
     assert positions.read_positions(store) == []
-    assert positions.read_account_states(store) == {}
+    assert _account_states(store) == {}
 
 
 def test_a_position_the_ledger_no_longer_names_leaves(store, tmp_path):
