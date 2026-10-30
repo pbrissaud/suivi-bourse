@@ -350,6 +350,23 @@ def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path)
     assert payload['movers'][0]['contribution'] == pytest.approx(100.0)
 
 
+def test_movers_read_the_auction_stamped_closes(tmp_path):
+    """#1352. Two closes stamped at the closing auction's own instant."""
+    def seed(opened):
+        seed_position(opened, symbol='SAN.PA', quantity=10.0, cost_basis=700.0)
+        seed_quote(opened, symbol='SAN.PA', price=71.01,
+                   at=datetime(2026, 10, 19, 15, 35, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='SAN.PA', price=73.44,
+                   at=datetime(2026, 10, 20, 15, 29, 59, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='SAN.PA', price=73.58,
+                   at=datetime(2026, 10, 20, 15, 35, 46, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, seed=seed)
+    move = client.get('/api/portfolio/movers').get_json()['movers'][0]
+
+    assert move['change_pct'] == pytest.approx(0.0362, abs=0.0001)
+
+
 def test_movers_compare_each_line_against_its_own_previous_close(tmp_path):
     """#1142. A 24/7 line quoted on Sunday must not drag every other line's
     baseline to Sunday midnight: the equity's price there *is* its Friday

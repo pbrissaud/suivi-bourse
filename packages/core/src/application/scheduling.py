@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil, isclose
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
+from application import instants
 from application import market_info
 
 try:  # zoneinfo is stdlib on 3.9+; no new dependency (design #602/#603).
@@ -19,6 +20,9 @@ AFTER_SESSION_STATES = frozenset({'POST', 'POSTPOST'})
 
 SHORT_RETRY = 60           # s: re-probe when the next open is unknown
 MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
+
+CLOSE_SETTLE_POLL = 5 * 60     # s: re-poll cadence while waiting for the auction print
+CLOSE_SETTLE_WINDOW = 30 * 60  # s: stop waiting this long after regular.end
 
 OPENING_LAG = 15 * 60      # s: the ambiguous reading only — see above
 
@@ -67,18 +71,57 @@ def backoff_delay(base_interval: int, failure_count: int) -> float:
     return min(base_interval * (_BACKOFF_FACTOR ** exponent), MAX_SLEEP)
 
 
+def _instant(value) -> Optional[datetime]:
+    """One Yahoo instant as UTC: a datetime (naive = UTC) or epoch seconds, else None."""
+    if isinstance(value, datetime):          # pandas.Timestamp is one, and so is NaT
+        return instants.utc(value) if value == value else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except (OSError, ValueError, OverflowError):
+            return None
+    return None
+
+
+def session_print(history_meta) -> Tuple[Optional[datetime], Optional[datetime]]:
+    """``(regularMarketTime, currentTradingPeriod.regular.end)`` in UTC, ``None`` each unreadable (#1352)."""
+    if not isinstance(history_meta, dict):
+        return None, None
+    period = history_meta.get('currentTradingPeriod')
+    regular = period.get('regular') if isinstance(period, dict) else None
+    end = regular.get('end') if isinstance(regular, dict) else None
+    return _instant(history_meta.get('regularMarketTime')), _instant(end)
+
+
 def decide(state, price_present: bool, next_open: Optional[datetime],
            now: datetime, failure_count: int,
-           base_interval: int) -> Tuple[bool, float, int]:
-    """Decide one scrape cycle's write gate and next re-arm delay."""
+           base_interval: int, *, print_at: Optional[datetime] = None,
+           session_end: Optional[datetime] = None,
+           stored_at: Optional[datetime] = None) -> Tuple[bool, float, int]:
+    """Decide one scrape cycle's write gate and next re-arm delay.
+
+    A closed pass writes once per session print (``print_at`` newer than
+    ``stored_at``), and keeps re-polling shortly after ``session_end`` until
+    the closing auction's print lands (#1352).
+    """
     closed = is_closed(state)
 
-    should_write = (not closed) and price_present
+    if closed:
+        should_write = (price_present and print_at is not None
+                        and (stored_at is None or print_at > stored_at))
+    else:
+        should_write = price_present
 
     if closed:
         new_failure_count = failure_count
-        if next_open is None:
-            next_delay: float = SHORT_RETRY
+        settling = (print_at is not None and session_end is not None
+                    and print_at <= session_end
+                    and session_end <= now < session_end + timedelta(
+                        seconds=CLOSE_SETTLE_WINDOW))
+        if settling:
+            next_delay: float = CLOSE_SETTLE_POLL
+        elif next_open is None:
+            next_delay = SHORT_RETRY
         else:
             delta = (next_open - now).total_seconds()
             next_delay = min(delta, MAX_SLEEP) if delta > 0 else SHORT_RETRY
