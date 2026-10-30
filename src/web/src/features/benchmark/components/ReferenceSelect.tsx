@@ -127,8 +127,10 @@ function Note({ rows }: { rows: readonly BenchmarkReference[] | undefined }) {
   const waiting = pending.filter((row) => row !== running && row.waiting !== 'no_events')
 
   const said = [
-    running && percent !== null
-      ? t('benchmark.select.downloading', { index: running.index, percent: percent / 100 })
+    running
+      ? percent !== null
+        ? t('benchmark.select.downloading', { index: running.index, percent: percent / 100 })
+        : t('benchmark.select.starting', { index: running.index })
       : null,
     waiting.length > 0
       ? t('benchmark.select.waiting', { index: f.list(waiting.map((row) => row.index)) })

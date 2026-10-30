@@ -90,6 +90,13 @@ describe('the row in Portfolio', () => {
     ).toBeInTheDocument()
   })
 
+  it('names the ETF being downloaded even before it has a percentage', async () => {
+    serve(aBenchmarkReferences({ 'C40.PA': { followed: true } }), ['C40.PA'])
+    renderApp({ url: '/settings' })
+
+    expect(await screen.findByText('CAC 40 en téléchargement.')).toBeInTheDocument()
+  })
+
   it('opens the sheet from #portfolio-references, with the first switch focused', async () => {
     serve(aBenchmarkReferences())
     renderApp({ url: '/settings#portfolio-references' })
@@ -244,6 +251,28 @@ describe('the sheet', () => {
         'false',
       ),
     )
+  })
+
+  it('forgets a refusal when the sheet is closed', async () => {
+    serve(aBenchmarkReferences(), [])
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json(
+          { type: PROBLEM_TYPES.invalidSetting, title: 'Invalid setting', status: 422 },
+          { status: 422 },
+        ),
+      ),
+    )
+    const { user } = renderApp({ url: '/settings#portfolio-references' })
+    await user.click(await row('Suivre CAC 40'))
+    await waitFor(() => expect(document.querySelector('[data-slot="alert"]')).not.toBeNull())
+
+    await user.click(screen.getByRole('button', { name: 'Fermer' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Gérer' }))
+
+    await screen.findByRole('dialog', { name: SHEET })
+    expect(document.querySelector('[data-slot="alert"]')).toBeNull()
   })
 
   it('says a failed read with Unreadable and no skeleton', async () => {

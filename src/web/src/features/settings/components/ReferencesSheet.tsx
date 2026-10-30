@@ -69,10 +69,13 @@ export function ReferencesSheet({
     // Moved or refused, the server's state is what the switches show again.
     // Not `config`: the answer already carries it, and a refetch under another
     // row being typed in is what the live reads are kept away from.
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: REFERENCES_KEY })
-      client.invalidateQueries({ queryKey: ['benchmark'] })
-    },
+    // Returned, so the save stays pending until both reads are fresh and the
+    // switches never flash the old state between the answer and the refetch.
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: REFERENCES_KEY }),
+        client.invalidateQueries({ queryKey: ['benchmark'] }),
+      ]),
   })
 
   const remove = useMutation({
@@ -95,6 +98,16 @@ export function ReferencesSheet({
     if (open && listed) list.current?.querySelector<HTMLElement>('[role="switch"]')?.focus()
   }, [open, listed])
   const pending = write.isPending ? write.variables : null
+
+  // A refusal belongs to the visit that caused it: closing the sheet forgets it,
+  // so it neither comes back on reopen nor outlives a later success.
+  const { reset: resetWrite } = write
+  const { reset: resetRemove } = remove
+  useEffect(() => {
+    if (open) return
+    resetWrite()
+    resetRemove()
+  }, [open, resetWrite, resetRemove])
 
   function toggle(symbol: string, on: boolean) {
     const others = followedNow.filter((one) => one !== symbol)
@@ -121,7 +134,9 @@ export function ReferencesSheet({
                   row={row}
                   rows={rows}
                   checked={pending ? pending.includes(row.symbol) : row.followed}
-                  busy={write.isPending}
+                  // No switch before the latest list is known: a toggle built on an
+                  // empty one would send only itself and unfollow the rest.
+                  busy={write.isPending || config.data === undefined}
                   onToggle={(on) => toggle(row.symbol, on)}
                   onKeep={(kept) => remove.mutate({ symbol: row.symbol, kept })}
                 />

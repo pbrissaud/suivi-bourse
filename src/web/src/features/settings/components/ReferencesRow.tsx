@@ -72,8 +72,10 @@ function Summary({ rows }: { rows: readonly BenchmarkReference[] }) {
           count: ready.length,
         })
       : null,
-    running && percent !== null
-      ? t('settings.refs.downloading', { index: running.index, percent: percent / 100 })
+    running
+      ? percent !== null
+        ? t('settings.refs.downloading', { index: running.index, percent: percent / 100 })
+        : t('settings.refs.starting', { index: running.index })
       : null,
     queued.length > 0
       ? t('settings.refs.waiting', { names: f.list(queued.map((row) => row.index)) })
