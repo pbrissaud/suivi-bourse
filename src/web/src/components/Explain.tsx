@@ -34,7 +34,7 @@ import { useEffect, useState } from 'react'
 import { Info } from 'lucide-react'
 
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { docsHref, type DocsAnchor } from '@/lib/docs'
+import { useDocs, type DocsAnchor } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 
 interface ExplainProps {
@@ -50,6 +50,7 @@ interface ExplainProps {
 
 export function Explain({ figure, body, values, anchor }: ExplainProps) {
   const { t, language } = useI18n()
+  const { docsHref } = useDocs()
   const [open, setOpen] = useState(false)
 
   useEffect(() => {

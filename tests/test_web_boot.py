@@ -191,6 +191,16 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert threading.active_count() == threads_before
 
 
+def test_build_runtime_carries_the_documentation_root_of_the_environment(fake_config, monkeypatch):
+    """#1446: ``SB_DOCUMENTATION_URL`` reaches ``Runtime``, and a bad one stops the boot."""
+    monkeypatch.setenv('SB_DOCUMENTATION_URL', 'https://docs.example.net/suivi-bourse/')
+    assert main.build_runtime().documentation_url == 'https://docs.example.net/suivi-bourse'
+
+    monkeypatch.setenv('SB_DOCUMENTATION_URL', 'docs.example')
+    with pytest.raises(ValueError, match='SB_DOCUMENTATION_URL'):
+        main.build_runtime()
+
+
 def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
     """One connection, for the life of the process (#696).
 

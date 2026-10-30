@@ -548,21 +548,22 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     assert "COMPOSE_PROJECT_NAME" not in names
 
 
-def test_the_inventory_is_the_five_and_no_sixth():
-    """The environment says five things (the PIN's reset
-    and trusted proxies since #1203); everything else is a dial, the two the
+def test_the_inventory_is_the_six_and_no_seventh():
+    """The environment says six things (the PIN's reset
+    and trusted proxies since #1203, the documentation root since #1446); everything else is a dial, the two the
     exporter answered for left with it, and the drop folder's own left with the
     mount.
 
     Named here rather than only in ``test_boot_env.py`` because this is the
-    list ``/api/config`` publishes: a fifth name appearing in the payload is a
-    fifth name the documentation would have to explain.
+    list ``/api/config`` publishes: a seventh name appearing in the payload is a
+    seventh name the documentation would have to explain.
     """
     names = [name for name, _ in boot_env.INVENTORY]
 
-    assert len(names) == 5
+    assert len(names) == 6
     assert set(names) == {"LOG_LEVEL", "SB_STORE_DIR", "SB_WEB_PORT",
-                          "SB_RESET_AUTH", "SB_FORWARDED_ALLOW_IPS"}
+                          "SB_RESET_AUTH", "SB_FORWARDED_ALLOW_IPS",
+                          "SB_DOCUMENTATION_URL"}
 
 
 def test_the_bundle_location_is_no_longer_an_environment_variable(monkeypatch):

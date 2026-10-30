@@ -22,13 +22,14 @@ import {
 import { TaxationModelEditor } from '@/features/accounts/components/TaxationModelEditor'
 import { accountsApi, type TaxationModel } from '@/features/accounts/lib/api'
 import { TaxationImport } from '@/features/settings/components/TaxationImport'
-import { docsPageHref } from '@/lib/docs'
+import { useDocs } from '@/lib/docs'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 
 /** The taxation models, and which accounts carry each one (#752). */
 export function TaxationBlock() {
   const { t, language } = useI18n()
+  const { docsPageHref } = useDocs()
   const queryClient = useQueryClient()
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })

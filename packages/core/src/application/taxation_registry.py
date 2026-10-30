@@ -11,16 +11,24 @@ from typing import Callable, List, Optional
 from application import taxation
 from application.bounded_get import bounded_get
 
-URL = 'https://pbrissaud.github.io/suivi-bourse/taxation.json'
 MAX_BYTES = 256 * 1024
 
 
 class FetchFailed(Exception):
-    """The registry did not come back as a JSON list."""
+    """The registry did not come back as a JSON list.
 
-    def __init__(self, reason: str):
+    ``unpublished``: the site answered 404, so it is up and has no registry for this build.
+    """
+
+    def __init__(self, reason: str, unpublished: bool = False):
         super().__init__(reason)
         self.reason = reason
+        self.unpublished = unpublished
+
+
+def registry_url(root: str) -> str:
+    """The registry file of the documentation site at ``root`` (no trailing ``/``)."""
+    return f'{root}/taxation.json'
 
 
 def http_fetch(url: str) -> bytes:
@@ -44,12 +52,15 @@ def _item(entry: object) -> Optional[dict]:
     return fields
 
 
-def fetch(fetcher: Callable[[str], bytes]) -> List[dict]:
+def fetch(fetcher: Callable[[str], bytes], root: str) -> List[dict]:
     """Every wrapper of the registry, the ones this app refuses flagged and kept."""
+    url = registry_url(root)
     try:
-        data = json.loads(fetcher(URL))
+        data = json.loads(fetcher(url))
     except Exception as exc:  # the fetcher is injected; anything it raises is a failed fetch
-        raise FetchFailed(f'{type(exc).__name__}: {exc}') from exc
+        # urlopen raises HTTPError on a 404 before bounded_get looks at the status.
+        raise FetchFailed(f'{type(exc).__name__}: {exc} ({url})',
+                          unpublished=getattr(exc, 'code', None) == 404) from exc
     if not isinstance(data, list):
         raise FetchFailed('invalid registry JSON')
     items = {}
@@ -60,4 +71,4 @@ def fetch(fetcher: Callable[[str], bytes]) -> List[dict]:
     return list(items.values())
 
 
-__all__ = ['URL', 'MAX_BYTES', 'FetchFailed', 'http_fetch', 'fetch']
+__all__ = ['MAX_BYTES', 'FetchFailed', 'registry_url', 'http_fetch', 'fetch']

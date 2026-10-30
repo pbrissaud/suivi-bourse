@@ -370,7 +370,8 @@ class Runtime:
     def __init__(self, config_manager: ConfigurationManager,
                  store_path: Optional[Path] = None,
                  opened_store: Optional['store.Store'] = None,
-                 build: build_info.Build = build_info.UNSTAMPED):
+                 build: build_info.Build = build_info.UNSTAMPED,
+                 documentation_url: str = boot_env.DEFAULT_DOCUMENTATION_URL):
         self.config_manager = config_manager
         self.workloads: Optional[workloads.Workloads] = None
         self.scheduler: Optional[BackgroundScheduler] = None
@@ -379,6 +380,8 @@ class Runtime:
         self.store: Optional[store.Store] = opened_store
 
         self.build: build_info.Build = build
+
+        self.documentation_url: str = documentation_url
 
         self.recorder = runtime_state.RuntimeRecorder()
 
@@ -432,7 +435,8 @@ def build_runtime() -> Runtime:
 
     return Runtime(config_manager, store_path=store_path,
                    opened_store=opened,
-                   build=build)
+                   build=build,
+                   documentation_url=boot.documentation_url)
 
 
 def start_runtime(runtime: Runtime) -> Runtime:

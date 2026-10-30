@@ -1,7 +1,9 @@
 """What the environment still says (store, port, log level, the PIN's two), and the names it no longer says."""
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
+from urllib.parse import urlsplit
 
 
 STORE_DIR = 'SB_STORE_DIR'
@@ -16,9 +18,13 @@ RESET_AUTH = 'SB_RESET_AUTH'
 #: The proxies whose ``X-Forwarded-For``/``-Proto`` are believed. Empty: none.
 FORWARDED_ALLOW_IPS = 'SB_FORWARDED_ALLOW_IPS'
 
+#: The documentation site's root: the registry, the migration page and every link of the UI hang off it.
+DOCUMENTATION_URL = 'SB_DOCUMENTATION_URL'
+
 DEFAULT_STORE_DIR = '/data'
 DEFAULT_WEB_PORT = 8080
 DEFAULT_LOG_LEVEL = 'INFO'
+DEFAULT_DOCUMENTATION_URL = 'https://pbrissaud.github.io/suivi-bourse'
 
 INVENTORY: Tuple[Tuple[str, str], ...] = (
     (LOG_LEVEL, DEFAULT_LOG_LEVEL),
@@ -26,6 +32,7 @@ INVENTORY: Tuple[Tuple[str, str], ...] = (
     (WEB_PORT, str(DEFAULT_WEB_PORT)),
     (RESET_AUTH, ''),
     (FORWARDED_ALLOW_IPS, ''),
+    (DOCUMENTATION_URL, DEFAULT_DOCUMENTATION_URL),
 )
 
 READ: frozenset = frozenset(name for name, _ in INVENTORY)
@@ -56,6 +63,32 @@ def integer(env: Mapping[str, str], name: str, default: int) -> int:
 def directory(env: Mapping[str, str], name: str, default: str) -> Path:
     """Read the one path. ``expanduser`` because a Docker-less install writes ``~/…`` and gets a literal ``~`` directory otherwise."""
     return Path(text(env, name, default)).expanduser()
+
+
+def http_url(env: Mapping[str, str], name: str, default: str) -> str:
+    """Read an absolute http(s) URL without its trailing ``/``, failing with a message that names it.
+
+    Plain origin plus optional path only: the root is published to the browser and
+    ``/taxation.json`` is appended to it, so credentials, a query, a fragment,
+    whitespace or a backslash (parsed differently by Python and by browsers) are refused.
+    """
+    raw = text(env, name, default).rstrip('/')
+    try:
+        parts = urlsplit(raw)
+        parts.port  # raises on a bad port
+        absolute = parts.scheme in ('http', 'https') and bool(parts.hostname)
+        bare = parts.username is None and parts.password is None
+        plain = not any(c in raw for c in '?#\\')
+        clean = not any(c.isspace() or not c.isprintable() for c in raw)
+        valid = absolute and bare and plain and clean
+    except ValueError:  # e.g. an unclosed IPv6 bracket
+        valid = False
+    if not valid:
+        shown = re.sub(r'(?<=//)[^/@]*@', '', raw)  # a rejected value is logged: no credentials in it
+        raise ValueError(
+            f"Invalid value for {name}: {shown!r} is not an absolute http(s) URL "
+            f"(no credentials, query, fragment or whitespace)")
+    return raw
 
 
 PREFIXES = ('SB_', 'INFLUXDB_')
@@ -90,6 +123,7 @@ class BootEnvironment:
     unread: Tuple[str, ...]
     reset_auth: bool = False
     forwarded_allow_ips: str = ''
+    documentation_url: str = DEFAULT_DOCUMENTATION_URL
 
 
 def read(env: Mapping[str, str]) -> BootEnvironment:
@@ -101,14 +135,16 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
         unread=unread(env),
         reset_auth=text(env, RESET_AUTH) == '1',
         forwarded_allow_ips=text(env, FORWARDED_ALLOW_IPS, ''),
+        documentation_url=http_url(env, DOCUMENTATION_URL, DEFAULT_DOCUMENTATION_URL),
     )
 
 
 __all__ = [
     'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'RESET_AUTH',
-    'FORWARDED_ALLOW_IPS',
+    'FORWARDED_ALLOW_IPS', 'DOCUMENTATION_URL',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
+    'DEFAULT_DOCUMENTATION_URL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',
     'BootEnvironment', 'read', 'unread', 'notice',
-    'text', 'integer', 'directory',
+    'text', 'integer', 'directory', 'http_url',
 ]

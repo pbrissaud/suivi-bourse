@@ -136,7 +136,7 @@ With Ollama on your own machine, nothing leaves it.
 
 ## What the container imposes
 
-Five names. This is the complete list of what the app reads from its
+Six names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
 | Variable | Default | What it decides |
@@ -146,6 +146,7 @@ environment; nothing else in it is consulted.
 | `LOG_LEVEL` | `INFO` | how loudly the app logs |
 | `SB_RESET_AUTH` | unset | `1` clears the access code, its sessions and the MCP token at start-up, and says so in the log at every start while it is set — remove it once you are back in |
 | `SB_FORWARDED_ALLOW_IPS` | unset | the reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed, comma-separated; none by default |
+| `SB_DOCUMENTATION_URL` | `https://pbrissaud.github.io/suivi-bourse` | the root of the documentation site: the tax registry the app imports from, the migration page it quotes and every ⓘ link are built from it. Change it for a staging docs build, a self-hosted mirror, or a network without GitHub Pages; an absolute `http(s)://` address (a trailing `/` is ignored; no credentials, query or fragment), and anything else stops the start-up |
 
 - **The path is a directory, never a file.** The app names its own store file
   inside it. That removes the entire class of mistake where you point at a file

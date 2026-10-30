@@ -809,6 +809,7 @@
   "settings.taxation.import.adding": "Ajout du modèle…",
   "settings.taxation.import.failed": "Le registre a refusé : {reason}",
   "settings.taxation.import.refused": "Le registre a refusé la demande.",
+  "settings.taxation.import.unpublished": "Le site de documentation ne publie pas encore de registre fiscal pour cette version.",
   "settings.taxation.import.retry": "Réessayer",
   "settings.taxation.import.fallback": "Vous pouvez aussi écrire un modèle.",
   "settings.taxation.import.newer": "nécessite une version plus récente de l’app",

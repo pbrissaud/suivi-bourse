@@ -163,9 +163,53 @@ def test_the_read_set_is_exactly_the_inventory():
     """A name absent from the inventory but read somewhere would be reported as
     ignored while being obeyed, which is the one thing worse than silence."""
     assert boot_env.READ == {name for name, _ in boot_env.INVENTORY}
-    assert len(boot_env.INVENTORY) == 5
+    assert len(boot_env.INVENTORY) == 6
 
 
 def test_the_theme_variable_is_said_to_be_unread():
     """#1248: the theme lives in the store now; a leftover ``SB_TWEAKCN_THEME`` is named."""
     assert boot_env.unread({'SB_TWEAKCN_THEME': 'claude'}) == ('SB_TWEAKCN_THEME',)
+
+
+# --------------------------------------------------------------------- #
+# SB_DOCUMENTATION_URL (#1446)
+# --------------------------------------------------------------------- #
+
+DEFAULT_DOCS = 'https://pbrissaud.github.io/suivi-bourse'
+
+
+@pytest.mark.parametrize('value', [None, '', '   '])
+def test_the_documentation_root_defaults_when_unset_or_blank(value):
+    env = {} if value is None else {'SB_DOCUMENTATION_URL': value}
+    assert boot_env.read(env).documentation_url == DEFAULT_DOCS
+
+
+@pytest.mark.parametrize('value, root', [
+    ('https://docs.example.net/suivi-bourse/', 'https://docs.example.net/suivi-bourse'),
+    (' https://docs.example.net/suivi-bourse ', 'https://docs.example.net/suivi-bourse'),
+    ('https://docs-staging.example.net', 'https://docs-staging.example.net'),
+    ('https://docs-staging.example.net//', 'https://docs-staging.example.net'),
+    ('http://nas.lan:8000/docs', 'http://nas.lan:8000/docs'),
+])
+def test_the_documentation_root_is_kept_without_its_trailing_slash(value, root):
+    assert boot_env.read({'SB_DOCUMENTATION_URL': value}).documentation_url == root
+
+
+@pytest.mark.parametrize('value', [
+    'docs.example', '/suivi-bourse', 'ftp://docs.example', 'https://', '//docs.example', 'http://[::1',
+    'https://' + 'user:pw' + '@docs.lan/x', 'https://docs.lan/x?a=1', 'https://docs.lan/x?', 'https://docs.lan/x#f',
+    'https://docs.lan/#', 'http://docs.lan:99999', 'http://docs.lan:abc', 'http://ho st/x',
+    'https://docs.lan/a b', 'https://docs.lan\\@evil.example'])
+def test_a_documentation_root_that_is_not_an_absolute_http_url_names_the_variable(value):
+    with pytest.raises(ValueError, match='SB_DOCUMENTATION_URL'):
+        boot_env.read({'SB_DOCUMENTATION_URL': value})
+
+
+def test_the_documentation_root_is_read_so_never_reported_as_unread():
+    assert boot_env.unread({'SB_DOCUMENTATION_URL': 'https://x.example'}) == ()
+
+
+def test_a_rejected_documentation_root_never_logs_its_credentials():
+    with pytest.raises(ValueError) as caught:
+        boot_env.read({'SB_DOCUMENTATION_URL': 'ftp://' + 'user:secret' + '@docs.lan'})
+    assert 'secret' not in str(caught.value)

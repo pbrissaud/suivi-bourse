@@ -47,7 +47,7 @@ import {
   type AgentTestResult,
   type AgentThinking,
 } from '@/features/agent/lib/api'
-import { docsPageHref } from '@/lib/docs'
+import { useDocs } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { ApiProblem } from '@/lib/api'
 import { PROBLEM_TYPES, problemMessageKey, providerRefusal } from '@/lib/problem'
@@ -80,6 +80,7 @@ const THINKING_LABEL: Record<AgentThinking, MessageKey> = {
 
 export function AgentBlock({ config }: { config: AgentConfig }) {
   const { t, language } = useI18n()
+  const { docsPageHref } = useDocs()
   const client = useQueryClient()
   const navigate = useNavigate()
   // Seeded once from the store: a refetch after a write must not wipe what

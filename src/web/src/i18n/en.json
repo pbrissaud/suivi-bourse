@@ -809,6 +809,7 @@
   "settings.taxation.import.adding": "Adding the model…",
   "settings.taxation.import.failed": "The registry refused: {reason}",
   "settings.taxation.import.refused": "The registry refused the request.",
+  "settings.taxation.import.unpublished": "The documentation site publishes no tax registry for this version yet.",
   "settings.taxation.import.retry": "Try again",
   "settings.taxation.import.fallback": "You can also write a model.",
   "settings.taxation.import.newer": "needs a newer version of the app",

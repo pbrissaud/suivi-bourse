@@ -78,7 +78,7 @@ import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { useProposalImport } from '@/features/data/lib/proposalImport'
 import { EVENT_FILE_COLUMNS, exportable, templateHref } from '@/features/data/lib/imports'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { docsPageHref } from '@/lib/docs'
+import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import {
   accountsNamed,
@@ -168,6 +168,7 @@ export function Ledger({
   onProposalClosed,
 }: LedgerProps = {}) {
   const { t, language } = useI18n()
+  const { docsPageHref } = useDocs()
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   // **The gesture is held here and nowhere lower** (#811): the first import

@@ -3836,6 +3836,19 @@ def test_the_runtime_resource_answers_200_with_the_store_unreadable(tmp_path):
     assert response.get_json()['symbols'][0]['symbol'] == 'AAPL'
 
 
+def test_the_runtime_publishes_the_documentation_root_of_the_process(tmp_path):
+    """#1446: the front builds every docs link from this field."""
+    from api import current_runtime
+    client = build_client(tmp_path)
+
+    assert client.get('/api/runtime').get_json()['documentation_url'] == \
+        'https://pbrissaud.github.io/suivi-bourse'
+
+    current_runtime().documentation_url = 'https://docs.example.net/suivi-bourse'
+    assert client.get('/api/runtime').get_json()['documentation_url'] == \
+        'https://docs.example.net/suivi-bourse'
+
+
 def test_the_runtime_says_whether_the_reconstruction_still_has_windows(tmp_path):
     """`rebuilding` (contract #745, issue #763), read from process memory.
 

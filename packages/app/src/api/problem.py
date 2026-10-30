@@ -156,7 +156,8 @@ def provider_refused(detail: str, provider: str, reason: str):
     the key masked. The front renders ``reason`` in its own words and keeps
     ``detail`` behind a disclosure (#1269). ``reason`` is ``key``, ``quota``,
     ``rate_limit``, ``model``, ``address``, ``overloaded``, ``unreachable``, ``unreadable``
-    or ``refused`` (``agent.refusal``).
+    or ``refused`` (``agent.refusal``), plus ``unpublished`` (the documentation site
+    answered 404 for the tax registry).
     """
     return problem(502, 'Provider refused', detail, TYPE_PROVIDER_REFUSED,
                    provider=provider, reason=reason)

@@ -49,6 +49,7 @@ def get_runtime():
         reconstruction=(runtime.workloads.reconstruction_state()
                         if runtime.workloads is not None else None),
         build=runtime.build,
+        documentation_url=runtime.documentation_url,
         store_path=(str(runtime.store_path)
                     if runtime.store_path is not None else None),
     ))

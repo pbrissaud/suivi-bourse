@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from application import boot_env
 from application import build_info
 from application import instants
 from application import job_history
@@ -381,6 +382,7 @@ def build_runtime(
     reconstruction: Optional[Tuple[int, int]] = None,
     store_path: Optional[str] = None,
     build: build_info.Build = build_info.UNSTAMPED,
+    documentation_url: str = boot_env.DEFAULT_DOCUMENTATION_URL,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload."""
     symbols = build_symbols(
@@ -394,6 +396,7 @@ def build_runtime(
             else {'complete': reconstruction[0], 'total': reconstruction[1]}),
         'store': {'path': store_path},
         'build': build.to_dict(),
+        'documentation_url': documentation_url,
         'symbols': [symbol.to_dict() for symbol in symbols],
         'accounts': build_accounts(perf),
         'backfill': build_backfill_summary(symbols),

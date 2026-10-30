@@ -810,6 +810,17 @@ def test_a_v4_config_file_is_refused_by_its_name_and_points_at_the_migration(tmp
     assert opened.query('SELECT count(*) FROM event') == [(0,)]
 
 
+def test_the_migration_link_is_the_configured_root(tmp_path):
+    from api import current_runtime
+    client, _ = build_client_and_store(tmp_path)
+    current_runtime().documentation_url = 'https://docs.example.net/suivi-bourse'
+
+    response = _upload(client, b"shares:\n  - name: Apple\n", filename="config.yaml")
+
+    assert response.get_json()['detail'].endswith(
+        ' — https://docs.example.net/suivi-bourse/docs/v5/coming-from-v4')
+
+
 def test_an_accounts_file_is_refused_naming_what_it_recognised(tmp_path):
     """Accounts are born in the app and nowhere else.
 

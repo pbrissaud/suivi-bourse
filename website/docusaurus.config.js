@@ -30,8 +30,10 @@ const config = {
   // no stack, and the previous one ("with yfinance, InfluxDB 3 & Grafana") was
   // a fourth writer of the getting-started (ADR-0012, ADR-0025).
   tagline: 'Track your portfolio: your events in, your figures out, in one container',
-  url: `https://${organizationName}.github.io`,
-  baseUrl: `/${projectName}/`,
+  // A docs build served elsewhere (staging, a mirror) sets these two; the app's
+  // `SB_DOCUMENTATION_URL` is then `${DOCS_URL}${DOCS_BASE_URL}` without its trailing `/`.
+  url: process.env.DOCS_URL || `https://${organizationName}.github.io`,
+  baseUrl: process.env.DOCS_BASE_URL || `/${projectName}/`,
   onBrokenLinks: 'throw',
   markdown: {
     hooks: {

@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { declaredLabel } from '@/features/accounts/lib/accounts'
-import { docsPageHref } from '@/lib/docs'
+import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 
@@ -51,6 +51,7 @@ export function TaxationModelField({
   write = { error: null },
 }: TaxationModelFieldProps) {
   const { t, language } = useI18n()
+  const { docsPageHref } = useDocs()
   const queryClient = useQueryClient()
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
