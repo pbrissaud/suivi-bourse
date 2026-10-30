@@ -52,6 +52,8 @@ export interface BenchmarkReference {
   /** The later of its inception and the ledger's first day. */
   target: string | null
   ratio: number | null
+  /** The backward pass has asked for a first window: the fund has had its turn. */
+  requested: boolean
 }
 
 /** The reconstruction bar, fed from the store and never from the recorder. */
@@ -63,6 +65,8 @@ export interface BenchmarkRebuild {
   target: string | null
   /** `0`…`1`, or `null` when there is nothing to take a ratio of. */
   ratio: number | null
+  /** The backward pass has asked for a first window: the reference has had its turn. */
+  requested: boolean
 }
 
 /**

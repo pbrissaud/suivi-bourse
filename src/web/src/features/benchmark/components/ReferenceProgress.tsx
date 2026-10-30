@@ -26,11 +26,14 @@ export function ReferenceProgress({
   reached,
   target,
   ratio,
+  requested,
 }: {
   index: string
   reached: string | null
   target: string | null
   ratio: number | null
+  /** No request has gone out for this fund yet: it is waiting for its turn (#1336). */
+  requested: boolean
 }) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -46,7 +49,7 @@ export function ReferenceProgress({
               target: f.monthYear(target),
               percent: percent / 100,
             })
-          : t('benchmark.refs.starting')}
+          : t(requested ? 'benchmark.refs.starting' : 'benchmark.refs.waiting')}
       </p>
       {measured ? (
         <progress

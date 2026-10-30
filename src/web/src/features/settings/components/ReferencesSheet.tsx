@@ -273,6 +273,7 @@ function Download({ row, rows }: { row: BenchmarkReference; rows: readonly Bench
       reached={row.reached}
       target={row.target}
       ratio={row.ratio}
+      requested={row.requested}
     />
   )
 }

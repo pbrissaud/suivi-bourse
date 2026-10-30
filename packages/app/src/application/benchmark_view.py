@@ -251,7 +251,8 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
                'inception': instants.iso(entry.inception),
                'followed': is_followed, 'ready': done.get(symbol, False),
                'kept': False, 'freed': False, 'waiting': None, 'after': None,
-               'reached': None, 'target': None, 'ratio': None}
+               'reached': None, 'target': None, 'ratio': None,
+               'requested': False}
         if not is_followed and quotes.oldest_ts(store, symbol) is not None:
             row['kept'] = symbol in kept
             row['freed'] = symbol not in kept
@@ -273,9 +274,11 @@ def _rebuild(store, symbol: str, first_day: date, now: datetime
 
     `runtime_view.backfill_progress` reads `runtime_state.Recorder`, a dict this
     process holds and loses on restart — so a bar built from it is empty on
-    every boot, on a job that runs for hours. The three facts here are all
+    every boot, on a job that runs for hours. The four facts here are all
     persisted: where the backward pass has reached (`price_point`), where it is
-    heading, and today.
+    heading, and whether the pass has asked for anything yet
+    (`symbol_quote.oldest_window_tried`, #1336) — which is what tells a fund
+    waiting for its turn from one whose first request is out.
 
     **Where it is heading is the later of the fund's inception and the ledger's
     first day** (#1312): the backfill stops there, so a target further back
@@ -297,7 +300,8 @@ def _rebuild(store, symbol: str, first_day: date, now: datetime
         ratio = max(0.0, min(1.0, covered / total)) if total else None
 
     return {'symbol': symbol, 'reached': instants.iso(reached_day),
-            'target': instants.iso(target), 'ratio': ratio}
+            'target': instants.iso(target), 'ratio': ratio,
+            'requested': quotes.oldest_window_tried(store, symbol) is not None}
 
 
 def _by_account(store, snapshot, prices: Dict[date, float], symbol: str) -> (

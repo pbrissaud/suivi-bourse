@@ -1828,6 +1828,73 @@ def test_followed_references_download_one_at_a_time_in_click_order(
     assert _reference_row(store, "CW8.PA") == []      # not even declared yet
 
 
+def _three_held_and_a_late_reference(store, mocker, on_fetch=None, held=None):
+    """Three held lines and a reference that sorts after all of them.
+
+    Returns ``(metrics, visited)`` — ``visited`` lists the symbol of every fetch
+    in order, and ``on_fetch(symbol)`` runs inside each one.
+    """
+    held = held or ["AAPL", "ACA.PA", "BNP.PA"]
+    metrics, _ = _build_metrics(
+        [_valid_shares(symbol, symbol) for symbol in held], store,
+        mode="events",
+        events=[Event(date(2022, 1, 3), EventType.BUY, symbol, symbol,
+                      quantity=10, unit_price=150.0) for symbol in held])
+    visited = []
+
+    def fetch(symbol, start, end, **kwargs):
+        visited.append(symbol)
+        if on_fetch:
+            on_fetch(symbol)
+        return []
+
+    mocker.patch.object(metrics, "_fetch_historical_data", side_effect=fetch)
+    return metrics, visited
+
+
+def test_the_reference_is_fetched_before_any_held_symbol(store, mocker):
+    """#1336: a fresh install walks 15 symbols for minutes; the reference is not one of the queue."""
+    metrics, visited = _three_held_and_a_late_reference(store, mocker)
+    _names_a_reference(store, "CW8.PA")
+
+    metrics.backfill()
+
+    assert visited[0] == "CW8.PA"
+    assert visited[1:4] == ["AAPL", "ACA.PA", "BNP.PA"]
+
+
+def test_a_reference_named_mid_cycle_is_visited_next(store, mocker):
+    """The setting is read again before each symbol, not once for the cycle."""
+    metrics, visited = _three_held_and_a_late_reference(
+        store, mocker,
+        on_fetch=lambda symbol: symbol == "AAPL" and _names_a_reference(
+            store, "CW8.PA"))
+
+    metrics.backfill()
+
+    assert visited[:2] == ["AAPL", "CW8.PA"]
+    assert _reference_row(store, "CW8.PA") == [("CW8.PA",)]
+    assert visited.count("CW8.PA") == 1
+
+
+def test_with_no_reference_the_held_symbols_keep_their_order(store, mocker):
+    metrics, visited = _three_held_and_a_late_reference(store, mocker)
+
+    metrics.backfill()
+
+    assert visited == ["AAPL", "ACA.PA", "BNP.PA"]
+
+
+def test_a_held_reference_is_visited_once_per_cycle(store, mocker):
+    metrics, visited = _three_held_and_a_late_reference(
+        store, mocker, held=["AAPL", "CW8.PA", "MSFT"])
+    _names_a_reference(store, "CW8.PA")
+
+    metrics.backfill()
+
+    assert visited == ["CW8.PA", "AAPL", "MSFT"]
+
+
 def test_a_reference_that_was_held_and_sold_keeps_its_own_first_day(store, mocker):
     """Two rules meet on one symbol, and each keeps the half it owns.
 

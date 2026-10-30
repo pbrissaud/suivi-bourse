@@ -905,6 +905,7 @@
   "benchmark.followed.manage": "Manage the references",
   "benchmark.refs.progress": "Back to {reached}, out of {target} · {percent, number, percent}",
   "benchmark.refs.starting": "The download has just started.",
+  "benchmark.refs.waiting": "Waiting for its turn…",
   "benchmark.refs.label": "{index}: {percent, number, percent} of the history",
   "benchmark.refs.queued": "waiting, after {index}",
   "benchmark.refs.noEvents": "No period yet",
