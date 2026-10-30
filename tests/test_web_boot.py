@@ -477,10 +477,11 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     # ingest() arms the per-symbol scrape jobs (#616), so it must land before the
     # scheduler starts — the same order the blocking boot had.
     assert order == ["ingest", "start"]
-    # ... plus the fixed-cadence interval jobs, of which there are now **two**:
-    # the ``ingest`` job left with SB_INGESTION_INTERVAL (issue #697).
+    # ... plus the fixed jobs: the ``ingest`` interval job left with
+    # SB_INGESTION_INTERVAL (issue #697); the one ingestion on a clock is the
+    # turn of the day (#1459).
     assert {c.kwargs["id"] for c in scheduler.add_job.call_args_list} == \
-        {"backfill", "perf"}
+        {"backfill", "perf", "day_turn"}
 
 
 def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(

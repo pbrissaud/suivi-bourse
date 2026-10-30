@@ -103,7 +103,7 @@ def report_boot_conditions(boot: boot_env.BootEnvironment,
 
 def register_interval_jobs(scheduler, workloads_,
                            backfill_interval: int) -> None:
-    """Register the two fixed-cadence interval jobs on ``scheduler``."""
+    """Register the fixed-cadence jobs on ``scheduler``."""
     scheduler.add_job(
         workloads_.backfill, 'interval',
         seconds=backfill_interval,
@@ -115,6 +115,13 @@ def register_interval_jobs(scheduler, workloads_,
         next_run_time=datetime.now(timezone.utc),
         id=scheduling.PERF_JOB_ID,
         name='Performance recompute')
+    # The replay stops at today (#1459), so an event dated ahead starts
+    # counting at the turn of the day, with no write to replay it: the
+    # ingestion replays then, and re-arms the scrape jobs the new day holds.
+    scheduler.add_job(
+        workloads_.ingest, 'cron', hour=0, minute=0, timezone=timezone.utc,
+        id=scheduling.DAY_TURN_JOB_ID,
+        name='Day turn replay')
 
 
 def apply_settings(runtime, changes) -> Dict:

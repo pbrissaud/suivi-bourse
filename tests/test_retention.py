@@ -533,13 +533,13 @@ def test_the_ladder_runs_as_a_step_of_the_backfill(store):
 
 
 def test_the_scheduler_gains_no_job_for_it(store, mocker):
-    """Two interval jobs, and the ladder is in neither's name."""
+    """The fixed jobs, and the ladder is in none of their names."""
     scheduler = mocker.MagicMock()
     main.register_interval_jobs(scheduler, mocker.MagicMock(), 60)
 
     ids = {call.kwargs['id'] for call in scheduler.add_job.call_args_list}
 
-    assert ids == {'backfill', 'perf'}
+    assert ids == {'backfill', 'perf', 'day_turn'}
 
 
 def test_the_ladder_runs_though_the_backward_pass_has_nothing_left_to_do(store):
