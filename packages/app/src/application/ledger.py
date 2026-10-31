@@ -68,6 +68,17 @@ _LEDGER_DIGEST = (
 )
 
 
+def yahoo_names(store) -> Dict[str, str]:
+    """What Yahoo calls each symbol it has named, in **one** read (#1386).
+
+    The name a row nobody named is served under; ``symbol`` being the primary
+    key of ``symbol_quote``, there is at most one per symbol.
+    """
+    return dict(store.query(
+        'SELECT symbol, long_name FROM symbol_quote '
+        'WHERE long_name IS NOT NULL'))
+
+
 def stamp(store) -> Optional[str]:
     """A fingerprint of the whole ledger, for the snapshot's cache key."""
     (digest,) = store.query(_LEDGER_DIGEST)[0:1][0]
@@ -271,6 +282,6 @@ __all__ = [
     'consulted_benchmarks', 'record_consulted_benchmark',
     'forget_consulted_benchmark',
     'read_events', 'stamp', 'last_write', 'first_payments',
-    'orphan_symbols', 'purge_orphan_symbols',
+    'orphan_symbols', 'purge_orphan_symbols', 'yahoo_names',
     'currency_to_adopt',
 ]

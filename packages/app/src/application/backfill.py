@@ -487,7 +487,8 @@ class BackfillWorkload:
         except Exception as e:
             app_logger.error(f"Failed to read what {symbol} is: {e}")
             return
-        if row is not None and all(row.get(name) for name in CLASSIFICATION):
+        if row is not None and all(
+                row.get(name) for name in CLASSIFICATION + ('long_name',)):
             self.classified.add(symbol)
             return
 
@@ -499,10 +500,22 @@ class BackfillWorkload:
 
         columns = market_info.quote_columns(info)
         classification = {name: columns[name] for name in CLASSIFICATION}
+        # The name rides the same answer (#1386) -- only when Yahoo gave one, so
+        # an answer without it never blanks what the scrape already wrote.
+        named = {'long_name': columns['long_name']} if columns['long_name'] else {}
 
         if not any(classification.values()):
             # A fund, most often: Yahoo publishes no sector for one, and an
             # absence is written as an absence rather than re-asked every cycle.
+            # It still has a name, and that is written.
+            if named:
+                try:
+                    with self.facade.config_manager.writing() as opened:
+                        quotes.record_attributes(
+                            opened, symbol, datetime.now(timezone.utc), named)
+                except Exception as e:
+                    app_logger.error(f"Failed to record what {symbol} is: {e}")
+                    return
             self.classified.add(symbol)
             app_logger.debug(f"Yahoo classifies {symbol} as nothing")
             return
@@ -510,7 +523,8 @@ class BackfillWorkload:
         try:
             with self.facade.config_manager.writing() as opened:
                 quotes.record_attributes(
-                    opened, symbol, datetime.now(timezone.utc), classification)
+                    opened, symbol, datetime.now(timezone.utc),
+                    {**classification, **named})
         except Exception as e:
             app_logger.error(f"Failed to record what {symbol} is: {e}")
             return
