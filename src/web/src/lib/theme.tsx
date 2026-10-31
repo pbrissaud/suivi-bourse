@@ -41,6 +41,12 @@ interface ThemeContextValue {
   choice: ThemeChoice
   ground: Ground
   setChoice: (choice: ThemeChoice) => void
+  /**
+   * Show a ground whatever the choice and the system say, or `null` to stop.
+   * The Thème form sets it so that editing the dark palette is seen in dark;
+   * it never touches `sb.theme`.
+   */
+  setPreviewGround: (ground: Ground | null) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -61,7 +67,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => media.removeEventListener('change', onChange)
   }, [])
 
-  const ground = resolveTheme(choice, prefersDark)
+  const [preview, setPreviewGround] = useState<Ground | null>(null)
+  const ground = preview ?? resolveTheme(choice, prefersDark)
 
   useEffect(() => {
     applyGround(document.documentElement, ground)
@@ -72,7 +79,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     rememberPreference(THEME_STORAGE_KEY, next)
   }, [])
 
-  const value = useMemo(() => ({ choice, ground, setChoice }), [choice, ground, setChoice])
+  const value = useMemo(
+    () => ({ choice, ground, setChoice, setPreviewGround }),
+    [choice, ground, setChoice],
+  )
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
