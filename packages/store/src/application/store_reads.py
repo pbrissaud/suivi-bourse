@@ -13,7 +13,7 @@ POSITION_COLUMNS = (
 QUOTE_COLUMNS = (
     'currency', 'exchange', 'quote_type',
     'dividend_yield', 'pe_ratio', 'market_cap',
-    'sector', 'industry', 'country',
+    'sector', 'industry', 'country', 'long_name',
 )
 PRICE_COLUMNS = ('price', 'price_native', 'fx_rate', 'price_time')
 
@@ -37,7 +37,9 @@ class PortfolioReader:
         """One row per ``(account, symbol)``: the position, joined to its quote."""
         where = 'WHERE p.symbol = ?' if symbol is not None else ''
         parameters = [symbol] if symbol is not None else None
-        selected = [f'p.{name}' for name in POSITION_COLUMNS]
+        # What the ledger declared wins; Yahoo's name fills a ``NULL`` (#1386).
+        selected = ['COALESCE(p.name, q.long_name)' if name == 'name'
+                    else f'p.{name}' for name in POSITION_COLUMNS]
         selected += [f'q.{name}' for name in QUOTE_COLUMNS]
         selected += ['q.last_price_converted', 'q.last_price_native',
                      'q.last_fx_rate', 'q.last_price_ts']

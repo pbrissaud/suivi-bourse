@@ -45,6 +45,7 @@ from application import workloads
 from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
+from application.events.validator import EventValidator
 from application.account_facts import AccountsPayload
 from application.mcp_server import Positions
 from api import create_app, problem
@@ -2695,19 +2696,32 @@ def test_two_strictly_identical_posts_both_succeed(tmp_path):
         "SELECT quantity FROM position WHERE symbol = 'AAPL'") == [(14.0,)]
 
 
-def test_a_security_nothing_has_named_yet_is_called_by_its_ticker(tmp_path):
-    """The form does not ask for a name, so a first purchase carries the ticker.
+def test_a_security_nothing_has_named_yet_is_served_under_yahoos_name(tmp_path):
+    """The row keeps what was declared (nothing); the name is resolved at read (#1386).
 
-    Left ``NULL`` the row would fail ``EventValidator``'s *name is required* on
-    the next build — i.e. a boot the owner cannot repair from an app that is
-    down.
+    The ticker is no longer written into the row, and a ``NULL`` name must not
+    stop the next boot: the replay's validator accepts it. Once Yahoo has named
+    the security, ``GET /api/events`` serves that name with no restart and no new
+    ledger write -- and a name the ledger declared still wins.
     """
     client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
 
     client.post('/api/events', json=_draft(symbol='MSFT'))
 
     assert opened.query(
-        "SELECT name FROM event WHERE symbol = 'MSFT'") == [('MSFT',)]
+        "SELECT name FROM event WHERE symbol = 'MSFT'") == [(None,)]
+    ok, errors = EventValidator().validate(ledger.read_events(opened))
+    assert ok, errors
+
+    def served():
+        return {event['symbol']: event['name']
+                for event in client.get('/api/events').get_json()}
+
+    assert served() == {'AAPL': 'Apple Inc', 'MSFT': None}
+    for symbol, name in (('MSFT', 'Microsoft Corporation'), ('AAPL', 'Apple')):
+        quotes.record_attributes(opened, symbol, datetime.now(timezone.utc),
+                                 {'long_name': name})
+    assert served() == {'AAPL': 'Apple Inc', 'MSFT': 'Microsoft Corporation'}
     # And the symbol got its row before the event referenced it.
     assert ('MSFT',) in opened.query('SELECT symbol FROM symbol')
 
@@ -3147,7 +3161,9 @@ def test_a_typed_event_is_exported_like_any_other_row(tmp_path):
     assert len(rows) == 2
     # Same column count on both, the typed one included.
     assert len({len(row.split(',')) for row in rows}) == 1
-    assert any(row.startswith('2024-06-03,BUY,default,MSFT,MSFT,') for row in rows)
+    # Nobody named it, so the export says so: an export then a re-import gives
+    # the same ledger back (#1386).
+    assert any(row.startswith('2024-06-03,BUY,default,MSFT,,') for row in rows)
 
 
 # --------------------------------------------------------------------- #
@@ -6537,3 +6553,23 @@ def test_the_job_history_is_its_own_read_and_health_keeps_its_shape(tmp_path):
         'RuntimeError: boom')
     assert history['scrape']['AAPL']['passes'][0]['outcome'] == 'ok'
     assert len(history['scrape']['AAPL']['slots']) == 24
+
+
+def test_the_portfolio_export_states_yahoos_name_and_the_events_export_does_not(
+        tmp_path):
+    """``portfolio.csv`` is a state, so it resolves the name; ``events.csv`` is
+    the ledger, so an unnamed row stays empty (#1386)."""
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    client.post('/api/events', json=_draft(symbol='MSFT'))
+    quotes.record_attributes(opened, 'MSFT', datetime.now(timezone.utc),
+                             {'long_name': 'Microsoft Corporation'})
+
+    held = list(csv.DictReader(io.StringIO(
+        client.get('/api/export/portfolio.csv').get_data(as_text=True))))
+    ledgered = list(csv.DictReader(io.StringIO(
+        client.get('/api/export/events.csv').get_data(as_text=True))))
+
+    assert {row['symbol']: row['name'] for row in held if row['symbol']} == {
+        'AAPL': 'Apple Inc', 'MSFT': 'Microsoft Corporation'}
+    assert {row['symbol']: row['name'] for row in ledgered} == {
+        'AAPL': 'Apple Inc', 'MSFT': ''}

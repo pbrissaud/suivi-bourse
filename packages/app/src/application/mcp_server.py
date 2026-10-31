@@ -17,6 +17,7 @@ from application.account_facts import AccountsPayload
 from application import benchmark_view
 from application import event_proposals
 from application import instants
+from application import ledger
 from application import portfolio_facts
 from application import profile
 from application import proposals
@@ -1062,11 +1063,12 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                         key=lambda event: event.date or date.min,
                         reverse=True)[:limit]
 
+        names = ledger.yahoo_names(_store())
         return reading(lambda: {
             'base_currency': _base_currency(),
             'total': total,
             'returned': len(newest),
-            'events': [_event_to_dict(event) for event in newest],
+            'events': [_event_to_dict(event, names) for event in newest],
         }, Ledger)
 
     @mcp.tool(description=GET_INVESTMENT_RHYTHM_DESCRIPTION)
@@ -1162,14 +1164,14 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
     return mcp
 
 
-def _event_to_dict(event) -> Dict[str, Any]:
-    """One event, as ``/api/events`` puts it on the wire."""
+def _event_to_dict(event, names=None) -> Dict[str, Any]:
+    """One event, as ``/api/events`` puts it on the wire (names: see there)."""
     return {key: store_module.finite(value) for key, value in {
         'id': str(event.id) if event.id is not None else None,
         'date': event.date.isoformat() if event.date else None,
         'event_type': event.event_type.value,
         'symbol': event.symbol,
-        'name': event.name,
+        'name': event.name or (names or {}).get(event.symbol),
         'quantity': event.quantity,
         'unit_price': event.unit_price,
         'fee': event.fee,

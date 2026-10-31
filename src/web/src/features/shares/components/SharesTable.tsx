@@ -390,7 +390,10 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
           {/* The ticker follows the name on the same line (#1281): outside the
               button, so the button's name is the name alone, and never
               truncated — it is what the reader recognises the line by. */}
-          <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.symbol}</span>
+          {/* Nobody named it (#1386): the button already reads the ticker. */}
+          {row.name === null ? null : (
+            <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.symbol}</span>
+          )}
           {isAnomalous(row) ? (
             <span className="inline-flex items-center text-attention">
               <TriangleAlert className="size-4" aria-hidden />

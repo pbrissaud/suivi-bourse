@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from application import market_info
 from application import perf_series
 from application import quotes
 from application import store_reads
@@ -1118,3 +1119,63 @@ def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker
     # row-by-row seam is not reached at all any more.
     assert block.call_count == 6
     assert loop.call_count == 0
+
+
+# --------------------------------------------------------------------------- #
+# What Yahoo calls it (#1386)
+# --------------------------------------------------------------------------- #
+
+def test_yahoos_long_name_is_read_collapsed_and_mapped_to_a_column():
+    info = market_info.quote_attributes({'longName': '  SAP \n SE ',
+                                         'shortName': 'SAP'})
+
+    assert info['longName'] == 'SAP SE'
+    assert market_info.quote_columns(info)['long_name'] == 'SAP SE'
+
+
+def test_the_short_name_stands_in_when_there_is_no_long_one():
+    assert market_info.quote_attributes({'shortName': 'SAP  SE'})['longName'] == 'SAP SE'
+
+
+def test_no_name_at_all_is_none_and_never_an_empty_string():
+    assert market_info.quote_attributes({})['longName'] is None
+    assert market_info.quote_attributes({'longName': '  '})['longName'] is None
+
+
+def _position(store, name):
+    store.execute("INSERT INTO symbol (symbol) VALUES ('SAP.DE')")
+    store.execute("INSERT INTO account (id, label) VALUES ('default', 'D') "
+                  "ON CONFLICT DO NOTHING")
+    store.execute(
+        "INSERT INTO position VALUES ('default', 'SAP.DE', ?, 2, 360, 0, 0)",
+        [name])
+
+
+def test_a_declared_name_wins_over_yahoos(store):
+    _position(store, 'Ma SAP')
+    quotes.record_attributes(store, 'SAP.DE', NOW, {'long_name': 'SAP SE'})
+
+    assert store_reads.PortfolioReader(store).positions()[0]['name'] == 'Ma SAP'
+
+
+def test_yahoos_name_fills_a_position_nobody_named(store):
+    _position(store, None)
+    quotes.record_attributes(store, 'SAP.DE', NOW, {'long_name': 'SAP SE'})
+
+    assert store_reads.PortfolioReader(store).positions()[0]['name'] == 'SAP SE'
+
+
+def test_a_position_nobody_and_nothing_named_has_no_name(store):
+    _position(store, None)
+
+    assert store_reads.PortfolioReader(store).positions()[0]['name'] is None
+
+
+def test_a_live_fetch_without_a_name_keeps_the_name_already_read(declared):
+    """A thin ``.info`` payload must not send the display back to the ticker (#1386)."""
+    quotes.record_quote(declared, 'AAPL', NOW, 187.0,
+                        {'currency': 'USD', 'long_name': 'Apple Inc.'})
+    quotes.record_quote(declared, 'AAPL', NOW + timedelta(minutes=5), 188.0,
+                        {'currency': 'USD', 'long_name': None})
+
+    assert quotes.read_quote(declared, 'AAPL')['long_name'] == 'Apple Inc.'

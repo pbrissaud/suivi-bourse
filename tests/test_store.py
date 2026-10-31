@@ -782,7 +782,7 @@ def test_a_store_that_predates_the_classification_reads_a_quote(tmp_path):
         "VALUES ('AAPL', 'USD', 187.0, DATE '2021-05-04')")
     connection.close()
 
-    opened = store_module.open_store(path)
+    opened = store_module.open_store(path, schema_steps.STEPS)
     try:
         row = quotes.read_quote(opened, 'AAPL')
         assert row['last_price_native'] == 187.0

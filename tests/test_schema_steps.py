@@ -24,6 +24,8 @@ RELEASED = (
     'add_agent_model_name',
     'add_agent_thinking',
     'follow_the_references',
+    'add_symbol_quote_long_name',
+    'forget_ticker_names',
 )
 
 
@@ -159,3 +161,52 @@ def test_an_off_list_reference_is_cleared_and_not_followed(tmp_path):
 
 def test_an_install_that_compared_against_nothing_gets_no_row(tmp_path):
     assert _migrated(tmp_path, {}) == {}
+
+
+def _before(tmp_path, *steps):
+    """A store opened with every step, then put back before ``steps``."""
+    path = tmp_path / 'before.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    connection.executemany('DELETE FROM schema_step WHERE step = ?',
+                           [[name] for name in steps])
+    return path, connection
+
+
+def test_the_long_name_step_adds_a_null_column_and_keeps_the_quote(tmp_path):
+    """A store from before #1386 keeps its quotes, and none of them has a name."""
+    path, connection = _before(tmp_path, 'add_symbol_quote_long_name')
+    connection.execute("INSERT INTO symbol VALUES ('AAPL')")
+    connection.execute(
+        "INSERT INTO symbol_quote (symbol, currency) VALUES ('AAPL', 'USD')")
+    connection.execute('ALTER TABLE symbol_quote DROP COLUMN long_name')
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query(
+            'SELECT currency, long_name FROM symbol_quote') == [('USD', None)]
+    finally:
+        opened.close()
+
+
+def test_the_ticker_names_are_forgotten_once_and_only_those(tmp_path):
+    """``name = symbol`` was the app's fallback, never a declaration (#1386)."""
+    path, connection = _before(tmp_path, 'forget_ticker_names')
+    connection.execute("INSERT INTO symbol VALUES ('SAP.DE'), ('AAPL')")
+    connection.execute("INSERT INTO account (id, label) VALUES ('default', 'D') "
+                       "ON CONFLICT DO NOTHING")
+    connection.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, name, "
+        "                   quantity, unit_price) VALUES "
+        "(1, DATE '2024-01-15', 'BUY', 'default', 'SAP.DE', 'SAP.DE', 1, 100), "
+        "(2, DATE '2024-01-16', 'BUY', 'default', 'AAPL', 'Apple Inc', 1, 100)")
+    connection.close()
+
+    for _ in range(2):  # the second open runs nothing, and changes nothing
+        opened = store_module.open_store(path, schema_steps.STEPS)
+        try:
+            assert opened.query('SELECT id, name FROM event ORDER BY id') == [
+                (1, None), (2, 'Apple Inc')]
+        finally:
+            opened.close()

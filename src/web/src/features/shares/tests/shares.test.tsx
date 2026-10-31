@@ -268,6 +268,16 @@ describe('one line per row (#1281)', () => {
   })
 })
 
+describe('a line nobody named (#1386)', () => {
+  it('reads its ticker once, not twice', async () => {
+    renderShares([aPosition({ symbol: 'SAPDE', name: null })])
+
+    const button = await screen.findByRole('button', { name: 'SAPDE' })
+    const row = button.closest('tr') as HTMLElement
+    expect(within(row).getAllByText('SAPDE')).toHaveLength(1)
+  })
+})
+
 describe('the table sits on the page’s background (#1273)', () => {
   it('draws no box, with the closed shares folded under the total', async () => {
     renderShares()

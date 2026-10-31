@@ -11,6 +11,7 @@ the SDK's transport and nothing of ours; what is ours is the routing, and that i
 held in ``test_mcp_wiring.py``.
 """
 import asyncio
+from dataclasses import replace
 import json
 import math
 import re
@@ -650,6 +651,22 @@ def test_the_ledger_narrows_by_symbol_and_the_total_narrows_with_it(tmp_path):
 
     assert body['total'] == 1
     assert {event['symbol'] for event in body['events']} == {'MSFT'}
+
+
+def test_the_ledger_fills_an_unnamed_row_from_yahoos_name(tmp_path):
+    """A ``null`` name is resolved at read; one the ledger declared wins (#1386)."""
+    unnamed = [replace(event, name=None) if event.symbol == 'MSFT' else event
+               for event in LEDGER]
+    runtime, opened = build_runtime(tmp_path, events=unnamed)
+    for symbol in ('MSFT', 'AAPL'):
+        quotes.record_attributes(opened, symbol, datetime(2024, 9, 16, tzinfo=timezone.utc),
+                                 {'long_name': f'Yahoo {symbol}'})
+
+    body = payload(call(runtime, 'list_events'))
+
+    names = {event['symbol']: event['name'] for event in body['events']}
+    assert names['MSFT'] == 'Yahoo MSFT'
+    assert names['AAPL'] != 'Yahoo AAPL'
 
 
 def test_the_ledger_narrows_by_calendar_day(tmp_path):

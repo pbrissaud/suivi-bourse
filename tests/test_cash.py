@@ -103,13 +103,21 @@ def test_withdrawal_valid():
     assert ok, errors
 
 
-def test_share_event_still_requires_symbol_and_name():
-    # The loader no longer enforces symbol/name; the validator must.
+def test_share_event_still_requires_symbol_but_not_name():
+    # The loader no longer enforces symbol; the validator must. A name is what
+    # somebody declared, and it is resolved at read time otherwise (#1386).
     ev = Event(date(2024, 1, 1), EventType.BUY, quantity=1, unit_price=10.0)
     ok, errors = EventValidator().validate([ev])
     assert not ok
     assert any("symbol is required" in e for e in errors)
-    assert any("name is required" in e for e in errors)
+    assert not any("name" in e for e in errors)
+
+
+def test_a_purchase_with_no_name_is_valid():
+    ev = Event(date(2024, 1, 1), EventType.BUY, symbol="SAP.DE", quantity=1,
+               unit_price=10.0, account="default")
+    ok, errors = EventValidator().validate([ev])
+    assert ok, errors
 
 
 # --------------------------------------------------------------------------- #

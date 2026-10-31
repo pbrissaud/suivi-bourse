@@ -811,6 +811,56 @@ def test_a_row_carrying_half_a_classification_is_filled_rather_than_skipped(
         "Consumer Electronics", "United States")
 
 
+def _sold_out_metrics(store, mocker):
+    """AAPL sold out, its history already complete: only classify has work."""
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
+        acquisitions={"AAPL": date(2024, 1, 15)},
+        exits={"AAPL": date(2024, 6, 4)})
+    metrics.backfill_chunk_days = 365
+    _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+    return metrics
+
+
+def test_a_classified_row_without_a_name_is_asked_again(
+        store, mocker, monkeypatch, fake_ticker):
+    """Classified is the three columns **and** Yahoo's name (#1386)."""
+    metrics = _sold_out_metrics(store, mocker)
+    quotes.record_attributes(
+        store, "AAPL", datetime(2024, 6, 4, tzinfo=timezone.utc),
+        {"sector": "Technology", "industry": "Consumer Electronics",
+         "country": "United States"})
+    monkeypatch.setattr(market.yf, "Ticker", lambda symbol: fake_ticker(
+        info={"sector": "Technology", "industry": "Consumer Electronics",
+              "country": "United States", "longName": "Apple Inc."}))
+
+    metrics.backfill()
+
+    assert quotes.read_quote(store, "AAPL")["long_name"] == "Apple Inc."
+
+
+def test_a_fund_still_gets_its_name_with_one_ask_per_turn(
+        store, mocker, monkeypatch, fake_ticker):
+    """Yahoo classifies a fund as nothing, and names it all the same (#1386)."""
+    metrics = _sold_out_metrics(store, mocker)
+    asked = []
+
+    def _ticker(symbol):
+        asked.append(symbol)
+        return fake_ticker(info={"longName": "Amundi MSCI World"})
+
+    monkeypatch.setattr(market.yf, "Ticker", _ticker)
+
+    metrics.backfill()
+    metrics.backfill()
+
+    row = quotes.read_quote(store, "AAPL")
+    assert row["long_name"] == "Amundi MSCI World"
+    assert (row["sector"], row["industry"], row["country"]) == (None, None, None)
+    assert asked == ["AAPL"]
+
+
 def test_backfill_write_failure_does_not_abort_remaining_symbols(store, mocker):
     acquired_on = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 1, 15)}
     metrics, _ = _build_metrics(

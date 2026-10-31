@@ -18,7 +18,7 @@ logger = getLogger("quotes")
 QUOTE_ATTRIBUTES = (
     'currency', 'exchange', 'quote_type',
     'dividend_yield', 'pe_ratio', 'market_cap',
-    'sector', 'industry', 'country',
+    'sector', 'industry', 'country', 'long_name',
 )
 
 #: ``price_point``'s columns, in the order :func:`record_history` builds a row.
@@ -66,7 +66,12 @@ def record_quote(store, symbol: str, moment: datetime,
     rate = finite(fx_rate)
 
     refreshed = ('fetched_at',) + QUOTE_ATTRIBUTES
-    assignments = ', '.join(f'{name} = excluded.{name}' for name in refreshed)
+    # A name once read is never blanked by a thin payload that omits it (#1386):
+    # the display would fall back to the ticker until the backfill asked again.
+    assignments = ', '.join(
+        f'{name} = COALESCE(excluded.{name}, symbol_quote.{name})'
+        if name == 'long_name' else f'{name} = excluded.{name}'
+        for name in refreshed)
     with store.transaction():
         store.execute(
             f'INSERT INTO symbol_quote (symbol, {", ".join(refreshed)}) '
