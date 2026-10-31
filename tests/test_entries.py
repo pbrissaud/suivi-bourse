@@ -89,11 +89,11 @@ def test_a_row_carries_no_provenance_at_all(store):
     assert created.id is not None
 
 
-def test_the_name_comes_off_the_ledger_or_falls_back(store, tmp_path):
+def test_the_name_comes_off_the_ledger_or_stays_empty(store, tmp_path):
     """The form never asks for it: a name is the security's, not the event's.
 
-    Left ``NULL`` the row would fail ``EventValidator``'s *name is required* on
-    the next build — i.e. a boot nobody can repair from an app that is down.
+    A security nobody named stays ``NULL`` (#1386): the ticker is not written
+    into the row, it is what the front shows when nothing names the line.
     """
     _upload(store, tmp_path)
 
@@ -102,7 +102,7 @@ def test_the_name_comes_off_the_ledger_or_falls_back(store, tmp_path):
 
     assert set(store.query(
         'SELECT symbol, name FROM event WHERE notes = ?',
-        ['Typed here'])) == {('AAPL', 'Apple Inc'), ('MSFT', 'MSFT')}
+        ['Typed here'])) == {('AAPL', 'Apple Inc'), ('MSFT', None)}
 
 
 def test_a_blank_account_is_the_seeded_bucket(store):
@@ -681,3 +681,13 @@ def test_a_row_deleted_before_this_store_has_written_keeps_its_key(store):
         assert entries.create(reopened, _draft(notes='after')).id == 4
     finally:
         reopened.close()
+
+
+def test_an_unnamed_security_is_named_nothing_on_both_roads(store, tmp_path):
+    """``_named`` answers ``None``, whether it reads the store or a prepared map."""
+    _upload(store, tmp_path)
+
+    assert entries._named(store, 'SAP.DE') is None
+    assert entries._named(store, 'SAP.DE', {'AAPL': 'Apple Inc'}) is None
+    assert entries._named(store, 'AAPL') == 'Apple Inc'
+    assert entries._named(store, 'AAPL', {'AAPL': 'Apple Inc'}) == 'Apple Inc'

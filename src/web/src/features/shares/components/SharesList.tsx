@@ -170,8 +170,13 @@ function ShareItem({ row, grouped, currency, onSelect }: ShareItemProps) {
       </div>
       <div className="flex items-baseline justify-between gap-3">
         <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground">
-          {row.symbol}
-          {grouped || row.accounts.length === 0 ? null : ` · ${row.accounts.join(', ')}`}
+          {/* The ticker is the title when nobody named the line (#1386). */}
+          {[
+            row.name === null ? null : row.symbol,
+            grouped || row.accounts.length === 0 ? null : row.accounts.join(', '),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
         <span
           className={`shrink-0 text-xs font-medium tabular ${toneOf(renderings.unrealised, gain)}`}

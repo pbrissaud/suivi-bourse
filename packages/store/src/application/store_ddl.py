@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS symbol_quote (
     sector                VARCHAR,                   -- what it does (#964)
     industry              VARCHAR,
     country               VARCHAR,                   -- *not* Yahoo's `region`
+    long_name             VARCHAR,                   -- what Yahoo calls it (#1386)
     fetched_at            TIMESTAMPTZ,
     last_price_native     DOUBLE,                   -- the `latest` row
     last_price_converted  DOUBLE,
