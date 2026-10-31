@@ -59,7 +59,9 @@ export const FIELDS: Record<LedgerEventType, FieldSet> = {
  * `−(quantity × price + fee)`, a sale `quantity × price − fee`. `null` for a
  * grant, which moves shares and no cash, and for a row missing a figure.
  */
-export function cashFlow(event: LedgerEvent): number | null {
+export function cashFlow(
+  event: Pick<LedgerEvent, 'event_type' | 'quantity' | 'unit_price' | 'fee' | 'amount'>,
+): number | null {
   const fee = event.fee ?? 0
   const traded =
     event.quantity !== null && event.unit_price !== null ? event.quantity * event.unit_price : null

@@ -59,6 +59,7 @@ import { currencyInput, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
   accountOf,
+  cashFlow,
   FIELDS,
   fold,
   isEditable,
@@ -70,6 +71,16 @@ import {
 } from '@/features/data/lib/ledger'
 import { entryGone, problemSentence, refusedKey } from '@/lib/problem'
 import { cn } from '@/lib/utils'
+
+/**
+ * The sentence for a cash flow. **Below half a cent it is neither a debit nor a
+ * credit** — a sale whose fees eat the proceeds — and a float's noise
+ * (`−4e-16`) must not pick a direction for it.
+ */
+function cashLabel(cash: number) {
+  if (Math.abs(cash) < 0.005) return 'data.form.cash.none' satisfies MessageKey
+  return cash < 0 ? 'data.form.cash.debited' : 'data.form.cash.credited'
+}
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
 interface Draft {
@@ -178,6 +189,8 @@ interface EventFormProps {
    * and the name, so the suggestion costs no request of its own.
    */
   titles: readonly Title[] | null
+  /** The ledger's reporting currency, `null` until the totals have answered. */
+  currency: string | null
   onClose: () => void
   /** Asks for the row being edited to be removed — the confirmation is the caller's (#1264). */
   onDelete: () => void
@@ -189,6 +202,7 @@ export function EventForm({
   accounts,
   accountsFailed,
   titles,
+  currency,
   onClose,
   onDelete,
 }: EventFormProps) {
@@ -286,6 +300,24 @@ export function EventForm({
   }
 
   const fields = type === null ? null : FIELDS[type]
+
+  /**
+   * **The cash this event will move** (#1461), by the ledger's own `cashFlow`, so
+   * the sheet and the *Montant* column agree to the cent. Parsed on every render
+   * from the typed strings; a figure the type needs and cannot read gives no line.
+   */
+  const cash = (() => {
+    if (type === null || fields === null) return null
+    const read = (field: FieldName, present: boolean) =>
+      present ? parseDecimal(draft[field]) : null
+    return cashFlow({
+      event_type: type,
+      quantity: read('quantity', fields.quantity),
+      unit_price: read('unitPrice', fields.unitPrice !== 'none'),
+      fee: read('fee', fields.fee) ?? 0,
+      amount: read('amount', fields.amount),
+    })
+  })()
 
   /**
    * **The grant's price is suggested, and never imposed** (#1007).
@@ -913,6 +945,12 @@ export function EventForm({
                   />
                 )}
               </Field>
+
+              {cash !== null ? (
+                <p className="text-sm tabular-nums">
+                  {t(cashLabel(cash), { amount: format.currency(Math.abs(cash), currency) })}
+                </p>
+              ) : null}
 
               {write.error && refusedField(write.error) === null ? (
                 <Refusal ref={refusal}>{problemSentence(t, write.error)}</Refusal>
