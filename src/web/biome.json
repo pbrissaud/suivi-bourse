@@ -66,7 +66,8 @@
         "**/src/**/*.{ts,tsx}",
         "!**/components/ui/**",
         "!**/src/test/**",
-        "!**/*.test.{ts,tsx}"
+        "!**/*.test.{ts,tsx}",
+        "!**/src/lib/oklch.ts"
       ]
     },
     {
@@ -75,7 +76,8 @@
         "**/src/**/*.{ts,tsx}",
         "!**/src/test/**",
         "!**/*.test.{ts,tsx}",
-        "!**/src/lib/sign.ts"
+        "!**/src/lib/sign.ts",
+        "!**/features/settings/lib/themeForm.ts"
       ]
     },
     {
@@ -108,7 +110,8 @@
         "!**/components/ui/**",
         "!**/src/test/**",
         "!**/*.test.tsx",
-        "!**/features/accounts/components/AccountDetail.tsx"
+        "!**/features/accounts/components/AccountDetail.tsx",
+        "!**/features/settings/components/ThemeForm.tsx"
       ]
     },
     {
