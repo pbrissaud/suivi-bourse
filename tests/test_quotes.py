@@ -1179,3 +1179,16 @@ def test_a_live_fetch_without_a_name_keeps_the_name_already_read(declared):
                         {'currency': 'USD', 'long_name': None})
 
     assert quotes.read_quote(declared, 'AAPL')['long_name'] == 'Apple Inc.'
+
+
+def test_a_blank_long_name_falls_back_to_the_short_one():
+    """Each name is collapsed before the choice: whitespace is not a name (#1386)."""
+    info = market_info.quote_attributes({'longName': '   ', 'shortName': 'SAP  SE'})
+
+    assert info['longName'] == 'SAP SE'
+
+
+def test_no_name_means_no_long_name_column_to_write():
+    """``record_attributes`` writes the columns it is given, so none must blank (#1386)."""
+    assert 'long_name' not in market_info.quote_columns(
+        market_info.quote_attributes({'currency': 'EUR'}))

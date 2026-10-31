@@ -441,6 +441,17 @@ def cap_dividend_fees(connection) -> List[Tuple[int, float]]:
     return capped
 
 
+def forget_ticker_names(connection) -> None:
+    """Null every name that is only the row's own ticker (#1386).
+
+    A schema step's write, kept here because this module is the table's writer;
+    it runs on the step's connection and inside its transaction. The ticker was
+    the fallback name the app wrote when nobody named a security: ``name ??
+    symbol`` shows the same text, so the display does not move.
+    """
+    connection.execute('UPDATE event SET name = NULL WHERE name = symbol')
+
+
 def _replays(store) -> None:
     """Replay the ledger this gesture would leave, before the commit."""
     EventAggregator().aggregate(ledger.read_events(store))

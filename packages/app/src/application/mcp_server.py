@@ -1063,13 +1063,16 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                         key=lambda event: event.date or date.min,
                         reverse=True)[:limit]
 
-        names = ledger.yahoo_names(_store())
-        return reading(lambda: {
-            'base_currency': _base_currency(),
-            'total': total,
-            'returned': len(newest),
-            'events': [_event_to_dict(event, names) for event in newest],
-        }, Ledger)
+        def _body():
+            """The reads and the serialisation, so a storage fault arrives in words."""
+            names = ledger.yahoo_names(_store())
+            return {
+                'base_currency': _base_currency(),
+                'total': total,
+                'returned': len(newest),
+                'events': [_event_to_dict(event, names) for event in newest],
+            }
+        return reading(_body, Ledger)
 
     @mcp.tool(description=GET_INVESTMENT_RHYTHM_DESCRIPTION)
     def get_investment_rhythm() -> Rhythm:

@@ -502,7 +502,7 @@ class BackfillWorkload:
         classification = {name: columns[name] for name in CLASSIFICATION}
         # The name rides the same answer (#1386) -- only when Yahoo gave one, so
         # an answer without it never blanks what the scrape already wrote.
-        named = {'long_name': columns['long_name']} if columns['long_name'] else {}
+        named = {'long_name': columns['long_name']} if 'long_name' in columns else {}
 
         if not any(classification.values()):
             # A fund, most often: Yahoo publishes no sector for one, and an

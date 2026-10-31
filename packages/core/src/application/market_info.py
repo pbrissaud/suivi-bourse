@@ -6,6 +6,11 @@ from decimal import Decimal
 from typing import Mapping, MutableMapping, Optional, Sequence
 
 
+def _name(value) -> Optional[str]:
+    """One Yahoo name with its whitespace collapsed, or ``None`` when blank."""
+    return ' '.join(str(value or '').split()) or None
+
+
 def quote_attributes(raw: Mapping) -> dict:
     """The quotation attributes of a fetch, from Yahoo's own mapping."""
     return {
@@ -24,8 +29,7 @@ def quote_attributes(raw: Mapping) -> dict:
         'country': raw.get('country'),
         #: What Yahoo calls it, whitespace collapsed like :func:`security_lines`
         #: does (#1386): the name a security nobody named is shown under.
-        'longName': ' '.join(
-            (raw.get('longName') or raw.get('shortName') or '').split()) or None,
+        'longName': _name(raw.get('longName')) or _name(raw.get('shortName')),
     }
 
 
@@ -66,8 +70,13 @@ def live_attributes(raw: Mapping, history_meta: Optional[Mapping]) -> dict:
 
 
 def quote_columns(info: Mapping) -> dict:
-    """The ``symbol_quote`` columns one translated mapping supplies."""
-    return {
+    """The ``symbol_quote`` columns one translated mapping supplies.
+
+    ``long_name`` rides only when Yahoo gave a name (#1386): a writer that names
+    its columns, ``record_attributes`` among them, must never blank a name an
+    earlier fetch established.
+    """
+    columns = {
         'currency': info.get('currency'),
         'exchange': info.get('exchange'),
         'quote_type': info.get('quoteType'),
@@ -77,8 +86,10 @@ def quote_columns(info: Mapping) -> dict:
         'sector': info.get('sector'),
         'industry': info.get('industry'),
         'country': info.get('country'),
-        'long_name': info.get('longName'),
     }
+    if info.get('longName'):
+        columns['long_name'] = info['longName']
+    return columns
 
 
 def currency_of(info: Optional[Mapping]) -> Optional[str]:

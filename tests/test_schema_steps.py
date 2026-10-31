@@ -175,11 +175,23 @@ def _before(tmp_path, *steps):
 
 def test_the_long_name_step_adds_a_null_column_and_keeps_the_quote(tmp_path):
     """A store from before #1386 keeps its quotes, and none of them has a name."""
-    path, connection = _before(tmp_path, 'add_symbol_quote_long_name')
+    # The table as the released DDL spelled it, before the column existed.
+    column = "    long_name             VARCHAR,                   -- what Yahoo calls it (#1386)\n"
+    assert column in store_module.DDL
+    legacy = store_module.DDL.replace(column, "")
+
+    path = tmp_path / 'old.duckdb'
+    connection = duckdb.connect(str(path))
+    connection.execute(legacy)
     connection.execute("INSERT INTO symbol VALUES ('AAPL')")
     connection.execute(
         "INSERT INTO symbol_quote (symbol, currency) VALUES ('AAPL', 'USD')")
-    connection.execute('ALTER TABLE symbol_quote DROP COLUMN long_name')
+    # Every earlier step already ran, as on a store in the wild.
+    connection.executemany(
+        "INSERT INTO schema_step (step, applied_at) "
+        "VALUES (?, TIMESTAMPTZ '2026-10-01 00:00:00+00')",
+        [[name] for name in RELEASED
+         if name not in ('add_symbol_quote_long_name', 'forget_ticker_names')])
     connection.close()
 
     opened = store_module.open_store(path, schema_steps.STEPS)

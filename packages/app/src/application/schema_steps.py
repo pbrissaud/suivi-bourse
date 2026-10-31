@@ -66,9 +66,10 @@ def _forget_ticker_names(connection) -> None:
     """Undo the ticker the app used to write as a security's name (#1386).
 
     ``name ?? symbol`` shows the same text, so the display does not move; the
-    row just stops claiming somebody declared it. Idempotent.
+    row just stops claiming somebody declared it. Idempotent. The write is
+    :func:`entries.forget_ticker_names`, ``event`` having one writer.
     """
-    connection.execute('UPDATE event SET name = NULL WHERE name = symbol')
+    entries.forget_ticker_names(connection)
 
 
 def _add_agent_thinking(connection) -> None:
