@@ -48,6 +48,7 @@ export function ReferenceRebuild({
           reached={rebuild.reached}
           target={rebuild.target}
           ratio={rebuild.ratio}
+          requested={rebuild.requested}
         />
         <Button asChild variant="outline" className="max-md:h-11">
           <Link to="/settings" hash="portfolio-references">

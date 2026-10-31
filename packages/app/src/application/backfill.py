@@ -90,17 +90,23 @@ class BackfillWorkload:
         """Backfill historical price data, one series per **symbol**, in both directions. This runs as its own scheduled job, progressively filling gaps."""
         now = now or datetime.now(timezone.utc)
         snapshot = self.facade.config_manager.current()
-        # Read fresh each cycle, not off the snapshot: the snapshot is a view of
-        # the *ledger* and is cached on it, so a reference named between two
+        # Read fresh, not off the snapshot: the snapshot is a view of the
+        # *ledger* and is cached on it, so a reference followed between two
         # cycles would not be seen until an event moved. Its effect is
         # `next_cycle`, and this is that cycle.
-        # The followed ETFs (#1312), one download at a time: every complete one
-        # keeps its forward pass, and only the first incomplete one is walked
-        # backwards, in the order the owner turned them on.
-        complete, downloading = benchmark_view.downloads(
-            self.facade.config_manager.store, snapshot, now)
-        references = complete + ([downloading] if downloading else [])
-        windows = snapshot.tracked_windows(*references)
+        store = self.facade.config_manager.store
+
+        def perimeter():
+            # The followed ETFs (#1312), one download at a time: every complete
+            # one keeps its forward pass, and only the first incomplete one is
+            # walked backwards, in the order the owner turned them on.
+            complete, downloading = benchmark_view.downloads(
+                store, snapshot, now)
+            references = complete + ([downloading] if downloading else [])
+            return (snapshot.tracked_windows(*references), references,
+                    downloading)
+
+        windows, _, _ = perimeter()
 
         self.facade._collapse_to_ladder(now)
 
@@ -113,16 +119,28 @@ class BackfillWorkload:
 
         held = carrying.held_symbols(snapshot.shares)
 
-        if references:
-            # A quote references a `symbol` row, and no event will ever create
-            # these. Idempotent, so it also converges from a restored store.
-            with self.facade.config_manager.writing() as opened:
-                for reference in references:
-                    entries.declare_symbol(opened, reference)
-
         repaired_count = 0
 
-        for symbol in sorted(windows):
+        # **The fund being downloaded goes first, and is looked up again before
+        # every symbol** (#1336). A cycle takes minutes on a fresh install, so a
+        # reference followed while it runs would otherwise wait out the rest of
+        # it, then the next one, behind every symbol sorted before it.
+        visited: Set[str] = set()
+        while True:
+            windows, references, downloading = perimeter()
+            pending = sorted(set(windows) - visited)
+            if not pending:
+                break
+            symbol = downloading if downloading in pending else pending[0]
+            visited.add(symbol)
+
+            if symbol in references:
+                # A quote references a `symbol` row, and no event will ever
+                # create this one. Idempotent, so it also converges from a
+                # restored store.
+                with self.facade.config_manager.writing() as opened:
+                    entries.declare_symbol(opened, symbol)
+
             written, repaired = self.facade._backfill_symbol(
                 symbol, windows[symbol],
                 symbol in held or symbol in references, now)

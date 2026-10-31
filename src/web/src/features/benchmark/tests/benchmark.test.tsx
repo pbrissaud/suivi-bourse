@@ -130,7 +130,13 @@ describe('the comparison', () => {
       index: 'MSCI World',
       covered_from: '2009-06-16',
       covered_to: '2026-09-17',
-      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 },
+      rebuild: {
+        symbol: 'CW8.PA',
+        reached: '2014-03-04',
+        target: '2009-06-16',
+        ratio: 0.55,
+        requested: true,
+      },
     })
     await screen.findByRole('region', { name: /MSCI World en cours de téléchargement/ })
     expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
@@ -183,7 +189,13 @@ describe('the comparison', () => {
       state: 'rebuilding',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 },
+      rebuild: {
+        symbol: 'CW8.PA',
+        reached: '2014-03-04',
+        target: '2009-06-16',
+        ratio: 0.55,
+        requested: true,
+      },
     })
 
     // The load-bearing rule: a gap computed over half a series is a **wrong**
@@ -198,7 +210,13 @@ describe('the comparison', () => {
       state: 'splits_unknown',
       reference: 'CW8.PA',
       index: 'MSCI World',
-      rebuild: { symbol: 'CW8.PA', reached: '2009-06-16', target: '2009-06-16', ratio: 1 },
+      rebuild: {
+        symbol: 'CW8.PA',
+        reached: '2009-06-16',
+        target: '2009-06-16',
+        ratio: 1,
+        requested: true,
+      },
     })
 
     // The series is complete and the ratios behind it are not, so a replay
@@ -230,7 +248,13 @@ describe('the comparison', () => {
       index: 'MSCI World',
       followed: ['CW8.PA'],
       ready: [],
-      rebuild: { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.555 },
+      rebuild: {
+        symbol: 'CW8.PA',
+        reached: '2014-03-04',
+        target: '2009-06-16',
+        ratio: 0.555,
+        requested: true,
+      },
     })
 
     const section = await screen.findByRole('region', {
@@ -783,7 +807,13 @@ describe('the page sits on the ground (#1273)', () => {
     portfolio_return: 0.181,
     reference_return: 0.078,
   }))
-  const rebuild = { symbol: 'CW8.PA', reached: '2014-03-04', target: '2009-06-16', ratio: 0.55 }
+  const rebuild = {
+    symbol: 'CW8.PA',
+    reached: '2014-03-04',
+    target: '2009-06-16',
+    ratio: 0.55,
+    requested: true,
+  }
 
   it('draws the chart and the per-account table as sections, under one hero', async () => {
     renderBenchmark(ready({ series, per_account }))

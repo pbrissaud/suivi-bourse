@@ -667,6 +667,7 @@ export function Ledger({
         accounts={accounts.data}
         accountsFailed={accounts.isError}
         titles={titles}
+        currency={currency}
         onClose={() => setEditing(undefined)}
         onDelete={() => setRemoving(editing ?? null)}
       />
