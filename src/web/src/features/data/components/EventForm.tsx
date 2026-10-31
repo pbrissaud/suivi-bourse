@@ -72,6 +72,16 @@ import {
 import { entryGone, problemSentence, refusedKey } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
+/**
+ * The sentence for a cash flow. **Below half a cent it is neither a debit nor a
+ * credit** — a sale whose fees eat the proceeds — and a float's noise
+ * (`−4e-16`) must not pick a direction for it.
+ */
+function cashLabel(cash: number) {
+  if (Math.abs(cash) < 0.005) return 'data.form.cash.none' satisfies MessageKey
+  return cash < 0 ? 'data.form.cash.debited' : 'data.form.cash.credited'
+}
+
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
 interface Draft {
   date: string
@@ -938,9 +948,7 @@ export function EventForm({
 
               {cash !== null ? (
                 <p className="text-sm tabular-nums">
-                  {t(cash < 0 ? 'data.form.cash.debited' : 'data.form.cash.credited', {
-                    amount: format.currency(Math.abs(cash), currency),
-                  })}
+                  {t(cashLabel(cash), { amount: format.currency(Math.abs(cash), currency) })}
                 </p>
               ) : null}
 

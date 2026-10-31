@@ -585,6 +585,7 @@
   "data.form.fee": "Fee",
   "data.form.amount": "Amount",
   "data.form.cash.credited": "Credited to the account: {amount}",
+  "data.form.cash.none": "Movement on the account: {amount}",
   "data.form.cash.debited": "Debited from the account: {amount}",
   "data.form.notes": "Label",
   "data.form.optional": "optional",

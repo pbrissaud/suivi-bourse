@@ -2964,7 +2964,9 @@ describe('EventFigure (#1355, #1425)', () => {
 describe('the cash the form says it will move (#1461)', () => {
   /** The line, its spaces folded: `Intl` separates thousands with a narrow no-break space. */
   const said = () =>
-    screen.queryByText(/(Débité du compte|Crédité au compte)/)?.textContent?.replace(/\s/g, ' ')
+    screen
+      .queryByText(/(Débité du compte|Crédité au compte|Mouvement sur le compte)/)
+      ?.textContent?.replace(/\s/g, ' ')
 
   async function fill(user: User, type: string, values: Record<string, string>) {
     await user.click(screen.getByRole('radio', { name: type }))
@@ -2993,6 +2995,11 @@ describe('the cash the form says it will move (#1461)', () => {
     ],
     ['Vente', { Quantité: '1', 'Prix unitaire': '1', Frais: '2' }, 'Débité du compte : 1,00 €'],
     ['Dividende', { Montant: '12', Frais: '1,80' }, 'Crédité au compte : 10,20 €'],
+    [
+      'Vente',
+      { Quantité: '1', 'Prix unitaire': '2', Frais: '2' },
+      'Mouvement sur le compte : 0,00 €',
+    ],
     ['Retrait', { Montant: '100', Frais: '1' }, 'Débité du compte : 101,00 €'],
     ['Versement', { Montant: '500' }, 'Crédité au compte : 500,00 €'],
   ])('%s %j reads « %s »', async (type, values, line) => {
@@ -3062,7 +3069,8 @@ describe('the cash the form says it will move (#1461)', () => {
     await fill(user, 'Achat', { Quantité: '1', 'Prix unitaire': '10' })
     const line = await screen.findByText(/Débité du compte/)
     expect(line.className).not.toMatch(/text-(gain|loss|destructive)/)
-    expect(line.closest('[aria-live]')).toBeNull()
+    // Explicit live regions, and the roles that imply one.
+    expect(line.closest('[aria-live], [role="status"], [role="alert"], [role="log"]')).toBeNull()
     expect(line.closest('output')).toBeNull()
   })
 })
