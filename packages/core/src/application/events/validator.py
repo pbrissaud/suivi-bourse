@@ -71,8 +71,6 @@ class EventValidator:
                     f"symbol '{event.symbol}' holds a character no ticker "
                     f"has — a lookalike letter, most often (tickers are "
                     f"spelled in ASCII: MC.PA, ^FCHI, BTC-EUR)"))
-            if not event.name:
-                errors.append(_issue('name', prefix, "name is required"))
 
             if event.event_type == EventType.BUY:
                 errors.extend(self._validate_buy(event, prefix))

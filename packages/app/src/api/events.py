@@ -46,17 +46,22 @@ def list_events():
     if symbol:
         events = [event for event in events if event.symbol == symbol]
 
-    return jsonify([_event_to_dict(event) for event in events])
+    names = ledger.yahoo_names(_store())
+    return jsonify([_event_to_dict(event, names) for event in events])
 
 
-def _event_to_dict(event) -> dict:
-    """One :class:`events.schemas.Event`, on the wire."""
+def _event_to_dict(event, names=None) -> dict:
+    """One :class:`events.schemas.Event`, on the wire.
+
+    A ``null`` name is filled from ``names`` (Yahoo's, by symbol); one the ledger
+    declared always wins (#1386).
+    """
     return {key: store_module.finite(value) for key, value in {
         'id': str(event.id) if event.id is not None else None,
         'date': event.date.isoformat() if event.date else None,
         'event_type': event.event_type.value,
         'symbol': event.symbol,
-        'name': event.name,
+        'name': event.name or (names or {}).get(event.symbol),
         'quantity': event.quantity,
         'unit_price': event.unit_price,
         'fee': event.fee,

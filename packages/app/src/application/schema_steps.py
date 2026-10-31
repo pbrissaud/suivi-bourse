@@ -53,6 +53,24 @@ def _add_agent_model_name(connection) -> None:
     store_steps.add_column(connection, 'agent_config', 'model_name', 'VARCHAR')
 
 
+def _add_symbol_quote_long_name(connection) -> None:
+    """Give ``symbol_quote`` the name Yahoo calls the security (#1386).
+
+    NULL until the scrape or the classification backfill reads it. A no-op on a
+    new store, whose table already has the column.
+    """
+    store_steps.add_column(connection, 'symbol_quote', 'long_name', 'VARCHAR')
+
+
+def _forget_ticker_names(connection) -> None:
+    """Undo the ticker the app used to write as a security's name (#1386).
+
+    ``name ?? symbol`` shows the same text, so the display does not move; the
+    row just stops claiming somebody declared it. Idempotent.
+    """
+    connection.execute('UPDATE event SET name = NULL WHERE name = symbol')
+
+
 def _add_agent_thinking(connection) -> None:
     """Give ``agent_config`` the analyst's thinking level (#1191).
 
@@ -114,6 +132,8 @@ STEPS = store_steps.STEPS + (
     ('add_agent_model_name', _add_agent_model_name),
     ('add_agent_thinking', _add_agent_thinking),
     ('follow_the_references', _follow_the_references),
+    ('add_symbol_quote_long_name', _add_symbol_quote_long_name),
+    ('forget_ticker_names', _forget_ticker_names),
 )
 
 __all__ = ['STEPS']

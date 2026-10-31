@@ -120,9 +120,11 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
                     >
                       {row.name ?? row.symbol}
                     </button>
-                    <span className="block font-mono text-2xs text-muted-foreground">
-                      {row.symbol}
-                    </span>
+                    {row.name === null ? null : (
+                      <span className="block font-mono text-2xs text-muted-foreground">
+                        {row.symbol}
+                      </span>
+                    )}
                   </TableCell>
                   {/* The one column that discriminates these rows. An em dash
                     where the store has no date: there is nothing to compute. */}
@@ -165,8 +167,9 @@ function ClosedList({ rows, currency, onSelect }: ClosedSharesProps) {
               {t('shares.column.closedOn')} {row.closedAt === null ? ABSENT : f.date(row.closedAt)}
             </span>
             <span className="truncate font-mono text-2xs text-muted-foreground">
-              {row.symbol}
-              {row.accounts.length === 0 ? null : ` · ${row.accounts.join(', ')}`}
+              {[row.name === null ? null : row.symbol, row.accounts.join(', ')]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-0.5">

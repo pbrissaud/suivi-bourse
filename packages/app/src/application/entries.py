@@ -375,15 +375,19 @@ def _settled(store, draft: Event,
 
 def _named(store, symbol: Optional[str],
            known: Optional[Mapping[str, str]] = None) -> Optional[str]:
-    """What this ledger already calls that security, or the ticker itself."""
+    """What this ledger already calls that security, or ``None`` (#1386).
+
+    The ticker is **not** a fallback: a row holds what somebody declared, and the
+    name shown is resolved at read time (the ledger's, Yahoo's, the ticker).
+    """
     if not symbol:
         return None
     if known is not None:
-        return known.get(symbol) or symbol
+        return known.get(symbol)
     rows = store.query(
         'SELECT name FROM event WHERE symbol = ? AND name IS NOT NULL '
         'ORDER BY date DESC, id DESC LIMIT 1', [symbol])
-    return rows[0][0] if rows else symbol
+    return rows[0][0] if rows else None
 
 
 def _known_names(store) -> Dict[str, str]:

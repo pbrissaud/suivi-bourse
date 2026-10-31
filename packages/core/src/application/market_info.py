@@ -22,6 +22,10 @@ def quote_attributes(raw: Mapping) -> dict:
         'sector': raw.get('sector'),
         'industry': raw.get('industry'),
         'country': raw.get('country'),
+        #: What Yahoo calls it, whitespace collapsed like :func:`security_lines`
+        #: does (#1386): the name a security nobody named is shown under.
+        'longName': ' '.join(
+            (raw.get('longName') or raw.get('shortName') or '').split()) or None,
     }
 
 
@@ -73,6 +77,7 @@ def quote_columns(info: Mapping) -> dict:
         'sector': info.get('sector'),
         'industry': info.get('industry'),
         'country': info.get('country'),
+        'long_name': info.get('longName'),
     }
 
 
