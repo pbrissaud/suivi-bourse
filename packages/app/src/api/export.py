@@ -2,9 +2,8 @@
 
 from flask import Blueprint, Response, request
 
-from application import accounts as accounts_module
+from application import account_facts
 from application import ledger
-from application import positions as positions_module
 from application.events.schemas import EventType
 from application.events import export as events_export
 from application.store_reads import PortfolioReader
@@ -12,6 +11,7 @@ from api.problem import (
     unprocessable_request,
 )
 from api.common import (
+    _snapshot,
     _store,
     _InvalidParameter,
     _argument,
@@ -71,11 +71,12 @@ def export_events_workbook():
 def export_portfolio():
     """The accounts and their positions — **the entry that is a report** (#836)."""
     opened = _store()
+    reader = PortfolioReader(opened)
     return _file_response(
         events_export.render_portfolio(
-            accounts_module.read_accounts(opened),
-            positions_module.read_account_states(opened),
-            PortfolioReader(opened).positions(),
+            account_facts.declaration(opened, _snapshot()),
+            {row['account']: row for row in reader.latest_account_metrics()},
+            reader.positions(),
             opened.setting('base_currency')),
         EXPORT_FILENAMES['portfolio.csv'],
         'text/csv; charset=utf-8')

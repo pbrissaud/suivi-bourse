@@ -46,15 +46,6 @@ def read_positions(store) -> List[Dict]:
     return [dict(zip(POSITION_COLUMNS, row)) for row in rows]
 
 
-def read_account_states(store) -> Dict[str, CashState]:
-    """Every account's stored cash ledger, keyed by account id."""
-    rows = store.query(
-        'SELECT account, cash_balance, net_contributed FROM account_state '
-        'ORDER BY account')
-    return {row[0]: CashState(cash_balance=row[1], net_contributed=row[2])
-            for row in rows}
-
-
 __all__ = [
-    'POSITION_COLUMNS', 'write_state', 'read_positions', 'read_account_states',
+    'POSITION_COLUMNS', 'write_state', 'read_positions',
 ]

@@ -105,7 +105,7 @@ class AccountsPayload(TypedDict):
 def accounts_payload(store, snapshot, now: datetime) -> AccountsPayload:
     """The **declared** accounts, each with its newest perf figures and facts."""
     accounts = snapshot.accounts
-    declaration = _declaration(store, snapshot)
+    roster = declaration(store, snapshot)
 
     reader = PortfolioReader(store)
     rows = reader.latest_account_metrics()
@@ -129,8 +129,8 @@ def accounts_payload(store, snapshot, now: datetime) -> AccountsPayload:
     # shares table already renders rather than on a second opinion of it.
     models = {model.id: model
               for model in accounts_module.read_models(store)}
-    usable = _usable(models, carried, declaration)
-    latent = _latent_gains(reader, store, snapshot, now, declaration, usable)
+    usable = _usable(models, carried, roster)
+    latent = _latent_gains(reader, store, snapshot, now, roster, usable)
     twr_since = reader.twr_origin_by_account()
     return {
         'declared': accounts is not None,
@@ -143,17 +143,17 @@ def accounts_payload(store, snapshot, now: datetime) -> AccountsPayload:
             _with_account_facts(summary.to_dict(), carried, opened_on, payments,
                                 usable, latent, twr_since, now.date())
             for summary in portfolio_view.build_accounts(
-                declaration, rows, reader.transfer_fees_by_account(through))
+                roster, rows, reader.transfer_fees_by_account(through))
         ],
     }
 
 
-def _declaration(store, snapshot) -> list:
+def declaration(store, snapshot) -> list:
     """The declared accounts, or the seeded one where nothing was declared."""
     accounts = snapshot.accounts
-    declaration = (accounts.accounts if accounts is not None
-                   else accounts_module.seeded_only(store))
-    return [accounts_module.as_declared(row) for row in declaration]
+    rows = (accounts.accounts if accounts is not None
+            else accounts_module.seeded_only(store))
+    return [accounts_module.as_declared(row) for row in rows]
 
 
 def simulation_account(store, snapshot, now: datetime, account_id: str,
@@ -170,8 +170,8 @@ def simulation_account(store, snapshot, now: datetime, account_id: str,
     refuses: that account *has* a model, and simulating it as ``no_model``
     would say otherwise.
     """
-    declaration = _declaration(store, snapshot)
-    declared = sorted(account.id for account in declaration)
+    roster = declaration(store, snapshot)
+    declared = sorted(account.id for account in roster)
     if account_id not in declared:
         raise simulation.SimulationRefused(
             f"no account {account_id!r}; the declared accounts are: "
@@ -180,7 +180,7 @@ def simulation_account(store, snapshot, now: datetime, account_id: str,
     carried = accounts_module.taxation_models_by_account(store)
     models = {model.id: model
               for model in accounts_module.read_models(store)}
-    usable = _usable(models, carried, declaration)
+    usable = _usable(models, carried, roster)
     if account_id in carried and account_id not in usable:
         raise simulation.SimulationRefused(
             f"account {account_id!r} carries a taxation model this version "
@@ -216,7 +216,7 @@ def _line_price(share, holding, selling: str) -> Optional[float]:
     return holding.market_value / holding.quantity
 
 
-def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
+def _usable(models: dict, carried: dict, roster) -> Dict[str, Any]:
     """The declared models this version still accepts, by account id.
 
     **Checked early, which is the whole of it** — not checked fewer times.
@@ -235,7 +235,7 @@ def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
     either way.
     """
     usable: Dict[str, Any] = {}
-    for account in declaration:
+    for account in roster:
         model = models.get(carried.get(account.id))
         if model is None:
             continue
@@ -251,7 +251,7 @@ def _usable(models: dict, carried: dict, declaration) -> Dict[str, Any]:
     return usable
 
 
-def _latent_gains(reader, store, snapshot, now: datetime, declaration,
+def _latent_gains(reader, store, snapshot, now: datetime, roster,
                   usable: dict) -> dict:
     """The per-account assiette — **read only where something reads it**.
 
@@ -264,12 +264,12 @@ def _latent_gains(reader, store, snapshot, now: datetime, declaration,
     use.
     """
     if not any(getattr(usable.get(account.id), 'kind', None)
-               in _NEEDS_POSITIONS for account in declaration):
+               in _NEEDS_POSITIONS for account in roster):
         return {}
     terminal = quotes.terminal_symbols(store, snapshot.backfill_windows(), now)
     return portfolio_view.latent_gains_by_account(
         portfolio_view.build_shares(reader.positions(), terminal),
-        [account.id for account in declaration])
+        [account.id for account in roster])
 
 
 def _with_account_facts(row: dict, carried: dict, opened_on: dict,
@@ -352,4 +352,4 @@ def declared_only(facts: dict) -> dict:
     return {name: value for name, value in facts.items() if value is not None}
 
 
-__all__ = ['accounts_payload', 'declared_only', 'simulation_account']
+__all__ = ['accounts_payload', 'declaration', 'declared_only', 'simulation_account']

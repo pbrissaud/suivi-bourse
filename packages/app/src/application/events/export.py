@@ -183,7 +183,7 @@ def _haystack(event: Event) -> str:
 # by the app and read by nobody, so exporting it would ship a field whose every
 # row carries the same seeded word.
 PORTFOLIO_COLUMNS = (
-    'account', 'account_label',
+    'account', 'account_label', 'as_of',
     'cash_balance', 'net_contributed',
     'symbol', 'name', 'quantity', 'unit_cost', 'cost_basis',
     'price', 'market_value', 'realized_gain', 'received_dividend',
@@ -192,10 +192,14 @@ PORTFOLIO_COLUMNS = (
 
 
 def render_portfolio(accounts: Iterable[Any],
-                     states: Mapping[str, Any],
+                     metrics: Mapping[str, Mapping[str, Any]],
                      positions: Iterable[Mapping[str, Any]],
                      base_currency: Optional[str] = None) -> str:
-    """The accounts and their positions — balances, PMP and valuations (#836)."""
+    """The accounts and their positions — balances, PMP and valuations (#836).
+
+    ``metrics`` is each account's **newest** ``account_metrics`` row, which is
+    what ``/api/accounts`` reads: the file and the app state one figure (#1373).
+    """
     declared = {account.id: account for account in accounts}
     held: Dict[str, List[Mapping[str, Any]]] = {}
     for position in positions:
@@ -205,7 +209,7 @@ def render_portfolio(accounts: Iterable[Any],
     rows: List[dict] = []
     for account in sorted(set(declared) | set(held)):
         rows.append(_account_row(account, declared.get(account),
-                                 states.get(account), base_currency))
+                                 metrics.get(account), base_currency))
         for position in sorted(held.get(account, []),
                                key=lambda row: str(row.get('symbol') or '')):
             rows.append(_position_row(account, declared.get(account),
@@ -214,15 +218,23 @@ def render_portfolio(accounts: Iterable[Any],
 
 
 def _account_row(account: str, declaration: Optional[Any],
-                 state: Optional[Any], base_currency: Optional[str]) -> dict:
+                 metric: Optional[Mapping[str, Any]],
+                 base_currency: Optional[str]) -> dict:
     """The account itself: what it is called, and what cash stands in it."""
+    metric = metric or {}
     return {
         'account': account,
         'account_label': None if declaration is None else declaration.label,
-        'cash_balance': None if state is None else state.cash_balance,
-        'net_contributed': None if state is None else state.net_contributed,
+        'as_of': metric.get('day'),
+        'cash_balance': metric.get('cash_balance'),
+        'net_contributed': metric.get('net_contributed'),
         BASE_CURRENCY_COLUMN: base_currency,
     }
+
+
+def _rounded(value: Optional[float], digits: int) -> Optional[float]:
+    """``value`` to ``digits`` places — ``+ 0.0`` so a tiny loss is not ``-0.0``."""
+    return None if value is None else round(value, digits) + 0.0
 
 
 def _position_row(account: str, declaration: Optional[Any],
@@ -237,12 +249,12 @@ def _position_row(account: str, declaration: Optional[Any],
         'symbol': position.get('symbol'),
         'name': position.get('name'),
         'quantity': quantity,
-        'unit_cost': unit_cost(quantity or 0.0,
-                               position.get('cost_basis') or 0.0),
+        'unit_cost': _rounded(unit_cost(quantity or 0.0,
+                                        position.get('cost_basis') or 0.0), 4),
         'cost_basis': position.get('cost_basis'),
         'price': price,
         'market_value': (None if quantity is None or price is None
-                         else quantity * price),
+                         else _rounded(quantity * price, 2)),
         'realized_gain': position.get('realized_gain'),
         'received_dividend': position.get('received_dividend'),
         BASE_CURRENCY_COLUMN: base_currency,
