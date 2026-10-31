@@ -144,6 +144,17 @@ def test_a_reference_still_backfilling_publishes_a_bar_and_no_figure(store):
     assert 'reason' not in payload
 
 
+def test_the_rebuild_says_whether_the_backward_pass_has_asked_yet(store):
+    """#1336: `requested` is the persisted anchor, so it survives a restart."""
+    store.execute('INSERT INTO symbol (symbol) VALUES (?)', [REFERENCE])
+
+    assert benchmark_view._rebuild(store, REFERENCE, date(2024, 1, 1), NOW)['requested'] is False
+
+    quotes.record_window_tried(store, REFERENCE, date(2024, 1, 1))
+
+    assert benchmark_view._rebuild(store, REFERENCE, date(2024, 1, 1), NOW)['requested'] is True
+
+
 def test_terminality_is_read_from_the_store_and_survives_a_restart(named):
     """`runtime_state.Recorder` is a per-process dict wiped on every boot.
 

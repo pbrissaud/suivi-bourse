@@ -2607,7 +2607,13 @@ describe('the comparison card (#1205)', () => {
       renderCard(
         ready({
           state,
-          rebuild: { symbol: 'CW8.PA', reached: '2015-01-02', target: '2009-06-16', ratio: 0.4 },
+          rebuild: {
+            symbol: 'CW8.PA',
+            reached: '2015-01-02',
+            target: '2009-06-16',
+            ratio: 0.4,
+            requested: true,
+          },
         } as Partial<BenchmarkResponse>),
       )
       const region = await card('Face au MSCI World')
