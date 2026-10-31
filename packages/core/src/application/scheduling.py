@@ -108,17 +108,16 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
     closed = is_closed(state)
 
     if closed:
-        should_write = (price_present and print_at is not None
-                        and (stored_at is None or print_at > stored_at))
+        printed = price_present and print_at is not None
+        should_write = printed and (stored_at is None or print_at > stored_at)
     else:
         should_write = price_present
 
     if closed:
         new_failure_count = failure_count
-        settling = (print_at is not None and session_end is not None
-                    and print_at <= session_end
-                    and session_end <= now < session_end + timedelta(
-                        seconds=CLOSE_SETTLE_WINDOW))
+        known = print_at is not None and session_end is not None
+        settling = known and print_at <= session_end <= now < (
+            session_end + timedelta(seconds=CLOSE_SETTLE_WINDOW))
         if settling:
             next_delay: float = CLOSE_SETTLE_POLL
         elif next_open is None:
