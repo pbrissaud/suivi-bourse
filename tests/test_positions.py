@@ -199,8 +199,9 @@ def test_a_future_dated_event_stays_out_of_todays_positions(
 
     (row,) = positions.read_positions(store)
     assert (row['symbol'], row['quantity']) == ('AAPL', 10.0)
-    assert positions.read_account_states(store)['default'].cash_balance == (
-        pytest.approx(1499.9))
+    assert store.query(
+        "SELECT cash_balance FROM account_state WHERE account = 'default'"
+    ) == [pytest.approx((1499.9,))]
 
 
 def test_the_day_it_is_dated_the_future_event_counts(
