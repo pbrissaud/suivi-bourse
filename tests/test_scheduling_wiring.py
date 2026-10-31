@@ -480,10 +480,10 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
     register_interval_jobs(scheduler, m, backfill_interval=60)
 
     by_id = {c.kwargs["id"]: c for c in scheduler.add_job.call_args_list}
-    # Two, not three: the ``ingest`` job left with SB_INGESTION_INTERVAL
-    # (issue #697). The replay follows the write now, so there is no cadence
-    # for it to be registered at.
-    assert set(by_id) == {"backfill", "perf"}
+    # No ``ingest`` interval job: it left with SB_INGESTION_INTERVAL (issue
+    # #697), the replay follows the write. The one ingestion on a clock is the
+    # turn of the day (#1459), when an event dated ahead starts counting.
+    assert set(by_id) == {"backfill", "perf", "day_turn"}
     perf = by_id["perf"]
     # The perf tick is a constant, not a dial (#701/#707): the two tables are a
     # cache and a full recompute costs 0,4 % of the tick, so there is nothing
@@ -496,6 +496,11 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
     # the previous process's cache — or on nothing at all — for two minutes.
     assert perf.kwargs["next_run_time"] <= datetime.now(UTC)
     assert "next_run_time" not in by_id["backfill"].kwargs
+    day_turn = by_id["day_turn"]
+    assert day_turn.args[0].__func__ is Workloads.ingest
+    assert day_turn.args[1] == "cron"
+    assert (day_turn.kwargs["hour"], day_turn.kwargs["minute"],
+            day_turn.kwargs["timezone"]) == (0, 0, UTC)
     # The backfill's cadence *is* a dial, and it arrives as an argument.
     assert by_id["backfill"].kwargs["seconds"] == 60
     # Separate from the per-symbol scrape jobs (no scrape: prefixed id here).

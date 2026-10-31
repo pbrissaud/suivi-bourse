@@ -103,7 +103,7 @@ def report_boot_conditions(boot: boot_env.BootEnvironment,
 
 def register_interval_jobs(scheduler, workloads_,
                            backfill_interval: int) -> None:
-    """Register the two fixed-cadence interval jobs on ``scheduler``."""
+    """Register the fixed-cadence jobs on ``scheduler``."""
     scheduler.add_job(
         workloads_.backfill, 'interval',
         seconds=backfill_interval,
@@ -115,6 +115,13 @@ def register_interval_jobs(scheduler, workloads_,
         next_run_time=datetime.now(timezone.utc),
         id=scheduling.PERF_JOB_ID,
         name='Performance recompute')
+    # The replay stops at today (#1459), so an event dated ahead starts
+    # counting at the turn of the day, with no write to replay it: the
+    # ingestion replays then, and re-arms the scrape jobs the new day holds.
+    scheduler.add_job(
+        workloads_.ingest, 'cron', hour=0, minute=0, timezone=timezone.utc,
+        id=scheduling.DAY_TURN_JOB_ID,
+        name='Day turn replay')
 
 
 def apply_settings(runtime, changes) -> Dict:
@@ -157,6 +164,11 @@ def _reschedule_interval_job(scheduler, job_id: str, seconds: int) -> bool:
     except Exception as e:
         app_logger.error(f"Failed to reschedule the {job_id} job: {e}")
         return False
+
+
+def _today() -> date:
+    """The UTC day the replay stops at — the perf series' own ``today``."""
+    return datetime.now(timezone.utc).date()
 
 
 @dataclass(frozen=True)
@@ -322,7 +334,10 @@ class ConfigurationManager:
 
         accounts = accounts_module.declared_portfolio(opened)
 
-        cache_key = ledger.stamp(self._require_store())
+        # The day is in the key (#1459): an event dated ahead starts counting
+        # the day it is dated, and nothing is written to the ledger that day.
+        stamp = ledger.stamp(self._require_store())
+        cache_key = stamp and f'{stamp}@{_today()}'
         if not force and published is not None and published.cache_key == cache_key:
             app_logger.debug("Using cached configuration (the ledger is unchanged)")
             return published
@@ -355,8 +370,11 @@ class ConfigurationManager:
         validator.validate_or_raise(events)
 
         timeline = EventAggregator().replay(events)
-        shares = timeline.current()
-        positions.write_state(opened_store, shares, timeline.current_cash())
+        today = _today()
+        shares = timeline.at(today)
+        cash = {account: state for account in timeline.cash_snapshots
+                if (state := timeline.cash_at(account, today)) is not None}
+        positions.write_state(opened_store, shares, cash)
 
         app_logger.info(f"Replayed {len(events)} events for {len(shares)} shares")
         return shares, events

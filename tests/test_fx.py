@@ -835,7 +835,7 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
     scheduler = mocker.MagicMock()
     main.register_interval_jobs(scheduler, metrics, 60)
     assert [c.kwargs['id'] for c in scheduler.add_job.call_args_list] \
-        == ['backfill', 'perf']
+        == ['backfill', 'perf', 'day_turn']
 
 
 def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(

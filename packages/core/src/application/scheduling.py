@@ -26,6 +26,7 @@ PERF_TICK = 120            # s
 
 BACKFILL_JOB_ID = 'backfill'
 PERF_JOB_ID = 'perf'
+DAY_TURN_JOB_ID = 'day_turn'
 
 FAILURE_GRACE = 3          # K: first K failures still re-arm at base_interval
 _BACKOFF_FACTOR = 2        # geometric growth per failure beyond the grace window
