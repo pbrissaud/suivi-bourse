@@ -2960,3 +2960,109 @@ describe('EventFigure (#1355, #1425)', () => {
     expect(draw(anEvent({ event_type: 'GRANT', quantity: null }))).toHaveTextContent(/^—$/)
   })
 })
+
+describe('the cash the form says it will move (#1461)', () => {
+  /** The line, its spaces folded: `Intl` separates thousands with a narrow no-break space. */
+  const said = () =>
+    screen.queryByText(/(Débité du compte|Crédité au compte)/)?.textContent?.replace(/\s/g, ' ')
+
+  async function fill(user: User, type: string, values: Record<string, string>) {
+    await user.click(screen.getByRole('radio', { name: type }))
+    for (const [label, value] of Object.entries(values)) {
+      await user.type(await screen.findByLabelText(label), value)
+    }
+  }
+
+  async function openFresh() {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await openTheForm(user)
+    return user
+  }
+
+  it.each([
+    [
+      'Achat',
+      { Quantité: '5', 'Prix unitaire': '541,20', Frais: '1,35' },
+      'Débité du compte : 2 707,35 €',
+    ],
+    [
+      'Vente',
+      { Quantité: '10', 'Prix unitaire': '47,814', Frais: '0,48' },
+      'Crédité au compte : 477,66 €',
+    ],
+    ['Vente', { Quantité: '1', 'Prix unitaire': '1', Frais: '2' }, 'Débité du compte : 1,00 €'],
+    ['Dividende', { Montant: '12', Frais: '1,80' }, 'Crédité au compte : 10,20 €'],
+    ['Retrait', { Montant: '100', Frais: '1' }, 'Débité du compte : 101,00 €'],
+    ['Versement', { Montant: '500' }, 'Crédité au compte : 500,00 €'],
+  ])('%s %j reads « %s »', async (type, values, line) => {
+    const user = await openFresh()
+    await fill(user, type, values)
+    await waitFor(() => expect(said()).toBe(line))
+  })
+
+  it('says nothing without a type, for a grant, or while a figure is missing or unreadable', async () => {
+    const user = await openFresh()
+    expect(said()).toBeUndefined()
+
+    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.type(await screen.findByLabelText('Quantité'), '2')
+    await user.type(screen.getByLabelText('Prix unitaire'), '10')
+    expect(said()).toBeUndefined()
+
+    await user.click(screen.getByRole('radio', { name: 'Achat' }))
+    const quantity = screen.getByLabelText('Quantité')
+    await user.clear(quantity)
+    await user.type(quantity, 'abc')
+    expect(said()).toBeUndefined()
+
+    // An empty price hides it as well, and an unreadable fee alone does not.
+    await user.clear(quantity)
+    await user.type(quantity, '2')
+    const price = screen.getByLabelText('Prix unitaire')
+    await user.clear(price)
+    expect(said()).toBeUndefined()
+    await user.type(price, '10')
+    await user.type(screen.getByLabelText('Frais'), 'abc')
+    expect(said()).toBe('Débité du compte : 20,00 €')
+  })
+
+  it('follows each keystroke, and is filled when a row is opened for edit', async () => {
+    const user = await openFresh()
+    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    const amount = await screen.findByLabelText('Montant')
+    await user.type(amount, '5')
+    expect(said()).toBe('Crédité au compte : 5,00 €')
+    await user.type(amount, '0')
+    expect(said()).toBe('Crédité au compte : 50,00 €')
+
+    cleanup()
+    const edit = renderData([anEvent({ quantity: 5, unit_price: 541.2, fee: 1.35 })])
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await edit.user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await screen.findByLabelText('Quantité')
+    expect(said()).toBe('Débité du compte : 2 707,35 €')
+  })
+
+  it('is a bare number while the base currency is unknown', async () => {
+    server.use(
+      problemHandler(ROUTES.portfolioTotals, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    const user = await openFresh()
+    await fill(user, 'Versement', { Montant: '500' })
+    await waitFor(() => expect(said()).toBe('Crédité au compte : 500,00'))
+  })
+
+  it('has no colour and is not announced', async () => {
+    const user = await openFresh()
+    await fill(user, 'Achat', { Quantité: '1', 'Prix unitaire': '10' })
+    const line = await screen.findByText(/Débité du compte/)
+    expect(line.className).not.toMatch(/text-(gain|loss|destructive)/)
+    expect(line.closest('[aria-live]')).toBeNull()
+    expect(line.closest('output')).toBeNull()
+  })
+})

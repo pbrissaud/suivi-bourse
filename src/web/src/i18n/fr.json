@@ -584,6 +584,8 @@
   "data.form.grantPrice.suggested": "Proposé : cours de clôture du {day}. Videz-le pour déclarer une attribution qui ne vous a rien coûté.",
   "data.form.fee": "Frais",
   "data.form.amount": "Montant",
+  "data.form.cash.credited": "Crédité au compte : {amount}",
+  "data.form.cash.debited": "Débité du compte : {amount}",
   "data.form.notes": "Libellé",
   "data.form.optional": "facultatif",
   "data.form.required": "Obligatoire.",

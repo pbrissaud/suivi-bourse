@@ -20,6 +20,7 @@ import {
   accountFacets,
   accountOf,
   byDateDescending,
+  cashFlow,
   exportHref,
   FIELDS,
   filterEvents,
@@ -615,5 +616,13 @@ describe('the state of the head checkbox', () => {
     expect(selectionState(rows, { gone: true })).toBe('none')
     expect(selectionState(rows, { '1': true, gone: true })).toBe('some')
     expect(selectionState(rows, { '1': false })).toBe('none')
+  })
+})
+
+describe('cashFlow on a draft (#1461)', () => {
+  it('takes the five figures a form holds, and nothing else of an event', () => {
+    expect(
+      cashFlow({ event_type: 'BUY', quantity: 5, unit_price: 541.2, fee: 1.35, amount: null }),
+    ).toBeCloseTo(-2707.35, 2)
   })
 })
