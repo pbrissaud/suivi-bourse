@@ -38,10 +38,9 @@ def scrape_next_runs(scheduler) -> Dict[str, Optional[datetime]]:
 def scrape_verdict(should_write: bool, state, wrote: bool,
                    has_holdings: bool) -> str:
     """Name what one scrape pass did, at the instant it did it (issue #668)."""
-    if scheduling.is_closed(state):
-        return runtime_state.SCRAPE_CLOSED
     if not should_write:
-        return runtime_state.SCRAPE_NO_PRICE
+        return (runtime_state.SCRAPE_CLOSED if scheduling.is_closed(state)
+                else runtime_state.SCRAPE_NO_PRICE)
     if not has_holdings:
         return runtime_state.SCRAPE_NOTHING_TO_WRITE
     if wrote:
@@ -252,11 +251,21 @@ class ScrapeWorkload:
             else:
                 state, next_open = None, None
 
+            closed = scheduling.is_closed(state)
+            print_at = session_end = stored_at = None
+            if closed:
+                print_at, session_end = scheduling.session_print(
+                    market_info.history_metadata_of(info))
+                stored = quotes.read_quote(
+                    self.facade.config_manager.store, symbol)
+                stored_at = stored and stored['last_price_ts']
+
             with self.failure_counts_lock:
                 should_write, next_delay, new_failure_count = scheduling.decide(
                     state, price_present, next_open, now,
                     self.failure_counts.get(symbol, 0),
-                    self.facade.regular_interval)
+                    self.facade.regular_interval, print_at=print_at,
+                    session_end=session_end, stored_at=stored_at)
                 if symbol in self.facade._held_symbols():
                     self.failure_counts[symbol] = new_failure_count
                 else:
@@ -264,11 +273,15 @@ class ScrapeWorkload:
 
             stale = False
             if should_write:
-                stale = self.facade._check_price_freshness(
-                    symbol, last_quote, now)
+                # A closed pass stamps the point at the print's own instant
+                # (#1352), and the REGULAR-only sonde has nothing to say of it.
+                if not closed:
+                    stale = self.facade._check_price_freshness(
+                        symbol, last_quote, now)
 
                 wrote_live_data = bool(holdings) and self.facade._write_quote(
-                    symbol, last_quote, info, now, converted, rate)
+                    symbol, last_quote, info, print_at if closed else now,
+                    converted, rate)
             else:
                 wrote_live_data = False
                 app_logger.debug(
@@ -279,7 +292,7 @@ class ScrapeWorkload:
                 symbol=symbol,
                 at=now,
                 market_state=state,
-                closed=scheduling.is_closed(state),
+                closed=closed,
                 price_present=price_present,
                 verdict=scrape_verdict(
                     should_write, state, wrote_live_data, bool(holdings)),

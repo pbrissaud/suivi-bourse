@@ -1125,3 +1125,96 @@ def test_default_horizon_is_several_cycles_wide():
     from application import settings_registry
 
     assert settings_registry.default_for('staleness_horizon') >= 5 * BASE
+
+
+# ---------------------------------------------------------------------------
+# The closing auction's print (#1352)
+# ---------------------------------------------------------------------------
+
+END = datetime(2026, 10, 20, 15, 30, tzinfo=UTC)          # 17:30 CEST
+PRINT = datetime(2026, 10, 20, 15, 35, 46, tzinfo=UTC)    # 17:35:46 CEST
+
+
+def test_session_print_reads_timestamp_datetime_and_epoch_alike():
+    import pandas as pd
+
+    expected = (PRINT, END)
+    stamp = pd.Timestamp("2026-10-20 17:35:46", tz="Europe/Paris")
+    end = pd.Timestamp("2026-10-20 17:30", tz="Europe/Paris")
+    meta = {"regularMarketTime": stamp,
+            "currentTradingPeriod": {"regular": {"end": end}}}
+    assert scheduling.session_print(meta) == expected
+    meta = {"regularMarketTime": PRINT.astimezone(timezone(timedelta(hours=2))),
+            "currentTradingPeriod": {"regular": {"end": END}}}
+    assert scheduling.session_print(meta) == expected
+    meta = {"regularMarketTime": PRINT.timestamp(),
+            "currentTradingPeriod": {"regular": {"end": END.timestamp()}}}
+    assert scheduling.session_print(meta) == expected
+
+
+def test_session_print_reads_a_naive_datetime_as_utc_and_epoch_as_seconds():
+    naive = PRINT.replace(tzinfo=None)
+    assert scheduling.session_print({"regularMarketTime": naive}) == (PRINT, None)
+    assert scheduling.session_print({"regularMarketTime": 1_000_000_000.0}) == (
+        datetime(2001, 9, 9, 1, 46, 40, tzinfo=UTC), None)
+
+
+@pytest.mark.parametrize("meta", [None, {}, "garbage", {"regularMarketTime": "x"},
+                                  {"regularMarketTime": True}])
+def test_session_print_gives_none_for_what_it_cannot_read(meta):
+    assert scheduling.session_print(meta) == (None, None)
+
+
+def test_decide_closed_writes_a_print_newer_than_the_stored_point():
+    stored = PRINT - timedelta(minutes=6)
+    kwargs = dict(print_at=PRINT, session_end=END)
+    now = END + timedelta(minutes=10)
+    assert decide("POST", True, None, now, 0, BASE, stored_at=stored, **kwargs)[0]
+    assert decide("POST", True, None, now, 0, BASE, stored_at=None, **kwargs)[0]
+    assert not decide("POST", True, None, now, 0, BASE, stored_at=PRINT, **kwargs)[0]
+    assert not decide("POST", True, None, now, 0, BASE, stored_at=stored,
+                      print_at=None, session_end=END)[0]
+    assert not decide("POST", False, None, now, 0, BASE, stored_at=stored, **kwargs)[0]
+
+
+def test_decide_closed_polls_every_five_minutes_until_the_print_lands():
+    early = datetime(2026, 10, 20, 15, 29, 59, tzinfo=UTC)
+    next_open = END + timedelta(hours=16)
+    write, delay, failures = decide(
+        "POST", True, next_open, END + timedelta(seconds=30), 2, BASE,
+        print_at=early, session_end=END, stored_at=early - timedelta(seconds=30))
+    assert (write, delay, failures) == (True, scheduling.CLOSE_SETTLE_POLL, 2)
+    # Nothing newer, still waiting: no write, same poll.
+    write, delay, _ = decide(
+        "POST", True, next_open, END + timedelta(minutes=5), 0, BASE,
+        print_at=early, session_end=END, stored_at=early)
+    assert (write, delay) == (False, scheduling.CLOSE_SETTLE_POLL)
+
+
+def test_decide_closed_stops_polling_once_the_print_is_out_or_the_window_ends():
+    next_open = END + timedelta(hours=16)
+    out = decide("POST", True, next_open, END + timedelta(minutes=10), 0, BASE,
+                 print_at=PRINT, session_end=END, stored_at=None)
+    assert out[1] == (next_open - END - timedelta(minutes=10)).total_seconds()
+    late = END + timedelta(seconds=scheduling.CLOSE_SETTLE_WINDOW)
+    out = decide("POST", True, next_open, late, 0, BASE,
+                 print_at=END - timedelta(seconds=1), session_end=END,
+                 stored_at=END - timedelta(seconds=1))
+    assert out[1] == (next_open - late).total_seconds()
+
+
+def test_decide_closed_without_the_session_fields_sleeps_to_next_open():
+    next_open = END + timedelta(hours=16)
+    now = END + timedelta(minutes=2)
+    assert decide("POST", True, next_open, now, 0, BASE, print_at=PRINT)[1] == (
+        next_open - now).total_seconds()
+    assert decide("POST", True, next_open, now, 0, BASE, session_end=END)[1] == (
+        next_open - now).total_seconds()
+
+
+def test_session_print_treats_pandas_nat_as_unreadable():
+    import pandas as pd
+
+    meta = {"regularMarketTime": pd.NaT,
+            "currentTradingPeriod": {"regular": {"end": pd.NaT}}}
+    assert scheduling.session_print(meta) == (None, None)

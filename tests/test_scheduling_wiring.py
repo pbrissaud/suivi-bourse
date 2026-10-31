@@ -1497,3 +1497,69 @@ def test_scrape_symbol_rearms_after_an_unexpected_failure(
     record = m.recorder.scrape_of("AAPL")
     assert record.verdict == runtime_state.SCRAPE_NO_PRICE
     assert record.error == "KeyError: 'marketState'"
+
+
+# ---------------------------------------------------------------------------
+# The closing auction's print (#1352)
+# ---------------------------------------------------------------------------
+
+def _auction_meta(print_at, end):
+    import pandas as pd
+    return {"regularMarketTime": pd.Timestamp(print_at),
+            "currentTradingPeriod": {"regular": {
+                "start": pd.Timestamp(end - timedelta(hours=8, minutes=30)),
+                "end": pd.Timestamp(end)}}}
+
+
+def _closed_pass(m, store, fake_ticker, monkeypatch, now, print_at, close=74.12):
+    end = datetime(2024, 1, 15, 16, 30, tzinfo=UTC)
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(
+        close=close, market_state="POST",
+        history_metadata=_auction_meta(print_at, end)))
+    m._scrape_symbol("AAPL", now=now)
+
+
+def _stored(store):
+    return store.query("SELECT ts, price_native FROM price_point ORDER BY ts")
+
+
+def test_scrape_symbol_closed_writes_the_auction_print_at_its_own_instant(
+        store, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], store, mocker)
+    before = datetime(2024, 1, 15, 16, 29, 30, tzinfo=UTC)
+    printed = datetime(2024, 1, 15, 16, 35, 46, tzinfo=UTC)
+    quotes.record_quote(store, "AAPL", before, 73.44)
+
+    _closed_pass(m, store, fake_ticker, monkeypatch,
+                 printed + timedelta(minutes=5), printed)
+
+    assert [(ts.replace(tzinfo=UTC), p) for ts, p in _stored(store)] == [
+        (before, 73.44), (printed, 74.12)]
+    assert quotes.read_quote(store, "AAPL")["last_price_ts"] == printed
+    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
+
+
+def test_scrape_symbol_closed_second_pass_writes_nothing_and_reports_closed(
+        store, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], store, mocker)
+    printed = datetime(2024, 1, 15, 16, 35, 46, tzinfo=UTC)
+    now = printed + timedelta(minutes=5)
+    _closed_pass(m, store, fake_ticker, monkeypatch, now, printed)
+    _closed_pass(m, store, fake_ticker, monkeypatch, now + timedelta(minutes=5),
+                 printed)
+
+    assert len(_stored(store)) == 1
+    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_CLOSED
+
+
+def test_scrape_symbol_closed_polls_again_while_the_auction_is_pending(
+        store, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], store, mocker)
+    early = datetime(2024, 1, 15, 16, 29, 59, tzinfo=UTC)
+    now = datetime(2024, 1, 15, 16, 30, 30, tzinfo=UTC)
+
+    _closed_pass(m, store, fake_ticker, monkeypatch, now, early, close=73.44)
+
+    assert [p for _, p in _stored(store)] == [73.44]
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == now + timedelta(
+        seconds=scheduling.CLOSE_SETTLE_POLL)
