@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  accountAllocation,
   accountChoice,
   accountColour,
   accountEvents,
@@ -191,6 +192,44 @@ describe('the rows, and the weights the rail draws off them', () => {
     const [empty] = buildAccountRows([anAccountWithoutSeries({ id: 'delta' })])
     expect(accountWorth(empty)).toBeNull()
     expect(accountWeights([...rows, empty]).get('delta')).toBeNull()
+  })
+
+  it('draws the dashboard split on the same shares as the weights (#1426)', () => {
+    const { slices, total, unplaced } = accountAllocation(rows, (row) => declaredLabel(row) ?? '')
+    const weights = accountWeights(rows)
+    expect(slices.map((one) => [one.symbol, one.label, one.value])).toEqual([
+      ['alpha', 'Alpha', 1800],
+      ['beta', 'Beta', 900],
+      ['gamma', 'Gamma', 600],
+    ])
+    for (const slice of slices) expect(slice.share).toBeCloseTo(weights.get(slice.symbol!)!, 10)
+    expect(total).toBe(3300)
+    expect(unplaced).toEqual([])
+  })
+
+  it('gives no slice, and no unplaced sentence, to an account with no weight (#1426)', () => {
+    const odd = buildAccountRows([
+      anAccount({ id: 'alpha' }),
+      anAccount({ id: 'owing', total_value: -50, holdings_value: 0 }),
+      anAccountWithoutSeries({ id: 'delta' }),
+    ])
+    const { slices, total, unplaced } = accountAllocation(odd, (row) => row.id)
+    expect(slices.map((one) => one.symbol)).toEqual(['alpha'])
+    expect(slices[0].share).toBe(1)
+    expect(total).toBe(1800)
+    expect(unplaced).toEqual([])
+  })
+
+  it('folds past five accounts into one slice that counts them (#1426)', () => {
+    const many = buildAccountRows(
+      Array.from({ length: 7 }, (_, i) =>
+        anAccount({ id: `a${i}`, total_value: 100 - i, holdings_value: 50 }),
+      ),
+    )
+    const { slices } = accountAllocation(many, (row) => row.id)
+    expect(slices).toHaveLength(5)
+    expect(slices[4]).toMatchObject({ symbol: null, count: 3 })
+    expect(slices.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
   })
 
   it('divides nothing by nothing nowhere', () => {

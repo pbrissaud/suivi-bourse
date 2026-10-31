@@ -80,6 +80,8 @@ import { Movers, moversRenderState } from '@/features/dashboard/components/Mover
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { settingsApi } from '@/features/settings/lib/api'
+import { accountsApi } from '@/features/accounts/lib/api'
+import { buildAccountRows } from '@/features/accounts/lib/accounts'
 import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import type { BlockId } from '@/features/dashboard/lib/dashboardBlocks'
@@ -105,6 +107,8 @@ export default function DashboardPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: dashboardApi.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  // The accounts page's own key: one cache entry, one request (#1426).
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
@@ -227,6 +231,7 @@ export default function DashboardPage() {
     const moversRead = { movers: movers.data?.movers ?? null, failure: moversFailure }
     const rhythmRead = { rhythm: rhythm.data ?? null, failure: rhythmFailure }
     const allocationRead = { positions: positions.data ?? null }
+    const accountRows = accounts.data ? buildAccountRows(accounts.data.accounts) : null
     const benchmarkRead = { benchmark: benchmark.data ?? null, failure: benchmarkFailure }
     return {
       'gain-breakdown': {
@@ -254,7 +259,15 @@ export default function DashboardPage() {
       allocation: {
         state: allocationRenderState(allocationRead),
         bare: false,
-        render: (width) => <AllocationCard {...allocationRead} rows={rows} width={width} />,
+        render: (width) => (
+          <AllocationCard
+            {...allocationRead}
+            rows={rows}
+            accounts={accountRows}
+            runtime={runtime.data ?? null}
+            width={width}
+          />
+        ),
       },
       benchmark: {
         state: benchmarkRenderState(benchmarkRead),

@@ -56,6 +56,7 @@ import type { LedgerEvent } from '@/features/data/lib/api'
 import type { Position } from '@/features/shares/lib/api'
 import type { MessageKey } from '@/lib/i18n'
 import { accountOf, byDateDescending } from '@/features/data/lib/ledger'
+import { type Allocation, foldSlices } from '@/features/shares/lib/shares'
 
 /**
  * The bucket of the unassigned, and the one account id the **product** writes
@@ -487,6 +488,32 @@ export function accountWeights(rows: readonly AccountRow[]): Map<string, number 
       worth === null || worth < 0 || total <= 0 ? null : worth / total,
     ]),
   )
+}
+
+/**
+ * The dashboard's Répartition by account (#1426) — **`accountWeights`' own basis**,
+ * so the same account reads the same share on both pages: what it is worth, cash
+ * included, over the sum of the accounts worth something.
+ *
+ * An account with no weight (nothing written, or worth less than nothing) gets no
+ * slice and **no** `unplaced` entry: the chip bar says it with an em dash, and the
+ * unplaced sentence (« sans taux résolu ») would give the wrong reason.
+ */
+export function accountAllocation(
+  rows: readonly AccountRow[],
+  name: (row: AccountRow) => string,
+): Allocation {
+  const weights = accountWeights(rows)
+  const placed = rows
+    .filter((row) => weights.get(row.id) !== null)
+    .map((row) => ({
+      symbol: row.id,
+      label: name(row),
+      value: accountWorth(row) ?? 0,
+      share: 0,
+      count: 1,
+    }))
+  return { ...foldSlices(placed), unplaced: [] }
 }
 
 /**

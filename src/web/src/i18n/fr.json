@@ -207,6 +207,8 @@
   "dashboard.allocation.bySecurity": "Titre",
   "dashboard.allocation.toAccounts": "Voir les comptes →",
   "dashboard.allocation.byAccount": "Compte",
+  "dashboard.allocation.total.accounts": "Valeur des comptes",
+  "dashboard.allocation.byAccount.pending": "Parts par compte en attente du recalcul",
   "dashboard.allocation.others.lines": "Autres · {count, plural, one {# ligne} other {# lignes}}",
   "dashboard.allocation.others.accounts": "Autres · {count, plural, one {# compte} other {# comptes}}",
   "dashboard.allocation.scope.accounts": "{accounts} comptes · top {top} détaillé, {folded} regroupés",

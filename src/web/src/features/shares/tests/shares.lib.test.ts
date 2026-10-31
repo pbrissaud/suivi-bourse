@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest'
 import type { Position } from '@/features/shares/lib/api'
 import { positionRenderings } from '@/lib/absence'
 import {
-  accountAllocation,
   accountBreakdown,
   allocation,
   buildShareRows,
@@ -627,65 +626,6 @@ describe('foldSlices', () => {
     expect(nine.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1, 10)
     expect(nine[4]).toMatchObject({ symbol: null, count: 5, value: 5 + 4 + 3 + 2 + 1 })
     expect(foldSlices(lines(9)).total).toBe(45)
-  })
-})
-
-describe('accountAllocation', () => {
-  it('sums each account, skips a closed line, and names an unvalued one with its account', () => {
-    const { slices, total, unplaced } = accountAllocation([
-      aPosition({ account: 'PEA', symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
-      aPosition({ account: 'PEA', symbol: 'ZZB', quantity: 2, cost_basis: 200, price: 100 }),
-      // No rate: named, not counted, and PEA keeps the slice its others make.
-      aPosition({
-        account: 'PEA',
-        symbol: 'XYZ',
-        quantity: 4,
-        cost_basis: 400,
-        price: 125,
-        currency: 'USD',
-        rate: null,
-      }),
-      aPosition({ account: 'CTO', symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null }),
-      aPosition({
-        account: 'CTO',
-        symbol: 'XYZ',
-        quantity: 1,
-        cost_basis: 100,
-        price: 125,
-        currency: 'USD',
-        rate: null,
-      }),
-      aClosedPosition({ account: 'AV', symbol: 'ZZD', closed_at: '2025-11-04' }),
-    ])
-
-    expect(slices.map((one) => [one.symbol, one.value])).toEqual([
-      ['PEA', 1500],
-      ['CTO', 600],
-    ])
-    expect(total).toBe(2100)
-    // Once per account, each with its own.
-    expect(unplaced).toEqual(['XYZ (CTO)', 'XYZ (PEA)'])
-  })
-
-  it('names the accounts as told, and gives no slice to one with nothing placed', () => {
-    const { slices, unplaced } = accountAllocation(
-      [
-        aPosition({ account: 'pea', symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
-        aPosition({
-          account: 'cto',
-          symbol: 'XYZ',
-          quantity: 1,
-          cost_basis: 100,
-          price: 125,
-          currency: 'USD',
-          rate: null,
-        }),
-      ],
-      (account) => account.toUpperCase(),
-    )
-
-    expect(slices.map((one) => [one.symbol, one.label])).toEqual([['pea', 'PEA']])
-    expect(unplaced).toEqual(['XYZ (CTO)'])
   })
 })
 
