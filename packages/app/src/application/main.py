@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Mapping, Optional, Tuple
 
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -77,9 +77,10 @@ def current_log_level() -> str:
     return logging.getLevelName(logging.getLogger('suivi_bourse').level)
 
 
-def report_unread_environment() -> List[str]:
+def report_unread_environment(
+        env: Optional[Mapping[str, str]] = None) -> List[str]:
     """Name what is set and not obeyed, in **one** grouped notice."""
-    found = installation_facts.unread_environment()
+    found = installation_facts.unread_environment(env)
     message = boot_env.notice(tuple(found))
     if message is not None:
         app_logger.warning(message)
@@ -418,17 +419,22 @@ def log_fatal(exc: BaseException) -> None:
         app_logger.fatal(f'An unexpected error occurred: {exc}', exc_info=True)
 
 
-def build_runtime() -> Runtime:
-    """The store and the configuration — the boot's second step."""
-    build = build_info.describe(os.environ, build_info.checkout_revision())
+def build_runtime(env: Optional[Mapping[str, str]] = None) -> Runtime:
+    """The store and the configuration — the boot's second step.
+
+    ``env`` is the mapping :func:`boot.sequence` was handed, ``os.environ`` by
+    default: one environment for the whole boot, never a second read of the process's.
+    """
+    env = os.environ if env is None else env
+    build = build_info.describe(env, build_info.checkout_revision())
     app_logger.info(
         f'SuiviBourse {build_info.said(build)} is running !',
         extra={'context': {key: value for key, value in build.to_dict().items()
                            if value is not None}})
 
-    boot = boot_env.read(os.environ)
+    boot = boot_env.read(env)
 
-    report_unread_environment()
+    report_unread_environment(env)
 
     store_path = boot.store_dir / store.STORE_FILENAME
     opened = store.open_store(store_path, schema_steps.STEPS)

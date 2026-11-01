@@ -152,7 +152,7 @@ def build_gate(runtime: main.Runtime, environment: boot_env.BootEnvironment):
 def sequence(env: Mapping[str, str]) -> None:
     """The boot, in order, raising rather than exiting — :func:`run` owns the code."""
     environment = boot_env.read(env)
-    runtime = main.build_runtime()
+    runtime = main.build_runtime(env)
     teardown = partial(main.shutdown_runtime, runtime)
     try:
         app = api.create_app(runtime)
