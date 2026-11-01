@@ -13,8 +13,12 @@
  *
  * **The selector swaps what the slot draws**, like the hero chart's readings,
  * so it is `pressed` and not a radio group. Local and never saved; it opens on
- * the securities, and it is not drawn while fewer than two accounts hold a
- * placed line — a split by account of one account is a full circle.
+ * the securities, and it is not drawn while fewer than two accounts have a
+ * weight — a split by account of one account is a full circle.
+ *
+ * **The account view divides the accounts' worth, cash included** (#1426) — the
+ * accounts bar's own basis — and the securities view divides the securities.
+ * Each names its whole: « Valeur des comptes » or « Titres ».
  */
 import { useContext, useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -29,24 +33,29 @@ import {
 } from '@/features/shares/components/Allocation'
 import { Section, SectionControlsContext } from '@/components/ui/section'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { DEFAULT_ACCOUNT_LABEL, isDefaultAccount } from '@/features/accounts/lib/accounts'
+import {
+  accountAllocation,
+  DEFAULT_ACCOUNT_LABEL,
+  declaredLabel,
+  type AccountRow,
+} from '@/features/accounts/lib/accounts'
+import { accountReading } from '@/features/dashboard/lib/dashboard'
+import type { RuntimeState } from '@/lib/api'
 import type { PositionsResponse } from '@/features/shares/lib/api'
 import type { Width } from '@/features/dashboard/lib/dashboardBlocks'
 import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import {
-  accountAllocation,
-  allocation,
-  type AllocationSlice,
-  type ShareRow,
-} from '@/features/shares/lib/shares'
+import { allocation, type AllocationSlice, type ShareRow } from '@/features/shares/lib/shares'
 
 type View = 'security' | 'account'
 
 interface AllocationCardProps {
   positions: PositionsResponse | null
   rows: readonly ShareRow[]
+  /** `/api/accounts`, `null` while unanswered: the account view's own read (#1426). */
+  accounts: readonly AccountRow[] | null
+  runtime: RuntimeState | null
   /** The width the grid draws the card at — not the saved one (`lib/dashboardLayout`). */
   width?: Width
 }
@@ -58,7 +67,13 @@ export function allocationRenderState({
   return positions === null ? 'pending' : 'renders'
 }
 
-export function AllocationCard({ positions, rows, width = 'half' }: AllocationCardProps) {
+export function AllocationCard({
+  positions,
+  rows,
+  accounts,
+  runtime,
+  width = 'half',
+}: AllocationCardProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const mobile = useIsMobile()
@@ -68,16 +83,24 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
   const frame = useContext(SectionControlsContext)
   if (positions === null) return null
 
-  // **An account is named by its id**, as the shares page's groups name it:
-  // its declared label is on `/api/accounts`, which this page does not read
-  // (#1174). The seeded account alone reads its catalogue name, since its id
-  // (`default`) is a word in no language the owner chose.
-  const accountName = (id: string) => (isDefaultAccount(id) ? t(DEFAULT_ACCOUNT_LABEL) : id)
-  const byAccount = accountAllocation(positions.positions, accountName)
-  const placedAccounts = byAccount.slices.reduce((sum, slice) => sum + slice.count, 0)
-  const selectable = placedAccounts >= 2
+  // **One basis with the accounts bar** (#1426): an account's worth, cash included.
+  const byAccount =
+    accounts === null
+      ? null
+      : accountAllocation(accounts, (row) => declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL))
+  const selectable = byAccount !== null && byAccount.slices.reduce((n, s) => n + s.count, 0) >= 2
   const view = selectable ? chosen : 'security'
-  const split = view === 'account' ? byAccount : allocation(rows)
+  const split = view === 'account' && byAccount !== null ? byAccount : allocation(rows)
+  // **One row not yet valued drops every share** (#1285), `AccountsBar`'s own
+  // predicate, over every row — the ones left out of the split included.
+  const now = new Date()
+  const waiting =
+    view === 'account' &&
+    accounts !== null &&
+    accounts.some((row) => accountReading(row, runtime, now) !== 'valued')
+  const totalLabel = t(
+    view === 'account' ? 'dashboard.allocation.total.accounts' : 'shares.allocation.total',
+  )
   const currency = positions.base_currency ?? null
   const full = width === 'full' && !mobile
 
@@ -107,12 +130,20 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
     </div>
   ) : null
 
-  const empty = split.slices.length === 0
+  const empty = split.slices.length === 0 || waiting
   const scope = (
     <AllocationScope
       slices={split.slices}
       unit={view === 'account' ? 'accounts' : 'lines'}
       className="label block"
+    />
+  )
+  const placeholder = waiting ? (
+    <EmptyState title={t('dashboard.allocation.byAccount.pending')} />
+  ) : (
+    <EmptyState
+      title={t('shares.allocation.empty')}
+      description={t('shares.allocation.empty.body')}
     />
   )
 
@@ -128,7 +159,7 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
           // value read as a second value of it. The name is also the basis
           // every share in the list divides, by security or by account.
           <span className="flex items-baseline gap-2">
-            <span className="label">{t('shares.allocation.total')}</span>
+            <span className="label">{totalLabel}</span>
             <span className="tabular text-2xl font-semibold">
               {f.currency(split.total, currency)}
             </span>
@@ -138,22 +169,20 @@ export function AllocationCard({ positions, rows, width = 'half' }: AllocationCa
     >
       <div className="flex flex-col gap-3">
         {full ? null : selector}
-        {scope}
-        {full ? (
+        {waiting ? null : scope}
+        {full && !waiting ? (
           <AllocationFigure
             {...split}
             currency={currency}
             title={t('dashboard.allocation.title')}
             name={name}
+            totalLabel={totalLabel}
             amounts
           />
         ) : (
           <>
             {empty ? (
-              <EmptyState
-                title={t('shares.allocation.empty')}
-                description={t('shares.allocation.empty.body')}
-              />
+              placeholder
             ) : (
               <AllocationBars
                 slices={split.slices}

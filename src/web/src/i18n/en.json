@@ -207,6 +207,8 @@
   "dashboard.allocation.bySecurity": "Security",
   "dashboard.allocation.toAccounts": "See the accounts →",
   "dashboard.allocation.byAccount": "Account",
+  "dashboard.allocation.total.accounts": "Accounts value",
+  "dashboard.allocation.byAccount.pending": "Account shares are waiting for the rebuild",
   "dashboard.allocation.others.lines": "Others · {count, plural, one {# line} other {# lines}}",
   "dashboard.allocation.others.accounts": "Others · {count, plural, one {# account} other {# accounts}}",
   "dashboard.allocation.scope.accounts": "{accounts} accounts · top {top} detailed, {folded} grouped",

@@ -25,6 +25,7 @@ import {
   aClosedPosition,
   anAccount,
   anAccountsPayload,
+  theSeededAccount,
   aMover,
   aMoversPayload,
   aPosition,
@@ -142,7 +143,7 @@ describe('the value is the hero (direction 1a)', () => {
     expect(head).not.toHaveTextContent(/1ᵉʳ janvier/)
   })
 
-  it('says nothing of tax, whatever the accounts declare, and reads none of them', async () => {
+  it('says nothing of tax, whatever the accounts declare, and reads them once, for the allocation (#1426)', async () => {
     // The tax model is one reading among others, and its figures are not
     // certain enough to sit under the hero (#1174): the accounts page owns it.
     const requested: string[] = []
@@ -164,7 +165,8 @@ describe('the value is the hero (direction 1a)', () => {
 
     expect(screen.queryByText(/net d.impôt/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Il vous resterait/)).not.toBeInTheDocument()
-    expect(requested).not.toContain(ROUTES.accounts)
+    // The accounts page's own cache entry: one request (#1426).
+    expect(requested.filter((path) => path === ROUTES.accounts)).toHaveLength(1)
     server.events.removeAllListeners()
   })
 
@@ -1689,6 +1691,9 @@ describe('the allocation card (#1206)', () => {
     )
   }
 
+  const useAccounts = (...accounts: Parameters<typeof anAccountsPayload>[0][]) =>
+    server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(...accounts))))
+
   it('is shown on a fresh install, with nothing « Nouveau »', async () => {
     renderApp()
 
@@ -1745,8 +1750,13 @@ describe('the allocation card (#1206)', () => {
     fireEvent.click(byAccount)
     expect(byAccount).toHaveAttribute('aria-pressed', 'true')
     const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getByText('alpha')).toBeInTheDocument()
+    expect(within(legend).getByText('Alpha')).toBeInTheDocument()
     expect(card).not.toHaveTextContent(/en portefeuille/)
+    // The whole changes with the view, and is named (#1426): the accounts' value.
+    expect(titleRow).toHaveTextContent(/Valeur des comptes/)
+    expect(titleRow).toHaveTextContent(/3\D?300,00/)
+    fireEvent.click(bySecurity)
+    expect(titleRow).toHaveTextContent(/Titres/)
     expect(titleRow).toHaveTextContent(/2\D?300,00/)
   })
 
@@ -1789,24 +1799,16 @@ describe('the allocation card (#1206)', () => {
     expect(card).toHaveTextContent('9 lignes · top 4 détaillé, 5 regroupées')
   })
 
-  it('names the seeded account from the catalogue, not by its id', async () => {
+  it('names an account by its declared label, and the seeded one from the catalogue (#1426)', async () => {
     showAllocation('half')
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            aPosition({ account: 'default', symbol: 'ZZA', name: 'Zeta Alpha' }),
-            aPosition({ account: 'alpha', symbol: 'ZZB', name: 'Zeta Beta' }),
-          ]),
-        ),
-      ),
-    )
+    useAccounts([theSeededAccount(), anAccount({ id: 'alpha', label: 'Mon PEA' })])
     const { user } = renderApp()
     const card = await screen.findByRole('region', { name: 'Répartition' })
     await user.click(within(card).getByRole('button', { name: 'Compte' }))
 
     const legend = within(card).getByRole('list', { name: 'Répartition' })
     expect(within(legend).getByText('Non affecté')).toBeInTheDocument()
+    expect(within(legend).getByText('Mon PEA')).toBeInTheDocument()
     expect(within(legend).queryByText('default')).not.toBeInTheDocument()
   })
 
@@ -1820,11 +1822,14 @@ describe('the allocation card (#1206)', () => {
     expect(row).toHaveTextContent(/1\D?300,00/)
     expect(within(card).getByRole('group', { name: 'Répartir par' })).toBeInTheDocument()
 
-    // By account: the same total in the hole, each account with its amount.
+    // By account: the accounts' value in the hole, each account with its amount (#1426).
     fireEvent.click(within(card).getByRole('button', { name: 'Compte' }))
-    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
-    expect(within(card).getByText('alpha').closest('li')).toHaveTextContent(/1\D?300,00/)
-    expect(within(card).getByText('gamma').closest('li')).toHaveTextContent(/600,00/)
+    expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
+    expect(within(card).getByRole('group', { name: 'Valeur des comptes' })).toHaveTextContent(
+      /3\D?300,00/,
+    )
+    expect(within(card).getByText('Alpha').closest('li')).toHaveTextContent(/1\D?800,00/)
+    expect(within(card).getByText('Gamma').closest('li')).toHaveTextContent(/600,00/)
   })
 
   it('at full width, lays the legend in one column, two from xl and three from 3xl (#1325)', async () => {
@@ -1845,15 +1850,9 @@ describe('the allocation card (#1206)', () => {
 
   it('folds past five accounts into « Autres · N comptes » and counts accounts', async () => {
     showAllocation('half')
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload(
-            Array.from({ length: 9 }, (_, index) =>
-              aPosition({ account: `acct${index}`, symbol: `Z${index}`, price: 90 - index }),
-            ),
-          ),
-        ),
+    useAccounts(
+      Array.from({ length: 9 }, (_, index) =>
+        anAccount({ id: `acct${index}`, label: null, total_value: 900 - index }),
       ),
     )
     const { user } = renderApp()
@@ -1914,28 +1913,54 @@ describe('the allocation card (#1206)', () => {
 
   it('offers no selector while fewer than two accounts hold a placed line', async () => {
     showAllocation('half')
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            aPosition({ account: 'alpha', symbol: 'ZZA', name: 'Zeta Alpha' }),
-            aClosedPosition({ account: 'beta', symbol: 'ZZD', closed_at: '2025-11-04' }),
-            // Held, but with nothing placed: gamma is no slice either.
-            aPosition({
-              account: 'gamma',
-              symbol: 'ZZB',
-              price: 125,
-              currency: 'USD',
-              rate: null,
-            }),
-          ]),
-        ),
-      ),
-    )
+    // Owing and unwritten accounts have no weight, so they are no slice (#1426).
+    useAccounts([
+      anAccount({ id: 'alpha' }),
+      anAccount({ id: 'beta', total_value: -50, holdings_value: 0 }),
+      anAccount({ id: 'gamma', total_value: null, holdings_value: null }),
+    ])
     renderApp()
     const card = await screen.findByRole('region', { name: 'Répartition' })
 
     expect(within(card).queryByRole('group', { name: 'Répartir par' })).not.toBeInTheDocument()
+  })
+
+  it("divides by the accounts' worth, as the accounts bar does (#1426)", async () => {
+    showAllocation('half')
+    useAccounts([
+      anAccount({ id: 'pea', label: 'PEA', total_value: 42670, holdings_value: 40000 }),
+      anAccount({ id: 'cto', label: 'CTO', total_value: 5545.4, holdings_value: 5000 }),
+      anAccount({ id: 'debt', label: 'Dette', total_value: -100, holdings_value: 0 }),
+    ])
+    const { user } = renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+    await user.click(within(card).getByRole('button', { name: 'Compte' }))
+
+    const legend = within(card).getByRole('list', { name: 'Répartition' })
+    expect(within(legend).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(legend).getByText('PEA').closest('li')).toHaveTextContent(/88,5\s?%/)
+    expect(within(legend).getByText('CTO').closest('li')).toHaveTextContent(/11,5\s?%/)
+    expect(card).not.toHaveTextContent(/Dette/)
+    expect(card).not.toHaveTextContent(/sans taux/)
+  })
+
+  it('waits for the rebuild instead of stating shares of a partial whole (#1285, #1426)', async () => {
+    showAllocation('half')
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
+    // One row stale, and it is the one left out of the split: it still counts.
+    useAccounts([
+      anAccount({ id: 'alpha' }),
+      anAccount({ id: 'beta' }),
+      anAccount({ id: 'old', total_value: -1, holdings_value: 0, as_of: '2026-03-01' }),
+    ])
+    const { user } = renderApp()
+    const card = await screen.findByRole('region', { name: 'Répartition' })
+    await user.click(within(card).getByRole('button', { name: 'Compte' }))
+
+    expect(card).toHaveTextContent('Parts par compte en attente du recalcul')
+    expect(card).not.toHaveTextContent('%')
+    expect(card).not.toHaveTextContent('Valeur des comptes')
+    expect(within(card).queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
   })
 })
 

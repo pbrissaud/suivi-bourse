@@ -190,6 +190,8 @@ interface AllocationFigureProps extends Split {
   title: string
   /** What a slice is called — the tail's word (« lignes », « comptes ») is the surface's. */
   name: (slice: AllocationSlice) => string
+  /** What the total in the hole is the total of — the whole every share divides (#1426). */
+  totalLabel: string
   /** Each legend row also writes its amount (the dashboard's full width). */
   amounts?: boolean
 }
@@ -208,6 +210,7 @@ export function AllocationFigure({
   currency,
   title,
   name,
+  totalLabel,
   amounts = false,
 }: AllocationFigureProps) {
   const { t } = useI18n()
@@ -273,11 +276,7 @@ export function AllocationFigure({
                   so the slices under it stay reachable. */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="max-w-[9rem]">
-                <Stat
-                  align="center"
-                  label={t('shares.allocation.total')}
-                  value={f.currency(total, currency)}
-                />
+                <Stat align="center" label={totalLabel} value={f.currency(total, currency)} />
               </div>
             </div>
           </div>
