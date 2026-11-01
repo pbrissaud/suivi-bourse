@@ -19,7 +19,7 @@ RUN cd web && pnpm build
 # Everything that builds the venv stays in this stage: uv (53 MB), binutils and
 # the workspace sources. The runtime stage receives `/opt/venv` alone, at the
 # same path, on the same base image, so its interpreter links stay valid.
-FROM python:3.14-slim AS venv
+FROM python:3.15-slim AS venv
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.8 /uv /bin/
 
@@ -56,7 +56,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --package app --no-editable \
  && rm -f /opt/venv/bin/uvicorn
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ENV PATH="/opt/venv/bin:$PATH"
 
