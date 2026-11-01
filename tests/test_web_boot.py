@@ -201,6 +201,54 @@ def test_build_runtime_carries_the_documentation_root_of_the_environment(fake_co
         main.build_runtime()
 
 
+def test_build_runtime_reads_the_environment_it_is_handed(
+        fake_config, monkeypatch, tmp_path):
+    """One environment for the whole boot: the mapping, not the process's.
+
+    ``boot.run(env)`` reads ``env``; a ``build_runtime`` that went back to
+    ``os.environ`` would open the store, stamp the build and name the unread
+    variables from a second source the caller never chose.
+    """
+    monkeypatch.setenv('SB_STORE_DIR', str(tmp_path / 'process'))
+    monkeypatch.delenv('RELEASE_VERSION', raising=False)
+    handed = {'SB_STORE_DIR': str(tmp_path / 'handed'),
+              'RELEASE_VERSION': '9.9.9', 'SB_RETIRED_KNOB': '1'}
+    notices = []
+    monkeypatch.setattr(main.app_logger, 'warning', notices.append)
+
+    runtime = main.build_runtime(handed)
+
+    assert runtime.store_path == tmp_path / 'handed' / store.STORE_FILENAME
+    assert not (tmp_path / 'process').exists()
+    assert runtime.build.version == '9.9.9'
+    assert any('SB_RETIRED_KNOB' in str(notice) for notice in notices)
+
+
+def test_build_runtime_logs_at_the_level_of_the_environment_it_is_handed(
+        fake_config, tmp_path):
+    """``LOG_LEVEL`` is part of the boot's environment, as uvicorn already reads it.
+
+    The import set the app's loggers from ``os.environ``; the mapping the boot
+    was handed wins, and a mapping without ``LOG_LEVEL`` leaves them alone.
+    """
+    loggers = [logging.getLogger(name) for name in main.MANAGED_LOGGERS]
+    before = [(lg.level, [h.level for h in lg.handlers]) for lg in loggers]
+    try:
+        main._apply_log_level('WARNING')
+
+        main.build_runtime({'SB_STORE_DIR': str(tmp_path / 'quiet')})
+        assert main.current_log_level() == 'WARNING'
+
+        main.build_runtime({'SB_STORE_DIR': str(tmp_path / 'loud'),
+                            'LOG_LEVEL': 'debug'})
+        assert {lg.level for lg in loggers} == {logging.DEBUG}
+    finally:
+        for lg, (level, handler_levels) in zip(loggers, before):
+            lg.setLevel(level)
+            for handler, handler_level in zip(lg.handlers, handler_levels):
+                handler.setLevel(handler_level)
+
+
 def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
     """One connection, for the life of the process (#696).
 
@@ -435,7 +483,7 @@ def test_build_runtime_propagates_a_broken_config(monkeypatch):
      "An unexpected error occurred"),
 ])
 def test_the_boot_names_every_fatal_branch_and_exits_one(
-        monkeypatch, mocker, error, expected_message):
+        monkeypatch, mocker, tmp_path, error, expected_message):
     """A fatal configuration is one named line and one non-zero exit.
 
     The branch list is the one ``__main__`` carried before gunicorn and it
@@ -446,7 +494,7 @@ def test_the_boot_names_every_fatal_branch_and_exits_one(
         lambda **kwargs: _FakeConfigManager(load_error=error))
     fatal = mocker.patch.object(main.app_logger, "fatal")
 
-    assert boot.run({}) == 1
+    assert boot.run({"SB_STORE_DIR": str(tmp_path / "store")}) == 1
     assert fatal.call_count == 1
     assert expected_message in fatal.call_args[0][0]
 
@@ -771,6 +819,16 @@ def test_the_boot_is_one_sequence_in_one_order(steps):
                            "start_runtime", "serve", "shutdown_runtime"]
 
 
+def test_the_boot_hands_its_environment_to_build_runtime(steps, mocker):
+    """``run(env)`` reads ``env`` at step one and again at step two, never ``os.environ``."""
+    build = mocker.patch.object(main, "build_runtime", return_value=steps.runtime)
+    env = {"SB_STORE_DIR": "/somewhere/else"}
+
+    assert boot.run(env) == 0
+
+    build.assert_called_once_with(env)
+
+
 @pytest.mark.parametrize("failing", ["read_environment", "build_runtime",
                                      "create_app", "start_runtime", "serve"])
 def test_a_failure_at_any_step_is_one_non_zero_exit(steps, mocker, failing):
@@ -915,7 +973,7 @@ def test_the_boot_serves_although_the_market_edge_raises(
 
     monkeypatch.setattr(boot, "serve", _serve)
 
-    boot.sequence({})
+    boot.sequence({"SB_STORE_DIR": str(tmp_path / "store")})
 
     assert answered["status"] == 200
 
@@ -941,7 +999,7 @@ def test_the_health_probe_answers_within_a_second_of_a_hung_market(
     monkeypatch.setattr(boot, "serve", _serve)
 
     started = time.monotonic()
-    boot.sequence({})
+    boot.sequence({"SB_STORE_DIR": str(tmp_path / "store")})
 
     assert answered["status"] == 200
     assert answered["elapsed"] < 1.0
@@ -1206,7 +1264,7 @@ def test_the_boot_hands_the_agents_interface_to_the_socket(tmp_path, monkeypatch
 
     monkeypatch.setattr(boot, "serve", _serve)
 
-    boot.sequence({})
+    boot.sequence({"SB_STORE_DIR": str(tmp_path / "store")})
 
     assert isinstance(handed["mcp"], MCPServer)
     # And the in-app agent's routes beside it (#1114).

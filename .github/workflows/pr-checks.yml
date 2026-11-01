@@ -141,10 +141,10 @@ jobs:
           docker build --platform linux/amd64 \
             --build-arg SOURCE_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}" \
             -t suivi-bourse:pr .
-      # Assertions 2 to 10, each failing for its own reason. The script owns the
+      # Assertions 2 to 12, each failing for its own reason. The script owns the
       # containers and the volume it creates and removes them from an EXIT trap,
       # so a failed assertion leaves nothing behind either.
-      - name: "2-10. The image honours its contract"
+      - name: "2-12. The image honours its contract"
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         env:
           IMAGE: suivi-bourse:pr

@@ -1,0 +1,32 @@
+name: Image platforms
+
+# The release publishes linux/amd64 and linux/arm64, each built on its own
+# native runner (`releasing.yml`). The `Container` job of `pr-checks.yml` builds
+# and tests amd64 only, so without this a Dockerfile change could break the
+# arm64 half and nobody would know before the release. Build only, no push.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/image-platforms.yml
+      - .github/workflows/releasing.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: docker/github-builder/.github/workflows/build.yml@v1.18.1
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      output: image
+      push: false
+      platforms: linux/amd64,linux/arm64
+      meta-images: suivi-bourse
+      meta-tags: type=ref,event=pr
+      cache: true
+      cache-scope: suivi-bourse
+      cache-mode: max

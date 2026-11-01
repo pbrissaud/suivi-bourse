@@ -49,9 +49,9 @@ class Context:
         return total > 0 and complete >= total
 
 
-def unread_environment() -> List[str]:
+def unread_environment(env: Optional[Mapping[str, str]] = None) -> List[str]:
     """The ``SB_*``/``INFLUXDB_*`` variables that are set and no longer read."""
-    return list(boot_env.unread(os.environ))
+    return list(boot_env.unread(os.environ if env is None else env))
 
 
 def observe(workloads=None) -> 'Context':
