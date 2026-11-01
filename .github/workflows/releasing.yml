@@ -30,6 +30,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release-please.outputs.release_created }}
       tag_name: ${{ steps.release-please.outputs.tag_name }}
+      version: ${{ steps.release-please.outputs.version }}
       prs_created: ${{ steps.release-please.outputs.prs_created }}
       pr: ${{ steps.release-please.outputs.pr }}
 
@@ -44,83 +45,64 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ fromJSON(needs.create-release.outputs.pr).number }}
 
+  # One native runner per platform (ubuntu-24.04 and ubuntu-24.04-arm), then one
+  # manifest list: Docker's own reusable workflow does the fan-out, the push by
+  # digest and the merge. Under QEMU the arm64 half took ~5 of the 6 min 46 of
+  # the v5.2.0 job; `.github/workflows/image-platforms.yml` builds the same two
+  # platforms on every pull request that touches the image.
   docker:
-    runs-on: ubuntu-latest
     needs: create-release
-    if: ${{needs.create-release.outputs.release_created}} 
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: "0"
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          # list of Docker images to use as base name for tags
-          # The `-app` suffix named which of three services this was; there is
-          # only one now. No compatibility alias: nothing migrates from v4, so
-          # `suivi-bourse-app:5` never exists and a v4 install that bumps its
-          # tag out of habit fails at the pull instead of starting on a store
-          # that dies with the container.
-          images: |
-            paulbrissaud/suivi-bourse
-            ghcr.io/pbrissaud/suivi-bourse
-          # generate Docker tags based on the following events/attributes
-          tags: |
-            type=semver,pattern={{version}},value=${{needs.create-release.outputs.tag_name}}
-            type=semver,pattern={{major}}.{{minor}},value=${{needs.create-release.outputs.tag_name}}
-            type=semver,pattern={{major}},value=${{needs.create-release.outputs.tag_name}}
-            type=sha,prefix=
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        with:
+    if: ${{needs.create-release.outputs.release_created}}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    uses: docker/github-builder/.github/workflows/build.yml@v1.18.1
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64
+      # The `-app` suffix named which of three services this was; there is
+      # only one now. No compatibility alias: nothing migrates from v4, so
+      # `suivi-bourse-app:5` never exists and a v4 install that bumps its
+      # tag out of habit fails at the pull instead of starting on a store
+      # that dies with the container.
+      meta-images: |
+        paulbrissaud/suivi-bourse
+        ghcr.io/pbrissaud/suivi-bourse
+      meta-tags: |
+        type=semver,pattern={{version}},value=${{needs.create-release.outputs.tag_name}}
+        type=semver,pattern={{major}}.{{minor}},value=${{needs.create-release.outputs.tag_name}}
+        type=semver,pattern={{major}},value=${{needs.create-release.outputs.tag_name}}
+        type=sha,prefix=
+      set-meta-labels: true
+      # The stamp the app itself reads (`build_info`). The labels above are
+      # the same two facts for `docker inspect`, and they are not the same
+      # thing: a label is read from outside the container, by somebody who
+      # already knows which image they are looking at. These two are read
+      # by the process, published on `/api/runtime`, and are what a bug
+      # report carries.
+      #
+      # release-please's `version` rather than the tag name: `5.0.0` and not
+      # `v5.0.0`, so the string the page shows is the string somebody would
+      # `docker pull`.
+      build-args: |
+        RELEASE_VERSION=${{needs.create-release.outputs.version}}
+        SOURCE_COMMIT=${{ github.sha }}
+      # GitHub Actions cache, one scope per platform (the workflow suffixes
+      # it). It aims at the next release rebuilding; the Dockerfile's
+      # --mount=type=cache aims at the contributor rebuilding.
+      cache: true
+      cache-scope: suivi-bourse
+      cache-mode: max
+    secrets:
+      registry-auths: |
+        - registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
+        - registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # The stamp the app itself reads (`build_info`). The labels above are
-          # the same two facts for `docker inspect`, and they are not the same
-          # thing: a label is read from outside the container, by somebody who
-          # already knows which image they are looking at. These two are read
-          # by the process, published on `/api/runtime`, and are what a bug
-          # report carries.
-          #
-          # `steps.meta.outputs.version` rather than the tag name: it is the
-          # `{{version}}` the first tag pattern produced — `5.0.0` and not
-          # `v5.0.0` — so the string the page shows is the string somebody
-          # would `docker pull`.
-          build-args: |
-            RELEASE_VERSION=${{ steps.meta.outputs.version }}
-            SOURCE_COMMIT=${{ github.sha }}
-          # Registry cache, carried by a dedicated tag of the published image
-          # (version-free, so it never depends on a tag that does not exist
-          # yet). It aims at the PaaS rebuilding from zero — a different public
-          # from the Dockerfile's --mount=type=cache, which aims at the
-          # contributor rebuilding; confusing the two optimises neither.
-          cache-from: type=registry,ref=ghcr.io/pbrissaud/suivi-bourse:buildcache
-          cache-to: type=registry,ref=ghcr.io/pbrissaud/suivi-bourse:buildcache,mode=max
 
   doc:
     runs-on: ubuntu-latest
