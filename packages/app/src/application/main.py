@@ -54,19 +54,27 @@ MANAGED_LOGGERS = (
 )
 
 
-def set_log_level(level: str) -> str:
-    """Change the log level of the running process. **Ephemeral** by design."""
-    resolved = (level or '').strip().upper()
-    if resolved not in ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'):
-        raise ValueError(
-            f"Unknown log level {level!r}. "
-            f"Expected one of CRITICAL, ERROR, WARNING, INFO, DEBUG.")
+LOG_LEVELS = ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG')
 
+
+def _apply_log_level(resolved: str) -> None:
+    """Put every logger this app manages, and its handlers, at ``resolved``."""
     for name in MANAGED_LOGGERS:
         target = logging.getLogger(name)
         target.setLevel(resolved)
         for handler in target.handlers:
             handler.setLevel(resolved)
+
+
+def set_log_level(level: str) -> str:
+    """Change the log level of the running process. **Ephemeral** by design."""
+    resolved = (level or '').strip().upper()
+    if resolved not in LOG_LEVELS:
+        raise ValueError(
+            f"Unknown log level {level!r}. "
+            f"Expected one of CRITICAL, ERROR, WARNING, INFO, DEBUG.")
+
+    _apply_log_level(resolved)
 
     app_logger.info(f"Log level set to {resolved} (until the process restarts)")
     return resolved
@@ -426,6 +434,12 @@ def build_runtime(env: Optional[Mapping[str, str]] = None) -> Runtime:
     default: one environment for the whole boot, never a second read of the process's.
     """
     env = os.environ if env is None else env
+    # The level was read from ``os.environ`` at import; the boot's own
+    # ``LOG_LEVEL`` wins before the first line is logged. Absent or unknown, the
+    # import's level stays, as uvicorn's does in ``boot.serve``.
+    level = (boot_env.text(env, boot_env.LOG_LEVEL) or '').upper()
+    if level in LOG_LEVELS:
+        _apply_log_level(level)
     build = build_info.describe(env, build_info.checkout_revision())
     app_logger.info(
         f'SuiviBourse {build_info.said(build)} is running !',

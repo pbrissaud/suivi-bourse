@@ -224,6 +224,31 @@ def test_build_runtime_reads_the_environment_it_is_handed(
     assert any('SB_RETIRED_KNOB' in str(notice) for notice in notices)
 
 
+def test_build_runtime_logs_at_the_level_of_the_environment_it_is_handed(
+        fake_config, tmp_path):
+    """``LOG_LEVEL`` is part of the boot's environment, as uvicorn already reads it.
+
+    The import set the app's loggers from ``os.environ``; the mapping the boot
+    was handed wins, and a mapping without ``LOG_LEVEL`` leaves them alone.
+    """
+    loggers = [logging.getLogger(name) for name in main.MANAGED_LOGGERS]
+    before = [(lg.level, [h.level for h in lg.handlers]) for lg in loggers]
+    try:
+        main._apply_log_level('WARNING')
+
+        main.build_runtime({'SB_STORE_DIR': str(tmp_path / 'quiet')})
+        assert main.current_log_level() == 'WARNING'
+
+        main.build_runtime({'SB_STORE_DIR': str(tmp_path / 'loud'),
+                            'LOG_LEVEL': 'debug'})
+        assert {lg.level for lg in loggers} == {logging.DEBUG}
+    finally:
+        for lg, (level, handler_levels) in zip(loggers, before):
+            lg.setLevel(level)
+            for handler, handler_level in zip(lg.handlers, handler_levels):
+                handler.setLevel(handler_level)
+
+
 def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
     """One connection, for the life of the process (#696).
 
