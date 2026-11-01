@@ -45,7 +45,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ fromJSON(needs.create-release.outputs.pr).number }}
 
-  # One native runner per platform (ubuntu-24.04 and ubuntu-24.04-arm), then one
+  # One native runner per platform (the builder picks x64 and arm runners), then one
   # manifest list: Docker's own reusable workflow does the fan-out, the push by
   # digest and the merge. Under QEMU the arm64 half took ~5 of the 6 min 46 of
   # the v5.2.0 job; `.github/workflows/image-platforms.yml` builds the same two
