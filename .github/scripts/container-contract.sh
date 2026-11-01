@@ -322,14 +322,12 @@ done
 ok 'the build stamps itself, and the notice keeps quiet about it'
 
 assertion '11 — every native extension in the image resolves its libraries'
-# The image installs `binutils` to strip debug symbols out of the compiled
-# wheels and purges it in the same layer (#749 review). `apt-get autoremove`
-# runs in that purge, and APT cannot see an ELF dependency: it knows which
-# *packages* need `libstdc++6`, never that `_duckdb.so` does. Today those
-# libraries ship with `python:*-slim` and are held by packages that stay, so
-# nothing is taken — but that is a property of a base image this project does
-# not own, and the failure it would produce is the bad kind: not a red build, a
-# green one whose container dies on `import duckdb`.
+# The venv is built and stripped in one stage and copied, alone, onto a fresh
+# `python:*-slim` (#749 review). APT never saw it: it knows which *packages*
+# need `libstdc++6`, never that `_duckdb.so` does. Today those libraries ship
+# with the slim base, so every link resolves — but that is a property of a base
+# image this project does not own, and the failure it would produce is the bad
+# kind: not a red build, a green one whose container dies on `import duckdb`.
 #
 # So the property is asserted where it is true or false — on the artefact — and
 # for **every** extension rather than for the two libraries somebody thought of:
@@ -365,5 +363,19 @@ docker run --rm --entrypoint python "$IMAGE" \
     >/dev/null 2>&1 \
     || fail 'assertion 11: the image cannot import the wheels the app boots on'
 ok 'the compiled wheels find what they link against, and load'
+
+# --------------------------------------------------------------------------- #
+assertion '12 — the image serves one way, and carries no build tooling'
+# --------------------------------------------------------------------------- #
+# `uv` builds the venv in its own stage and stays there: 53 MB nothing at runtime
+# calls. `uvicorn`'s command is removed on purpose (#866): without it there is no
+# `--workers` flag to start a second scheduler with, and the boot module is the
+# only way to serve. Asked of the image's PATH, not of the Dockerfile's text.
+leftover="$(docker run --rm --entrypoint sh "$IMAGE" -c \
+    'for tool in uv uvx uvicorn; do command -v "$tool" || true; done')" \
+    || fail 'assertion 12: the PATH lookup could not run in the image'
+[ -z "$leftover" ] \
+    || fail "assertion 12: the image still carries $(printf '%s' "$leftover" | tr '\n' ' ')"
+ok 'no uv, no uvicorn command: the boot module is the only entrypoint'
 
 printf '\nThe image honours its contract.\n'
