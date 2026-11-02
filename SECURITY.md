@@ -96,6 +96,9 @@ ordinary release once there is one.
 
 Renovate watches this repository's dependencies — the Python runtime, the
 front's packages, the base image and the CI actions — and its minor and patch
-updates merge on their own once the checks pass. Secret scanning and push
+updates merge on their own once the checks pass. The Python version is the
+exception: the image, `.python-version` and every `requires-python` move
+together in one pull request that is merged by hand once `uv.lock` has been
+relocked. Secret scanning and push
 protection are on. An update that matters for security is cut as a release
 rather than left waiting for the next feature.
