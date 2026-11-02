@@ -24,6 +24,7 @@
       "groupName": "python",
       "semanticCommitScope": "app",
       "automerge": false,
+      "minimumReleaseAge": null,
       "prBodyNotes": ["Before merging: run `uv lock` with the mise uv and push it (Renovate does not relock after a regex bump), and check that every dependency ships wheels for the new Python."]
     },
     {
