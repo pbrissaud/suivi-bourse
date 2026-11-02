@@ -9,7 +9,7 @@ name = "suivi-bourse"
 version = "5.2.0"
 description = "Monitors stock shares with yfinance and stores everything in one embedded DuckDB store, with historical backfill."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 # The backend is four workspace members under `packages/` (#1199), sharing the
 # `application` namespace. Dependencies point down: app → store, market → core.
 # `tests/test_layers.py` holds the boundary (no import from a higher member,
