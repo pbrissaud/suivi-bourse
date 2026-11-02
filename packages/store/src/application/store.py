@@ -2,7 +2,7 @@
 import math
 import os
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -188,10 +188,11 @@ class Store:
     def arrow(self, sql: str, parameters: Optional[Sequence[Any]] = None):
         """Run one statement and materialise its rows as an Arrow table."""
         with self._lock:
-            if parameters is None:
-                return self._live().execute(sql).fetch_arrow_table()
-            return self._live().execute(
-                sql, list(parameters)).fetch_arrow_table()
+            # ``sql`` rather than ``execute``: DuckDB 2 copies the rows once
+            # more when a DB-API result is read as Arrow.
+            return self._live().sql(
+                sql, params=None if parameters is None else list(parameters)
+            ).to_arrow_table()
 
     def write_arrow(self, sql: str, columns: Sequence[str],
                     rows: Sequence[Sequence[Any]],
@@ -226,6 +227,9 @@ class Store:
         incoming = pyarrow.table(dict(zip(columns, zip(*rows))))
         with self._lock:
             connection = self._live()
+            # DuckDB 2 refuses ``register`` while an earlier result is unread
+            # (a ``fetchone`` leaves one); its reader is done with it.
+            connection.abort()
             connection.register(INCOMING, incoming)
             try:
                 if parameters is None:
@@ -233,7 +237,11 @@ class Store:
                 else:
                     connection.execute(sql, list(parameters))
             finally:
-                connection.unregister(INCOMING)
+                # In a transaction the failure aborted, DuckDB 2 refuses the
+                # unregister; the registration is transactional, so the
+                # ROLLBACK the caller runs takes the view with it.
+                with suppress(duckdb.TransactionException):
+                    connection.unregister(INCOMING)
 
     def ping(self) -> None:
         """Touch the store, and raise if it cannot be touched."""
