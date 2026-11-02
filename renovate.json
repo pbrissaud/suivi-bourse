@@ -17,6 +17,31 @@
     {
       "matchManagers": ["github-actions"],
       "semanticCommitScope": "repo"
+    },
+    {
+      "description": "One Python version everywhere: the image, .python-version and every requires-python move in one PR, merged by hand after `uv lock`.",
+      "matchDepNames": ["python"],
+      "groupName": "python",
+      "semanticCommitScope": "app",
+      "automerge": false,
+      "prBodyNotes": ["Before merging: run `uv lock` with the mise uv and push it (Renovate does not relock after a regex bump), and check that every dependency ships wheels for the new Python."]
+    },
+    {
+      "description": "pep621 also reads requires-python (python-version datasource); the regex manager below owns that line.",
+      "matchManagers": ["pep621"],
+      "matchDepNames": ["python"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump the requires-python floor of every pyproject with the Python image.",
+      "managerFilePatterns": ["/(^|/)pyproject\\.toml$/"],
+      "matchStrings": ["requires-python\\s*=\\s*\">=(?<currentValue>\\d+\\.\\d+)\""],
+      "depNameTemplate": "python",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
     }
   ],
   "assignees": ["pbrissaud"],
