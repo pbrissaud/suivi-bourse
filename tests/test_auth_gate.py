@@ -95,7 +95,7 @@ def test_a_store_from_before_the_pin_boots_unlocked(opened):
 
     assert [a.text for a in answers] == ['inner'] * 4
     assert status.json() == {'enabled': False, 'authenticated': False,
-                             'token_created_at': None}
+                             'token_created_at': None, 'session_seconds': None}
 
 
 # --------------------------------------------------------------------------- #
@@ -137,7 +137,7 @@ def test_without_a_credential_only_the_allowlist_reaches_the_app(opened):
     assert answers[('POST', '/mcp')].headers['www-authenticate'] == 'Bearer'
 
 
-def test_the_cookie_opens_the_app_and_not_mcp_and_the_token_the_reverse(opened):
+def test_the_cookie_opens_the_app_and_the_token_opens_mcp_and_api_not_auth(opened):
     inner = Inner()
     gate = Gate(inner, opened, INDEX)
 
@@ -152,10 +152,36 @@ def test_the_cookie_opens_the_app_and_not_mcp_and_the_token_the_reverse(opened):
                 (await c.post('/mcp', headers=bearer)).status_code,
                 (await c.get('/api/positions', headers=bearer)).status_code,
                 (await c.post('/api/agent/chat', headers=bearer)).status_code,
+                (await c.delete('/api/events/x', headers=bearer)).status_code,
+                (await c.get('/api', headers=bearer)).status_code,
                 (await c.post('/mcp', headers={'authorization': 'Bearer nope'})).status_code,
-            ]
+                (await c.get('/api/positions',
+                             headers={'authorization': 'Bearer nope'})).status_code,
+            ], [
+                (await c.post(path, json=body, headers=bearer)).status_code
+                for path, body in (('/auth/token', {'current': PIN}),
+                                   ('/auth/change', {'current': PIN, 'pin': '222222'}),
+                                   ('/auth/disable', {'current': PIN}),
+                                   ('/auth/lifetime', {'seconds': 900}))
+            ], (await c.get('/auth/status', headers=bearer)).json()
 
-    assert run(work) == [200, 200, 401, 200, 401, 401, 401]
+    gates, auth, status = run(work)
+    assert gates == [200, 200, 401, 200, 200, 200, 200, 200, 401, 401]
+    assert auth == [401, 401, 401, 401]
+    assert status['authenticated'] is False
+    assert gate.state.enabled and gate.state.session_seconds is None
+
+
+def test_a_wrong_bearer_beside_a_good_cookie_goes_through_on_the_cookie(opened):
+    gate = Gate(Inner(), opened, INDEX)
+
+    async def work():
+        _, cookie = await enable(gate)
+        async with client(gate) as c:
+            return (await c.post('/api/events', headers={
+                **with_cookie(cookie), 'authorization': 'Bearer nope'})).status_code
+
+    assert run(work) == 200
 
 
 def test_a_right_pin_gives_a_cookie_and_a_wrong_one_says_what_is_left(opened):
@@ -221,21 +247,50 @@ def test_a_forged_cookie_is_refused(opened, forge):
     assert inner.reached == []
 
 
-def test_a_cookie_seen_after_a_day_is_signed_again(opened):
+def test_a_cookie_seen_after_a_minute_is_signed_again_unless_in_the_background(opened):
+    later = [datetime.now(timezone.utc)]
+    gate = Gate(Inner(), opened, INDEX, now=lambda: later[0])
+    background = {'x-sb-background': '1'}
+
+    async def work():
+        _, cookie = await enable(gate)
+        async with client(gate) as c:
+            later[0] += timedelta(seconds=59)
+            young = await c.get('/api/positions', headers=with_cookie(cookie))
+            later[0] += timedelta(seconds=2)
+            polled = await c.get('/api/positions',
+                                 headers={**with_cookie(cookie), **background})
+            clicked = await c.get('/api/positions', headers=with_cookie(cookie))
+        return young, polled, clicked
+    young, polled, clicked = run(work)
+
+    assert young.status_code == polled.status_code == clicked.status_code == 200
+    assert 'set-cookie' not in young.headers
+    assert 'set-cookie' not in polled.headers
+    assert cookie_of(clicked)
+    assert f'Max-Age={auth_rules.DEFAULT_SESSION_SECONDS}' in clicked.headers['set-cookie']
+
+
+def test_polling_alone_lets_the_session_lapse_and_activity_keeps_it(opened):
     later = [datetime.now(timezone.utc)]
     gate = Gate(Inner(), opened, INDEX, now=lambda: later[0])
 
     async def work():
         _, cookie = await enable(gate)
         async with client(gate) as c:
-            same_day = await c.get('/api/positions', headers=with_cookie(cookie))
-            later[0] += timedelta(days=1, minutes=1)
-            next_day = await c.get('/api/positions', headers=with_cookie(cookie))
-        return same_day, next_day
-    same_day, next_day = run(work)
+            polled = active = cookie_of(await c.post(
+                '/auth/lifetime', json={'seconds': 900}, headers=with_cookie(cookie)))
+            for _ in range(16):
+                later[0] += timedelta(minutes=1)
+                answer = await c.get('/api/x', headers={**with_cookie(polled),
+                                                        'x-sb-background': '1'})
+                polled = cookie_of(answer) or polled
+                answer = await c.get('/api/x', headers=with_cookie(active))
+                active = cookie_of(answer) or active
+            return ((await c.get('/api/x', headers=with_cookie(polled))).status_code,
+                    (await c.get('/api/x', headers=with_cookie(active))).status_code)
 
-    assert 'set-cookie' not in same_day.headers
-    assert cookie_of(next_day)
+    assert run(work) == (401, 200)
 
 
 # --------------------------------------------------------------------------- #
@@ -510,13 +565,13 @@ def test_pin_on_no_route_is_reached_without_a_credential(tmp_path, monkeypatch):
     routes = _routes(serving.wsgi.app)
 
     async def work():
-        await enable(serving._entry)
+        token, _ = await enable(serving._entry)
         answers = {}
         async with client(serving) as c:
             for method, path in routes:
                 answers[(method, path)] = await c.request(method, path)
-        return answers
-    answers = run(work)
+        return token, answers
+    token, answers = run(work)
 
     assert set(reached) <= OPEN
     for key, answer in answers.items():
@@ -526,6 +581,28 @@ def test_pin_on_no_route_is_reached_without_a_credential(tmp_path, monkeypatch):
             assert answer.content == INDEX, key
     assert answers[('GET', '/a-future-route')].content == INDEX
     assert ('GET', '/a-future-route') not in reached
+
+    # The access token alone (#1313): every /api route is reached, whatever
+    # its method, and no guarded /auth route accepts it.
+    reached.clear()
+    bearer = {'authorization': f'Bearer {token}'}
+    api = [r for r in routes if r[1] == '/api' or r[1].startswith('/api/')]
+    guarded = [('POST', p) for p in (
+        '/auth/change', '/auth/disable', '/auth/token', '/auth/lifetime')]
+
+    async def with_token():
+        async with client(serving) as c:
+            for method, path in api:
+                await c.request(method, path, headers=bearer)
+            return [(await c.post(path, json={'current': PIN, 'pin': '222222',
+                                              'seconds': 900},
+                                  headers=bearer)).status_code
+                    for _, path in guarded]
+    refused = run(with_token)
+
+    assert api, 'the sweep found no /api route'
+    assert sorted(set(reached)) == sorted(set(api))
+    assert refused == [401] * len(guarded)
 
 
 INSTANT = re.compile(r'\d{4}-\d\d-\d\dT[\d:.]+\+00:00')
@@ -643,3 +720,180 @@ def test_sign_in_is_throttled_even_with_a_session(opened):
 
     assert [a.status_code for a in answers] == [401] * 5 + [429]
     assert [a.json()['remaining'] for a in answers[:5]] == [4, 3, 2, 1, 0]
+
+
+# --------------------------------------------------------------------------- #
+# The session lifetime (#1313)
+# --------------------------------------------------------------------------- #
+
+def test_the_lifetime_needs_a_session_a_code_and_an_offered_duration(opened, monkeypatch):
+    gate = Gate(Inner(), opened, INDEX)
+
+    def broken(store, state):
+        raise store_module.StoreUnavailable('the disk is full')
+
+    async def work():
+        async with client(gate) as c:
+            off = await c.post('/auth/lifetime', json={'seconds': 900})
+        token, cookie = await enable(gate)
+        async with client(gate) as c:
+            bare = await c.post('/auth/lifetime', json={'seconds': 900})
+            bearer = await c.post('/auth/lifetime', json={'seconds': 900},
+                                  headers={'authorization': f'Bearer {token}'})
+            wrong = [(await c.post('/auth/lifetime', json={'seconds': seconds},
+                                   headers=with_cookie(cookie))).status_code
+                     for seconds in (1234, 2592001, 31 * 86400, True, '900', None, 0)]
+            before = gate.state
+            monkeypatch.setattr(auth_gate, 'write_state', broken)
+            refused = await c.post('/auth/lifetime', json={'seconds': 900},
+                                   headers=with_cookie(cookie))
+        return off, bare, bearer, wrong, before, refused
+    off, bare, bearer, wrong, before, refused = run(work)
+
+    assert off.status_code == 409
+    assert (bare.status_code, bearer.status_code) == (401, 401)
+    assert wrong == [400] * 7
+    assert refused.status_code == 503
+    assert 'set-cookie' not in refused.headers
+    assert gate.state is before
+    assert gate.state.lifetime == auth_rules.DEFAULT_SESSION_SECONDS
+
+
+def test_lowering_the_lifetime_keeps_the_caller_and_locks_the_others(opened):
+    later = [datetime.now(timezone.utc)]
+    gate = Gate(Inner(), opened, INDEX, now=lambda: later[0])
+
+    async def work():
+        _, caller = await enable(gate)
+        other = cookie_of(await sign_in(gate))
+        later[0] += timedelta(minutes=20)
+        async with client(gate) as c:
+            lowered = await c.post('/auth/lifetime', json={'seconds': 900},
+                                   headers=with_cookie(caller))
+            status = (await c.get('/auth/status',
+                                  headers=with_cookie(cookie_of(lowered)))).json()
+            return (lowered,
+                    (await c.get('/api/x', headers=with_cookie(cookie_of(lowered)))).status_code,
+                    (await c.get('/api/x', headers=with_cookie(other))).status_code,
+                    (await c.get('/api/x', headers=with_cookie(caller))).status_code,
+                    status)
+    lowered, caller, other, old_caller, status = run(work)
+
+    assert lowered.status_code == 200
+    assert lowered.json() == {'session_seconds': 900}
+    assert 'Max-Age=900' in lowered.headers['set-cookie']
+    assert (caller, other, old_caller) == (200, 401, 401)
+    assert status['session_seconds'] == 900
+
+
+def test_a_cookie_older_than_the_stored_lifetime_is_refused(opened):
+    later = [datetime.now(timezone.utc)]
+    gate = Gate(Inner(), opened, INDEX, now=lambda: later[0])
+
+    async def work():
+        _, cookie = await enable(gate)
+        async with client(gate) as c:
+            fresh = cookie_of(await c.post('/auth/lifetime', json={'seconds': 3600},
+                                           headers=with_cookie(cookie)))
+            later[0] += timedelta(minutes=59)
+            inside = (await c.get('/api/x', headers={**with_cookie(fresh),
+                                                     'x-sb-background': '1'})).status_code
+            later[0] += timedelta(minutes=2)
+            beyond = (await c.get('/api/x', headers=with_cookie(fresh))).status_code
+        return inside, beyond
+
+    assert run(work) == (200, 401)
+
+
+def test_a_revoked_cookie_stays_refused_when_the_lifetime_goes_down_then_up(opened):
+    later = [datetime.now(timezone.utc)]
+    gate = Gate(Inner(), opened, INDEX, now=lambda: later[0])
+
+    async def work():
+        _, mine = await enable(gate)
+        gone = cookie_of(await sign_in(gate))
+        async with client(gate) as c:
+            await c.post('/auth/logout', headers=with_cookie(gone))
+            mine = cookie_of(await c.post('/auth/lifetime', json={'seconds': 900},
+                                          headers=with_cookie(mine)))
+            later[0] += timedelta(minutes=10)
+            mine = cookie_of(await c.get('/api/x', headers=with_cookie(mine))) or mine
+            later[0] += timedelta(minutes=10)
+            await c.post('/auth/lifetime', json={'seconds': 2592000},
+                         headers=with_cookie(mine))
+            return (await c.get('/api/x', headers=with_cookie(gone))).status_code
+
+    assert run(work) == 401
+
+
+def test_the_lifetime_survives_a_restart_and_a_change_and_not_a_disable(opened):
+    async def work():
+        gate = Gate(Inner(), opened, INDEX)
+        _, cookie = await enable(gate)
+        async with client(gate) as c:
+            cookie = cookie_of(await c.post('/auth/lifetime', json={'seconds': 604800},
+                                            headers=with_cookie(cookie)))
+        restarted = Gate(Inner(), opened, INDEX)
+        read_back = restarted.state.session_seconds
+        async with client(restarted) as c:
+            changed = await c.post('/auth/change', json={'current': PIN, 'pin': '222222'},
+                                   headers=with_cookie(cookie))
+            kept = auth_gate.read_state(opened).lifetime
+            await c.post('/auth/disable', json={'current': '222222'},
+                         headers=with_cookie(cookie_of(changed)))
+        again = Gate(Inner(), opened, INDEX)
+        await enable(again)
+        return read_back, kept, auth_gate.read_state(opened)
+
+    restarted, kept, after = run(work)
+    assert restarted == 604800
+    assert kept == 604800
+    assert after.session_seconds is None
+    assert after.lifetime == auth_rules.DEFAULT_SESSION_SECONDS
+
+
+@pytest.mark.parametrize('stored, read', [
+    (None, 2592000), (900, 900), (0, 2592000), (-5, 2592000), (40 * 86400, 2592000)])
+def test_a_stored_lifetime_never_outlives_thirty_days(stored, read):
+    assert auth_rules.session_seconds(stored) == read
+    assert auth_gate.AuthState(pin_hash='x', session_seconds=stored).lifetime == read
+
+
+def test_a_lifetime_racing_a_pin_change_does_not_outlive_it(opened, monkeypatch):
+    """The session is checked before the body is read; a PIN change landing in
+    between rotates the secret, and the lifetime must not re-sign the old
+    session with the new one."""
+    gate = Gate(Inner(), opened, INDEX)
+    real = auth_gate._json_body
+    raced = []
+
+    async def racing(receive):
+        body = await real(receive)
+        if 'seconds' in body and not raced:
+            raced.append(True)
+            async with client(gate) as c:
+                changed = await c.post('/auth/change',
+                                       json={'current': PIN, 'pin': '222222'},
+                                       headers=with_cookie(acting))
+            assert changed.status_code == 200
+        return body
+
+    async def work():
+        nonlocal acting
+        _, acting = await enable(gate)
+        other = cookie_of(await sign_in(gate))
+        monkeypatch.setattr(auth_gate, '_json_body', racing)
+        async with client(gate) as c:
+            answer = await c.post('/auth/lifetime', json={'seconds': 900},
+                                  headers=with_cookie(other))
+            after = (await c.get('/api/x', headers=with_cookie(
+                cookie_of(answer) or other))).status_code
+        return answer, after
+
+    acting = None
+    answer, after = run(work)
+    assert raced
+    assert answer.status_code == 401
+    assert 'set-cookie' not in answer.headers
+    assert after == 401
+    assert gate.state.session_seconds is None

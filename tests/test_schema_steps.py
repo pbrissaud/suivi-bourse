@@ -26,6 +26,7 @@ RELEASED = (
     'follow_the_references',
     'add_symbol_quote_long_name',
     'forget_ticker_names',
+    'add_auth_session_seconds',
 )
 
 
@@ -210,3 +211,25 @@ def test_the_ticker_names_are_forgotten_once_and_only_those(tmp_path):
                 (1, None), (2, 'Apple Inc')]
         finally:
             opened.close()
+
+
+def test_the_session_lifetime_step_keeps_the_pin_and_reads_the_default(tmp_path):
+    """A store whose PIN was set before #1313 keeps it, and its sessions live
+    the default 30 days until the owner chooses less."""
+    from application import auth_gate
+
+    path, connection = _before(tmp_path, 'add_auth_session_seconds')
+    connection.execute(
+        "INSERT INTO auth_secret (id, pin_hash, session_secret, revoked, updated_at) "
+        "VALUES (1, 'scrypt$00$00', 'secret', '{}', TIMESTAMPTZ '2026-10-01 00:00:00+00')")
+    connection.execute('ALTER TABLE auth_secret DROP COLUMN session_seconds')
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        state = auth_gate.read_state(opened)
+        assert state.pin_hash == 'scrypt$00$00'
+        assert state.session_seconds is None
+        assert state.lifetime == 30 * 86400
+    finally:
+        opened.close()

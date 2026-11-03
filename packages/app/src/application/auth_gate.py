@@ -6,6 +6,14 @@ a credential, so a route added later is unreachable without one whatever its
 path. With the PIN off it forwards everything untouched and answers ``/auth/*``
 only.
 
+Two credentials. The **session cookie** opens the app. The **access token**, a
+bearer shown once, opens ``/mcp`` and every method on ``/api`` (#1313), never
+``/auth/*``: a leaked token cannot rotate itself, change the lifetime or turn
+the code off. A session lives the **stored lifetime** (30 days unless the owner
+chose less) after it was last signed; any request re-signs a cookie older than
+a minute, except one marked ``X-SB-Background: 1`` — a poll from a tab nobody
+touches does not keep the session alive.
+
 It also owns ``auth_secret``, the one row it reads and writes: the state lives
 in an immutable snapshot, loaded at startup and swapped under an
 ``asyncio.Lock`` only once the store has taken the write (one uvicorn worker
@@ -28,13 +36,16 @@ from logfmt_logger import getLogger
 
 from application import auth_rules
 from application import instants
+from application import store_steps
 
 logger = getLogger('auth')
 
 COOKIE = 'sb_session'
-SESSION_SECONDS = auth_rules.SESSION_DAYS * 24 * 3600
-#: The sliding expiry re-signs a cookie at most this often.
-RESIGN_AFTER = timedelta(days=1)
+#: The sliding expiry re-signs a cookie at most this often, so a session locks
+#: between L - 60 s and L after the last activity (#1313).
+RESIGN_AFTER = timedelta(seconds=60)
+#: What the front sets on a request sent long after the tab's last input.
+BACKGROUND = b'x-sb-background'
 
 #: At most this many scrypt checks at once: each holds 16 MiB and a core.
 VERIFICATIONS = 2
@@ -58,10 +69,17 @@ class AuthState:
     token_hash: Optional[str] = None
     token_created_at: Optional[datetime] = None
     revoked: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    #: As stored: ``None`` is the default. Read :attr:`lifetime`.
+    session_seconds: Optional[int] = None
 
     @property
     def enabled(self) -> bool:
         return self.pin_hash is not None
+
+    @property
+    def lifetime(self) -> int:
+        """Seconds a session lives after it was last signed."""
+        return auth_rules.session_seconds(self.session_seconds)
 
 
 OFF = AuthState()
@@ -70,14 +88,14 @@ OFF = AuthState()
 def read_state(store) -> AuthState:
     """The stored row, or :data:`OFF` when there is none."""
     rows = store.query(
-        'SELECT pin_hash, session_secret, token_hash, token_created_at, revoked '
-        'FROM auth_secret WHERE id = 1')
+        'SELECT pin_hash, session_secret, token_hash, token_created_at, revoked, '
+        'session_seconds FROM auth_secret WHERE id = 1')
     if not rows:
         return OFF
-    pin_hash, secret, token_hash, created_at, revoked = rows[0]
+    pin_hash, secret, token_hash, created_at, revoked, seconds = rows[0]
     return AuthState(pin_hash, secret, token_hash,
                      instants.utc(created_at) if created_at else None,
-                     MappingProxyType(json.loads(revoked or '{}')))
+                     MappingProxyType(json.loads(revoked or '{}')), seconds)
 
 
 def write_state(store, state: AuthState) -> None:
@@ -88,17 +106,28 @@ def write_state(store, state: AuthState) -> None:
             return
         store.execute(
             'INSERT INTO auth_secret (id, pin_hash, session_secret, token_hash, '
-            'token_created_at, revoked, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)',
+            'token_created_at, revoked, session_seconds, updated_at) '
+            'VALUES (1, ?, ?, ?, ?, ?, ?, ?)',
             [state.pin_hash, state.session_secret, state.token_hash,
              state.token_created_at, json.dumps(dict(state.revoked)),
-             datetime.now(timezone.utc)])
+             state.session_seconds, datetime.now(timezone.utc)])
+
+
+def add_session_seconds(connection) -> None:
+    """The schema step giving an existing ``auth_secret`` its lifetime (#1313).
+
+    Here and not in ``schema_steps``: the gate stays the one module that names
+    its row. ``CREATE TABLE IF NOT EXISTS`` does not reach a table it finds; the
+    column stays ``NULL``, which reads as the default. A no-op on a new store.
+    """
+    store_steps.add_column(connection, 'auth_secret', 'session_seconds', 'INTEGER')
 
 
 def reset(store) -> None:
-    """``SB_RESET_AUTH=1``: the PIN, the session secret and the MCP token, gone."""
+    """``SB_RESET_AUTH=1``: the PIN, the session secret and the access token, gone."""
     write_state(store, OFF)
     logger.warning(
-        'SB_RESET_AUTH is set: the PIN, the session secret and the MCP token '
+        'SB_RESET_AUTH is set: the PIN, the session secret and the access token '
         'were cleared, and will be on every start until the variable is removed')
 
 
@@ -162,15 +191,23 @@ class Gate:
                            headers=[(b'www-authenticate', b'Bearer')])
             return
 
+        api = path == '/api' or path.startswith('/api/')
+        # The access token opens /api for scripts, every method (#1313). A
+        # wrong one is no answer yet: the cookie beside it may still be good.
+        if api and auth_rules.token_matches(_bearer(scope), state.token_hash):
+            await self.inner(scope, receive, send)
+            return
+
         session = self._session(scope, state)
         if session is not None:
             sid, signed_at = session
-            if self.now() - signed_at >= RESIGN_AFTER:
+            stale = self.now() - signed_at >= RESIGN_AFTER
+            if stale and _header(scope, BACKGROUND) != '1':
                 send = _with_cookie(send, self._cookie(scope, state, sid))
             await self.inner(scope, receive, send)
             return
 
-        if path == '/api' or path.startswith('/api/') or not reading:
+        if api or not reading:
             await _unauthorized(send)
             return
         await self._index(send)
@@ -180,8 +217,8 @@ class Gate:
     # ------------------------------------------------------------------ #
 
     def _signer(self, state: AuthState) -> TimestampSigner:
-        return TimestampSigner(state.session_secret, salt='sb-session',
-                               digest_method=hashlib.sha256)
+        return _Signer(self.now, state.session_secret, salt='sb-session',
+                       digest_method=hashlib.sha256)
 
     def _session(self, scope, state: AuthState):
         """``(session id, signed at)`` for a valid, unrevoked cookie, else ``None``."""
@@ -190,7 +227,7 @@ class Gate:
             return None
         try:
             sid, signed_at = self._signer(state).unsign(
-                raw, max_age=SESSION_SECONDS, return_timestamp=True)
+                raw, max_age=state.lifetime, return_timestamp=True)
         except BadSignature:
             return None
         sid = sid.decode()
@@ -200,7 +237,7 @@ class Gate:
 
     def _cookie(self, scope, state: AuthState, sid: str) -> bytes:
         signed = self._signer(state).sign(sid).decode()
-        return _set_cookie(scope, signed, SESSION_SECONDS)
+        return _set_cookie(scope, signed, state.lifetime)
 
     def _fresh_cookie(self, scope, state: AuthState) -> bytes:
         return self._cookie(scope, state, secrets.token_urlsafe(16))
@@ -234,6 +271,7 @@ class Gate:
             ('POST', '/auth/change'): self._change,
             ('POST', '/auth/disable'): self._disable,
             ('POST', '/auth/token'): self._regenerate,
+            ('POST', '/auth/lifetime'): self._lifetime,
         }.get((method, path))
         if route is None:
             await _problem(send, 404, 'Not found', f'No such route: {method} {path}')
@@ -277,6 +315,7 @@ class Gate:
             'authenticated': signed_in,
             'token_created_at': instants.iso(state.token_created_at)
             if signed_in and state.token_created_at else None,
+            'session_seconds': state.lifetime if signed_in else None,
         })
 
     async def _sign_in(self, scope, send, state, session, body) -> None:
@@ -365,7 +404,7 @@ class Gate:
                 raise _WrongCode()
             return OFF
         await self._commit(disable)
-        logger.info('The PIN was removed, and the MCP token with it')
+        logger.info('The PIN was removed, and the access token with it')
         await _json(send, 200, {'enabled': False},
                     headers=[(b'set-cookie', _set_cookie(scope, '', 0))])
 
@@ -378,8 +417,48 @@ class Gate:
             return replace(current, token_hash=auth_rules.hash_token(token),
                            token_created_at=self.now())
         after = await self._commit(regenerate)
-        logger.info('The MCP token was regenerated')
+        logger.info('The access token was regenerated')
         await _json(send, 200, _token_body(token, after))
+
+    async def _lifetime(self, scope, send, state, session, body) -> None:
+        """Store how long a session lives, and re-sign the caller's cookie.
+
+        Not guarded: no current code, no throttle. A stolen cookie can already
+        keep itself alive by polling; a longer lifetime gives it nothing more.
+        Lowering it refuses every other cookie older than the new lifetime at
+        once, but not the caller's, who may have read the page for a while.
+        """
+        if not state.enabled:
+            await _problem(send, 409, 'No code is set')
+            return
+        if session is None:
+            await _unauthorized(send)
+            return
+        seconds = body.get('seconds')
+        offered = type(seconds) is int and seconds in auth_rules.SESSION_PRESETS
+        if not offered:
+            await _problem(send, 400, 'Bad request',
+                           'A lifetime is one of the offered durations.',
+                           allowed=list(auth_rules.SESSION_PRESETS))
+            return
+
+        # The session was checked against ``state``, before the body was read. A
+        # PIN change landing in between rotated the secret: that session is
+        # over, and must be neither obeyed nor re-signed with the new secret.
+        async def store(current: AuthState) -> AuthState:
+            if not current.enabled or current.session_secret != state.session_secret:
+                return current
+            return replace(current, session_seconds=seconds)
+        after = await self._commit(store)
+        if not after.enabled:
+            await _problem(send, 409, 'No code is set')
+            return
+        if after.session_secret != state.session_secret or session[0] in after.revoked:
+            await _unauthorized(send)
+            return
+        logger.info(f'The session lifetime is now {seconds} s')
+        await _json(send, 200, {'session_seconds': after.lifetime},
+                    headers=[(b'set-cookie', self._cookie(scope, after, session[0]))])
 
     async def _index(self, send) -> None:
         if self.index_html is None:
@@ -389,6 +468,17 @@ class Gate:
         await _respond(send, 200, self.index_html,
                        [(b'content-type', b'text/html; charset=utf-8'),
                         (b'cache-control', b'no-cache')])
+
+
+class _Signer(TimestampSigner):
+    """Signs and ages a cookie on the gate's clock, not the wall's: one clock."""
+
+    def __init__(self, now: Callable[[], datetime], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._now = now
+
+    def get_timestamp(self) -> int:
+        return int(self._now().timestamp())
 
 
 class _WrongCode(Exception):
