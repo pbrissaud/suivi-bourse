@@ -167,10 +167,17 @@ def xirr(cashflows: List[Tuple[date, float]]) -> Optional[float]:
     return (low + high) / 2.0
 
 
-def _fill_twr(daily: List[DailyPerf]) -> None:
-    """Fill twr_index in place: base 100 anchored at the first day with value, then compounded by r_D = (V_D - F_D) / V_{D-1} (flows land end-of-day)."""
-    prev_v: Optional[float] = None
-    twr: Optional[float] = None
+def _fill_twr(daily: List[DailyPerf],
+              seed: Optional[DailyPerf] = None) -> None:
+    """Fill twr_index in place: base 100 anchored at the first day with value, then compounded by r_D = (V_D - F_D) / V_{D-1} (flows land end-of-day).
+
+    ``seed`` is the point that precedes ``daily[0]`` in the series, already
+    filled. Chaining from it runs the **same** expression the loop would have
+    run had it started earlier, so a series continued one day at a time equals
+    the series computed whole, bit for bit (issue #1257).
+    """
+    prev_v: Optional[float] = seed.total_value if seed is not None else None
+    twr: Optional[float] = seed.twr_index if seed is not None else None
     for dp in daily:
         v = dp.total_value
         if twr is None:
@@ -312,16 +319,23 @@ def _daily_range(start: date, today: date):
 def compute_account(timeline: Timeline, account: Account, symbols,
                     price_at: PriceAt, start: date, today: date,
                     carried: Collection[str] = (),
-                    first_quoted: Optional[Mapping[str, date]] = None
+                    first_quoted: Optional[Mapping[str, date]] = None,
+                    seed: Optional[DailyPerf] = None
                     ) -> Performance:
-    """Compute one account's daily valuation series, TWR, XIRR and absolute gain."""
+    """Compute one account's daily valuation series, TWR, XIRR and absolute gain.
+
+    ``seed`` is the series' point on the day before ``start``, when the series
+    already runs there: the account has started, and the index chains from it
+    (issue #1257). Every other figure is forward-filled from the timeline and
+    owes nothing to the days before ``start``; XIRR is solved over every flow.
+    """
     acc = account.id
     cash_flows, grant_flows = _account_flows(timeline, acc)
     flow_by_date = _external_flow_by_date(cash_flows, grant_flows)
     contributed_by = _running_contribution(flow_by_date)
 
     daily: List[DailyPerf] = []
-    started = False
+    started = seed is not None
     for day in _daily_range(start, today):
         cash = timeline.cash_at(acc, day)
         holdings, has_position = _holdings_value(
@@ -350,7 +364,7 @@ def compute_account(timeline: Timeline, account: Account, symbols,
             gain_absolu=total_value - contributed,
         ))
 
-    _fill_twr(daily)
+    _fill_twr(daily, seed)
 
     perf = Performance(
         daily=daily,
@@ -367,8 +381,13 @@ def compute_account(timeline: Timeline, account: Account, symbols,
 
 def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols,
                             price_at: PriceAt, start: date, today: date,
-                            per_account: Dict[str, Performance]) -> Optional[Performance]:
-    """Aggregate all accounts into a global performance (no tag)."""
+                            per_account: Dict[str, Performance],
+                            seed: Optional[DailyPerf] = None) -> Optional[Performance]:
+    """Aggregate all accounts into a global performance (no tag).
+
+    ``seed``: the total's point before the first day aggregated, as for
+    :func:`compute_account` (issue #1257).
+    """
     if not accounts:
         return None
 
@@ -389,7 +408,7 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
             agg.gain_absolu += dp.gain_absolu
 
     daily = [by_date[d] for d in sorted(by_date)]
-    _fill_twr(daily)
+    _fill_twr(daily, seed)
 
     all_cash, all_grant = [], []
     for account in accounts:

@@ -156,6 +156,87 @@ class PortfolioReader:
             ') WHERE rn = 1 ORDER BY day, symbol',
             parameters, ('day', 'symbol', 'price'))
 
+    def perf_inputs(self, day_start: datetime) -> tuple:
+        """A fingerprint of everything the perf pass reads from the market side (#1257).
+
+        Read by the pass itself, out of the store, on every tick, so it is not
+        a signal any writer raises (#707). A writer added tomorrow is covered
+        the day it lands, because nothing has to remember to bump anything.
+
+        Two halves on ``price_point``, cut at ``day_start``: the history behind
+        today, which only a backfill, a repair, the ladder or a forget moves,
+        and today's points, which every scrape moves. ``sum`` over a ``HUGEINT``
+        hash rather than ``bit_xor``, so a duplicated row does not cancel out.
+        Then the ``symbol_quote`` columns the horizon reads (currency, the
+        backward anchor) and the split history.
+        """
+        rows = self._store.query(
+            'SELECT count(*) FILTER (WHERE ts < ?),'
+            '       sum(h) FILTER (WHERE ts < ?),'
+            '       count(*) FILTER (WHERE ts >= ?),'
+            '       sum(h) FILTER (WHERE ts >= ?)'
+            '  FROM (SELECT ts, hash(symbol, ts, price_native, price_converted,'
+            '                        fx_rate)::HUGEINT AS h FROM price_point)',
+            [day_start] * 4)
+        history_count, history_sum, today_count, today_sum = rows[0]
+        (quotes_meta,) = self._store.query(
+            'SELECT count(*), sum(hash(symbol, currency,'
+            '                          oldest_window_tried)::HUGEINT)'
+            '  FROM symbol_quote')[0:1]
+        (splits,) = self._store.query(
+            'SELECT count(*), sum(hash(symbol, day, ratio)::HUGEINT)'
+            '  FROM symbol_split')[0:1]
+        return ((history_count, history_sum), (today_count, today_sum),
+                tuple(quotes_meta), tuple(splits))
+
+    def series_fingerprint(self) -> tuple:
+        """A fingerprint of the series the perf pass wrote, read back (#1257).
+
+        What keeps it a cache: rows deleted or edited by anything but the pass
+        are a series the pass did not write, and the next tick rebuilds it.
+        """
+        perf = ', '.join(PERF_COLUMNS)
+        (accounts,) = self._store.query(
+            f'SELECT count(*), sum(hash(account, {perf})::HUGEINT)'
+            '  FROM account_metrics')[0:1]
+        (totals,) = self._store.query(
+            f'SELECT count(*), sum(hash({perf})::HUGEINT)'
+            '  FROM portfolio_totals')[0:1]
+        return tuple(accounts), tuple(totals)
+
+    def closes_of_day(self, day_start: datetime,
+                      day_stop: datetime) -> Dict[str, float]:
+        """``{symbol: close}`` over ``[day_start, day_stop)`` — the same pick as :meth:`daily_closes`."""
+        rows = self._store.query(
+            'SELECT symbol, price FROM ('
+            '  SELECT symbol, price_converted AS price,'
+            '         ROW_NUMBER() OVER ('
+            '             PARTITION BY CAST(ts AS DATE), symbol'
+            '             ORDER BY ts DESC) AS rn'
+            '    FROM price_point'
+            '   WHERE price_converted IS NOT NULL AND ts >= ? AND ts < ?'
+            ') WHERE rn = 1', [day_start, day_stop])
+        return {symbol: float(price) for symbol, price in rows}
+
+    def symbols_seen(self, day_start: datetime,
+                     day_stop: datetime) -> Dict[str, tuple]:
+        """``{symbol: (has a converted price, carries a quote)}`` over ``[day_start, day_stop)``.
+
+        *Carries a quote* is :func:`quotes.first_quoted_days`' own term: a
+        native price **and** a currency on its ``symbol_quote`` row.
+        """
+        rows = self._store.query(
+            'SELECT p.symbol,'
+            '       bool_or(p.price_converted IS NOT NULL),'
+            "       bool_or(p.price_native IS NOT NULL AND q.currency IS NOT NULL"
+            "               AND q.currency <> '')"
+            '  FROM price_point p'
+            '  LEFT JOIN symbol_quote q ON q.symbol = p.symbol'
+            ' WHERE p.ts >= ? AND p.ts < ?'
+            ' GROUP BY p.symbol', [day_start, day_stop])
+        return {symbol: (bool(converted), bool(quoted))
+                for symbol, converted, quoted in rows}
+
     def latest_totals(self) -> Optional[Dict[str, Any]]:
         """The newest ``portfolio_totals`` point, or ``None`` when there is none."""
         rows = self._store.query(

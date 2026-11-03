@@ -258,13 +258,19 @@ class Workloads:
         """Rebuild the perf cache — **one pass at a time** (issue #812)."""
         return self._recompute.update_account_metrics()
 
-    def recompute_perf(self) -> None:
-        """Rebuild the perf cache, in full, every cycle — **guarded**."""
+    def recompute_perf(self, full: bool = False) -> None:
+        """Bring the perf cache up to date, every cycle — **guarded**.
+
+        ``full`` rebuilds the whole series whatever the store says moved: the
+        replay that follows a write asks for it (#812, #1257).
+        """
         with job_history.timed(self.recorder.history,
                                job_history.PERFORMANCE) as run:
             # Under the pass's own lock, so a concurrent pass cannot publish
             # its verdict between this one and the read.
             with self._perf_lock:
+                if full:
+                    self._recompute.forget()
                 self._recompute.recompute()
                 run.settle(*runtime_view.perf_outcome(self.recorder.perf()))
 

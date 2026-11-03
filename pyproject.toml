@@ -22,6 +22,7 @@ dependencies = ["app"]
 dev = [
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",
+    "hypothesis>=6.100.0",
     "flake8>=7.0.0",
 ]
 

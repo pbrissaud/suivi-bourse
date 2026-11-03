@@ -39,6 +39,13 @@ INGEST_FAILED = 'failed'
 PERF_RAN = 'ran'
 PERF_FAILED = 'failed'
 
+#: How much of the series a pass that **ran** rewrote (issue #1257): all of it,
+#: today's point alone, or nothing, because nothing it reads had moved. Not a
+#: verdict: every pass reads the store, and the verdict stays ran or failed.
+PERF_PASS_FULL = 'full'
+PERF_PASS_TODAY = 'today'
+PERF_PASS_UNCHANGED = 'unchanged'
+
 
 @dataclass(frozen=True)
 class ScrapeRecord:
@@ -98,6 +105,7 @@ class PerfRecord:
     verdict: str
     error: Optional[str] = None
     horizons: Mapping[str, Optional[date]] = field(default_factory=dict)
+    mode: Optional[str] = None
 
 
 class RuntimeRecorder:
@@ -203,6 +211,7 @@ __all__ = [
     'SKIP_NOTHING_TO_REPAIR', 'SKIP_UNIT_LEARNT',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',
     'PERF_RAN', 'PERF_FAILED',
+    'PERF_PASS_FULL', 'PERF_PASS_TODAY', 'PERF_PASS_UNCHANGED',
     'ScrapeRecord', 'BackfillRecord', 'IngestRecord', 'PerfRecord',
     'RuntimeRecorder',
 ]
