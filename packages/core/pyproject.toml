@@ -4,7 +4,7 @@
 [project]
 name = "core"
 version = "0.0.0"  # the release is the root's; nothing reads a member's
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 dependencies = [
     "logfmt-logger==0.1.2",
     "packaging==26.3",
