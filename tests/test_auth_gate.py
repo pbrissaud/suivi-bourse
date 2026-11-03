@@ -7,8 +7,10 @@ route the product mounts is covered, a future one included.
 """
 import asyncio
 import hashlib
+import io
 import logging
 import re
+import zipfile
 from datetime import datetime, timedelta, timezone
 
 import httpx2
@@ -529,6 +531,25 @@ def test_pin_on_no_route_is_reached_without_a_credential(tmp_path, monkeypatch):
 INSTANT = re.compile(r'\d{4}-\d\d-\d\dT[\d:.]+\+00:00')
 
 
+def _said(answer):
+    """What a route said, with the clock taken out of it.
+
+    An instant in a text body is the second it was asked, and so is an
+    ``.xlsx``: openpyxl stamps ``docProps/core.xml`` and every zip member's
+    date with *now*. Two sweeps of the same app that straddle a second then
+    differ in bytes and in nothing a gate could have changed, so a workbook
+    is compared by its parts' contents, the stamped properties left out. A
+    ``HEAD`` carries the workbook's type and no body, so it stays text.
+    """
+    if answer.content and answer.headers.get('content-type', '').startswith(
+            'application/vnd.openxmlformats'):
+        with zipfile.ZipFile(io.BytesIO(answer.content)) as book:
+            return answer.status_code, tuple(
+                (name, book.read(name)) for name in sorted(book.namelist())
+                if name != 'docProps/core.xml')
+    return answer.status_code, INSTANT.sub('<now>', answer.text)
+
+
 def test_pin_off_every_route_answers_as_it_did_without_the_gate(tmp_path):
     runtime = rich_runtime(tmp_path)
     plain = _serving(runtime, None)
@@ -541,8 +562,7 @@ def test_pin_off_every_route_answers_as_it_did_without_the_gate(tmp_path):
         said = []
         async with client(app) as c:
             for method, path in routes:
-                answer = await c.request(method, path)
-                said.append((answer.status_code, INSTANT.sub('<now>', answer.text)))
+                said.append(_said(await c.request(method, path)))
         return said
 
     async def work():
