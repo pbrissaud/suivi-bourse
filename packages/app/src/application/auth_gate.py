@@ -201,8 +201,8 @@ class Gate:
         session = self._session(scope, state)
         if session is not None:
             sid, signed_at = session
-            if (self.now() - signed_at >= RESIGN_AFTER
-                    and _header(scope, BACKGROUND) != '1'):
+            stale = self.now() - signed_at >= RESIGN_AFTER
+            if stale and _header(scope, BACKGROUND) != '1':
                 send = _with_cookie(send, self._cookie(scope, state, sid))
             await self.inner(scope, receive, send)
             return
@@ -435,8 +435,8 @@ class Gate:
             await _unauthorized(send)
             return
         seconds = body.get('seconds')
-        if (not isinstance(seconds, int) or isinstance(seconds, bool)
-                or seconds not in auth_rules.SESSION_PRESETS):
+        offered = type(seconds) is int and seconds in auth_rules.SESSION_PRESETS
+        if not offered:
             await _problem(send, 400, 'Bad request',
                            'A lifetime is one of the offered durations.',
                            allowed=list(auth_rules.SESSION_PRESETS))
