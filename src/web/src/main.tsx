@@ -4,6 +4,7 @@ import { QueryClient } from '@tanstack/react-query'
 
 import { App } from '@/app'
 import { pollLiveReads } from '@/lib/live'
+import { watchInput } from '@/lib/session'
 import { createAppRouter } from '@/router'
 import './index.css'
 
@@ -25,6 +26,7 @@ const queryClient = new QueryClient({
   },
 })
 pollLiveReads(queryClient)
+watchInput()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

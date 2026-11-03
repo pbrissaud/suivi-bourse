@@ -24,7 +24,7 @@
  *    anything.
  */
 
-import { sessionEnded } from '@/lib/session'
+import { isBackground, sessionEnded } from '@/lib/session'
 
 /**
  * The paths, in one object, because the test harness fakes exactly this edge
@@ -332,9 +332,21 @@ export class ApiProblem extends Error {
  * the page, and handed back to the caller like any other refusal.
  */
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const response = await fetch(input, init)
+  const response = await fetch(input, isBackground() ? inBackground(input, init) : init)
   if (response.status === 401 && !pathOf(input).startsWith('/auth/')) sessionEnded()
   return response
+}
+
+/**
+ * The same request, marked as sent by nobody (#1313): the server authenticates
+ * it but never re-signs its cookie. The headers a `Request` carries are kept,
+ * since `init.headers` would replace them.
+ */
+function inBackground(input: RequestInfo | URL, init?: RequestInit): RequestInit {
+  const headers = new Headers(input instanceof Request ? input.headers : undefined)
+  new Headers(init?.headers).forEach((value, name) => headers.set(name, value))
+  headers.set('X-SB-Background', '1')
+  return { ...init, headers }
 }
 
 function pathOf(input: RequestInfo | URL): string {

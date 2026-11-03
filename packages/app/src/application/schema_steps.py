@@ -5,6 +5,7 @@ module above the store is declared here, so the store imports none of them.
 """
 from logfmt_logger import getLogger
 
+from application import auth_gate
 from application import benchmarks
 from application import entries
 from application import store_steps
@@ -134,6 +135,7 @@ STEPS = store_steps.STEPS + (
     ('follow_the_references', _follow_the_references),
     ('add_symbol_quote_long_name', _add_symbol_quote_long_name),
     ('forget_ticker_names', _forget_ticker_names),
+    ('add_auth_session_seconds', auth_gate.add_session_seconds),
 )
 
 __all__ = ['STEPS']

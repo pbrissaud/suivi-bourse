@@ -21,8 +21,15 @@ SCRYPT_R = 8
 SCRYPT_P = 1
 SALT_BYTES = 16
 
-#: How long a session lives without being seen, and how long a revoked id is kept.
+#: The ceiling of a session's lifetime, and how long a revoked id is kept. The
+#: purge horizon stays here whatever lifetime is stored: lowering then raising
+#: it must not bring a logged-out cookie back (#1313).
 SESSION_DAYS = 30
+
+#: The lifetimes the owner may store, in seconds (#1313): 15 minutes, 1 hour,
+#: 1 day, 7 days, 30 days. The last one is the default.
+SESSION_PRESETS = (900, 3600, 86400, 604800, SESSION_DAYS * 86400)
+DEFAULT_SESSION_SECONDS = SESSION_PRESETS[-1]
 
 FREE_ATTEMPTS = 5
 FIRST_WAIT = 30
@@ -58,8 +65,16 @@ def verify_pin(pin: str, stored: Optional[str]) -> bool:
         return False
 
 
+def session_seconds(stored) -> int:
+    """The lifetime a stored value means: ``NULL`` is the default, and no stored
+    value outlives :data:`SESSION_DAYS`."""
+    if not isinstance(stored, int) or isinstance(stored, bool) or stored <= 0:
+        return DEFAULT_SESSION_SECONDS
+    return min(stored, DEFAULT_SESSION_SECONDS)
+
+
 def new_token() -> str:
-    """The ``/mcp`` bearer token, shown once."""
+    """The access token — a bearer on ``/mcp`` and ``/api`` — shown once."""
     return secrets.token_urlsafe(32)
 
 
@@ -160,7 +175,8 @@ def _seconds(delta: float) -> int:
 
 
 __all__ = [
-    'Admission', 'Throttle', 'SESSION_DAYS', 'FREE_ATTEMPTS',
+    'Admission', 'Throttle', 'SESSION_DAYS', 'SESSION_PRESETS',
+    'DEFAULT_SESSION_SECONDS', 'FREE_ATTEMPTS', 'session_seconds',
     'is_pin', 'hash_pin', 'verify_pin', 'new_token', 'hash_token',
     'token_matches', 'purge_revoked',
 ]

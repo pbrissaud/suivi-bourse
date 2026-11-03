@@ -10,8 +10,10 @@ import { ApiProblem, authFetch, get, ROUTES, send } from '@/lib/api'
 export interface AuthStatus {
   enabled: boolean
   authenticated: boolean
-  /** When the MCP token was made; only to a signed-in reader. Never the token. */
+  /** When the access token was made; only to a signed-in reader. Never the token. */
   token_created_at: string | null
+  /** How long a session lives without activity, in seconds; only to a signed-in reader (#1313). */
+  session_seconds?: number | null
 }
 
 /** What enabling and regenerating answer: the token, shown once. */

@@ -33,19 +33,23 @@ gate itself, and reaching them opens nothing: they say whether a PIN is set,
 take a code to sign in, and refuse every change to the PIN without both a
 session and the current code. Any route added later is closed whatever its
 path. A session is an
-`HttpOnly`, `SameSite=Strict` cookie; `/mcp` takes a bearer token instead,
-shown once when the PIN is set. Attempts are throttled per address and
-globally.
+`HttpOnly`, `SameSite=Strict` cookie. It lives 30 days after the last
+activity at most, less if the owner chose a shorter lifetime, and a request the
+page sends on its own (`X-SB-Background: 1`, a poll from a tab nobody touched
+for a minute) never extends it. The access token, a bearer shown once when the
+PIN is set, opens `/mcp` and every method on `/api` instead, never `/auth/*`:
+it cannot change the PIN, the lifetime or itself. Attempts are throttled per
+address and globally.
 
 **What the PIN does not protect: the internet without TLS.** The code, the
-cookie and the MCP bearer token cross the network as they are. To reach the app from outside, put a
+cookie and the bearer token cross the network as they are. To reach the app from outside, put a
 reverse proxy with TLS, a VPN or an identity layer in front of it, PIN or not.
 Behind a proxy, name it in `SB_FORWARDED_ALLOW_IPS` so the throttle counts the
 real client address and the cookie is marked `Secure` over https; no proxy is
 trusted by default.
 
 **A forgotten PIN** is cleared by starting the app once with
-`SB_RESET_AUTH=1`: the PIN, the session secret and the MCP token go, the data
+`SB_RESET_AUTH=1`: the PIN, the session secret and the access token go, the data
 stays. Remove the variable afterwards — while it is set, the reset runs, and is
 logged, at every start. There is no route that does this.
 

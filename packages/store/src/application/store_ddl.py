@@ -159,7 +159,8 @@ CREATE TABLE IF NOT EXISTS agent_config (
 -- **The PIN and what it opens** (#1203). One row, absent while the PIN is off,
 -- so a store from before it boots unlocked. Written and read by ``auth_gate``
 -- alone: no settings route, MCP tool or export reads it. ``revoked`` is a JSON
--- object of logged-out session ids to the instant they left.
+-- object of logged-out session ids to the instant they left. ``session_seconds``
+-- is how long a session lives (#1313); NULL reads as the default, 30 days.
 CREATE TABLE IF NOT EXISTS auth_secret (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     pin_hash          VARCHAR NOT NULL,
@@ -167,6 +168,7 @@ CREATE TABLE IF NOT EXISTS auth_secret (
     token_hash        VARCHAR,
     token_created_at  TIMESTAMPTZ,
     revoked           VARCHAR NOT NULL DEFAULT '{}',
+    session_seconds   INTEGER,
     updated_at        TIMESTAMPTZ NOT NULL);
 
 -- What the owner declares **about themself** (#1116), confirmed in the UI and
