@@ -45,7 +45,14 @@ jobs:
       # lands beside the first. `network` is the probe of #760's closed list;
       # `timing` is the ceilings of #995, which a runner shared with three
       # other builds cannot time honestly. Both run nightly instead.
-      - run: uv run pytest tests/ -m "not network and not timing"
+      #
+      # `-n auto` spreads the suite over the runner's CPUs (pytest-xdist): it is
+      # a long tail of one-to-three-second tests, which one process ran in ~7 min.
+      # `--dist loadfile` keeps each file on one worker, so a module-scoped
+      # fixture or a module's global state is never split across two processes.
+      # The nightly `timing` lane stays serial on purpose. `--durations` keeps
+      # the slowest tests in the log, so the next slow one is seen, not guessed.
+      - run: uv run pytest tests/ -m "not network and not timing" -n auto --dist loadfile --durations=15
 
   web:
     name: "Front"
