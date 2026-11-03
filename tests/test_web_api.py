@@ -111,7 +111,7 @@ class FakeMetrics:
         self._config_manager.replay() if force \
             else self._config_manager.reload()
 
-    def recompute_perf(self):
+    def recompute_perf(self, full=False):
         """The other half of the replay that follows the write (issue #812).
 
         A no-op, deliberately. The real one is the whole

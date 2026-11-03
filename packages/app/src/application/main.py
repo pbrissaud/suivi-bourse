@@ -512,7 +512,8 @@ def replay_after_write(runtime: Runtime) -> None:
     """Replay the ledger right after a write changed it (issue #697)."""
     if runtime.workloads is not None:
         runtime.workloads.ingest(force=True)
-        runtime.workloads.recompute_perf()
+        # Whole, so a correction made in 2019 shows at once (#812, #1257).
+        runtime.workloads.recompute_perf(full=True)
     else:
         runtime.config_manager.replay()
 

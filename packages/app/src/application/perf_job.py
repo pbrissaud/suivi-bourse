@@ -1,7 +1,8 @@
 """The performance workload: the ledger replayed, the series rewritten (#849)."""
 import logging
-from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from application import accounts as accounts_module
 from application import carrying
@@ -63,25 +64,87 @@ def spans(points, key) -> Dict[Any, Tuple[date, date]]:
     return spans
 
 
+@dataclass
+class _PassState:
+    """What the last full pass read and wrote, held to continue it by one day (#1257).
+
+    Owned by the perf pass and written by nobody else: it is the pass's memory
+    of its **own** inputs, compared on the next tick against the store it reads
+    again, never a signal a writer raises (#707).
+    """
+
+    today: date
+    fingerprint: tuple
+    #: :meth:`store_reads.PortfolioReader.series_fingerprint`, after the write.
+    written: tuple
+    events: list
+    declared: list
+    base_currency: Optional[str]
+    horizons: Dict[str, Optional[date]]
+    latest: Dict[str, AccountMetricPoint]
+    #: ``False`` when only a full pass may follow: no series at all, or a
+    #: symbol whose first point is today, the one day its horizon can move.
+    continuable: bool = False
+    timeline: Any = None
+    symbols: Set[str] = field(default_factory=set)
+    carried: Set[str] = field(default_factory=set)
+    first_quoted: Dict[str, date] = field(default_factory=dict)
+    #: Symbols with any point, and with any converted close, as the pass saw them.
+    stored: Set[str] = field(default_factory=set)
+    priced: Set[str] = field(default_factory=set)
+    #: Each symbol's last close **before** today: what today forward-fills from.
+    last_before: Dict[str, float] = field(default_factory=dict)
+    #: ``{account: the point before today's}``, for the accounts whose series
+    #: reaches today. ``None`` when today is the series' first point.
+    seeds: Dict[str, Optional[performance.DailyPerf]] = field(default_factory=dict)
+    total_start: Optional[date] = None
+    total_reaches_today: bool = False
+    total_seed: Optional[performance.DailyPerf] = None
+    total_has_cash_ledger: bool = False
+
+
+def _midnight(day: date) -> datetime:
+    """The UTC instant ``day`` begins — the store's own cut (``SET TimeZone='UTC'``)."""
+    return datetime.combine(day, time.min, tzinfo=timezone.utc)
+
+
+class _NotContinuable(Exception):
+    """Today's point cannot be derived from the last pass: rebuild the series whole."""
+
+
 class PerfJob:
     """One perf recompute, whole: its guard, its lock, its replay and its write."""
 
     def __init__(self, facade):
         self.facade = facade
+        self._last: Optional[_PassState] = None
+        self.last_mode: Optional[str] = None
+
+    def forget(self) -> None:
+        """Drop what the last pass read, so the next one rebuilds whole (#812, #1257)."""
+        self._last = None
 
     def recompute(self) -> None:
-        """Rebuild the perf cache, in full, every cycle (issue #707)."""
+        """Bring the perf cache up to date, every cycle (issues #707, #1257).
+
+        Every cycle reads the store again. What it rewrites is the least that
+        keeps the series exact: nothing when nothing it reads has moved, today's
+        point alone when only today's quotes have, and the whole series
+        otherwise.
+        """
         horizons: Dict[str, Optional[date]] = {}
         with self.facade._perf_lock:
+            self.last_mode = None
             try:
                 horizons = self.facade.update_account_metrics()
                 verdict, error = runtime_state.PERF_RAN, None
             except Exception as e:
+                self._last = None
                 app_logger.error(f"Failed to update account metrics: {e}")
                 verdict, error = runtime_state.PERF_FAILED, str(e)
             self.facade.recorder.record_perf(runtime_state.PerfRecord(
                 at=datetime.now(timezone.utc), verdict=verdict, error=error,
-                horizons=horizons))
+                horizons=horizons, mode=self.last_mode))
 
     def update_account_metrics(self) -> Dict[str, Optional[date]]:
         """Rebuild the perf cache — **one pass at a time** (issue #812)."""
@@ -89,8 +152,19 @@ class PerfJob:
             return self.facade._rebuild_series()
 
     def rebuild_series(self) -> Dict[str, Optional[date]]:
-        """Rebuild the daily ``account_metrics`` + ``portfolio_totals`` cache."""
+        """Bring the daily ``account_metrics`` + ``portfolio_totals`` cache up to date.
+
+        Which of the three passes runs is read off the store (issue #1257):
+
+        - **skipped** — the ledger, the accounts, the base currency, the UTC
+          day and every price point are what the last pass read;
+        - **today** — only today's points moved: today's point is recomputed
+          from the point before it and upserted, for each account and the total;
+        - **full** — anything else, and always after a write
+          (``main.replay_after_write``), a failure, or a restart.
+        """
         if not self.facade.base_currency:
+            self._last = None
             app_logger.debug(
                 "No base currency answered yet: no performance series is written")
             return {}
@@ -106,6 +180,41 @@ class PerfJob:
 
         now = datetime.now(timezone.utc)
         today = now.date()
+        # Read **before** the inputs: a write landing while this pass reads them
+        # leaves a fingerprint the next tick no longer matches, so it rebuilds.
+        fingerprint = store_reads.PortfolioReader(store_handle).perf_inputs(
+            _midnight(today))
+
+        last = self._last
+        if last is not None and all((
+                last.today == today,
+                last.written == store_reads.PortfolioReader(
+                    store_handle).series_fingerprint(),
+                last.base_currency == self.facade.base_currency,
+                last.events == events, last.declared == declared,
+                last.fingerprint[0] == fingerprint[0],
+                last.fingerprint[2:] == fingerprint[2:])):
+            if last.fingerprint[1] == fingerprint[1]:
+                self.last_mode = runtime_state.PERF_PASS_UNCHANGED
+                self._warn_negative_cash(last.latest)
+                return last.horizons
+            if last.continuable:
+                try:
+                    return self._today_only(last, today, fingerprint)
+                except _NotContinuable as reason:
+                    app_logger.debug(f"Perf pass rebuilt whole: {reason}")
+        return self._full(events, declared, now, today, fingerprint)
+
+    def _full(self, events, declared, now: datetime, today: date,
+              fingerprint: tuple) -> Dict[str, Optional[date]]:
+        """The whole series, recomputed and rewritten, then pruned to its spans."""
+        self._last = None
+        store_handle = self.facade.config_manager.store
+        state = _PassState(
+            today=today, fingerprint=fingerprint, written=(),
+            events=list(events),
+            declared=list(declared), base_currency=self.facade.base_currency,
+            horizons={}, latest={})
         acc_points: List[AccountMetricPoint] = []
         total_points: List[PortfolioTotalPoint] = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
@@ -200,6 +309,10 @@ class PerfJob:
                     for i, dp in enumerate(total.daily)
                 ]
 
+            self._remember(state, timeline, symbols, carried, first_quoted,
+                           price_pairs, today, per_account, total,
+                           max([start] + bounds))
+
         acc_spans = spans(acc_points, lambda pt: pt.account)
         total_span = spans(total_points, lambda _: None).get(None)
 
@@ -210,10 +323,130 @@ class PerfJob:
                 perf_series.prune_account_metrics(opened, acc_spans)
                 perf_series.prune_portfolio_totals(opened, total_span)
 
-        for acc, p in latest_by_account.items():
+        self._warn_negative_cash(latest_by_account)
+
+        state.horizons = horizons
+        state.latest = latest_by_account
+        state.written = store_reads.PortfolioReader(
+            store_handle).series_fingerprint()
+        self._last = state
+        self.last_mode = runtime_state.PERF_PASS_FULL
+        return horizons
+
+    def _remember(self, state: _PassState, timeline, symbols, carried,
+                  first_quoted, price_pairs, today: date, per_account, total,
+                  total_start: date) -> None:
+        """Keep what continuing this series by today's point alone needs."""
+        store_handle = self.facade.config_manager.store
+        state.timeline = timeline
+        state.symbols = symbols
+        state.carried = set(carried)
+        state.first_quoted = dict(first_quoted)
+        state.stored = set(quotes.oldest_stored(store_handle))
+        state.priced = set(price_pairs)
+        for symbol, pairs in price_pairs.items():
+            before = [price for day, price in pairs if day < today]
+            if before:
+                state.last_before[symbol] = before[-1]
+        # The one day a symbol's horizon, its carrying or its oldest point can
+        # move without the history behind today moving: the day it is first
+        # seen. Rebuilt whole all that day.
+        fresh = any(
+            pairs and pairs[0][0] >= today for pairs in price_pairs.values())
+        fresh = fresh or any(
+            first_quoted[symbol] >= today
+            for symbol in symbols if symbol in first_quoted)
+        fresh = fresh or any(
+            instant.date() >= today
+            for symbol, instant in quotes.oldest_stored(store_handle).items()
+            if symbol in symbols)
+        for account_id, perf in per_account.items():
+            if perf.daily and perf.daily[-1].date == today:
+                state.seeds[account_id] = (
+                    perf.daily[-2] if len(perf.daily) > 1 else None)
+        state.total_start = total_start
+        if total is not None and total.daily and total.daily[-1].date == today:
+            state.total_reaches_today = True
+            state.total_seed = total.daily[-2] if len(total.daily) > 1 else None
+            state.total_has_cash_ledger = total.has_cash_ledger
+        state.continuable = not fresh
+
+    def _today_only(self, last: _PassState, today: date,
+                    fingerprint: tuple) -> Dict[str, Optional[date]]:
+        """Today's point alone, from the point before it and today's closes (#1257).
+
+        Every figure is the one a full pass computes for today, through the same
+        functions: the timeline forward-fills cash, positions and contributions,
+        the index chains from the point before today's as the last full pass
+        wrote it (read back unchanged, or this pass would not run), and XIRR is
+        solved again over every flow. Nothing before today is written, and
+        nothing is pruned: no span moves within a day the history did not.
+        """
+        store_handle = self.facade.config_manager.store
+        reader = store_reads.PortfolioReader(store_handle)
+        start, stop = _midnight(today), _midnight(today + timedelta(days=1))
+        for symbol, (converted, quoted) in reader.symbols_seen(start, stop).items():
+            if symbol not in last.symbols:
+                continue
+            if any((symbol not in last.stored,
+                    converted and symbol not in last.priced,
+                    quoted and symbol not in last.first_quoted)):
+                raise _NotContinuable(f"{symbol} is quoted for the first time")
+        closes = reader.closes_of_day(start, stop)
+
+        def price_at(symbol, day):
+            if symbol in closes:
+                return closes[symbol]
+            return last.last_before.get(symbol)
+
+        acc_points: List[AccountMetricPoint] = []
+        per_account: Dict[str, performance.Performance] = {}
+        latest = dict(last.latest)
+        for account in last.declared:
+            if account.id not in last.seeds:
+                per_account[account.id] = performance.Performance(daily=[])
+                continue
+            perf = performance.compute_account(
+                last.timeline, account, last.symbols, price_at, today, today,
+                last.carried, last.first_quoted, seed=last.seeds[account.id])
+            if [dp.date for dp in perf.daily] != [today]:
+                raise _NotContinuable(f"{account.id} has no point today")
+            per_account[account.id] = perf
+            point = AccountMetricPoint(
+                account=account.id, day=today,
+                **value_kwargs(perf.daily[0], True, perf))
+            acc_points.append(point)
+            latest[account.id] = point
+
+        total_points: List[PortfolioTotalPoint] = []
+        if last.total_reaches_today:
+            total = performance.compute_portfolio_total(
+                last.timeline, last.declared, last.symbols, price_at,
+                last.total_start, today, per_account, seed=last.total_seed)
+            if total is None or [dp.date for dp in total.daily] != [today]:
+                raise _NotContinuable("the total has no point today")
+            # Over the whole series, not today's slice of it: an account whose
+            # series stopped before today still says whether the total has one.
+            total.has_cash_ledger = last.total_has_cash_ledger
+            total_points.append(PortfolioTotalPoint(
+                day=today, **value_kwargs(total.daily[0], True, total)))
+
+        with self.facade.config_manager.writing() as opened:
+            with opened.transaction():
+                perf_series.write_account_metrics(opened, acc_points)
+                perf_series.write_portfolio_totals(opened, total_points)
+
+        self._warn_negative_cash(latest)
+        last.latest = latest
+        last.fingerprint = fingerprint
+        last.written = reader.series_fingerprint()
+        self.last_mode = runtime_state.PERF_PASS_TODAY
+        return last.horizons
+
+    @staticmethod
+    def _warn_negative_cash(latest: Dict[str, AccountMetricPoint]) -> None:
+        for acc, p in latest.items():
             if p.cash_balance is not None and p.cash_balance < 0:
                 app_logger.warning(
                     f"Account '{acc}' has a negative cash balance "
                     f"({p.cash_balance:.2f}) — insufficient recorded cash")
-
-        return horizons

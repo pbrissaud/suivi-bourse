@@ -31,7 +31,7 @@ first nightly runs are what the ceilings are really sized for.
 import statistics
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -288,3 +288,96 @@ def test_one_counterfactual_replay_stays_cheap_enough_not_to_be_stored():
         f'one replay over {len(days)} days took {median * 1000:.2f} ms, '
         f'ceiling {COUNTERFACTUAL_CEILING_MS} ms — the route runs two per '
         f'account (#760, #983)')
+
+
+# --------------------------------------------------------------------------- #
+# 4. The tick that only today's quotes moved (#1257)
+# --------------------------------------------------------------------------- #
+
+#: The pass that follows a scrape, at the 500-symbol shape: today's point alone,
+#: for each account and the total. Measured 0.053 s against 5.8 s for the full
+#: rebuild it replaces on the same store (2026-11-03, a Linux CI container): 19×
+#: above the cost, 6× below the full pass, so a tick quietly falling back to it
+#: every time is a red nightly.
+TODAY_ONLY_CEILING_S = 1.0
+
+_WIDE_TODAY = date(2024, 3, 5)
+_WIDE_FIRST = date(2019, 3, 5)
+_WIDE_SYMBOLS = tuple(f'S{index:03d}' for index in range(500))
+_WIDE_ACCOUNTS = ('wide-a', 'wide-b', 'wide-c')
+
+
+@pytest.fixture
+def wide(tmp_path, mocker):
+    """3 accounts, 500 symbols, five years of daily closes, the series written."""
+    from application import quotes
+    from application.events.schemas import Event, EventType
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(_WIDE_TODAY.year, _WIDE_TODAY.month,
+                            _WIDE_TODAY.day, 12, 0, tzinfo=tz)
+    mocker.patch('application.perf_job.datetime', _FixedDatetime)
+
+    opened = store_module.open_store(tmp_path / 'store.duckdb')
+    for account in _WIDE_ACCOUNTS:
+        accounts.create_account(opened, account, account)
+    events = [Event(_WIDE_FIRST, EventType.DEPOSIT, amount=1_000_000.0,
+                    account=account) for account in _WIDE_ACCOUNTS]
+    events += [Event(_WIDE_FIRST + timedelta(days=1), EventType.BUY, symbol,
+                     symbol, quantity=10, unit_price=100.0,
+                     account=_WIDE_ACCOUNTS[index % len(_WIDE_ACCOUNTS)])
+               for index, symbol in enumerate(_WIDE_SYMBOLS)]
+    entries.create_many(opened, events)
+    opened.execute(
+        "INSERT INTO symbol_quote (symbol, currency) "
+        "SELECT symbol, 'EUR' FROM symbol ON CONFLICT (symbol) DO NOTHING")
+    days = (_WIDE_TODAY - _WIDE_FIRST).days
+    opened.execute(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted,'
+        '                         fx_rate) '
+        "SELECT s.symbol, CAST(? AS TIMESTAMPTZ) + d.range * INTERVAL '1 day',"
+        '       100 + d.range * 0.01, 100 + d.range * 0.01, 1.0'
+        '  FROM symbol s, range(?) d', [datetime.combine(
+            _WIDE_FIRST, datetime.min.time()).replace(hour=17).isoformat()
+            + '+00:00', days])
+    quotes.forget_oldest_stored()
+
+    manager = main.ConfigurationManager(config_dir=str(tmp_path),
+                                        opened_store=opened)
+    manager.reload()
+    metrics = workloads.Workloads(manager)
+    metrics.base_currency = 'EUR'
+    metrics.recompute_perf()
+    yield metrics, opened
+    opened.close()
+
+
+def test_the_tick_after_a_scrape_rewrites_only_today(wide):
+    """One symbol quoted today, then the pass — 500 symbols, five years."""
+    from application import quotes
+    from application import runtime_state
+
+    metrics, opened = wide
+    (points,) = opened.query('SELECT count(*) FROM price_point')[0]
+    assert points > 900_000, f'the fixture stopped being wide: {points} points'
+    minute = iter(range(60))
+
+    def tick():
+        quotes.record_quote(
+            opened, 'S000', datetime(_WIDE_TODAY.year, _WIDE_TODAY.month,
+                                     _WIDE_TODAY.day, 9, next(minute),
+                                     tzinfo=timezone.utc),
+            150.0, attributes={'currency': 'EUR'}, price_converted=150.0,
+            fx_rate=1.0)
+        metrics.recompute_perf()
+        assert metrics.recorder.perf().mode == runtime_state.PERF_PASS_TODAY
+
+    median = _median_of(5, tick)
+    full = _median_of(3, lambda: metrics.recompute_perf(full=True))
+
+    assert median < TODAY_ONLY_CEILING_S, (
+        f'the today-only pass took {median:.3f} s (full: {full:.3f} s), '
+        f'ceiling {TODAY_ONLY_CEILING_S} s — is it reading the whole '
+        f'history again? (#1257)')
