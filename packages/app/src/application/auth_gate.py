@@ -442,13 +442,19 @@ class Gate:
                            allowed=list(auth_rules.SESSION_PRESETS))
             return
 
+        # The session was checked against ``state``, before the body was read. A
+        # PIN change landing in between rotated the secret: that session is
+        # over, and must be neither obeyed nor re-signed with the new secret.
         async def store(current: AuthState) -> AuthState:
-            if not current.enabled:
+            if not current.enabled or current.session_secret != state.session_secret:
                 return current
             return replace(current, session_seconds=seconds)
         after = await self._commit(store)
         if not after.enabled:
             await _problem(send, 409, 'No code is set')
+            return
+        if after.session_secret != state.session_secret or session[0] in after.revoked:
+            await _unauthorized(send)
             return
         logger.info(f'The session lifetime is now {seconds} s')
         await _json(send, 200, {'session_seconds': after.lifetime},

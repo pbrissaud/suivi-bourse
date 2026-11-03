@@ -837,3 +837,43 @@ def test_the_lifetime_survives_a_restart_and_a_change_and_not_a_disable(opened):
 def test_a_stored_lifetime_never_outlives_thirty_days(stored, read):
     assert auth_rules.session_seconds(stored) == read
     assert auth_gate.AuthState(pin_hash='x', session_seconds=stored).lifetime == read
+
+
+def test_a_lifetime_racing_a_pin_change_does_not_outlive_it(opened, monkeypatch):
+    """The session is checked before the body is read; a PIN change landing in
+    between rotates the secret, and the lifetime must not re-sign the old
+    session with the new one."""
+    gate = Gate(Inner(), opened, INDEX)
+    real = auth_gate._json_body
+    raced = []
+
+    async def racing(receive):
+        body = await real(receive)
+        if 'seconds' in body and not raced:
+            raced.append(True)
+            async with client(gate) as c:
+                changed = await c.post('/auth/change',
+                                       json={'current': PIN, 'pin': '222222'},
+                                       headers=with_cookie(acting))
+            assert changed.status_code == 200
+        return body
+
+    async def work():
+        nonlocal acting
+        _, acting = await enable(gate)
+        other = cookie_of(await sign_in(gate))
+        monkeypatch.setattr(auth_gate, '_json_body', racing)
+        async with client(gate) as c:
+            answer = await c.post('/auth/lifetime', json={'seconds': 900},
+                                  headers=with_cookie(other))
+            after = (await c.get('/api/x', headers=with_cookie(
+                cookie_of(answer) or other))).status_code
+        return answer, after
+
+    acting = None
+    answer, after = run(work)
+    assert raced
+    assert answer.status_code == 401
+    assert 'set-cookie' not in answer.headers
+    assert after == 401
+    assert gate.state.session_seconds is None
