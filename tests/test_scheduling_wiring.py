@@ -385,6 +385,11 @@ def test_the_scrape_carries_no_perf_state_at_all(
     out of the way: it carries no information about what happened, the scrape
     never touches it, and what it buys is that two recomputes do not overlap now
     that the replay following a write is a second caller.
+
+    How much a pass rewrites (issue #1257) is no exception: the pass tells a
+    quiet tick from a quote today by **reading the store** — a fingerprint of
+    ``price_point`` and of its own series — and keeps its memory of what it read
+    on :class:`perf_job.PerfJob`, which no writer touches.
     """
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))

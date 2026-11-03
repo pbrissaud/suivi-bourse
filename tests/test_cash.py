@@ -796,10 +796,11 @@ def _totals_days(store):
 
 
 def test_every_cycle_rewrites_the_whole_series(store, declare_ledger, mocker):
-    """A steady second cycle rewrites **every** day, not just today's point.
+    """A series edited behind the pass is rewritten whole, every day of it.
 
-    The incremental window's replacement is nothing at all: the recompute is
-    integral and unconditional, and an upsert on a primary key is what makes
+    The pass reads its own series back on every tick (issue #1257): rows it did
+    not write are a cache gone stale, and the next cycle rebuilds the whole of
+    it rather than today's point alone. An upsert on a primary key is what makes
     that affordable.
     """
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
@@ -1000,6 +1001,9 @@ def test_a_failed_write_leaves_the_previous_cache_whole(
     m.update_account_metrics()
     before = store.query("SELECT * FROM account_metrics ORDER BY day")
 
+    # A day turn, so the next cycle rebuilds whole and reaches its prune: a
+    # cycle with nothing to rewrite writes nothing at all (issue #1257).
+    _fixed_today(mocker, 2024, 1, 4)
     mocker.patch.object(perf_series, "prune_account_metrics",
                         side_effect=RuntimeError("the store is unwritable"))
     with pytest.raises(RuntimeError):
