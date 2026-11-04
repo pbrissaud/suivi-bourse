@@ -108,6 +108,24 @@ def _midnight(day: date) -> datetime:
     return datetime.combine(day, time.min, tzinfo=timezone.utc)
 
 
+@dataclass
+class _ClosesCache:
+    """The daily closes behind a cut, kept between full passes (#1256).
+
+    Only days before ``cut``: today's close moves with every scrape, so it is
+    read again each pass. ``fingerprint`` is
+    :meth:`store_reads.PortfolioReader.history_fingerprint` at ``cut``, read
+    **before** the closes were: a writer landing between the two leaves newer
+    closes under an older fingerprint, which the next pass no longer matches.
+    So a backfill, a repair, the ladder, a forget or a split re-read is caught
+    by the pass reading the store, not by a writer remembering to say so (#707).
+    """
+
+    cut: datetime
+    fingerprint: tuple
+    pairs: Dict[str, List[Tuple[date, float]]]
+
+
 class _NotContinuable(Exception):
     """Today's point cannot be derived from the last pass: rebuild the series whole."""
 
@@ -118,6 +136,7 @@ class PerfJob:
     def __init__(self, facade):
         self.facade = facade
         self._last: Optional[_PassState] = None
+        self._closes_cache: Optional[_ClosesCache] = None
         self.last_mode: Optional[str] = None
 
     def forget(self) -> None:
@@ -140,6 +159,7 @@ class PerfJob:
                 verdict, error = runtime_state.PERF_RAN, None
             except Exception as e:
                 self._last = None
+                self._closes_cache = None
                 app_logger.error(f"Failed to update account metrics: {e}")
                 verdict, error = runtime_state.PERF_FAILED, str(e)
             self.facade.recorder.record_perf(runtime_state.PerfRecord(
@@ -165,6 +185,7 @@ class PerfJob:
         """
         if not self.facade.base_currency:
             self._last = None
+            self._closes_cache = None
             app_logger.debug(
                 "No base currency answered yet: no performance series is written")
             return {}
@@ -225,11 +246,9 @@ class PerfJob:
             timeline = EventAggregator().replay(events)
 
             symbols = {e.symbol for e in events if e.symbol}
-            price_pairs: Dict[str, List[Tuple[date, float]]] = {}
-            for close in store_reads.PortfolioReader(store_handle).daily_closes():
-                if close['symbol'] in symbols:
-                    price_pairs.setdefault(close['symbol'], []).append(
-                        (close['day'], float(close['price'])))
+            closes = self._closes(store_handle, today, fingerprint)
+            price_pairs = {symbol: pairs for symbol, pairs in closes.items()
+                           if symbol in symbols}
 
             def price_at(symbol, day):
                 pairs = price_pairs.get(symbol)
@@ -332,6 +351,51 @@ class PerfJob:
         self._last = state
         self.last_mode = runtime_state.PERF_PASS_FULL
         return horizons
+
+    def _closes(self, store_handle, today: date,
+                fingerprint: tuple) -> Dict[str, List[Tuple[date, float]]]:
+        """``{symbol: [(day, close), …]}``, every symbol, oldest day first (#1256).
+
+        The days behind the kept cut come from the cache when the history
+        behind it is the one it was read from, and only the days from the cut
+        on are read again — today, and yesterday the day after. Anything else
+        reads the whole history, as before. The lists returned are this pass's
+        own: the cache is never handed out to be mutated.
+        """
+        reader = store_reads.PortfolioReader(store_handle)
+        cut = _midnight(today)
+        cache = self._closes_cache
+        self._closes_cache = None
+        if cache is not None:
+            if cache.cut == cut:
+                kept = cache.fingerprint == fingerprint[0]
+            elif cache.cut < cut:
+                kept = cache.fingerprint == reader.history_fingerprint(cache.cut)
+            else:
+                kept = False
+            if not kept:
+                cache = None
+
+        rows = (reader.daily_closes() if cache is None
+                else reader.daily_closes(start=cache.cut))
+        history: Dict[str, List[Tuple[date, float]]] = (
+            {} if cache is None else cache.pairs)
+        recent: Dict[str, List[Tuple[date, float]]] = {}
+        days: Dict[date, date] = {}
+        for close in rows:
+            # One `date` per day, shared by every symbol: the cache outlives
+            # the pass, so 500 symbols do not keep 500 copies of each day.
+            day = days.setdefault(close['day'], close['day'])
+            pair = (day, float(close['price']))
+            if day < today:
+                history.setdefault(close['symbol'], []).append(pair)
+            else:
+                recent.setdefault(close['symbol'], []).append(pair)
+
+        self._closes_cache = _ClosesCache(
+            cut=cut, fingerprint=fingerprint[0], pairs=history)
+        return {symbol: history.get(symbol, []) + recent.get(symbol, [])
+                for symbol in history.keys() | recent.keys()}
 
     def _remember(self, state: _PassState, timeline, symbols, carried,
                   first_quoted, price_pairs, today: date, per_account, total,

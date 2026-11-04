@@ -381,3 +381,47 @@ def test_the_tick_after_a_scrape_rewrites_only_today(wide):
         f'the today-only pass took {median:.3f} s (full: {full:.3f} s), '
         f'ceiling {TODAY_ONLY_CEILING_S} s — is it reading the whole '
         f'history again? (#1257)')
+
+
+# --------------------------------------------------------------------------- #
+# 5. The full pass after a write reads only the recent closes (#1256)
+# --------------------------------------------------------------------------- #
+
+#: The full pass that follows a write, with the closes behind today kept, as a
+#: share of the same pass reading the whole history again, on the same store
+#: and the same machine. Measured 3.1 s against 5.8 s (2026-11-04, a Linux CI
+#: container): 0.54. A ratio and not seconds, because the saving is a factor
+#: of two, not ten: no absolute figure sits clear of both a noisy runner and
+#: the regression. The rows read are the structural half of the guard.
+FULL_AFTER_WRITE_SHARE = 0.8
+
+
+def test_the_full_pass_after_a_write_reads_only_recent_closes(wide, mocker):
+    """500 symbols, five years: the second full pass reads today alone."""
+    from application import store_reads
+
+    metrics, opened = wide
+    job = metrics._recompute
+    reads = []
+    original = store_reads.PortfolioReader.daily_closes
+
+    def spy(self, start=None, stop=None):
+        rows = original(self, start, stop)
+        reads.append((start, len(rows)))
+        return rows
+    mocker.patch.object(store_reads.PortfolioReader, 'daily_closes', spy)
+
+    cached = _median_of(3, lambda: metrics.recompute_perf(full=True))
+    assert reads and all(start is not None for start, _ in reads), reads
+    assert max(rows for _, rows in reads) < len(_WIDE_SYMBOLS), reads
+
+    def whole():
+        job._closes_cache = None
+        metrics.recompute_perf(full=True)
+    uncached = _median_of(3, whole)
+
+    assert cached < FULL_AFTER_WRITE_SHARE * uncached, (
+        f'the full pass with the closes kept took {cached:.3f} s against '
+        f'{uncached:.3f} s reading them whole, ceiling '
+        f'{FULL_AFTER_WRITE_SHARE:.0%} — is it reading the whole history '
+        f'again? (#1256)')
