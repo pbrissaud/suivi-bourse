@@ -46,7 +46,7 @@ import { useI18n } from '@/lib/i18n'
 /** Beyond this many chips, a *+N* chip opens the whole profile. */
 const CHIPS = 4
 
-/** The `<select>` skin of the other forms (`AgentBlock`, `EventForm`), copied as they copy it. */
+/** The `<select>` skin of the other forms (`AgentProviderSheet`, `EventForm`), copied as they copy it. */
 const SELECT =
   'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
 

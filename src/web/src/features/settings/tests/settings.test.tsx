@@ -68,7 +68,7 @@ describe('the page', () => {
         'Sur cet appareil',
         'Portefeuille',
         'L’agent',
-        'Accès',
+        'Sécurité',
         'Fiscalité',
         'Thème',
         'Avancé',
@@ -81,7 +81,7 @@ describe('the page', () => {
     await openSettings()
     await screen.findByRole('heading', { name: 'Avancé' })
 
-    for (const name of ['Sur cet appareil', 'Portefeuille', 'Avancé']) {
+    for (const name of ['Sur cet appareil', 'Portefeuille', 'L’agent', 'Sécurité', 'Avancé']) {
       const gutter = block(name).querySelector('header')
       expect(gutter, name).not.toBeNull()
       expect(within(gutter as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
@@ -641,8 +641,8 @@ describe('an unreadable store', () => {
     expect(await screen.findAllByRole('button', { name: 'Réessayer' })).toHaveLength(3)
     expect(within(block('Portefeuille')).queryByLabelText('Devise de base')).toBeNull()
     // Whether a code is set cannot be told either (#1418).
-    expect(screen.queryByRole('switch', { name: 'Code d’accès' })).toBeNull()
-    expect(within(block('Accès')).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Demander un code' })).toBeNull()
+    expect(within(block('Sécurité')).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
     expect(block('Sur cet appareil')).toBeInTheDocument()
     expect(screen.queryByLabelText('Cadence de relevé')).not.toBeInTheDocument()
   })

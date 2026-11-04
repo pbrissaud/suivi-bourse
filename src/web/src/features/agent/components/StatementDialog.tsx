@@ -26,7 +26,7 @@ import { accountsApi } from '@/features/accounts/lib/api'
 import { agentApi, PROVIDER_NAME, STATEMENT_MAX } from '@/features/agent/lib/api'
 import { useI18n } from '@/lib/i18n'
 
-/** The `<select>` skin the forms share (`EventForm`, `AgentBlock`). */
+/** The `<select>` skin the forms share (`EventForm`, `AgentProviderSheet`). */
 const SELECT =
   'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
 

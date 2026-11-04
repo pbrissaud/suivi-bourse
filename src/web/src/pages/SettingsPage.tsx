@@ -5,12 +5,12 @@ import { Link, useLocation } from '@tanstack/react-router'
 import { Unreadable } from '@/components/Unreadable'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { agentApi } from '@/features/agent/lib/api'
-import { AccessBlock } from '@/features/settings/components/AccessBlock'
 import { AdvancedSection } from '@/features/settings/components/AdvancedSection'
-import { AgentBlock } from '@/features/settings/components/AgentBlock'
+import { AgentSection } from '@/features/settings/components/AgentSection'
 import { DeviceSection } from '@/features/settings/components/DeviceSection'
 import { PortfolioSection } from '@/features/settings/components/PortfolioSection'
 import { REFERENCES_HASH } from '@/features/settings/components/ReferencesRow'
+import { SecuritySection } from '@/features/settings/components/SecuritySection'
 import type { SectionRead } from '@/features/settings/components/SettingsSection'
 import { TaxationBlock } from '@/features/settings/components/TaxationBlock'
 import { ThemeBlock } from '@/features/settings/components/ThemeBlock'
@@ -25,7 +25,7 @@ const SECTIONS = [
   { id: 'device', title: 'settings.device.title' },
   { id: 'portfolio', title: 'settings.portfolio.title' },
   { id: 'agent', title: 'settings.agent.title' },
-  { id: 'security', title: 'settings.access.title' },
+  { id: 'security', title: 'settings.security.title' },
   { id: 'taxation', title: 'settings.taxation' },
   { id: 'theme', title: 'settings.theme.title' },
   { id: 'advanced', title: 'settings.advanced.title' },
@@ -59,6 +59,12 @@ export default function SettingsPage() {
     settingsFailure !== null
       ? { kind: 'failed', failure: settingsFailure, retry: () => void config.refetch() }
       : config.data
+        ? { kind: 'ready' }
+        : { kind: 'pending' }
+  const agentRead: SectionRead =
+    agentFailure !== null
+      ? { kind: 'failed', failure: agentFailure, retry: () => void agent.refetch() }
+      : agent.data
         ? { kind: 'ready' }
         : { kind: 'pending' }
 
@@ -118,18 +124,10 @@ export default function SettingsPage() {
           renders when all of them fail. */}
         <DeviceSection />
         <PortfolioSection read={settingsRead} />
+        <AgentSection read={agentRead} config={agent.data} />
+        <SecuritySection read={settingsRead} />
         {/* Until each block moves onto `SettingsSection`, these wrappers wear its
           box: same id, focus and scroll offset, same rule above. */}
-        <div id="agent" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
-          {agentFailure !== null ? (
-            <Unreadable failure={agentFailure} />
-          ) : agent.data ? (
-            <AgentBlock config={agent.data} />
-          ) : null}
-        </div>
-        <div id="security" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
-          <AccessBlock read={settingsRead} />
-        </div>
         <div id="taxation" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
           <TaxationBlock />
         </div>
