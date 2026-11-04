@@ -254,3 +254,19 @@ def test_history_fingerprint_is_perf_inputs_first_half(seeded):
     cut = _midnight(_TODAY)
 
     assert reader.history_fingerprint(cut) == reader.perf_inputs(cut)[0]
+
+
+@pytest.mark.parametrize('order', [(101.0, 202.0), (202.0, 101.0)])
+def test_two_quotes_in_one_second_close_the_day_on_the_same_price(store, order):
+    """No key on ``(symbol, ts)``: the pick may not hang on row order."""
+    at = datetime(2024, 6, 3, 17, tzinfo=UTC)
+    store.executemany(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted,'
+        "                         fx_rate) VALUES ('AAPL', ?, 100, ?, 1)",
+        [[at, price] for price in order])
+    reader = store_reads.PortfolioReader(store)
+
+    assert [c['price'] for c in reader.daily_closes()] == [202.0]
+    assert reader.closes_of_day(_midnight(at.date()),
+                                _midnight(at.date() + timedelta(days=1))) == {
+        'AAPL': 202.0}

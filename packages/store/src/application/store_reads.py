@@ -154,7 +154,9 @@ class PortfolioReader:
             '  SELECT CAST(ts AS DATE) AS day, symbol, price_converted AS price,'
             '         ROW_NUMBER() OVER ('
             '             PARTITION BY CAST(ts AS DATE), symbol'
-            '             ORDER BY ts DESC) AS rn'
+            # Two quotes in the same second store two rows at one `ts`: the
+            # higher price wins, so the pick does not hang on row order (#1256).
+            '             ORDER BY ts DESC, price_converted DESC) AS rn'
             '    FROM price_point'
             f'   WHERE price_converted IS NOT NULL{clauses}'
             ') WHERE rn = 1 ORDER BY day, symbol',
@@ -227,7 +229,9 @@ class PortfolioReader:
             '  SELECT symbol, price_converted AS price,'
             '         ROW_NUMBER() OVER ('
             '             PARTITION BY CAST(ts AS DATE), symbol'
-            '             ORDER BY ts DESC) AS rn'
+            # Two quotes in the same second store two rows at one `ts`: the
+            # higher price wins, so the pick does not hang on row order (#1256).
+            '             ORDER BY ts DESC, price_converted DESC) AS rn'
             '    FROM price_point'
             '   WHERE price_converted IS NOT NULL AND ts >= ? AND ts < ?'
             ') WHERE rn = 1', [day_start, day_stop])
