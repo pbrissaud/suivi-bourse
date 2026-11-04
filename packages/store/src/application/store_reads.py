@@ -21,6 +21,10 @@ CLOSING_COLUMNS = ('closed_at',)
 
 P1_COLUMNS = POSITION_COLUMNS + QUOTE_COLUMNS + PRICE_COLUMNS + CLOSING_COLUMNS
 
+#: One ``price_point`` row, hashed: what the perf pass's fingerprints sum.
+_POINT_HASH = (
+    'hash(symbol, ts, price_native, price_converted, fx_rate)::HUGEINT')
+
 PERF_COLUMNS = (
     'day', 'cash_balance', 'holdings_value', 'total_value', 'net_contributed',
     'xirr', 'gain_absolu', 'twr_index',
@@ -150,7 +154,9 @@ class PortfolioReader:
             '  SELECT CAST(ts AS DATE) AS day, symbol, price_converted AS price,'
             '         ROW_NUMBER() OVER ('
             '             PARTITION BY CAST(ts AS DATE), symbol'
-            '             ORDER BY ts DESC) AS rn'
+            # Two quotes in the same second store two rows at one `ts`: the
+            # higher price wins, so the pick does not hang on row order (#1256).
+            '             ORDER BY ts DESC, price_converted DESC) AS rn'
             '    FROM price_point'
             f'   WHERE price_converted IS NOT NULL{clauses}'
             ') WHERE rn = 1 ORDER BY day, symbol',
@@ -175,8 +181,7 @@ class PortfolioReader:
             '       sum(h) FILTER (WHERE ts < ?),'
             '       count(*) FILTER (WHERE ts >= ?),'
             '       sum(h) FILTER (WHERE ts >= ?)'
-            '  FROM (SELECT ts, hash(symbol, ts, price_native, price_converted,'
-            '                        fx_rate)::HUGEINT AS h FROM price_point)',
+            f'  FROM (SELECT ts, {_POINT_HASH} AS h FROM price_point)',
             [day_start] * 4)
         history_count, history_sum, today_count, today_sum = rows[0]
         (quotes_meta,) = self._store.query(
@@ -188,6 +193,18 @@ class PortfolioReader:
             '  FROM symbol_split')[0:1]
         return ((history_count, history_sum), (today_count, today_sum),
                 tuple(quotes_meta), tuple(splits))
+
+    def history_fingerprint(self, day_start: datetime) -> tuple:
+        """``perf_inputs``' first half alone: the ``price_point`` rows behind ``day_start`` (#1256).
+
+        The same hash over the same rows, so the pair it returns at today's
+        midnight is the pair :meth:`perf_inputs` returned. The perf pass keeps
+        the closes behind a cut and asks this at that cut, the day after.
+        """
+        rows = self._store.query(
+            f'SELECT count(*), sum({_POINT_HASH}) FROM price_point WHERE ts < ?',
+            [day_start])
+        return tuple(rows[0])
 
     def series_fingerprint(self) -> tuple:
         """A fingerprint of the series the perf pass wrote, read back (#1257).
@@ -212,7 +229,9 @@ class PortfolioReader:
             '  SELECT symbol, price_converted AS price,'
             '         ROW_NUMBER() OVER ('
             '             PARTITION BY CAST(ts AS DATE), symbol'
-            '             ORDER BY ts DESC) AS rn'
+            # Two quotes in the same second store two rows at one `ts`: the
+            # higher price wins, so the pick does not hang on row order (#1256).
+            '             ORDER BY ts DESC, price_converted DESC) AS rn'
             '    FROM price_point'
             '   WHERE price_converted IS NOT NULL AND ts >= ? AND ts < ?'
             ') WHERE rn = 1', [day_start, day_stop])
