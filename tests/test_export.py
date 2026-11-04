@@ -29,7 +29,7 @@ from application import entries
 from application import ledger
 from application import main
 from application import settings_registry
-from application import workloads
+from application.jobs import registry
 from application import store as store_module
 from application.events import export as events_export
 from application.events.loader import BASE_CURRENCY_COLUMN, EventLoader, EventLoaderError
@@ -150,9 +150,9 @@ def portfolio_of(opened):
     cache's** newest row, which is what ``/api/accounts`` reads. The pass is
     driven here because the install only publishes: nothing has run it yet.
     """
-    workloads_ = workloads.Workloads(PerfConfigManager(opened))
-    workloads_.base_currency = 'EUR'
-    workloads_.update_account_metrics()
+    workloads_ = registry.build(PerfConfigManager(opened))
+    workloads_.ctx.base_currency = 'EUR'
+    workloads_['performance'].update_account_metrics()
     reader = PortfolioReader(opened)
     snapshot = SimpleNamespace(
         accounts=accounts_module.declared_portfolio(opened))
@@ -444,9 +444,9 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
     manager = main.ConfigurationManager(config_dir=str(root), opened_store=opened)
     manager.reload()
 
-    metrics = workloads.Workloads(manager)
-    metrics.apply_dials(settings_registry.defaults())
-    assert metrics.base_currency is None
+    metrics = registry.build(manager)
+    metrics.ctx.apply_dials(settings_registry.defaults())
+    assert metrics.ctx.base_currency is None
 
     landing = root / 'events' / 'restore.csv'
     landing.write_text(
@@ -454,9 +454,9 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
         "2024-11-02,BUY,default,AI.PA,Air Liquide,1,170.00,,,,CHF\n",
         encoding='utf-8')
     _write_events(opened, landing)
-    metrics.ingest(force=True)
+    metrics['ingestion'](force=True)
 
-    assert metrics.base_currency == 'CHF'
+    assert metrics.ctx.base_currency == 'CHF'
     opened.close()
 
 

@@ -58,9 +58,19 @@ def current_runtime():
 def _rebuilding() -> bool:
     """Is the reconstruction still covering windows? — process memory, no query."""
     runtime = current_runtime()
-    return runtime_view.is_rebuilding(
-        runtime.workloads.reconstruction_state()
-        if runtime.workloads is not None else None)
+    return runtime_view.is_rebuilding(reconstruction_state(runtime))
+
+
+def reconstruction_state(runtime):
+    """``(complete, total)`` of the reconstruction, or ``None`` with no jobs running."""
+    jobs = getattr(runtime, 'jobs', None)
+    return None if jobs is None else jobs['ingestion'].reconstruction_state()
+
+
+def ingestion(runtime):
+    """The running ingestion job — what the installation facts observe — or ``None``."""
+    jobs = getattr(runtime, 'jobs', None)
+    return None if jobs is None else jobs['ingestion']
 
 
 def _unreplayable(exc: AggregationError, gesture: str):

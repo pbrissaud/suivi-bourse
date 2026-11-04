@@ -19,14 +19,14 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from application import backfill
+from application.jobs import backfill
 from application import main
 from application import market
 from application import quotes
 from application import retention
 from application import settings_registry
 from application import store_reads
-from application import workloads
+from application.jobs import registry
 from application.events.schemas import Event, EventType
 from conftest import fake_history
 
@@ -515,7 +515,7 @@ _HELD = {'symbol': 'AAPL', 'name': 'Apple Inc', 'quantity': 10,
 
 
 def _metrics(opened, **kwargs):
-    return workloads.Workloads(_Manager(opened, **kwargs))
+    return registry.build(_Manager(opened, **kwargs))
 
 
 def test_the_ladder_runs_as_a_step_of_the_backfill(store):
@@ -528,7 +528,7 @@ def test_the_ladder_runs_as_a_step_of_the_backfill(store):
     _seed(store, 'AAPL', [_at(1200, 9, 0), _at(1200, 17, 0)])
     metrics = _metrics(store)
 
-    metrics.backfill(now=NOW)
+    metrics['backfill'](now=NOW)
 
     assert _series(store) == [_at(1200, 17, 0)]
 
@@ -536,7 +536,8 @@ def test_the_ladder_runs_as_a_step_of_the_backfill(store):
 def test_the_scheduler_gains_no_job_for_it(store, mocker):
     """The fixed jobs, and the ladder is in none of their names."""
     scheduler = mocker.MagicMock()
-    main.register_interval_jobs(scheduler, mocker.MagicMock(), 60)
+    registry.register(scheduler, registry.build(mocker.MagicMock()),
+                      {'backfill_interval': 60})
 
     ids = {call.kwargs['id'] for call in scheduler.add_job.call_args_list}
 
@@ -552,9 +553,9 @@ def test_the_ladder_runs_though_the_backward_pass_has_nothing_left_to_do(store):
     """
     _seed(store, 'AAPL', [_at(1200, 9, 0), _at(1200, 17, 0)])
     metrics = _metrics(store)
-    metrics._backfill_complete['AAPL'] = NOW
+    metrics['backfill'].complete['AAPL'] = NOW
 
-    metrics.backfill(now=NOW)
+    metrics['backfill'](now=NOW)
 
     assert _series(store) == [_at(1200, 17, 0)]
 
@@ -571,7 +572,7 @@ def test_the_ladder_reaches_a_symbol_no_event_names_any_more(store):
     _seed(store, 'ORPH', [_at(1200, 9, 0), _at(1200, 17, 0)])
     metrics = _metrics(store)
 
-    metrics.backfill(now=NOW)
+    metrics['backfill'](now=NOW)
 
     assert _series(store, 'ORPH') == [_at(1200, 17, 0)]
 
@@ -591,7 +592,7 @@ def test_a_store_that_refuses_to_age_does_not_abort_the_cycle(store, mocker):
                         side_effect=RuntimeError('boom'))
     fetch = fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill(now=NOW)
+    metrics['backfill'](now=NOW)
 
     # The three passes ran, and the series is exactly as the refusal left it.
     assert fetch.call_count > 0
@@ -610,7 +611,7 @@ def test_the_ladder_runs_beside_the_three_passes_on_a_populated_install(store,
     metrics = _metrics(store, shares=[_HELD], events=[_A_BUY])
     fetch = fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill(now=NOW)
+    metrics['backfill'](now=NOW)
 
     assert fetch.call_count > 0
     assert _series(store) == [_at(1200, 17, 0)]
@@ -647,8 +648,8 @@ def test_the_rebuild_asks_for_the_finest_bars_the_api_still_sells(store, mocker)
     # other read in the tree (#781).
     today = datetime.now(timezone.utc)
 
-    metrics._backfill.fetch_historical_data('AAPL', today - timedelta(days=700), today)
-    metrics._backfill.fetch_historical_data('AAPL', today - timedelta(days=800),
+    metrics['backfill'].fetch_historical_data('AAPL', today - timedelta(days=700), today)
+    metrics['backfill'].fetch_historical_data('AAPL', today - timedelta(days=800),
                                    today - timedelta(days=700))
 
     assert asked == ['1h', '1d']
@@ -708,7 +709,7 @@ def test_a_rebuild_started_today_buys_the_one_to_two_year_band_by_the_hour(
     metrics = _metrics(store, shares=[_HELD], events=[acquired])
 
     for _ in range(3):
-        metrics.backfill(now=today)
+        metrics['backfill'](now=today)
 
     # Three cycles, three requests — the repair is not paid for in requests.
     assert [((today - start).days, (today - end).days, interval)
@@ -747,7 +748,7 @@ def test_the_ceiling_does_not_move_and_the_pass_still_concludes(store, mocker):
     metrics = _metrics(store, shares=[_HELD], events=[acquired])
 
     for _ in range(5):
-        metrics.backfill(now=today)
+        metrics['backfill'](now=today)
 
     _the_api_ceiling_is_respected(asked, today)
 
@@ -763,10 +764,10 @@ def test_the_ceiling_does_not_move_and_the_pass_still_concludes(store, mocker):
         assert end.date() == previous_start.date()
 
     # Terminal, and it stays terminal: two more cycles ask Yahoo nothing.
-    assert metrics._backfill_complete['AAPL'].date() == acquired.date
+    assert metrics['backfill'].complete['AAPL'].date() == acquired.date
     concluded = len(asked)
-    metrics.backfill(now=today)
-    metrics.backfill(now=today)
+    metrics['backfill'](now=today)
+    metrics['backfill'](now=today)
     assert len(asked) == concluded
 
 
@@ -812,7 +813,7 @@ def test_a_gap_wider_than_two_years_is_closed_on_both_sides_of_the_ceiling(
     metrics = _metrics(store, shares=[_HELD], events=events)
 
     for _ in range(3):
-        metrics.backfill(now=today)
+        metrics['backfill'](now=today)
 
     assert asked, "the forward pass never ran"
     _the_api_ceiling_is_respected(asked, today)

@@ -41,7 +41,7 @@ from application import counterfactual
 from application import entries
 from application import main
 from application import store as store_module
-from application import workloads
+from application.jobs import registry
 from application.events.loader import EventLoader
 
 pytestmark = pytest.mark.timing
@@ -117,7 +117,7 @@ def _ledger() -> str:
 
 @pytest.fixture
 def loaded(tmp_path, mocker):
-    """A real store, a real manager, real workloads, and the series written.
+    """A real store, a real manager, real jobs, and the series written.
 
     Returns ``(runtime, store)`` with the first pass already done, so every
     measurement below is of a **rewrite** — which is what a write costs, the
@@ -128,7 +128,7 @@ def loaded(tmp_path, mocker):
         def now(cls, tz=None):
             return datetime(_TODAY.year, _TODAY.month, _TODAY.day,
                             12, 0, tzinfo=tz)
-    mocker.patch('application.perf_job.datetime', _FixedDatetime)
+    mocker.patch('application.jobs.performance.datetime', _FixedDatetime)
 
     events_dir = tmp_path / 'events'
     events_dir.mkdir(exist_ok=True)
@@ -149,10 +149,10 @@ def loaded(tmp_path, mocker):
         "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR') "
         "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
 
-    metrics = workloads.Workloads(manager)
-    metrics.base_currency = 'EUR'
-    runtime.workloads = metrics
-    metrics.recompute_perf()
+    metrics = registry.build(manager)
+    metrics.ctx.base_currency = 'EUR'
+    runtime.jobs = metrics
+    metrics['performance']()
 
     yield runtime, opened
     opened.close()
@@ -318,7 +318,7 @@ def wide(tmp_path, mocker):
         def now(cls, tz=None):
             return datetime(_WIDE_TODAY.year, _WIDE_TODAY.month,
                             _WIDE_TODAY.day, 12, 0, tzinfo=tz)
-    mocker.patch('application.perf_job.datetime', _FixedDatetime)
+    mocker.patch('application.jobs.performance.datetime', _FixedDatetime)
 
     opened = store_module.open_store(tmp_path / 'store.duckdb')
     for account in _WIDE_ACCOUNTS:
@@ -347,9 +347,9 @@ def wide(tmp_path, mocker):
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     manager.reload()
-    metrics = workloads.Workloads(manager)
-    metrics.base_currency = 'EUR'
-    metrics.recompute_perf()
+    metrics = registry.build(manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance']()
     yield metrics, opened
     opened.close()
 
@@ -371,11 +371,11 @@ def test_the_tick_after_a_scrape_rewrites_only_today(wide):
                                      tzinfo=timezone.utc),
             150.0, attributes={'currency': 'EUR'}, price_converted=150.0,
             fx_rate=1.0)
-        metrics.recompute_perf()
-        assert metrics.recorder.perf().mode == runtime_state.PERF_PASS_TODAY
+        metrics['performance']()
+        assert metrics.ctx.recorder.perf().mode == runtime_state.PERF_PASS_TODAY
 
     median = _median_of(5, tick)
-    full = _median_of(3, lambda: metrics.recompute_perf(full=True))
+    full = _median_of(3, lambda: metrics['performance'](full=True))
 
     assert median < TODAY_ONLY_CEILING_S, (
         f'the today-only pass took {median:.3f} s (full: {full:.3f} s), '
@@ -401,7 +401,7 @@ def test_the_full_pass_after_a_write_reads_only_recent_closes(wide, mocker):
     from application import store_reads
 
     metrics, opened = wide
-    job = metrics._recompute
+    job = metrics['performance']
     reads = []
     original = store_reads.PortfolioReader.daily_closes
 
@@ -411,13 +411,13 @@ def test_the_full_pass_after_a_write_reads_only_recent_closes(wide, mocker):
         return rows
     mocker.patch.object(store_reads.PortfolioReader, 'daily_closes', spy)
 
-    cached = _median_of(3, lambda: metrics.recompute_perf(full=True))
+    cached = _median_of(3, lambda: metrics['performance'](full=True))
     assert reads and all(start is not None for start, _ in reads), reads
     assert max(rows for _, rows in reads) < len(_WIDE_SYMBOLS), reads
 
     def whole():
         job._closes_cache = None
-        metrics.recompute_perf(full=True)
+        metrics['performance'](full=True)
     uncached = _median_of(3, whole)
 
     assert cached < FULL_AFTER_WRITE_SHARE * uncached, (

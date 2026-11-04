@@ -17,6 +17,8 @@ import pytest
 
 from application import runtime_state
 from application import runtime_view
+from application.jobs import registry
+from application.jobs import registry
 from application import scheduling
 
 
@@ -157,7 +159,7 @@ def test_a_missing_job_is_ambiguous_never_departed_and_never_running():
     """The trap, and the only thing a correct renderer can do about it.
 
     A ``date`` job is removed from the jobstore *while it runs* and re-added at
-    the end of ``_scrape_symbol``, so absence means "being scraped right now"
+    the end of the scrape pass, so absence means "being scraped right now"
     **or** "symbol departed" — and a cycle can be seconds long. The value carries
     both readings; picking one would be wrong roughly half the time, silently.
     """
@@ -1061,8 +1063,8 @@ def _health(shares=None, scrape=None, backfill=None, perf=None,
         scrape=scrape or {}, backfill=backfill or {}, next_runs={}, now=NOW,
         scheduler_running=scheduler_running)
     return runtime_view.build_health(
-        symbols=symbols, perf=perf, now=NOW,
-        scheduler_running=scheduler_running)
+        jobs=registry.health(registry.HealthView(symbols=symbols, perf=perf)),
+        now=NOW, scheduler_running=scheduler_running)
 
 
 def test_the_scrape_verdict_is_the_worst_symbol_and_not_the_commonest():

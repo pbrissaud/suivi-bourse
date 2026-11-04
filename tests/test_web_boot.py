@@ -45,6 +45,7 @@ from application import main
 from application import market
 from application import schema_steps
 from application import store
+from application.jobs import registry
 import api
 from application.events.schemas import Event, EventType
 from application.events.validator import EventValidationError
@@ -172,8 +173,8 @@ def open_store(tmp_path):
 def test_build_runtime_validates_the_config_without_starting_anything(
         fake_config, mocker):
     """Its whole job: read the config, start nothing. The scheduler is step four."""
-    workloads_cls = mocker.patch.object(main.workloads, "Workloads")
-    scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
+    build = mocker.patch.object(main.registry, "build")
+    scheduler_cls = mocker.patch.object(registry, "BackgroundScheduler")
     threads_before = threading.active_count()
 
     runtime = main.build_runtime()
@@ -184,9 +185,9 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert fake_config.load_calls == 1
     assert fake_config.named_unread == 1
     # ... and nothing else is.
-    assert workloads_cls.call_count == 0
+    assert build.call_count == 0
     assert scheduler_cls.call_count == 0
-    assert runtime.workloads is None
+    assert runtime.jobs is None
     assert runtime.scheduler is None
     assert threading.active_count() == threads_before
 
@@ -310,9 +311,9 @@ def test_the_boot_opens_the_store_exactly_once(fake_config, mocker):
     """
     opens = mocker.spy(store, "open_store")
     running = mocker.MagicMock()
-    running.shares = []
-    mocker.patch.object(main.workloads, "Workloads", return_value=running)
-    mocker.patch.object(main, "BackgroundScheduler")
+    running.ctx.shares = []
+    mocker.patch.object(main.registry, "build", return_value=running)
+    mocker.patch.object(registry, "BackgroundScheduler")
 
     main.start_runtime(main.build_runtime())
 
@@ -535,28 +536,28 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     runtime = main.Runtime(cfg)
 
     running = mocker.MagicMock()
-    running.shares = []
-    mocker.patch.object(main.workloads, "Workloads", return_value=running)
+    running.ctx.shares = []
+    mocker.patch.object(main.registry, "build", return_value=running)
     scheduler = mocker.MagicMock()
-    mocker.patch.object(main, "BackgroundScheduler", return_value=scheduler)
+    mocker.patch.object(registry, "BackgroundScheduler", return_value=scheduler)
 
     order = []
-    running.ingest.side_effect = lambda: order.append("ingest")
+    running['ingestion'].side_effect = lambda: order.append("ingest")
     scheduler.start.side_effect = lambda: order.append("start")
+    register = mocker.patch.object(main.registry, "register")
 
     main.start_runtime(runtime)
 
-    assert runtime.workloads is running
+    assert runtime.jobs is running
     assert runtime.scheduler is scheduler
-    assert running.scheduler is scheduler
+    assert running.ctx.scheduler is scheduler
     # ingest() arms the per-symbol scrape jobs (#616), so it must land before the
     # scheduler starts — the same order the blocking boot had.
     assert order == ["ingest", "start"]
-    # ... plus the fixed jobs: the ``ingest`` interval job left with
-    # SB_INGESTION_INTERVAL (issue #697); the one ingestion on a clock is the
-    # turn of the day (#1459).
-    assert {c.kwargs["id"] for c in scheduler.add_job.call_args_list} == \
-        {"backfill", "perf", "day_turn"}
+    # ... plus the timed jobs, on the dials the boot read: which ones they are
+    # is the registry's, pinned in ``test_scheduling_wiring.py``.
+    register.assert_called_once_with(scheduler, running, mocker.ANY)
+    assert register.call_args.args[2]["backfill_interval"] == 60
 
 
 def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
@@ -568,9 +569,9 @@ def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
     one connection now and this step is handed it.
     """
     running = mocker.MagicMock()
-    running.shares = []
-    mocker.patch.object(main.workloads, "Workloads", return_value=running)
-    mocker.patch.object(main, "BackgroundScheduler")
+    running.ctx.shares = []
+    mocker.patch.object(main.registry, "build", return_value=running)
+    mocker.patch.object(registry, "BackgroundScheduler")
     opened = store.open_store(tmp_path / "the-one.duckdb")
     opens = mocker.spy(store, "open_store")
     runtime = main.Runtime(_FakeConfigManager(),
@@ -590,9 +591,9 @@ def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
 def test_start_runtime_uses_a_background_scheduler(mocker):
     """Blocking would never return, and uvicorn's event loop owns the foreground."""
     running = mocker.MagicMock()
-    running.shares = []
-    mocker.patch.object(main.workloads, "Workloads", return_value=running)
-    scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
+    running.ctx.shares = []
+    mocker.patch.object(main.registry, "build", return_value=running)
+    scheduler_cls = mocker.patch.object(registry, "BackgroundScheduler")
 
     main.start_runtime(main.Runtime(_FakeConfigManager()))
 
@@ -612,7 +613,7 @@ def test_shutdown_runtime_stops_the_scheduler_and_gives_the_store_back(mocker):
     runtime = main.Runtime(cfg, opened_store=mocker.MagicMock())
     opened = runtime.store
     runtime.scheduler = mocker.MagicMock(running=True)
-    runtime.workloads = mocker.MagicMock()
+    runtime.jobs = mocker.MagicMock()
 
     main.shutdown_runtime(runtime)
 
@@ -1164,9 +1165,9 @@ def test_the_teardown_survives_being_asked_twice(mocker, tmp_path):
     two a defect.
     """
     running = mocker.MagicMock()
-    running.shares = []
-    mocker.patch.object(main.workloads, "Workloads", return_value=running)
-    mocker.patch.object(main, "BackgroundScheduler")
+    running.ctx.shares = []
+    mocker.patch.object(main.registry, "build", return_value=running)
+    mocker.patch.object(registry, "BackgroundScheduler")
     runtime = main.Runtime(
         _FakeConfigManager(),
         opened_store=store.open_store(tmp_path / "twice.duckdb"))

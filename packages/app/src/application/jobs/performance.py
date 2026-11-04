@@ -1,4 +1,4 @@
-"""The performance workload: the ledger replayed, the series rewritten (#849)."""
+"""The performance job: the ledger replayed, the series rewritten (#849, #1253)."""
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -6,13 +6,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from application import accounts as accounts_module
 from application import carrying
+from application import job_history
 from application import perf_series
 from application import performance
 from application import quotes
 from application import runtime_state
+from application import runtime_view
+from application import scheduling
 from application import store_reads
 from application.events.aggregator import EventAggregator
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
+from application.jobs import base
 
 app_logger = logging.getLogger("suivi_bourse")
 
@@ -130,14 +134,46 @@ class _NotContinuable(Exception):
     """Today's point cannot be derived from the last pass: rebuild the series whole."""
 
 
-class PerfJob:
+class PerformanceJob(base.Job):
     """One perf recompute, whole: its guard, its lock, its replay and its write."""
 
-    def __init__(self, facade):
-        self.facade = facade
+    id = job_history.PERFORMANCE
+    label_key = 'settings.jobs.performance'
+    triggers = (base.Interval(scheduler_id=scheduling.PERF_JOB_ID,
+                              name='Performance recompute',
+                              seconds=scheduling.PERF_TICK,
+                              first_run_now=True),
+                # Whole, so a correction made in 2019 shows at once (#812, #1257).
+                base.OnWrite(kwargs={'full': True}))
+    in_health = True
+
+    def __init__(self, ctx, jobs):
+        super().__init__(ctx, jobs)
         self._last: Optional[_PassState] = None
         self._closes_cache: Optional[_ClosesCache] = None
         self.last_mode: Optional[str] = None
+
+    def run(self, full: bool = False) -> None:
+        """Bring the perf cache up to date, every cycle — **guarded**.
+
+        ``full`` rebuilds the whole series whatever the store says moved: the
+        replay that follows a write asks for it (#812, #1257).
+        """
+        if full:
+            self.forget()
+        self.recompute()
+
+    def guard(self):
+        # Under the pass's own lock, so a concurrent pass cannot publish its
+        # verdict between this one and the read.
+        return self.ctx.perf_lock
+
+    def outcome(self, started: datetime) -> base.Outcome:
+        return runtime_view.perf_outcome(self.ctx.recorder.perf())
+
+    @classmethod
+    def health(cls, view):
+        return runtime_view.health_performance(view.perf)
 
     def forget(self) -> None:
         """Drop what the last pass read, so the next one rebuilds whole (#812, #1257)."""
@@ -152,24 +188,24 @@ class PerfJob:
         otherwise.
         """
         horizons: Dict[str, Optional[date]] = {}
-        with self.facade._perf_lock:
+        with self.ctx.perf_lock:
             self.last_mode = None
             try:
-                horizons = self.facade.update_account_metrics()
+                horizons = self.update_account_metrics()
                 verdict, error = runtime_state.PERF_RAN, None
             except Exception as e:
                 self._last = None
                 self._closes_cache = None
                 app_logger.error(f"Failed to update account metrics: {e}")
                 verdict, error = runtime_state.PERF_FAILED, str(e)
-            self.facade.recorder.record_perf(runtime_state.PerfRecord(
+            self.ctx.recorder.record_perf(runtime_state.PerfRecord(
                 at=datetime.now(timezone.utc), verdict=verdict, error=error,
                 horizons=horizons, mode=self.last_mode))
 
     def update_account_metrics(self) -> Dict[str, Optional[date]]:
         """Rebuild the perf cache — **one pass at a time** (issue #812)."""
-        with self.facade._perf_lock:
-            return self.facade._rebuild_series()
+        with self.ctx.perf_lock:
+            return self.rebuild_series()
 
     def rebuild_series(self) -> Dict[str, Optional[date]]:
         """Bring the daily ``account_metrics`` + ``portfolio_totals`` cache up to date.
@@ -183,20 +219,20 @@ class PerfJob:
         - **full** — anything else, and always after a write
           (``main.replay_after_write``), a failure, or a restart.
         """
-        if not self.facade.base_currency:
+        if not self.ctx.base_currency:
             self._last = None
             self._closes_cache = None
             app_logger.debug(
                 "No base currency answered yet: no performance series is written")
             return {}
 
-        store_handle = self.facade.config_manager.store
+        store_handle = self.ctx.config_manager.store
         # **The rows the ingestion just published**, not a second read of them
         # (#861): a write reaches here through `main.replay_after_write`, which
         # has already read, validated and published the whole ledger. `reload`
         # and not `current` because `ingest` keeps the previous snapshot when
         # its own read fails, and this pass ends in a prune.
-        events = self.facade.config_manager.reload().events or []
+        events = self.ctx.config_manager.reload().events or []
         declared = accounts_module.read_accounts(store_handle)
 
         now = datetime.now(timezone.utc)
@@ -211,7 +247,7 @@ class PerfJob:
                 last.today == today,
                 last.written == store_reads.PortfolioReader(
                     store_handle).series_fingerprint(),
-                last.base_currency == self.facade.base_currency,
+                last.base_currency == self.ctx.base_currency,
                 last.events == events, last.declared == declared,
                 last.fingerprint[0] == fingerprint[0],
                 last.fingerprint[2:] == fingerprint[2:])):
@@ -230,11 +266,11 @@ class PerfJob:
               fingerprint: tuple) -> Dict[str, Optional[date]]:
         """The whole series, recomputed and rewritten, then pruned to its spans."""
         self._last = None
-        store_handle = self.facade.config_manager.store
+        store_handle = self.ctx.config_manager.store
         state = _PassState(
             today=today, fingerprint=fingerprint, written=(),
             events=list(events),
-            declared=list(declared), base_currency=self.facade.base_currency,
+            declared=list(declared), base_currency=self.ctx.base_currency,
             horizons={}, latest={})
         acc_points: List[AccountMetricPoint] = []
         total_points: List[PortfolioTotalPoint] = []
@@ -335,7 +371,7 @@ class PerfJob:
         acc_spans = spans(acc_points, lambda pt: pt.account)
         total_span = spans(total_points, lambda _: None).get(None)
 
-        with self.facade.config_manager.writing() as opened:
+        with self.ctx.config_manager.writing() as opened:
             with opened.transaction():
                 perf_series.write_account_metrics(opened, acc_points)
                 perf_series.write_portfolio_totals(opened, total_points)
@@ -401,7 +437,7 @@ class PerfJob:
                   first_quoted, price_pairs, today: date, per_account, total,
                   total_start: date) -> None:
         """Keep what continuing this series by today's point alone needs."""
-        store_handle = self.facade.config_manager.store
+        store_handle = self.ctx.config_manager.store
         state.timeline = timeline
         state.symbols = symbols
         state.carried = set(carried)
@@ -446,7 +482,7 @@ class PerfJob:
         solved again over every flow. Nothing before today is written, and
         nothing is pruned: no span moves within a day the history did not.
         """
-        store_handle = self.facade.config_manager.store
+        store_handle = self.ctx.config_manager.store
         reader = store_reads.PortfolioReader(store_handle)
         start, stop = _midnight(today), _midnight(today + timedelta(days=1))
         for symbol, (converted, quoted) in reader.symbols_seen(start, stop).items():
@@ -495,7 +531,7 @@ class PerfJob:
             total_points.append(PortfolioTotalPoint(
                 day=today, **value_kwargs(total.daily[0], True, total)))
 
-        with self.facade.config_manager.writing() as opened:
+        with self.ctx.config_manager.writing() as opened:
             with opened.transaction():
                 perf_series.write_account_metrics(opened, acc_points)
                 perf_series.write_portfolio_totals(opened, total_points)

@@ -21,6 +21,8 @@ from api.common import (
     current_runtime,
     _rebuilding,
     _json_object,
+    ingestion,
+    reconstruction_state,
 )
 
 bp = Blueprint('system', __name__)
@@ -46,8 +48,7 @@ def get_runtime():
         perf=recorder.perf(),
         now=datetime.now(timezone.utc),
         scheduler_running=runtime.scheduler is not None,
-        reconstruction=(runtime.workloads.reconstruction_state()
-                        if runtime.workloads is not None else None),
+        reconstruction=reconstruction_state(runtime),
         build=runtime.build,
         documentation_url=runtime.documentation_url,
         store_path=(str(runtime.store_path)
@@ -57,7 +58,7 @@ def get_runtime():
 
 def _next_runs(scheduler) -> dict:
     """``symbol -> next_run_time`` for the live per-symbol scrape jobs."""
-    from application.scrape import scrape_next_runs
+    from application.jobs.scrape import scrape_next_runs
 
     return scrape_next_runs(scheduler)
 
@@ -104,7 +105,7 @@ def list_installation_facts():
     return jsonify([
         fact.to_dict() for fact in installation_facts.listing(
             _store(),
-            installation_facts.observe(runtime.workloads))
+            installation_facts.observe(ingestion(runtime)))
     ])
 
 
@@ -112,7 +113,7 @@ def list_installation_facts():
 def acknowledge_installation_fact(key: str):
     """Acknowledge one installation fact — the table's only gesture, and the reason it exists."""
     runtime = current_runtime()
-    context = installation_facts.observe(runtime.workloads)
+    context = installation_facts.observe(ingestion(runtime))
     try:
         with runtime.config_manager.writing() as opened:
             fact = installation_facts.acknowledge(opened, key, context)

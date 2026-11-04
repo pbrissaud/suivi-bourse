@@ -416,7 +416,7 @@ def _perimeter(store, snapshot) -> List[str]:
 def _written_days(store) -> Dict[str, List[Tuple[date, Optional[float]]]]:
     """``{account: [(day, holdings_value), …]}`` — every account, in one query.
 
-    One read and not one per account: `perf_job` writes a row a day per account
+    One read and not one per account: the performance job writes a row a day per account
     over the whole ledger, and this is the real curve of the comparison, its
     seed and its day axis all at once.
 

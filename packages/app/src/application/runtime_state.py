@@ -49,7 +49,7 @@ PERF_PASS_UNCHANGED = 'unchanged'
 
 @dataclass(frozen=True)
 class ScrapeRecord:
-    """One symbol's last scrape pass (``_scrape_symbol``)."""
+    """One symbol's last scrape pass (``ScrapeJob``)."""
 
     symbol: str
     at: datetime
@@ -99,7 +99,7 @@ class IngestRecord:
 
 @dataclass(frozen=True)
 class PerfRecord:
-    """The last perf-recompute pass (``recompute_perf``), global."""
+    """The last perf-recompute pass (``PerformanceJob``), global."""
 
     at: datetime
     verdict: str

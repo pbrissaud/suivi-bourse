@@ -10,7 +10,7 @@ for), while the set it is handed can only say *yes* or *no* about a whole
 symbol.
 
 The seam is the suite's usual one: a real DuckDB store in ``tmp_path``, a real
-:class:`workloads.Workloads`, and every assertion on the rows the pass wrote.
+the jobs registry (:mod:`application.jobs.registry`), and every assertion on the rows the pass wrote.
 There is no double here at all — what is asserted is the content of
 ``account_metrics`` and ``portfolio_totals``, which is where the defect is
 readable.
@@ -24,9 +24,9 @@ import pytest
 
 from conftest import PerfConfigManager
 
-from application import perf_job
+from application.jobs import performance as perf_job
 from application import quotes
-from application import workloads
+from application.jobs import registry
 from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
 
@@ -56,14 +56,14 @@ def _fixed_today(mocker):
         @classmethod
         def now(cls, tz=None):
             return datetime(_TODAY.year, _TODAY.month, _TODAY.day, 12, 0, tzinfo=tz)
-    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+    mocker.patch("application.jobs.performance.datetime", _FixedDatetime)
 
 
 def _metrics(opened, mocker):
     """A real metrics object over a real store, its reporting currency answered."""
     _fixed_today(mocker)
-    metrics = workloads.Workloads(PerfConfigManager(opened))
-    metrics.base_currency = 'EUR'
+    metrics = registry.build(PerfConfigManager(opened))
+    metrics.ctx.base_currency = 'EUR'
     return metrics
 
 
@@ -173,7 +173,7 @@ def test_a_line_converted_late_blocks_the_years_before_the_conversion(
     # one chunk per cycle, or a reporting currency answered late.
     _price(store, 'AAPL', _CONVERTED, 120.0, 120.0)
 
-    horizons = _metrics(store, mocker).update_account_metrics()
+    horizons = _metrics(store, mocker)['performance'].update_account_metrics()
 
     written = _totals(store)
     assert written, 'the days after the conversion are computable'
@@ -207,7 +207,7 @@ def test_a_terminal_line_quoted_late_carries_the_days_before_its_first_quote(
     quotes.record_window_tried(store, 'AAPL', _ACQUIRED)
     _price(store, 'AAPL', _LISTED, 120.0, 120.0)
 
-    horizons = _metrics(store, mocker).update_account_metrics()
+    horizons = _metrics(store, mocker)['performance'].update_account_metrics()
 
     written = dict((day, holdings) for day, holdings, _ in _totals(store))
     assert horizons == {'default': None}, 'nothing blocks this account'
@@ -242,7 +242,7 @@ def test_a_terminal_line_quoted_before_it_is_converted_still_blocks_the_gap(
     _price(store, 'AAPL', _LISTED, 120.0, None)
     _price(store, 'AAPL', _RATED, 130.0, 130.0)
 
-    horizons = _metrics(store, mocker).update_account_metrics()
+    horizons = _metrics(store, mocker)['performance'].update_account_metrics()
 
     written = _totals(store)
     assert horizons == {'default': _RATED}
@@ -263,7 +263,7 @@ def test_a_line_nobody_ever_quoted_in_a_nameable_unit_is_still_carried(
     # rate can turn into money, and the backfill is terminal all the same.
     _price(store, 'AAPL', _ACQUIRED, 100.0, None)
 
-    horizons = _metrics(store, mocker).update_account_metrics()
+    horizons = _metrics(store, mocker)['performance'].update_account_metrics()
 
     written = _totals(store)
     assert min(day for day, _, _ in written) == _OPENED

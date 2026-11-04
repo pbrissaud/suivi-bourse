@@ -34,9 +34,8 @@ from application import scheduling
 from application import settings
 from application import settings_registry
 from application.events.schemas import Event, EventType
-from application.main import register_interval_jobs
-from application.workloads import Workloads
-from application.scrape import _scrape_job_id, SCRAPE_JOB_PREFIX
+from application.jobs import registry
+from application.jobs.scrape import _scrape_job_id, SCRAPE_JOB_PREFIX
 
 
 UTC = timezone.utc
@@ -55,7 +54,7 @@ def _no_jitter(mocker):
     The target followed the arming into :mod:`scrape` (issue #847), and only the
     target: what is neutralised, and how much of it, has not moved.
     """
-    mocker.patch("application.scrape.random.uniform", return_value=0.0)
+    mocker.patch("application.jobs.scrape.random.uniform", return_value=0.0)
 
 
 def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
@@ -130,9 +129,9 @@ def _metrics(shares, store, mocker):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store)
-    m = Workloads(cfg)
-    m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
-    m.regular_interval = 120
+    m = registry.build(cfg)
+    m.ctx.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
+    m.ctx.regular_interval = 120
     return m
 
 
@@ -148,7 +147,7 @@ def _job(job_id):
 
 
 # ---------------------------------------------------------------------------
-# _scrape_symbol — write gate vs reschedule gate
+# the scrape pass — write gate vs reschedule gate
 # ---------------------------------------------------------------------------
 
 def test_scrape_symbol_regular_writes_and_rearms_at_base_interval(
@@ -156,11 +155,11 @@ def test_scrape_symbol_regular_writes_and_rearms_at_base_interval(
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
     # Re-armed as a one-shot 'date' job, base_interval from now.
-    call = m.scheduler.add_job.call_args
+    call = m.ctx.scheduler.add_job.call_args
     assert call.args[1] == "date"            # trigger (positional)
     assert call.kwargs["id"] == _scrape_job_id("AAPL")
     assert call.kwargs["run_date"] == NOW + timedelta(seconds=120)
@@ -173,10 +172,10 @@ def test_scrape_symbol_coerces_unknown_state_to_regular_and_writes(
     # Default fake_ticker has no marketState -> coerced REGULAR (fail-open).
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
 def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
@@ -188,23 +187,23 @@ def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
         market.yf, "Ticker",
         lambda s: fake_ticker(market_state="CLOSED", history_metadata=meta))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == []
     # Slept to the exact next open (no lead-in margin).
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(hours=2)
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(hours=2)
 
 
 def test_scrape_symbol_price_failure_keeps_polling_without_writing(
         store, mocker):
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
+    mocker.patch.object(m.ctx.market, "latest_quote", return_value=(None, None))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == []
     # Reschedule gate still REGULAR (fail-open) -> keeps polling at base_interval.
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
 def test_scrape_symbol_writes_one_point_however_many_accounts_hold_it(
@@ -220,11 +219,11 @@ def test_scrape_symbol_writes_one_point_however_many_accounts_hold_it(
     m = _metrics(shares, store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
     # One fetch, one point, one re-arm.
-    m.scheduler.add_job.assert_called_once()
+    m.ctx.scheduler.add_job.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -235,46 +234,46 @@ def test_scrape_symbol_failure_increments_and_backs_off(
         store, mocker):
     """A run of non-closed no-price cycles grows the re-arm delay past base."""
     m = _metrics([_share("AAPL")], store, mocker)
-    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
+    mocker.patch.object(m.ctx.market, "latest_quote", return_value=(None, None))
 
     # First three failures stay at base_interval (grace window).
     for _ in range(3):
-        m._scrape_symbol("AAPL", now=NOW)
-    assert m._failure_counts["AAPL"] == 3
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+        m['scrape']("AAPL", now=NOW)
+    assert m['scrape'].failure_counts["AAPL"] == 3
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
     # Fourth failure backs off to base×2.
-    m._scrape_symbol("AAPL", now=NOW)
-    assert m._failure_counts["AAPL"] == 4
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=240)
+    m['scrape']("AAPL", now=NOW)
+    assert m['scrape'].failure_counts["AAPL"] == 4
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=240)
 
 
 def test_scrape_symbol_success_resets_failure_count(
         store, fake_ticker, mocker, monkeypatch):
     """A successful write clears an accumulated backoff back to base_interval."""
     m = _metrics([_share("AAPL")], store, mocker)
-    m._failure_counts["AAPL"] = 5
+    m['scrape'].failure_counts["AAPL"] = 5
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
-    assert m._failure_counts["AAPL"] == 0
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    assert m['scrape'].failure_counts["AAPL"] == 0
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
 def test_reconcile_removes_departed_symbol_failure_state(
         store, mocker):
     """Failure state must not survive symbol removal (per-job lifetime)."""
     m = _metrics([_share("AAPL")], store, mocker)
-    m._failure_counts = {"AAPL": 1, "MSFT": 9}
-    m.scheduler.get_jobs.return_value = [
+    m['scrape'].failure_counts = {"AAPL": 1, "MSFT": 9}
+    m.ctx.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
 
-    m._reconcile_jobs()  # MSFT departed (only AAPL held)
+    m['scrape'].reconcile_jobs()  # MSFT departed (only AAPL held)
 
-    m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
-    assert "MSFT" not in m._failure_counts
-    assert m._failure_counts == {"AAPL": 1}
+    m.ctx.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
+    assert "MSFT" not in m['scrape'].failure_counts
+    assert m['scrape'].failure_counts == {"AAPL": 1}
 
 
 def test_scrape_symbol_departed_does_not_persist_failure_count(
@@ -282,14 +281,14 @@ def test_scrape_symbol_departed_does_not_persist_failure_count(
     """A scrape whose symbol has already departed must not (re)write its
     backoff counter — the held-recheck guards the persist (issue #617)."""
     m = _metrics([_share("AAPL")], store, mocker)
-    m._failure_counts["AAPL"] = 3
-    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
-    m.config_manager._shares = []  # departed between the last reconcile and this cycle
+    m['scrape'].failure_counts["AAPL"] = 3
+    mocker.patch.object(m.ctx.market, "latest_quote", return_value=(None, None))
+    m.ctx.config_manager._shares = []  # departed between the last reconcile and this cycle
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
-    assert "AAPL" not in m._failure_counts     # not resurrected
-    m.scheduler.add_job.assert_not_called()    # and not re-armed
+    assert "AAPL" not in m['scrape'].failure_counts     # not resurrected
+    m.ctx.scheduler.add_job.assert_not_called()    # and not re-armed
 
 
 def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
@@ -302,7 +301,7 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
     resumes it sees the symbol no longer held and skips the write. Without the
     lock + held-recheck this would leave a stale 'AAPL' entry (resurrection)."""
     m = _metrics([_share("AAPL")], store, mocker)
-    m._failure_counts["AAPL"] = 2  # a backoff already building
+    m['scrape'].failure_counts["AAPL"] = 2  # a backoff already building
 
     fetch_started = threading.Event()
     release_fetch = threading.Event()
@@ -312,24 +311,24 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
         assert release_fetch.wait(timeout=5)
         return (None, None)  # failure -> decide would increment + persist
 
-    mocker.patch.object(m.market, "latest_quote", side_effect=blocking_fetch)
+    mocker.patch.object(m.ctx.market, "latest_quote", side_effect=blocking_fetch)
 
-    scrape_thread = threading.Thread(target=m._scrape_symbol, args=("AAPL",))
+    scrape_thread = threading.Thread(target=m['scrape'], args=("AAPL",))
     scrape_thread.start()
     assert fetch_started.wait(timeout=5)  # scrape is in-flight, pre-persist
 
     # Symbol departs: ingest updates shares, reconcile removes the job + pops.
-    m.config_manager._shares = []
-    m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
-    m._reconcile_jobs()
-    assert "AAPL" not in m._failure_counts  # cleanup popped it
+    m.ctx.config_manager._shares = []
+    m.ctx.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
+    m['scrape'].reconcile_jobs()
+    assert "AAPL" not in m['scrape'].failure_counts  # cleanup popped it
 
     # Let the in-flight scrape finish; it must NOT restore the counter.
     release_fetch.set()
     scrape_thread.join(timeout=5)
     assert not scrape_thread.is_alive()
-    assert "AAPL" not in m._failure_counts
-    m.scheduler.add_job.assert_not_called()  # also does not re-arm
+    assert "AAPL" not in m['scrape'].failure_counts
+    m.ctx.scheduler.add_job.assert_not_called()  # also does not re-arm
 
 
 # ---------------------------------------------------------------------------
@@ -342,14 +341,14 @@ def test_scrape_symbol_rearms_although_the_held_read_raised(store, mocker):
     Nothing else puts the symbol back: the job is a one-shot ``date`` trigger.
     """
     m = _metrics([_share("AAPL")], store, mocker)
-    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
-    mocker.patch.object(m, "_held_symbols",
+    mocker.patch.object(m.ctx.market, "latest_quote", return_value=(None, None))
+    mocker.patch.object(m['scrape'], "held_symbols",
                         side_effect=RuntimeError("the configuration is unreadable"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
-    assert m.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    assert m.ctx.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
 def test_scrape_symbol_failed_rearm_does_not_escape_into_apscheduler(
@@ -357,13 +356,13 @@ def test_scrape_symbol_failed_rearm_does_not_escape_into_apscheduler(
     """A jobstore refusal is logged, not raised: the pass itself still stands."""
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
-    mocker.patch.object(m, "_arm_symbol",
+    mocker.patch.object(m['scrape'], "arm_symbol",
                         side_effect=RuntimeError("the jobstore refused the job"))
 
-    m._scrape_symbol("AAPL", now=NOW)   # must not raise
+    m['scrape']("AAPL", now=NOW)   # must not raise
 
     assert _prices(store) == [185.0]
-    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
+    assert m.ctx.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
 
 
 # ---------------------------------------------------------------------------
@@ -390,12 +389,12 @@ def test_the_scrape_carries_no_perf_state_at_all(
     How much a pass rewrites (issue #1257) is no exception: the pass tells a
     quiet tick from a quote today by **reading the store** — a fingerprint of
     ``price_point`` and of its own series — and keeps its memory of what it read
-    on :class:`perf_job.PerfJob`, which no writer touches.
+    on :class:`perf_job.PerformanceJob`, which no writer touches.
     """
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
     assert [name for name in vars(m) if name.startswith("_perf")] == []
@@ -414,10 +413,10 @@ def test_scrape_symbol_failed_store_write_is_named_as_such(
                         side_effect=RuntimeError("the store refused the write"))
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == []
-    record = m.recorder.scrape_of("AAPL")
+    record = m.ctx.recorder.scrape_of("AAPL")
     assert record.verdict == runtime_state.SCRAPE_WRITE_FAILED
     assert record.wrote is False
 
@@ -431,10 +430,10 @@ def test_every_perf_cycle_recomputes(store, mocker):
     behind by more than one.
     """
     m = _metrics([_share()], store, mocker)
-    spy = mocker.patch.object(m, "update_account_metrics")
+    spy = mocker.patch.object(m['performance'], "update_account_metrics")
 
-    m.recompute_perf()
-    m.recompute_perf()
+    m['performance']()
+    m['performance']()
 
     assert spy.call_count == 2
 
@@ -449,12 +448,12 @@ def test_the_backfill_signals_nothing_to_the_perf_job(
     anything: by reading the store on its next tick.
     """
     m = _metrics([_share()], store, mocker)
-    m.config_manager._events = [
+    m.ctx.config_manager._events = [
         Event(date(2020, 1, 15), EventType.BUY, "AAPL", "Apple",
               quantity=10, unit_price=150.0)]
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(rows=2))
 
-    m.backfill()
+    m['backfill']()
 
     assert _prices(store)
     assert not hasattr(m, "_mark_perf_dirty")
@@ -468,23 +467,23 @@ def test_recompute_perf_error_does_not_propagate(store, mocker):
     recomputes the whole series whatever happened here.
     """
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m, "update_account_metrics", side_effect=RuntimeError("boom"))
+    mocker.patch.object(m['performance'], "update_account_metrics", side_effect=RuntimeError("boom"))
 
-    m.recompute_perf()  # must not raise
+    m['performance']()  # must not raise
 
-    assert m.recorder.perf().verdict == runtime_state.PERF_FAILED
+    assert m.ctx.recorder.perf().verdict == runtime_state.PERF_FAILED
 
 
 # ---------------------------------------------------------------------------
-# register_interval_jobs — the perf job is separate from the scrape (#618/#701)
+# registry.register — the perf job is separate from the scrape (#618/#701)
 # ---------------------------------------------------------------------------
 
-def test_register_interval_jobs_registers_perf_on_its_own_tick(
+def test_the_registry_registers_perf_on_its_own_tick(
         store, mocker):
     m = _metrics([_share()], store, mocker)
     scheduler = mocker.MagicMock(spec=BackgroundScheduler)
 
-    register_interval_jobs(scheduler, m, backfill_interval=60)
+    registry.register(scheduler, m, {"backfill_interval": 60})
 
     by_id = {c.kwargs["id"]: c for c in scheduler.add_job.call_args_list}
     # No ``ingest`` interval job: it left with SB_INGESTION_INTERVAL (issue
@@ -495,7 +494,7 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
     # The perf tick is a constant, not a dial (#701/#707): the two tables are a
     # cache and a full recompute costs 0,4 % of the tick, so there is nothing
     # left for an operator to trade off.
-    assert perf.args[0].__func__ is Workloads.recompute_perf
+    assert perf.args[0] is m["performance"]
     assert perf.args[1] == "interval"
     assert perf.kwargs["seconds"] == scheduling.PERF_TICK
     # And it fires **at the boot**, not one tick later (#707): an interval
@@ -504,11 +503,11 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
     assert perf.kwargs["next_run_time"] <= datetime.now(UTC)
     assert "next_run_time" not in by_id["backfill"].kwargs
     day_turn = by_id["day_turn"]
-    assert day_turn.args[0].__func__ is Workloads.ingest
+    assert day_turn.args[0] is m["ingestion"]
     assert day_turn.args[1] == "cron"
     assert (day_turn.kwargs["hour"], day_turn.kwargs["minute"],
             day_turn.kwargs["timezone"]) == (0, 0, UTC)
-    # The backfill's cadence *is* a dial, and it arrives as an argument.
+    # The backfill's cadence *is* a dial, and it arrives with the dials.
     assert by_id["backfill"].kwargs["seconds"] == 60
     # Separate from the per-symbol scrape jobs (no scrape: prefixed id here).
     assert not any(jid.startswith(SCRAPE_JOB_PREFIX) for jid in by_id)
@@ -531,10 +530,10 @@ def test_a_closed_probe_fetches_successfully_and_writes_nothing(
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == []
-    record = m.recorder.scrape_of("AAPL")
+    record = m.ctx.recorder.scrape_of("AAPL")
     assert record.price_present is True
     assert record.market_state == "CLOSED"
     assert record.verdict == runtime_state.SCRAPE_CLOSED
@@ -557,12 +556,12 @@ def test_a_silent_fetch_failure_writes_nothing_and_says_so(
     state.
     """
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
+    mocker.patch.object(m.ctx.market, "latest_quote", return_value=(None, None))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == []
-    record = m.recorder.scrape_of("AAPL")
+    record = m.ctx.recorder.scrape_of("AAPL")
     assert record.price_present is False
     assert record.market_state is None
     assert record.verdict == runtime_state.SCRAPE_NO_PRICE
@@ -599,25 +598,25 @@ def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
     the interface renders (#628, #806, #808).
     """
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     # Live close is 185.0 (fake_ticker default); the stored value never advances.
     _freeze_the_writer(store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     # Cycle 1: baseline — no signal yet.
-    m._scrape_symbol("AAPL", now=NOW)
-    assert m.recorder.scrape_of("AAPL").stale is False
+    m['scrape']("AAPL", now=NOW)
+    assert m.ctx.recorder.scrape_of("AAPL").stale is False
 
     # Cycle 2, one horizon later (gap not wider than the horizon): still frozen,
     # quote moved → stale.
     with caplog.at_level("WARNING"):
-        m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
+        m['scrape']("AAPL", now=NOW + timedelta(seconds=900))
 
     assert any("Price-freshness sonde" in r.message and "AAPL" in r.message
                for r in caplog.records)
     # Diagnostic only: it never gates the write or the re-arm.
-    assert m.recorder.scrape_of("AAPL").stale is True
-    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
+    assert m.ctx.recorder.scrape_of("AAPL").stale is True
+    assert m.ctx.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
 
 
 def test_the_sonde_watches_the_native_price_and_never_a_converted_one(
@@ -631,17 +630,17 @@ def test_the_sonde_watches_the_native_price_and_never_a_converted_one(
     it at the other one by accident.
     """
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     _freeze_the_writer(store, mocker)
     # A conversion lands on the same row without the native price moving.
     store.execute("UPDATE symbol_quote SET last_price_converted = 210.0, "
                   "last_fx_rate = 1.1 WHERE symbol = 'AAPL'")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
+    m['scrape']("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW + timedelta(seconds=900))
 
-    assert m.recorder.scrape_of("AAPL").stale is True
+    assert m.ctx.recorder.scrape_of("AAPL").stale is True
 
 
 def test_sonde_no_false_positive_first_tick_after_close(
@@ -650,16 +649,16 @@ def test_sonde_no_false_positive_first_tick_after_close(
     (overnight) re-baselines, so the first morning tick raises no signal even
     though the stored point is legitimately hours old and the quote gapped."""
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     _freeze_the_writer(store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     # Yesterday's last REGULAR cycle baselines the series.
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
     # This morning, 16h later (a break in consecutive polling): re-baseline, not stale.
-    m._scrape_symbol("AAPL", now=NOW + timedelta(hours=16))
+    m['scrape']("AAPL", now=NOW + timedelta(hours=16))
 
-    assert m.recorder.scrape_of("AAPL").stale is False
+    assert m.ctx.recorder.scrape_of("AAPL").stale is False
 
 
 def test_sonde_no_false_positive_when_writer_advances_value(
@@ -672,14 +671,14 @@ def test_sonde_no_false_positive_when_writer_advances_value(
     healthy.
     """
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     quotes.record_quote(store, "AAPL", NOW - timedelta(hours=1), 180.0)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
+    m['scrape']("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW + timedelta(seconds=900))
 
-    assert m.recorder.scrape_of("AAPL").stale is False
+    assert m.ctx.recorder.scrape_of("AAPL").stale is False
     # And the writer really did advance, which is what makes the case healthy.
     assert _prices(store) == [180.0, 185.0, 185.0]
 
@@ -694,15 +693,15 @@ def test_sonde_does_not_run_on_closed_market(
     field of its own — which is the one case the convention keeps a spy for.
     """
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     read = mocker.spy(quotes, "last_price")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     read.assert_not_called()
     assert _prices(store) == []
-    assert m.recorder.scrape_of("AAPL").stale is False
+    assert m.ctx.recorder.scrape_of("AAPL").stale is False
 
 
 def test_sonde_disabled_when_horizon_non_positive(
@@ -710,14 +709,14 @@ def test_sonde_disabled_when_horizon_non_positive(
     """A non-positive horizon turns the sonde off: no read, no signal, write
     intact. Same argument as above for the spy — an off sonde leaves no trace."""
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 0
+    m.ctx.staleness_horizon = 0
     read = mocker.spy(quotes, "last_price")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     read.assert_not_called()
-    assert m.recorder.scrape_of("AAPL").stale is False
+    assert m.ctx.recorder.scrape_of("AAPL").stale is False
     assert _prices(store) == [185.0]
 
 
@@ -726,15 +725,15 @@ def test_sonde_read_error_never_disturbs_scrape(
     """A read error in the sonde is swallowed: the write, re-arm, and backoff
     reset all proceed exactly as if the sonde were absent (diagnostic only)."""
     m = _metrics([_share()], store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     mocker.patch.object(quotes, "last_price",
                         side_effect=RuntimeError("db down"))
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
 def test_the_sonde_asks_once_per_symbol_however_many_holdings(
@@ -750,15 +749,15 @@ def test_the_sonde_asks_once_per_symbol_however_many_holdings(
     """
     shares = [_share(account="pea"), _share(account="cto")]
     m = _metrics(shares, store, mocker)
-    m.staleness_horizon = 900
+    m.ctx.staleness_horizon = 900
     read = mocker.spy(quotes, "last_price")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert read.call_count == 1
     # Nothing stored yet → not stale, and the one point is the one write.
-    assert m.recorder.scrape_of("AAPL").stale is False
+    assert m.ctx.recorder.scrape_of("AAPL").stale is False
     assert _prices(store) == [185.0]
 
 
@@ -770,39 +769,39 @@ def test_reconcile_adds_new_symbols_firing_immediately(
         store, mocker):
     m = _metrics([_share("AAPL"), _share("MSFT", "Microsoft")],
                  store, mocker)
-    m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
+    m.ctx.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
 
     before = datetime.now(UTC)
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    added = {c.kwargs["id"] for c in m.scheduler.add_job.call_args_list}
+    added = {c.kwargs["id"] for c in m.ctx.scheduler.add_job.call_args_list}
     assert added == {_scrape_job_id("MSFT")}          # AAPL untouched
-    m.scheduler.remove_job.assert_not_called()
+    m.ctx.scheduler.remove_job.assert_not_called()
     # New symbol fires immediately (~now).
-    run_date = m.scheduler.add_job.call_args.kwargs["run_date"]
+    run_date = m.ctx.scheduler.add_job.call_args.kwargs["run_date"]
     assert before <= run_date <= datetime.now(UTC) + timedelta(seconds=1)
 
 
 def test_reconcile_removes_departed_symbols(
         store, mocker):
     m = _metrics([_share("AAPL")], store, mocker)
-    m.scheduler.get_jobs.return_value = [
+    m.ctx.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
 
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    m.scheduler.add_job.assert_not_called()            # AAPL untouched
-    m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
+    m.ctx.scheduler.add_job.assert_not_called()            # AAPL untouched
+    m.ctx.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
 
 
 def test_a_sold_position_is_not_a_held_symbol(store, mocker):
     """The filter is on ``quantity``, which is what makes the docstring true (#699)."""
     m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], store, mocker)
 
-    assert m._held_symbols() == {"AAPL"}
+    assert m['scrape'].held_symbols() == {"AAPL"}
     # And the row itself has not gone anywhere: the replay still writes its
     # realized gain and the page still shows it.
-    assert {s["symbol"] for s in m.shares} == {"AAPL", "ALO"}
+    assert {s["symbol"] for s in m.ctx.shares} == {"AAPL", "ALO"}
 
 
 def test_an_account_that_sold_out_stops_being_written(
@@ -820,7 +819,7 @@ def test_an_account_that_sold_out_stops_being_written(
                  store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
 
@@ -836,7 +835,7 @@ def test_the_synchronous_driver_skips_a_sold_position_too(
         return fake_ticker()
     monkeypatch.setattr(market.yf, "Ticker", ticker)
 
-    m.scrape_held()
+    m['scrape'].scrape_held()
 
     assert fetched == ["AAPL"]
     assert _prices(store) == [185.0]
@@ -859,60 +858,60 @@ def test_selling_out_removes_the_scrape_job_and_forgets_its_last_pass(
     """
     m = _metrics([_share("AAPL"), _share("ALO", "Alstom")], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
-    m._scrape_symbol("ALO", now=NOW)
-    assert m.recorder.scrape_of("ALO") is not None
-    m.scheduler.reset_mock()
+    m['scrape']("ALO", now=NOW)
+    assert m.ctx.recorder.scrape_of("ALO") is not None
+    m.ctx.scheduler.reset_mock()
 
     # Sold out between two reconciles.
-    m.shares[1]["quantity"] = 0
-    m.scheduler.get_jobs.return_value = [
+    m.ctx.shares[1]["quantity"] = 0
+    m.ctx.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("ALO"))]
 
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("ALO"))
-    assert m.recorder.scrape_of("ALO") is None
+    m.ctx.scheduler.remove_job.assert_called_once_with(_scrape_job_id("ALO"))
+    assert m.ctx.recorder.scrape_of("ALO") is None
 
 
 def test_buying_back_re_arms_the_job_with_nothing_to_unset(store, mocker):
     """No flag was written, so the revival is the ordinary revive path (#672 D5)."""
     m = _metrics([_share("ALO", quantity=0)], store, mocker)
-    m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("ALO"))]
-    m._reconcile_jobs()
-    m.scheduler.reset_mock()
+    m.ctx.scheduler.get_jobs.return_value = [_job(_scrape_job_id("ALO"))]
+    m['scrape'].reconcile_jobs()
+    m.ctx.scheduler.reset_mock()
 
-    m.shares[0]["quantity"] = 4
-    m.scheduler.get_jobs.return_value = []
-    m._reconcile_jobs()
+    m.ctx.shares[0]["quantity"] = 4
+    m.ctx.scheduler.get_jobs.return_value = []
+    m['scrape'].reconcile_jobs()
 
-    m.scheduler.add_job.assert_called_once()
-    assert m.scheduler.add_job.call_args.kwargs["args"] == ["ALO"]
+    m.ctx.scheduler.add_job.assert_called_once()
+    assert m.ctx.scheduler.add_job.call_args.kwargs["args"] == ["ALO"]
 
 
 def test_reconcile_revives_missing_job(store, mocker):
     # Held symbol whose job vanished (e.g. a misfire death) is re-armed. Foreign
     # (non-scrape) jobs in the store are ignored by the prefix filter.
     m = _metrics([_share("AAPL")], store, mocker)
-    m.scheduler.get_jobs.return_value = [_job("ingest"), _job("backfill")]
+    m.ctx.scheduler.get_jobs.return_value = [_job("ingest"), _job("backfill")]
 
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    m.scheduler.add_job.assert_called_once()
-    assert m.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
-    m.scheduler.remove_job.assert_not_called()
+    m.ctx.scheduler.add_job.assert_called_once()
+    assert m.ctx.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
+    m.ctx.scheduler.remove_job.assert_not_called()
 
 
 def test_reconcile_leaves_unchanged_jobs_untouched(
         store, mocker):
     m = _metrics([_share("AAPL"), _share("MSFT", "Microsoft")],
                  store, mocker)
-    m.scheduler.get_jobs.return_value = [
+    m.ctx.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
 
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    m.scheduler.add_job.assert_not_called()
-    m.scheduler.remove_job.assert_not_called()
+    m.ctx.scheduler.add_job.assert_not_called()
+    m.ctx.scheduler.remove_job.assert_not_called()
 
 
 def test_reconcile_one_remove_failure_does_not_abort_the_pass(
@@ -921,16 +920,16 @@ def test_reconcile_one_remove_failure_does_not_abort_the_pass(
     just fired) must not skip the remaining removals or arms."""
     m = _metrics([_share("AAPL"), _share("TSLA", "Tesla")],
                  store, mocker)
-    m.scheduler.get_jobs.return_value = [
+    m.ctx.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("MSFT")), _job(_scrape_job_id("GOOG"))]
     # First removal raises (job already gone); the second must still run.
-    m.scheduler.remove_job.side_effect = [JobLookupError("gone"), None]
+    m.ctx.scheduler.remove_job.side_effect = [JobLookupError("gone"), None]
 
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    armed = {c.kwargs["id"] for c in m.scheduler.add_job.call_args_list}
+    armed = {c.kwargs["id"] for c in m.ctx.scheduler.add_job.call_args_list}
     assert armed == {_scrape_job_id("AAPL"), _scrape_job_id("TSLA")}
-    removed = {c.args[0] for c in m.scheduler.remove_job.call_args_list}
+    removed = {c.args[0] for c in m.ctx.scheduler.remove_job.call_args_list}
     assert removed == {_scrape_job_id("MSFT"), _scrape_job_id("GOOG")}
 
 
@@ -941,32 +940,32 @@ def test_scrape_symbol_does_not_rearm_when_symbol_no_longer_held(
     m = _metrics([_share("AAPL")], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
     # Symbol departs between fetch and re-arm.
-    m.config_manager._shares = []
+    m.ctx.config_manager._shares = []
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
-    m.scheduler.add_job.assert_not_called()
+    m.ctx.scheduler.add_job.assert_not_called()
 
 
 def test_ingest_reconciles_against_scheduler(
         store, mocker):
     m = _metrics([_share("AAPL")], store, mocker)
-    m.scheduler.get_jobs.return_value = []  # nothing scheduled yet
+    m.ctx.scheduler.get_jobs.return_value = []  # nothing scheduled yet
 
-    m.ingest()
+    m['ingestion']()
 
     # First ingest arms the held symbol (bootstrap via immediate fire).
-    m.scheduler.add_job.assert_called_once()
-    assert m.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
+    m.ctx.scheduler.add_job.assert_called_once()
+    assert m.ctx.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
 
 
 def test_reconcile_noop_without_scheduler():
     cfg = _FakeConfigManager([_share("AAPL")])
-    m = Workloads(cfg)
+    m = registry.build(cfg)
     # scheduler is None -> reconcile is a safe no-op (unit tests that never wire
     # a scheduler still exercise ingest()).
-    assert m.scheduler is None
-    m._reconcile_jobs()  # must not raise
+    assert m.ctx.scheduler is None
+    m['scrape'].reconcile_jobs()  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -981,29 +980,29 @@ def test_a_fresh_metrics_carries_the_registry_s_values(store, mocker):
     """
     m = _metrics([_share()], store, mocker)
 
-    assert m.regular_interval == 120
-    assert m.backfill_delay == 10
-    assert m.backfill_chunk_days == 365
-    assert m.staleness_horizon == 900
+    assert m.ctx.regular_interval == 120
+    assert m.ctx.backfill_delay == 10
+    assert m.ctx.backfill_chunk_days == 365
+    assert m.ctx.staleness_horizon == 900
 
 
 def test_apply_dials_sets_only_the_keys_it_is_given(store, mocker):
     """A PUT naming one dial must not reset the other four."""
     m = _metrics([_share()], store, mocker)
 
-    m.apply_dials({"regular_interval": 600})
+    m.ctx.apply_dials({"regular_interval": 600})
 
-    assert m.regular_interval == 600
-    assert m.backfill_delay == 10
+    assert m.ctx.regular_interval == 600
+    assert m.ctx.backfill_delay == 10
 
 
 def test_apply_dials_ignores_the_unanswered_currency(store, mocker):
     """``base_currency`` is the one dial that can be ``None``, and it has no attribute."""
     m = _metrics([_share()], store, mocker)
 
-    m.apply_dials(settings_registry.defaults())  # carries base_currency=None
+    m.ctx.apply_dials(settings_registry.defaults())  # carries base_currency=None
 
-    assert m.regular_interval == 120
+    assert m.ctx.regular_interval == 120
 
 
 def test_a_retired_environment_variable_is_named_and_not_obeyed(monkeypatch):
@@ -1099,12 +1098,12 @@ def test_arm_symbol_offsets_run_date_by_jitter(
     """Jitter is applied as a uniform(0, JITTER_SECONDS) offset on run_date."""
     m = _metrics([_share()], store, mocker)
     # Re-patch over the autouse zero-jitter with a fixed non-zero offset.
-    uniform = mocker.patch("application.scrape.random.uniform", return_value=7.5)
+    uniform = mocker.patch("application.jobs.scrape.random.uniform", return_value=7.5)
 
-    m._arm_symbol("AAPL", 120, NOW)
+    m['scrape'].arm_symbol("AAPL", 120, NOW)
 
     uniform.assert_called_once_with(0, scheduling.JITTER_SECONDS)
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == \
         NOW + timedelta(seconds=127.5)
 
 
@@ -1117,8 +1116,8 @@ def test_arm_symbol_jitter_stays_within_window(
     lo = NOW + timedelta(seconds=120)
     hi = lo + timedelta(seconds=scheduling.JITTER_SECONDS)
     for _ in range(50):
-        m._arm_symbol("AAPL", 120, NOW)
-        run_date = m.scheduler.add_job.call_args.kwargs["run_date"]
+        m['scrape'].arm_symbol("AAPL", 120, NOW)
+        run_date = m.ctx.scheduler.add_job.call_args.kwargs["run_date"]
         assert lo <= run_date <= hi
 
 
@@ -1127,9 +1126,9 @@ def test_arm_symbol_registers_misfire_none_and_single_instance(
     """Per-symbol jobs carry misfire_grace_time=None and max_instances=1."""
     m = _metrics([_share()], store, mocker)
 
-    m._arm_symbol("AAPL", 120, NOW)
+    m['scrape'].arm_symbol("AAPL", 120, NOW)
 
-    kwargs = m.scheduler.add_job.call_args.kwargs
+    kwargs = m.ctx.scheduler.add_job.call_args.kwargs
     assert kwargs["misfire_grace_time"] is None
     assert kwargs["max_instances"] == 1
     assert kwargs["replace_existing"] is True
@@ -1141,9 +1140,9 @@ def test_scrape_symbol_rearm_carries_misfire_and_max_instances(
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
-    kwargs = m.scheduler.add_job.call_args.kwargs
+    kwargs = m.ctx.scheduler.add_job.call_args.kwargs
     assert kwargs["misfire_grace_time"] is None
     assert kwargs["max_instances"] == 1
 
@@ -1158,13 +1157,13 @@ def _scrape_job(symbol):
 
 def _with_jobs(m, *symbols):
     """Point the spy scheduler at a fixed set of idle scrape jobs."""
-    m.scheduler.get_jobs.return_value = [_scrape_job(s) for s in symbols]
+    m.ctx.scheduler.get_jobs.return_value = [_scrape_job(s) for s in symbols]
     return m
 
 
 def _scraped(m, symbol, closed):
     """Record one completed pass for ``symbol`` — what the split classifies on."""
-    m.recorder.record_scrape(runtime_state.ScrapeRecord(
+    m.ctx.recorder.record_scrape(runtime_state.ScrapeRecord(
         symbol=symbol, at=NOW, market_state="CLOSED" if closed else "REGULAR",
         closed=closed, price_present=not closed,
         verdict=runtime_state.SCRAPE_CLOSED if closed
@@ -1180,13 +1179,13 @@ def test_rearm_touches_only_the_symbols_whose_market_is_open(
     _with_jobs(m, "AAPL", "MC.PA")
     _scraped(m, "AAPL", closed=False)
     _scraped(m, "MC.PA", closed=True)
-    m.regular_interval = 600
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    m.ctx.regular_interval = 600
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
-    reached, sleeping = m.rearm_regular_scrapes()
+    reached, sleeping = m['scrape'].rearm_regular_scrapes()
 
     assert (reached, sleeping) == (1, 1)
-    armed = [c.kwargs["id"] for c in m.scheduler.add_job.call_args_list]
+    armed = [c.kwargs["id"] for c in m.ctx.scheduler.add_job.call_args_list]
     assert armed == [_scrape_job_id("AAPL")]
 
 
@@ -1194,13 +1193,13 @@ def test_rearm_starts_the_new_cadence_from_now(store, mocker):
     m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
-    m.regular_interval = 600
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    m.ctx.regular_interval = 600
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
-    m.rearm_regular_scrapes()
+    m['scrape'].rearm_regular_scrapes()
 
     # Jitter is zeroed by the autouse fixture, so this is the bare cadence.
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == \
         NOW + timedelta(seconds=600)
 
 
@@ -1217,13 +1216,13 @@ def test_rearm_rescales_a_failing_symbol_s_backoff_rather_than_flattening_it(
     m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
-    m._failure_counts["AAPL"] = 6
-    m.regular_interval = 600
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    m['scrape'].failure_counts["AAPL"] = 6
+    m.ctx.regular_interval = 600
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
-    m.rearm_regular_scrapes()
+    m['scrape'].rearm_regular_scrapes()
 
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == \
         NOW + timedelta(seconds=600 * 8)
 
 
@@ -1238,12 +1237,12 @@ def test_rearm_leaves_a_symbol_being_scraped_to_re_arm_itself(
     m = _metrics([_share()], store, mocker)
     _with_jobs(m)  # the job is gone from the store: it is running
     _scraped(m, "AAPL", closed=False)
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
-    reached, sleeping = m.rearm_regular_scrapes()
+    reached, sleeping = m['scrape'].rearm_regular_scrapes()
 
     assert (reached, sleeping) == (1, 0)
-    m.scheduler.add_job.assert_not_called()
+    m.ctx.scheduler.add_job.assert_not_called()
 
 
 def test_rearm_leaves_a_symbol_that_has_never_been_scraped_alone(
@@ -1251,32 +1250,32 @@ def test_rearm_leaves_a_symbol_that_has_never_been_scraped_alone(
     """At boot every held symbol is armed to fire immediately — do not delay it."""
     m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")  # armed, never fired: no last-pass record
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
-    reached, sleeping = m.rearm_regular_scrapes()
+    reached, sleeping = m['scrape'].rearm_regular_scrapes()
 
     assert (reached, sleeping) == (1, 0)
-    m.scheduler.add_job.assert_not_called()
+    m.ctx.scheduler.add_job.assert_not_called()
 
 
 def test_rearm_without_a_scheduler_is_a_quiet_zero(store, mocker):
     m = _metrics([_share()], store, mocker)
-    m.scheduler = None
+    m.ctx.scheduler = None
 
-    assert m.rearm_regular_scrapes() == (0, 0)
+    assert m['scrape'].rearm_regular_scrapes() == (0, 0)
 
 
 def test_a_jobstore_error_never_turns_a_saved_dial_into_a_failure(
         store, mocker):
     """The value is in the store either way; the next boot reads it from there."""
     m = _metrics([_share()], store, mocker)
-    m.scheduler.get_jobs.side_effect = RuntimeError("boom")
+    m.ctx.scheduler.get_jobs.side_effect = RuntimeError("boom")
 
-    assert m.rearm_regular_scrapes() == (0, 0)
+    assert m['scrape'].rearm_regular_scrapes() == (0, 0)
 
 
 def _runtime(m, scheduler=None):
-    return SimpleNamespace(workloads=m, scheduler=scheduler or m.scheduler)
+    return SimpleNamespace(jobs=m, scheduler=scheduler or m.ctx.scheduler)
 
 
 def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(
@@ -1286,12 +1285,12 @@ def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(
     _with_jobs(m, "AAPL", "MC.PA")
     _scraped(m, "AAPL", closed=False)
     _scraped(m, "MC.PA", closed=True)
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
     report = main.apply_settings(
         _runtime(m), (settings.Change("regular_interval", 120, 600),))
 
-    assert m.regular_interval == 600
+    assert m.ctx.regular_interval == 600
     assert report["symbols_rescheduled"] == 1
     assert report["symbols_at_market_open"] == 1
 
@@ -1307,14 +1306,14 @@ def test_apply_settings_leaves_an_untouched_job_s_timer_alone(
     m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
-    mocker.patch("application.scrape.datetime", **{"now.return_value": NOW})
+    mocker.patch("application.jobs.scrape.datetime", **{"now.return_value": NOW})
 
     report = main.apply_settings(
         _runtime(m), (settings.Change("backfill_delay", 10, 20),))
 
-    assert m.backfill_delay == 20
-    m.scheduler.add_job.assert_not_called()
-    m.scheduler.reschedule_job.assert_not_called()
+    assert m.ctx.backfill_delay == 20
+    m.ctx.scheduler.add_job.assert_not_called()
+    m.ctx.scheduler.reschedule_job.assert_not_called()
     assert report["symbols_rescheduled"] == 0
 
 
@@ -1324,7 +1323,7 @@ def test_apply_settings_re_cadences_the_backfill_job(store, mocker):
     report = main.apply_settings(
         _runtime(m), (settings.Change("backfill_interval", 60, 300),))
 
-    m.scheduler.reschedule_job.assert_called_once_with(
+    m.ctx.scheduler.reschedule_job.assert_called_once_with(
         "backfill", trigger="interval", seconds=300)
     assert report["jobs_rescheduled"] == ["backfill"]
 
@@ -1332,7 +1331,7 @@ def test_apply_settings_re_cadences_the_backfill_job(store, mocker):
 def test_apply_settings_survives_a_missing_backfill_job(store, mocker):
     """A runtime with no such job answers "reached nothing", never a 503."""
     m = _metrics([_share()], store, mocker)
-    m.scheduler.reschedule_job.side_effect = JobLookupError("backfill")
+    m.ctx.scheduler.reschedule_job.side_effect = JobLookupError("backfill")
 
     report = main.apply_settings(
         _runtime(m), (settings.Change("backfill_interval", 60, 300),))
@@ -1370,9 +1369,9 @@ def test_read_exchange_of_reads_the_store_and_touches_no_edge(store, mocker):
     m = _metrics([_share(symbol="AAPL"), _share(symbol="MSFT")], store, mocker)
     quotes.record_attributes(store, "AAPL", NOW, {"exchange": "NMS"})
     quotes.record_attributes(store, "MSFT", NOW, {"exchange": "PAR"})
-    fetch = mocker.patch.object(m.market, "latest_quote")
+    fetch = mocker.patch.object(m.ctx.market, "latest_quote")
 
-    assert m.read_exchange_of() == {"AAPL": "NMS", "MSFT": "PAR"}
+    assert m['scrape'].read_exchange_of() == {"AAPL": "NMS", "MSFT": "PAR"}
     fetch.assert_not_called()
 
 
@@ -1386,9 +1385,9 @@ def test_read_exchange_of_ignores_the_cache_a_fresh_boot_has_not_filled(
     process that learnt it, and it is the one this reads.
     """
     m = _metrics([_share(symbol="AAPL")], store, mocker)
-    m._share_info_cache["AAPL"] = {"exchange": "NMS"}
+    m.ctx.info_cache["AAPL"] = {"exchange": "NMS"}
 
-    assert m.read_exchange_of() == {"AAPL": None}
+    assert m['scrape'].read_exchange_of() == {"AAPL": None}
 
 
 def test_read_exchange_of_asks_one_query_whatever_the_portfolio(store, mocker):
@@ -1404,7 +1403,7 @@ def test_read_exchange_of_asks_one_query_whatever_the_portfolio(store, mocker):
                                  {"exchange": "PAR"})
     reads = mocker.spy(store, "query")
 
-    exchange_of = m.read_exchange_of()
+    exchange_of = m['scrape'].read_exchange_of()
 
     assert exchange_of == {f"SYM{i}": "PAR" for i in range(12)}
     assert reads.call_count == 1
@@ -1423,14 +1422,14 @@ def test_a_symbol_the_scrape_never_reached_is_its_own_solo_market(
     shares = [_share(symbol=f"NEW{i}") for i in range(7)]
     m = _metrics(shares, store, mocker)
 
-    exchange_of = m.read_exchange_of()
+    exchange_of = m['scrape'].read_exchange_of()
 
     assert exchange_of == {f"NEW{i}": None for i in range(7)}
-    assert scheduling.compute_pool_size(m.shares, exchange_of) == \
+    assert scheduling.compute_pool_size(m.ctx.shares, exchange_of) == \
         scheduling.RESERVED + 1
     # ... and one giant cohort is what it is *not*.
     assert scheduling.compute_pool_size(
-        m.shares, {s["symbol"]: "UNKNOWN" for s in shares}) == \
+        m.ctx.shares, {s["symbol"]: "UNKNOWN" for s in shares}) == \
         scheduling.RESERVED + 2
 
 
@@ -1451,13 +1450,13 @@ def test_the_pool_is_the_one_the_capture_produced_at_an_equivalent_store(
         quotes.record_attributes(store, share["symbol"], NOW,
                                  {"exchange": "NMS"})
 
-    exchange_of = m.read_exchange_of()
+    exchange_of = m['scrape'].read_exchange_of()
 
     assert exchange_of == {
         **{s["symbol"]: "PAR" for s in paris},
         **{s["symbol"]: "NMS" for s in nasdaq}}
     # ceil(8 x FETCH_EST / JITTER) = 2 — the eight-strong cohort, not the three.
-    assert scheduling.compute_pool_size(m.shares, exchange_of) == \
+    assert scheduling.compute_pool_size(m.ctx.shares, exchange_of) == \
         scheduling.RESERVED + 2
 
 
@@ -1471,11 +1470,11 @@ def test_an_empty_portfolio_reads_nothing_and_takes_the_reserved_pool(
     m = _metrics([], store, mocker)
     reads = mocker.spy(store, "query")
 
-    exchange_of = m.read_exchange_of()
+    exchange_of = m['scrape'].read_exchange_of()
 
     assert exchange_of == {}
     assert reads.call_count == 0
-    assert scheduling.compute_pool_size(m.shares, exchange_of) == \
+    assert scheduling.compute_pool_size(m.ctx.shares, exchange_of) == \
         scheduling.RESERVED
 
 
@@ -1491,17 +1490,17 @@ def test_scrape_symbol_rearms_after_an_unexpected_failure(
     ``ingest()`` reconcile could revive it.
     """
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m.market, "latest_quote",
+    mocker.patch.object(m.ctx.market, "latest_quote",
                         side_effect=KeyError("marketState"))
 
-    m._scrape_symbol("AAPL", now=NOW)
+    m['scrape']("AAPL", now=NOW)
 
     assert _prices(store) == []
     # Re-armed at the ordinary cadence: `decide` never got to narrow it.
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
     # And the pass says what happened rather than leaving the reader in front of
     # a record that still describes the cycle before it.
-    record = m.recorder.scrape_of("AAPL")
+    record = m.ctx.recorder.scrape_of("AAPL")
     assert record.verdict == runtime_state.SCRAPE_NO_PRICE
     assert record.error == "KeyError: 'marketState'"
 
@@ -1523,7 +1522,7 @@ def _closed_pass(m, store, fake_ticker, monkeypatch, now, print_at, close=74.12)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(
         close=close, market_state="POST",
         history_metadata=_auction_meta(print_at, end)))
-    m._scrape_symbol("AAPL", now=now)
+    m['scrape']("AAPL", now=now)
 
 
 def _stored(store):
@@ -1543,7 +1542,7 @@ def test_scrape_symbol_closed_writes_the_auction_print_at_its_own_instant(
     assert [(ts.replace(tzinfo=UTC), p) for ts, p in _stored(store)] == [
         (before, 73.44), (printed, 74.12)]
     assert quotes.read_quote(store, "AAPL")["last_price_ts"] == printed
-    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
+    assert m.ctx.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
 
 
 def test_scrape_symbol_closed_second_pass_writes_nothing_and_reports_closed(
@@ -1556,7 +1555,7 @@ def test_scrape_symbol_closed_second_pass_writes_nothing_and_reports_closed(
                  printed)
 
     assert len(_stored(store)) == 1
-    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_CLOSED
+    assert m.ctx.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_CLOSED
 
 
 def test_scrape_symbol_closed_polls_again_while_the_auction_is_pending(
@@ -1568,5 +1567,5 @@ def test_scrape_symbol_closed_polls_again_while_the_auction_is_pending(
     _closed_pass(m, store, fake_ticker, monkeypatch, now, early, close=73.44)
 
     assert [p for _, p in _stored(store)] == [73.44]
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == now + timedelta(
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == now + timedelta(
         seconds=scheduling.CLOSE_SETTLE_POLL)

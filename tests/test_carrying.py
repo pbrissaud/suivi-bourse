@@ -24,7 +24,7 @@ from application import carrying
 from application import performance
 from application import portfolio_view
 from application import quotes
-from application import workloads
+from application.jobs import registry
 from application.carrying import carrying_price
 from application.events.aggregator import EventAggregator
 from application.events.schemas import Account, Event, EventType
@@ -40,9 +40,9 @@ PEA = Account("PEA", "Mon PEA")
 
 
 def _metrics(store):
-    m = workloads.Workloads(PerfConfigManager(store))
-    m.backfill_delay = 0
-    m.backfill_chunk_days = 365
+    m = registry.build(PerfConfigManager(store))
+    m.ctx.backfill_delay = 0
+    m.ctx.backfill_chunk_days = 365
     return m
 
 
@@ -511,9 +511,9 @@ def test_the_perf_recompute_carries_a_terminal_symbol(
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     quotes.record_window_tried(store, 'AAPL', date(2024, 1, 15))
     metrics = _metrics(store)
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
 
-    metrics.update_account_metrics()
+    metrics['performance'].update_account_metrics()
 
     (holdings, total) = store.query(
         'SELECT holdings_value, total_value FROM account_metrics '
@@ -553,9 +553,9 @@ def test_a_symbol_waiting_for_a_rate_is_not_written_at_zero(
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
     _record_unit(store)
     metrics = _metrics(store)
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
 
-    metrics.update_account_metrics()
+    metrics['performance'].update_account_metrics()
 
     assert store.query(
         "SELECT count(*) FROM account_metrics WHERE account = 'PEA'") == [(0,)]
@@ -581,9 +581,9 @@ def test_the_perf_recompute_carries_a_symbol_quoted_in_no_nameable_unit(
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
     metrics = _metrics(store)
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
 
-    metrics.update_account_metrics()
+    metrics['performance'].update_account_metrics()
 
     (holdings, total) = store.query(
         'SELECT holdings_value, total_value FROM account_metrics '
@@ -637,9 +637,9 @@ def test_a_symbol_waiting_for_a_rate_holds_the_horizon_back(
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
     _record_unit(store)
     metrics = _metrics(store)
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
 
-    horizons = metrics.update_account_metrics()
+    horizons = metrics['performance'].update_account_metrics()
 
     # The horizon has not arrived: the day after the last day it could not
     # write, which is the shape #708 gives an account with nothing publishable.
@@ -666,9 +666,9 @@ def test_the_perf_recompute_writes_nothing_at_all_under_the_horizon(
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     metrics = _metrics(store)
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
 
-    horizons = metrics.update_account_metrics()
+    horizons = metrics['performance'].update_account_metrics()
 
     assert store.query(
         "SELECT count(*) FROM account_metrics WHERE account = 'PEA'") == [(0,)]
@@ -704,10 +704,10 @@ def test_carrying_is_never_invoked_under_the_horizon(
         'timestamp': datetime(2024, 1, 18, 16, 0, tzinfo=UTC),
         'price': 110.0, 'converted': 110.0, 'rate': 1.0}])
     metrics = _metrics(store)
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
     spy = mocker.spy(performance, 'carrying_price')
 
-    horizons = metrics.update_account_metrics()
+    horizons = metrics['performance'].update_account_metrics()
 
     assert horizons['PEA'] == date(2024, 1, 18)
     assert spy.call_count > 0            # ALO *is* carried, above the horizon
@@ -734,7 +734,7 @@ def test_the_backward_pass_never_asks_for_a_window_before_the_acquisition(
     target = datetime(2024, 1, 15, tzinfo=UTC)
     ceiling = datetime(2024, 12, 31, tzinfo=UTC)
 
-    metrics._backfill_backward('AAPL', target, ceiling)
+    metrics['backfill'].backward('AAPL', target, ceiling)
 
     (called_symbol, start, end), _ = fetch.call_args
     assert called_symbol == 'AAPL'
@@ -747,11 +747,11 @@ def test_a_long_chunk_is_clamped_to_the_acquisition(store, mocker):
     """The clamp is what keeps a 365-day chunk from reaching back past the target."""
     _declare_symbol(store, 'AAPL')
     metrics = _metrics(store)
-    metrics.backfill_chunk_days = 3650
+    metrics.ctx.backfill_chunk_days = 3650
     fetch = fake_history(mocker, metrics, return_value=[])
     target = datetime(2024, 1, 15, tzinfo=UTC)
 
-    metrics._backfill_backward('AAPL', target,
+    metrics['backfill'].backward('AAPL', target,
                                datetime(2024, 6, 1, tzinfo=UTC))
 
     (_, start, _end), _ = fetch.call_args

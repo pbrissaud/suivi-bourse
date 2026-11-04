@@ -316,9 +316,10 @@ def _answered(rows, asked, amounts_in: Optional[str], chosen, runtime, base: str
     """``rows`` with the amounts of the ``asked`` positions in ``base`` if asked to."""
     if amounts_in != 'quote' or not chosen:
         return rows
-    running = getattr(runtime, 'workloads', None)
+    running = getattr(runtime, 'jobs', None)
     converted = import_currency.convert(
-        [rows[i] for i in asked], chosen, getattr(running, 'rates', None), base)
+        [rows[i] for i in asked], chosen,
+        running.ctx.rates if running is not None else None, base)
     answered = list(rows)
     for i, event in zip(asked, converted):
         answered[i] = event

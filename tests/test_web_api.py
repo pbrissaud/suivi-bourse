@@ -41,7 +41,9 @@ from application import settings_registry
 from application import store
 from application.store_reads import PortfolioReader
 import api as api_module
-from application import workloads
+from application.jobs import base
+from application.jobs import context
+from application.jobs import registry
 from application.events.loader import EventLoader
 from application.events import export as events_export
 from application.events.schemas import AccountMetricPoint, PortfolioTotalPoint
@@ -53,25 +55,24 @@ from conftest import write_legacy_taxation_model
 
 
 class FakeMetrics:
-    """Stands in for ``Workloads``: the replay, and the dials.
+    """Stands in for the jobs registry: the replay, and the dials (#1253).
 
     ``ingest`` is real rather than a spy (issue #697). It is the seam
     *"the replay follows the write"* lands on, so a route that forgets an
     import has to be observable through the snapshot it republished — which
     only a real reload gives. The scrape-job reconciliation the production
-    method also does needs a scheduler and is not what these tests are about.
+    job also does needs a scheduler and is not what these tests are about.
 
-    The InfluxDB half is gone with #700: a route reads the **store**, which
-    these tests give it for real, so there is nothing left here to stand in for.
+    The dials live on a **real** :class:`context.JobContext`, the one
+    ``apply_settings`` writes them to. Every job id answers this same object,
+    which carries the few methods the routes reach a job for.
     """
-
-    apply_dials = workloads.Workloads.apply_dials
 
     def __init__(self, config_manager=None):
         self._config_manager = config_manager
+        self.ctx = context.JobContext(config_manager)
         self.ingest_calls = 0
-        self.apply_dials(settings_registry.defaults())
-        # What ``rearm_regular_scrapes`` answers here. Re-arming needs a live
+        # What re-arming the scrape answers here. Re-arming needs a live
         # jobstore, which these tests have no business standing up; the split
         # itself is pinned in ``test_scheduling.py`` and its wiring in
         # ``test_scheduling_wiring.py``.
@@ -79,10 +80,10 @@ class FakeMetrics:
         self.rearm_calls = 0
         # The reconstruction's progress, from the scheduler's own memory
         # (issue #709). A **pair**, always: the real method has no ``None`` to
-        # answer, since a process holding a metrics object is a process that can
-        # see the memory. ``(0, 0)`` is what these tests' empty ledgers hold —
-        # nothing to reconstruct. *Unobservable* is a runtime with no metrics at
-        # all (``runtime.workloads is None``), which is what ``with_scheduler``
+        # answer, since a process holding the jobs is a process that can see
+        # the memory. ``(0, 0)`` is what these tests' empty ledgers hold —
+        # nothing to reconstruct. *Unobservable* is a runtime with no jobs at
+        # all (``runtime.jobs is None``), which is what ``with_scheduler``
         # below builds.
         self.reconstruction = (0, 0)
         # What answering the reporting currency triggers (issue #704): the
@@ -93,16 +94,36 @@ class FakeMetrics:
         self.repair_calls = 0
         self.repair_result = False
 
+    def __getitem__(self, job_id):
+        return self
+
     def reconstruction_state(self):
         return self.reconstruction
 
-    def rearm_regular_scrapes(self):
+    def rearm(self, dial, value):
+        if dial != 'regular_interval':
+            return base.Rearmed()
         self.rearm_calls += 1
-        return self.rearm_result
+        return base.Rearmed(symbols=self.rearm_result[0],
+                            at_market_open=self.rearm_result[1])
 
     def repair_conversions_now(self):
         self.repair_calls += 1
         return self.repair_result
+
+    def after_write(self):
+        """The ingestion, then the perf series (issues #697, #812).
+
+        The perf half is a no-op, deliberately. The real one is the whole
+        of :meth:`performance.PerformanceJob.update_account_metrics` — a
+        reporting currency, a price series, a horizon per account — so a copy of
+        it in this class would be a simulation of the product rather than the
+        product. What #812 claims is claimed where it can be read off the
+        store: ``tests/test_replay_perf.py`` runs these same routes against the
+        **real** jobs and asserts on ``account_metrics`` and
+        ``portfolio_totals``, with no tick anywhere.
+        """
+        self.ingest(force=True)
 
     def ingest(self, force=False):
         self.ingest_calls += 1
@@ -110,23 +131,6 @@ class FakeMetrics:
             return
         self._config_manager.replay() if force \
             else self._config_manager.reload()
-
-    def recompute_perf(self, full=False):
-        """The other half of the replay that follows the write (issue #812).
-
-        A no-op, deliberately. The real one is the whole
-        of :meth:`workloads.Workloads.update_account_metrics` — a reporting
-        currency, a price series, a horizon per account — so a copy of it in
-        this class would be a simulation of the product rather than the product.
-        What #812 claims is claimed where it can be read off the store:
-        ``tests/test_replay_perf.py`` runs these same routes against a **real**
-        metrics object and asserts on ``account_metrics`` and
-        ``portfolio_totals``, with no tick anywhere.
-
-        Not even a counter, therefore: a call count nothing asserts is evidence
-        nobody reads, and it would leave this file green on the day the recompute
-        stopped following the write.
-        """
 
 
 def build_client(tmp_path, accounts=None, events=None, seed=None,
@@ -140,7 +144,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
                            break_store=False, with_scheduler=True):
     """As above, plus the open store so a test can read the rows back.
 
-    ``with_scheduler=False`` leaves ``runtime.workloads`` **unset**, which is
+    ``with_scheduler=False`` leaves ``runtime.jobs`` **unset**, which is
     the shape of a worker whose ``start_runtime`` has not run: it is the one
     state in which the reconstruction is genuinely *unobservable* (issue #709),
     and it is a missing object rather than a metrics object answering ``None``.
@@ -198,7 +202,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
         opened.execute('DROP TABLE portfolio_totals')
         opened.execute('DROP TABLE price_point')
     if with_scheduler:
-        runtime.workloads = FakeMetrics(manager)
+        runtime.jobs = FakeMetrics(manager)
     return create_app(runtime).test_client(), opened
 
 
@@ -1303,9 +1307,9 @@ def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
     # The perf cache written by the production path, not by `seed_totals`: what
     # is being checked is that the two *modules* agree, so a hand-written
     # `gain_absolu` would check nothing at all.
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
     assert opened.query('SELECT count(*) FROM portfolio_totals')[0][0] > 0
 
     positions = client.get('/api/positions').get_json()['positions']
@@ -1359,9 +1363,9 @@ def test_the_identity_holds_when_the_dividend_itself_carries_a_fee(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=events, seed=seed)
 
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
 
     positions = client.get('/api/positions').get_json()['positions']
     totals = client.get('/api/portfolio-totals').get_json()['totals']
@@ -1396,7 +1400,7 @@ def _fixed_today(mocker, y, mo, d):
         @classmethod
         def now(cls, tz=None):
             return datetime(y, mo, d, 12, 0, tzinfo=tz)
-    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+    mocker.patch("application.jobs.performance.datetime", _FixedDatetime)
 
 
 def test_the_year_to_date_gain_is_a_figure_when_the_real_job_crosses_a_new_year(
@@ -1443,9 +1447,9 @@ def test_the_year_to_date_gain_is_a_figure_when_the_real_job_crosses_a_new_year(
                           seed=seed)
 
     _fixed_today(mocker, 2026, 3, 2)
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
 
     totals = client.get('/api/portfolio-totals').get_json()['totals']
 
@@ -1494,9 +1498,9 @@ def test_the_year_to_date_gain_crosses_the_year_without_a_cash_ledger_too(
                           seed=seed)
 
     _fixed_today(mocker, 2026, 3, 2)
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
 
     totals = client.get('/api/portfolio-totals').get_json()['totals']
 
@@ -1923,9 +1927,9 @@ def test_an_absent_field_reaches_the_wire_as_null_and_never_as_a_zero(
                           seed=seed)
 
     _fixed_today(mocker, 2024, 6, 3)
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
 
     row = client.get('/api/accounts').get_json()['accounts'][0]
 
@@ -1976,9 +1980,9 @@ def test_accounts_carry_the_fourth_term_of_the_gain_per_account(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=accounts, events=events, seed=seed)
 
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
     assert opened.query('SELECT count(*) FROM account_metrics')[0][0] > 0
 
     positions = client.get('/api/positions').get_json()['positions']
@@ -3681,9 +3685,9 @@ def test_the_report_states_the_figures_the_app_states(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts="id,type,label\npea,PEA,PEA\ncto,CTO,CTO\n",
         events=events, seed=seed)
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
 
     served = {row['id']: row
               for row in client.get('/api/accounts').get_json()['accounts']}
@@ -3936,13 +3940,13 @@ def test_the_runtime_says_whether_the_reconstruction_still_has_windows(tmp_path)
     runtime = api_module.current_runtime()
 
     # Nothing to reconstruct is an observation, and it is not a rebuild.
-    runtime.workloads.reconstruction = (0, 0)
+    runtime.jobs.reconstruction = (0, 0)
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
-    runtime.workloads.reconstruction = (1, 2)
+    runtime.jobs.reconstruction = (1, 2)
     assert client.get('/api/runtime').get_json()['rebuilding'] is True
 
-    runtime.workloads.reconstruction = (2, 2)
+    runtime.jobs.reconstruction = (2, 2)
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
 
@@ -3957,7 +3961,7 @@ def test_the_runtime_carries_the_reconstruction_count_behind_rebuilding(tmp_path
     runtime = api_module.current_runtime()
 
     for count, rebuilding in (((0, 0), False), ((1, 2), True), ((2, 2), False)):
-        runtime.workloads.reconstruction = count
+        runtime.jobs.reconstruction = count
         payload = client.get('/api/runtime').get_json()
         assert payload['reconstruction'] == {
             'complete': count[0], 'total': count[1]}
@@ -4845,7 +4849,7 @@ def test_saving_a_dial_takes_effect_with_no_restart(tmp_path):
 
     client.put('/api/settings', json={'backfill_chunk_days': 90})
 
-    assert api_module.current_runtime().workloads.backfill_chunk_days == 90
+    assert api_module.current_runtime().jobs.ctx.backfill_chunk_days == 90
 
 
 def test_the_answer_quantifies_what_the_change_reached(tmp_path):
@@ -4861,7 +4865,7 @@ def test_the_answer_quantifies_what_the_change_reached(tmp_path):
 
     assert body['effect']['symbols_rescheduled'] == 3
     assert body['effect']['symbols_at_market_open'] == 8
-    assert api_module.current_runtime().workloads.rearm_calls == 1
+    assert api_module.current_runtime().jobs.rearm_calls == 1
 
 
 def test_a_value_out_of_bounds_is_a_422_and_writes_nothing(tmp_path):
@@ -4917,7 +4921,7 @@ def test_reposting_the_same_value_re_arms_nothing(tmp_path):
 
     assert body['changed'] == []
     assert body['effect']['symbols_rescheduled'] == 0
-    assert api_module.current_runtime().workloads.rearm_calls == 0
+    assert api_module.current_runtime().jobs.rearm_calls == 0
 
 
 # --------------------------------------------------------------------- #
@@ -5122,11 +5126,11 @@ def test_a_reconstruction_withholds_the_accounts_it_cannot_speak_for(tmp_path):
 
     runtime = api_module.current_runtime()
 
-    runtime.workloads.reconstruction = (1, 2)
+    runtime.jobs.reconstruction = (1, 2)
     rebuilding = client.get('/api/advisories').get_json()
     asleep_too = client.get('/api/advisories?asleep=include').get_json()
 
-    runtime.workloads.reconstruction = (2, 2)
+    runtime.jobs.reconstruction = (2, 2)
     concluded = client.get('/api/advisories').get_json()
 
     assert rebuilding == []
@@ -5143,7 +5147,7 @@ def test_what_the_reconstruction_withholds_cannot_be_acknowledged(tmp_path):
     """
     client, opened = build_client_and_store(tmp_path)
     _cash_heavy_account(opened)
-    api_module.current_runtime().workloads.reconstruction = (1, 2)
+    api_module.current_runtime().jobs.reconstruction = (1, 2)
 
     response = client.post('/api/advisories/cash_share:cto/acknowledgement')
 
@@ -6093,9 +6097,9 @@ def test_a_pea_counted_from_its_first_payment_still_gets_a_figure(tmp_path):
         "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
     )
     client, opened = _valued_pea(tmp_path, events=events)
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
     _carry(client, name='PEA', kind='aged_flat_realised',
            parameters={'rate_before': 0.128, 'rate_after': 0.0,
                        'threshold_years': 5, 'age_basis': 'first_payment',
@@ -6233,9 +6237,9 @@ def test_an_aged_wrapper_short_of_its_threshold_names_the_day_it_changes(tmp_pat
         "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
     )
     client, _ = _valued_pea(tmp_path, events=events)
-    metrics = workloads.Workloads(api_module.current_runtime().config_manager)
-    metrics.base_currency = 'EUR'
-    metrics.update_account_metrics()
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
     _carry(client, name='PEA', kind='aged_flat_realised',
            parameters={'rate_before': 0.128, 'rate_after': 0.0,
                        'threshold_years': 5, 'age_basis': 'first_payment',

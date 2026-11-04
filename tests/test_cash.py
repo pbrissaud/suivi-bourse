@@ -7,7 +7,7 @@ Covers:
     per-account siloing, CashFlow emission
   * Timeline.cash_at forward-fill
   * InfluxDBWriter.get_price_series / write_account_metrics SQL & tags
-  * Workloads.update_account_metrics wiring (gate, midnight stamp,
+  * PerformanceJob.update_account_metrics wiring (gate, midnight stamp,
     holdings valuation, negative-balance warning)
 
 No network, no real InfluxDB.
@@ -22,7 +22,7 @@ from conftest import PerfConfigManager, fake_history
 
 from application import perf_series
 from application import quotes
-from application import workloads
+from application.jobs import registry
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
 from application.events.schemas import Event, EventType, CashFlow, Account, Portfolio, AccountMetricPoint, PortfolioTotalPoint
@@ -289,7 +289,7 @@ def test_portfolio_totals_is_keyed_by_the_day_alone(store):
 
 
 # --------------------------------------------------------------------------- #
-# Workloads.update_account_metrics wiring
+# PerformanceJob.update_account_metrics wiring
 #
 # The job's **only inputs are the store and the clock** (issue #707), so every
 # test below lays its ledger into the store and reads the answer back out of it.
@@ -299,13 +299,13 @@ def test_portfolio_totals_is_keyed_by_the_day_alone(store):
 
 def _metrics(store, declare_ledger, events, accounts):
     declare_ledger(store, events, accounts.accounts if accounts else None)
-    metrics = workloads.Workloads(PerfConfigManager(store))
+    metrics = registry.build(PerfConfigManager(store))
     # The one question the app asks (#702). Without an answer the perf
     # job writes **nothing at all** — not zeros, not NULLs — because every figure
     # it computes is money and an amount with no settled unit is not a figure.
     # ``test_no_base_currency_writes_no_performance_at_all`` is where that is
     # asserted; everything else here is about the arithmetic behind it.
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = 'EUR'
     return metrics
 
 
@@ -314,7 +314,7 @@ def _fixed_today(mocker, y, mo, d):
         @classmethod
         def now(cls, tz=None):
             return datetime(y, mo, d, 12, 0, tzinfo=tz)
-    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+    mocker.patch("application.jobs.performance.datetime", _FixedDatetime)
 
 
 def test_the_seeded_default_account_gets_a_series_like_any_other(
@@ -328,7 +328,7 @@ def test_the_seeded_default_account_gets_a_series_like_any_other(
     m = _metrics(store, declare_ledger, events=[
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=100.0)],
         accounts=None)
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     (day, cash, total) = store.query(
         "SELECT day, cash_balance, total_value FROM account_metrics "
         " WHERE account = 'default' ORDER BY day LIMIT 1")[0]
@@ -358,7 +358,7 @@ def test_an_account_with_no_cash_event_writes_holdings_and_gain_and_nothing_else
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 1)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     (cash, holdings, total, net, xirr, gain, twr) = store.query(
         "SELECT cash_balance, holdings_value, total_value, net_contributed, "
@@ -384,7 +384,7 @@ def test_an_account_with_a_deposit_keeps_every_field(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 1)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     (cash, holdings, total, net, gain, twr) = store.query(
         "SELECT cash_balance, holdings_value, total_value, net_contributed, "
@@ -421,7 +421,7 @@ def test_the_global_is_written_from_the_max_of_the_horizons(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
-    horizons = m.update_account_metrics()
+    horizons = m['performance'].update_account_metrics()
 
     # No `default`: the seeded row is a row nothing names here, and
     # `/api/accounts` drops it on exactly that test. The two resources answer
@@ -502,12 +502,12 @@ def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
     _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
     m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
                  Portfolio([Account("PEA", "Mon PEA")]))
-    m.backfill_delay = 0
-    m._share_info_cache["NEW"] = {"currency": "EUR"}
+    m.ctx.backfill_delay = 0
+    m.ctx.info_cache["NEW"] = {"currency": "EUR"}
 
     empty_cycles = 0
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     empty_cycles += _pea_days(store) is None
 
     # The backward pass, with yfinance faked and everything else real: it is what
@@ -519,11 +519,11 @@ def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
         {"timestamp": datetime(2024, 1, 9, 16, 0, tzinfo=timezone.utc),
          "price": 52.0},
     ])
-    m._backfill_backward("NEW",
+    m['backfill'].backward("NEW",
                          datetime(2024, 1, 8, tzinfo=timezone.utc),
                          datetime(2024, 1, 10, 12, 0, tzinfo=timezone.utc))
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     empty_cycles += _pea_days(store) is None
 
     assert empty_cycles == 0
@@ -546,7 +546,7 @@ def test_buying_a_never_quoted_line_does_not_delete_four_years_of_history(
     m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
                  Portfolio([Account("PEA", "Mon PEA")]))
 
-    horizons = m.update_account_metrics()
+    horizons = m['performance'].update_account_metrics()
 
     assert _pea_days(store) == (date(2020, 1, 1), _BOUGHT - timedelta(days=1))
     # Nothing bounds the account on the **left** — which is what the payload has
@@ -587,7 +587,7 @@ def test_a_first_purchase_with_no_price_still_writes_nothing_at_all(
               unit_price=50.0, account="PEA"),
     ], Portfolio([Account("PEA", "Mon PEA")]))
 
-    horizons = m.update_account_metrics()
+    horizons = m['performance'].update_account_metrics()
 
     assert _pea_days(store) is None
     assert horizons["PEA"] > _BOUGHT
@@ -608,7 +608,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     rows = {row[0]: row for row in store.query(
         "SELECT day, cash_balance, holdings_value, total_value, "
@@ -634,9 +634,9 @@ def test_update_account_metrics_is_idempotent(store, declare_ledger, mocker):
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 1)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     first = store.query("SELECT * FROM account_metrics ORDER BY day")
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     second = store.query("SELECT * FROM account_metrics ORDER BY day")
 
     # The upsert overwrites its own key rather than appending a second row.
@@ -651,7 +651,7 @@ def test_update_account_metrics_writes_portfolio_totals_single_currency(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     assert store.query("SELECT count(*) FROM portfolio_totals") == [(2,)]
 
@@ -678,7 +678,7 @@ def test_two_accounts_are_pooled_because_they_cannot_disagree_on_a_currency(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     assert store.query(
         "SELECT total_value FROM portfolio_totals ORDER BY day DESC LIMIT 1") \
@@ -699,17 +699,17 @@ def test_no_base_currency_writes_no_performance_at_all(
     portfolio = Portfolio([Account("PEA", "Mon PEA")])
 
     m = _metrics(store, declare_ledger, events, portfolio)
-    m.base_currency = None
+    m.ctx.base_currency = None
     _fixed_today(mocker, 2024, 1, 2)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
 
     # ...and answering it is all it takes: the next cycle writes the series it
     # was withholding, with nothing to replay and nothing to repair.
-    m.base_currency = 'EUR'
-    m.update_account_metrics()
+    m.ctx.base_currency = 'EUR'
+    m['performance'].update_account_metrics()
 
     assert store.query("SELECT count(*) FROM portfolio_totals")[0][0] > 0
 
@@ -745,7 +745,7 @@ def test_the_gain_is_written_on_every_day_and_the_rate_only_on_the_last(
     # attest nothing.
     _fixed_today(mocker, 2025, 1, 1)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     rows = store.query(
         "SELECT day, twr_index, gain_absolu, xirr FROM account_metrics "
@@ -809,11 +809,11 @@ def test_every_cycle_rewrites_the_whole_series(store, declare_ledger, mocker):
     _fixed_today(mocker, 2024, 1, 3)
 
     whole = {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert _acc_days(store) == whole
 
     _mark_all(store)
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert _acc_days(store) == whole
     assert _totals_days(store) == whole
 
@@ -837,7 +837,7 @@ def test_the_series_is_dense_over_calendar_days(store, declare_ledger, mocker):
 
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 8)
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     rows = {row[0]: row for row in store.query(
         "SELECT day, cash_balance, holdings_value, twr_index "
@@ -862,7 +862,7 @@ def test_deleting_the_rows_is_enough_to_rebuild(store, declare_ledger, mocker):
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     before = store.query("SELECT * FROM account_metrics ORDER BY account, day")
     totals_before = store.query("SELECT * FROM portfolio_totals ORDER BY day")
     assert before and totals_before
@@ -870,7 +870,7 @@ def test_deleting_the_rows_is_enough_to_rebuild(store, declare_ledger, mocker):
     store.execute("DELETE FROM account_metrics")
     store.execute("DELETE FROM portfolio_totals")
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert store.query(
         "SELECT * FROM account_metrics ORDER BY account, day") == before
     assert store.query("SELECT * FROM portfolio_totals ORDER BY day") == totals_before
@@ -898,10 +898,10 @@ def test_the_file_does_not_drift_over_many_cycles(store, declare_ledger, mocker)
                    [store.path, store.path.with_suffix(".duckdb.wal")]
                    if p.exists())
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     settled = _bytes()
     for _ in range(20):
-        m.update_account_metrics()
+        m['performance'].update_account_metrics()
     assert _bytes() == settled
 
 
@@ -920,12 +920,12 @@ def test_a_day_that_left_the_series_is_pruned(store, declare_ledger, mocker):
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 4)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert _acc_days(store) == {date(2024, 1, d) for d in (1, 2, 3, 4)}
 
     # The first deposit is forgotten: the series now starts on the 3rd.
     store.execute("DELETE FROM event WHERE date = ?", [date(2024, 1, 1)])
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert _acc_days(store) == {date(2024, 1, 3), date(2024, 1, 4)}
     assert _totals_days(store) == {date(2024, 1, 3), date(2024, 1, 4)}
 
@@ -953,12 +953,12 @@ def test_an_account_that_stops_being_written_is_pruned(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert {row[0] for row in store.query(
         "SELECT DISTINCT account FROM account_metrics")} == {"PEA", "CTO"}
 
     store.execute("DELETE FROM event WHERE account = ?", ["CTO"])
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert {row[0] for row in store.query(
         "SELECT DISTINCT account FROM account_metrics")} == {"PEA"}
 
@@ -976,11 +976,11 @@ def test_an_emptied_ledger_empties_both_tables(store, declare_ledger, mocker):
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 2)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert store.query("SELECT count(*) FROM portfolio_totals")[0][0] == 2
 
     store.execute("DELETE FROM event")
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
     assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
 
@@ -998,7 +998,7 @@ def test_a_failed_write_leaves_the_previous_cache_whole(
     m = _metrics(store, declare_ledger, events, portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
     before = store.query("SELECT * FROM account_metrics ORDER BY day")
 
     # A day turn, so the next cycle rebuilds whole and reaches its prune: a
@@ -1007,7 +1007,7 @@ def test_a_failed_write_leaves_the_previous_cache_whole(
     mocker.patch.object(perf_series, "prune_account_metrics",
                         side_effect=RuntimeError("the store is unwritable"))
     with pytest.raises(RuntimeError):
-        m.update_account_metrics()
+        m['performance'].update_account_metrics()
 
     assert store.query("SELECT * FROM account_metrics ORDER BY day") == before
 
@@ -1052,7 +1052,7 @@ def test_an_event_dated_in_the_future_does_not_bound_the_series(
     m = _metrics(store, declare_ledger, events,
                  Portfolio([Account("PEA", "Mon PEA")]))
 
-    horizons = m.update_account_metrics()
+    horizons = m['performance'].update_account_metrics()
 
     assert horizons["PEA"] is None
     assert _pea_days(store) == (date(2020, 1, 1), date(2024, 1, 10))
@@ -1092,6 +1092,6 @@ def test_a_future_buy_back_no_longer_holds_a_sold_line_at_today(
     m = _metrics(store, declare_ledger, events,
                  Portfolio([Account("PEA", "Mon PEA")]))
 
-    m.update_account_metrics()
+    m['performance'].update_account_metrics()
 
     assert _pea_days(store) == (date(2021, 6, 2), date(2024, 1, 10))

@@ -70,7 +70,7 @@ def reads(mocker):
 
 def _rebuilt_whole(opened):
     """The series a pass with no memory writes over the same store."""
-    _metrics(opened).recompute_perf(full=True)
+    _metrics(opened)['performance'](full=True)
     return _series(opened)
 
 
@@ -94,9 +94,9 @@ def test_the_full_pass_after_a_write_reads_today_alone(seeded, declare_ledger,
     _quote_today(opened, 'AAPL', 101.0)
     _ledger_write(opened, metrics, declare_ledger)
 
-    metrics.recompute_perf(full=True)
+    metrics['performance'](full=True)
 
-    assert metrics.recorder.perf().mode == runtime_state.PERF_PASS_FULL
+    assert metrics.ctx.recorder.perf().mode == runtime_state.PERF_PASS_FULL
     # One close per symbol quoted today: BTC-EUR and AAPL.
     assert reads == [(_midnight(_TODAY), 2)]
     written = _series(opened)
@@ -125,12 +125,12 @@ def test_a_failed_pass_forgets_the_closes(seeded, mocker, reads):
     failing = mocker.patch(
         'application.performance.compute_portfolio_total',
         side_effect=RuntimeError('boom'))
-    metrics.recompute_perf(full=True)
-    assert metrics.recorder.perf().verdict == runtime_state.PERF_FAILED
+    metrics['performance'](full=True)
+    assert metrics.ctx.recorder.perf().verdict == runtime_state.PERF_FAILED
     mocker.stop(failing)
     reads.clear()
 
-    metrics.recompute_perf(full=True)
+    metrics['performance'](full=True)
 
     assert [start for start, _ in reads] == [None]
 
@@ -167,12 +167,12 @@ def test_a_rewritten_history_is_read_whole_again(seeded, declare_ledger,
                                                  reads, change):
     opened, metrics = seeded
     # Warm: the cache now holds the history the change is about to rewrite.
-    metrics.recompute_perf(full=True)
+    metrics['performance'](full=True)
     assert reads[-1][0] == _midnight(_TODAY)
     reads.clear()
 
     change(opened, metrics, declare_ledger)
-    metrics.recompute_perf(full=True)
+    metrics['performance'](full=True)
 
     assert [start for start, _ in reads] == [None]
     written = _series(opened)
@@ -220,7 +220,7 @@ def test_the_kept_closes_equal_a_whole_read(tmp_path_factory, mocker,
         tmp_path_factory.mktemp('closes') / 'store.duckdb')
     try:
         _seed(opened, declare_ledger)
-        job = _metrics(opened)._recompute
+        job = _metrics(opened)['performance']
         for minute, step in enumerate(steps):
             day = _Clock.day
             if step == 'quote':

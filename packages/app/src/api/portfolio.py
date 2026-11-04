@@ -104,7 +104,7 @@ def get_positions_history():
                         for row in reader.prices_at(start)},
             carried=_carried(),
             first_quoted=quotes.first_quoted_days(_store()),
-            # The ledger's symbols, the same scope `perf_job` values on.
+            # The ledger's symbols, the same scope the performance job values on.
             symbols={event.symbol for event in events if event.symbol}),
     })
 
