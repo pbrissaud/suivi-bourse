@@ -491,6 +491,28 @@ describe('the model row (#1279)', () => {
       'Anthropic refuse faute de crédit',
     )
   })
+
+  it('asks the list again at the next opening after a refusal', async () => {
+    let refuse = true
+    const writes = provider(
+      (candidate, row) => (refuse ? refuses('quota') : passes(candidate, row)),
+      configured(),
+    )
+    const { user, block } = await openAgent()
+    const model = within(block).getByRole('combobox', { name: 'Modèle' })
+
+    await user.click(model)
+    expect(await within(block).findByRole('alert')).toHaveTextContent(
+      'Anthropic refuse faute de crédit',
+    )
+    await user.keyboard('{Escape}')
+    refuse = false
+
+    await user.click(model)
+
+    expect(await screen.findByRole('option', { name: 'Claude Old' })).toBeInTheDocument()
+    expect(writes.filter(([kind]) => kind === 'test')).toHaveLength(2)
+  })
 })
 
 describe('the thinking level (#1191)', () => {

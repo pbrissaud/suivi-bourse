@@ -330,11 +330,21 @@ function EnableDialog({
   const [pin, setPin] = useState('')
   const [again, setAgain] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
-  const enable = useMutation({ mutationFn: authApi.enable, onSuccess: onDone })
-  const give = () => {
+  // The dialog stays mounted when closed: what was typed goes with each closing.
+  const clear = () => {
     setPin('')
     setAgain('')
     setInvalid(null)
+  }
+  const enable = useMutation({
+    mutationFn: authApi.enable,
+    onSuccess: (answer) => {
+      clear()
+      onDone(answer)
+    },
+  })
+  const give = () => {
+    clear()
     enable.reset()
     onClose()
   }
@@ -376,15 +386,21 @@ function ChangeDialog({
   const [pin, setPin] = useState('')
   const [again, setAgain] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
-  const change = useMutation({
-    mutationFn: () => authApi.change(current, pin),
-    onSuccess: onDone,
-  })
-  const give = () => {
+  const clear = () => {
     setCurrent('')
     setPin('')
     setAgain('')
     setInvalid(null)
+  }
+  const change = useMutation({
+    mutationFn: () => authApi.change(current, pin),
+    onSuccess: () => {
+      clear()
+      onDone()
+    },
+  })
+  const give = () => {
+    clear()
     change.reset()
     onClose()
   }
@@ -440,10 +456,19 @@ function CurrentCodeDialog({
   const { t } = useI18n()
   const [current, setCurrent] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
-  const mutation = useMutation({ mutationFn: () => run(current), onSuccess: onDone })
-  const give = () => {
+  const clear = () => {
     setCurrent('')
     setInvalid(null)
+  }
+  const mutation = useMutation({
+    mutationFn: () => run(current),
+    onSuccess: (answer) => {
+      clear()
+      onDone(answer)
+    },
+  })
+  const give = () => {
+    clear()
     mutation.reset()
     onClose()
   }

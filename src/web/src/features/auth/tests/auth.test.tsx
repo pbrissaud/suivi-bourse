@@ -297,6 +297,13 @@ describe('the Sécurité section', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(sent).not.toBeNull()
     await waitFor(() => expect(change).toHaveFocus())
+
+    // Opened again, it holds none of the codes typed the first time.
+    await user.click(change)
+    const again = await screen.findByRole('dialog', { name: 'Changer le code' })
+    expect(within(again).getByLabelText('Code actuel')).toHaveValue('')
+    expect(within(again).getByLabelText('Nouveau code')).toHaveValue('')
+    expect(within(again).getByLabelText('Confirmez le code')).toHaveValue('')
   })
 
   it('signs this device out back to the PIN screen', async () => {

@@ -192,7 +192,10 @@ function ModelRow({ config }: { config: AgentConfig }) {
       <Select
         value={current}
         onOpenChange={(open) => {
-          if (open) setAsked(true)
+          if (!open) return
+          // A list that failed is asked again at the next opening.
+          if (asked && models.isError) void models.refetch()
+          setAsked(true)
         }}
         onValueChange={(next) => {
           const name = options.find((one) => one.id === next)?.name ?? null
