@@ -386,3 +386,28 @@ def write_legacy_taxation_model(opened, model_id='legacy', name='Legacy',
             'INSERT INTO account_fact (account, taxation_model) VALUES (?, ?)',
             [account, model_id])
     return model_id
+
+
+def fake_history(mocker, workloads_, **kwargs):
+    """Fake the price history the market client answers ``workloads_`` (#1253).
+
+    The returned mock stands for the fetch as the backfill sees it:
+    ``fetch(symbol, start, end) -> prices``, configured with ``return_value`` or
+    ``side_effect`` like any mock. The client answers no splits, so nothing is
+    written beside the prices — what patching the fetch whole used to give.
+    """
+    fetch = mocker.MagicMock(**kwargs)
+
+    def price_history(symbol, start, end, delay=0.0, max_retries=3):
+        return fetch(symbol, start, end), None
+
+    mocker.patch.object(workloads_.market, 'price_history',
+                        side_effect=price_history)
+    return fetch
+
+
+def history_from(fetch):
+    """A market ``price_history`` answering ``fetch(symbol, start, end)``'s prices."""
+    def price_history(symbol, start, end, delay=0.0, max_retries=3):
+        return fetch(symbol, start, end), None
+    return price_history

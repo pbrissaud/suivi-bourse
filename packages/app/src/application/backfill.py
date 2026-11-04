@@ -8,7 +8,6 @@ from application import benchmark_view
 from application import carrying
 from application import entries
 from application import fx
-from application import market
 from application import market_info
 from application import quotes
 from application import runtime_state
@@ -76,8 +75,9 @@ class BackfillWorkload:
         right either way: #988 put them in the day's printed share before they
         got here, and the next cycle rewrites the history whole.
         """
-        prices, splits = market.price_history(
-            symbol, start, end, self.facade.backfill_delay, max_retries)
+        prices, splits = self.facade.market.price_history(
+            symbol, start, end, delay=self.facade.backfill_delay,
+            max_retries=max_retries)
         if splits is not None:
             try:
                 with self.facade.config_manager.writing() as opened:
@@ -195,7 +195,7 @@ class BackfillWorkload:
         fetched, but the **write failed** — nothing of the window reached the
         store, so the window has not been tried and its anchor must not move.
         """
-        prices = self.facade._fetch_historical_data(symbol, start_date, end_date)
+        prices = self.fetch_historical_data(symbol, start_date, end_date)
         if prices is None:
             return None, 0
         if not prices:
@@ -557,7 +557,7 @@ class BackfillWorkload:
         """
         if symbol in self.asked:
             return self.asked[symbol]
-        info = market.symbol_attributes(symbol)
+        info = self.facade.market.symbol_attributes(symbol)
         if info is None:
             return None
         time.sleep(self.facade.backfill_delay)

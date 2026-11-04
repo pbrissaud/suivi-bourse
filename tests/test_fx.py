@@ -1794,7 +1794,7 @@ def test_a_failed_request_for_a_unit_alone_backs_off_and_concludes_nothing(
 # =========================================================================== #
 # The unit that is not a unit (issue #845)
 #
-# `_fetch_ticker_data` used to write a **word** on `currency`, `exchange` and
+# `fetch_ticker_data` used to write a **word** on `currency`, `exchange` and
 # `quoteType` for a payload that named none, and only two of the three readers
 # downstream removed it. The one that did not is the translation towards the
 # quotation columns, which is the production write path — so `symbol_quote`
