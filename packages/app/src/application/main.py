@@ -434,11 +434,11 @@ def build_runtime(env: Optional[Mapping[str, str]] = None) -> Runtime:
     """
     env = os.environ if env is None else env
     # The level was read from ``os.environ`` at import; the boot's own
-    # ``LOG_LEVEL`` wins before the first line is logged. Absent, the import's
-    # level stays; unknown, it is INFO, as uvicorn's is in ``boot.serve``.
+    # ``LOG_LEVEL`` wins before the first line is logged, resolved exactly as
+    # ``boot_env.read`` resolves it for uvicorn in ``boot.serve``: absent or
+    # unknown, both are at the default, so the two can never disagree.
     raw_level = boot_env.text(env, boot_env.LOG_LEVEL)
-    if raw_level is not None:
-        _apply_log_level(boot_env.log_level(env))
+    _apply_log_level(boot_env.log_level(env))
     build = build_info.describe(env, build_info.checkout_revision())
     app_logger.info(
         f'SuiviBourse {build_info.said(build)} is running !',

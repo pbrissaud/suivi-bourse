@@ -229,7 +229,8 @@ def test_build_runtime_logs_at_the_level_of_the_environment_it_is_handed(
     """``LOG_LEVEL`` is part of the boot's environment, as uvicorn already reads it.
 
     The import set the app's loggers from ``os.environ``; the mapping the boot
-    was handed wins, and a mapping without ``LOG_LEVEL`` leaves them alone.
+    was handed wins, and a mapping without ``LOG_LEVEL`` puts them at the
+    default — the level ``boot_env.read`` hands uvicorn for the same mapping.
     """
     loggers = [logging.getLogger(name) for name in main.MANAGED_LOGGERS]
     before = [(lg.level, [h.level for h in lg.handlers]) for lg in loggers]
@@ -237,7 +238,7 @@ def test_build_runtime_logs_at_the_level_of_the_environment_it_is_handed(
         main._apply_log_level('WARNING')
 
         main.build_runtime({'SB_STORE_DIR': str(tmp_path / 'quiet')})
-        assert main.current_log_level() == 'WARNING'
+        assert main.current_log_level() == boot_env.read({}).log_level == 'INFO'
 
         main.build_runtime({'SB_STORE_DIR': str(tmp_path / 'loud'),
                             'LOG_LEVEL': 'debug'})
@@ -255,6 +256,8 @@ def test_build_runtime_says_an_unknown_log_level_falls_back_to_info(
     loggers = [logging.getLogger(name) for name in main.MANAGED_LOGGERS]
     before = [(lg.level, [h.level for h in lg.handlers]) for lg in loggers]
     app_logger = logging.getLogger('suivi_bourse')
+    # Attached to a managed logger, the handler is moved by ``_apply_log_level``.
+    caplog_level = caplog.handler.level
     app_logger.addHandler(caplog.handler)
     try:
         main._apply_log_level('ERROR')
@@ -266,6 +269,7 @@ def test_build_runtime_says_an_unknown_log_level_falls_back_to_info(
                    for r in caplog.records)
     finally:
         app_logger.removeHandler(caplog.handler)
+        caplog.handler.setLevel(caplog_level)
         for lg, (level, handler_levels) in zip(loggers, before):
             lg.setLevel(level)
             for handler, handler_level in zip(lg.handlers, handler_levels):
