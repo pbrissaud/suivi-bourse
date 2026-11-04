@@ -28,6 +28,7 @@ from application import settings_registry
 from application import store_reads
 from application import workloads
 from application.events.schemas import Event, EventType
+from conftest import fake_history
 
 UTC = timezone.utc
 
@@ -588,8 +589,7 @@ def test_a_store_that_refuses_to_age_does_not_abort_the_cycle(store, mocker):
     metrics = _metrics(store, shares=[_HELD], events=[_A_BUY])
     mocker.patch.object(quotes, 'collapse_to_ladder',
                         side_effect=RuntimeError('boom'))
-    fetch = mocker.patch.object(metrics, '_fetch_historical_data',
-                                return_value=[])
+    fetch = fake_history(mocker, metrics, return_value=[])
 
     metrics.backfill(now=NOW)
 
@@ -608,8 +608,7 @@ def test_the_ladder_runs_beside_the_three_passes_on_a_populated_install(store,
     """
     _seed(store, 'AAPL', [_at(1200, 9, 0), _at(1200, 17, 0)])
     metrics = _metrics(store, shares=[_HELD], events=[_A_BUY])
-    fetch = mocker.patch.object(metrics, '_fetch_historical_data',
-                                return_value=[])
+    fetch = fake_history(mocker, metrics, return_value=[])
 
     metrics.backfill(now=NOW)
 
@@ -648,8 +647,8 @@ def test_the_rebuild_asks_for_the_finest_bars_the_api_still_sells(store, mocker)
     # other read in the tree (#781).
     today = datetime.now(timezone.utc)
 
-    metrics._fetch_historical_data('AAPL', today - timedelta(days=700), today)
-    metrics._fetch_historical_data('AAPL', today - timedelta(days=800),
+    metrics._backfill.fetch_historical_data('AAPL', today - timedelta(days=700), today)
+    metrics._backfill.fetch_historical_data('AAPL', today - timedelta(days=800),
                                    today - timedelta(days=700))
 
     assert asked == ['1h', '1d']

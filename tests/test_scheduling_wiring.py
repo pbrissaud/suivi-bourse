@@ -198,7 +198,7 @@ def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
 def test_scrape_symbol_price_failure_keeps_polling_without_writing(
         store, mocker):
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -235,7 +235,7 @@ def test_scrape_symbol_failure_increments_and_backs_off(
         store, mocker):
     """A run of non-closed no-price cycles grows the re-arm delay past base."""
     m = _metrics([_share("AAPL")], store, mocker)
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
 
     # First three failures stay at base_interval (grace window).
     for _ in range(3):
@@ -283,7 +283,7 @@ def test_scrape_symbol_departed_does_not_persist_failure_count(
     backoff counter — the held-recheck guards the persist (issue #617)."""
     m = _metrics([_share("AAPL")], store, mocker)
     m._failure_counts["AAPL"] = 3
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
     m.config_manager._shares = []  # departed between the last reconcile and this cycle
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -307,12 +307,12 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
     fetch_started = threading.Event()
     release_fetch = threading.Event()
 
-    def blocking_fetch(symbol):
+    def blocking_fetch(symbol, max_retries=3):
         fetch_started.set()
         assert release_fetch.wait(timeout=5)
         return (None, None)  # failure -> decide would increment + persist
 
-    mocker.patch.object(m, "_fetch_ticker_data", side_effect=blocking_fetch)
+    mocker.patch.object(m.market, "latest_quote", side_effect=blocking_fetch)
 
     scrape_thread = threading.Thread(target=m._scrape_symbol, args=("AAPL",))
     scrape_thread.start()
@@ -342,7 +342,7 @@ def test_scrape_symbol_rearms_although_the_held_read_raised(store, mocker):
     Nothing else puts the symbol back: the job is a one-shot ``date`` trigger.
     """
     m = _metrics([_share("AAPL")], store, mocker)
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
     mocker.patch.object(m, "_held_symbols",
                         side_effect=RuntimeError("the configuration is unreadable"))
 
@@ -381,7 +381,8 @@ def test_the_scrape_carries_no_perf_state_at_all(
 
     What is forbidden is a **signal**: a flag, a watermark, a dirty set — anything
     the scrape writes and the recompute reads instead of reading the store.
-    ``_perf_lock`` (issue #812) is not one and is named here rather than renamed
+    The perf lock (issue #812), on the jobs' shared context since #1253, is
+    not one and is named here rather than renamed
     out of the way: it carries no information about what happened, the scrape
     never touches it, and what it buys is that two recomputes do not overlap now
     that the replay following a write is a second caller.
@@ -397,7 +398,8 @@ def test_the_scrape_carries_no_perf_state_at_all(
     m._scrape_symbol("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
-    assert [name for name in vars(m) if name.startswith("_perf")] == ["_perf_lock"]
+    assert [name for name in vars(m) if name.startswith("_perf")] == []
+    assert [name for name in vars(m.ctx) if "perf" in name] == ["perf_lock"]
 
 
 def test_scrape_symbol_failed_store_write_is_named_as_such(
@@ -548,14 +550,14 @@ def test_a_silent_fetch_failure_writes_nothing_and_says_so(
         store, mocker):
     """The other side of the gate, and the quiet one.
 
-    ``_fetch_ticker_data`` catches three exception types and answers
+    ``fetch_ticker_data`` catches three exception types and answers
     ``(None, None)``: no price, no state, nothing to write and — unlike the
     raising case further down — no error to name. The record says ``no_price``
     with a ``market_state`` of ``None``, which is the honest answer and not a
     state.
     """
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -1368,7 +1370,7 @@ def test_read_exchange_of_reads_the_store_and_touches_no_edge(store, mocker):
     m = _metrics([_share(symbol="AAPL"), _share(symbol="MSFT")], store, mocker)
     quotes.record_attributes(store, "AAPL", NOW, {"exchange": "NMS"})
     quotes.record_attributes(store, "MSFT", NOW, {"exchange": "PAR"})
-    fetch = mocker.patch.object(m, "_fetch_ticker_data")
+    fetch = mocker.patch.object(m.market, "latest_quote")
 
     assert m.read_exchange_of() == {"AAPL": "NMS", "MSFT": "PAR"}
     fetch.assert_not_called()
@@ -1483,13 +1485,13 @@ def test_scrape_symbol_rearms_after_an_unexpected_failure(
 
     The job is a one-shot ``date`` trigger: APScheduler drops it from the store
     as it dispatches it, so the re-arm at the end of the pass is the only thing
-    that puts the symbol back. ``_fetch_ticker_data`` catches three exception
+    that puts the symbol back. ``fetch_ticker_data`` catches three exception
     types; anything else — a transport error, a shape yfinance changed — used to
     end the self-reschedule chain for the life of the process, and only an
     ``ingest()`` reconcile could revive it.
     """
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m, "_fetch_ticker_data",
+    mocker.patch.object(m.market, "latest_quote",
                         side_effect=KeyError("marketState"))
 
     m._scrape_symbol("AAPL", now=NOW)

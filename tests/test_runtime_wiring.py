@@ -30,6 +30,7 @@ from application import scheduling
 from application import scrape
 from application import workloads
 from application.events.schemas import Event, EventType
+from conftest import fake_history
 
 
 UTC = timezone.utc
@@ -142,7 +143,7 @@ def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
     """
     m = _metrics([_share()], store, mocker)
     m._share_info_cache["AAPL"] = {"marketState": "REGULAR"}
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
     record = m.recorder.scrape_of("AAPL")
@@ -332,7 +333,7 @@ def test_a_grant_only_position_is_reconstructed_like_any_other(
     events = [Event(datetime(2024, 6, 1).date(), EventType.GRANT, "AAPL",
                     "Apple", quantity=1)]
     m = _metrics([_share()], store, mocker, events=events)
-    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+    fake_history(mocker, m, return_value=[
         {"timestamp": datetime(2024, 7, 1, tzinfo=UTC), "price": 170.0}])
 
     m.backfill()
@@ -372,7 +373,7 @@ def test_a_failed_history_fetch_raises_the_consecutive_counter(
     m = _metrics([_share()], store, mocker, events=events)
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
-    mocker.patch.object(m, "_fetch_historical_data", return_value=None)
+    fake_history(mocker, m, return_value=None)
 
     now = datetime.now(UTC)
     m.backfill(now)
@@ -393,7 +394,7 @@ def test_an_empty_window_is_recorded_without_raising_the_counter(
     m = _metrics([_share()], store, mocker, events=events)
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
-    mocker.patch.object(m, "_fetch_historical_data", return_value=[])
+    fake_history(mocker, m, return_value=[])
     mocker.patch("application.backfill.time.sleep")
 
     m.backfill()
@@ -418,7 +419,7 @@ def test_a_failed_write_leaves_the_anchor_where_it_was_and_is_recorded(
     m = _metrics([_share()], store, mocker, events=events)
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
-    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+    fake_history(mocker, m, return_value=[
         {"timestamp": datetime(2023, 6, 1, tzinfo=UTC), "price": 90.0}])
     mocker.patch.object(quotes, "record_history",
                         side_effect=RuntimeError("connection refused"))
@@ -446,7 +447,7 @@ def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
     m = _metrics([_share()], store, mocker, events=events)
     # Nothing stored at all: the backward pass owns seeding the series, and the
     # forward one has no anchor to measure from.
-    mocker.patch.object(m, "_fetch_historical_data", return_value=[])
+    fake_history(mocker, m, return_value=[])
     mocker.patch("application.backfill.time.sleep")
 
     m.backfill()

@@ -38,6 +38,7 @@ from application.main import ConfigurationManager, Runtime
 from application.workloads import Workloads
 
 from datetime import datetime, timedelta, timezone
+from conftest import history_from
 
 
 # --------------------------------------------------------------------------- #
@@ -219,7 +220,7 @@ def test_backfill_writes_the_price_and_only_the_price(
             return [{"timestamp": intermediate, "price": 180.0}]
         return []
 
-    sb._fetch_historical_data = canned_fetch
+    sb.market.price_history = history_from(canned_fetch)
 
     sb.backfill()
 
@@ -335,7 +336,7 @@ def test_a_named_reference_is_priced_and_the_curve_never_sees_it(
             return [{"timestamp": reference_day, "price": 512.0}]
         return [{"timestamp": held_day, "price": TICKER_CLOSE[symbol]}]
 
-    sb._fetch_historical_data = canned_fetch
+    sb.market.price_history = history_from(canned_fetch)
 
     # The curve as it is before anything is named — the comparison's witness.
     sb.backfill()

@@ -6,7 +6,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Tuple
 
 from application import carrying
-from application import market
 from application import market_info
 from application import quotes
 from application import runtime_state
@@ -63,7 +62,7 @@ class ScrapeWorkload:
 
     def fetch_ticker_data(self, symbol: str, max_retries: int = 3):
         """One symbol's newest close and its attributes, and the cache's fill."""
-        last_quote, info = market.latest_quote(symbol, max_retries)
+        last_quote, info = self.facade.market.latest_quote(symbol, max_retries)
         if info is not None:
             self.info_cache[symbol] = info
         return last_quote, info
@@ -86,7 +85,7 @@ class ScrapeWorkload:
         shares = self.facade.shares
         held = sorted(carrying.held_symbols(shares))
         for symbol in held:
-            last_quote, info = self.facade._fetch_ticker_data(symbol)
+            last_quote, info = self.fetch_ticker_data(symbol)
             converted, rate = self.facade._convert(
                 last_quote, market_info.currency_of(info))
 
@@ -236,7 +235,7 @@ class ScrapeWorkload:
         now = now or datetime.now(timezone.utc)
         next_delay = self.facade.regular_interval
         try:
-            last_quote, info = self.facade._fetch_ticker_data(symbol)
+            last_quote, info = self.fetch_ticker_data(symbol)
             price_present = last_quote is not None and info is not None
 
             converted, rate = self.facade._convert(

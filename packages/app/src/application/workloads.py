@@ -1,48 +1,48 @@
 """The four workloads and the state they share (issue #850)."""
-import threading
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
-from apscheduler.schedulers.background import BackgroundScheduler
-
 from application import backfill
-from application import fx
 from application import ingestion
 from application import job_history
-from application import market
 from application import perf_job
 from application import runtime_state
 from application import runtime_view
 from application import scheduling
 from application import scrape
 from application import settings_registry
+from application.jobs import context
+
+
+def _forwarded(name: str) -> property:
+    """One attribute of the facade, kept on its :class:`JobContext`."""
+    return property(lambda self: getattr(self.ctx, name),
+                    lambda self, value: setattr(self.ctx, name, value))
 
 
 class Workloads:
     """The four workloads, and the state they share (issue #850)."""
 
+    config_manager = _forwarded('config_manager')
+    recorder = _forwarded('recorder')
+    market = _forwarded('market')
+    rates = _forwarded('rates')
+    scheduler = _forwarded('scheduler')
+    _perf_lock = _forwarded('perf_lock')
+
     def __init__(self, config_manager,
-                 recorder: Optional[runtime_state.RuntimeRecorder] = None):
-        self.config_manager = config_manager
+                 recorder: Optional[runtime_state.RuntimeRecorder] = None,
+                 market_client: Optional[context.MarketClient] = None):
+        self.ctx = context.JobContext(
+            config_manager,
+            recorder=recorder or runtime_state.RuntimeRecorder(),
+            market=market_client or context.YahooMarket())
 
-        self.base_currency: Optional[str] = None
-        self.apply_dials(settings_registry.defaults())
+        self._scrape = scrape.ScrapeWorkload(self, self.ctx.info_cache)
 
-        self._perf_lock = threading.RLock()
-
-        self.rates = fx.Rates(market.pair_rate, market.pair_series)
-
-        self.scheduler: Optional[BackgroundScheduler] = None
-
-        info_cache: Dict[str, Dict] = {}
-
-        self._scrape = scrape.ScrapeWorkload(self, info_cache)
-
-        self._backfill = backfill.BackfillWorkload(self, info_cache)
+        self._backfill = backfill.BackfillWorkload(self, self.ctx.info_cache)
 
         self._recompute = perf_job.PerfJob(self)
-
-        self.recorder = recorder or runtime_state.RuntimeRecorder()
 
         self._ingestion = ingestion.IngestionWorkload(self)
 
@@ -52,6 +52,7 @@ class Workloads:
 
     @_share_info_cache.setter
     def _share_info_cache(self, cache: Dict[str, Dict]) -> None:
+        self.ctx.info_cache = cache
         self._scrape.info_cache = cache
         self._backfill.info_cache = cache
 
@@ -122,12 +123,12 @@ class Workloads:
     @property
     def shares(self) -> List[Dict]:
         """The held positions, read from the published configuration snapshot."""
-        return self.config_manager.current().shares
+        return self.ctx.shares
 
     def _convert(self, price, currency: Optional[str],
                  at: Optional[date] = None) -> Tuple[Optional[float], Optional[float]]:
         """``(converted, rate)`` for one observed price, in one call."""
-        return fx.convert(price, currency, self.base_currency, self.rates, at)
+        return self.ctx.convert(price, currency, at)
 
     def apply_dials(self, values: Dict[str, object]) -> None:
         """Set the live attributes a mapping of dials names (issue #701)."""
@@ -136,9 +137,6 @@ class Workloads:
                 continue
             if values.get(spec.key) is not None:
                 setattr(self, spec.attribute, values[spec.key])
-
-    def _fetch_ticker_data(self, symbol: str, max_retries: int = 3):
-        return self._scrape.fetch_ticker_data(symbol, max_retries)
 
     def _write_quote(self, symbol: str, last_quote, info, now: datetime,
                      converted=None, fx_rate=None) -> bool:
@@ -194,11 +192,6 @@ class Workloads:
     def rearm_regular_scrapes(self) -> Tuple[int, int]:
         """``(reached, at_market_open)`` for a new ``regular_interval`` (#701)."""
         return self._scrape.rearm_regular_scrapes()
-
-    def _fetch_historical_data(self, symbol: str, start: datetime, end: datetime,
-                               max_retries: int = 3) -> Optional[List[Dict]]:
-        return self._backfill.fetch_historical_data(symbol, start, end,
-                                                    max_retries)
 
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
@@ -295,3 +288,9 @@ class Workloads:
     def repair_conversions_now(self) -> bool:
         """Put the lateral pass in front of the queue (issue #704). Did it move?"""
         return self._ingestion.repair_conversions_now()
+
+
+# The live dials too: ``apply_dials`` sets them on the facade, they land on the
+# context the workloads read.
+for _name in context.DIAL_ATTRIBUTES:
+    setattr(Workloads, _name, _forwarded(_name))

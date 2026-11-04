@@ -44,7 +44,7 @@ _APPROX_OPEN_HOUR = 8
 JITTER_SECONDS = 30
 
 POOL_CAP = 50              # hard bound on the *auto* formula only (not the dial)
-FETCH_EST_SECONDS = 5      # rough wall-clock of one _fetch_ticker_data cycle
+FETCH_EST_SECONDS = 5      # rough wall-clock of one fetch_ticker_data cycle
 RESERVED = 3               # backfill + perf (+ headroom), the non-scrape jobs
 
 

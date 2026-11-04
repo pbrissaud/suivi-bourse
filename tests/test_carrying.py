@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from conftest import PerfConfigManager
+from conftest import PerfConfigManager, fake_history
 
 from application import carrying
 from application import performance
@@ -730,8 +730,7 @@ def test_the_backward_pass_never_asks_for_a_window_before_the_acquisition(
     """
     _declare_symbol(store, 'AAPL')
     metrics = _metrics(store)
-    fetch = mocker.patch.object(metrics, '_fetch_historical_data',
-                                return_value=[])
+    fetch = fake_history(mocker, metrics, return_value=[])
     target = datetime(2024, 1, 15, tzinfo=UTC)
     ceiling = datetime(2024, 12, 31, tzinfo=UTC)
 
@@ -749,8 +748,7 @@ def test_a_long_chunk_is_clamped_to_the_acquisition(store, mocker):
     _declare_symbol(store, 'AAPL')
     metrics = _metrics(store)
     metrics.backfill_chunk_days = 3650
-    fetch = mocker.patch.object(metrics, '_fetch_historical_data',
-                                return_value=[])
+    fetch = fake_history(mocker, metrics, return_value=[])
     target = datetime(2024, 1, 15, tzinfo=UTC)
 
     metrics._backfill_backward('AAPL', target,

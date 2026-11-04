@@ -18,7 +18,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
-from conftest import PerfConfigManager
+from conftest import PerfConfigManager, fake_history
 
 from application import perf_series
 from application import quotes
@@ -513,7 +513,7 @@ def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
     # The backward pass, with yfinance faked and everything else real: it is what
     # ends the window, and it needs no market to be open — the backfill is an
     # interval job driven by the replay, not by ``marketState``.
-    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+    fake_history(mocker, m, return_value=[
         {"timestamp": datetime(2024, 1, 8, 16, 0, tzinfo=timezone.utc),
          "price": 50.0},
         {"timestamp": datetime(2024, 1, 9, 16, 0, tzinfo=timezone.utc),
