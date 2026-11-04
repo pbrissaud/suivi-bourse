@@ -29,8 +29,6 @@ AGENT_STATEMENTS_PATH = '/api/agent/statements'
 NO_HOST_ALLOWLIST = TransportSecuritySettings(
     enable_dns_rebinding_protection=False)
 
-_UVICORN_LEVELS = ('critical', 'error', 'warning', 'info', 'debug', 'trace')
-
 
 class Serving:
     """The ASGI application uvicorn is handed: the Flask app, the agent's, and the teardown."""
@@ -128,12 +126,11 @@ def serve(app, environment: boot_env.BootEnvironment,
     ``forwarded_allow_ips`` is passed even when empty: uvicorn's own default
     trusts ``X-Forwarded-For`` from localhost, and the throttle counts by IP.
     """
-    level = environment.log_level.lower()
     uvicorn.run(
         Serving(app, on_shutdown, mcp, agent, gate),
         host='0.0.0.0',
         port=environment.web_port,
-        log_level=level if level in _UVICORN_LEVELS else 'info',
+        log_level=environment.log_level.lower(),
         access_log=False,
         proxy_headers=True,
         forwarded_allow_ips=environment.forwarded_allow_ips,

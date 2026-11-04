@@ -249,6 +249,29 @@ def test_build_runtime_logs_at_the_level_of_the_environment_it_is_handed(
                 handler.setLevel(handler_level)
 
 
+def test_build_runtime_says_an_unknown_log_level_falls_back_to_info(
+        fake_config, tmp_path, caplog):
+    """#1487: an unknown ``LOG_LEVEL`` never fails the boot, and is never silent."""
+    loggers = [logging.getLogger(name) for name in main.MANAGED_LOGGERS]
+    before = [(lg.level, [h.level for h in lg.handlers]) for lg in loggers]
+    app_logger = logging.getLogger('suivi_bourse')
+    app_logger.addHandler(caplog.handler)
+    try:
+        main._apply_log_level('ERROR')
+
+        main.build_runtime({'SB_STORE_DIR': str(tmp_path), 'LOG_LEVEL': 'TRACE'})
+
+        assert main.current_log_level() == 'INFO'
+        assert any(r.levelno == logging.WARNING and "'TRACE'" in r.getMessage()
+                   for r in caplog.records)
+    finally:
+        app_logger.removeHandler(caplog.handler)
+        for lg, (level, handler_levels) in zip(loggers, before):
+            lg.setLevel(level)
+            for handler, handler_level in zip(lg.handlers, handler_levels):
+                handler.setLevel(handler_level)
+
+
 def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
     """One connection, for the life of the process (#696).
 

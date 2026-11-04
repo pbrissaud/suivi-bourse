@@ -24,6 +24,7 @@ DOCUMENTATION_URL = 'SB_DOCUMENTATION_URL'
 DEFAULT_STORE_DIR = '/data'
 DEFAULT_WEB_PORT = 8080
 DEFAULT_LOG_LEVEL = 'INFO'
+LOG_LEVELS = ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG')
 DEFAULT_DOCUMENTATION_URL = 'https://pbrissaud.github.io/suivi-bourse'
 
 INVENTORY: Tuple[Tuple[str, str], ...] = (
@@ -46,6 +47,12 @@ def text(env: Mapping[str, str], name: str,
         return default
     raw = str(raw).strip()
     return raw or default
+
+
+def log_level(env: Mapping[str, str]) -> str:
+    """``LOG_LEVEL`` in any case; an unknown value logs at the default rather than failing the boot (#1487)."""
+    level = (text(env, LOG_LEVEL) or '').upper()
+    return level if level in LOG_LEVELS else DEFAULT_LOG_LEVEL
 
 
 def integer(env: Mapping[str, str], name: str, default: int) -> int:
@@ -131,7 +138,7 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
     return BootEnvironment(
         store_dir=directory(env, STORE_DIR, DEFAULT_STORE_DIR),
         web_port=integer(env, WEB_PORT, DEFAULT_WEB_PORT),
-        log_level=text(env, LOG_LEVEL, DEFAULT_LOG_LEVEL),
+        log_level=log_level(env),
         unread=unread(env),
         reset_auth=text(env, RESET_AUTH) == '1',
         forwarded_allow_ips=text(env, FORWARDED_ALLOW_IPS, ''),
@@ -143,8 +150,8 @@ __all__ = [
     'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL', 'RESET_AUTH',
     'FORWARDED_ALLOW_IPS', 'DOCUMENTATION_URL',
     'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
-    'DEFAULT_DOCUMENTATION_URL',
+    'DEFAULT_DOCUMENTATION_URL', 'LOG_LEVELS',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ',
     'BootEnvironment', 'read', 'unread', 'notice',
-    'text', 'integer', 'directory', 'http_url',
+    'text', 'log_level', 'integer', 'directory', 'http_url',
 ]
