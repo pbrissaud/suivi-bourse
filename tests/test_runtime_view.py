@@ -18,7 +18,6 @@ import pytest
 from application import runtime_state
 from application import runtime_view
 from application.jobs import registry
-from application.jobs import registry
 from application import scheduling
 
 
