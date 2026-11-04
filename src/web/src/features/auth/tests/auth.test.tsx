@@ -149,15 +149,20 @@ describe('a session that ends under the page', () => {
     )
     const { user } = renderApp({ url: '/settings' })
     const block = await screen.findByRole('region', { name: 'L’agent' })
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), 'test-key-0123456789abcd')
-    await user.click(within(block).getByRole('button', { name: 'Tester la connexion' }))
+    await user.click(await within(block).findByRole('button', { name: 'Configurer' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Le fournisseur de l’agent' })
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), 'test-key-0123456789abcd')
+    await user.click(within(sheet).getByRole('button', { name: 'Tester la connexion' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Entrez votre code' })
     await user.type(within(dialog).getByRole('textbox'), '123456')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Entrez votre code' })).not.toBeInTheDocument(),
+    )
 
-    expect(within(block).getByLabelText('Clé d’API')).toHaveValue('test-key-0123456789abcd')
+    // The sheet is still open, and holds what was typed.
+    expect(within(sheet).getByLabelText('Clé d’API')).toHaveValue('test-key-0123456789abcd')
     expect(writes).toBe(1)
   })
 
@@ -184,7 +189,7 @@ describe('a session that ends under the page', () => {
   })
 })
 
-describe('the Accès block', () => {
+describe('the Sécurité section', () => {
   function pinOff() {
     let enabled = false
     server.use(
@@ -206,38 +211,43 @@ describe('the Accès block', () => {
   it('says what no code means, asks the new code twice, and shows the token once', async () => {
     pinOff()
     const { user } = renderApp({ url: '/settings' })
-    const block = await screen.findByRole('region', { name: 'Accès' })
-    const toggle = within(block).getByRole('switch', { name: 'Code d’accès' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const toggle = await within(block).findByRole('switch', { name: 'Demander un code' })
     expect(toggle).not.toBeChecked()
     expect(
       within(block).getByText('Sans code, toute personne sur votre réseau ouvre l’app.'),
     ).toBeInTheDocument()
+    // Off, the section is that one row.
+    expect(within(block).queryByRole('button')).not.toBeInTheDocument()
 
     await user.click(toggle)
-    // Only once the card's action succeeds.
+    // Only once the dialog's action succeeds.
     expect(toggle).not.toBeChecked()
-    await user.type(within(block).getByLabelText('Nouveau code'), '246810')
-    await user.type(within(block).getByLabelText('Confirmez le code'), '246811')
-    await user.click(within(block).getByRole('button', { name: 'Activer le code' }))
-    expect(within(block).getByRole('alert')).toHaveTextContent('Les deux codes diffèrent.')
+    const dialog = await screen.findByRole('dialog', { name: 'Activer le code' })
+    await user.type(within(dialog).getByLabelText('Nouveau code'), '246810')
+    await user.type(within(dialog).getByLabelText('Confirmez le code'), '246811')
+    await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Les deux codes diffèrent.')
 
-    await user.clear(within(block).getByLabelText('Confirmez le code'))
-    await user.type(within(block).getByLabelText('Confirmez le code'), '246810')
-    await user.click(within(block).getByRole('button', { name: 'Activer le code' }))
+    await user.clear(within(dialog).getByLabelText('Confirmez le code'))
+    await user.type(within(dialog).getByLabelText('Confirmez le code'), '246810')
+    await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
 
-    expect(await within(block).findByText('tok-shown-once')).toBeInTheDocument()
-    expect(within(block).getByText('Il ne sera plus affiché.')).toBeInTheDocument()
+    const shown = await screen.findByRole('dialog', { name: 'Votre jeton MCP' })
+    expect(within(shown).getByText('tok-shown-once')).toBeInTheDocument()
+    expect(within(shown).getByText('Il ne sera plus affiché.')).toBeInTheDocument()
+    expect(within(shown).queryByRole('button', { name: 'Fermer' })).not.toBeInTheDocument()
     expect(toggle).toBeChecked()
     await user.keyboard('{Escape}')
-    expect(within(block).getByText('tok-shown-once')).toBeInTheDocument()
+    expect(within(shown).getByText('tok-shown-once')).toBeInTheDocument()
 
-    await user.click(within(block).getByRole('button', { name: 'J’ai copié le jeton' }))
-    expect(within(block).queryByText('tok-shown-once')).not.toBeInTheDocument()
-    expect(within(block).getByText(/^Jeton MCP · créé le 16/)).toBeInTheDocument()
+    await user.click(within(shown).getByRole('button', { name: 'J’ai copié le jeton' }))
+    await waitFor(() => expect(screen.queryByText('tok-shown-once')).not.toBeInTheDocument())
+    expect(within(block).getByText(/^Créé le 16/)).toBeInTheDocument()
     expect(await screen.findByText('Code activé')).toBeInTheDocument()
   })
 
-  it('refuses to turn the code off with a wrong current code', async () => {
+  it('refuses to turn the code off with a wrong current code, in an alertdialog', async () => {
     server.use(
       http.get(ROUTES.authStatus, () =>
         HttpResponse.json({ enabled: true, authenticated: true, token_created_at: null }),
@@ -245,19 +255,48 @@ describe('the Accès block', () => {
       http.post(ROUTES.authDisable, () => refused(403)),
     )
     const { user } = renderApp({ url: '/settings' })
-    const block = await screen.findByRole('region', { name: 'Accès' })
-    const toggle = within(block).getByRole('switch', { name: 'Code d’accès' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const toggle = await within(block).findByRole('switch', { name: 'Demander un code' })
     expect(toggle).toBeChecked()
 
     await user.click(toggle)
-    await user.type(within(block).getByLabelText('Code actuel'), '999999')
-    await user.click(within(block).getByRole('button', { name: 'Désactiver le code' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Désactiver le code' })
+    await user.type(within(dialog).getByLabelText('Code actuel'), '999999')
+    await user.click(within(dialog).getByRole('button', { name: 'Désactiver le code' }))
 
-    expect(await within(block).findByRole('alert')).toHaveTextContent('Code actuel incorrect.')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Code actuel incorrect.')
     expect(toggle).toBeChecked()
-    // Escape closes the card.
+    // Escape closes the dialog, and gives the focus back to the switch.
     await user.keyboard('{Escape}')
-    expect(within(block).queryByLabelText('Code actuel')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(toggle).toHaveFocus())
+  })
+
+  it('changes the code in a dialog, and gives the focus back to its row', async () => {
+    let sent: unknown = null
+    server.use(
+      http.get(ROUTES.authStatus, () =>
+        HttpResponse.json({ enabled: true, authenticated: true, token_created_at: null }),
+      ),
+      http.post(ROUTES.authChange, async ({ request }) => {
+        sent = await request.json()
+        return HttpResponse.json({ enabled: true })
+      }),
+    )
+    const { user } = renderApp({ url: '/settings' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const change = await within(block).findByRole('button', { name: 'Changer le code' })
+
+    await user.click(change)
+    const dialog = await screen.findByRole('dialog', { name: 'Changer le code' })
+    await user.type(within(dialog).getByLabelText('Code actuel'), '123456')
+    await user.type(within(dialog).getByLabelText('Nouveau code'), '654321')
+    await user.type(within(dialog).getByLabelText('Confirmez le code'), '654321')
+    await user.click(within(dialog).getByRole('button', { name: 'Changer' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(sent).not.toBeNull()
+    await waitFor(() => expect(change).toHaveFocus())
   })
 
   it('signs this device out back to the PIN screen', async () => {
@@ -272,9 +311,9 @@ describe('the Accès block', () => {
       }),
     )
     const { user } = renderApp({ url: '/settings' })
-    const block = await screen.findByRole('region', { name: 'Accès' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
 
-    await user.click(within(block).getByRole('button', { name: 'Se déconnecter' }))
+    await user.click(await within(block).findByRole('button', { name: 'Se déconnecter' }))
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' }),

@@ -493,8 +493,9 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 - **Section:** see Layout. No hover state; the section itself is not interactive. In
   the dashboard's edit mode its title row carries the ⋯ menu (see The dashboard grid).
 - **Card:** `card`, `rounded.card`, 14 px padding. Allowed only for something the
-  user decides (an agent proposal, a profile fact to confirm, a first-run step, a
-  destructive confirmation) or selects (an account tile). Never a card inside a card.
+  user decides (an agent proposal, a profile fact to confirm, a first-run step) or
+  selects (an account tile). A destructive confirmation is a Dialog (`alertdialog`, a
+  destructive primary), not a card. Never a card inside a card.
   A decided proposal loses its buttons **and its frame**: one status line (decision 5A).
 - **Weight bar:** a 6 px `muted-foreground` bar with its percentage in Label, inside holding
   rows and in a legend drawn without a ring (the dashboard's allocation at half width). In
@@ -518,7 +519,7 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   reads trace lines, then the answer, then its proposal cards (a proposal call keeps its trace
   line). While a turn streams, one thing moves at a time: a running tool line, the pending
   line "Préparation de la réponse…" (a running trace line, no chevron), or the growing text.
-- **PIN screen and Accès block (#1203):** the PIN screen is a single 360 px column on a
+- **PIN screen and Sécurité section (#1203, #1279):** the PIN screen is a single 360 px column on a
   `muted` plane (`rounded.section`, no border, no shadow) centred on `background`: the product
   name in Label `muted-foreground`, the heading "Entrez votre code" in Section title, six 44 px
   slots (`card`, 1 px `border`, `rounded.md`, a dot for a filled slot) in one real
@@ -528,11 +529,22 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   oublié ?" is a collapsible naming `SB_RESET_AUTH`. Under 768 px there is no plane: the
   column sits on the background, 14 px gutter, in the top third; under 340 px the slot gap
   narrows to 4 px. A session that ends inside the app opens the same form in a modal,
-  non-dismissable dialog over the mounted page. The *Accès* settings section carries a
-  `Switch` in its title row that flips only once its card's action succeeds; with the PIN
-  on, three `border`-separated rows (Code, Jeton MCP, Cet appareil) each open a `card`
-  card under them, one at a time, Escape closing it — except the token card, which only
-  "J'ai copié le jeton" closes.
+  non-dismissable dialog over the mounted page. The *Sécurité* settings section opens on
+  the row "Demander un code", whose `Switch` flips only once its Dialog's action
+  succeeds (on: the new code twice; off: the current code in an `alertdialog` with a
+  destructive primary). With the code off the section is that one row; with it on, three
+  more rows (Code, Jeton MCP, Cet appareil) each open a Dialog, never a card under the
+  row. A regenerated token is shown once, in a Dialog without a close button that only
+  "J'ai copié le jeton" closes. Every Dialog gives the focus back to the control that
+  opened it.
+- **Agent section (#1279):** "Agent activé" is its first row, a `Switch` saved on change
+  and disabled until a connection has passed its test and a model is stored. "Fournisseur"
+  names the provider and the key by its last four; "Configurer" (primary, the first time)
+  or "Changer" opens a 420 px Sheet holding the procedure: the provider, its key ("leave
+  empty to keep …last4") or address, *Tester la connexion*, the model, *Enregistrer*.
+  "Modèle" and "Réflexion" are Selects saved on change: changing the model asks for no
+  key, and its list is asked of the provider on the Select's first opening, never when
+  the page loads.
 - **Mark (#1337):** a 28 px `sidebar-primary` tile, its corners 8/28 of its side (the buttons' `md` at 28 px, scaling with the mark), where the value (a solid line
   ending on a dot) rises away from the net contributions (dotted, 60 %), both strokes in
   `sidebar-primary-foreground`: the dashboard chart in one gesture, the gap between the two
@@ -631,3 +643,4 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 | 2026-10-29 | The product's mark: the value rising away from the contributions (#1337) | The letter in a tile read like a starter template. The drawing reuses the one image the app already has, the dashboard chart (value over contributions), chosen over a monogram or rising bars; it takes the sidebar's tokens so a theme repaints it. The favicon is the one copy that cannot follow a theme and keeps Atelier's ink. |
 | 2026-10-31 | The theme is edited as a form with a live preview (#1314) | A textarea of JSON asked the owner to know 40 token names and to apply blind. The form names the 16 colours the design reads, previews them on the real app before anything is saved, and keeps the JSON as an expert escape hatch for the keys it does not show. The preview is one stylesheet, not inline variables, so both grounds keep their own palette; the dark palette is previewed in dark whatever the device is set to. |
 | 2026-10-30 | The dashboard's third track (#1325) | Packing, move and drag rules for three tracks: consecutive halves fill rows of three; a lone half that accepts the full width is drawn across the row, other leftover tracks are free cells ("Place libre" in edit mode, one outline per track); a full section takes the whole row and jumps a whole row when moved; the stored list and `LAYOUT_VERSION` are untouched. The default order becomes allocation, gain breakdown, rhythm, movers, so three tracks show three halves then the movers across the row (saved layouts are untouched). The movers show fifteen lines in columns of five across three tracks, the allocation's legend a third column. |
+| 2026-11-04 | The Sécurité and agent sections follow #1279 (#1436, item 17) | The owner settled the conflict #1436 left open: #1279 wins over the title-row switch and the cards under the rows. A section's switch is its first row, never in its title row; a procedure opens a Dialog or a Sheet; « Accès » becomes « Sécurité ». The agent's connection moves into a Sheet, and its model becomes a value saved on change without the key. |

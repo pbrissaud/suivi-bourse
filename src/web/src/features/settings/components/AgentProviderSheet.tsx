@@ -1,30 +1,45 @@
 /**
- * *L’agent* — **switching it on, in four guided steps** (#1115, design
- * review 6A), for a reader who has never configured a model.
+ * *Fournisseur* — **the agent's connection, in a Sheet** (#1279), for a reader
+ * who has never configured a model (#1115, design review 6A).
  *
  * 1. **The provider**, each with the one sentence that tells them apart;
- * 2. **its key**, with where to find one, or Ollama's address;
+ * 2. **its key**, with where to find one, or the address of a gateway or of
+ *    Ollama; left empty, the stored one is kept, shown by its last four;
  * 3. **Tester la connexion**: the form goes to the server as one candidate,
  *    which lists the provider's models with it and preselects one, and keeps
  *    the candidate only on a pass (#1269). A failure is said in a sentence of
  *    ours, the provider's own words folded behind it;
- * 4. **the outbound contract** — what leaves for the provider and what never
- *    does — and the *Activer l’agent* button, which stays absent until step 3
+ * 4. **Enregistrer** stores the model chosen, and stays disabled until step 3
  *    has passed **for what is on screen**: any edit to steps 1 and 2 takes the
- *    pass back. The switch at the top is the state, and the way off.
+ *    pass back.
  *
+ * A passed test that changes the provider, its key or its address switches the
+ * agent off on the server; *Enregistrer* switches it back on when it was on as
+ * the sheet opened, and on for the first time when nothing was configured.
  * The key is typed here and never read back: the server answers its last four
- * characters and nothing else (#1114). The agent is off by default.
+ * characters and nothing else (#1114).
  */
-import { useRef, useState } from 'react'
+import { type RefObject, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Section } from '@/components/ui/section'
-import { Switch } from '@/components/ui/switch'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
+import {
+  agentApi,
+  type AgentConfig,
+  type AgentProvider,
+  type AgentTestResult,
+} from '@/features/agent/lib/api'
 import {
   AGENT_PROVIDERS,
   addressRequired,
@@ -39,24 +54,15 @@ import {
   storedKeyApplies,
   type AgentDraft,
 } from '@/features/settings/lib/agentSetup'
-import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
-import {
-  agentApi,
-  type AgentConfig,
-  type AgentProvider,
-  type AgentTestResult,
-  type AgentThinking,
-} from '@/features/agent/lib/api'
-import { useDocs } from '@/lib/docs'
-import { useI18n, type MessageKey } from '@/lib/i18n'
 import { ApiProblem } from '@/lib/api'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { PROBLEM_TYPES, problemMessageKey, providerRefusal } from '@/lib/problem'
 
 /** The `<select>` skin the forms share (`TaxationModelField`, `EventForm`). */
 const SELECT =
   'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
 
-const PROVIDER_LABEL: Record<AgentProvider, MessageKey> = {
+export const PROVIDER_LABEL: Record<AgentProvider, MessageKey> = {
   anthropic: 'settings.agent.provider.anthropic',
   openai: 'settings.agent.provider.openai',
   openai_compatible: 'settings.agent.provider.openai_compatible',
@@ -70,50 +76,72 @@ const PROVIDER_HINT: Record<AgentProvider, MessageKey> = {
   ollama: 'settings.agent.provider.ollama.hint',
 }
 
-const THINKING_LEVELS: AgentThinking[] = ['low', 'medium', 'high']
-
-const THINKING_LABEL: Record<AgentThinking, MessageKey> = {
-  low: 'settings.agent.thinking.low',
-  medium: 'settings.agent.thinking.medium',
-  high: 'settings.agent.thinking.high',
+export function AgentProviderSheet({
+  open,
+  onClose,
+  config,
+  opener,
+}: {
+  open: boolean
+  onClose: () => void
+  config: AgentConfig
+  /** Gets the focus back on close: Radix gives it to a `SheetTrigger` only. */
+  opener: RefObject<HTMLButtonElement | null>
+}) {
+  const { t } = useI18n()
+  return (
+    <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+      <SheetContent
+        className="w-full overflow-y-auto sm:max-w-[420px]"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          opener.current?.focus()
+        }}
+      >
+        <SheetHeader>
+          <SheetTitle className="text-lg">{t('settings.agent.sheet.title')}</SheetTitle>
+          <SheetDescription>{t('settings.agent.key.note')}</SheetDescription>
+        </SheetHeader>
+        {/* Mounted while open only, so every opening starts from the store. */}
+        {open ? <ProviderForm config={config} onClose={onClose} /> : null}
+      </SheetContent>
+    </Sheet>
+  )
 }
 
-export function AgentBlock({ config }: { config: AgentConfig }) {
-  const { t, language } = useI18n()
-  const { docsPageHref } = useDocs()
+function ProviderForm({ config, onClose }: { config: AgentConfig; onClose: () => void }) {
+  const { t } = useI18n()
   const client = useQueryClient()
-  const navigate = useNavigate()
+  // What the sheet opened on: whether *Enregistrer* puts the agent (back) on.
+  const [opened] = useState(config)
   // Seeded once from the store: a refetch after a write must not wipe what
   // the reader is typing, nor the test that just passed.
   const [draft, setDraft] = useState<AgentDraft>(() => draftOf(config))
   const [tested, setTested] = useState<AgentTestResult | null>(null)
   const [model, setModel] = useState('')
-  // Steps 1 and 2 edited since the last passed test: the stored model no longer
-  // answers for them, even once a failed test has written them to the store.
-  const [untested, setUntested] = useState(false)
   // Counts the edits: a test that answers after one is about a form no longer on screen.
   const edits = useRef(0)
+
+  const stored = (answer: AgentConfig) => client.setQueryData(['agent-config'], answer)
 
   const edit = (change: Partial<AgentDraft>) => {
     edits.current += 1
     setDraft((current) => ({ ...current, ...change }))
-    setUntested(true)
     // What was tested is no longer what is on screen.
     setTested(null)
     setModel('')
     test.reset()
   }
 
-  const stored = (answer: AgentConfig) => client.setQueryData(['agent-config'], answer)
-
   const test = useMutation({
     mutationFn: (_started: number) => agentApi.testAgent(candidateOf(draft)),
     onSuccess: (answer, started) => {
       // Stored by the pass, and only by it: a refusal changes nothing.
       stored(answer.config)
+      // The model list the row offers belongs to what was just stored.
+      void client.invalidateQueries({ queryKey: ['agent-models'] })
       if (started !== edits.current) return
       setTested(answer)
-      setUntested(false)
       setModel(answer.preselected ?? '')
       // Stored now: the field goes back to saying so by its last four.
       setDraft((current) => ({ ...current, key: '' }))
@@ -121,39 +149,24 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
     onSettled: () => client.invalidateQueries({ queryKey: ['agent-config'] }),
   })
 
-  const toggle = useMutation({
-    mutationFn: (enabled: boolean) => {
-      if (!enabled) return agentApi.saveAgentConfig({ enabled: false })
+  const save = useMutation({
+    mutationFn: () => {
       // The name the listing gave the model travels with its id (#1269).
-      const chosen = model || (config.model ?? '')
-      const name =
-        tested?.models.find((one) => one.id === chosen)?.name ??
-        (chosen === config.model ? config.model_name : null)
-      return agentApi.saveAgentConfig({ model: chosen, model_name: name, enabled: true })
+      const name = tested?.models.find((one) => one.id === model)?.name ?? null
+      const on = opened.enabled || opened.model === null
+      return agentApi.saveAgentConfig({
+        model,
+        model_name: name,
+        ...(on ? { enabled: true } : {}),
+      })
     },
     onSuccess: (answer) => {
       stored(answer)
       toast.success(
-        answer.enabled
-          ? t('settings.agent.receipt.on', { model: answer.model_name ?? answer.model ?? '' })
-          : t('settings.agent.receipt.off'),
-        answer.enabled
-          ? {
-              action: {
-                label: t('settings.agent.receipt.open'),
-                onClick: () => void navigate({ to: '/agent' }),
-              },
-            }
-          : undefined,
+        t('settings.agent.receipt.saved', { model: answer.model_name ?? answer.model ?? '' }),
       )
+      onClose()
     },
-  })
-
-  // Written at once, with nothing else: not a field of the connection, so no test.
-  const thinking = useMutation({
-    mutationFn: (level: AgentThinking) => agentApi.saveAgentConfig({ thinking: level }),
-    onSuccess: stored,
-    onSettled: () => client.invalidateQueries({ queryKey: ['agent-config'] }),
   })
 
   const provider = draft.provider
@@ -164,37 +177,20 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
   const keyLast4 = storedKeyApplies(config, draft) ? config.key.last4 : null
   const keyPage = provider ? KEY_PAGE[provider] : undefined
   const refusal = providerRefusal(test.error)
-  // A test this session decides; without one, the stored model can be switched back on.
-  const activatable =
-    tested !== null ? canActivate(true, model) : !untested && config.model !== null
+  const savable = tested !== null && canActivate(true, model)
 
   return (
-    <Section
-      title={t('settings.agent.title')}
-      aside={
-        <span className="flex items-center gap-3">
-          {config.enabled && config.provider && config.model ? (
-            <span role="status" className="text-sm text-muted-foreground">
-              {t('settings.agent.on', {
-                provider: t(PROVIDER_LABEL[config.provider]),
-                model: config.model_name ?? config.model,
-              })}
-            </span>
-          ) : null}
-          <Switch
-            aria-label={t('settings.agent.switch')}
-            checked={config.enabled}
-            // On needs a model: the one the test just picked, or the one stored.
-            disabled={toggle.isPending || (!config.enabled && !activatable)}
-            onCheckedChange={(on) => toggle.mutate(on)}
-          />
-        </span>
-      }
+    <form
+      className="flex flex-1 flex-col"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (savable) save.mutate()
+      }}
     >
-      <div className="space-y-6">
+      <div className="flex-1 space-y-6 px-4">
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">{t('settings.agent.step.provider')}</legend>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2">
             {AGENT_PROVIDERS.map((one) => (
               <label
                 key={one}
@@ -285,11 +281,11 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
                   onChange={(event) => edit({ key: event.target.value })}
                   className="font-mono"
                 />
-                <p className="text-2xs leading-relaxed text-muted-foreground">
-                  {keyLast4
-                    ? t('settings.agent.key.stored', { last4: keyLast4 })
-                    : t('settings.agent.key.note')}
-                </p>
+                {keyLast4 ? (
+                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                    {t('settings.agent.key.keep', { last4: keyLast4 })}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -322,11 +318,11 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
               </p>
               {tested.models.length > 0 ? (
                 <div className="space-y-1.5">
-                  <label htmlFor="agent-model" className="block text-sm">
+                  <label htmlFor="agent-sheet-model" className="block text-sm">
                     {t('settings.agent.model')}
                   </label>
                   <select
-                    id="agent-model"
+                    id="agent-sheet-model"
                     value={model}
                     onChange={(event) => setModel(event.target.value)}
                     className={SELECT}
@@ -337,18 +333,6 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
                       </option>
                     ))}
                   </select>
-                  {/* While on, the switch has nothing to flip: a new model is saved here. */}
-                  {config.enabled && model !== '' && model !== config.model ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={toggle.isPending}
-                      onClick={() => toggle.mutate(true)}
-                    >
-                      {t('settings.agent.model.use')}
-                    </Button>
-                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -369,60 +353,25 @@ export function AgentBlock({ config }: { config: AgentConfig }) {
             )
           ) : null}
         </section>
-
-        {/* A model chosen by a passed test counts before it is activated: the level can be set first. */}
-        {config.model !== null || model !== '' ? (
-          <section className="space-y-1.5">
-            <label htmlFor="agent-thinking" className="block text-sm font-medium">
-              {t('settings.agent.thinking')}
-            </label>
-            <select
-              id="agent-thinking"
-              value={config.thinking}
-              disabled={thinking.isPending}
-              onChange={(event) => thinking.mutate(event.target.value as AgentThinking)}
-              className={SELECT}
-            >
-              {THINKING_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {t(THINKING_LABEL[level])}
-                </option>
-              ))}
-            </select>
-            <p className="text-2xs leading-relaxed text-muted-foreground">
-              {t('settings.agent.thinking.help')}
-            </p>
-            {thinking.isError ? (
-              <p role="alert" className="text-sm text-destructive">
-                {t(problemMessageKey(thinking.error))}
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {config.enabled ? null : activatable ? (
-            <Button type="button" disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
-              {t('settings.agent.switch')}
-            </Button>
-          ) : (
-            <p>{t('settings.agent.activate.why')}</p>
-          )}
-          <a
-            href={docsPageHref(language, 'settings', 'agent')}
-            target="_blank"
-            rel="noreferrer"
-            className="text-primary underline underline-offset-4"
-          >
-            {t('settings.agent.contract')}
-          </a>
-        </div>
-        {toggle.isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {t(problemMessageKey(toggle.error))}
-          </p>
-        ) : null}
       </div>
-    </Section>
+
+      <SheetFooter className="border-t">
+        {save.isError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(problemMessageKey(save.error))}
+          </p>
+        ) : !savable ? (
+          <p className="text-xs text-muted-foreground">{t('settings.agent.save.why')}</p>
+        ) : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="ghost" className="max-md:h-11" onClick={onClose}>
+            {t('settings.access.cancel')}
+          </Button>
+          <Button type="submit" className="max-md:h-11" disabled={!savable || save.isPending}>
+            {t('settings.agent.save')}
+          </Button>
+        </div>
+      </SheetFooter>
+    </form>
   )
 }

@@ -1,10 +1,11 @@
 /**
- * *L’agent* in Settings (#1115): switching it on in four steps, the whole
- * app in jsdom and HTTP the only faked edge.
+ * *L’agent* in Settings (#1115, #1279): the switch and the model on their rows,
+ * the connection in a Sheet; the whole app in jsdom and HTTP the only faked edge.
  *
- * The rule the ticket asks a test of is the first one: **The switch stays
- * disabled until Tester la connexion succeeds** — for what is on screen, so an
- * edit after a pass takes it back.
+ * The rule the ticket asks a test of is the first one: **nothing is stored as
+ * the agent's model until Tester la connexion succeeds** — for what is on
+ * screen, so an edit after a pass takes it back. And since #1279: **changing
+ * the model asks for no key**, and loading the page asks the provider nothing.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -86,59 +87,140 @@ function provider(
 async function openAgent() {
   const rendered = renderApp({ url: '/settings' })
   const block = await screen.findByRole('region', { name: 'L’agent' })
+  // The rows stand on the agent's read: wait for them.
+  await within(block).findByRole('switch', { name: 'Agent activé' })
   return { ...rendered, block }
 }
 
-const activate = (block: HTMLElement) =>
-  within(block).getByRole('switch', { name: 'Activer l’agent' })
-const testButton = (block: HTMLElement) =>
-  within(block).getByRole('button', { name: 'Tester la connexion' })
+/** Opens the provider's sheet from its row, whatever the row's button says. */
+async function openSheet() {
+  const rendered = await openAgent()
+  await rendered.user.click(
+    within(rendered.block).getByRole('button', { name: /^(Configurer|Changer)$/ }),
+  )
+  const sheet = await screen.findByRole('dialog', { name: 'Le fournisseur de l’agent' })
+  return { ...rendered, sheet }
+}
 
-describe('switching the agent on', () => {
-  it('is off by default, and the switch stays disabled until the test passes', async () => {
+const enabled = (block: HTMLElement) => within(block).getByRole('switch', { name: 'Agent activé' })
+const testButton = (sheet: HTMLElement) =>
+  within(sheet).getByRole('button', { name: 'Tester la connexion' })
+const saveButton = (sheet: HTMLElement) =>
+  within(sheet).getByRole('button', { name: 'Enregistrer' })
+
+const configured = (overrides: Partial<AgentConfig> = {}) =>
+  anAgentConfig({
+    provider: 'anthropic',
+    model: 'claude-x',
+    model_name: 'Claude X',
+    key: { set: true, last4: 'abcd', set_at: null },
+    ...overrides,
+  })
+
+describe('the agent section', () => {
+  it('is off by default: the switch is disabled and « Configurer » leads', async () => {
     const writes = provider()
+    const { block } = await openAgent()
+
+    expect(enabled(block)).toBeDisabled()
+    expect(enabled(block)).not.toBeChecked()
+    expect(within(block).getByText('Aucun fournisseur configuré.')).toBeInTheDocument()
+    expect(within(block).getByRole('button', { name: 'Configurer' })).toBeInTheDocument()
+    expect(within(block).queryByRole('combobox', { name: 'Modèle' })).not.toBeInTheDocument()
+    expect(writes).toEqual([])
+  })
+
+  it('keeps every control out of the gutter', async () => {
+    provider(undefined, configured())
+    const { block } = await openAgent()
+    const gutter = block.querySelector('header') as HTMLElement
+
+    expect(within(gutter).queryByRole('switch')).not.toBeInTheDocument()
+    expect(within(gutter).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('switches off and on from its first row, and says so there', async () => {
+    const writes = provider(undefined, configured({ enabled: true }))
     const { user, block } = await openAgent()
 
-    expect(within(block).queryByText(/^Actif/)).not.toBeInTheDocument()
-    expect(activate(block)).toBeDisabled()
-    expect(testButton(block)).toBeDisabled()
+    await user.click(enabled(block))
 
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    expect(activate(block)).toBeDisabled()
+    await waitFor(() => expect(enabled(block)).not.toBeChecked())
+    expect(await within(block).findByRole('status')).toHaveTextContent('✓ Enregistré')
+    expect(writes).toEqual([['config', { enabled: false }]])
+  })
 
-    await user.click(testButton(block))
+  it('says a refused switch on its row', async () => {
+    provider(undefined, configured())
+    server.use(
+      http.put(ROUTES.agentConfig, () =>
+        HttpResponse.json(
+          { status: 422, title: 'refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user, block } = await openAgent()
+
+    await user.click(enabled(block))
+
+    expect(await within(block).findByRole('alert')).toHaveTextContent('Non enregistré :')
+    await waitFor(() => expect(enabled(block)).not.toBeChecked())
+  })
+
+  it('never shows the stored key, only its last four', async () => {
+    provider(undefined, configured({ enabled: true }))
+    const { block } = await openAgent()
+
+    expect(within(block).getByText('Anthropic · clé …abcd')).toBeInTheDocument()
+    expect(within(block).queryByText(/test-key/)).not.toBeInTheDocument()
+  })
+})
+
+describe('the provider sheet', () => {
+  it('stores nothing until the test passes, and sends one candidate', async () => {
+    const writes = provider()
+    const { user, sheet } = await openSheet()
+
+    expect(testButton(sheet)).toBeDisabled()
+    expect(saveButton(sheet)).toBeDisabled()
+
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    expect(saveButton(sheet)).toBeDisabled()
+
+    await user.click(testButton(sheet))
 
     expect(
-      await within(block).findByText('Anthropic répond : 2 modèles disponibles.'),
+      await within(sheet).findByText('Anthropic répond : 2 modèles disponibles.'),
     ).toBeInTheDocument()
-    expect(activate(block)).toBeEnabled()
-    // One test carrying the candidate — and nothing switched on yet.
+    expect(saveButton(sheet)).toBeEnabled()
+    // One test carrying the candidate — and nothing saved yet.
     expect(writes).toEqual([['test', { provider: 'anthropic', base_url: null, key: KEY }]])
   })
 
   it('sends the provider, the key and the address in one test, and nothing else', async () => {
     const writes = provider()
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /passerelle/i }))
-    await user.type(within(block).getByLabelText('Adresse'), 'http://litellm:4000')
-    await user.type(within(block).getByLabelText(/Clé d’API/), KEY)
-    await user.click(testButton(block))
-    await within(block).findByLabelText('Modèle')
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /passerelle/i }))
+    await user.type(within(sheet).getByLabelText('Adresse'), 'http://litellm:4000')
+    await user.type(within(sheet).getByLabelText(/Clé d’API/), KEY)
+    await user.click(testButton(sheet))
+    await within(sheet).findByLabelText('Modèle')
 
     expect(writes).toEqual([
       ['test', { provider: 'openai_compatible', base_url: 'http://litellm:4000', key: KEY }],
     ])
   })
 
-  it('offers the provider’s models, preselects one, and switches on with it', async () => {
+  it('offers the provider’s models, preselects one, and the first save switches the agent on', async () => {
     const writes = provider()
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+    const { user, block, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
 
-    const model = await within(block).findByLabelText('Modèle')
+    const model = await within(sheet).findByLabelText('Modèle')
     expect(model).toHaveValue('claude-new')
     expect(
       within(model)
@@ -146,85 +228,65 @@ describe('switching the agent on', () => {
         .map((one) => one.textContent),
     ).toEqual(['Claude New (claude-new)', 'Claude Old (claude-old)'])
     await user.selectOptions(model, 'claude-old')
-    await user.click(within(block).getByRole('button', { name: 'Activer l’agent' }))
+    await user.click(saveButton(sheet))
 
-    expect(await within(block).findByText('Actif : Anthropic, Claude Old.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(writes.at(-1)).toEqual([
       'config',
       { model: 'claude-old', model_name: 'Claude Old', enabled: true },
     ])
+    expect(await screen.findByText('Fournisseur enregistré : Claude Old')).toBeInTheDocument()
+    expect(enabled(block)).toBeChecked()
+    expect(within(block).getByRole('combobox', { name: 'Modèle' })).toHaveTextContent('Claude Old')
   })
 
-  it('offers Activer l’agent where Prêt was said, and confirms with a receipt', async () => {
-    const writes = provider()
-    const { user, block, router } = await openAgent()
-    expect(within(block).queryByRole('button', { name: 'Activer l’agent' })).not.toBeInTheDocument()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+  it('leaves an agent that was off off when it saves another provider', async () => {
+    const writes = provider(undefined, configured())
+    const { user, block, sheet } = await openSheet()
+    // The stored key is enough to test again.
+    expect(testButton(sheet)).toBeEnabled()
+    await user.click(testButton(sheet))
+    await within(sheet).findByLabelText('Modèle')
+    await user.click(saveButton(sheet))
 
-    await user.click(await within(block).findByRole('button', { name: 'Activer l’agent' }))
-
-    expect(writes.at(-1)).toEqual([
-      'config',
-      { model: 'claude-new', model_name: 'Claude New', enabled: true },
-    ])
-    expect(await screen.findByText('Agent activé : Claude New')).toBeInTheDocument()
-    // Switched on: the button gives way to the state.
-    expect(within(block).queryByRole('button', { name: 'Activer l’agent' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Ouvrir l’agent' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/agent'))
-  })
-
-  it('confirms switching off with a receipt', async () => {
-    provider(
-      undefined,
-      anAgentConfig({
-        provider: 'anthropic',
-        model: 'claude-x',
-        enabled: true,
-        key: { set: true, last4: 'abcd', set_at: null },
-      }),
+    await waitFor(() =>
+      expect(writes.at(-1)).toEqual(['config', { model: 'claude-new', model_name: 'Claude New' }]),
     )
-    const { user, block } = await openAgent()
-
-    await user.click(activate(block))
-
-    expect(await screen.findByText('Agent désactivé')).toBeInTheDocument()
+    expect(enabled(block)).not.toBeChecked()
   })
 
-  it('shows the model’s name in the active line', async () => {
-    provider(
-      undefined,
-      anAgentConfig({
-        provider: 'anthropic',
-        model: 'claude-sonnet-5-5',
-        model_name: 'Claude Sonnet 5.5',
-        enabled: true,
-        key: { set: true, last4: 'abcd', set_at: null },
-      }),
+  it('puts an agent that was on back on, after a test switched it off', async () => {
+    const writes = provider(undefined, configured({ enabled: true }))
+    const { user, sheet } = await openSheet()
+    await user.click(testButton(sheet))
+    await within(sheet).findByLabelText('Modèle')
+    await user.click(saveButton(sheet))
+
+    await waitFor(() =>
+      expect(writes.at(-1)).toEqual([
+        'config',
+        { model: 'claude-new', model_name: 'Claude New', enabled: true },
+      ]),
     )
-    const { block } = await openAgent()
-
-    expect(within(block).getByText('Actif : Anthropic, Claude Sonnet 5.5.')).toBeInTheDocument()
   })
 
-  it('says a refused key in a sentence, keeps the raw message folded, and never says it is saved', async () => {
-    provider(() => refuses('key'))
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+  it('says a refused key in a sentence, keeps the raw message folded, and saves nothing', async () => {
+    const writes = provider(() => refuses('key'))
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
 
-    const alert = await within(block).findByRole('alert')
+    const alert = await within(sheet).findByRole('alert')
     expect(alert).toHaveTextContent(
       'Anthropic refuse cette clé : vérifiez qu’elle est complète et toujours active.',
     )
-    expect(within(block).queryByText('invalid x-api-key')).not.toBeInTheDocument()
-    await user.click(within(block).getByRole('button', { name: 'Message brut (Anthropic)' }))
-    expect(within(block).getByText('invalid x-api-key')).toBeVisible()
-    expect(within(block).queryByText(/est enregistrée/)).not.toBeInTheDocument()
-    expect(activate(block)).toBeDisabled()
+    expect(within(sheet).queryByText('invalid x-api-key')).not.toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Message brut (Anthropic)' }))
+    expect(within(sheet).getByText('invalid x-api-key')).toBeVisible()
+    expect(within(sheet).queryByText(/garder la clé/)).not.toBeInTheDocument()
+    expect(saveButton(sheet)).toBeDisabled()
+    expect(writes.filter(([kind]) => kind === 'config')).toEqual([])
   })
 
   it('says a configuration changed during the test as such, and keeps what was typed', async () => {
@@ -234,15 +296,15 @@ describe('switching the agent on', () => {
         { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
       ),
     )
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
 
-    expect(await within(block).findByRole('alert')).toHaveTextContent(
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent(
       'La configuration de l’agent a changé pendant le test : testez de nouveau.',
     )
-    expect(within(block).getByLabelText('Clé d’API')).toHaveValue(KEY)
+    expect(within(sheet).getByLabelText('Clé d’API')).toHaveValue(KEY)
   })
 
   it('drops the answer of a test the reader edited the form under', async () => {
@@ -254,17 +316,17 @@ describe('switching the agent on', () => {
       await gate
       return passes(candidate, row)
     })
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
     // Edited while the provider is still answering.
-    await user.type(within(block).getByLabelText('Clé d’API'), 'x')
+    await user.type(within(sheet).getByLabelText('Clé d’API'), 'x')
     release()
 
-    await waitFor(() => expect(within(block).getByLabelText('Clé d’API')).toHaveValue(`${KEY}x`))
-    expect(within(block).queryByLabelText('Modèle')).not.toBeInTheDocument()
-    expect(within(block).queryByRole('button', { name: 'Activer l’agent' })).not.toBeInTheDocument()
+    await waitFor(() => expect(within(sheet).getByLabelText('Clé d’API')).toHaveValue(`${KEY}x`))
+    expect(within(sheet).queryByLabelText('Modèle')).not.toBeInTheDocument()
+    expect(saveButton(sheet)).toBeDisabled()
   })
 
   it.each([
@@ -278,47 +340,43 @@ describe('switching the agent on', () => {
     ['refused', 'Anthropic a refusé la connexion.'],
   ])('translates each refusal reason (%s)', async (reason, sentence) => {
     provider(() => refuses(reason))
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
 
-    expect(await within(block).findByRole('alert')).toHaveTextContent(sentence)
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent(sentence)
   })
 
-  it('does not switch the stored model back on after a failed test on another provider', async () => {
-    provider(
-      () => refuses('key', 'OpenAI: invalid key'),
-      anAgentConfig({
-        provider: 'anthropic',
-        model: 'claude-x',
-        key: { set: true, last4: 'abcd', set_at: null },
-      }),
-    )
-    const { user, block } = await openAgent()
-    expect(activate(block)).toBeEnabled()
+  it('keeps the stored provider after a failed test on another one', async () => {
+    provider(() => refuses('key', 'OpenAI: invalid key'), configured())
+    const { user, block, sheet } = await openSheet()
 
-    await user.click(within(block).getByRole('radio', { name: /modèles GPT/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
+    await user.click(within(sheet).getByRole('radio', { name: /modèles GPT/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
 
-    await within(block).findByRole('alert')
-    expect(activate(block)).toBeDisabled()
+    await within(sheet).findByRole('alert')
+    expect(saveButton(sheet)).toBeDisabled()
+    await user.click(within(sheet).getByRole('button', { name: 'Annuler' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(within(block).getByText('Anthropic · clé …abcd')).toBeInTheDocument()
+    expect(enabled(block)).toBeEnabled()
   })
 
   it('takes the pass back when the key is edited after it', async () => {
     provider()
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    await user.click(testButton(block))
-    await within(block).findByLabelText('Modèle')
-    expect(activate(block)).toBeEnabled()
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(testButton(sheet))
+    await within(sheet).findByLabelText('Modèle')
+    expect(saveButton(sheet)).toBeEnabled()
 
-    await user.type(within(block).getByLabelText('Clé d’API'), 'x')
+    await user.type(within(sheet).getByLabelText('Clé d’API'), 'x')
 
-    expect(activate(block)).toBeDisabled()
-    expect(within(block).queryByLabelText('Modèle')).not.toBeInTheDocument()
+    expect(saveButton(sheet)).toBeDisabled()
+    expect(within(sheet).queryByLabelText('Modèle')).not.toBeInTheDocument()
   })
 
   it('asks Ollama for an address and no key', async () => {
@@ -330,112 +388,136 @@ describe('switching the agent on', () => {
           preselected: null,
           config: { ...row, provider: 'ollama', base_url: candidate.base_url ?? null },
         }),
-      anAgentConfig({
-        provider: 'anthropic',
-        model: 'claude-x',
-        key: { set: true, last4: 'abcd', set_at: null },
-      }),
+      configured(),
     )
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Ollama/ }))
+    const { user, sheet } = await openSheet()
+    await user.click(within(sheet).getByRole('radio', { name: /Ollama/ }))
 
-    expect(within(block).queryByLabelText(/Clé d’API/)).not.toBeInTheDocument()
-    expect(within(block).getByLabelText('Adresse')).toHaveValue('http://localhost:11434')
-    await user.click(testButton(block))
+    expect(within(sheet).queryByLabelText(/Clé d’API/)).not.toBeInTheDocument()
+    expect(within(sheet).getByLabelText('Adresse')).toHaveValue('http://localhost:11434')
+    await user.click(testButton(sheet))
 
     expect(
-      await within(block).findByText(
+      await within(sheet).findByText(
         'Ollama sur cette machine répond, mais ne propose aucun modèle.',
       ),
     ).toBeInTheDocument()
-    expect(activate(block)).toBeDisabled()
+    expect(saveButton(sheet)).toBeDisabled()
     expect(writes).toEqual([['test', { provider: 'ollama', base_url: 'http://localhost:11434' }]])
   })
 
-  it('never shows the stored key, only its last four', async () => {
-    provider(
-      undefined,
-      anAgentConfig({
-        provider: 'anthropic',
-        model: 'claude-x',
-        enabled: true,
-        key: { set: true, last4: 'abcd', set_at: null },
-      }),
-    )
-    const { block } = await openAgent()
+  it('shows the stored key by its last four, and offers to keep it', async () => {
+    provider(undefined, configured({ enabled: true }))
+    const { sheet } = await openSheet()
 
-    expect(within(block).getByText('Actif : Anthropic, claude-x.')).toBeInTheDocument()
-    expect(within(block).getByLabelText('Clé d’API')).toHaveValue('')
-    expect(within(block).getByLabelText('Clé d’API')).toHaveAttribute('placeholder', '…abcd')
-    // A stored key for the chosen provider is enough to test again.
-    expect(testButton(block)).toBeEnabled()
+    expect(within(sheet).getByLabelText('Clé d’API')).toHaveValue('')
+    expect(within(sheet).getByLabelText('Clé d’API')).toHaveAttribute('placeholder', '…abcd')
+    expect(within(sheet).getByText('Laissez vide pour garder la clé …abcd.')).toBeInTheDocument()
+    expect(testButton(sheet)).toBeEnabled()
   })
+
   it('asks for the key again once the address changes', async () => {
     provider(
       undefined,
-      anAgentConfig({
-        provider: 'openai_compatible',
-        base_url: 'http://litellm:4000',
-        key: { set: true, last4: 'abcd', set_at: null },
-      }),
+      configured({ provider: 'openai_compatible', base_url: 'http://litellm:4000' }),
     )
-    const { user, block } = await openAgent()
-    const key = within(block).getByLabelText(/Clé d’API/)
+    const { user, sheet } = await openSheet()
+    const key = within(sheet).getByLabelText(/Clé d’API/)
     expect(key).toHaveAttribute('placeholder', '…abcd')
 
-    await user.type(within(block).getByLabelText('Adresse'), '/v1')
+    await user.type(within(sheet).getByLabelText('Adresse'), '/v1')
 
     expect(key).not.toHaveAttribute('placeholder')
+  })
+
+  it('starts again from the store at every opening', async () => {
+    provider(undefined, configured())
+    const { user, block, sheet } = await openSheet()
+    await user.type(within(sheet).getByLabelText('Clé d’API'), KEY)
+    await user.click(within(sheet).getByRole('button', { name: 'Annuler' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await user.click(within(block).getByRole('button', { name: 'Changer' }))
+    const again = await screen.findByRole('dialog')
+    expect(within(again).getByLabelText('Clé d’API')).toHaveValue('')
+  })
+
+  it('gives the focus back to « Changer » when it closes', async () => {
+    provider(undefined, configured())
+    const { user, block } = await openSheet()
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(block).getByRole('button', { name: 'Changer' })).toHaveFocus(),
+    )
+  })
+})
+
+describe('the model row (#1279)', () => {
+  it('asks the provider nothing until the select opens, then once, with no key', async () => {
+    const writes = provider(undefined, configured({ enabled: true }))
+    const { user, block } = await openAgent()
+    const model = within(block).getByRole('combobox', { name: 'Modèle' })
+    expect(model).toHaveTextContent('Claude X')
+    expect(writes).toEqual([])
+
+    await user.click(model)
+    await user.click(await screen.findByRole('option', { name: 'Claude Old' }))
+
+    await waitFor(() =>
+      expect(writes).toEqual([
+        ['test', {}],
+        ['config', { model: 'claude-old', model_name: 'Claude Old' }],
+      ]),
+    )
+    expect(await within(block).findByText('✓ Enregistré')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Clé d’API/)).not.toBeInTheDocument()
+
+    // Asked once: a second opening reads the list it already has.
+    await user.click(model)
+    await screen.findByRole('option', { name: 'Claude New' })
+    expect(writes.filter(([kind]) => kind === 'test')).toHaveLength(1)
+  })
+
+  it('says on its row when the provider refuses to list the models', async () => {
+    provider(() => refuses('quota'), configured())
+    const { user, block } = await openAgent()
+
+    await user.click(within(block).getByRole('combobox', { name: 'Modèle' }))
+
+    expect(await within(block).findByRole('alert')).toHaveTextContent(
+      'Anthropic refuse faute de crédit',
+    )
   })
 })
 
 describe('the thinking level (#1191)', () => {
-  const chosen = anAgentConfig({
-    provider: 'anthropic',
-    model: 'claude-x',
-    model_name: 'Claude X',
-    enabled: true,
-    key: { set: true, last4: 'abcd', set_at: null },
-  })
-
-  it('is written at once and alone, with no test run in the session', async () => {
-    const writes = provider(undefined, chosen)
+  it('is written at once and alone, with no test run', async () => {
+    const writes = provider(undefined, configured({ enabled: true }))
     const { user, block } = await openAgent()
-    const level = within(block).getByLabelText('Réflexion')
-    expect(level).toHaveValue('low')
-    expect(
-      within(level)
-        .getAllByRole('option')
-        .map((one) => one.textContent),
-    ).toEqual(['Légère', 'Moyenne', 'Approfondie'])
+    const level = within(block).getByRole('combobox', { name: 'Réflexion' })
+    expect(level).toHaveTextContent('Légère')
 
-    await user.selectOptions(level, 'high')
+    await user.click(level)
+    expect(screen.getAllByRole('option').map((one) => one.textContent)).toEqual([
+      'Légère',
+      'Moyenne',
+      'Approfondie',
+    ])
+    await user.click(screen.getByRole('option', { name: 'Approfondie' }))
 
-    await waitFor(() => expect(level).toHaveValue('high'))
+    await waitFor(() => expect(level).toHaveTextContent('Approfondie'))
     expect(writes).toEqual([['config', { thinking: 'high' }]])
     // The agent stays on: the write carried no `enabled`.
-    expect(activate(block)).toBeChecked()
+    expect(enabled(block)).toBeChecked()
   })
 
-  it('is offered as soon as a passed test has preselected a model, before the agent is on', async () => {
-    const writes = provider()
-    const { user, block } = await openAgent()
-    await user.click(within(block).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(block).getByLabelText('Clé d’API'), KEY)
-    expect(within(block).queryByLabelText('Réflexion')).not.toBeInTheDocument()
-    await user.click(testButton(block))
-    await within(block).findByLabelText('Modèle')
-
-    await user.selectOptions(within(block).getByLabelText('Réflexion'), 'medium')
-
-    await waitFor(() => expect(writes.at(-1)).toEqual(['config', { thinking: 'medium' }]))
-    expect(activate(block)).not.toBeChecked()
-  })
-
-  it('is not offered until a model is chosen', async () => {
+  it('is not offered until a model is stored', async () => {
     provider()
     const { block } = await openAgent()
 
-    expect(within(block).queryByLabelText('Réflexion')).not.toBeInTheDocument()
+    expect(within(block).queryByRole('combobox', { name: 'Réflexion' })).not.toBeInTheDocument()
   })
 })
