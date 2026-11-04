@@ -552,17 +552,14 @@ def _health_status(verdict: str, attention: Sequence[str]) -> str:
 
 
 def build_health(
-    symbols: Sequence[SymbolRuntime],
-    perf: Optional[runtime_state.PerfRecord],
+    jobs: Dict[str, Dict[str, Any]],
     now: datetime,
     scheduler_running: bool = True,
 ) -> Dict[str, Any]:
-    """The body of ``GET /health`` — the register whose reader is a person."""
-    jobs = {
-        'scrape': health_scrape(symbols),
-        'backfill': health_backfill(symbols),
-        'performance': health_performance(perf),
-    }
+    """The body of ``GET /health`` — the register whose reader is a person.
+
+    ``jobs`` is each job's line, folded by the job itself (issue #1253).
+    """
     attention = not scheduler_running or any(
         job['status'] == HEALTH_ATTENTION for job in jobs.values())
     observed = any(job['at'] is not None for job in jobs.values())

@@ -209,6 +209,8 @@ export const ROUTES = {
    * {@link ROUTES.health}: the bell polls that one and it must stay small.
    */
   jobsHistory: '/api/jobs/history',
+  /** The jobs the process runs, in the server's order, with their labels (#1253). */
+  jobs: '/api/jobs',
   /** The orphans as a collection: the only thing done to it is removing it. */
   storeOrphans: '/api/store/orphans',
   /** One account's perf series. A **pattern**, like {@link ROUTES.prices}. */
@@ -686,7 +688,7 @@ export type HealthStatus = (typeof HEALTH_STATUSES)[number]
 export const BACKFILL_RUNNING = 'running'
 
 /** One job's line: what it last did, and what that is worth looking at. */
-interface HealthJob {
+export interface HealthJob {
   status: HealthStatus
   /** The instant of its last pass. `null` — this process has seen none. */
   at: string | null

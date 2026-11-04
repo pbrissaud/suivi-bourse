@@ -1,4 +1,4 @@
-"""The scrape workload: one self-rescheduling job per held symbol (issue #847)."""
+"""The scrape: one self-rescheduling entry per held symbol (issues #847, #1253)."""
 import logging
 import random
 import threading
@@ -6,10 +6,13 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Tuple
 
 from application import carrying
+from application import job_history
 from application import market_info
 from application import quotes
 from application import runtime_state
+from application import runtime_view
 from application import scheduling
+from application.jobs import base
 
 app_logger = logging.getLogger("suivi_bourse")
 
@@ -47,12 +50,16 @@ def scrape_verdict(should_write: bool, state, wrote: bool,
     return runtime_state.SCRAPE_WRITE_FAILED
 
 
-class ScrapeWorkload:
-    """The scrape, whole: its state, its jobs, and the pass they run."""
+class ScrapeJob(base.JobFamily):
+    """The scrape, whole: its state, its entries, and the pass they run."""
 
-    def __init__(self, facade, info_cache):
-        self.facade = facade
-        self.info_cache = info_cache
+    id = job_history.SCRAPE
+    label_key = 'settings.jobs.scrape'
+    triggers = (base.SelfArmed(dial='regular_interval'),)
+    in_health = True
+
+    def __init__(self, ctx, jobs):
+        super().__init__(ctx, jobs)
 
         self.failure_counts: Dict[str, int] = {}
         self.failure_counts_lock = threading.Lock()
@@ -60,9 +67,31 @@ class ScrapeWorkload:
         self.sonde_lock = threading.Lock()
         self.sonde_state: Dict[str, scheduling.SondeState] = {}
 
+    @property
+    def info_cache(self) -> Dict[str, Dict]:
+        """The attributes the last quote of each symbol came with — shared."""
+        return self.ctx.info_cache
+
+    def members(self) -> set:
+        return self.held_symbols()
+
+    def run(self, member: str, now: Optional[datetime] = None) -> None:
+        self.scrape_symbol(member, now)
+
+    def outcome(self, member: str) -> base.Outcome:
+        return runtime_view.scrape_outcome(self.ctx.recorder.scrape_of(member))
+
+    @classmethod
+    def health(cls, view):
+        return runtime_view.health_scrape(view.symbols)
+
+    def rearm(self, dial: str, value) -> base.Rearmed:
+        reached, sleeping = self.rearm_regular_scrapes()
+        return base.Rearmed(symbols=reached, at_market_open=sleeping)
+
     def fetch_ticker_data(self, symbol: str, max_retries: int = 3):
         """One symbol's newest close and its attributes, and the cache's fill."""
-        last_quote, info = self.facade.market.latest_quote(symbol, max_retries)
+        last_quote, info = self.ctx.market.latest_quote(symbol, max_retries)
         if info is not None:
             self.info_cache[symbol] = info
         return last_quote, info
@@ -71,7 +100,7 @@ class ScrapeWorkload:
                     converted=None, fx_rate=None) -> bool:
         """Persist one live observation: ``symbol_quote`` + one ``price_point``."""
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 quotes.record_quote(opened, symbol, now, last_quote,
                                     market_info.quote_columns(info),
                                     converted, fx_rate)
@@ -82,44 +111,44 @@ class ScrapeWorkload:
 
     def scrape_held(self):
         """Fetch and store every held symbol's quote, once."""
-        shares = self.facade.shares
+        shares = self.ctx.shares
         held = sorted(carrying.held_symbols(shares))
         for symbol in held:
             last_quote, info = self.fetch_ticker_data(symbol)
-            converted, rate = self.facade._convert(
+            converted, rate = self.ctx.convert(
                 last_quote, market_info.currency_of(info))
 
             if last_quote is None or info is None:
                 app_logger.warning(
                     f"No data fetched for {symbol}, skipping the quote write")
             else:
-                self.facade._write_quote(symbol, last_quote, info,
-                                         datetime.now(timezone.utc),
-                                         converted, rate)
+                self.write_quote(symbol, last_quote, info,
+                                 datetime.now(timezone.utc),
+                                 converted, rate)
 
     def scrape(self):
         """Scrape stock prices from Yahoo Finance, refusing an empty portfolio."""
-        if not self.facade.shares:
+        if not self.ctx.shares:
             app_logger.warning("No shares configured, skipping scrape")
             return
 
-        self.facade.scrape_held()
+        self.scrape_held()
 
     def held_symbols(self) -> set:
         """The set of symbols currently held across all accounts."""
-        return carrying.held_symbols(self.facade.shares)
+        return carrying.held_symbols(self.ctx.shares)
 
     def read_exchange_of(self) -> Dict[str, Optional[str]]:
         """Map each held symbol to its venue for auto pool sizing (#851, #619)."""
-        held = self.facade._held_symbols()
+        held = self.held_symbols()
         if not held:
             return {}
-        return quotes.quote_exchanges(self.facade.config_manager.store, held)
+        return quotes.quote_exchanges(self.ctx.config_manager.store, held)
 
     def scheduled_symbols(self) -> set:
         """Symbols that currently have a live per-symbol scrape job."""
         out = set()
-        for job in (self.facade.scheduler.get_jobs() or []):
+        for job in (self.ctx.scheduler.get_jobs() or []):
             jid = getattr(job, 'id', '') or ''
             if jid.startswith(SCRAPE_JOB_PREFIX):
                 out.add(jid[len(SCRAPE_JOB_PREFIX):])
@@ -129,21 +158,21 @@ class ScrapeWorkload:
         """(Re)schedule a symbol's scrape job to fire ``delay`` seconds from now."""
         jitter = random.uniform(0, scheduling.JITTER_SECONDS)
         run_date = now + timedelta(seconds=delay + jitter)
-        self.facade.scheduler.add_job(
-            self.facade._scrape_symbol, 'date', run_date=run_date,
+        self.ctx.scheduler.add_job(
+            self, 'date', run_date=run_date,
             args=[symbol], id=_scrape_job_id(symbol),
             name=f'Scrape {symbol}', replace_existing=True,
             misfire_grace_time=None, max_instances=1)
 
     def rearm_regular_scrapes(self) -> Tuple[int, int]:
         """Re-arm the symbols a new ``regular_interval`` reaches (issue #701)."""
-        if self.facade.scheduler is None:
+        if self.ctx.scheduler is None:
             return 0, 0
         try:
             now = datetime.now(timezone.utc)
-            held = self.facade._held_symbols()
-            armed = set(scrape_next_runs(self.facade.scheduler))
-            closed = {symbol: self.facade._last_pass_closed(symbol)
+            held = self.held_symbols()
+            armed = set(scrape_next_runs(self.ctx.scheduler))
+            closed = {symbol: self.last_pass_closed(symbol)
                       for symbol in held}
             split = scheduling.rearm_split(held, closed, armed)
         except Exception as e:
@@ -155,65 +184,65 @@ class ScrapeWorkload:
             try:
                 with self.failure_counts_lock:
                     failures = self.failure_counts.get(symbol, 0)
-                self.facade._arm_symbol(
+                self.arm_symbol(
                     symbol,
                     scheduling.backoff_delay(
-                        self.facade.regular_interval, failures),
+                        self.ctx.regular_interval, failures),
                     now)
                 reached += 1
             except Exception as e:
                 app_logger.error(f"Failed to re-arm scrape job for {symbol}: {e}")
 
         app_logger.info(
-            f"Poll cadence is now {self.facade.regular_interval}s: {reached} "
+            f"Poll cadence is now {self.ctx.regular_interval}s: {reached} "
             f"symbol(s) reached, {len(split.asleep)} waiting for their market "
             f"to open")
         return reached, len(split.asleep)
 
     def last_pass_closed(self, symbol: str) -> Optional[bool]:
         """Was this symbol's market shut on its last pass? ``None`` if it has none."""
-        record = self.facade.recorder.scrape_of(symbol)
+        record = self.ctx.recorder.scrape_of(symbol)
         return None if record is None else record.closed
 
     def reconcile_jobs(self) -> None:
         """Diff the held-symbol set against the scheduled jobs (design #604)."""
-        if self.facade.scheduler is None:
+        if self.ctx.scheduler is None:
             return
         try:
             now = datetime.now(timezone.utc)
-            held = self.facade._held_symbols()
-            scheduled = self.facade._scheduled_symbols()
+            held = self.held_symbols()
+            scheduled = self.scheduled_symbols()
         except Exception as e:
             app_logger.error(f"Failed to reconcile per-symbol jobs: {e}")
             return
         for symbol in held - scheduled:
             try:
-                self.facade._arm_symbol(symbol, 0, now)
+                self.arm_symbol(symbol, 0, now)
             except Exception as e:
                 app_logger.error(f"Failed to arm scrape job for {symbol}: {e}")
         for symbol in scheduled - held:
             try:
-                self.facade.scheduler.remove_job(_scrape_job_id(symbol))
+                self.ctx.scheduler.remove_job(_scrape_job_id(symbol))
             except Exception as e:
                 app_logger.debug(f"Job for {symbol} already gone, skipping: {e}")
             finally:
                 with self.failure_counts_lock:
                     self.failure_counts.pop(symbol, None)
-                self.facade.recorder.forget_scrape(symbol)
+                self.ctx.recorder.forget_scrape(symbol)
 
     def check_price_freshness(self, symbol: str,
                               live_price, now: datetime) -> bool:
         """Price-freshness liveness sonde (issue #628, design #626)."""
-        if self.facade.staleness_horizon <= 0:
+        if self.ctx.staleness_horizon <= 0:
             return False
         stale = False
         try:
             stored_price = quotes.last_price(
-                self.facade.config_manager.store, symbol)
+                self.ctx.config_manager.store, symbol)
             with self.sonde_lock:
                 new_state, stale = scheduling.price_freshness_step(
                     self.sonde_state.get(symbol), live_price, stored_price,
-                    now, self.facade.staleness_horizon)
+                    now, self.ctx.staleness_horizon)
                 if new_state is None:
                     self.sonde_state.pop(symbol, None)
                 else:
@@ -233,15 +262,15 @@ class ScrapeWorkload:
         """Scrape one symbol, gate the write, and re-arm the job (design #602)."""
         injected_now = now is not None
         now = now or datetime.now(timezone.utc)
-        next_delay = self.facade.regular_interval
+        next_delay = self.ctx.regular_interval
         try:
             last_quote, info = self.fetch_ticker_data(symbol)
             price_present = last_quote is not None and info is not None
 
-            converted, rate = self.facade._convert(
+            converted, rate = self.ctx.convert(
                 last_quote, market_info.currency_of(info))
 
-            holdings = [s for s in self.facade.shares
+            holdings = [s for s in self.ctx.shares
                         if s.get('symbol') == symbol and s.get('quantity')]
 
             if info is not None:
@@ -256,16 +285,16 @@ class ScrapeWorkload:
                 print_at, session_end = scheduling.session_print(
                     market_info.history_metadata_of(info))
                 stored = quotes.read_quote(
-                    self.facade.config_manager.store, symbol)
+                    self.ctx.config_manager.store, symbol)
                 stored_at = stored and stored['last_price_ts']
 
             with self.failure_counts_lock:
                 should_write, next_delay, new_failure_count = scheduling.decide(
                     state, price_present, next_open, now,
                     self.failure_counts.get(symbol, 0),
-                    self.facade.regular_interval, print_at=print_at,
+                    self.ctx.regular_interval, print_at=print_at,
                     session_end=session_end, stored_at=stored_at)
-                if symbol in self.facade._held_symbols():
+                if symbol in self.held_symbols():
                     self.failure_counts[symbol] = new_failure_count
                 else:
                     self.failure_counts.pop(symbol, None)
@@ -275,10 +304,10 @@ class ScrapeWorkload:
                 # A closed pass stamps the point at the print's own instant
                 # (#1352), and the REGULAR-only sonde has nothing to say of it.
                 if not closed:
-                    stale = self.facade._check_price_freshness(
+                    stale = self.check_price_freshness(
                         symbol, last_quote, now)
 
-                wrote_live_data = bool(holdings) and self.facade._write_quote(
+                wrote_live_data = bool(holdings) and self.write_quote(
                     symbol, last_quote, info, print_at if closed else now,
                     converted, rate)
             else:
@@ -287,7 +316,7 @@ class ScrapeWorkload:
                     f"Skipping write for {symbol} (state={state}, "
                     f"price_present={price_present})")
 
-            self.facade.recorder.record_scrape(runtime_state.ScrapeRecord(
+            self.ctx.recorder.record_scrape(runtime_state.ScrapeRecord(
                 symbol=symbol,
                 at=now,
                 market_state=state,
@@ -306,7 +335,7 @@ class ScrapeWorkload:
         except Exception as exc:
             app_logger.error(
                 f"Scrape pass for {symbol} failed", exc_info=True)
-            self.facade.recorder.record_scrape(runtime_state.ScrapeRecord(
+            self.ctx.recorder.record_scrape(runtime_state.ScrapeRecord(
                 symbol=symbol,
                 at=now,
                 market_state=None,
@@ -324,9 +353,9 @@ class ScrapeWorkload:
             # the arming may escape into APScheduler (issue #855). A read that
             # fails re-arms all the same: an arming too many writes nothing, a
             # missing arming costs the symbol.
-            if self.facade.scheduler is not None:
+            if self.ctx.scheduler is not None:
                 try:
-                    still_held = symbol in self.facade._held_symbols()
+                    still_held = symbol in self.held_symbols()
                 except Exception as e:
                     app_logger.error(
                         f"Failed to read the held symbols after the pass for "
@@ -334,7 +363,7 @@ class ScrapeWorkload:
                     still_held = True
                 if still_held:
                     try:
-                        self.facade._arm_symbol(
+                        self.arm_symbol(
                             symbol, next_delay,
                             now if injected_now else datetime.now(timezone.utc))
                     except Exception as e:

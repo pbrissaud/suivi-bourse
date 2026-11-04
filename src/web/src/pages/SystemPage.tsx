@@ -22,6 +22,8 @@ export default function SystemPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const store = useQuery({ queryKey: ['store'], queryFn: settingsApi.store })
   const history = useQuery({ queryKey: ['jobs-history'], queryFn: settingsApi.jobsHistory })
+  // What the server runs never changes while it runs: read once (#1253).
+  const jobs = useQuery({ queryKey: ['jobs'], queryFn: settingsApi.jobs, staleTime: Infinity })
   // Same key as the bell, so the two never disagree.
   const health = useQuery({ queryKey: ['health'], queryFn: api.health })
   const events = useQuery({ queryKey: ['events'], queryFn: dataApi.events })
@@ -62,6 +64,8 @@ export default function SystemPage() {
         failure={healthFailure}
         history={history.data ?? null}
         historyFailure={oneFailure(readConditions({ queries: [history] }))}
+        jobs={jobs.data ?? null}
+        jobsFailure={oneFailure(readConditions({ queries: [jobs] }))}
       />
       <OrphansBlock orphans={store.data?.orphans ?? null} />
     </div>

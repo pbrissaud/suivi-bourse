@@ -8,7 +8,7 @@ correcting a mistake made in 2019 left every curve exactly as it was, with
 
 The seam is the suite's usual one: a **real** DuckDB store in ``tmp_path``, a
 real :class:`main.ConfigurationManager` and a real
-:class:`workloads.Workloads` behind a real Flask client. Nothing here
+the jobs registry (:mod:`application.jobs.registry`) behind a real Flask client. Nothing here
 asserts that a method was called — every assertion is on ``account_metrics`` and
 ``portfolio_totals``, read back after a write and **before any tick has run**:
 there is no scheduler in this module at all, so a row that is up to date can
@@ -26,7 +26,8 @@ import pytest
 
 from application import entries
 from application import main
-from application import workloads
+from application.jobs import registry
+from application.jobs import performance as perf_job
 from application import store as store_module
 import api as api_module
 from application.events.loader import EventLoader
@@ -55,7 +56,7 @@ def _fixed_today(mocker):
         @classmethod
         def now(cls, tz=None):
             return datetime(_TODAY.year, _TODAY.month, _TODAY.day, 12, 0, tzinfo=tz)
-    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+    mocker.patch("application.jobs.performance.datetime", _FixedDatetime)
 
 
 def _deposit(**overrides) -> dict:
@@ -78,7 +79,7 @@ def _deposit(**overrides) -> dict:
 def _build(tmp_path, mocker):
     """A client over a real store, a real manager and a **real** metrics object.
 
-    ``runtime.workloads`` is the production class rather than a stand-in: the
+    ``runtime.jobs`` is the production class rather than a stand-in: the
     whole point is that the perf tables are written by the replay, and a fake
     would be the one thing incapable of showing it. No scheduler is wired —
     ``_reconcile_jobs`` no-ops without one — which is also what makes *"no tick
@@ -105,10 +106,10 @@ def _build(tmp_path, mocker):
     opened.execute("INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR') "
                    "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
 
-    metrics = workloads.Workloads(manager)
-    metrics.base_currency = 'EUR'
-    runtime.workloads = metrics
-    runtime.workloads.recompute_perf()
+    metrics = registry.build(manager)
+    metrics.ctx.base_currency = 'EUR'
+    runtime.jobs = metrics
+    runtime.jobs['performance']()
 
     return create_app(runtime).test_client(), opened
 
@@ -300,10 +301,10 @@ def test_a_file_that_declares_the_currency_gets_a_series_from_that_write(
     runtime = main.Runtime(manager, None)
     runtime.store = opened
     manager.reload()
-    metrics = workloads.Workloads(manager)
-    runtime.workloads = metrics
+    metrics = registry.build(manager)
+    runtime.jobs = metrics
     # Unanswered, as it is on a fresh install: the file is what answers it.
-    assert metrics.base_currency is None
+    assert metrics.ctx.base_currency is None
     client = create_app(runtime).test_client()
 
     written = client.post(
@@ -313,7 +314,7 @@ def test_a_file_that_declares_the_currency_gets_a_series_from_that_write(
     assert written.status_code == 201
 
     assert opened.setting('base_currency') == 'EUR'
-    assert metrics.base_currency == 'EUR'
+    assert metrics.ctx.base_currency == 'EUR'
     assert _days(opened)[0] == date(2024, 1, 10)
     assert _cash_on(opened, _TODAY) == pytest.approx(1000.0)
     opened.close()
@@ -338,10 +339,10 @@ def test_two_recomputes_never_overlap(tmp_path, mocker):
     the suite reaches for an internal double (see ``src/application/CLAUDE.md``).
     """
     client, opened = _build(tmp_path, mocker)
-    metrics = workloads.Workloads
+    job = perf_job.PerformanceJob
     live, overlapped = [], []
     guard = threading.Lock()
-    real = metrics._rebuild_series
+    real = job.rebuild_series
 
     def watched(self):
         with guard:
@@ -353,7 +354,7 @@ def test_two_recomputes_never_overlap(tmp_path, mocker):
             with guard:
                 live.pop()
 
-    mocker.patch.object(metrics, '_rebuild_series', watched)
+    mocker.patch.object(job, 'rebuild_series', watched)
 
     threads = [threading.Thread(
         target=lambda i=i: client.post(
@@ -388,11 +389,11 @@ def test_the_record_of_a_pass_is_published_under_the_pass_lock(
     for an internal double (see ``src/application/CLAUDE.md``).
     """
     client, opened = _build(tmp_path, mocker)
-    metrics = api_module.current_runtime().workloads
+    metrics = api_module.current_runtime().jobs
     seen, record = [], main.runtime_state.PerfRecord
 
     def watched(**kwargs):
-        seen.append(_free_from_another_thread(metrics._perf_lock))
+        seen.append(_free_from_another_thread(metrics.ctx.perf_lock))
         return record(**kwargs)
 
     mocker.patch.object(main.runtime_state, 'PerfRecord', watched)

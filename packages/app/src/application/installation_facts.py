@@ -54,12 +54,12 @@ def unread_environment(env: Optional[Mapping[str, str]] = None) -> List[str]:
     return list(boot_env.unread(os.environ if env is None else env))
 
 
-def observe(workloads=None) -> 'Context':
+def observe(ingestion=None) -> 'Context':
     """Gather what the derivable installation facts' predicates read (#709)."""
     return Context(
         unread_variables=tuple(unread_environment()),
-        reconstruction=(None if workloads is None
-                        else workloads.reconstruction_state()),
+        reconstruction=(None if ingestion is None
+                        else ingestion.reconstruction_state()),
     )
 
 

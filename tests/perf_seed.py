@@ -11,7 +11,7 @@ from conftest import PerfConfigManager
 
 from application import quotes
 from application import runtime_state
-from application import workloads
+from application.jobs import registry
 from application.events.schemas import Account, Event, EventType
 
 UTC = timezone.utc
@@ -51,7 +51,7 @@ def _pin(mocker):
             d = _Clock.day
             return datetime(d.year, d.month, d.day, 12, 0, tzinfo=tz)
     _Clock.day = _TODAY
-    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+    mocker.patch("application.jobs.performance.datetime", _FixedDatetime)
 
 
 def _seed(opened, declare_ledger, ledger=_LEDGER):
@@ -78,8 +78,8 @@ def _seed(opened, declare_ledger, ledger=_LEDGER):
 
 
 def _metrics(opened):
-    metrics = workloads.Workloads(PerfConfigManager(opened))
-    metrics.base_currency = 'EUR'
+    metrics = registry.build(PerfConfigManager(opened))
+    metrics.ctx.base_currency = 'EUR'
     return metrics
 
 
@@ -93,8 +93,8 @@ def _quote_today(opened, symbol, price, minute=0):
 
 
 def _pass(metrics) -> str:
-    metrics.recompute_perf()
-    record = metrics.recorder.perf()
+    metrics['performance']()
+    record = metrics.ctx.recorder.perf()
     assert record.verdict == runtime_state.PERF_RAN, record.error
     return record.mode
 
@@ -152,7 +152,7 @@ def _anchor(opened, metrics, declare_ledger):
 
 
 def _currency(opened, metrics, declare_ledger):
-    metrics.base_currency = 'USD'
+    metrics.ctx.base_currency = 'USD'
 
 
 def _day_turn(opened, metrics, declare_ledger):
@@ -160,4 +160,4 @@ def _day_turn(opened, metrics, declare_ledger):
 
 
 def _restart(opened, metrics, declare_ledger):
-    metrics._recompute.forget()
+    metrics['performance'].forget()

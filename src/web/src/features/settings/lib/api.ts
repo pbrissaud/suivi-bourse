@@ -134,12 +134,24 @@ export interface JobTrack {
   last: JobPass | null
 }
 
+/**
+ * One job of `GET /api/jobs` (#1253). `in_health` says it has a line in
+ * `/health`; a `family` runs once per held symbol, its passes under `scrape`.
+ */
+export interface JobInfo {
+  id: string
+  label_key: string
+  kind: 'job' | 'family'
+  in_health: boolean
+}
+
 /** `GET /api/jobs/history` — process memory, lost at every restart (#1236). */
 export interface JobsHistory {
   now: string
   /** When this process started: the hours before it have no pass to show. */
   started: string
-  jobs: { backfill: JobTrack; performance: JobTrack; ingestion: JobTrack }
+  /** One track per singleton job the server runs, keyed by its id. */
+  jobs: Record<string, JobTrack>
   /**
    * One track per symbol scraped since start: a held symbol with no pass yet is
    * absent. Its passes come **without** their log lines, which ride on
@@ -169,6 +181,7 @@ export const settingsApi = {
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
   store: () => get<StoreState>(ROUTES.store),
   jobsHistory: () => get<JobsHistory>(ROUTES.jobsHistory),
+  jobs: () => get<JobInfo[]>(ROUTES.jobs),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
   theme: () => get<ThemeVars | null>(ROUTES.theme),
   /** A bare theme is checked strictly; a pasted registry entry (`cssVars`) is cleaned. */

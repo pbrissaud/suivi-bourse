@@ -1,4 +1,4 @@
-"""Tests for :class:`workloads.Workloads` and the passes it carries.
+"""Tests for the jobs (:mod:`application.jobs`) and the passes they carry.
 
 Everything here is network-free, and since #700 there is **one** faked edge:
 yfinance. The store is real — a DuckDB file in ``tmp_path`` with the DDL
@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from application import backfill
+from application.jobs import backfill
 from application import entries
 from application import main
 from application import market
@@ -31,7 +31,7 @@ from application import runtime_state
 from application import runtime_view
 from application import scheduling
 from application import settings as settings_module
-from application.workloads import Workloads
+from application.jobs import registry
 from application.events.schemas import Event, EventType
 from application.events.validator import EventValidationError
 from urllib3.exceptions import NewConnectionError
@@ -57,7 +57,7 @@ def _valid_shares(symbol="AAPL", name="Apple", quantity=10):
 class FakeConfigManager:
     """In-memory stand-in for main.ConfigurationManager.
 
-    Exposes the surface ``Workloads`` relies on since #658: ``current()``
+    Exposes the surface the jobs rely on since #658: ``current()``
     (the published snapshot — the read path), ``reload()`` (the publisher), plus
     ``get_mode()``. ``_acquisitions`` / ``_exits`` override what the snapshot
     would derive from ``events``, so tests can name a holding window without
@@ -186,7 +186,7 @@ def _build_metrics(shares, store, mode="manual",
     cfg = FakeConfigManager(shares, opened_store=store, mode=mode,
                             acquisitions=acquisitions, exits=exits,
                             events=events)
-    metrics = Workloads(cfg)
+    metrics = registry.build(cfg)
     return metrics, cfg
 
 
@@ -236,8 +236,8 @@ def test_constructor_reads_the_published_shares_and_opens_nothing(store):
     """
     metrics, cfg = _build_metrics([_valid_shares()], store)
 
-    assert metrics.shares == [_valid_shares()]
-    assert metrics.config_manager.store is store
+    assert metrics.ctx.shares == [_valid_shares()]
+    assert metrics.ctx.config_manager.store is store
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ def test_fetch_ticker_data_success_and_mapping(store,
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
-    last_quote, info = metrics._scrape.fetch_ticker_data("AAPL")
+    last_quote, info = metrics['scrape'].fetch_ticker_data("AAPL")
 
     assert last_quote == 185.0
     assert info["currency"] == "USD"
@@ -260,7 +260,7 @@ def test_fetch_ticker_data_success_and_mapping(store,
     assert info["peRatio"] == 28.5
     assert info["marketCap"] == 3_000_000_000_000
     # info is cached for backfill reuse
-    assert metrics._share_info_cache["AAPL"] == info
+    assert metrics.ctx.info_cache["AAPL"] == info
 
 
 def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(store,
@@ -269,7 +269,7 @@ def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(store,
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"trailingPE": None}))
 
-    _, info = metrics._scrape.fetch_ticker_data("AAPL")
+    _, info = metrics['scrape'].fetch_ticker_data("AAPL")
     assert info["peRatio"] == 26.0  # forwardPE
 
 
@@ -279,7 +279,7 @@ def test_fetch_ticker_data_none_dividend_yield_preserved(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
-    _, info = metrics._scrape.fetch_ticker_data("AAPL")
+    _, info = metrics['scrape'].fetch_ticker_data("AAPL")
     assert info["dividendYield"] is None
 
 
@@ -289,7 +289,7 @@ def test_fetch_ticker_data_empty_history_returns_none(
     empty = fake_ticker(history_df=pd.DataFrame())
     monkeypatch.setattr(market.yf, "Ticker", lambda s: empty)
 
-    assert metrics._scrape.fetch_ticker_data("AAPL") == (None, None)
+    assert metrics['scrape'].fetch_ticker_data("AAPL") == (None, None)
 
 
 def test_fetch_ticker_data_uses_last_non_nan_close(
@@ -314,13 +314,13 @@ def test_fetch_ticker_data_uses_last_non_nan_close(
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(history_df=df))
 
-    last_quote, info = metrics._scrape.fetch_ticker_data("AAPL")
+    last_quote, info = metrics['scrape'].fetch_ticker_data("AAPL")
 
     # Last non-NaN close, not the NaN tail row.
     assert last_quote == pytest.approx(176.52)
     # .info is still resolved and cached so backfill can proceed while closed.
     assert info is not None
-    assert metrics._share_info_cache["AAPL"] == info
+    assert metrics.ctx.info_cache["AAPL"] == info
 
 
 def test_fetch_ticker_data_all_nan_close_returns_none(
@@ -341,8 +341,8 @@ def test_fetch_ticker_data_all_nan_close_returns_none(
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(history_df=df))
 
-    assert metrics._scrape.fetch_ticker_data("AAPL") == (None, None)
-    assert "AAPL" not in metrics._share_info_cache
+    assert metrics['scrape'].fetch_ticker_data("AAPL") == (None, None)
+    assert "AAPL" not in metrics.ctx.info_cache
 
 
 def test_fetch_ticker_data_retries_after_rate_limit(
@@ -351,7 +351,7 @@ def test_fetch_ticker_data_retries_after_rate_limit(
     tickers = iter([_RaisingTicker(market.YFRateLimitError()), fake_ticker()])
     monkeypatch.setattr(market.yf, "Ticker", lambda s: next(tickers))
 
-    last_quote, info = metrics._scrape.fetch_ticker_data("AAPL")
+    last_quote, info = metrics['scrape'].fetch_ticker_data("AAPL")
     assert last_quote == 185.0
     assert info is not None
 
@@ -362,7 +362,7 @@ def test_fetch_ticker_data_exhausts_retries_returns_none(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: _RaisingTicker(market.YFRateLimitError()))
 
-    assert metrics._scrape.fetch_ticker_data("AAPL", max_retries=3) == (None, None)
+    assert metrics['scrape'].fetch_ticker_data("AAPL", max_retries=3) == (None, None)
 
 
 def test_fetch_ticker_data_runtime_error_returns_none(
@@ -371,7 +371,7 @@ def test_fetch_ticker_data_runtime_error_returns_none(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: _RaisingTicker(RuntimeError("kaboom")))
 
-    assert metrics._scrape.fetch_ticker_data("AAPL") == (None, None)
+    assert metrics['scrape'].fetch_ticker_data("AAPL") == (None, None)
 
 
 def test_fetch_ticker_data_connection_error_returns_none(
@@ -380,7 +380,7 @@ def test_fetch_ticker_data_connection_error_returns_none(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: _RaisingTicker(NewConnectionError(None, "no route")))
 
-    assert metrics._scrape.fetch_ticker_data("AAPL") == (None, None)
+    assert metrics['scrape'].fetch_ticker_data("AAPL") == (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +393,7 @@ def test_a_scrape_writes_one_price_point_and_refreshes_the_quote_row(
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
-    metrics.scrape_held()
+    metrics['scrape'].scrape_held()
 
     assert [price for _, price in _points(store)] == [185.0]
     quote = quotes.read_quote(store, "AAPL")
@@ -419,7 +419,7 @@ def test_a_symbol_held_in_two_accounts_is_written_once(
     """
     shares = [_valid_shares(), dict(_valid_shares(), account="pea")]
     metrics, _ = _build_metrics([_valid_shares()], store)
-    metrics.config_manager._shares = shares
+    metrics.ctx.config_manager._shares = shares
     store.execute("INSERT INTO account (id, label) VALUES "
                   "('pea', 'PEA')")
     store.execute(
@@ -428,7 +428,7 @@ def test_a_symbol_held_in_two_accounts_is_written_once(
         "VALUES ('pea', 'AAPL', 'Apple', 4, 600.0, 0, 0)")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
-    metrics.scrape_held()
+    metrics['scrape'].scrape_held()
 
     assert len(_points(store)) == 1
 
@@ -439,7 +439,7 @@ def test_a_missing_dividend_yield_is_stored_as_null_not_as_zero(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
-    metrics.scrape_held()
+    metrics['scrape'].scrape_held()
 
     assert quotes.read_quote(store, "AAPL")["dividend_yield"] is None
 
@@ -472,7 +472,7 @@ def test_a_payload_that_names_no_unit_writes_no_unit_at_all(
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", _bare_ticker)
 
-    metrics.scrape_held()
+    metrics['scrape'].scrape_held()
 
     quote = quotes.read_quote(store, "AAPL")
     assert quote["currency"] is None
@@ -484,9 +484,9 @@ def test_a_payload_that_names_no_unit_writes_no_unit_at_all(
 
 def test_scrape_held_skips_write_when_fetch_fails(store, mocker):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    mocker.patch.object(metrics.market, "latest_quote", return_value=(None, None))
+    mocker.patch.object(metrics.ctx.market, "latest_quote", return_value=(None, None))
 
-    metrics.scrape_held()
+    metrics['scrape'].scrape_held()
 
     assert _points(store) == []
 
@@ -508,7 +508,7 @@ def test_a_write_error_on_one_symbol_does_not_abort_the_rest(
 
     mocker.patch.object(quotes, "record_quote", side_effect=flaky)
 
-    metrics.scrape_held()
+    metrics['scrape'].scrape_held()
 
     assert calls["n"] == 2
     assert [price for _, price in _points(store, "MSFT")] == [185.0]
@@ -523,9 +523,9 @@ def test_ingest_updates_shares_when_valid_and_different(store):
     new_shares = [_valid_shares("MSFT", "Microsoft")]
     cfg._shares = new_shares
 
-    metrics.ingest()
+    metrics['ingestion']()
 
-    assert metrics.shares == new_shares
+    assert metrics.ctx.shares == new_shares
 
 
 def test_ingest_keeps_previous_when_publication_fails(store):
@@ -540,9 +540,9 @@ def test_ingest_keeps_previous_when_publication_fails(store):
     metrics, cfg = _build_metrics(original, store)
     cfg.raise_on_load = EventValidationError("row 4: SELL of 40 with 18 owned")
 
-    metrics.ingest()
+    metrics['ingestion']()
 
-    assert metrics.shares == original
+    assert metrics.ctx.shares == original
 
 
 def test_ingest_swallows_exceptions(store):
@@ -551,9 +551,9 @@ def test_ingest_swallows_exceptions(store):
     cfg.raise_on_load = True
 
     # Must not raise
-    metrics.ingest()
+    metrics['ingestion']()
 
-    assert metrics.shares == original
+    assert metrics.ctx.shares == original
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +569,7 @@ def test_shares_is_a_read_of_the_published_snapshot(store):
     metrics, cfg = _build_metrics([_valid_shares("AAPL")], store)
     cfg._shares = [_valid_shares("MSFT", "Microsoft")]
 
-    assert [s["symbol"] for s in metrics.shares] == ["MSFT"]
+    assert [s["symbol"] for s in metrics.ctx.shares] == ["MSFT"]
 
 
 def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
@@ -586,7 +586,7 @@ def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
         mode="events")
     spy = mocker.spy(cfg, "current")
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert spy.call_count == 1
 
@@ -603,10 +603,10 @@ def test_recompute_perf_reads_no_snapshot_at_all(
     metrics, cfg = _build_metrics([_valid_shares("AAPL")], store,
                                   mode="events",
                                   events=sample_events)
-    recompute = mocker.patch.object(metrics, "update_account_metrics")
+    recompute = mocker.patch.object(metrics['performance'], "update_account_metrics")
     published = mocker.spy(cfg, "current")
 
-    metrics.recompute_perf()
+    metrics['performance']()
 
     recompute.assert_called_once_with()
     assert published.call_count == 0
@@ -619,9 +619,9 @@ def test_recompute_perf_reads_no_snapshot_at_all(
 def test_scrape_returns_when_no_shares(store, mocker):
     metrics, cfg = _build_metrics([_valid_shares()], store)
     cfg._shares = []
-    spy = mocker.spy(metrics, "scrape_held")
+    spy = mocker.spy(metrics['scrape'], "scrape_held")
 
-    metrics.scrape()
+    metrics['scrape'].scrape()
 
     spy.assert_not_called()
     assert _points(store) == []
@@ -640,7 +640,7 @@ def test_backfill_returns_when_no_shares(store, mocker):
     cfg._shares = []
     fetch = fake_history(mocker, metrics)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     fetch.assert_not_called()
     assert _points(store) == []
@@ -651,17 +651,17 @@ def test_backfill_marks_complete_when_the_anchor_reaches_the_acquisition(store, 
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired})
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     # Stored history already predates the first BUY date.
     _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
     fetch = fake_history(mocker, metrics)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     fetch.assert_not_called()
     expected = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
     # The watermark is per symbol since #700 — one series, one answer.
-    assert metrics._backfill_complete["AAPL"] == expected
+    assert metrics['backfill'].complete["AAPL"] == expected
 
 
 def test_backfill_fetches_a_chunk_and_the_prices_land(store, mocker):
@@ -669,7 +669,7 @@ def test_backfill_fetches_a_chunk_and_the_prices_land(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired}, events=None)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     # Oldest stored point well after the first BUY -> a gap to fill.
     _seed_up_to_now(store, "AAPL", datetime(2024, 6, 1, tzinfo=timezone.utc))
     latest_before = quotes.read_quote(store, "AAPL")["last_price_ts"]
@@ -677,7 +677,7 @@ def test_backfill_fetches_a_chunk_and_the_prices_land(store, mocker):
                "price": 170.0}]
     fake_history(mocker, metrics, return_value=canned)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert [price for _, price in _points(store)] == [170.0, 100.0, 100.0]
     # An older chunk leaves the ``latest`` row alone: the maintenance rule only
@@ -697,12 +697,12 @@ def test_a_symbol_held_in_two_accounts_is_backfilled_once(store, mocker):
         mode="events", acquisitions={"AAPL": date(2024, 1, 15)})
     cfg._shares = [_valid_shares("AAPL", "Apple"),
                    dict(_valid_shares("AAPL", "Apple"), account="pea")]
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     _seed_up_to_now(store, "AAPL", datetime(2024, 6, 1, tzinfo=timezone.utc))
     fetch = fake_history(mocker, metrics, return_value=[{"timestamp": datetime(2024, 3, 1, tzinfo=timezone.utc),
                        "price": 170.0}])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert fetch.call_count == 1
 
@@ -721,14 +721,14 @@ def test_backfill_does_not_replay_the_ledger_at_all(store, mocker, sample_events
         [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
         store, mode="events",
         acquisitions=acquired_on, events=sample_events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     for symbol in ("AAPL", "MSFT"):
         _seed_up_to_now(store, symbol, datetime(2024, 6, 1, tzinfo=timezone.utc))
     fake_history(mocker, metrics, return_value=[
         {"timestamp": datetime(2024, 3, 1, tzinfo=timezone.utc), "price": 170.0}])
 
     spy = mocker.spy(main_module.EventAggregator, "replay")
-    metrics.backfill()
+    metrics['backfill']()
 
     assert spy.call_count == 0
 
@@ -750,7 +750,7 @@ def test_a_sold_out_line_is_classified_by_the_backfill(
         [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
         acquisitions={"AAPL": date(2024, 1, 15)},
         exits={"AAPL": date(2024, 6, 4)})
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     # Stored history already predates the first BUY: the backward pass is done,
     # so the only fetch left in the cycle is the classification one.
     _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
@@ -765,7 +765,7 @@ def test_a_sold_out_line_is_classified_by_the_backfill(
 
     monkeypatch.setattr(market.yf, "Ticker", _ticker)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     row = quotes.read_quote(store, "AAPL")
     assert (row["sector"], row["industry"], row["country"]) == (
@@ -776,7 +776,7 @@ def test_a_sold_out_line_is_classified_by_the_backfill(
 
     # A sector changes about never, so the answer is kept: the next cycle asks
     # Yahoo nothing at all.
-    metrics.backfill()
+    metrics['backfill']()
 
     assert asked == ["AAPL"]
 
@@ -794,7 +794,7 @@ def test_a_row_carrying_half_a_classification_is_filled_rather_than_skipped(
         [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
         acquisitions={"AAPL": date(2024, 1, 15)},
         exits={"AAPL": date(2024, 6, 4)})
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
     quotes.record_attributes(store, "AAPL", datetime(2024, 6, 4, tzinfo=timezone.utc),
                              {"sector": "Technology"})
@@ -803,7 +803,7 @@ def test_a_row_carrying_half_a_classification_is_filled_rather_than_skipped(
         info={"sector": "Technology", "industry": "Consumer Electronics",
               "country": "United States"}))
 
-    metrics.backfill()
+    metrics['backfill']()
 
     row = quotes.read_quote(store, "AAPL")
     assert (row["industry"], row["country"]) == (
@@ -816,7 +816,7 @@ def _sold_out_metrics(store, mocker):
         [_valid_shares("AAPL", "Apple", quantity=0)], store, mode="events",
         acquisitions={"AAPL": date(2024, 1, 15)},
         exits={"AAPL": date(2024, 6, 4)})
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     _seed_up_to_now(store, "AAPL", datetime(2024, 1, 10, tzinfo=timezone.utc))
     fake_history(mocker, metrics, return_value=[])
     return metrics
@@ -834,7 +834,7 @@ def test_a_classified_row_without_a_name_is_asked_again(
         info={"sector": "Technology", "industry": "Consumer Electronics",
               "country": "United States", "longName": "Apple Inc."}))
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert quotes.read_quote(store, "AAPL")["long_name"] == "Apple Inc."
 
@@ -851,8 +851,8 @@ def test_a_fund_still_gets_its_name_with_one_ask_per_turn(
 
     monkeypatch.setattr(market.yf, "Ticker", _ticker)
 
-    metrics.backfill()
-    metrics.backfill()
+    metrics['backfill']()
+    metrics['backfill']()
 
     row = quotes.read_quote(store, "AAPL")
     assert row["long_name"] == "Amundi MSCI World"
@@ -865,7 +865,7 @@ def test_backfill_write_failure_does_not_abort_remaining_symbols(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
         store, mode="events", acquisitions=acquired_on, events=None)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     for symbol in ("AAPL", "MSFT"):
         _seed_up_to_now(store, symbol, datetime(2024, 6, 1, tzinfo=timezone.utc))
     fake_history(mocker, metrics, return_value=[
@@ -883,7 +883,7 @@ def test_backfill_write_failure_does_not_abort_remaining_symbols(store, mocker):
     mocker.patch.object(quotes, "record_history", side_effect=flaky)
 
     # Must not propagate the exception out of the per-symbol loop.
-    metrics.backfill()
+    metrics['backfill']()
 
     assert calls["n"] == 2
     assert [price for _, price in _points(store, "MSFT")] == [
@@ -902,15 +902,15 @@ def test_backfill_forward_fills_recent_gap(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired}, events=None)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     # Backward already complete -> only the forward pass should act.
-    metrics._backfill_complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    metrics['backfill'].complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
     anchor = datetime.now(timezone.utc) - timedelta(days=30)
     _seed_prices(store, "AAPL", anchor)
     recovered = anchor + timedelta(days=2)
     fake_history(mocker, metrics, return_value=[{"timestamp": recovered, "price": 175.0}])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert [price for _, price in _points(store)] == [100.0, 175.0]
     # The forward chunk is newer than the anchor, so the maintenance rule moves
@@ -935,11 +935,11 @@ def test_a_sold_position_keeps_its_history_but_stops_chasing_the_present(
     _seed_prices(store, "ALO", datetime(2022, 1, 1, tzinfo=timezone.utc))
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         "ALO", main.runtime_state.BACKWARD) is not None
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         "ALO", main.runtime_state.FORWARD) is None
 
 
@@ -950,12 +950,12 @@ def test_backfill_forward_empty_window_writes_nothing(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired}, events=None)
-    metrics.backfill_chunk_days = 365
-    metrics._backfill_complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    metrics.ctx.backfill_chunk_days = 365
+    metrics['backfill'].complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
     _seed_prices(store, "AAPL", datetime.now(timezone.utc) - timedelta(days=30))
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert len(_points(store)) == 1
 
@@ -967,15 +967,15 @@ def test_backfill_forward_noop_when_series_empty(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired}, events=None)
-    metrics.backfill_chunk_days = 365
-    metrics._backfill_complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    metrics.ctx.backfill_chunk_days = 365
+    metrics['backfill'].complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
     fetch = fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     fetch.assert_not_called()
     assert _points(store) == []
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         "AAPL", main.runtime_state.FORWARD).skipped == \
         main.runtime_state.SKIP_NO_SERIES
 
@@ -987,18 +987,18 @@ def test_backfill_runs_both_directions_in_one_cycle(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired}, events=None)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     anchor = datetime.now(timezone.utc) - timedelta(days=30)
     _seed_prices(store, "AAPL", anchor)
     fetch = fake_history(mocker, metrics, return_value=[{"timestamp": anchor - timedelta(days=1),
                        "price": 170.0}])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     # One fetch for the backward chunk, one for the forward chunk.
     assert fetch.call_count == 2
     # Backward pass never marked complete (the older gap remains open).
-    assert "AAPL" not in metrics._backfill_complete
+    assert "AAPL" not in metrics['backfill'].complete
 
 
 def test_backfill_empty_window_marks_complete(store, mocker):
@@ -1006,17 +1006,17 @@ def test_backfill_empty_window_marks_complete(store, mocker):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired})
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     # end_date=2024-03-01, chunk clamps start_date to the acquisition (2024-01-15).
     _seed_up_to_now(store, "AAPL", datetime(2024, 3, 1, tzinfo=timezone.utc))
     # Empty (but non-None) window: the fetch succeeded with no rows.
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert len(_points(store)) == 2
     expected = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
-    assert metrics._backfill_complete["AAPL"] == expected
+    assert metrics['backfill'].complete["AAPL"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1054,14 +1054,14 @@ def test_a_share_bought_in_2020_and_sold_in_2022_is_reconstructed(store, mocker)
     metrics, _ = _build_metrics(
         [_valid_shares("ALO", "Alstom", quantity=0)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     windows = _window_recorder(
         metrics, mocker,
         prices=lambda s, start, end: [
             {"timestamp": start + timedelta(days=1), "price": 42.0}])
 
     for _ in range(4):
-        metrics.backfill()
+        metrics['backfill']()
 
     # The window is the holding period: it opens at the sale (the day after,
     # yfinance reading the end of a range as exclusive) and not at today, and it
@@ -1072,7 +1072,7 @@ def test_a_share_bought_in_2020_and_sold_in_2022_is_reconstructed(store, mocker)
     stored = [ts.date() for ts, _ in _points(store, "ALO")]
     assert stored and all(date(2020, 3, 2) <= day <= date(2022, 5, 5)
                           for day in stored)
-    assert metrics._backfill_complete["ALO"] == datetime(
+    assert metrics['backfill'].complete["ALO"] == datetime(
         2020, 3, 2, tzinfo=timezone.utc)
 
 
@@ -1096,17 +1096,17 @@ def test_the_published_progress_measures_the_holding_window_not_today(
     metrics, _ = _build_metrics(
         [_valid_shares("ALO", "Alstom", quantity=0)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     _window_recorder(
         metrics, mocker,
         prices=lambda s, start, end: [
             {"timestamp": start + timedelta(days=1), "price": 42.0}])
 
     # Two cycles: the first seeds the series, the second observes an ``oldest``.
-    metrics.backfill()
-    metrics.backfill()
+    metrics['backfill']()
+    metrics['backfill']()
 
-    record = metrics.recorder.backfill_of("ALO", main.runtime_state.BACKWARD)
+    record = metrics.ctx.recorder.backfill_of("ALO", main.runtime_state.BACKWARD)
     assert record.ceiling.date() == date(2022, 5, 5)
 
     now = datetime(2026, 8, 10, tzinfo=timezone.utc)
@@ -1137,20 +1137,20 @@ def test_the_backfill_takes_the_whole_timeline_and_the_scrape_only_holdings(
         [_valid_shares("AAPL", "Apple", quantity=4),
          _valid_shares("ALO", "Alstom", quantity=0)],
         store, mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     windows = _window_recorder(metrics, mocker)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     backward = {
         symbol for symbol in ("AAPL", "ALO")
-        if metrics.recorder.backfill_of(
+        if metrics.ctx.recorder.backfill_of(
             symbol, main.runtime_state.BACKWARD) is not None
     }
     assert backward == {"AAPL", "ALO"}
     assert len(windows) == 2
     # And the scrape keeps its own set, filtered on ``quantity``.
-    assert metrics._held_symbols() == {"AAPL"}
+    assert metrics['scrape'].held_symbols() == {"AAPL"}
 
 
 def test_a_mute_symbol_walks_back_to_its_acquisition_and_stops_asking(
@@ -1172,16 +1172,16 @@ def test_a_mute_symbol_walks_back_to_its_acquisition_and_stops_asking(
     metrics, _ = _build_metrics(
         [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     fetch = fake_history(mocker, metrics, return_value=[])
 
     for _ in range(10):
-        metrics.backfill()
+        metrics['backfill']()
 
     # 1125 days over 365-day chunks: four windows, then nothing, for ever.
     assert fetch.call_count == 4
     assert _points(store, "DEAD") == []
-    record = metrics.recorder.backfill_of("DEAD", main.runtime_state.BACKWARD)
+    record = metrics.ctx.recorder.backfill_of("DEAD", main.runtime_state.BACKWARD)
     assert record.terminal == main.runtime_state.TERMINAL_COMPLETE
     assert record.written == 0
 
@@ -1201,11 +1201,11 @@ def test_the_anchor_is_persisted_so_a_restart_does_not_start_asking_again(
     metrics, _ = _build_metrics(
         [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     fake_history(mocker, metrics, return_value=[])
 
     for _ in range(4):
-        metrics.backfill()
+        metrics['backfill']()
 
     assert quotes.oldest_window_tried(store, "DEAD") == acquired
 
@@ -1213,13 +1213,13 @@ def test_the_anchor_is_persisted_so_a_restart_does_not_start_asking_again(
     revived, _ = _build_metrics(
         [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
         mode="events", events=events)
-    revived.backfill_chunk_days = 365
+    revived.ctx.backfill_chunk_days = 365
     again = fake_history(mocker, revived, return_value=[])
 
-    revived.backfill()
+    revived['backfill']()
 
     again.assert_not_called()
-    assert revived.recorder.backfill_of(
+    assert revived.ctx.recorder.backfill_of(
         "DEAD", main.runtime_state.BACKWARD).terminal == \
         main.runtime_state.TERMINAL_COMPLETE
 
@@ -1235,10 +1235,10 @@ def test_a_failed_fetch_leaves_the_anchor_where_it_was(store, mocker):
                     quantity=10, unit_price=150.0)]
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store, mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     fake_history(mocker, metrics, return_value=None)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert quotes.oldest_window_tried(store, "AAPL") is None
 
@@ -1254,12 +1254,12 @@ def test_the_backward_pass_never_reaches_into_the_stored_series(store, mocker):
                     quantity=10, unit_price=150.0)]
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store, mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     _seed_up_to_now(store, "AAPL", datetime(2023, 6, 1, tzinfo=timezone.utc))
     windows = _window_recorder(metrics, mocker)
 
     for _ in range(3):
-        metrics.backfill()
+        metrics['backfill']()
 
     oldest = quotes.oldest_ts(store, "AAPL")
     assert windows
@@ -1287,26 +1287,26 @@ def test_the_forward_pass_fills_the_gap_of_a_position_bought_back(
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple", quantity=5)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     # Backward already done, so only the forward pass can act.
-    metrics._backfill_complete["AAPL"] = datetime(
+    metrics['backfill'].complete["AAPL"] = datetime(
         2022, 1, 10, tzinfo=timezone.utc)
     anchor = datetime.now(timezone.utc) - timedelta(days=270)
     _seed_prices(store, "AAPL", anchor)
     recovered = anchor + timedelta(days=2)
     fake_history(mocker, metrics, return_value=[{"timestamp": recovered, "price": 175.0}])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert [price for _, price in _points(store)] == [100.0, 175.0]
-    record = metrics.recorder.backfill_of("AAPL", main.runtime_state.FORWARD)
+    record = metrics.ctx.recorder.backfill_of("AAPL", main.runtime_state.FORWARD)
     assert record.written == 1
 
     # And the no-op guard is intact: a point a minute old sizes no window.
     _seed_prices(store, "AAPL", datetime.now(timezone.utc) - timedelta(minutes=1))
-    metrics.backfill()
+    metrics['backfill']()
 
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         "AAPL", main.runtime_state.FORWARD).skipped == \
         main.runtime_state.SKIP_TOO_RECENT
 
@@ -1354,7 +1354,7 @@ def test_a_shut_market_is_asked_once_a_day_and_not_once_a_cycle(store, mocker):
 
     for day in (2, 3):
         for hour in (0, 6, 12, 18, 23):
-            metrics.backfill(datetime(2024, 3, day, hour, 30,
+            metrics['backfill'](datetime(2024, 3, day, hour, 30,
                                       tzinfo=timezone.utc))
 
     # Ten cycles across two shut days: one fetch each, not one per cycle.
@@ -1376,18 +1376,18 @@ def test_a_held_symbol_yahoo_stopped_answering_about_stops_being_asked(
     now = datetime(2024, 6, 3, 12, 0, tzinfo=timezone.utc)
     metrics = _held_since(store, "DEAD", date(2024, 2, 4),
                           datetime(2024, 2, 4, 12, 0, tzinfo=timezone.utc))
-    metrics.backfill_chunk_days = 30
+    metrics.ctx.backfill_chunk_days = 30
     fetch = fake_history(mocker, metrics, return_value=[])
 
     for _ in range(20):
-        metrics.backfill(now)
+        metrics['backfill'](now)
 
     # 120 days over 30-day chunks: four windows, then nothing, for ever.
     assert fetch.call_count == 4
     # And not one row came back, which is the whole of the symbol being mute.
     assert len(_points(store, "DEAD")) == 1
     assert quotes.newest_window_tried(store, "DEAD") == date(2024, 6, 3)
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         "DEAD", main.runtime_state.FORWARD).skipped == \
         main.runtime_state.SKIP_TOO_RECENT
 
@@ -1403,17 +1403,17 @@ def test_the_forward_anchor_survives_the_process_that_wrote_it(store, mocker):
     metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill(datetime(2024, 3, 2, 18, 0, tzinfo=timezone.utc))
+    metrics['backfill'](datetime(2024, 3, 2, 18, 0, tzinfo=timezone.utc))
     assert quotes.newest_window_tried(store, "AAPL") == date(2024, 3, 2)
 
     # A fresh process over the same store: no in-memory watermark at all.
     revived = _held_since(store, "AAPL", date(2024, 3, 1), friday)
     again = fake_history(mocker, revived, return_value=[])
 
-    revived.backfill(datetime(2024, 3, 2, 23, 0, tzinfo=timezone.utc))
+    revived['backfill'](datetime(2024, 3, 2, 23, 0, tzinfo=timezone.utc))
 
     again.assert_not_called()
-    assert revived.recorder.backfill_of(
+    assert revived.ctx.recorder.backfill_of(
         "AAPL", main.runtime_state.FORWARD).skipped == \
         main.runtime_state.SKIP_TOO_RECENT
 
@@ -1432,14 +1432,14 @@ def test_neither_a_failed_fetch_nor_a_failed_write_moves_the_forward_anchor(
     metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
 
     fake_history(mocker, metrics, return_value=None)
-    metrics.backfill(saturday)
+    metrics['backfill'](saturday)
     assert quotes.newest_window_tried(store, "AAPL") is None
 
     # Fetched, but nothing of it reached the store (#853).
     mocker.patch.object(
-        metrics, "_fetch_and_store",
+        metrics['backfill'], "fetch_and_store",
         return_value=([{"timestamp": saturday, "price": 175.0}], None))
-    metrics.backfill(saturday)
+    metrics['backfill'](saturday)
     assert quotes.newest_window_tried(store, "AAPL") is None
 
 
@@ -1458,7 +1458,7 @@ def _failing_history(store, mocker, symbols=("AAPL",)):
     metrics, _ = _build_metrics(
         [_valid_shares(symbol, symbol, quantity=10) for symbol in symbols],
         store, mode="events", events=events)
-    metrics.regular_interval = 120
+    metrics.ctx.regular_interval = 120
     for symbol in symbols:
         _seed_up_to_now(store, symbol, datetime(2024, 1, 10, tzinfo=timezone.utc))
     return metrics, fake_history(mocker, metrics, return_value=None)
@@ -1469,7 +1469,7 @@ def _fetch_instants(metrics, fetch, seconds):
     reached = []
     for second in seconds:
         before = fetch.call_count
-        metrics.backfill(_T0 + timedelta(seconds=second))
+        metrics['backfill'](_T0 + timedelta(seconds=second))
         if fetch.call_count > before:
             reached.append(second)
     return reached
@@ -1482,11 +1482,11 @@ def test_a_failing_backward_fetch_backs_off_then_stops_counting_toward_the_recon
     reached = _fetch_instants(metrics, fetch, range(0, 7801, 60))
 
     assert reached == [0, 120, 240, 360, 600, 1080, 2040, 3960, 7800]
-    record = metrics.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    record = metrics.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
     assert (record.terminal, record.failed, record.failures) == (
         runtime_state.TERMINAL_UNREACHABLE, True, 9)
-    assert metrics._backfill_unreachable["AAPL"] == _ACQUIRED
-    assert metrics.reconstruction_state() == (1, 1)
+    assert metrics['backfill'].unreachable["AAPL"] == _ACQUIRED
+    assert metrics['ingestion'].reconstruction_state() == (1, 1)
 
 
 def test_the_wait_after_each_backward_failure_is_the_617_formula(store, mocker):
@@ -1494,9 +1494,9 @@ def test_the_wait_after_each_backward_failure_is_the_617_formula(store, mocker):
 
     for failures in range(1, 12):
         at = _T0 + timedelta(days=failures)
-        metrics._backward_retry_at.clear()
-        metrics.backfill(at)
-        waited = metrics._backward_retry_at["AAPL"] - at
+        metrics['backfill'].backward_retry_at.clear()
+        metrics['backfill'](at)
+        waited = metrics['backfill'].backward_retry_at["AAPL"] - at
         assert waited.total_seconds() == pytest.approx(
             scheduling.backoff_delay(120, failures))
     assert waited.total_seconds() > scheduling.backoff_delay(120, 9)
@@ -1505,46 +1505,46 @@ def test_the_wait_after_each_backward_failure_is_the_617_formula(store, mocker):
 def test_one_complete_and_one_unreachable_series_settle_the_reconstruction(
         store, mocker):
     metrics, fetch = _failing_history(store, mocker, symbols=("AAPL", "MSFT"))
-    metrics._backfill_complete["MSFT"] = _ACQUIRED
-    assert metrics.reconstruction_state() == (1, 2)
+    metrics['backfill'].complete["MSFT"] = _ACQUIRED
+    assert metrics['ingestion'].reconstruction_state() == (1, 2)
 
     _fetch_instants(metrics, fetch, range(0, 7801, 60))
 
-    assert metrics.reconstruction_state() == (2, 2)
+    assert metrics['ingestion'].reconstruction_state() == (2, 2)
 
 
 def test_a_fetch_that_lands_after_the_give_up_brings_the_symbol_back(store, mocker):
     metrics, fetch = _failing_history(store, mocker)
     _fetch_instants(metrics, fetch, range(0, 7801, 60))
-    assert metrics._backfill_unreachable
+    assert metrics['backfill'].unreachable
 
     fetch.return_value = [
         {"timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc), "price": 90.0}]
-    metrics.backfill(_T0 + timedelta(days=2))
+    metrics['backfill'](_T0 + timedelta(days=2))
 
-    record = metrics.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    record = metrics.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
     assert (record.terminal, record.failures) == (None, 0)
-    assert "AAPL" not in metrics._backward_retry_at
-    assert "AAPL" not in metrics._backfill_unreachable
-    assert metrics.reconstruction_state() == (0, 1)
+    assert "AAPL" not in metrics['backfill'].backward_retry_at
+    assert "AAPL" not in metrics['backfill'].unreachable
+    assert metrics['ingestion'].reconstruction_state() == (0, 1)
 
 
 def test_a_failed_store_write_backs_off_and_counts_toward_the_give_up(
         store, mocker):
     metrics, _ = _failing_history(store, mocker)
     mocker.patch.object(
-        metrics, "_fetch_and_store",
+        metrics['backfill'], "fetch_and_store",
         return_value=([{"timestamp": _T0, "price": 175.0}], None))
 
     reached = []
     for second in range(0, 7801, 60):
-        before = metrics._fetch_and_store.call_count
-        metrics.backfill(_T0 + timedelta(seconds=second))
-        if metrics._fetch_and_store.call_count > before:
+        before = metrics['backfill'].fetch_and_store.call_count
+        metrics['backfill'](_T0 + timedelta(seconds=second))
+        if metrics['backfill'].fetch_and_store.call_count > before:
             reached.append(second)
 
     assert reached == [0, 120, 240, 360, 600, 1080, 2040, 3960, 7800]
-    record = metrics.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    record = metrics.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
     assert record.terminal == runtime_state.TERMINAL_UNREACHABLE
 
 
@@ -1552,27 +1552,27 @@ def test_a_failing_forward_fetch_backs_off_without_a_terminal_and_one_success_re
         store, mocker):
     friday = datetime(2024, 3, 1, 16, 0, tzinfo=timezone.utc)
     metrics = _held_since(store, "AAPL", date(2024, 3, 1), friday)
-    metrics.regular_interval = 120
+    metrics.ctx.regular_interval = 120
     fetch = fake_history(mocker, metrics, return_value=None)
     t0 = datetime(2024, 3, 4, 12, 0, tzinfo=timezone.utc)
 
     reached = []
     for second in range(0, 1081, 60):
         before = fetch.call_count
-        metrics.backfill(t0 + timedelta(seconds=second))
+        metrics['backfill'](t0 + timedelta(seconds=second))
         if fetch.call_count > before:
             reached.append(second)
 
     assert reached == [0, 120, 240, 360, 600, 1080]
-    record = metrics.recorder.backfill_of("AAPL", runtime_state.FORWARD)
+    record = metrics.ctx.recorder.backfill_of("AAPL", runtime_state.FORWARD)
     assert (record.failed, record.terminal, record.failures) == (True, None, 6)
 
     fetch.return_value = [{"timestamp": t0, "price": 175.0}]
-    metrics.backfill(t0 + timedelta(days=1))
+    metrics['backfill'](t0 + timedelta(days=1))
 
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         "AAPL", runtime_state.FORWARD).failures == 0
-    assert "AAPL" not in metrics._forward_retry_at
+    assert "AAPL" not in metrics['backfill'].forward_retry_at
 
 
 # ---------------------------------------------------------------------------
@@ -1596,10 +1596,10 @@ def test_the_reconstruction_state_is_process_memory(store):
         [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
         store, mode="events", events=events)
 
-    assert metrics.reconstruction_state() == (0, 2)
+    assert metrics['ingestion'].reconstruction_state() == (0, 2)
 
-    metrics._backfill_complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
-    assert metrics.reconstruction_state() == (1, 2)
+    metrics['backfill'].complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
+    assert metrics['ingestion'].reconstruction_state() == (1, 2)
 
 
 def test_nothing_ever_held_is_an_observation_and_not_an_absence(store):
@@ -1612,7 +1612,7 @@ def test_nothing_ever_held_is_an_observation_and_not_an_absence(store):
     """
     metrics, _ = _build_metrics([], store, mode="events", events=[])
 
-    assert metrics.reconstruction_state() == (0, 0)
+    assert metrics['ingestion'].reconstruction_state() == (0, 0)
 
 
 def test_forgetting_every_import_takes_the_reconstruction_fact_with_it(
@@ -1631,10 +1631,10 @@ def test_forgetting_every_import_takes_the_reconstruction_fact_with_it(
     metrics, config_manager = _build_metrics(
         [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
     assert [row[0] for row in store.query("SELECT key FROM installation_fact")] == \
         [main.installation_facts.RECONSTRUCTION_RUNNING]
 
@@ -1642,10 +1642,10 @@ def test_forgetting_every_import_takes_the_reconstruction_fact_with_it(
     # holding window any more.
     config_manager._events = []
     config_manager._shares = []
-    assert metrics.config_manager.current().backfill_windows() == {}
-    assert metrics.reconstruction_state() == (0, 0)
+    assert metrics.ctx.config_manager.current().backfill_windows() == {}
+    assert metrics['ingestion'].reconstruction_state() == (0, 0)
 
-    metrics.review_installation_facts()
+    metrics['ingestion'].review_installation_facts()
 
     assert store.query("SELECT count(*) FROM installation_fact")[0][0] == 0
 
@@ -1658,10 +1658,10 @@ def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(
     metrics, _ = _build_metrics(
         [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
         mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert [row[0] for row in store.query("SELECT key FROM installation_fact")] == \
         [main.installation_facts.RECONSTRUCTION_RUNNING]
@@ -1669,7 +1669,7 @@ def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(
     # Two chunks later the backward pass has reached its acquisition, and the
     # installation fact has no subject left.
     for _ in range(3):
-        metrics.backfill()
+        metrics['backfill']()
 
     assert store.query("SELECT count(*) FROM installation_fact")[0][0] == 0
 
@@ -1691,7 +1691,7 @@ def test_the_end_of_the_reconstruction_produces_the_assumed_currency_fact(
                     quantity=10, unit_price=150.0)]
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store, mode="events", events=events)
-    metrics.backfill_chunk_days = 365
+    metrics.ctx.backfill_chunk_days = 365
     store.execute(
         "INSERT INTO event (id, date, event_type, account, symbol, quantity, "
         "                   unit_price) "
@@ -1700,13 +1700,13 @@ def test_the_end_of_the_reconstruction_produces_the_assumed_currency_fact(
                         attributes={"currency": "USD"})
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     keys = {row[0] for row in store.query("SELECT key FROM installation_fact")}
     assert main.installation_facts.ASSUMED_BASE_CURRENCY in keys
     # And it is produced once, however many cycles conclude the same way.
-    metrics.backfill()
-    metrics.backfill()
+    metrics['backfill']()
+    metrics['backfill']()
     assert store.query(
         "SELECT count(*) FROM installation_fact WHERE key = ?",
         [main.installation_facts.ASSUMED_BASE_CURRENCY])[0][0] == 1
@@ -1724,13 +1724,13 @@ def test_the_ingest_and_the_backfill_read_the_same_memory(store):
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store, mode="events", events=events)
 
-    metrics.ingest()
+    metrics['ingestion']()
 
     assert [row[0] for row in store.query("SELECT key FROM installation_fact")] == \
         [main.installation_facts.RECONSTRUCTION_RUNNING]
 
-    metrics._backfill_complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
-    metrics.ingest()
+    metrics['backfill'].complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
+    metrics['ingestion']()
 
     assert store.query("SELECT count(*) FROM installation_fact")[0][0] == 0
 
@@ -1742,7 +1742,7 @@ def test_a_store_failure_never_takes_a_job_with_the_facts(store, mocker):
     mocker.patch.object(main.installation_facts, "refresh",
                         side_effect=RuntimeError("the file is gone"))
 
-    metrics.review_installation_facts()  # must not raise
+    metrics['ingestion'].review_installation_facts()  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -1781,8 +1781,8 @@ def test_the_reference_is_declared_at_the_top_of_every_cycle(store, mocker):
     _names_a_reference(store)
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
-    metrics.backfill()
+    metrics['backfill']()
+    metrics['backfill']()
 
     assert _reference_row(store) == [("CW8.PA",)]
 
@@ -1801,11 +1801,11 @@ def test_a_reference_named_between_two_cycles_is_seen_by_the_next_one(store, moc
                       quantity=10, unit_price=150.0)])
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
     assert _reference_row(store) == []
 
     _names_a_reference(store)
-    metrics.backfill()
+    metrics['backfill']()
 
     assert _reference_row(store) == [("CW8.PA",)]
 
@@ -1831,9 +1831,9 @@ def test_a_reference_nobody_holds_is_still_walked_up_to_today(store, mocker):
     _seed_prices(store, "CW8.PA", datetime(2022, 1, 3, tzinfo=timezone.utc))
     windows = _window_recorder(metrics, mocker)
 
-    metrics.backfill()
+    metrics['backfill']()
 
-    forward = metrics.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
+    forward = metrics.ctx.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
     assert forward is not None and forward.skipped is None
     # And it asked Yahoo for the days since the series stops, not for nothing.
     assert any(end.date() >= datetime.now(timezone.utc).date() - timedelta(days=1)
@@ -1856,7 +1856,7 @@ def test_followed_references_download_one_at_a_time_in_click_order(
     walked = []
     fake_history(mocker, metrics, side_effect=lambda symbol, *_: walked.append(symbol) or [])
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert "CSPX.AS" in walked
     assert "CW8.PA" not in walked
@@ -1892,7 +1892,7 @@ def test_the_reference_is_fetched_before_any_held_symbol(store, mocker):
     metrics, visited = _three_held_and_a_late_reference(store, mocker)
     _names_a_reference(store, "CW8.PA")
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert visited[0] == "CW8.PA"
     assert visited[1:4] == ["AAPL", "ACA.PA", "BNP.PA"]
@@ -1905,7 +1905,7 @@ def test_a_reference_named_mid_cycle_is_visited_next(store, mocker):
         on_fetch=lambda symbol: symbol == "AAPL" and _names_a_reference(
             store, "CW8.PA"))
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert visited[:2] == ["AAPL", "CW8.PA"]
     assert _reference_row(store, "CW8.PA") == [("CW8.PA",)]
@@ -1915,7 +1915,7 @@ def test_a_reference_named_mid_cycle_is_visited_next(store, mocker):
 def test_with_no_reference_the_held_symbols_keep_their_order(store, mocker):
     metrics, visited = _three_held_and_a_late_reference(store, mocker)
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert visited == ["AAPL", "ACA.PA", "BNP.PA"]
 
@@ -1925,7 +1925,7 @@ def test_a_held_reference_is_visited_once_per_cycle(store, mocker):
         store, mocker, held=["AAPL", "CW8.PA", "MSFT"])
     _names_a_reference(store, "CW8.PA")
 
-    metrics.backfill()
+    metrics['backfill']()
 
     assert visited == ["CW8.PA", "AAPL", "MSFT"]
 
@@ -1948,11 +1948,11 @@ def test_a_reference_that_was_held_and_sold_keeps_its_own_first_day(store, mocke
     _seed_prices(store, "CW8.PA", datetime(2021, 10, 5, tzinfo=timezone.utc))
     fake_history(mocker, metrics, return_value=[])
 
-    metrics.backfill()
+    metrics['backfill']()
 
-    assert metrics._backfill_complete["CW8.PA"] == datetime(
+    assert metrics['backfill'].complete["CW8.PA"] == datetime(
         2021, 10, 5, tzinfo=timezone.utc)
-    forward = metrics.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
+    forward = metrics.ctx.recorder.backfill_of("CW8.PA", main.runtime_state.FORWARD)
     assert forward is not None and forward.skipped is None
 
 
@@ -1961,14 +1961,14 @@ def test_each_job_records_a_timed_pass_with_its_outcome(
     """#1236: the façade times every pass; the classifier names its outcome."""
     metrics, _ = _build_metrics([_valid_shares("AAPL")], store,
                                 mode="events", events=sample_events)
-    mocker.patch.object(metrics, "update_account_metrics",
+    mocker.patch.object(metrics['performance'], "update_account_metrics",
                         side_effect=RuntimeError("store gone"))
-    mocker.patch.object(metrics._backfill, "run")
+    mocker.patch.object(metrics['backfill'], "run")
 
-    metrics.recompute_perf()
-    metrics.backfill()
+    metrics['performance']()
+    metrics['backfill']()
 
-    history = metrics.recorder.history.read(datetime.now(timezone.utc))
+    history = metrics.ctx.recorder.history.read(datetime.now(timezone.utc), registry.history_jobs())
     perf = history['jobs']['performance']['passes'][0]
     assert perf['outcome'] == 'error'
     assert perf['error'] == 'store gone'
@@ -1980,14 +1980,14 @@ def test_a_raising_scrape_and_a_failed_replay_are_errors_in_the_history(
         store, mocker):
     """#1236: the scrape keeps a track per symbol; a failed replay is an error."""
     metrics, cfg = _build_metrics([_valid_shares("AAPL")], store)
-    mocker.patch.object(metrics.market, "latest_quote",
+    mocker.patch.object(metrics.ctx.market, "latest_quote",
                         side_effect=RuntimeError("yahoo down"))
     mocker.patch.object(cfg, "reload", side_effect=RuntimeError("bad ledger"))
 
-    metrics._scrape_symbol("AAPL")
-    metrics.ingest()
+    metrics['scrape']("AAPL")
+    metrics['ingestion']()
 
-    history = metrics.recorder.history.read(datetime.now(timezone.utc))
+    history = metrics.ctx.recorder.history.read(datetime.now(timezone.utc), registry.history_jobs())
     scrape = history['scrape']['AAPL']['passes'][0]
     assert scrape['outcome'] == 'error'
     assert scrape['error'] == 'RuntimeError: yahoo down'
@@ -1998,20 +1998,20 @@ def test_a_raising_scrape_and_a_failed_replay_are_errors_in_the_history(
 def test_a_backfill_cycle_reads_only_the_passes_it_published(store, mocker):
     """A record older than the cycle is not this cycle's: it stays idle."""
     metrics, _ = _build_metrics([_valid_shares("AAPL")], store)
-    metrics.recorder.record_backfill(runtime_state.BackfillRecord(
+    metrics.ctx.recorder.record_backfill(runtime_state.BackfillRecord(
         symbol="AAPL", direction=runtime_state.BACKWARD,
         at=datetime.now(timezone.utc) - timedelta(minutes=5), failed=True))
-    run = mocker.patch.object(metrics._backfill, "run")
+    run = mocker.patch.object(metrics['backfill'], "run")
 
-    metrics.backfill()
-    run.side_effect = lambda now: metrics.recorder.record_backfill(
+    metrics['backfill']()
+    run.side_effect = lambda now=None: metrics.ctx.recorder.record_backfill(
         runtime_state.BackfillRecord(
             symbol="AAPL", direction=runtime_state.FORWARD,
             at=datetime.now(timezone.utc), failed=True, error="timeout"))
-    metrics.backfill()
+    metrics['backfill']()
 
-    passes = metrics.recorder.history.read(
-        datetime.now(timezone.utc))['jobs']['backfill']['passes']
+    passes = metrics.ctx.recorder.history.read(
+        datetime.now(timezone.utc), registry.history_jobs())['jobs']['backfill']['passes']
     assert [(one['outcome'], one['error']) for one in passes] == [
         ('error', 'timeout'), ('idle', None)]
 
@@ -2020,10 +2020,10 @@ def test_a_pass_that_ends_after_its_symbol_was_sold_leaves_no_track(
         store, mocker):
     """The reconciliation forgot it mid-pass; the pass's record must not revive it."""
     metrics, _ = _build_metrics([_valid_shares("AAPL")], store)
-    mocker.patch.object(metrics.market, "latest_quote", return_value=(None, None))
-    mocker.patch.object(metrics, "_held_symbols", return_value=set())
+    mocker.patch.object(metrics.ctx.market, "latest_quote", return_value=(None, None))
+    mocker.patch.object(metrics['scrape'], "held_symbols", return_value=set())
 
-    metrics._scrape_symbol("AAPL")
+    metrics['scrape']("AAPL")
 
-    assert metrics.recorder.history.read(
-        datetime.now(timezone.utc))['scrape'] == {}
+    assert metrics.ctx.recorder.history.read(
+        datetime.now(timezone.utc), registry.history_jobs())['scrape'] == {}

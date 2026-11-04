@@ -1682,7 +1682,7 @@ def _in_euro(client, yahoo=None, rate=0.5):
         lambda symbol: ({'currency': answers[symbol]}
                         if answers.get(symbol) else None))
     runtime = api_module.current_runtime()
-    runtime.workloads.rates = fx.Rates(
+    runtime.jobs.ctx.rates = fx.Rates(
         lambda pair: None,
         lambda pair, start, end: ({} if rate is None else {
             start + timedelta(days=i): rate

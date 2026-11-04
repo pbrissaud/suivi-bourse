@@ -7,6 +7,7 @@ import pytest
 
 from application import job_history, runtime_state, runtime_view
 from application.job_history import JobHistory, Pass
+from application.jobs import registry
 
 T0 = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
 
@@ -27,7 +28,7 @@ def test_a_day_at_a_ten_second_cadence_keeps_24_slots_and_20_passes():
     assert len(track.slots) == 24
     assert len(track.recent) == 20
 
-    body = history.read(end - timedelta(seconds=1))['jobs'][job_history.PERFORMANCE]
+    body = history.read(end - timedelta(seconds=1), registry.history_jobs())['jobs'][job_history.PERFORMANCE]
     assert len(body['slots']) == 24
     assert len(body['passes']) == 20
     assert body['slots'][-1]['passes'] == 360
@@ -37,7 +38,7 @@ def test_a_pass_25_hours_old_is_gone():
     history = JobHistory(now=T0)
     history.record(job_history.INGESTION, None, _pass(T0, job_history.ERROR, 'boom'))
 
-    body = history.read(T0 + timedelta(hours=25))['jobs'][job_history.INGESTION]
+    body = history.read(T0 + timedelta(hours=25), registry.history_jobs())['jobs'][job_history.INGESTION]
 
     assert body['passes'] == []
     assert all(slot['passes'] == 0 for slot in body['slots'])
@@ -49,7 +50,7 @@ def test_a_read_30_hours_later_shows_24_empty_slots_and_writes_nothing():
     history = JobHistory(now=T0)
     history.record(job_history.BACKFILL, None, _pass(T0))
 
-    body = history.read(T0 + timedelta(hours=30))['jobs'][job_history.BACKFILL]
+    body = history.read(T0 + timedelta(hours=30), registry.history_jobs())['jobs'][job_history.BACKFILL]
 
     assert len(body['slots']) == 24
     assert all(slot['passes'] == 0 for slot in body['slots'])
@@ -65,7 +66,7 @@ def test_a_slot_counts_its_outcomes_and_keeps_its_last_error():
     history.record(job_history.SCRAPE, 'AAPL',
                    _pass(T0 + timedelta(minutes=9), job_history.ERROR, 'two'))
 
-    slot = history.read(T0)['scrape']['AAPL']['slots'][-1]
+    slot = history.read(T0, registry.history_jobs())['scrape']['AAPL']['slots'][-1]
 
     assert (slot['passes'], slot['errors'], slot['attentions']) == (3, 2, 1)
     assert slot['last_error'] == 'two'
@@ -80,7 +81,7 @@ def test_a_departed_symbol_takes_its_scrape_history_with_it():
     recorder.retain({'AAPL', 'TSLA'})
     recorder.forget_scrape('TSLA')
 
-    assert list(recorder.history.read(T0)['scrape']) == ['AAPL']
+    assert list(recorder.history.read(T0, registry.history_jobs())['scrape']) == ['AAPL']
 
 
 def test_eight_concurrent_threads_never_share_a_log_line():
@@ -235,7 +236,7 @@ def test_the_scrape_lines_ride_on_its_20_newest_passes_only():
                 lines=({'level': 'WARNING', 'logger': 'yfinance',
                         'message': 'down'},)))
 
-    body = history.read(T0 + timedelta(minutes=30))
+    body = history.read(T0 + timedelta(minutes=30), registry.history_jobs())
 
     assert body['scrape']['AAPL']['passes'][0]['lines'] == []
     recent = body['scrape_recent']

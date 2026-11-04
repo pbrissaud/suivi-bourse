@@ -8,10 +8,10 @@ import {
   lastFaultyHour,
   mergeTracks,
 } from '@/features/system/components/JobHistogram'
-import type { JobsHistory, JobTrack } from '@/features/settings/lib/api'
-import type { HealthJobs, HealthState, HealthStatus } from '@/lib/api'
+import type { JobInfo, JobsHistory, JobTrack } from '@/features/settings/lib/api'
+import type { HealthJob, HealthJobs, HealthState, HealthStatus } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
-import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import { isMessageKey, useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -19,16 +19,6 @@ const JOB_TONE: Record<HealthStatus, string> = {
   ok: 'text-foreground',
   attention: 'text-attention',
   unknown: 'text-muted-foreground',
-}
-
-const JOB_KEYS = ['scrape', 'backfill', 'performance'] as const
-
-type JobKey = (typeof JOB_KEYS)[number]
-
-const JOB_NAMES: Record<JobKey, MessageKey> = {
-  scrape: 'settings.jobs.scrape',
-  backfill: 'settings.jobs.backfill',
-  performance: 'settings.jobs.performance',
 }
 
 /** Symbols under the scrape shown before "see the others". */
@@ -42,6 +32,9 @@ interface JobsBlockProps {
   /** `null` while `GET /api/jobs/history` is in flight or refused. */
   history?: JobsHistory | null
   historyFailure?: ReadFailure | null
+  /** The jobs the server runs, in its order (#1253); `null` while unread. */
+  jobs?: JobInfo[] | null
+  jobsFailure?: ReadFailure | null
 }
 
 export function JobsBlock({
@@ -49,6 +42,8 @@ export function JobsBlock({
   failure = null,
   history = null,
   historyFailure = null,
+  jobs = null,
+  jobsFailure = null,
 }: JobsBlockProps) {
   const { t } = useI18n()
   const format = useFormatters()
@@ -62,10 +57,13 @@ export function JobsBlock({
     )
   }
 
-  // `readHealth` does not check the three keys, so a short payload is treated
-  // like an unreadable one rather than crashing the table.
+  // `readHealth` does not check the jobs' keys, so a payload short of one the
+  // server lists is treated like an unreadable one rather than crashing the table.
   const rows =
-    health.jobs !== null && JOB_KEYS.every((key) => health.jobs?.[key] != null) ? health.jobs : null
+    health.jobs !== null &&
+    (jobs ?? []).every((job) => !job.in_health || health.jobs?.[job.id as keyof HealthJobs] != null)
+      ? health.jobs
+      : null
   // In flight: the strips keep their place, empty (#795).
   const pending = history === null && historyFailure === null
   // Under two hours of life there is no history worth drawing: the bars would
@@ -104,49 +102,77 @@ export function JobsBlock({
         <p className="text-sm text-muted-foreground">{t('settings.jobs.unfolded')}</p>
       ) : (
         <dl className="divide-y text-sm">
-          {JOB_KEYS.map((key) => {
-            const track = history === null ? null : trackOf(key, history)
-            return (
-              <div key={key} className="py-2.5">
-                <div className="flex flex-wrap items-baseline gap-x-3">
-                  <dt>{t(JOB_NAMES[key])}</dt>
-                  {/* No pass, no instant: the verdict under it says so, once (#1412). */}
-                  {rows[key].at === null ? null : (
-                    <dd className="tabular ml-auto text-xs text-muted-foreground">
-                      {format.dateTime(rows[key].at)}
-                    </dd>
-                  )}
-                </div>
-                <dd className={cn('mt-0.5 text-xs', JOB_TONE[rows[key].status])}>
-                  {t(...verdictOf(key, rows))}
-                </dd>
-                <dd className="mt-2">
-                  <History
-                    label={t(JOB_NAMES[key])}
-                    track={track}
+          {/* The jobs with a `/health` line first, then the ones read off their history. */}
+          {[...(jobs ?? [])]
+            .sort((a, b) => Number(b.in_health) - Number(a.in_health))
+            .map((job) => {
+              const line: HealthJob | undefined = job.in_health
+                ? rows[job.id as keyof HealthJobs]
+                : undefined
+              if (line === undefined)
+                return (
+                  <PassRow
+                    key={job.id}
+                    job={job}
+                    history={history}
                     pending={pending}
-                    flagged={rows[key].status === 'attention'}
-                    started={young ? null : history?.started}
+                    young={young}
                   />
-                  {key === 'scrape' && history !== null && !young ? (
-                    <SymbolHistories tracks={history.scrape} started={history.started} />
-                  ) : null}
-                </dd>
-              </div>
-            )
-          })}
-          <IngestionRow history={history} pending={pending} young={young} />
+                )
+              const track = history === null ? null : trackOf(job, history)
+              return (
+                <div key={job.id} className="py-2.5">
+                  <div className="flex flex-wrap items-baseline gap-x-3">
+                    <dt>{labelOf(t, job)}</dt>
+                    {/* No pass, no instant: the verdict under it says so, once (#1412). */}
+                    {line.at === null ? null : (
+                      <dd className="tabular ml-auto text-xs text-muted-foreground">
+                        {format.dateTime(line.at)}
+                      </dd>
+                    )}
+                  </div>
+                  <dd className={cn('mt-0.5 text-xs', JOB_TONE[line.status])}>
+                    {t(...verdictOf(job.id, rows, line))}
+                  </dd>
+                  <dd className="mt-2">
+                    <History
+                      label={labelOf(t, job)}
+                      track={track}
+                      pending={pending}
+                      flagged={line.status === 'attention'}
+                      started={young ? null : history?.started}
+                    />
+                    {job.kind === 'family' && history !== null && !young ? (
+                      <SymbolHistories
+                        label={labelOf(t, job)}
+                        tracks={history.scrape}
+                        started={history.started}
+                      />
+                    ) : null}
+                  </dd>
+                </div>
+              )
+            })}
         </dl>
       )}
+      {jobsFailure === null ? null : <Unreadable failure={jobsFailure} />}
       {historyFailure === null ? null : <Unreadable failure={historyFailure} />}
     </Section>
   )
 }
 
-function trackOf(key: JobKey, history: JobsHistory): JobTrack {
-  if (key === 'scrape')
-    return mergeTracks(history.scrape, history.jobs.performance.slots, history.scrape_recent)
-  return history.jobs[key]
+/** The name the server gives a job, or its id for a key this build lacks. */
+function labelOf(t: (key: MessageKey) => string, job: JobInfo): string {
+  return isMessageKey(job.label_key) ? t(job.label_key) : job.id
+}
+
+function trackOf(job: JobInfo, history: JobsHistory): JobTrack | null {
+  if (job.kind === 'family') {
+    // Every track carries the same 24 hours: any singleton's are the frame.
+    const hours = Object.values(history.jobs)[0]?.slots ?? []
+    return mergeTracks(history.scrape, hours, history.scrape_recent)
+  }
+  return history.jobs[job.id] ?? null
 }
 
 /** A job's histogram, or the empty 70 px it will take (no spinner, #795). */
@@ -176,26 +202,30 @@ function History({
   )
 }
 
-/** The ingestion is not in `/health`: its row is read off its own history. */
-function IngestionRow({
+/** A job with no line in `/health` (the ingestion): its row is read off its own history. */
+function PassRow({
+  job,
   history,
   pending,
   young,
 }: {
+  job: JobInfo
   history: JobsHistory | null
   pending: boolean
   young: boolean
 }) {
   const { t } = useI18n()
   const format = useFormatters()
-  const track = history?.jobs.ingestion ?? null
+  const track = history?.jobs[job.id] ?? null
   const last = track?.last ?? null
   const failed = last?.outcome === 'error'
+  // Its own wording when it has one, the outcome's otherwise.
+  const verdict = `${job.label_key}.verdict`
 
   return (
     <div className="py-2.5">
       <div className="flex flex-wrap items-baseline gap-x-3">
-        <dt>{t('settings.jobs.ingestion')}</dt>
+        <dt>{labelOf(t, job)}</dt>
         <dd className="tabular ml-auto text-xs text-muted-foreground">
           {last !== null
             ? format.dateTime(last.at)
@@ -206,12 +236,14 @@ function IngestionRow({
       </div>
       {last === null ? null : (
         <dd className={cn('mt-0.5 text-xs', failed ? JOB_TONE.attention : JOB_TONE.ok)}>
-          {t('settings.jobs.ingestion.verdict', { outcome: last.outcome })}
+          {t(isMessageKey(verdict) ? verdict : 'settings.jobs.outcome', {
+            outcome: last.outcome,
+          })}
         </dd>
       )}
       <dd className="mt-2">
         <History
-          label={t('settings.jobs.ingestion')}
+          label={labelOf(t, job)}
           track={track}
           pending={pending}
           flagged={failed}
@@ -224,9 +256,11 @@ function IngestionRow({
 
 /** One mini-histogram per held symbol, the worst first, five open. */
 function SymbolHistories({
+  label,
   tracks,
   started,
 }: {
+  label: string
   tracks: Record<string, JobTrack>
   started: string
 }) {
@@ -248,7 +282,7 @@ function SymbolHistories({
         <div key={symbol}>
           <p className="mb-0.5 text-xs text-muted-foreground">{symbol}</p>
           <JobHistogram
-            label={`${t('settings.jobs.scrape')} · ${symbol}`}
+            label={`${label} · ${symbol}`}
             track={tracks[symbol]}
             height={32}
             started={started}
@@ -268,9 +302,12 @@ function SymbolHistories({
   )
 }
 
-/** One job's verdict and the values its message interpolates. */
-function verdictOf(key: JobKey, jobs: HealthJobs): [MessageKey, MessageValues] {
-  if (key === 'scrape') {
+/**
+ * One job's verdict and the values its message interpolates. A job whose
+ * `/health` line this build does not know reads as its state alone.
+ */
+function verdictOf(id: string, jobs: HealthJobs, line: HealthJob): [MessageKey, MessageValues] {
+  if (id === 'scrape') {
     const job = jobs.scrape
     return [
       'settings.jobs.scrape.verdict',
@@ -284,7 +321,7 @@ function verdictOf(key: JobKey, jobs: HealthJobs): [MessageKey, MessageValues] {
       },
     ]
   }
-  if (key === 'backfill') {
+  if (id === 'backfill') {
     const job = jobs.backfill
     return [
       'settings.jobs.backfill.verdict',
@@ -297,5 +334,7 @@ function verdictOf(key: JobKey, jobs: HealthJobs): [MessageKey, MessageValues] {
       },
     ]
   }
-  return ['settings.jobs.performance.verdict', { verdict: jobs.performance.verdict }]
+  if (id === 'performance')
+    return ['settings.jobs.performance.verdict', { verdict: jobs.performance.verdict }]
+  return ['settings.jobs.state', { state: line.status }]
 }

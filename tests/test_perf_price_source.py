@@ -16,7 +16,7 @@ equivalence against the per-symbol implementation, expressed through
 so it can stand as the reference.
 
 The seam is the suite's usual one: a real DuckDB store in ``tmp_path``, a real
-:class:`workloads.Workloads`, and every assertion on the rows the pass
+the jobs registry (:mod:`application.jobs.registry`), and every assertion on the rows the pass
 wrote. The one double is the *old implementation*, injected at the reader so the
 two can be run over the same store — it stands for what the app used to do, not
 for what it was asked to do.
@@ -32,7 +32,7 @@ from conftest import PerfConfigManager
 
 from application import quotes
 from application import store_reads
-from application import workloads
+from application.jobs import registry
 from application.events.schemas import Event, EventType
 
 UTC = timezone.utc
@@ -90,14 +90,14 @@ def _fixed_today(mocker):
         @classmethod
         def now(cls, tz=None):
             return datetime(_TODAY.year, _TODAY.month, _TODAY.day, 12, 0, tzinfo=tz)
-    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+    mocker.patch("application.jobs.performance.datetime", _FixedDatetime)
 
 
 def _metrics(opened, mocker):
     """A real metrics object over a real store, its reporting currency answered."""
     _fixed_today(mocker)
-    metrics = workloads.Workloads(PerfConfigManager(opened))
-    metrics.base_currency = 'EUR'
+    metrics = registry.build(PerfConfigManager(opened))
+    metrics.ctx.base_currency = 'EUR'
     return metrics
 
 
@@ -188,7 +188,7 @@ def test_the_recompute_reads_the_price_table_once_for_every_symbol(
     metrics = _metrics(store, mocker)
 
     with _Recorder(store) as recorded:
-        metrics.update_account_metrics()
+        metrics['performance'].update_account_metrics()
 
     price_reads = recorded.touching('price_point')
     assert [sql for sql in price_reads if 'symbol = ?' in sql] == []
@@ -211,7 +211,7 @@ def test_the_number_of_price_scans_does_not_follow_the_portfolio(
             _quote(opened, symbol)
             _price(opened, symbol, date(2024, 6, 5), 100.0, 100.0)
         with _Recorder(opened) as recorded:
-            _metrics(opened, mocker).update_account_metrics()
+            _metrics(opened, mocker)['performance'].update_account_metrics()
         return len(recorded.touching('price_point'))
 
     alone = scans(store, ['AAPL'])
@@ -241,10 +241,10 @@ def test_a_multi_symbol_series_is_identical_to_the_per_symbol_one(
                    100.0 + offset + day.day)
 
     with _the_per_symbol_implementation(symbols):
-        _metrics(store, mocker).update_account_metrics()
+        _metrics(store, mocker)['performance'].update_account_metrics()
         before = _written(store)
 
-    _metrics(store, mocker).update_account_metrics()
+    _metrics(store, mocker)['performance'].update_account_metrics()
 
     assert _written(store) == before
     # And the comparison is not between two empty tables: the days are there and
@@ -280,10 +280,10 @@ def test_a_symbol_with_no_converted_price_invents_no_valuation(
     assert {row['symbol'] for row in closes} == {'AAPL'}
 
     with _the_per_symbol_implementation(['AAPL', 'MSFT']):
-        _metrics(store, mocker).update_account_metrics()
+        _metrics(store, mocker)['performance'].update_account_metrics()
         before = _written(store)
 
-    _metrics(store, mocker).update_account_metrics()
+    _metrics(store, mocker)['performance'].update_account_metrics()
 
     assert _written(store) == before
     # The purchase is on 4 June and no day from there on carries a figure: the

@@ -1,4 +1,4 @@
-"""The backfill workload: the past, rebuilt in three directions (issue #848)."""
+"""The backfill: the past, rebuilt in three directions (issues #848, #1253)."""
 import logging
 import time
 from datetime import date, datetime, timezone, timedelta, time as time_of_day
@@ -8,10 +8,13 @@ from application import benchmark_view
 from application import carrying
 from application import entries
 from application import fx
+from application import job_history
 from application import market_info
 from application import quotes
 from application import runtime_state
+from application import runtime_view
 from application import scheduling
+from application.jobs import base
 
 app_logger = logging.getLogger("suivi_bourse")
 
@@ -29,12 +32,18 @@ def span_instants(first: date, last: date) -> Tuple[datetime, datetime]:
             datetime.combine(last, time_of_day.min, tzinfo=timezone.utc))
 
 
-class BackfillWorkload:
+class BackfillJob(base.Job):
     """The backfill, whole: its memory, its ladder, and its three passes."""
 
-    def __init__(self, facade, info_cache):
-        self.facade = facade
-        self.info_cache = info_cache
+    id = job_history.BACKFILL
+    label_key = 'settings.jobs.backfill'
+    triggers = (base.Interval(scheduler_id=scheduling.BACKFILL_JOB_ID,
+                              name='Historical backfill',
+                              dial='backfill_interval'),)
+    in_health = True
+
+    def __init__(self, ctx, jobs):
+        super().__init__(ctx, jobs)
 
         self.complete: Dict[str, datetime] = {}
 
@@ -75,26 +84,39 @@ class BackfillWorkload:
         right either way: #988 put them in the day's printed share before they
         got here, and the next cycle rewrites the history whole.
         """
-        prices, splits = self.facade.market.price_history(
-            symbol, start, end, delay=self.facade.backfill_delay,
+        prices, splits = self.ctx.market.price_history(
+            symbol, start, end, delay=self.ctx.backfill_delay,
             max_retries=max_retries)
         if splits is not None:
             try:
-                with self.facade.config_manager.writing() as opened:
+                with self.ctx.config_manager.writing() as opened:
                     quotes.record_splits(opened, symbol, splits)
             except Exception as e:
                 app_logger.error(f"Failed to write the splits of {symbol}: {e}")
         return prices
 
+    @property
+    def info_cache(self) -> Dict[str, Dict]:
+        """The attributes the live scrape last read — shared with it."""
+        return self.ctx.info_cache
+
+    def outcome(self, started: datetime) -> base.Outcome:
+        return runtime_view.backfill_outcome(
+            self.ctx.recorder.backfill_since(started))
+
+    @classmethod
+    def health(cls, view):
+        return runtime_view.health_backfill(view.symbols)
+
     def run(self, now: Optional[datetime] = None):
         """Backfill historical price data, one series per **symbol**, in both directions. This runs as its own scheduled job, progressively filling gaps."""
         now = now or datetime.now(timezone.utc)
-        snapshot = self.facade.config_manager.current()
+        snapshot = self.ctx.config_manager.current()
         # Read fresh, not off the snapshot: the snapshot is a view of the
         # *ledger* and is cached on it, so a reference followed between two
         # cycles would not be seen until an event moved. Its effect is
         # `next_cycle`, and this is that cycle.
-        store = self.facade.config_manager.store
+        store = self.ctx.config_manager.store
 
         def perimeter():
             # The followed ETFs (#1312), one download at a time: every complete
@@ -108,7 +130,7 @@ class BackfillWorkload:
 
         windows, _, _ = perimeter()
 
-        self.facade._collapse_to_ladder(now)
+        self.collapse_to_ladder(now)
 
         if not windows:
             app_logger.debug("Nothing was ever held, skipping backfill")
@@ -138,10 +160,10 @@ class BackfillWorkload:
                 # A quote references a `symbol` row, and no event will ever
                 # create this one. Idempotent, so it also converges from a
                 # restored store.
-                with self.facade.config_manager.writing() as opened:
+                with self.ctx.config_manager.writing() as opened:
                     entries.declare_symbol(opened, symbol)
 
-            written, repaired = self.facade._backfill_symbol(
+            written, repaired = self.backfill_symbol(
                 symbol, windows[symbol],
                 symbol in held or symbol in references, now)
             backfilled_count += written
@@ -157,7 +179,7 @@ class BackfillWorkload:
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
-        self.facade.review_installation_facts()
+        self.jobs['ingestion'].review_installation_facts()
 
     def backfill_symbol(self, symbol: str,
                         window: Tuple[date, Optional[date]],
@@ -172,18 +194,18 @@ class BackfillWorkload:
         target, ceiling = carrying.holding_bounds(acquired, exited, now)
 
         self.asked.clear()
-        self.facade._classify(symbol)
+        self.classify(symbol)
 
         written = 0
         if self.complete.get(symbol) == target:
             app_logger.debug(f"Backfill already complete for {symbol}")
         else:
-            written += self.facade._backfill_backward(symbol, target, ceiling, now)
+            written += self.backward(symbol, target, ceiling, now)
 
         if advancing:
-            written += self.facade._backfill_forward(symbol, now)
+            written += self.forward(symbol, now)
 
-        repaired = self.facade._backfill_lateral(symbol)
+        repaired = self.lateral(symbol)
         return written, repaired
 
     def fetch_and_store(self, symbol, start_date, end_date):
@@ -199,32 +221,32 @@ class BackfillWorkload:
         if prices is None:
             return None, 0
         if not prices:
-            time.sleep(self.facade.backfill_delay)
+            time.sleep(self.ctx.backfill_delay)
             return prices, 0
 
-        self.facade._convert_history(symbol, prices)
+        self.convert_history(symbol, prices)
 
         written = 0
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 written = quotes.record_history(opened, symbol, prices)
         except Exception as e:
             written = None
             app_logger.error(
                 f"Failed to write historical prices for {symbol}: {e}")
-        time.sleep(self.facade.backfill_delay)
+        time.sleep(self.ctx.backfill_delay)
         return prices, written
 
     def backward_anchor(self, symbol: str, ceiling: datetime) -> datetime:
         """Where the backward pass resumes from — **the oldest window tried**."""
         return carrying.backward_anchor(
             ceiling,
-            quotes.oldest_ts(self.facade.config_manager.store, symbol),
-            quotes.oldest_window_tried(self.facade.config_manager.store, symbol))
+            quotes.oldest_ts(self.ctx.config_manager.store, symbol),
+            quotes.oldest_window_tried(self.ctx.config_manager.store, symbol))
 
     def convert_history(self, symbol: str, prices: List[Dict]) -> None:
         """Stamp a fetched chunk with its converted price and rate, in place."""
-        if not prices or not self.facade.base_currency:
+        if not prices or not self.ctx.base_currency:
             return
         currency = market_info.currency_of(self.info_cache.get(symbol))
         if not currency:
@@ -232,32 +254,32 @@ class BackfillWorkload:
 
         days = [quotes.truncate(point['timestamp']).date() for point in prices]
         try:
-            self.facade.rates.series(currency, self.facade.base_currency,
-                                     min(days), max(days))
+            self.ctx.rates.series(currency, self.ctx.base_currency,
+                                  min(days), max(days))
         except Exception as e:
             app_logger.warning(
                 f"Could not prefetch the rates for {symbol}: {e}")
 
         for point, day in zip(prices, days):
-            converted, rate = self.facade._convert(point.get('price'), currency, day)
+            converted, rate = self.ctx.convert(point.get('price'), currency, day)
             point['converted'] = converted
             point['rate'] = rate
 
     def back_off(self, retry_at: Dict[str, datetime], symbol: str,
                  direction: str, now: datetime) -> int:
         """Arm the wait after one more failure (#1288), on #617's formula and the lateral pass's base. Returns the consecutive failures so far."""
-        record = self.facade.recorder.backfill_of(symbol, direction)
+        record = self.ctx.recorder.backfill_of(symbol, direction)
         failures = (record.failures if record is not None else 0) + 1
         retry_at[symbol] = now + timedelta(
             seconds=scheduling.backoff_delay(
-                self.facade.regular_interval, failures))
+                self.ctx.regular_interval, failures))
         return failures
 
     def backward(self, symbol: str, target: datetime, ceiling: datetime,
                  now: Optional[datetime] = None) -> int:
         """Backward pass: extend the series toward the first acquisition, one chunk (``backfill_chunk_days``) per cycle. Returns points written this cycle."""
         def publish(**fields) -> None:
-            self.facade.recorder.record_backfill(runtime_state.BackfillRecord(
+            self.ctx.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol,
                 direction=runtime_state.BACKWARD,
                 at=datetime.now(timezone.utc),
@@ -274,8 +296,8 @@ class BackfillWorkload:
             self.backward_retry_at.pop(symbol, None)
             self.unreachable.pop(symbol, None)
 
-        oldest_timestamp = quotes.oldest_ts(self.facade.config_manager.store, symbol)
-        end_date = self.facade._backward_anchor(symbol, ceiling)
+        oldest_timestamp = quotes.oldest_ts(self.ctx.config_manager.store, symbol)
+        end_date = self.backward_anchor(symbol, ceiling)
 
         if carrying.is_terminal(end_date, target):
             app_logger.debug(
@@ -287,7 +309,7 @@ class BackfillWorkload:
                     terminal=runtime_state.TERMINAL_COMPLETE)
             return 0
 
-        start_date = end_date - timedelta(days=self.facade.backfill_chunk_days)
+        start_date = end_date - timedelta(days=self.ctx.backfill_chunk_days)
 
         if start_date < target:
             start_date = target
@@ -306,7 +328,7 @@ class BackfillWorkload:
         app_logger.info(
             f"Backfilling {symbol}: {start_date.date()} to {end_date.date()}")
 
-        prices, written = self.facade._fetch_and_store(symbol, start_date, end_date)
+        prices, written = self.fetch_and_store(symbol, start_date, end_date)
 
         def fail(**fields) -> None:
             """Back off, and give up counting the symbol toward the reconstruction at the ``BACKWARD_GIVE_UP``-th failure in a row — the pass keeps retrying (#1288)."""
@@ -331,7 +353,7 @@ class BackfillWorkload:
             return 0
 
         settle()
-        self.facade._record_window_tried(symbol, start_date.date())
+        self.record_window_tried(symbol, start_date.date())
 
         if not prices:
             if start_date <= target:
@@ -352,7 +374,7 @@ class BackfillWorkload:
     def collapse_to_ladder(self, now: datetime) -> int:
         """Age the stored series onto the ladder, guarded like every other write."""
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 return quotes.collapse_to_ladder(opened, now)
         except Exception as e:
             app_logger.error(f"Failed to age the stored series: {e}")
@@ -361,7 +383,7 @@ class BackfillWorkload:
     def record_window_tried(self, symbol: str, oldest: date) -> None:
         """Persist the backward pass's anchor, guarded like every other write."""
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 quotes.record_window_tried(opened, symbol, oldest)
         except Exception as e:
             app_logger.error(
@@ -370,7 +392,7 @@ class BackfillWorkload:
     def record_forward_window_tried(self, symbol: str, newest: date) -> None:
         """Persist the forward pass's anchor, guarded like every other write."""
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 quotes.record_forward_window_tried(opened, symbol, newest)
         except Exception as e:
             app_logger.error(
@@ -384,20 +406,20 @@ class BackfillWorkload:
         if retry_at is not None and now < retry_at:
             return 0
 
-        store = self.facade.config_manager.store
+        store = self.ctx.config_manager.store
         newest = quotes.newest_ts(store, symbol)
         anchor = carrying.forward_anchor(
             newest, quotes.newest_window_tried(store, symbol))
 
         def publish(**fields) -> None:
-            self.facade.recorder.record_backfill(runtime_state.BackfillRecord(
+            self.ctx.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol,
                 direction=runtime_state.FORWARD,
                 at=datetime.now(timezone.utc),
                 newest=newest, **fields))
 
         window = scheduling.forward_backfill_window(
-            anchor, now, self.facade.backfill_chunk_days)
+            anchor, now, self.ctx.backfill_chunk_days)
         if window is None:
             self.forward_retry_at.pop(symbol, None)
             publish(skipped=(runtime_state.SKIP_NO_SERIES if anchor is None
@@ -408,7 +430,7 @@ class BackfillWorkload:
         app_logger.info(
             f"Forward-filling {symbol}: {start_date.date()} to {end_date.date()}")
 
-        prices, written = self.facade._fetch_and_store(symbol, start_date, end_date)
+        prices, written = self.fetch_and_store(symbol, start_date, end_date)
 
         if prices is None:
             app_logger.warning(
@@ -428,7 +450,7 @@ class BackfillWorkload:
             return 0
 
         self.forward_retry_at.pop(symbol, None)
-        self.facade._record_forward_window_tried(symbol, end_date.date())
+        self.record_forward_window_tried(symbol, end_date.date())
 
         if not prices:
             app_logger.debug(
@@ -456,7 +478,7 @@ class BackfillWorkload:
             return None, False
 
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 quotes.record_attributes(
                     opened, symbol, datetime.now(timezone.utc),
                     market_info.quote_columns(info))
@@ -483,7 +505,7 @@ class BackfillWorkload:
         if symbol in self.classified:
             return
         try:
-            row = quotes.read_quote(self.facade.config_manager.store, symbol)
+            row = quotes.read_quote(self.ctx.config_manager.store, symbol)
         except Exception as e:
             app_logger.error(f"Failed to read what {symbol} is: {e}")
             return
@@ -510,7 +532,7 @@ class BackfillWorkload:
             # It still has a name, and that is written.
             if named:
                 try:
-                    with self.facade.config_manager.writing() as opened:
+                    with self.ctx.config_manager.writing() as opened:
                         quotes.record_attributes(
                             opened, symbol, datetime.now(timezone.utc), named)
                 except Exception as e:
@@ -521,7 +543,7 @@ class BackfillWorkload:
             return
 
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 quotes.record_attributes(
                     opened, symbol, datetime.now(timezone.utc),
                     {**classification, **named})
@@ -557,10 +579,10 @@ class BackfillWorkload:
         """
         if symbol in self.asked:
             return self.asked[symbol]
-        info = self.facade.market.symbol_attributes(symbol)
+        info = self.ctx.market.symbol_attributes(symbol)
         if info is None:
             return None
-        time.sleep(self.facade.backfill_delay)
+        time.sleep(self.ctx.backfill_delay)
         self.asked[symbol] = info
         return info
 
@@ -569,19 +591,19 @@ class BackfillWorkload:
         now = datetime.now(timezone.utc)
 
         def publish(**fields) -> None:
-            self.facade.recorder.record_backfill(runtime_state.BackfillRecord(
+            self.ctx.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol, direction=runtime_state.LATERAL, at=now,
                 **fields))
 
         def back_off() -> None:
             """#617's own formula, and its own base: the wait is a multiple of ``regular_interval``, which is what makes the number in the settings form the number in the formula here too."""
-            record = self.facade.recorder.backfill_of(symbol, runtime_state.LATERAL)
+            record = self.ctx.recorder.backfill_of(symbol, runtime_state.LATERAL)
             failures = (record.failures if record is not None else 0) + 1
             self.lateral_retry_at[symbol] = now + timedelta(
                 seconds=scheduling.backoff_delay(
-                    self.facade.regular_interval, failures))
+                    self.ctx.regular_interval, failures))
 
-        if not self.facade.base_currency:
+        if not self.ctx.base_currency:
             publish(skipped=runtime_state.SKIP_NO_BASE_CURRENCY)
             return 0
 
@@ -589,7 +611,7 @@ class BackfillWorkload:
         if retry_at is not None and now < retry_at:
             return 0
 
-        store_open = self.facade.config_manager.store
+        store_open = self.ctx.config_manager.store
         span = quotes.unconverted_span(store_open, symbol)
         currency = quotes.quote_currency(store_open, symbol)
 
@@ -604,7 +626,7 @@ class BackfillWorkload:
         span_window = span_instants(span[0], span[1]) if span else None
 
         if not currency:
-            currency, failed = self.facade._learn_quote_currency(symbol)
+            currency, failed = self.learn_quote_currency(symbol)
             if failed:
                 back_off()
                 app_logger.warning(
@@ -631,52 +653,52 @@ class BackfillWorkload:
 
         oldest, newest, pending = span
 
-        end = min(newest, oldest + timedelta(days=self.facade.backfill_chunk_days))
+        end = min(newest, oldest + timedelta(days=self.ctx.backfill_chunk_days))
         window = span_instants(oldest, end)
 
         fetch_start = oldest - timedelta(days=LATERAL_LOOKBACK_DAYS)
         fetch_end = end + timedelta(days=1)
-        cached = self.facade.rates.answers_from_cache(
-            currency, self.facade.base_currency, fetch_start, fetch_end)
-        outcome, _ = self.facade.rates.observe(
-            currency, self.facade.base_currency, fetch_start, fetch_end)
+        cached = self.ctx.rates.answers_from_cache(
+            currency, self.ctx.base_currency, fetch_start, fetch_end)
+        outcome, _ = self.ctx.rates.observe(
+            currency, self.ctx.base_currency, fetch_start, fetch_end)
         if not cached and outcome != fx.FAILED:
-            time.sleep(self.facade.backfill_delay)
+            time.sleep(self.ctx.backfill_delay)
 
         if outcome == fx.FAILED:
             back_off()
             app_logger.warning(
                 f"Could not fetch the rates to convert {symbol}, will retry")
             publish(window=window, failed=True,
-                    error=f"the {currency}→{self.facade.base_currency} rates for "
+                    error=f"the {currency}→{self.ctx.base_currency} rates for "
                           f"{oldest} → {end} could not be fetched")
             return 0
 
         if outcome == fx.UNRESOLVED:
             self.lateral_retry_at.pop(symbol, None)
             pair = fx.pair_symbol(
-                fx.normalise(currency)[0], self.facade.base_currency)
+                fx.normalise(currency)[0], self.ctx.base_currency)
             app_logger.warning(
                 f"{symbol} cannot be converted: no {pair} rate exists "
                 f"({pending} price(s) will stay unconverted)")
             publish(window=window,
                     terminal=runtime_state.TERMINAL_UNCONVERTIBLE,
                     reason=f"no exchange rate exists between {currency} and "
-                           f"{self.facade.base_currency} ({pair}), so {pending} stored "
+                           f"{self.ctx.base_currency} ({pair}), so {pending} stored "
                            f"price(s) of {symbol} cannot be converted")
             return 0
 
         days = quotes.unconverted_days(store_open, symbol, oldest, end)
         factors = {}
         for day in days:
-            factor = self.facade.rates.rate(currency, self.facade.base_currency, day)
+            factor = self.ctx.rates.rate(currency, self.ctx.base_currency, day)
             if factor is not None:
                 factors[day] = factor
 
         self.lateral_retry_at.pop(symbol, None)
         repaired = 0
         try:
-            with self.facade.config_manager.writing() as opened:
+            with self.ctx.config_manager.writing() as opened:
                 repaired = quotes.repair_conversions(opened, symbol, factors)
         except Exception as e:
             app_logger.error(

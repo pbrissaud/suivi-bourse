@@ -7,7 +7,7 @@ These exercise the *whole* application with **one** external boundary faked:
   * time.sleep-> no-op (so rate-limit pauses never actually sleep)
 
 A real ``ConfigurationManager`` reads a real CSV written into ``tmp_path``, a
-real store holds what comes of it, and a real ``Workloads`` drives the
+real store holds what comes of it, and the real jobs drive the
 full pipeline loader -> validator -> aggregator -> scrape / backfill.
 
 This is the seam v5 descends from (spec #695), and #700 completes it: the mock
@@ -26,7 +26,7 @@ from api import create_app
 from application import entries
 from application import instants
 from application import ledger
-from application import backfill
+from application.jobs import backfill
 from application import market
 from application import portfolio_view
 from application import quotes
@@ -35,7 +35,7 @@ from application import store_reads
 from application.events.loader import EventLoader
 from application.events.aggregator import AggregationError
 from application.main import ConfigurationManager, Runtime
-from application.workloads import Workloads
+from application.jobs import registry
 
 from datetime import datetime, timedelta, timezone
 from conftest import history_from
@@ -128,15 +128,15 @@ def test_the_full_chain_writes_the_position_and_the_quote(
 
     config_manager = _config_with_a_ledger(tmp_path)
 
-    sb = Workloads(config_manager)
+    sb = registry.build(config_manager)
     # The one question the app asks (#702). The fake quotes in USD and
     # this install reports in USD, so the conversion is the identity: the chain
     # is asserted end to end without a second faked fetch, and the point still
     # carries the three columns rather than two.
-    sb.base_currency = "USD"
+    sb.ctx.base_currency = "USD"
 
     # The shares came through the real loader -> validator -> aggregator chain.
-    shares_by_symbol = {s["symbol"]: s for s in sb.shares}
+    shares_by_symbol = {s["symbol"]: s for s in sb.ctx.shares}
     assert set(shares_by_symbol) == {"AAPL", "MSFT"}
 
     aapl = shares_by_symbol["AAPL"]
@@ -146,7 +146,7 @@ def test_the_full_chain_writes_the_position_and_the_quote(
     assert aapl["received_dividend"] == pytest.approx(2.4)
 
     # Drive the real scrape (fetch prices -> write the quote and the point).
-    sb.scrape()
+    sb['scrape'].scrape()
 
     opened = config_manager._require_store()
     prices = dict(opened.query(
@@ -208,7 +208,7 @@ def test_backfill_writes_the_price_and_only_the_price(
     _patch_ticker(monkeypatch, fake_ticker)
 
     config_manager = _config_with_a_ledger(tmp_path)
-    sb = Workloads(config_manager)
+    sb = registry.build(config_manager)
 
     intermediate = datetime(2024, 6, 20, 15, 0, tzinfo=timezone.utc)
 
@@ -220,9 +220,9 @@ def test_backfill_writes_the_price_and_only_the_price(
             return [{"timestamp": intermediate, "price": 180.0}]
         return []
 
-    sb.market.price_history = history_from(canned_fetch)
+    sb.ctx.market.price_history = history_from(canned_fetch)
 
-    sb.backfill()
+    sb['backfill']()
 
     opened = config_manager._require_store()
     assert opened.query(
@@ -317,11 +317,11 @@ def test_a_named_reference_is_priced_and_the_curve_never_sees_it(
 
     config_manager = _config_with_a_ledger(tmp_path)
     opened = config_manager._require_store()
-    sb = Workloads(config_manager)
+    sb = registry.build(config_manager)
     # Quotes come back in USD and this install reports in USD, so the conversion
     # is the identity — and `daily_closes` reads the *converted* price, which is
     # what puts a day on the curve at all.
-    sb.base_currency = "USD"
+    sb.ctx.base_currency = "USD"
 
     # Two days that never meet: the held lines are priced on one, the reference
     # on another. A reference day leaking onto the curve is then a day the
@@ -336,16 +336,16 @@ def test_a_named_reference_is_priced_and_the_curve_never_sees_it(
             return [{"timestamp": reference_day, "price": 512.0}]
         return [{"timestamp": held_day, "price": TICKER_CLOSE[symbol]}]
 
-    sb.market.price_history = history_from(canned_fetch)
+    sb.ctx.market.price_history = history_from(canned_fetch)
 
     # The curve as it is before anything is named — the comparison's witness.
-    sb.backfill()
+    sb['backfill']()
     client = _api_client(config_manager, opened)
     before = client.get("/api/positions/history").get_json()["points"]
     assert before, "the curve is empty, so what follows would compare nothing"
 
     settings.save(opened, {"benchmark_symbols": [BENCHMARK]})
-    sb.backfill()
+    sb['backfill']()
 
     # 1. The series is written, for a symbol no event names.
     assert opened.query(

@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from flask import Blueprint
 
 from application import runtime_view
-from application.scrape import scrape_next_runs
+from application.jobs import registry
+from application.jobs.scrape import scrape_next_runs
 from api import problem
 
 health_bp = Blueprint('health', __name__)
@@ -45,8 +46,8 @@ def _jobs(runtime) -> dict:
             now=now,
             scheduler_running=scheduler_running)
         return runtime_view.build_health(
-            symbols=symbols,
-            perf=runtime.recorder.perf(),
+            jobs=registry.health(registry.HealthView(
+                symbols=symbols, perf=runtime.recorder.perf())),
             now=now,
             scheduler_running=scheduler_running)
     except Exception as exc:

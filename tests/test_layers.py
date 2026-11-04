@@ -86,3 +86,27 @@ def test_every_member_holds_modules():
 
 def test_no_member_imports_above_itself_nor_a_heavy_edge_it_may_not_reach():
     assert violations() == []
+
+
+#: Third-party roots a single module owns, whatever its member may reach.
+ONLY_IN = {
+    # The scheduler is the registry's: every job declares its triggers as data
+    # and this one module translates them (issue #1253).
+    'apscheduler': {'application.jobs.registry'},
+}
+
+
+def module_violations():
+    refused = []
+    for name, (member, path) in sorted(_modules().items()):
+        for target in _imported(name, path, ast.parse(path.read_text(encoding='utf-8'))):
+            owners = ONLY_IN.get(target.split('.')[0])
+            if owners is not None and name not in owners:
+                refused.append(f'{name} imports {target}')
+    return sorted(set(refused))
+
+
+def test_the_scheduler_is_imported_by_the_registry_alone():
+    assert module_violations() == []
+    # And the registry does import it: a renamed module would pass on nothing.
+    assert 'application.jobs.registry' in _modules()

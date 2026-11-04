@@ -48,6 +48,11 @@ const CHOICES: LanguageChoice[] = ['fr', 'en', 'auto']
 export type MessageKey = keyof typeof en
 type Catalogue = Record<MessageKey, string>
 
+/** Is `key` a message — for a key the server names, such as a job's label (#1253)? */
+export function isMessageKey(key: string): key is MessageKey {
+  return Object.hasOwn(en, key)
+}
+
 const CATALOGUES: Record<Language, Catalogue> = { en, fr }
 
 export const LOCALES: Record<Language, string> = { fr: 'fr-FR', en: 'en-GB' }

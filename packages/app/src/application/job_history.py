@@ -185,8 +185,13 @@ class JobHistory:
                         if k[0] == SCRAPE and k[1] not in keep]:
                 del self._tracks[key]
 
-    def read(self, now: datetime) -> Dict[str, Any]:
-        """The 24 hours ending at ``now``'s hour, aged on read and never written."""
+    def read(self, now: datetime, jobs: Iterable[str]) -> Dict[str, Any]:
+        """The 24 hours ending at ``now``'s hour, aged on read and never written.
+
+        ``jobs`` are the singleton jobs, each given a track of its own whether it
+        ran or not; the registry names them (issue #1253). The scrape, which
+        runs per symbol, is read off whatever symbols it recorded.
+        """
         current = _hour(now)
         hours = [current - timedelta(hours=SLOTS - 1 - i) for i in range(SLOTS)]
         with self._lock:
@@ -214,8 +219,7 @@ class JobHistory:
             'now': instants.iso(now),
             'started': instants.iso(self.started),
             'jobs': {
-                job: view((job, None))
-                for job in (BACKFILL, PERFORMANCE, INGESTION)},
+                job: view((job, None)) for job in jobs},
             # Per symbol without the log lines: a symbol failing every pass
             # would carry 20 × 10 of them to each poll. The lines ride on the
             # scrape's 20 newest passes, all symbols mixed, which is what the

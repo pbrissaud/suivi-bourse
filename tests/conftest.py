@@ -401,7 +401,7 @@ def fake_history(mocker, workloads_, **kwargs):
     def price_history(symbol, start, end, delay=0.0, max_retries=3):
         return fetch(symbol, start, end), None
 
-    mocker.patch.object(workloads_.market, 'price_history',
+    mocker.patch.object(workloads_.ctx.market, 'price_history',
                         side_effect=price_history)
     return fetch
 

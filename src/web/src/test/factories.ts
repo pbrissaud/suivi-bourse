@@ -107,6 +107,7 @@ import type {
   ConfigResponse,
   JobPass,
   JobSlot,
+  JobInfo,
   JobsHistory,
   JobTrack,
   SettingDescription,
@@ -1548,6 +1549,17 @@ export function aJobTrack(overrides: Partial<JobTrack> = {}): JobTrack {
     last: aJobPass(),
     ...overrides,
   }
+}
+
+/** `GET /api/jobs` as the server lists its four jobs, in its order (#1253). */
+export function someJobs(extra: JobInfo[] = []): JobInfo[] {
+  return [
+    { id: 'scrape', label_key: 'settings.jobs.scrape', kind: 'family', in_health: true },
+    { id: 'backfill', label_key: 'settings.jobs.backfill', kind: 'job', in_health: true },
+    { id: 'ingestion', label_key: 'settings.jobs.ingestion', kind: 'job', in_health: false },
+    { id: 'performance', label_key: 'settings.jobs.performance', kind: 'job', in_health: true },
+    ...extra,
+  ]
 }
 
 export function aJobsHistory(overrides: Partial<JobsHistory> = {}): JobsHistory {

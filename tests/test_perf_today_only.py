@@ -8,7 +8,7 @@ Three passes, told apart by what the store holds and nothing else (#707):
 - **full**, on anything else.
 
 The seam is the suite's usual one: a real DuckDB store in ``tmp_path``, a real
-:class:`workloads.Workloads`, and what is asserted is the rows written. The
+the jobs registry (:mod:`application.jobs.registry`), and what is asserted is the rows written. The
 claim the whole issue rests on — *a series continued one day at a time equals
 the series rebuilt whole* — is asserted row for row and exactly, by a property
 test over random sequences of today's quotes.
@@ -106,9 +106,9 @@ def test_the_replay_after_a_write_rebuilds_whole(seeded):
     opened, metrics = seeded
     _quote_today(opened, 'BTC-EUR', 62000.0, minute=2)
 
-    metrics.recompute_perf(full=True)
+    metrics['performance'](full=True)
 
-    assert metrics.recorder.perf().mode == runtime_state.PERF_PASS_FULL
+    assert metrics.ctx.recorder.perf().mode == runtime_state.PERF_PASS_FULL
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +148,9 @@ def test_a_symbol_first_quoted_today_rebuilds_whole(
 def test_a_base_currency_answered_again_rebuilds_whole(seeded):
     """No base currency writes nothing and forgets the pass; its return rebuilds."""
     opened, metrics = seeded
-    metrics.base_currency = None
-    metrics.recompute_perf()
-    metrics.base_currency = 'EUR'
+    metrics.ctx.base_currency = None
+    metrics['performance']()
+    metrics.ctx.base_currency = 'EUR'
     assert _pass(metrics) == runtime_state.PERF_PASS_FULL
 
 
@@ -199,7 +199,7 @@ def test_todays_point_continued_equals_a_full_rebuild(
             modes.append(_pass(metrics))
             continued = _series(opened)
 
-            whole.recompute_perf(full=True)
+            whole['performance'](full=True)
             assert _series(opened) == continued
         assert set(modes) == {runtime_state.PERF_PASS_TODAY}
     finally:

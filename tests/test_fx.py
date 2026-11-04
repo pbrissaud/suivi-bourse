@@ -23,7 +23,7 @@ import pytest
 
 from application import carrying
 from application import fx
-from application import backfill
+from application.jobs import backfill
 from application import main
 from application import market
 from application import market_info
@@ -33,11 +33,11 @@ from application import quotes
 from application import runtime_state
 from application import runtime_view
 from application import scheduling
-from application import scrape
+from application.jobs import scrape
 from application import store_reads
 from application import settings as settings_module
 from application import settings_registry
-from application import workloads
+from application.jobs import registry
 from application.events.aggregator import EventAggregator
 from application.events.schemas import Event, EventType
 
@@ -545,8 +545,8 @@ def _metrics(store, shares=None, base_currency=None):
             [share['account'], share['account']])
         store.execute("INSERT INTO symbol (symbol) VALUES (?) "
                       "ON CONFLICT (symbol) DO NOTHING", [share['symbol']])
-    metrics = workloads.Workloads(_FakeConfigManager(shares, store))
-    metrics.base_currency = base_currency
+    metrics = registry.build(_FakeConfigManager(shares, store))
+    metrics.ctx.base_currency = base_currency
     return metrics
 
 
@@ -558,7 +558,7 @@ def _point(store, symbol='AAPL'):
 
 def _fixed_rate(metrics, mapping):
     """Replace the injected live fetch, leaving the TTL cache itself real."""
-    metrics.rates = fx.Rates(lambda pair: mapping.get(pair))
+    metrics.ctx.rates = fx.Rates(lambda pair: mapping.get(pair))
 
 
 def test_a_london_position_is_converted_from_pence_and_says_so(
@@ -575,7 +575,7 @@ def test_a_london_position_is_converted_from_pence_and_says_so(
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=250.0, market_state='REGULAR', info={'currency': 'GBp'}))
 
-    metrics._scrape_symbol('VOD.L', now=NOW)
+    metrics['scrape']('VOD.L', now=NOW)
 
     (native, converted, rate), = _point(store, 'VOD.L')
     assert native == 250.0
@@ -596,7 +596,7 @@ def test_a_missing_rate_writes_the_point_with_no_converted_price(
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
-    metrics._scrape_symbol('AAPL', now=NOW)
+    metrics['scrape']('AAPL', now=NOW)
 
     assert _point(store) == [(185.0, None, None)]
     # The `latest` row agrees with it rather than keeping an older conversion.
@@ -611,12 +611,12 @@ def test_no_reporting_currency_scrapes_natively_and_converts_nothing(
     design. Prices go on being collected, so answering late costs no history."""
     metrics = _metrics(store, base_currency=None)
     fetched = []
-    metrics.rates = fx.Rates(lambda pair: fetched.append(pair))
+    metrics.ctx.rates = fx.Rates(lambda pair: fetched.append(pair))
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
-    metrics._scrape_symbol('AAPL', now=NOW)
+    metrics['scrape']('AAPL', now=NOW)
 
     assert _point(store) == [(185.0, None, None)]
     # And no pair was even asked for: there is nothing to convert *into*.
@@ -637,17 +637,17 @@ def test_answering_the_currency_converts_from_the_next_cycle_on(
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
-    metrics._scrape_symbol('AAPL', now=NOW)
+    metrics['scrape']('AAPL', now=NOW)
     assert _point(store) == [(185.0, None, None)]
 
     # One `PUT /api/settings` away, and this is what it does to the process.
     settings_module.save(store, {'base_currency': 'EUR'})
-    metrics.apply_dials(settings_module.read_all(store))
+    metrics.ctx.apply_dials(settings_module.read_all(store))
     _fixed_rate(metrics, {'USDEUR=X': 0.92})
 
-    metrics._scrape_symbol('AAPL', now=NOW + timedelta(seconds=120))
+    metrics['scrape']('AAPL', now=NOW + timedelta(seconds=120))
 
-    assert metrics.base_currency == 'EUR'
+    assert metrics.ctx.base_currency == 'EUR'
     assert _point(store) == [
         (185.0, None, None),
         (185.0, pytest.approx(170.2), 0.92),
@@ -663,7 +663,7 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     each row has to be the one that row's figure came from.
     """
     metrics = _metrics(store, base_currency='EUR')
-    metrics._share_info_cache['AAPL'] = {'currency': 'USD'}
+    metrics.ctx.info_cache['AAPL'] = {'currency': 'USD'}
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
@@ -675,9 +675,9 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
         return {date(2024, 1, 2): 0.90, date(2024, 1, 3): 0.91,
                 date(2024, 1, 4): 0.92}
 
-    metrics.rates = fx.Rates(lambda pair: 1.0, history)
+    metrics.ctx.rates = fx.Rates(lambda pair: 1.0, history)
 
-    metrics._fetch_and_store(
+    metrics['backfill'].fetch_and_store(
         'AAPL', datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 1, 5, tzinfo=UTC))
 
     assert _point(store) == [
@@ -711,7 +711,7 @@ def test_a_paris_bar_is_converted_at_the_rate_of_the_day_it_is_filed_under(
     one got to it.
     """
     metrics = _metrics(store, shares=[_share('AI.PA')], base_currency='USD')
-    metrics._share_info_cache['AI.PA'] = {'currency': 'EUR'}
+    metrics.ctx.info_cache['AI.PA'] = {'currency': 'EUR'}
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     # The bar as yfinance hands it over: tz-aware, on the exchange's clock.
     paris = pd.DataFrame(
@@ -724,9 +724,9 @@ def test_a_paris_bar_is_converted_at_the_rate_of_the_day_it_is_filed_under(
     def history(pair, start, end):
         return {date(2024, 1, 14): 1.10, date(2024, 1, 15): 1.20}
 
-    metrics.rates = fx.Rates(lambda pair: 1.0, history)
+    metrics.ctx.rates = fx.Rates(lambda pair: 1.0, history)
 
-    metrics._fetch_and_store(
+    metrics['backfill'].fetch_and_store(
         'AI.PA', datetime(2024, 1, 10, tzinfo=UTC),
         datetime(2024, 1, 16, tzinfo=UTC))
 
@@ -756,7 +756,7 @@ def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
     metrics = _metrics(store, base_currency='EUR')
     # What the translation now answers for a payload that carries no key at
     # all — the whole of the fix, read from the cache the backfill reads.
-    metrics._share_info_cache['AAPL'] = market_info.quote_attributes({})
+    metrics.ctx.info_cache['AAPL'] = market_info.quote_attributes({})
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
@@ -767,9 +767,9 @@ def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
         asked.append(pair)
         return {}
 
-    metrics.rates = fx.Rates(lambda pair: 1.0, history)
+    metrics.ctx.rates = fx.Rates(lambda pair: 1.0, history)
 
-    metrics._fetch_and_store(
+    metrics['backfill'].fetch_and_store(
         'AAPL', datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 1, 5, tzinfo=UTC))
 
     assert asked == []
@@ -797,10 +797,10 @@ def test_an_event_amount_is_never_converted_because_it_is_already_the_debit(
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=250.0, market_state='REGULAR', info={'currency': 'GBp'}))
 
-    metrics._scrape_symbol('VOD.L', now=NOW)
+    metrics['scrape']('VOD.L', now=NOW)
 
     # The ledger's own figure, exactly as the replay wrote it.
-    assert [s['cost_basis'] for s in metrics.shares] == [1500.0]
+    assert [s['cost_basis'] for s in metrics.ctx.shares] == [1500.0]
 
 
 def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
@@ -815,34 +815,34 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
     of the product. And not a fifth job.
     """
     metrics = _metrics(store, base_currency='EUR')
-    metrics.scheduler = mocker.MagicMock()
+    metrics.ctx.scheduler = mocker.MagicMock()
     _fixed_rate(metrics, {'USDEUR=X': 0.92})
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
-    metrics._scrape_symbol('AAPL', now=NOW)
-    metrics._reconcile_jobs()
+    metrics['scrape']('AAPL', now=NOW)
+    metrics['scrape'].reconcile_jobs()
 
     armed = {call.kwargs['id']
-             for call in metrics.scheduler.add_job.call_args_list}
+             for call in metrics.ctx.scheduler.add_job.call_args_list}
     assert armed == {scrape._scrape_job_id('AAPL')}
-    assert metrics._held_symbols() == {'AAPL'}
+    assert metrics['scrape'].held_symbols() == {'AAPL'}
     assert 'fx_rates' not in [row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]
     assert store.query(
         "SELECT count(*) FROM symbol WHERE symbol LIKE '%=X'") == [(0,)]
 
     scheduler = mocker.MagicMock()
-    main.register_interval_jobs(scheduler, metrics, 60)
-    assert [c.kwargs['id'] for c in scheduler.add_job.call_args_list] \
-        == ['backfill', 'perf', 'day_turn']
+    registry.register(scheduler, metrics, {'backfill_interval': 60})
+    assert {c.kwargs['id'] for c in scheduler.add_job.call_args_list} \
+        == {'backfill', 'perf', 'day_turn'}
 
 
 def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
         store, mocker, monkeypatch, fake_ticker):
     """The two production fetches, exercised rather than replaced.
 
-    Every test above swaps `metrics.rates` for a fixed table, which is what
+    Every test above swaps `metrics.ctx.rates` for a fixed table, which is what
     makes the arithmetic assertable — so the wire between the module and
     yfinance needs one test of its own, or the whole feature is green against a
     fetch nobody ever calls.
@@ -850,11 +850,11 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
     The two are :mod:`market`'s own since #846, and the runtime class stopped
     wrapping them under a second copy of their docstring with #850 — so what is
     asserted here is the pair itself, plus the one thing the wrappers were
-    hiding: that :attr:`Workloads.rates` is built on *them*.
+    hiding: that :attr:`JobContext.rates` is built on *them*.
     """
     metrics = _metrics(store, base_currency='EUR')
-    assert metrics.rates._fetch_live is market.pair_rate
-    assert metrics.rates._fetch_series is market.pair_series
+    assert metrics.ctx.rates._fetch_live is market.pair_rate
+    assert metrics.ctx.rates._fetch_series is market.pair_series
 
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=0.92, rows=3, start='2024-06-01'))
@@ -898,7 +898,7 @@ def test_the_freshness_sonde_still_watches_the_native_price(
     _fixed_rate(metrics, {'USDEUR=X': 0.92})
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
-    metrics._scrape_symbol('AAPL', now=NOW)
+    metrics['scrape']('AAPL', now=NOW)
 
     assert quotes.last_price(store, 'AAPL') == 185.0
 
@@ -975,8 +975,8 @@ def _unconverted(store, symbol='AAPL', currency='USD', days=(1, 2, 3)):
 
 def _lateral(metrics, symbol='AAPL'):
     """One cycle of the pass, and the record it published."""
-    written = metrics._backfill_lateral(symbol)
-    return written, metrics.recorder.backfill_of(symbol, runtime_state.LATERAL)
+    written = metrics['backfill'].lateral(symbol)
+    return written, metrics.ctx.recorder.backfill_of(symbol, runtime_state.LATERAL)
 
 
 def test_the_lateral_pass_repairs_by_update_and_never_by_insert(
@@ -993,7 +993,7 @@ def test_the_lateral_pass_repairs_by_update_and_never_by_insert(
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90,
         date(2024, 6, 2): 0.91,
         date(2024, 6, 3): 0.92}}))
@@ -1026,7 +1026,7 @@ def test_an_unanswered_reporting_currency_never_arms_unconvertible(
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     fetch = _SeriesFetch()
-    metrics.rates = fx.Rates(lambda pair: None, fetch)
+    metrics.ctx.rates = fx.Rates(lambda pair: None, fetch)
 
     written, record = _lateral(metrics)
 
@@ -1052,7 +1052,7 @@ def test_a_pair_that_does_not_resolve_arms_unconvertible_and_names_itself(
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency='XYZ')
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch())
 
     written, record = _lateral(metrics)
 
@@ -1076,7 +1076,7 @@ def test_a_failed_rate_fetch_backs_off_like_617_and_retries_indefinitely(
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
-    metrics.rates = fx.Rates(
+    metrics.ctx.rates = fx.Rates(
         lambda pair: None, _SeriesFetch(raises=RuntimeError('yahoo is down')))
 
     delays = []
@@ -1084,15 +1084,15 @@ def test_a_failed_rate_fetch_backs_off_like_617_and_retries_indefinitely(
         at = datetime.now(UTC)
         _lateral(metrics)
         delays.append(
-            (metrics._lateral_retry_at['AAPL'] - at).total_seconds())
+            (metrics['backfill'].lateral_retry_at['AAPL'] - at).total_seconds())
         # The back-off is honoured against the *clock*; clearing it here counts
         # five attempts rather than five ticks.
-        metrics._lateral_retry_at.clear()
+        metrics['backfill'].lateral_retry_at.clear()
 
-    record = metrics.recorder.backfill_of('AAPL', runtime_state.LATERAL)
+    record = metrics.ctx.recorder.backfill_of('AAPL', runtime_state.LATERAL)
     assert record.failed is True and record.failures == 5
     assert record.terminal is None
-    base = metrics.regular_interval
+    base = metrics.ctx.regular_interval
     assert delays == [pytest.approx(scheduling.backoff_delay(base, n), abs=2)
                       for n in (1, 2, 3, 4, 5)]
     assert delays[:3] == [pytest.approx(base, abs=2)] * 3
@@ -1112,7 +1112,7 @@ def test_a_symbol_inside_its_back_off_is_stepped_over_rather_than_re_counted(
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     fetch = _SeriesFetch(raises=RuntimeError('yahoo is down'))
-    metrics.rates = fx.Rates(lambda pair: None, fetch)
+    metrics.ctx.rates = fx.Rates(lambda pair: None, fetch)
 
     _lateral(metrics)
     assert len(fetch.calls) == 1
@@ -1120,7 +1120,7 @@ def test_a_symbol_inside_its_back_off_is_stepped_over_rather_than_re_counted(
         _lateral(metrics)
 
     assert len(fetch.calls) == 1
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         'AAPL', runtime_state.LATERAL).failures == 1
 
 
@@ -1130,21 +1130,21 @@ def test_the_first_conversion_that_lands_resets_the_back_off(
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
-    metrics.rates = fx.Rates(
+    metrics.ctx.rates = fx.Rates(
         lambda pair: None, _SeriesFetch(raises=RuntimeError('yahoo is down')))
     _lateral(metrics)
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         'AAPL', runtime_state.LATERAL).failures == 1
 
-    metrics._lateral_retry_at.clear()
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics['backfill'].lateral_retry_at.clear()
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90}}))
 
     written, record = _lateral(metrics)
 
     assert written == 3          # one rate, forward-filled onto the three days
     assert record.failures == 0
-    assert 'AAPL' not in metrics._lateral_retry_at
+    assert 'AAPL' not in metrics['backfill'].lateral_retry_at
 
 
 def test_a_symbol_yahoo_names_no_currency_for_says_so_instead_of_failing_at_it(
@@ -1164,7 +1164,7 @@ def test_a_symbol_yahoo_names_no_currency_for_says_so_instead_of_failing_at_it(
     instrument = _Instrument(info={})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     fetch = _SeriesFetch()
-    metrics.rates = fx.Rates(lambda pair: None, fetch)
+    metrics.ctx.rates = fx.Rates(lambda pair: None, fetch)
 
     written, record = _lateral(metrics)
 
@@ -1195,8 +1195,8 @@ def test_the_pass_walks_one_chunk_a_cycle_from_the_oldest_missing_day(
     ])
     store.execute("UPDATE symbol_quote SET currency = 'USD'")
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
-    metrics.backfill_chunk_days = 365
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.backfill_chunk_days = 365
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2022, 6, 1): 0.90, date(2024, 6, 1): 0.92}}))
 
     assert _lateral(metrics)[0] == 1
@@ -1221,19 +1221,19 @@ def test_answering_the_reporting_currency_starts_the_repair_of_the_whole_stock(
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     scheduler = mocker.MagicMock()
-    metrics.scheduler = scheduler
-    runtime = mocker.MagicMock(workloads=metrics, scheduler=scheduler)
+    metrics.ctx.scheduler = scheduler
+    runtime = mocker.MagicMock(jobs=metrics, scheduler=scheduler)
 
     changes = settings_module.save(store, {'base_currency': 'EUR'})
     report = main.apply_settings(runtime, changes)
 
-    assert metrics.base_currency == 'EUR'
+    assert metrics.ctx.base_currency == 'EUR'
     assert report['jobs_rescheduled'] == [scheduling.BACKFILL_JOB_ID]
     assert scheduler.modify_job.call_args.args[0] == scheduling.BACKFILL_JOB_ID
     assert 'next_run_time' in scheduler.modify_job.call_args.kwargs
 
     # And the cycle it brings forward repairs what was already scraped.
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90}}))
     assert _lateral(metrics)[0] == 3
     assert [converted for _, converted, _ in _point(store)] == [
@@ -1251,13 +1251,13 @@ def test_a_declared_currency_taken_from_an_import_triggers_it_too(
     """
     metrics = _metrics(store, base_currency=None)
     scheduler = mocker.MagicMock()
-    metrics.scheduler = scheduler
+    metrics.ctx.scheduler = scheduler
     store.execute(
         "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
 
-    metrics._adopt_declared_currency()
+    metrics['ingestion'].adopt_declared_currency()
 
-    assert metrics.base_currency == 'EUR'
+    assert metrics.ctx.base_currency == 'EUR'
     assert scheduler.modify_job.call_args.args[0] == scheduling.BACKFILL_JOB_ID
 
 
@@ -1273,24 +1273,24 @@ def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
                        base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90}}))
 
     # The whole of ``_backfill_symbol``, so the gating is the production one:
     # the backward pass reaches its terminal by itself (its anchor is already the
     # first acquisition), the forward one is refused by ``advancing=False``, and the
     # lateral one runs regardless — which is the claim.
-    metrics._backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
+    metrics['backfill'].backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
                              advancing=False, now=datetime.now(timezone.utc))
 
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         'AAPL', runtime_state.BACKWARD).terminal \
         == runtime_state.TERMINAL_COMPLETE
 
-    assert metrics.recorder.backfill_of(
+    assert metrics.ctx.recorder.backfill_of(
         'AAPL', runtime_state.LATERAL).written == 3
     # And the forward pass did **not** run: there is no live writer to catch up.
-    assert metrics.recorder.backfill_of('AAPL', runtime_state.FORWARD) is None
+    assert metrics.ctx.recorder.backfill_of('AAPL', runtime_state.FORWARD) is None
 
 
 # =========================================================================== #
@@ -1325,7 +1325,7 @@ def _sold_before_the_install(store, mocker, monkeypatch, closes, info=None):
                        base_currency='EUR')
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
         date(2024, 6, 3): 0.92}}))
     return metrics, instrument
@@ -1346,10 +1346,10 @@ def test_a_line_sold_before_the_install_learns_its_currency_and_is_converted(
         store, mocker, monkeypatch, (101.0, 102.0, 103.0))
 
     # Nothing has met this symbol, which is the premise of the whole ticket.
-    assert metrics._held_symbols() == set()
-    assert metrics._share_info_cache == {}
+    assert metrics['scrape'].held_symbols() == set()
+    assert metrics.ctx.info_cache == {}
 
-    metrics._backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
+    metrics['backfill'].backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
                              advancing=False, now=datetime.now(timezone.utc))
 
     assert store.query(
@@ -1363,7 +1363,7 @@ def test_a_line_sold_before_the_install_learns_its_currency_and_is_converted(
     assert instrument.reads == 1
     # And the rebuild's own cache is filled on the way, so the chunks fetched
     # after this one are converted at write time rather than repaired later.
-    assert metrics._share_info_cache['AAPL']['currency'] == 'USD'
+    assert metrics.ctx.info_cache['AAPL']['currency'] == 'USD'
 
 
 def test_the_learnt_currency_is_written_once_and_never_asked_for_again(
@@ -1382,8 +1382,8 @@ def test_the_learnt_currency_is_written_once_and_never_asked_for_again(
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
-    metrics.backfill_chunk_days = 1          # so several cycles have work left
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.backfill_chunk_days = 1          # so several cycles have work left
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
         date(2024, 6, 3): 0.92}}))
 
@@ -1413,7 +1413,7 @@ def test_a_failed_attribute_fetch_backs_off_rather_than_concluding_anything(
     instrument = _Instrument(raises=RuntimeError('yahoo is down'))
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     fetch = _SeriesFetch()
-    metrics.rates = fx.Rates(lambda pair: None, fetch)
+    metrics.ctx.rates = fx.Rates(lambda pair: None, fetch)
 
     at = datetime.now(UTC)
     written, record = _lateral(metrics)
@@ -1423,11 +1423,11 @@ def test_a_failed_attribute_fetch_backs_off_rather_than_concluding_anything(
     assert record.terminal is None
     assert 'AAPL' in record.error
     assert fetch.calls == []                 # no pair to ask about yet
-    assert (metrics._lateral_retry_at['AAPL'] - at).total_seconds() \
-        == pytest.approx(scheduling.backoff_delay(metrics.regular_interval, 1),
+    assert (metrics['backfill'].lateral_retry_at['AAPL'] - at).total_seconds() \
+        == pytest.approx(scheduling.backoff_delay(metrics.ctx.regular_interval, 1),
                          abs=2)
     # And it is asked again once the back-off has run out, for ever.
-    metrics._lateral_retry_at.clear()
+    metrics['backfill'].lateral_retry_at.clear()
     _lateral(metrics)
     assert instrument.reads == 2
 
@@ -1462,7 +1462,7 @@ def test_the_repaired_line_stops_being_valued_at_zero(
 
     metrics, _ = _sold_before_the_install(
         store, mocker, monkeypatch, (101.0, 102.0, 103.0))
-    metrics._backfill_backward(
+    metrics['backfill'].backward(
         'AAPL', datetime(2024, 6, 1, tzinfo=UTC),
         datetime(2024, 6, 5, tzinfo=UTC))
 
@@ -1473,7 +1473,7 @@ def test_the_repaired_line_stops_being_valued_at_zero(
         == (3,)
     assert value_on(date(2024, 6, 2)) == (0.0, True)
 
-    metrics._backfill_lateral('AAPL')
+    metrics['backfill'].lateral('AAPL')
 
     assert value_on(date(2024, 6, 2)) == (pytest.approx(10 * 102.0 * 0.91), True)
 
@@ -1524,7 +1524,7 @@ def test_a_line_yahoo_names_no_unit_for_is_carried_at_its_cost(
 
     metrics, instrument = _sold_before_the_install(
         store, mocker, monkeypatch, (101.0, 102.0, 103.0), info={})
-    metrics._backfill_backward(
+    metrics['backfill'].backward(
         'AAPL', datetime(2024, 6, 1, tzinfo=UTC),
         datetime(2024, 6, 5, tzinfo=UTC))
     _, record = _lateral(metrics)
@@ -1582,9 +1582,9 @@ def _met_with_its_market_shut(store, monkeypatch, info=None,
     metrics = _metrics(store, base_currency=base_currency)
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
-    metrics._share_info_cache['AAPL'] = dict(_SHUT_MARKET_INFO)
-    metrics._backfill_backward('AAPL', datetime(2024, 6, 1, tzinfo=UTC),
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch())
+    metrics.ctx.info_cache['AAPL'] = dict(_SHUT_MARKET_INFO)
+    metrics['backfill'].backward('AAPL', datetime(2024, 6, 1, tzinfo=UTC),
                                datetime(2024, 6, 4, tzinfo=UTC))
     return metrics, instrument
 
@@ -1639,7 +1639,7 @@ def test_a_pass_that_only_learnt_a_unit_says_so_and_is_not_a_failure(
     # No window: there was no span, and dating a repair nobody made would be a
     # claim about rows this pass never touched.
     assert record.window is None
-    assert 'AAPL' not in metrics._lateral_retry_at
+    assert 'AAPL' not in metrics['backfill'].lateral_retry_at
     assert runtime_view.backfill_progress(
         record, runtime_state.LATERAL, datetime.now(UTC)).state \
         == runtime_state.SKIP_UNIT_LEARNT
@@ -1699,7 +1699,7 @@ def test_the_foreign_currency_twin_goes_on_being_repaired_exactly_as_before(
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
         date(2024, 6, 3): 0.92}}))
 
@@ -1781,12 +1781,12 @@ def test_a_failed_request_for_a_unit_alone_backs_off_and_concludes_nothing(
     assert record.window is None
     assert record.error == \
         'the currency AAPL is quoted in could not be established'
-    assert (metrics._lateral_retry_at['AAPL'] - at).total_seconds() \
-        == pytest.approx(scheduling.backoff_delay(metrics.regular_interval, 1),
+    assert (metrics['backfill'].lateral_retry_at['AAPL'] - at).total_seconds() \
+        == pytest.approx(scheduling.backoff_delay(metrics.ctx.regular_interval, 1),
                          abs=2)
     # A failure is not a reply: the symbol is asked again once the back-off has
     # run out, and for ever.
-    metrics._lateral_retry_at.clear()
+    metrics['backfill'].lateral_retry_at.clear()
     _lateral(metrics)
     assert instrument.reads == 2
 
@@ -1891,7 +1891,7 @@ def test_a_row_written_before_the_fix_learns_its_real_unit(
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
-    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+    metrics.ctx.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
         date(2024, 6, 3): 0.92}}))
 

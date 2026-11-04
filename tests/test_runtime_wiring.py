@@ -20,15 +20,15 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from contextlib import contextmanager
 
-from application import backfill
+from application.jobs import backfill
 from application import boot_env
 from application import main
 from application import market
 from application import quotes
 from application import runtime_state
 from application import scheduling
-from application import scrape
-from application import workloads
+from application.jobs import scrape
+from application.jobs import registry
 from application.events.schemas import Event, EventType
 from conftest import fake_history
 
@@ -39,7 +39,7 @@ NOW = datetime(2026, 8, 5, 15, 0, tzinfo=UTC)
 
 @pytest.fixture(autouse=True)
 def _no_jitter(mocker):
-    mocker.patch("application.scrape.random.uniform", return_value=0.0)
+    mocker.patch("application.jobs.scrape.random.uniform", return_value=0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -102,9 +102,9 @@ def _metrics(shares, store, mocker, **manager):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store, **manager)
-    m = workloads.Workloads(cfg)
-    m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
-    m.regular_interval = 120
+    m = registry.build(cfg)
+    m.ctx.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
+    m.ctx.regular_interval = 120
     return m
 
 
@@ -118,8 +118,8 @@ def test_a_regular_pass_records_the_state_it_acted_on_and_its_counter(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.verdict == runtime_state.SCRAPE_WROTE
     assert record.market_state == "REGULAR"
@@ -142,11 +142,11 @@ def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
     record carries what this cycle read, which on a failure is nothing.
     """
     m = _metrics([_share()], store, mocker)
-    m._share_info_cache["AAPL"] = {"marketState": "REGULAR"}
-    mocker.patch.object(m.market, "latest_quote", return_value=(None, None))
+    m.ctx.info_cache["AAPL"] = {"marketState": "REGULAR"}
+    mocker.patch.object(m.ctx.market, "latest_quote", return_value=(None, None))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.market_state is None
     assert record.verdict == runtime_state.SCRAPE_NO_PRICE
@@ -162,8 +162,8 @@ def test_an_unrecognised_state_records_the_coercion_beside_the_raw_value(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="SOMETHING_NEW"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.market_state == "SOMETHING_NEW"
     assert record.closed is False
@@ -187,15 +187,15 @@ def test_a_refused_write_is_recorded_although_617s_counter_stays_zero(
     mocker.patch.object(quotes, "record_quote",
                         side_effect=RuntimeError("connection refused"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.verdict == runtime_state.SCRAPE_WRITE_FAILED
     assert record.wrote is False
     assert record.failure_count == 0
     assert "the store refused the write" in record.error
     # And the cadence is untouched — the record is a diagnostic, not a gate.
-    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+    assert m.ctx.scheduler.add_job.call_args.kwargs["run_date"] == \
         NOW + timedelta(seconds=120)
 
 
@@ -209,8 +209,8 @@ def test_a_pass_with_nothing_held_says_so_instead_of_claiming_a_write(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.verdict == runtime_state.SCRAPE_NOTHING_TO_WRITE
     assert record.wrote is False
@@ -220,12 +220,12 @@ def test_a_pass_with_nothing_held_says_so_instead_of_claiming_a_write(
 def test_a_closed_pass_is_recorded_without_touching_the_counter(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share()], store, mocker)
-    m._failure_counts["AAPL"] = 2
+    m['scrape'].failure_counts["AAPL"] = 2
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="CLOSED"))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.verdict == runtime_state.SCRAPE_CLOSED
     assert record.closed is True
@@ -251,14 +251,14 @@ def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
     # symbol that fetches fine and persists nothing.
     quotes.record_quote(store, "AAPL", NOW - timedelta(seconds=120), 100.0)
     mocker.patch.object(quotes, "record_quote")
-    m.staleness_horizon = 900
-    m._sonde_state["AAPL"] = scheduling.SondeState(
+    m.ctx.staleness_horizon = 900
+    m['scrape'].sonde_state["AAPL"] = scheduling.SondeState(
         stored_price=100.0,
         frozen_since=NOW - timedelta(seconds=1000),
         last_seen=NOW - timedelta(seconds=120))
 
-    m._scrape_symbol("AAPL", now=NOW)
-    record = m.recorder.scrape_of("AAPL")
+    m['scrape']("AAPL", now=NOW)
+    record = m.ctx.recorder.scrape_of("AAPL")
 
     assert record.stale is True
 
@@ -268,16 +268,16 @@ def test_a_departed_symbol_loses_its_records_with_its_counter(
     m = _metrics([_share("AAPL")], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
-    m._scrape_symbol("AAPL", now=NOW)
-    assert m.recorder.scrape_of("AAPL") is not None
+    m['scrape']("AAPL", now=NOW)
+    assert m.ctx.recorder.scrape_of("AAPL") is not None
 
     # The symbol leaves the portfolio; reconcile removes its job.
-    m.config_manager._shares = []
-    m.scheduler.get_jobs.return_value = [
+    m.ctx.config_manager._shares = []
+    m.ctx.scheduler.get_jobs.return_value = [
         SimpleNamespace(id=scrape._scrape_job_id("AAPL"))]
-    m._reconcile_jobs()
+    m['scrape'].reconcile_jobs()
 
-    assert m.recorder.scrape_of("AAPL") is None
+    assert m.ctx.recorder.scrape_of("AAPL") is None
 
 
 # ===================================================================== #
@@ -295,8 +295,8 @@ def test_a_rejected_configuration_is_recorded_as_kept_previous(
     m = _metrics([_share()], store, mocker,
                  raises=ValueError("Invalid 'accounts' block"))
 
-    m.ingest()
-    record = m.recorder.ingest()
+    m['ingestion']()
+    record = m.ctx.recorder.ingest()
 
     assert record.outcome == runtime_state.INGEST_FAILED
     assert "Invalid 'accounts' block" in record.error
@@ -308,8 +308,8 @@ def test_an_unchanged_ingestion_is_told_apart_from_an_updated_one(
                     "Apple", quantity=10, unit_price=150.0)]
     m = _metrics([_share()], store, mocker, events=events)
 
-    m.ingest()
-    record = m.recorder.ingest()
+    m['ingestion']()
+    record = m.ctx.recorder.ingest()
 
     assert record.outcome == runtime_state.INGEST_UNCHANGED
     assert record.shares == 1
@@ -336,8 +336,8 @@ def test_a_grant_only_position_is_reconstructed_like_any_other(
     fake_history(mocker, m, return_value=[
         {"timestamp": datetime(2024, 7, 1, tzinfo=UTC), "price": 170.0}])
 
-    m.backfill()
-    record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    m['backfill']()
+    record = m.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
 
     assert record.target == datetime(2024, 6, 1, tzinfo=UTC)
     assert record.terminal is None
@@ -352,8 +352,8 @@ def test_a_completed_backward_pass_records_both_dates_of_the_bar(
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
 
-    m.backfill()
-    record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    m['backfill']()
+    record = m.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
 
     assert record.terminal == runtime_state.TERMINAL_COMPLETE
     assert record.oldest == datetime(2024, 1, 10, tzinfo=UTC)
@@ -376,9 +376,9 @@ def test_a_failed_history_fetch_raises_the_consecutive_counter(
     fake_history(mocker, m, return_value=None)
 
     now = datetime.now(UTC)
-    m.backfill(now)
-    m.backfill(now + timedelta(hours=1))  # past the back-off (#1288)
-    record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    m['backfill'](now)
+    m['backfill'](now + timedelta(hours=1))  # past the back-off (#1288)
+    record = m.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
 
     assert record.failures == 2
     assert record.window is not None
@@ -395,10 +395,10 @@ def test_an_empty_window_is_recorded_without_raising_the_counter(
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
     fake_history(mocker, m, return_value=[])
-    mocker.patch("application.backfill.time.sleep")
+    mocker.patch("application.jobs.backfill.time.sleep")
 
-    m.backfill()
-    record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
+    m['backfill']()
+    record = m.ctx.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
 
     assert record.failures == 0
     assert record.terminal is None
@@ -424,12 +424,12 @@ def test_a_failed_write_leaves_the_anchor_where_it_was_and_is_recorded(
     mocker.patch.object(quotes, "record_history",
                         side_effect=RuntimeError("connection refused"))
 
-    m.backfill()
+    m['backfill']()
 
     assert quotes.oldest_window_tried(store, "AAPL") is None
     # Both passes read the same return value, so both are held here.
     for direction in (runtime_state.BACKWARD, runtime_state.FORWARD):
-        record = m.recorder.backfill_of("AAPL", direction)
+        record = m.ctx.recorder.backfill_of("AAPL", direction)
         assert record.failed is True
         assert "could not be written" in record.error
 
@@ -448,17 +448,17 @@ def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
     # Nothing stored at all: the backward pass owns seeding the series, and the
     # forward one has no anchor to measure from.
     fake_history(mocker, m, return_value=[])
-    mocker.patch("application.backfill.time.sleep")
+    mocker.patch("application.jobs.backfill.time.sleep")
 
-    m.backfill()
-    assert m.recorder.backfill_of(
+    m['backfill']()
+    assert m.ctx.recorder.backfill_of(
         "AAPL", runtime_state.FORWARD).skipped == \
         runtime_state.SKIP_NO_SERIES
 
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime.now(UTC), "price": 101.0}])
-    m.backfill()
-    assert m.recorder.backfill_of(
+    m['backfill']()
+    assert m.ctx.recorder.backfill_of(
         "AAPL", runtime_state.FORWARD).skipped == \
         runtime_state.SKIP_TOO_RECENT
 
@@ -477,8 +477,8 @@ def test_every_perf_cycle_records_that_it_ran(store, mocker):
     """
     m = _metrics([_share()], store, mocker)
 
-    m.recompute_perf()
-    record = m.recorder.perf()
+    m['performance']()
+    record = m.ctx.recorder.perf()
 
     assert record.verdict == runtime_state.PERF_RAN
     assert record.error is None
@@ -488,11 +488,11 @@ def test_every_perf_cycle_records_that_it_ran(store, mocker):
 def test_a_failed_perf_recompute_records_the_error_it_only_logged(
         store, mocker):
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(m, "update_account_metrics",
+    mocker.patch.object(m['performance'], "update_account_metrics",
                         side_effect=Exception("the store is unreadable"))
 
-    m.recompute_perf()
-    record = m.recorder.perf()
+    m['performance']()
+    record = m.ctx.recorder.perf()
 
     assert record.verdict == runtime_state.PERF_FAILED
     assert "the store is unreadable" in record.error

@@ -11,6 +11,7 @@ import {
   aJobsHistory,
   aJobTrack,
   NOW,
+  someJobs,
   someSlots,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
@@ -62,6 +63,31 @@ describe('the job history (#1236)', () => {
       within(region).getByRole('listbox', { name: 'Relevé des cours · AAPL' }),
     ).toBeInTheDocument()
     expect(region).toHaveTextContent(/depuis le démarrage/)
+  })
+
+  it('lists a job the server runs and this build was never told of (#1253)', async () => {
+    server.use(
+      http.get(ROUTES.jobs, () =>
+        HttpResponse.json(
+          someJobs([
+            { id: 'fake', label_key: 'settings.jobs.fake', kind: 'job', in_health: false },
+          ]),
+        ),
+      ),
+      http.get(ROUTES.jobsHistory, () => {
+        const history = aJobsHistory()
+        return HttpResponse.json({
+          ...history,
+          jobs: { ...history.jobs, fake: aJobTrack({ last: aJobPass({ outcome: 'ok' }) }) },
+        })
+      }),
+    )
+    const { region } = await jobs()
+
+    // No label of its own in this build: it is named by its id, and drawn.
+    const strip = await within(region).findByRole('listbox', { name: 'fake' })
+    expect(within(strip).getAllByRole('option')).toHaveLength(24)
+    expect(region).toHaveTextContent(/Réussi/)
   })
 
   it('names each hour by its passes and its faults', async () => {

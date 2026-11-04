@@ -8,8 +8,6 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Mapping, Optional, Tuple
 
-from apscheduler.executors.pool import ThreadPoolExecutor
-from apscheduler.schedulers.background import BackgroundScheduler
 from logfmt_logger import getLogger
 
 from application import accounts as accounts_module
@@ -26,7 +24,7 @@ from application import schema_steps
 from application import settings as settings_module
 from application import settings_registry
 from application import store
-from application import workloads
+from application.jobs import registry
 from application.events.validator import EventValidator
 from application.events.aggregator import EventAggregator
 from application.events.loader import EventLoaderError
@@ -109,69 +107,36 @@ def report_boot_conditions(boot: boot_env.BootEnvironment,
     return said
 
 
-def register_interval_jobs(scheduler, workloads_,
-                           backfill_interval: int) -> None:
-    """Register the fixed-cadence jobs on ``scheduler``."""
-    scheduler.add_job(
-        workloads_.backfill, 'interval',
-        seconds=backfill_interval,
-        id=scheduling.BACKFILL_JOB_ID,
-        name='Historical backfill')
-    scheduler.add_job(
-        workloads_.recompute_perf, 'interval',
-        seconds=scheduling.PERF_TICK,
-        next_run_time=datetime.now(timezone.utc),
-        id=scheduling.PERF_JOB_ID,
-        name='Performance recompute')
-    # The replay stops at today (#1459), so an event dated ahead starts
-    # counting at the turn of the day, with no write to replay it: the
-    # ingestion replays then, and re-arms the scrape jobs the new day holds.
-    scheduler.add_job(
-        workloads_.ingest, 'cron', hour=0, minute=0, timezone=timezone.utc,
-        id=scheduling.DAY_TURN_JOB_ID,
-        name='Day turn replay')
-
-
 def apply_settings(runtime, changes) -> Dict:
-    """Make a set of saved dials take effect, and say what they reached (#701)."""
+    """Make a set of saved dials take effect, and say what they reached (#701).
+
+    A dial that sets a job's cadence re-arms that job: the registry knows which
+    (issue #1253). The reporting currency is an action, not a cadence.
+    """
     report = {
         'symbols_rescheduled': 0,
         'symbols_at_market_open': 0,
         'jobs_rescheduled': [],
     }
-    running = getattr(runtime, 'workloads', None)
+    running = getattr(runtime, 'jobs', None)
     if running is None:
         return report
 
-    running.apply_dials({change.key: change.after for change in changes})
+    running.ctx.apply_dials({change.key: change.after for change in changes})
 
     for change in changes:
+        reached = running.rearm(change.key, change.after)
+        report['symbols_rescheduled'] += reached.symbols
+        report['symbols_at_market_open'] += reached.at_market_open
+        for job_id in reached.jobs:
+            if job_id not in report['jobs_rescheduled']:
+                report['jobs_rescheduled'].append(job_id)
         effect = settings_registry.spec_for(change.key).effect
-        if effect == settings_registry.REARM_SCRAPE:
-            reached, sleeping = running.rearm_regular_scrapes()
-            report['symbols_rescheduled'] += reached
-            report['symbols_at_market_open'] += sleeping
-        elif effect == settings_registry.REARM_BACKFILL_JOB:
-            if _reschedule_interval_job(
-                    runtime.scheduler, scheduling.BACKFILL_JOB_ID, change.after):
-                report['jobs_rescheduled'].append(scheduling.BACKFILL_JOB_ID)
-        elif effect == settings_registry.REPAIR_CONVERSIONS:
-            started = running.repair_conversions_now()
+        if effect == settings_registry.REPAIR_CONVERSIONS:
+            started = running['ingestion'].repair_conversions_now()
             if started and scheduling.BACKFILL_JOB_ID not in report['jobs_rescheduled']:
                 report['jobs_rescheduled'].append(scheduling.BACKFILL_JOB_ID)
     return report
-
-
-def _reschedule_interval_job(scheduler, job_id: str, seconds: int) -> bool:
-    """Re-cadence one interval job. ``False`` when there is nothing to re-cadence."""
-    if scheduler is None:
-        return False
-    try:
-        scheduler.reschedule_job(job_id, trigger='interval', seconds=seconds)
-        return True
-    except Exception as e:
-        app_logger.error(f"Failed to reschedule the {job_id} job: {e}")
-        return False
 
 
 def _today() -> date:
@@ -200,7 +165,7 @@ class ConfigSnapshot:
         A symbol reaches the backfill by being named by an acquisition event,
         and a reference ticker has none — nobody bought it (#982). So it is
         added here, from the day the ledger itself starts, which is
-        ``perf_job``'s own expression and what makes the two curves share a
+        the performance job's own expression and what makes the two curves share a
         first day.
 
         Two perimeters, named, and not one widened set — the tracked one is
@@ -209,7 +174,7 @@ class ConfigSnapshot:
 
             ledger events ──► backfill_windows()   held: bought, maybe sold
                                      │             └─► valuation, totals,
-                                     │                 positions, perf_job
+                                     │                 positions, performance
                                      ▼
             references ────►  tracked_windows()    tracked: held + named
                                                    ├─► backfill
@@ -401,8 +366,8 @@ class Runtime:
                  build: build_info.Build = build_info.UNSTAMPED,
                  documentation_url: str = boot_env.DEFAULT_DOCUMENTATION_URL):
         self.config_manager = config_manager
-        self.workloads: Optional[workloads.Workloads] = None
-        self.scheduler: Optional[BackgroundScheduler] = None
+        self.jobs: Optional[registry.Jobs] = None
+        self.scheduler = None
 
         self.store_path: Optional[Path] = store_path
         self.store: Optional[store.Store] = opened_store
@@ -488,24 +453,21 @@ def start_runtime(runtime: Runtime) -> Runtime:
         else settings_module.read_all(runtime.store)
     backfill_interval = dials['backfill_interval']
 
-    running = workloads.Workloads(
-        runtime.config_manager,
-        recorder=runtime.recorder)
-    running.apply_dials(dials)
-    runtime.workloads = running
+    running = registry.build(runtime.config_manager, recorder=runtime.recorder)
+    running.ctx.apply_dials(dials)
+    runtime.jobs = running
 
     pool_size = scheduling.compute_pool_size(
-        running.shares, running.read_exchange_of())
-    scheduler = BackgroundScheduler(
-        executors={'default': ThreadPoolExecutor(pool_size)})
-    running.scheduler = scheduler
+        running.ctx.shares, running['scrape'].read_exchange_of())
+    scheduler = registry.build_scheduler(pool_size)
+    running.ctx.scheduler = scheduler
     runtime.scheduler = scheduler
-    running.ingest()
-    register_interval_jobs(scheduler, running, backfill_interval)
+    running['ingestion']()
+    registry.register(scheduler, running, dials)
     scheduler.start()
     app_logger.info(
         f"Scheduler started: per-symbol scraping (REGULAR every "
-        f"{running.regular_interval}s), ingestion on write (watched drop "
+        f"{running.ctx.regular_interval}s), ingestion on write (watched drop "
         f"folder), backfill every {backfill_interval}s, perf recomputed every "
         f"{scheduling.PERF_TICK}s, executor pool: {pool_size} workers")
     return runtime
@@ -513,10 +475,9 @@ def start_runtime(runtime: Runtime) -> Runtime:
 
 def replay_after_write(runtime: Runtime) -> None:
     """Replay the ledger right after a write changed it (issue #697)."""
-    if runtime.workloads is not None:
-        runtime.workloads.ingest(force=True)
-        # Whole, so a correction made in 2019 shows at once (#812, #1257).
-        runtime.workloads.recompute_perf(full=True)
+    if runtime.jobs is not None:
+        # The ingestion, then the whole perf series (#812, #1257).
+        runtime.jobs.after_write()
     else:
         runtime.config_manager.replay()
 
