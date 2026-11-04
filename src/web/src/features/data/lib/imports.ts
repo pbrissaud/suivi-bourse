@@ -143,14 +143,6 @@ export const EVENT_FILE_COLUMNS = [
 ] as const
 
 /**
- * The template as a `data:` URI: the header and nothing else. An example row the
- * reader forgets to delete would be imported.
- */
-export function templateHref(): string {
-  return `data:text/csv;charset=utf-8,${encodeURIComponent(`${EVENT_FILE_COLUMNS.join(',')}\n`)}`
-}
-
-/**
  * **The groups of identical lines the file repeats** (#1267): the index of each
  * group's first copy, in the order the file has them, with how many lines the
  * group holds. Read off the census, whose `duplicate_rows` name every copy after

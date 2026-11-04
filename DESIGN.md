@@ -454,7 +454,8 @@ is in percent from the start of the visible window, never in base 100.
 - A security is named by the symbol the owner recorded (`CW8.PA`), beside its name where
   it has one; the movers' badge cuts it to `CW8`. A page names the fund it is about once.
 - *Aller au grand livre* / *Go to the ledger*: the one link an empty page offers to the
-  ledger.
+  ledger. The ledger's first-import state is not an empty state but `EntryPair`: two doors,
+  one gesture each (the file picker; *Saisir un événement*), plus a quiet docs link.
 
 ## Elevation & Depth
 

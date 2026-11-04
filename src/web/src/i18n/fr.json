@@ -603,7 +603,6 @@
   "data.empty.file.body": "Un ou plusieurs fichiers .csv ou .xlsx de vos événements, quel que soit leur nom.",
   "data.empty.file.columns": "Colonnes attendues",
   "data.empty.file.account": "La colonne « account » porte l’identifiant d’un compte déclaré dans Comptes.",
-  "data.empty.file.template": "Télécharger un modèle (.csv)",
   "data.empty.file.docs": "Le format, colonne par colonne",
   "data.empty.manual.title": "Saisir un premier événement",
   "data.empty.manual.body": "Une position se saisit comme les événements qui l’ont construite — un achat, sa date, son prix. Si vous n’avez plus la date, saisissez votre meilleure estimation.",
