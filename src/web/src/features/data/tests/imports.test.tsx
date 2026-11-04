@@ -2242,16 +2242,6 @@ describe('an install that has imported nothing, and the format it reads (#1266)'
     ).toBeInTheDocument()
   })
 
-  it('offers a template whose header is the column list', async () => {
-    renderImports({ events: [] })
-
-    const link = await screen.findByRole('link', { name: 'Télécharger un modèle (.csv)' })
-
-    expect(link).toHaveAttribute('download', 'suivi-bourse-template.csv')
-    const [, body] = (link.getAttribute('href') ?? '').split('data:text/csv;charset=utf-8,')
-    expect(decodeURIComponent(body)).toBe(`${EVENT_FILE_COLUMNS.join(',')}\n`)
-  })
-
   it('links the format section of the docs in the reader language', async () => {
     renderImports({ events: [] })
 
@@ -2265,7 +2255,7 @@ describe('an install that has imported nothing, and the format it reads (#1266)'
     expect(link).toHaveAttribute('rel', expect.stringContaining('noreferrer'))
   })
 
-  it('keeps the template header equal to the docs example', () => {
+  it('keeps the column list equal to the docs example', () => {
     const page = fs.readFileSync(
       path.resolve(import.meta.dirname, '../../../../../..', 'website/docs/import-your-events.mdx'),
       'utf8',

@@ -76,7 +76,7 @@ import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { useProposalImport } from '@/features/data/lib/proposalImport'
-import { EVENT_FILE_COLUMNS, exportable, templateHref } from '@/features/data/lib/imports'
+import { EVENT_FILE_COLUMNS, exportable } from '@/features/data/lib/imports'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
@@ -402,10 +402,10 @@ export function Ledger({
               // and a populated one imports from the toolbar.
               //
               // **It says what a file looks like** (#1266): the columns, from the
-              // constant the template is built from so the two cannot disagree,
-              // the one thing the header does not say about `account`, a
-              // header-only template and the docs page. The picker stays last,
-              // lined up with *Saisir un événement*.
+              // constant the docs example is tested against, the one thing the
+              // header does not say about `account`, and the docs page, quietly:
+              // one gesture per door (#1435), so no template link. The picker
+              // stays last, lined up with *Saisir un événement*.
               action: (
                 <div className="space-y-3">
                   <div className="space-y-1.5">
@@ -416,23 +416,14 @@ export function Ledger({
                     <p className="text-xs text-muted-foreground">{t('data.empty.file.account')}</p>
                   </div>
                   <UploadZone upload={upload} />
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                    <a
-                      download="suivi-bourse-template.csv"
-                      href={templateHref()}
-                      className="text-primary underline underline-offset-4"
-                    >
-                      {t('data.empty.file.template')}
-                    </a>
-                    <a
-                      href={docsPageHref(language, 'import-your-events', 'format')}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary underline underline-offset-4"
-                    >
-                      {t('data.empty.file.docs')}
-                    </a>
-                  </div>
+                  <a
+                    href={docsPageHref(language, 'import-your-events', 'format')}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-muted-foreground underline underline-offset-4"
+                  >
+                    {t('data.empty.file.docs')}
+                  </a>
                 </div>
               ),
             },

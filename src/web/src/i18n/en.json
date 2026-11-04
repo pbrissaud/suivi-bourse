@@ -603,7 +603,6 @@
   "data.empty.file.body": "One or more .csv or .xlsx files of your events, whatever they are called.",
   "data.empty.file.columns": "Expected columns",
   "data.empty.file.account": "The \"account\" column holds the id of an account declared under Accounts.",
-  "data.empty.file.template": "Download a template (.csv)",
   "data.empty.file.docs": "The format, column by column",
   "data.empty.manual.title": "Enter a first event",
   "data.empty.manual.body": "A position is typed as the events that built it — a purchase, its date, its price. If you no longer have the date, record your best estimate.",
