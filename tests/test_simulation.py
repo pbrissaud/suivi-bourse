@@ -83,6 +83,9 @@ def test_an_aged_sale_owes_nothing_now_and_the_prorata_on_withdrawal():
     assert under['net_proceeds'] == pytest.approx(1_800.0)
     assert under['if_withdrawn'] == pytest.approx(60.0)     # 200 × 30 %
     assert over['if_withdrawn'] == pytest.approx(34.4)      # 200 × 17.2 %
+    assert under['not_modelled'] == ['social_contributions_detail',
+                                     'early_withdrawal_closure']
+    assert over['not_modelled'] == ['social_contributions_detail']
 
 
 def test_a_negative_prorata_owes_nothing_on_withdrawal():
@@ -164,8 +167,9 @@ def test_a_nan_price_is_an_unvalued_line():
 
 
 def test_a_pea_with_no_age_date_has_no_withdrawal_figure():
-    assert simulate_sale(pea(first_payment=None), 'A', 9,
-                         now=NOW)['if_withdrawn'] is None
+    sale = simulate_sale(pea(first_payment=None), 'A', 9, now=NOW)
+    assert sale['if_withdrawn'] is None
+    assert 'early_withdrawal_closure' not in sale['not_modelled']
 
 
 def test_an_unreadable_model_says_so():

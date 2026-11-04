@@ -380,7 +380,10 @@ latent gain of the WHOLE plan, so the other lines' losses lower it, and it can
 be below the tax on this lot's own gain. It is null off an aged wrapper, and
 null ON one when the plan cannot be measured — a line with no price, or no day
 to age the plan from. On an aged wrapper a null is NO FIGURE for the exit, not
-an exit that owes nothing, even with `reason` null.
+an exit that owes nothing, even with `reason` null. While the plan is under its
+age threshold, `not_modelled` carries "early_withdrawal_closure": some wrappers
+close the plan on a withdrawal before it and tax the whole plan's gain, so
+`if_withdrawn` is then a floor, not the cost of the exit.
 
 `fees` is 0 because fees are NOT MODELLED, not because there are none.
 `not_modelled` lists what every figure of the sale leaves out — say so in

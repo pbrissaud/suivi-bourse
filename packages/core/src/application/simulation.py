@@ -18,7 +18,7 @@ from datetime import date
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from application import taxation
-from application.taxation_projection import projected_tax
+from application.taxation_projection import projected_tax, rate_changes_on
 
 #: The relative slack a quantity is compared with, so a float typed back from
 #: the screen still sells the whole line.
@@ -89,6 +89,13 @@ def simulate_sale(account: Account, symbol: str, qty: float, *,
         not_modelled.append('loss_offset')
     if account.kind == taxation.BRACKETED_REALISED:
         not_modelled.append('annual_accumulation')
+    # Some wrappers (a PEA) close the plan on a withdrawal before the age
+    # threshold and tax its whole gain; `if_withdrawn` is a prorata (#1244).
+    if rate_changes_on(kind=account.kind, parameters=account.parameters,
+                       opened_on=account.opened_on,
+                       first_payment=account.first_payment,
+                       now=now) is not None:
+        not_modelled.append('early_withdrawal_closure')
 
     return {
         'account': account.id, 'symbol': symbol, 'quantity': qty,
