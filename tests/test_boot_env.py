@@ -55,6 +55,18 @@ def test_a_blank_value_counts_as_unset_for_every_one_of_the_three(name):
     assert boot_env.read({name: '   '}) == boot_env.read({})
 
 
+@pytest.mark.parametrize('raw', ['debug', 'Debug', 'DEBUG', ' debug '])
+def test_the_log_level_is_read_in_any_case(raw):
+    """#1487: ``LOG_LEVEL=debug`` in a compose file is a reasonable thing to write."""
+    assert boot_env.read({'LOG_LEVEL': raw}).log_level == 'DEBUG'
+
+
+@pytest.mark.parametrize('raw', ['TRACE', 'chatty', 'NOTSET'])
+def test_an_unknown_log_level_falls_back_to_info(raw):
+    """Never a failed boot: the app and uvicorn both log at INFO, and the boot says so."""
+    assert boot_env.read({'LOG_LEVEL': raw}).log_level == 'INFO'
+
+
 def test_there_is_no_reader_of_booleans_left():
     """The one name that was a flag was the metrics one, and it left with the
     exporter. A reader kept for the boolean variable that may never

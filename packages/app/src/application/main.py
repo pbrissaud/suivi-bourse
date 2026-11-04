@@ -34,8 +34,7 @@ from application.events.validator import EventValidationError
 from application.events.aggregator import AggregationError
 from application.events.schemas import Portfolio
 
-LOG_LEVEL = boot_env.text(os.environ, boot_env.LOG_LEVEL,
-                          boot_env.DEFAULT_LOG_LEVEL)
+LOG_LEVEL = boot_env.log_level(os.environ)
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
 
 getLogger("apscheduler.scheduler", level=LOG_LEVEL)
@@ -54,7 +53,7 @@ MANAGED_LOGGERS = (
 )
 
 
-LOG_LEVELS = ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG')
+LOG_LEVELS = boot_env.LOG_LEVELS
 
 
 def _apply_log_level(resolved: str) -> None:
@@ -435,16 +434,20 @@ def build_runtime(env: Optional[Mapping[str, str]] = None) -> Runtime:
     """
     env = os.environ if env is None else env
     # The level was read from ``os.environ`` at import; the boot's own
-    # ``LOG_LEVEL`` wins before the first line is logged. Absent or unknown, the
-    # import's level stays, as uvicorn's does in ``boot.serve``.
-    level = (boot_env.text(env, boot_env.LOG_LEVEL) or '').upper()
-    if level in LOG_LEVELS:
-        _apply_log_level(level)
+    # ``LOG_LEVEL`` wins before the first line is logged, resolved exactly as
+    # ``boot_env.read`` resolves it for uvicorn in ``boot.serve``: absent or
+    # unknown, both are at the default, so the two can never disagree.
+    raw_level = boot_env.text(env, boot_env.LOG_LEVEL)
+    _apply_log_level(boot_env.log_level(env))
     build = build_info.describe(env, build_info.checkout_revision())
     app_logger.info(
         f'SuiviBourse {build_info.said(build)} is running !',
         extra={'context': {key: value for key, value in build.to_dict().items()
                            if value is not None}})
+    if raw_level is not None and raw_level.upper() not in LOG_LEVELS:
+        app_logger.warning(
+            f"LOG_LEVEL={raw_level!r} is not one of {', '.join(LOG_LEVELS)}; "
+            f"logging at {boot_env.DEFAULT_LOG_LEVEL}")
 
     boot = boot_env.read(env)
 

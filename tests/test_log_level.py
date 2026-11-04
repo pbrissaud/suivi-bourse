@@ -70,7 +70,13 @@ class TestLogLevel:
 
         assert named - set(main.MANAGED_LOGGERS) == set()
 
-    def test_the_boot_turns_the_two_dependencies_to_the_environment_s_level(self):
+    @pytest.mark.parametrize('raw, expected', [
+        ('CRITICAL', 'CRITICAL'),
+        ('debug', 'DEBUG'),    # #1487: any case
+        ('TRACE', 'INFO'),     # #1487: unknown falls back, the import does not crash
+    ])
+    def test_the_boot_turns_the_two_dependencies_to_the_environment_s_level(
+            self, raw, expected):
         """The side effect of a call whose *name* was dead (#862).
 
         `main` used to bind `scheduler_logger` and `yfinance_logger` and read
@@ -92,10 +98,10 @@ class TestLogLevel:
 
         result = subprocess.run(
             [sys.executable, '-c', program], capture_output=True, text=True,
-            env={**os.environ, 'LOG_LEVEL': 'CRITICAL'})
+            env={**os.environ, 'LOG_LEVEL': raw})
 
         assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == 'CRITICAL,CRITICAL,CRITICAL'
+        assert result.stdout.strip() == ','.join([expected] * 3)
 
     def test_an_unknown_level_is_refused(self):
         with pytest.raises(ValueError):
