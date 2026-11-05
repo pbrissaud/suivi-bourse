@@ -229,7 +229,7 @@ export function Notifications() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className="relative flex size-8 items-center justify-center rounded-lg outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:size-11"
+        className="relative flex size-8 items-center justify-center rounded-lg outline-hidden hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:size-11"
         // **Two channels in one name.** The state is the icon's colour, which
         // says nothing to a screen reader, and the count is the badge, which is
         // `aria-hidden` for the same reason every figure drawn twice is. The
