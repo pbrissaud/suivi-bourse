@@ -927,10 +927,11 @@ function ProjectedTax({ row, currency }: { row: AccountRow; currency: string | n
 function EventName({ event }: { event: LedgerEvent }) {
   const identity = identityOf(event)
   const name = nameOf(event)
-  if (identity.name === null) return <span className="block truncate">{name ?? ABSENT}</span>
+  if (identity.name === null)
+    return <span className="block truncate font-medium">{name ?? ABSENT}</span>
   return (
     <span className="flex min-w-0 items-baseline gap-2">
-      <span className="truncate">{name}</span>
+      <span className="truncate font-medium">{name}</span>
       <Ticker symbol={identity.ticker as string} />
     </span>
   )
