@@ -194,11 +194,24 @@ def test_the_long_name_step_adds_a_null_column_and_keeps_the_quote(tmp_path):
 
 def test_the_backward_failure_step_adds_a_null_column(tmp_path):
     """A store from before #1460 keeps its quotes, and none of them has failed."""
-    path, connection = _before(tmp_path, 'add_backward_failed_at')
+    # The table as the released DDL spelled it, built here rather than altered:
+    # the schema moves in store_steps alone.
+    column = ("    splits_read_at        TIMESTAMPTZ,              -- when the split history was last read (#760)\n"
+              "    backward_failed_at    TIMESTAMPTZ);")
+    assert column in store_module.DDL
+    legacy = store_module.DDL.replace(
+        column, "    splits_read_at        TIMESTAMPTZ);")
+
+    path = tmp_path / 'before.duckdb'
+    connection = duckdb.connect(str(path))
+    connection.execute(legacy)
+    connection.executemany(
+        "INSERT INTO schema_step (step, applied_at) "
+        "VALUES (?, TIMESTAMPTZ '2026-10-01 00:00:00+00')",
+        [[name] for name in RELEASED if name != 'add_backward_failed_at'])
     connection.execute("INSERT INTO symbol VALUES ('AAPL')")
     connection.execute(
         "INSERT INTO symbol_quote (symbol, currency) VALUES ('AAPL', 'USD')")
-    connection.execute('ALTER TABLE symbol_quote DROP COLUMN backward_failed_at')
     connection.close()
 
     opened = store_module.open_store(path, schema_steps.STEPS)
