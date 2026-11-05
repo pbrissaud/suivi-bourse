@@ -211,7 +211,7 @@ function Item({
         </span>
         <Switch
           aria-label={t('settings.refs.follow', { index: row.index })}
-          className="max-md:after:-inset-3.5"
+          className="pointer-coarse:after:-inset-3.5"
           checked={checked}
           disabled={busy}
           onCheckedChange={onToggle}

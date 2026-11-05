@@ -36,13 +36,29 @@ export function ThemeLeaveDialog({
           <DialogDescription>{t('settings.theme.leave.body')}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onStay}>
+          <Button
+            type="button"
+            className="pointer-coarse:min-h-11"
+            variant="ghost"
+            onClick={onStay}
+          >
             {t('settings.theme.leave.stay')}
           </Button>
-          <Button type="button" variant="secondary" disabled={busy} onClick={onDiscard}>
+          <Button
+            type="button"
+            className="pointer-coarse:min-h-11"
+            variant="secondary"
+            disabled={busy}
+            onClick={onDiscard}
+          >
             {t('settings.theme.leave.discard')}
           </Button>
-          <Button type="button" disabled={busy} onClick={onApply}>
+          <Button
+            type="button"
+            className="pointer-coarse:min-h-11"
+            disabled={busy}
+            onClick={onApply}
+          >
             {t('settings.theme.apply')}
           </Button>
         </div>

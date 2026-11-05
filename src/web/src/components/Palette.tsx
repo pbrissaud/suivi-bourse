@@ -255,7 +255,7 @@ export function Palette() {
         variant="ghost"
         size="icon"
         aria-label={t('palette.open')}
-        className="size-8 rounded-lg text-muted-foreground lg:h-8.5 lg:w-50 lg:justify-start lg:gap-2.5 lg:border lg:border-input lg:bg-card lg:pr-2 lg:pl-2.5 xl:w-70"
+        className="size-8 rounded-lg text-muted-foreground pointer-coarse:min-h-11 pointer-coarse:min-w-11 lg:h-8.5 lg:w-50 lg:justify-start lg:gap-2.5 lg:border lg:border-input lg:bg-card lg:pr-2 lg:pl-2.5 xl:w-70"
         onClick={() => setOpen(true)}
       >
         <Search className="size-3.75" />

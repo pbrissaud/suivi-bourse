@@ -87,7 +87,7 @@ export function SecuritySection({ read }: { read: SectionRead }) {
         <Switch
           id={SWITCH_ID}
           aria-describedby={enabled ? noteId : `${SWITCH_ID}-description ${noteId}`}
-          className="max-md:after:-inset-3.5"
+          className="pointer-coarse:after:-inset-3.5"
           checked={enabled}
           onCheckedChange={(on) => procedure(on ? 'enable' : 'disable')}
         />
