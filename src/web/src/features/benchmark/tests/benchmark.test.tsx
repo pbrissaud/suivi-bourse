@@ -671,6 +671,7 @@ describe('each account over its own period', () => {
     ['not_computed', 'Calcul en cours', /pas encore calculées/, false],
     ['nothing_held', 'Rien à comparer', /pas sur les liquidités/, true],
     ['no_rate_on_seed', 'Total non comparable', /un taux de change manque/, false],
+    ['never_priced', 'Aucun cours reçu', /aucune courbe à comparer/, false],
     [undefined, 'Rien à comparer pour l’instant', /Enregistrez vos premiers événements/, true],
     ['from_a_newer_server', 'Rien à comparer pour l’instant', /Enregistrez/, true],
   ] as const)('names why there is nothing to compare: %s', async (reason, title, body, link) => {
@@ -689,6 +690,23 @@ describe('each account over its own period', () => {
     if (reason !== undefined && reason !== 'from_a_newer_server') {
       expect(screen.queryByText(/Enregistrez vos premiers événements/)).not.toBeInTheDocument()
     }
+  })
+
+  it('sends a reference the market answered empty to the System page, no duration (#1510)', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reason: 'never_priced',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      followed: ['CW8.PA'],
+      ready: [],
+    })
+
+    expect(await screen.findByRole('link', { name: 'Voir la page Système' })).toHaveAttribute(
+      'href',
+      '/system',
+    )
+    expect(screen.queryByText(/vient de commencer|retenté/)).not.toBeInTheDocument()
   })
 
   it('renders nothing on a single account, where the row repeats the head', async () => {

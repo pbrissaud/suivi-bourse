@@ -56,6 +56,8 @@ export interface BenchmarkReference {
   requested: boolean
   /** The backward pass's last request failed (#1460): its turn came, and it failed. */
   failing: boolean
+  /** The backward pass finished and the market returned no price at all (#1510). */
+  never_priced: boolean
 }
 
 /** The reconstruction bar, fed from the store and never from the recorder. */
@@ -122,7 +124,7 @@ export interface BenchmarkResponse {
    * Why there is nothing to compare, on `nothing_to_compare` only (#1207).
    * Only `no_events` is an empty ledger; absent or unknown reads as it.
    */
-  reason?: 'no_events' | 'not_computed' | 'nothing_held' | 'no_rate_on_seed'
+  reason?: 'no_events' | 'not_computed' | 'nothing_held' | 'no_rate_on_seed' | 'never_priced'
   reference: string | null
   index?: string | null
   inception?: string | null

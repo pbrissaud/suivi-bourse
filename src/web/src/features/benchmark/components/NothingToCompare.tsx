@@ -1,7 +1,7 @@
 /**
  * Why there is nothing to compare, in the server's words (#1207).
  *
- * The server reaches `nothing_to_compare` for four causes, and only
+ * The server reaches `nothing_to_compare` for five causes, and only
  * `no_events` is an empty ledger: an owner with years of events must not be
  * told to record their first ones. An absent or unknown reason reads as
  * `no_events`, so an older or newer server still renders. The ledger is the
@@ -44,6 +44,19 @@ export function NothingToCompare({ reason }: { reason: BenchmarkResponse['reason
         <EmptyState
           title={t('benchmark.empty.noTotal.title')}
           description={t('benchmark.empty.noTotal.body')}
+        />
+      )
+    case 'never_priced':
+      // #1510: nothing more is coming, so no duration and no « retried ».
+      return (
+        <EmptyState
+          title={t('benchmark.empty.neverPriced.title')}
+          description={t('benchmark.empty.neverPriced.body')}
+          action={
+            <Link to="/system" className="font-medium underline underline-offset-4">
+              {t('benchmark.followed.system')}
+            </Link>
+          }
         />
       )
     default:

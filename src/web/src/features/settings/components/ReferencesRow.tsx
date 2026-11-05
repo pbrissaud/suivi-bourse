@@ -61,7 +61,8 @@ function Summary({ rows }: { rows: readonly BenchmarkReference[] }) {
 
   const ready = followed.filter((row) => row.ready)
   const pending = followed.filter((row) => !row.ready)
-  const running = pending.find((row) => row.waiting === null)
+  const running = pending.find((row) => row.waiting === null && !row.never_priced)
+  const empty = pending.filter((row) => row.never_priced)
   const percent = running ? flooredPercent(running.ratio) : null
   const queued = pending.filter((row) => row.waiting === 'queued')
 
@@ -78,6 +79,9 @@ function Summary({ rows }: { rows: readonly BenchmarkReference[] }) {
         : t(running.failing ? 'settings.refs.failing' : 'settings.refs.starting', {
             index: running.index,
           })
+      : null,
+    empty.length > 0
+      ? t('settings.refs.neverPriced', { names: f.list(empty.map((row) => row.index)) })
       : null,
     queued.length > 0
       ? t('settings.refs.waiting', { names: f.list(queued.map((row) => row.index)) })

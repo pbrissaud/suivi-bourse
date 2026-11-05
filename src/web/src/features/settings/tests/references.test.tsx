@@ -107,6 +107,23 @@ describe('the row in Portfolio', () => {
     expect(screen.queryByText('CAC 40 en téléchargement.')).toBeNull()
   })
 
+  it('says a reference the market answered empty has no price, and names the next one downloading (#1510)', async () => {
+    serve(
+      aBenchmarkReferences({
+        'C40.PA': { followed: true, requested: true, never_priced: true },
+        'CSPX.AS': { followed: true },
+      }),
+      ['C40.PA', 'CSPX.AS'],
+    )
+    renderApp({ url: '/settings' })
+
+    expect(
+      await screen.findByText(/CAC 40 : le marché n’a renvoyé aucun cours\./),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/CAC 40 en téléchargement/)).toBeNull()
+    expect(screen.getByText(/S&P 500 en téléchargement\./)).toBeInTheDocument()
+  })
+
   it('opens the sheet from #portfolio-references, with the first switch focused', async () => {
     serve(aBenchmarkReferences())
     renderApp({ url: '/settings#portfolio-references' })
