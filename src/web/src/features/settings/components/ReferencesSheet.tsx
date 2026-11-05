@@ -275,6 +275,7 @@ function Download({ row, rows }: { row: BenchmarkReference; rows: readonly Bench
       ratio={row.ratio}
       requested={row.requested}
       failing={row.failing}
+      neverPriced={row.never_priced}
     />
   )
 }

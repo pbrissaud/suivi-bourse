@@ -28,6 +28,7 @@ export function ReferenceProgress({
   ratio,
   requested,
   failing,
+  neverPriced,
 }: {
   index: string
   reached: string | null
@@ -37,6 +38,8 @@ export function ReferenceProgress({
   requested: boolean
   /** Its last request failed (#1460): its turn came, so it is never « waiting ». */
   failing: boolean
+  /** Finished with no price at all (#1510): nothing is coming, never « starting ». */
+  neverPriced: boolean
 }) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -53,11 +56,13 @@ export function ReferenceProgress({
               percent: percent / 100,
             })
           : t(
-              failing
-                ? 'benchmark.refs.failing'
-                : requested
-                  ? 'benchmark.refs.starting'
-                  : 'benchmark.refs.waiting',
+              neverPriced
+                ? 'benchmark.refs.neverPriced'
+                : failing
+                  ? 'benchmark.refs.failing'
+                  : requested
+                    ? 'benchmark.refs.starting'
+                    : 'benchmark.refs.waiting',
             )}
       </p>
       {measured ? (

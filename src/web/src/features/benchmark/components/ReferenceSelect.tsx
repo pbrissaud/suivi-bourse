@@ -122,9 +122,12 @@ function Note({ rows }: { rows: readonly BenchmarkReference[] | undefined }) {
   const f = useFormatters()
 
   const pending = (rows ?? []).filter((row) => row.followed && !row.ready)
-  const running = pending.find((row) => row.waiting === null)
+  const running = pending.find((row) => row.waiting === null && !row.never_priced)
   const percent = running ? flooredPercent(running.ratio) : null
-  const waiting = pending.filter((row) => row !== running && row.waiting !== 'no_events')
+  const empty = pending.filter((row) => row.never_priced)
+  const waiting = pending.filter(
+    (row) => row !== running && row.waiting !== 'no_events' && !row.never_priced,
+  )
 
   const said = [
     running
@@ -133,6 +136,9 @@ function Note({ rows }: { rows: readonly BenchmarkReference[] | undefined }) {
         : t(running.failing ? 'benchmark.select.failing' : 'benchmark.select.starting', {
             index: running.index,
           })
+      : null,
+    empty.length > 0
+      ? t('benchmark.select.neverPriced', { index: f.list(empty.map((row) => row.index)) })
       : null,
     waiting.length > 0
       ? t('benchmark.select.waiting', { index: f.list(waiting.map((row) => row.index)) })

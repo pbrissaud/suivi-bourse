@@ -1339,6 +1339,7 @@ export function aBenchmarkReferences(
     ratio: null,
     requested: false,
     failing: false,
+    never_priced: false,
     ...overrides[entry.symbol],
   }))
 }

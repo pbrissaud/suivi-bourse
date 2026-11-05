@@ -54,6 +54,7 @@ export function ReferenceRebuild({
           ratio={rebuild.ratio}
           requested={rebuild.requested}
           failing={rebuild.failing}
+          neverPriced={false}
         />
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="max-md:h-11">
