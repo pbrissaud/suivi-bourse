@@ -146,7 +146,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
         return {**head, 'state': REBUILDING,
                 'rebuild': _rebuild(store, symbol, window[0], now)}
 
-    if quotes.oldest_ts(store, symbol) is None:
+    if _answered_empty(store, symbol):
         return {**head, 'state': NOTHING_TO_COMPARE, 'reason': NEVER_PRICED}
 
     prices = quotes.price_series(store, symbol)
@@ -228,8 +228,19 @@ def never_priced(store, snapshot, symbols: List[str], now: datetime
     terminal = quotes.terminal_symbols(
         store, {symbol: windows[symbol] for symbol in symbols
                 if symbol in windows}, now)
-    return {symbol for symbol in terminal
-            if quotes.oldest_ts(store, symbol) is None}
+    return {symbol for symbol in terminal if _answered_empty(store, symbol)}
+
+
+def _answered_empty(store, symbol: str) -> bool:
+    """Asked at least once, and not one price stored.
+
+    **The request is part of the fact.** A ledger whose first day is today is
+    terminal before anything was asked (the anchor is already on the target),
+    and that fund has simply not had its turn.
+    """
+    if quotes.oldest_ts(store, symbol) is not None:
+        return False
+    return quotes.oldest_window_tried(store, symbol) is not None
 
 
 def ready(store, snapshot, symbol: str, now: datetime) -> bool:

@@ -769,6 +769,17 @@ def test_a_reference_the_market_answered_empty_never_reads_as_starting(store):
     assert 'rebuild' not in payload
 
 
+def test_a_ledger_starting_today_is_not_answered_empty_before_any_request(store):
+    """A first day of today is terminal before the backward pass has asked."""
+    _follow(store)
+    today = NOW.date().isoformat()
+    snapshot = _snapshot([_invest(today, 'pea', 1000.0)])
+
+    assert benchmark_view.never_priced(store, snapshot, [REFERENCE], NOW) == set()
+    assert benchmark_view.comparison(store, snapshot, NOW).get('reason') != (
+        benchmark_view.NEVER_PRICED)
+
+
 def test_a_reference_answered_empty_steps_out_of_the_download_queue(store):
     """#1510: it would otherwise hold up every reference behind it forever."""
     _follow(store, REFERENCE, 'CSPX.AS', 'C40.PA')
