@@ -44,7 +44,8 @@ def export_events():
     opened = _store()
     return _file_response(
         events_export.render_events(
-            events_export.select(ledger.read_events(opened), selection),
+            events_export.select(ledger.read_events(opened), selection,
+                                 ledger.yahoo_names(opened)),
             opened.setting('base_currency')),
         _export_name('csv', selection),
         'text/csv; charset=utf-8')
@@ -61,7 +62,8 @@ def export_events_workbook():
     opened = _store()
     return _file_response(
         events_export.render_events_workbook(
-            events_export.select(ledger.read_events(opened), selection),
+            events_export.select(ledger.read_events(opened), selection,
+                                 ledger.yahoo_names(opened)),
             opened.setting('base_currency')),
         _export_name('xlsx', selection),
         XLSX_MIME)

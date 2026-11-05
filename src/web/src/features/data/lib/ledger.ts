@@ -81,19 +81,31 @@ export function cashFlow(
 }
 
 /**
- * The identity column, for both families at once: the ticker in first rank and
- * the label in second when both exist, the label alone on a transfer.
+ * The identity column, for both families at once: the security in first rank —
+ * its name with the ticker beside it, the ticker alone where nobody named it
+ * (#1433) — and the label in second when both exist; the label alone on a
+ * transfer. `name` is read off the event, which the server names at read time
+ * (#1474), and is `null` wherever there is no ticker.
  */
 export interface Identity {
   ticker: string | null
+  name: string | null
   label: string | null
 }
 
 export function identityOf(event: LedgerEvent): Identity {
+  const ticker = event.symbol && event.symbol.trim() !== '' ? event.symbol : null
   return {
-    ticker: event.symbol && event.symbol.trim() !== '' ? event.symbol : null,
+    ticker,
+    name: ticker !== null && event.name && event.name.trim() !== '' ? event.name : null,
     label: event.notes && event.notes.trim() !== '' ? event.notes : null,
   }
+}
+
+/** What a row is called on screen: the name, else the ticker, else the label. */
+export function nameOf(event: LedgerEvent): string | null {
+  const identity = identityOf(event)
+  return identity.name ?? identity.ticker ?? identity.label
 }
 
 /**
@@ -256,7 +268,9 @@ const folded = new WeakMap<LedgerEvent, string>()
 function haystack(event: LedgerEvent): string {
   const known = folded.get(event)
   if (known !== undefined) return known
-  const value = fold([event.symbol, event.notes, accountOf(event)].filter(Boolean).join(' '))
+  // The name leads the identity column (#1433); `export.py`'s `_haystack` reads it too.
+  const name = identityOf(event).name
+  const value = fold([event.symbol, name, event.notes, accountOf(event)].filter(Boolean).join(' '))
   folded.set(event, value)
   return value
 }

@@ -74,15 +74,21 @@ describe('the fields of a type', () => {
 
 describe('the identity of a row', () => {
   it('is the ticker and the label, or the label alone', () => {
-    expect(identityOf(anEvent({ symbol: 'ZZA', notes: 'Ordre au marché' }))).toEqual({
+    expect(identityOf(anEvent({ symbol: 'ZZA', name: null, notes: 'Ordre au marché' }))).toEqual({
       ticker: 'ZZA',
+      name: null,
       label: 'Ordre au marché',
     })
-    // No symbol at all on a transfer: the label is the whole identity.
-    expect(identityOf(anEvent({ symbol: null, notes: 'Virement entrant' }))).toEqual({
+    // No symbol at all on a transfer: the label is the whole identity, and a
+    // name without a ticker names nothing.
+    expect(identityOf(anEvent({ symbol: null, name: 'Zeta', notes: 'Virement entrant' }))).toEqual({
       ticker: null,
+      name: null,
       label: 'Virement entrant',
     })
+    // The name leads where there is one (#1433); a blank one is none.
+    expect(identityOf(anEvent({ symbol: 'ZZA', name: 'Zeta Corp' })).name).toBe('Zeta Corp')
+    expect(identityOf(anEvent({ symbol: 'ZZA', name: ' ' })).name).toBeNull()
     // An empty label is not a label — 7 rows of 285 carry none.
     expect(identityOf(anEvent({ notes: '  ' })).label).toBeNull()
   })
@@ -114,6 +120,18 @@ describe('the reduction', () => {
     expect(filterEvents(events, { ...NO_FILTERS, query: 'EXECUTION' })).toHaveLength(1)
     expect(filterEvents(events, { ...NO_FILTERS, type: 'DEPOSIT' })).toHaveLength(1)
     expect(filterEvents(events, { ...NO_FILTERS, account: 'alpha' })).toHaveLength(events.length)
+  })
+
+  it('reads the security’s name, which leads the identity column (#1433)', () => {
+    const events = [
+      anEvent({ id: 'a', symbol: 'ZZA', name: 'Zéta Alpha', notes: null }),
+      anEvent({ id: 'b', symbol: 'ZZB', name: null, notes: null }),
+      // A cash movement names no security, whatever its `name` says.
+      anEvent({ id: 'c', event_type: 'DEPOSIT', symbol: null, name: 'Zeta', notes: null }),
+    ]
+    expect(filterEvents(events, { ...NO_FILTERS, query: 'zeta alpha' }).map((e) => e.id)).toEqual([
+      'a',
+    ])
   })
 
   it('reduces to a whole set of securities, cash movements excluded', () => {

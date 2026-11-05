@@ -663,6 +663,35 @@ def test_the_search_reads_what_the_table_shows_accents_folded(tmp_path):
     assert found('nothing here') == []
 
 
+def test_the_search_reads_the_name_the_ledger_shows(tmp_path):
+    """The name leads the identity column since #1433, so it is searched too.
+
+    A declared one, or Yahoo's for a row nobody named — the name ``/api/events``
+    serves — and never on a cash movement, which names no security.
+    """
+    _, opened = install(tmp_path / 'a', {
+        '2024.csv': ("date,event_type,account,symbol,name,quantity,unit_price,"
+                     "fee,amount,notes\n"
+                     "2024-01-02,DEPOSIT,pea,,,,,,2000.00,\n"
+                     "2024-01-15,BUY,pea,AI.PA,Air Liquide,10,168.40,,,\n"
+                     "2024-02-15,BUY,pea,CW8.PA,,1,500.00,,,\n"),
+        'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    def found(query, names=None):
+        return [event.symbol for event
+                in events_export.select(events,
+                                        events_export.Selection(query=query),
+                                        names)]
+
+    assert found('liquide') == ['AI.PA']
+    assert found('amundi') == []
+    assert found('amundi', {'CW8.PA': 'Amundi MSCI World'}) == ['CW8.PA']
+    # The declared name wins over Yahoo's, as on the wire.
+    assert found('other', {'AI.PA': 'Other Name'}) == []
+
+
 def test_a_selection_of_no_row_is_a_file_with_no_row(tmp_path):
     """A reduction that retains nothing is a header, never an error."""
     _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
