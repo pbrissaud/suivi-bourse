@@ -49,7 +49,7 @@
  * answers from process memory and never opens the store (#668), so it was in
  * the list to be short-circuited on and nothing else.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { RowSelectionState } from '@tanstack/react-table'
 
@@ -327,26 +327,25 @@ export function Ledger({
     setBudget(PAGE)
   }
   const page = reveal(shown, budget)
+  const more = useCallback(() => setBudget((current) => current + PAGE), [])
 
-  // **The last packet takes the control the reader just pressed with it.** With
-  // nothing done about it the focus falls to `<body>` and a reader without a
-  // pointer loses their place in a table of two hundred rows; the region that
-  // replaced the button takes the focus instead. It is also the one thing on
-  // this surface worth announcing — forty rows arriving is a change with no
-  // sound — so the region is polite and holds both sentences rather than each
-  // of them holding its own.
+  // **The next forty arrive as the tail comes into view** — on a phone, where
+  // the page scrolls. On a desktop the table scrolls in its own box, so the table
+  // watches its own last row (`onNearEnd`) and this tail is always on screen.
+  // The rows are in memory: no button, no wait, a `setState` and a render.
   const tail = useRef<HTMLDivElement>(null)
-  const offeredMore = useRef(false)
   useEffect(() => {
-    if (!page.atEnd) {
-      offeredMore.current = true
-      return
-    }
-    if (offeredMore.current && document.activeElement === document.body) {
-      tail.current?.focus()
-    }
-    offeredMore.current = false
-  }, [page.atEnd])
+    const node = tail.current
+    if (!isMobile || page.atEnd || !node) return
+    const watch = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) more()
+      },
+      { rootMargin: '0px 0px 300px 0px' },
+    )
+    watch.observe(node)
+    return () => watch.disconnect()
+  }, [isMobile, page.atEnd, budget, more])
 
   // **The tab is its ledger, and only its ledger** (#829). There is no
   // band left to raise for the second read: `/api/accounts` failing costs this
@@ -371,6 +370,46 @@ export function Ledger({
     onEdit: setEditing,
     fresh,
   }
+
+  // The page's gestures on the ledger: placed by the toolbar below.
+  const gestures = (
+    <div className="flex flex-wrap items-center gap-2 max-md:basis-full md:ml-auto">
+      <UploadZone upload={upload} compact label={t('data.toolbar.import')} />
+      {files.events ? (
+        <ExportMenu
+          files={files}
+          // The chips, at the instant the menu is clicked (#796). They
+          // live here because they reduce the table, and the export's
+          // third entry is the same reduction asked of the store —
+          // which is why what travels is the five parameters and never
+          // the rows they retain.
+          selection={filters}
+          selected={shown.length}
+          // The ledger entire, for the two entries whose perimeter it
+          // is: the count is a note on what the file will hold.
+          total={all.length}
+        />
+      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        className="pointer-coarse:min-h-11 max-md:ml-auto"
+        // Where the line is too narrow for the three, the visible label is the
+        // verb; the name stays the whole action.
+        aria-label={isMobile ? t('data.new') : undefined}
+        onClick={() => setEditing(null)}
+      >
+        {isMobile ? (
+          <>
+            <span className="@md/toolbar:hidden">{t('data.new.short')}</span>
+            <span className="hidden @md/toolbar:inline">{t('data.new')}</span>
+          </>
+        ) : (
+          t('data.new')
+        )}
+      </Button>
+    </div>
+  )
 
   return (
     <div className="space-y-6">
@@ -472,8 +511,14 @@ export function Ledger({
                 focus. The search and the three menus lead; the page's gestures
                 ride at the right and wrap to a line of their own, still
                 right-aligned, when the row is full. No control is hidden at any
-                width. */}
-            <div className="flex flex-wrap items-center gap-2">
+                width.
+
+                **On a phone the gestures come first**, on a line of their own,
+                and the reduction is one line: the search, Type, Période.
+                Nothing stretches: both lines start on the left edge.
+                The order is the DOM's, so the tab order follows the eye. */}
+            <div className="@container/toolbar flex flex-wrap items-center gap-2">
+              {isMobile ? gestures : null}
               <LedgerSearch filters={filters} onChange={reduce} />
               <LedgerFacets
                 filters={filters}
@@ -483,32 +528,7 @@ export function Ledger({
                 events={all}
                 accounts={accountsNamed(all)}
               />
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <UploadZone upload={upload} compact label={t('data.toolbar.import')} />
-                {files.events ? (
-                  <ExportMenu
-                    files={files}
-                    // The chips, at the instant the menu is clicked (#796). They
-                    // live here because they reduce the table, and the export's
-                    // third entry is the same reduction asked of the store —
-                    // which is why what travels is the five parameters and never
-                    // the rows they retain.
-                    selection={filters}
-                    selected={shown.length}
-                    // The ledger entire, for the two entries whose perimeter it
-                    // is: the count is a note on what the file will hold.
-                    total={all.length}
-                  />
-                ) : null}
-                <Button
-                  type="button"
-                  size="sm"
-                  className="pointer-coarse:min-h-11"
-                  onClick={() => setEditing(null)}
-                >
-                  {t('data.new')}
-                </Button>
-              </div>
+              {isMobile ? null : gestures}
             </div>
 
             {/* **The summary line, always there** (#1278): the count, what the
@@ -586,7 +606,9 @@ export function Ledger({
                 {...drop.handlers}
                 data-drop="ledger"
                 className={cn(
-                  '@container/ledger relative',
+                  // The shell's bottom padding, given back: on a desktop the
+                  // tail is the window's last line (the table scrolls inside).
+                  '@container/ledger relative md:-mb-5 lg:-mb-6',
                   drop.over && 'outline-[1.5px] -outline-offset-1 outline-primary outline-dashed',
                 )}
               >
@@ -600,7 +622,7 @@ export function Ledger({
                 ) : null}
                 {/* Below 768 px the table is a list (#1339): same props, same
                     wrapper, so the drop and the reveal tail are shared. */}
-                {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} />}
+                {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} onNearEnd={more} />}
 
                 {/* **The reveal speaks, and the read did not**.
                       Both sentences below describe rows the app already holds —
@@ -612,13 +634,12 @@ export function Ledger({
 
                       And there is **no spinner**, in this state or in any
                       other. There is not even a wait to dress: the next forty
-                      rows are in memory, and pressing the button is a
+                      rows are in memory, and scrolling to them is a
                       `setState` and a render. */}
                 <div
                   ref={tail}
-                  tabIndex={-1}
                   aria-live="polite"
-                  className="flex flex-wrap items-center justify-center gap-3 border-t px-4 py-3.5 outline-none"
+                  className="flex flex-wrap items-center justify-center gap-3 border-t px-4 py-3.5"
                 >
                   {page.atEnd ? (
                     <p className="text-xs text-muted-foreground">
@@ -630,20 +651,9 @@ export function Ledger({
                       {t('data.ledger.end', { reduced: reduces(filters) ? 'yes' : 'no' })}
                     </p>
                   ) : (
-                    <>
-                      <span className="text-xs text-muted-foreground">
-                        {t('data.ledger.shown', { shown: page.shown, total: page.total })}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="pointer-coarse:min-h-11"
-                        onClick={() => setBudget((current) => current + PAGE)}
-                      >
-                        {t('data.ledger.more')}
-                      </Button>
-                    </>
+                    <span className="text-xs text-muted-foreground">
+                      {t('data.ledger.shown', { shown: page.shown, total: page.total })}
+                    </span>
                   )}
                 </div>
               </div>

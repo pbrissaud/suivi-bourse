@@ -674,12 +674,12 @@ export function byDateDescending(events: readonly LedgerEvent[]): LedgerEvent[] 
 
 /**
  * **The rendering budget**: how many rows a first reveal draws, and
- * how many each *show more* adds.
+ * how many each scroll to the last row adds.
  *
  * Forty is not a page size in the usual sense, because nothing is fetched a
  * second time: `GET /api/events` answers from the published snapshot in process
  * memory and hands back the ledger entire, so what this number bounds is the
- * number of `<tr>` in the document and nothing else. It is why the control below
+ * number of `<tr>` in the document and nothing else. It is why the sentence below
  * the table may speak while the table is on screen — it describes rows the app
  * already holds — and why no state of this surface has a wait to dress.
  */

@@ -19,6 +19,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 import { installMatchMedia, setViewportWidth } from '@/test/media'
 import { sessionResumed } from '@/lib/session'
 import { server } from '@/test/server'
+import { StubIntersectionObserver } from '@/test/intersection'
 
 // Neither jsdom 30 nor the Node it runs on provides Web Storage here, and the
 // app degrades to *not remembered* when it is missing — which would quietly
@@ -77,20 +78,11 @@ if (!globalThis.ResizeObserver) {
     disconnect() {}
   }
 }
-// dnd-kit watches the dragged card's position with one; jsdom never scrolls.
+// dnd-kit watches the dragged card's position with one; the ledger reveals its
+// rows with one. jsdom never scrolls, so `reachTheEnd()` stands in for it.
 if (!globalThis.IntersectionObserver) {
-  globalThis.IntersectionObserver = class {
-    readonly root = null
-    readonly rootMargin = ''
-    readonly scrollMargin = ''
-    readonly thresholds = []
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-    takeRecords() {
-      return []
-    }
-  }
+  globalThis.IntersectionObserver =
+    StubIntersectionObserver as unknown as typeof IntersectionObserver
 }
 
 // `fetch` in this environment is Node's, and Node's refuses a relative URL —

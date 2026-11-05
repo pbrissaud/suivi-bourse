@@ -46,8 +46,13 @@ export function LedgerSearch({ filters, onChange }: LedgerSearchProps) {
   // a field with its own mark rather than as a bare box, which is what tells it
   // apart from the form's inputs at a glance. The label stays screen-reader
   // only — the icon is decoration and never a name.
+  //
+  // It takes what is left of its line, so a toolbar that wrapped reads as full
+  // rows rather than a staircase; only where the whole toolbar holds on one line
+  // with room to spare is it capped (the toolbar is the container). On a phone it
+  // shares its line with the two menus instead of taking one of its own.
   return (
-    <div className="relative min-w-0 grow basis-60 sm:max-w-80">
+    <div className="relative min-w-0 grow basis-60 max-md:basis-0 @5xl/toolbar:max-w-80">
       <label htmlFor="ledger-search" className="sr-only">
         {t('data.search.label')}
       </label>

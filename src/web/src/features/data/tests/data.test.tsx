@@ -44,6 +44,7 @@ import {
   ledgerEvents,
 } from '@/test/factories'
 import { expectNoBox } from '@/test/noBox'
+import { reachTheEnd } from '@/test/intersection'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -676,25 +677,27 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     // process memory, and handed back the ledger entire.
     expect(rowsOf(ledger())).toHaveLength(40)
     expect(screen.getByText('40 sur 176 affichés')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Afficher la suite' })).toBeInTheDocument()
+    // No button: the next packet comes with the scroll.
+    expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
     // The end is not said before the last row has arrived.
     expect(screen.queryByText(/Fin du grand livre/)).not.toBeInTheDocument()
     // And there is no wait to dress, so nothing dresses one.
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
-  it('adds forty per gesture, and says the end at the last row', async () => {
-    const { user } = renderData(aLongLedger(85))
+  it('adds forty each time the last row comes into view, and says the end at the last row', async () => {
+    renderData(aLongLedger(85))
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    reachTheEnd()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
     expect(screen.getByText('80 sur 85 affichés')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    reachTheEnd()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(85))
-    // The control goes with the rows it was promising: there are none left.
-    expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
+    // Nothing left to reveal, so a further scroll reveals nothing.
+    reachTheEnd()
+    expect(rowsOf(ledger())).toHaveLength(85)
     expect(screen.getByText('Fin du grand livre')).toBeInTheDocument()
   })
 
@@ -704,7 +707,6 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
 
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(screen.getByText('Fin du grand livre')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
   })
 
   it('counts the reduction and not the store, and starts it over when a chip moves', async () => {
@@ -727,7 +729,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     const { user } = renderData(mixed)
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    reachTheEnd()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
 
     // The chips are a reduction, so both sentences are true of what survives
@@ -789,24 +791,6 @@ describe('a reduction in force always has the chip that releases it', () => {
     )
     await user.click(within(after).getByRole('button', { name: /^Tous les comptes/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
-  })
-
-  it('does not drop the reader on the floor when the last packet takes the button', async () => {
-    const { user } = renderData(aLongLedger(50))
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-
-    const more = screen.getByRole('button', { name: 'Afficher la suite' })
-    more.focus()
-    await user.click(more)
-
-    // The control the reader just pressed is gone with the rows it promised. A
-    // focus left on `<body>` loses a keyboard reader their place in fifty rows,
-    // so the region that replaced it takes the focus — and it is polite, which
-    // is what makes forty rows arriving a change with a sound.
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(50))
-    expect(document.activeElement).not.toBe(document.body)
-    expect(document.activeElement).toHaveTextContent('Fin du grand livre')
-    expect(document.activeElement).toHaveAttribute('aria-live', 'polite')
   })
 })
 
@@ -952,7 +936,7 @@ describe('deleting the ticked rows (#1113)', () => {
     expect(screen.getByText('120 sélectionnés')).toBeInTheDocument()
 
     // Revealing more shows the new rows already ticked.
-    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    reachTheEnd()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
     expect(rowBox(ledger(), 79)).toBeChecked()
   })
@@ -2753,7 +2737,7 @@ describe('the ledger on a phone (#1339)', () => {
   }
 
   it('is a list of forty items revealed forty at a time, with no table and no card', async () => {
-    const { user } = await renderPhone(aLongLedger(120))
+    await renderPhone(aLongLedger(120))
 
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(items()).toHaveLength(40)
@@ -2766,7 +2750,7 @@ describe('the ledger on a phone (#1339)', () => {
       ),
     ).toBe(true)
 
-    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    reachTheEnd()
     expect(items()).toHaveLength(80)
   })
 
@@ -2922,6 +2906,16 @@ describe('the ledger on a phone (#1339)', () => {
       return value
     })
     expect(seen[0]).toBe(true)
+  })
+
+  it('puts the gestures above the reduction, in the tab order as on screen', async () => {
+    await renderPhone(aLongLedger(120))
+
+    const enter = screen.getByRole('button', { name: 'Saisir un événement' })
+    const search = screen.getByLabelText('Rechercher')
+    expect(enter.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The verb alone where the line is narrow; the whole action from 28 rem up.
+    expect(within(enter).getByText('Saisir')).toHaveClass('@md/toolbar:hidden')
   })
 })
 
