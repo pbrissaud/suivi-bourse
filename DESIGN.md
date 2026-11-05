@@ -321,6 +321,7 @@ and in a mockup alike. A mockup names the rung (the design system's `.section-ti
 - Under 768 px the Shares table is a list on the background (#1338): one ruled item per held line, the name and valuation on the first line, the ticker and the latent gain on the second, the totals as four ruled rows, and a sort select with a direction button in the toolbar. The closed lines and the sheet's per-account breakdown are lists too.
 - A table page has no side panel: its filters are a toolbar above the table, its
   selection's actions appear only with a selection.
+- Under 768 px the ledger's toolbar leads with its gestures on a line of their own (Importer, Exporter, then Saisir at the right, whose visible label is the verb alone where the line is too narrow for the whole action); the reduction is one line under it: the search, Type, Période.
 - The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict. The head reads like the dashboard's: the gap, the verdict, then the two returns on one row. It sits on the ground; the chart, the rebuild status and the per-account table are sections.
 - The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
   flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);

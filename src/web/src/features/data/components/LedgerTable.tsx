@@ -58,7 +58,7 @@
  * The selection itself is the caller's state — it outlives a reduction, and a
  * row hidden by a chip comes back ticked when the chip is let go of.
  */
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   flexRender,
   rowSelectionFeature,
@@ -136,6 +136,8 @@ interface LedgerTableProps {
   onEdit: (event: LedgerEvent) => void
   /** The rows a merge has just written (#1119): marked, then let go of. */
   fresh?: ReadonlySet<string>
+  /** The last drawn row came into view: draw the next ones. */
+  onNearEnd?: () => void
 }
 
 type LedgerColumnId =
@@ -200,6 +202,7 @@ export function LedgerTable({
   onRowSelectionChange,
   onEdit,
   fresh,
+  onNearEnd,
 }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -344,8 +347,52 @@ export function LedgerTable({
   // its ground and lets its own separator scroll away with the rows.
   const head = 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)]'
 
+  // **The box runs down to the bottom of the window**: its ceiling is measured,
+  // not guessed, so the tail under it lands on the page's last line wherever the
+  // toolbar wrapped. What sits below the box (the tail) is read off the layout
+  // too.
+  const tableRef = useRef<HTMLTableElement>(null)
+  const [ceiling, setCeiling] = useState<number>()
+  useLayoutEffect(() => {
+    const box = tableRef.current?.parentElement
+    const wrapper = box?.parentElement
+    if (!box || !wrapper) return
+    const fit = () => {
+      const boxRect = box.getBoundingClientRect()
+      // The wrapper eats the page's bottom padding (`Ledger`'s negative
+      // margin), so the tail sits on the window's last line.
+      const below = wrapper.getBoundingClientRect().bottom - boxRect.bottom
+      setCeiling(window.innerHeight - (boxRect.top + window.scrollY) - below)
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [])
+
+  // **The next forty arrive as the last row comes into view** — in the box, not
+  // the page. The rows are in memory, so this is a render and nothing else. A
+  // keyboard reader gets there too: tabbing onto a row scrolls the box.
+  useLayoutEffect(() => {
+    const table = tableRef.current
+    const last = table?.tBodies[0]?.lastElementChild
+    if (!onNearEnd || !last || budget >= events.length) return
+    if (typeof IntersectionObserver === 'undefined') return
+    const watch = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onNearEnd()
+      },
+      { root: table.parentElement, rootMargin: '0px 0px 300px 0px' },
+    )
+    watch.observe(last)
+    return () => watch.disconnect()
+  }, [onNearEnd, budget, events])
+
   return (
-    <Table containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto">
+    <Table
+      ref={tableRef}
+      containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto"
+      containerStyle={ceiling === undefined ? undefined : { maxHeight: ceiling }}
+    >
       <caption className="sr-only">{t('data.ledger.label')}</caption>
       <TableHeader>
         {table.getHeaderGroups().map((group) => (

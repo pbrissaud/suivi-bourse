@@ -22,13 +22,18 @@ import { cn } from '@/lib/utils'
 function Table({
   className,
   containerClassName,
+  containerStyle,
   ...props
-}: React.ComponentProps<'table'> & { containerClassName?: string }) {
+}: React.ComponentProps<'table'> & {
+  containerClassName?: string
+  containerStyle?: React.CSSProperties
+}) {
   const density = useDensity()
   return (
     <div
       data-slot="table-container"
       className={cn('relative w-full overflow-x-auto', containerClassName)}
+      style={containerStyle}
     >
       <table
         data-slot="table"
