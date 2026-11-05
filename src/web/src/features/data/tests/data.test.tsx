@@ -1139,7 +1139,7 @@ describe('the editor, and where it does not appear', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
 
     // A grant: a quantity, an optional price, and no fee field at all.
     expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
@@ -1170,7 +1170,7 @@ describe('the editor, and where it does not appear', () => {
 })
 
 /** Opens the sheet on the row named `name`, asks for its removal, returns the box. */
-async function askToRemove(user: ReturnType<typeof renderApp>['user'], name = 'ZZC') {
+async function askToRemove(user: ReturnType<typeof renderApp>['user'], name = 'Zeta Gamma') {
   await user.click(within(ledger()).getByRole('button', { name }))
   const sheet = await screen.findByRole('dialog')
   await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
@@ -1519,7 +1519,7 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData([precise])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha' }))
     await waitFor(() => expect(screen.getByLabelText('Prix unitaire')).toHaveValue('40.1234'))
   })
 
@@ -1595,7 +1595,7 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData([priced])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha' }))
 
     const price = await screen.findByLabelText('Prix unitaire')
     await waitFor(() => expect(price).toHaveValue('40'))
@@ -1623,7 +1623,7 @@ describe('the create form, which is the onboarding', () => {
       }),
     )
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
     expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
     await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
 
@@ -1671,7 +1671,7 @@ describe('the create form, which is the onboarding', () => {
       ),
     )
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
     await user.click(await screen.findByRole('button', { name: 'Enregistrer cet événement' }))
     expect(await screen.findByText(/n’est plus dans le grand livre/)).toBeInTheDocument()
 
@@ -1685,7 +1685,7 @@ describe('the create form, which is the onboarding', () => {
       ).not.toBeInTheDocument(),
     )
 
-    await user.click(within(ledger()).getAllByRole('button', { name: 'ZZA' })[0])
+    await user.click(within(ledger()).getAllByRole('button', { name: 'Zeta Alpha' })[0])
     expect(await screen.findByLabelText('Quantité')).toBeInTheDocument()
     expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()
   })
@@ -2360,7 +2360,7 @@ describe('le champ Titre se conduit', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZC' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
 
     expect(await screen.findByLabelText('Ticker')).toHaveValue('ZZC')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
@@ -2732,7 +2732,7 @@ describe('the ticker search', () => {
     const { user } = renderData([anEvent({ id: 'imp', name: 'Zeta Alpha Imported' })])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha Imported' }))
     await screen.findByLabelText('Quantité')
     await save(user)
 
@@ -2758,9 +2758,12 @@ describe('the ledger on a phone (#1339)', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(items()).toHaveLength(40)
     expect(list().closest('[data-slot="card"]')).toBeNull()
-    // Only the account chip is set in Geist Mono; the amount is Geist, tabular.
+    // Only the account chip and the ticker beside a name (#1433) are set in
+    // Geist Mono; the amount is Geist, tabular.
     expect(
-      Array.from(list().querySelectorAll('.font-mono')).every((node) => node.hasAttribute('title')),
+      Array.from(list().querySelectorAll('.font-mono')).every(
+        (node) => node.hasAttribute('title') || /^ZZ[A-Z]$/.test(node.textContent ?? ''),
+      ),
     ).toBe(true)
 
     await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
@@ -2779,7 +2782,9 @@ describe('the ledger on a phone (#1339)', () => {
     ])
 
     const item = items()[0]
-    expect(within(item).getByRole('button', { name: 'ZZA' })).toBeInTheDocument()
+    expect(within(item).getByRole('button', { name: 'Zeta Alpha' })).toBeInTheDocument()
+    // The ticker beside the name, outside the button (#1433).
+    expect(within(item).getByText('ZZA')).toHaveClass('font-mono')
     expect(within(item).getByText('Dividende')).toBeInTheDocument()
     expect(within(item).getByText('alpha')).toHaveClass('font-mono')
     expect(within(item).getByText(/480/)).toHaveClass('tabular')
@@ -2810,7 +2815,7 @@ describe('the ledger on a phone (#1339)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.getByText('1 sélectionné')).toBeInTheDocument()
 
-    await user.click(within(items()[0]).getByRole('button', { name: 'ZZA' }))
+    await user.click(within(items()[0]).getByRole('button', { name: 'Zeta Alpha' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
@@ -3046,7 +3051,7 @@ describe('the cash the form says it will move (#1461)', () => {
     cleanup()
     const edit = renderData([anEvent({ quantity: 5, unit_price: 541.2, fee: 1.35 })])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
-    await edit.user.click(within(ledger()).getByRole('button', { name: 'ZZA' }))
+    await edit.user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha' }))
     await screen.findByLabelText('Quantité')
     expect(said()).toBe('Débité du compte : 2 707,35 €')
   })

@@ -51,7 +51,7 @@ import { Explain } from '@/components/Explain'
 import { SignedFigure } from '@/components/FigurePill'
 import { Stat } from '@/components/Stat'
 import { ShareBar } from '@/components/ShareBar'
-import { EventFigure, TYPE_LABEL } from '@/features/data/components/LedgerTable'
+import { EventFigure, Ticker, TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Section } from '@/components/ui/section'
@@ -79,7 +79,7 @@ import type { Advisory, RuntimeState } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { portfolioTerms, termAmount, termRendering } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { identityOf } from '@/features/data/lib/ledger'
+import { identityOf, nameOf } from '@/features/data/lib/ledger'
 import { problemSentence } from '@/lib/problem'
 import {
   buildShareRows,
@@ -767,7 +767,7 @@ export function AccountDetail({
                       — the ledger's own identity column is what discriminates,
                       here as there (`identityOf`). */}
                     <span className="min-w-0">
-                      <span className="block truncate">{eventName(event) ?? ABSENT}</span>
+                      <EventName event={event} />
                       <span className="block truncate text-xs text-muted-foreground">
                         {t(TYPE_LABEL[event.event_type])} · {f.date(event.date)}
                       </span>
@@ -920,10 +920,21 @@ function ProjectedTax({ row, currency }: { row: AccountRow; currency: string | n
   )
 }
 
-/** The row's own name — the ticker where there is one, the label otherwise. */
-function eventName(event: LedgerEvent): string | null {
+/**
+ * The row's own name — the security's name with its ticker beside it, the
+ * ticker alone where nobody named it, the label otherwise (#1433).
+ */
+function EventName({ event }: { event: LedgerEvent }) {
   const identity = identityOf(event)
-  return identity.ticker ?? identity.label
+  const name = nameOf(event)
+  if (identity.name === null)
+    return <span className="block truncate font-medium">{name ?? ABSENT}</span>
+  return (
+    <span className="flex min-w-0 items-baseline gap-2">
+      <span className="truncate font-medium">{name}</span>
+      <Ticker symbol={identity.ticker as string} />
+    </span>
+  )
 }
 
 /**

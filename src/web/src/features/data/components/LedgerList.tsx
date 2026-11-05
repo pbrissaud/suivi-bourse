@@ -30,10 +30,11 @@ import type { LedgerEvent } from '@/features/data/lib/api'
 import {
   AccountChip,
   EventFigure,
+  Ticker,
   TYPE_LABEL,
   TypePill,
 } from '@/features/data/components/LedgerTable'
-import { identityOf, isEditable, rowKey, selectionState } from '@/features/data/lib/ledger'
+import { identityOf, isEditable, nameOf, rowKey, selectionState } from '@/features/data/lib/ledger'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -104,11 +105,12 @@ export function LedgerList({
         {events.slice(0, Math.max(budget, 0)).map((event, index) => {
           const key = rowKey(event, index)
           const identity = identityOf(event)
-          const name = identity.ticker ?? identity.label
-          // A ticker is short; a label alone may be long. Both take one line,
-          // and the whole text stays in the DOM and in the `title`.
+          const name = nameOf(event)
+          // A name or a label may be long; a ticker alone is short. All take one
+          // line, and the whole text stays in the DOM and in the `title`.
           const shape = 'block min-w-0 max-w-full truncate text-left font-medium'
-          const title = identity.ticker === null ? (name ?? undefined) : undefined
+          const title =
+            identity.ticker !== null && identity.name === null ? undefined : (name ?? undefined)
           return (
             <li
               key={key}
@@ -129,34 +131,38 @@ export function LedgerList({
               />
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  {isEditable(event) ? (
-                    // An editable row is always tappable, a label-less transfer
-                    // included: the dash is then the button, named by its date and type.
-                    <button
-                      type="button"
-                      title={title}
-                      aria-label={
-                        name === null
-                          ? `${f.date(event.date)} · ${t(TYPE_LABEL[event.event_type])}`
-                          : undefined
-                      }
-                      className={cn(
-                        shape,
-                        name === null && 'text-muted-foreground',
-                        'outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring',
-                      )}
-                      onClick={() => onEdit(event)}
-                    >
-                      {name ?? ABSENT}
-                    </button>
-                  ) : (
-                    <span
-                      title={title}
-                      className={cn(shape, name === null && 'text-muted-foreground')}
-                    >
-                      {name ?? ABSENT}
-                    </span>
-                  )}
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    {isEditable(event) ? (
+                      // An editable row is always tappable, a label-less transfer
+                      // included: the dash is then the button, named by its date and type.
+                      <button
+                        type="button"
+                        title={title}
+                        aria-label={
+                          name === null
+                            ? `${f.date(event.date)} · ${t(TYPE_LABEL[event.event_type])}`
+                            : undefined
+                        }
+                        className={cn(
+                          shape,
+                          name === null && 'text-muted-foreground',
+                          'outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring',
+                        )}
+                        onClick={() => onEdit(event)}
+                      >
+                        {name ?? ABSENT}
+                      </button>
+                    ) : (
+                      <span
+                        title={title}
+                        className={cn(shape, name === null && 'text-muted-foreground')}
+                      >
+                        {name ?? ABSENT}
+                      </span>
+                    )}
+                    {/* The ticker beside the name, as on Titres (#1433). */}
+                    {identity.name === null ? null : <Ticker symbol={identity.ticker as string} />}
+                  </span>
                   <span className="tabular shrink-0">
                     <EventFigure event={event} currency={currency} />
                   </span>

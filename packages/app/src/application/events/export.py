@@ -136,8 +136,13 @@ class Selection(NamedTuple):
 NO_SELECTION = Selection()
 
 
-def select(events: Iterable[Event], selection: Selection) -> List[Event]:
-    """The events a selection retains, in the order they arrived."""
+def select(events: Iterable[Event], selection: Selection,
+           names: Optional[Mapping[str, str]] = None) -> List[Event]:
+    """The events a selection retains, in the order they arrived.
+
+    ``names`` is Yahoo's name by symbol (``ledger.yahoo_names``): a row nobody
+    named is searched under the name the ledger shows it with (#1433).
+    """
     needle = fold(selection.query.strip())
     symbols = None if selection.symbols is None else set(selection.symbols)
     kept = []
@@ -155,7 +160,7 @@ def select(events: Iterable[Event], selection: Selection) -> List[Event]:
         if symbols is not None \
                 and (not event.symbol or event.symbol not in symbols):
             continue
-        if needle and needle not in _haystack(event):
+        if needle and needle not in _haystack(event, names or {}):
             continue
         kept.append(event)
     return kept
@@ -173,10 +178,16 @@ def fold(value: str) -> str:
                    if not unicodedata.combining(character)).lower()
 
 
-def _haystack(event: Event) -> str:
-    """What the search reads: everything the identity and account columns show."""
+def _haystack(event: Event, names: Mapping[str, str]) -> str:
+    """What the search reads: everything the identity and account columns show.
+
+    The security's name is one of them since #1433, and it is the declared one
+    or Yahoo's, as ``/api/events`` serves it.
+    """
+    name = (event.name or names.get(event.symbol)) if event.symbol else None
     return fold(' '.join(part for part in
-                         (event.symbol, event.notes, account_of(event)) if part))
+                         (event.symbol, name, event.notes, account_of(event))
+                         if part))
 
 
 # **No `account_type`** since #916: the column it rendered is written

@@ -452,7 +452,9 @@ is in percent from the start of the visible window, never in base 100.
   receipts and agent proposals; `02/03/2026` in a table's date column only, where the
   digits line up.
 - A security is named by the symbol the owner recorded (`CW8.PA`), beside its name where
-  it has one; the movers' badge cuts it to `CW8`. A page names the fund it is about once.
+  it has one: the name in Geist 500, the symbol after it in Geist Mono `2xs`, muted — on
+  Titres, in the ledger's « De quoi il s'agit » and in an account's last events alike. The
+  movers' badge cuts it to `CW8`. A page names the fund it is about once.
 - *Aller au grand livre* / *Go to the ledger*: the one link an empty page offers to the
   ledger. The ledger's first-import state is not an empty state but `EntryPair`: two doors,
   one gesture each (the file picker; *Saisir un événement*), plus a quiet docs link.

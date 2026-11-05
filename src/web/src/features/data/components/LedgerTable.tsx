@@ -85,6 +85,7 @@ import {
   accountOf,
   cashFlow,
   identityOf,
+  nameOf,
   isEditable,
   rowKey,
   selectionState,
@@ -243,7 +244,7 @@ export function LedgerTable({
             aria-label={t('data.select.row', {
               date: f.date(row.original.date),
               type: t(TYPE_LABEL[row.original.event_type]),
-              symbol: identityOf(row.original).ticker ?? identityOf(row.original).label ?? ABSENT,
+              symbol: nameOf(row.original) ?? ABSENT,
             })}
             checked={row.getIsSelected()}
             disabled={!row.getCanSelect()}
@@ -454,24 +455,22 @@ export function AccountChip({ event }: { event: LedgerEvent }) {
  */
 function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: LedgerEvent) => void }) {
   const identity = identityOf(event)
-  const name = identity.ticker ?? identity.label
+  const name = nameOf(event)
 
   if (name === null) return <span className="text-muted-foreground">{ABSENT}</span>
-  // A ticker is short and takes one line; with none, the label is the identity
-  // and may take two — never more, so the row is no taller than a ticker row.
-  // The whole text stays in the DOM and in the `title`.
+  // A security takes one line; with none, the label is the identity and may
+  // take two — never more, so the row is no taller than a security's row. The
+  // whole text stays in the DOM and in the `title`.
   const shape =
     identity.ticker !== null
-      ? 'block max-w-full truncate text-left font-medium'
+      ? 'block min-w-0 max-w-full truncate text-left font-medium'
       : 'line-clamp-2 whitespace-normal break-words text-left font-medium'
-  const title = identity.ticker !== null ? undefined : name
-  if (!isEditable(event))
-    return (
-      <span title={title} className={shape}>
-        {name}
-      </span>
-    )
-  return (
+  const title = identity.ticker !== null && identity.name === null ? undefined : name
+  const own = !isEditable(event) ? (
+    <span title={title} className={shape}>
+      {name}
+    </span>
+  ) : (
     <button
       type="button"
       title={title}
@@ -481,4 +480,18 @@ function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: Ledge
       {name}
     </button>
   )
+  if (identity.name === null) return own
+  // The ticker beside the name, as on Titres (#1433): outside the button, so
+  // the button's name is the name alone, and never truncated.
+  return (
+    <span className="flex min-w-0 items-baseline gap-2">
+      {own}
+      <Ticker symbol={identity.ticker as string} />
+    </span>
+  )
+}
+
+/** A ticker beside a security's name: Geist Mono, small, muted — every page alike (#1433). */
+export function Ticker({ symbol }: { symbol: string }) {
+  return <span className="shrink-0 font-mono text-2xs text-muted-foreground">{symbol}</span>
 }
