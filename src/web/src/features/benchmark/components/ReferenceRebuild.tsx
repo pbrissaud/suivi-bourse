@@ -41,7 +41,11 @@ export function ReferenceRebuild({
   const { t } = useI18n()
 
   return (
-    <Section title={t('benchmark.followed.title', { index })}>
+    <Section
+      title={t(rebuild.failing ? 'benchmark.followed.title.failing' : 'benchmark.followed.title', {
+        index,
+      })}
+    >
       <div className="space-y-4">
         <ReferenceProgress
           index={index}
@@ -49,12 +53,20 @@ export function ReferenceRebuild({
           target={rebuild.target}
           ratio={rebuild.ratio}
           requested={rebuild.requested}
+          failing={rebuild.failing}
         />
-        <Button asChild variant="outline" className="max-md:h-11">
-          <Link to="/settings" hash="portfolio-references">
-            {t('benchmark.followed.manage')}
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" className="max-md:h-11">
+            <Link to="/settings" hash="portfolio-references">
+              {t('benchmark.followed.manage')}
+            </Link>
+          </Button>
+          {rebuild.failing ? (
+            <Button asChild variant="outline" className="max-md:h-11">
+              <Link to="/system">{t('benchmark.followed.system')}</Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
     </Section>
   )

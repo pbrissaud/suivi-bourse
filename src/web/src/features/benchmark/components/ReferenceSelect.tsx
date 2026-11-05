@@ -130,7 +130,9 @@ function Note({ rows }: { rows: readonly BenchmarkReference[] | undefined }) {
     running
       ? percent !== null
         ? t('benchmark.select.downloading', { index: running.index, percent: percent / 100 })
-        : t('benchmark.select.starting', { index: running.index })
+        : t(running.failing ? 'benchmark.select.failing' : 'benchmark.select.starting', {
+            index: running.index,
+          })
       : null,
     waiting.length > 0
       ? t('benchmark.select.waiting', { index: f.list(waiting.map((row) => row.index)) })

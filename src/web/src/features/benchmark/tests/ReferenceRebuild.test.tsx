@@ -26,6 +26,7 @@ function renderRebuild(rebuild: Partial<BenchmarkRebuild>) {
             target: '2009-06-16',
             ratio: null,
             requested: false,
+            failing: false,
             ...rebuild,
           },
         }),
@@ -48,6 +49,22 @@ describe('the download sentence', () => {
 
     expect(await screen.findByText('Le téléchargement vient de commencer.')).toBeInTheDocument()
     expect(screen.queryByText('En attente de son tour…')).toBeNull()
+  })
+
+  it('says a failing download fails, never that it waits, and points to System', async () => {
+    renderRebuild({ requested: false, failing: true })
+
+    expect(
+      await screen.findByText('Le téléchargement échoue pour l’instant ; il sera retenté.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('En attente de son tour…')).toBeNull()
+    expect(
+      screen.getByRole('region', { name: 'MSCI World : téléchargement en échec' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Voir la page Système' })).toHaveAttribute(
+      'href',
+      '/system',
+    )
   })
 
   it('says how far back it got as soon as a close is stored', async () => {

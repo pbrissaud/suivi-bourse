@@ -54,6 +54,8 @@ export interface BenchmarkReference {
   ratio: number | null
   /** The backward pass has asked for a first window: the fund has had its turn. */
   requested: boolean
+  /** The backward pass's last request failed (#1460): its turn came, and it failed. */
+  failing: boolean
 }
 
 /** The reconstruction bar, fed from the store and never from the recorder. */
@@ -67,6 +69,8 @@ export interface BenchmarkRebuild {
   ratio: number | null
   /** The backward pass has asked for a first window: the reference has had its turn. */
   requested: boolean
+  /** The backward pass's last request failed (#1460): its turn came, and it failed. */
+  failing: boolean
 }
 
 /**

@@ -136,6 +136,7 @@ describe('the comparison', () => {
         target: '2009-06-16',
         ratio: 0.55,
         requested: true,
+        failing: false,
       },
     })
     await screen.findByRole('region', { name: /MSCI World en cours de téléchargement/ })
@@ -195,6 +196,7 @@ describe('the comparison', () => {
         target: '2009-06-16',
         ratio: 0.55,
         requested: true,
+        failing: false,
       },
     })
 
@@ -216,6 +218,7 @@ describe('the comparison', () => {
         target: '2009-06-16',
         ratio: 1,
         requested: true,
+        failing: false,
       },
     })
 
@@ -254,6 +257,7 @@ describe('the comparison', () => {
         target: '2009-06-16',
         ratio: 0.555,
         requested: true,
+        failing: false,
       },
     })
 
@@ -813,6 +817,7 @@ describe('the page sits on the ground (#1273)', () => {
     target: '2009-06-16',
     ratio: 0.55,
     requested: true,
+    failing: false,
   }
 
   it('draws the chart and the per-account table as sections, under one hero', async () => {

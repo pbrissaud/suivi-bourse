@@ -97,6 +97,16 @@ describe('the row in Portfolio', () => {
     expect(await screen.findByText('CAC 40 en téléchargement.')).toBeInTheDocument()
   })
 
+  it('says a download that is failing fails, not that it is downloading (#1460)', async () => {
+    serve(aBenchmarkReferences({ 'C40.PA': { followed: true, failing: true } }), ['C40.PA'])
+    renderApp({ url: '/settings' })
+
+    expect(
+      await screen.findByText('CAC 40 : le téléchargement échoue pour l’instant.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('CAC 40 en téléchargement.')).toBeNull()
+  })
+
   it('opens the sheet from #portfolio-references, with the first switch focused', async () => {
     serve(aBenchmarkReferences())
     renderApp({ url: '/settings#portfolio-references' })
