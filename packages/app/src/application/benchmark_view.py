@@ -55,7 +55,7 @@ account's own replay, over its own life. Those rows add up to the head: same
 flows, same seeds, same end.
 """
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from application import accounts as accounts_module
 from application import benchmarks
@@ -83,6 +83,11 @@ NO_EVENTS = 'no_events'
 #: Events, and no account of the perimeter has a written day yet — the perf
 #: pass has not run since they were recorded.
 NOT_COMPUTED = 'not_computed'
+
+#: The backward pass reached its target and the market returned no price at
+#: all over the ledger's period (#1510): a dead ticker answers with empty
+#: frames, not errors. Not a rebuild — nothing more is coming.
+NEVER_PRICED = 'never_priced'
 
 #: Written days, and none on which an account held securities while the fund
 #: was quoted: the comparison is about invested money, not cash.
@@ -115,7 +120,7 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
             in readiness(store, snapshot, following, now).items() if finished]
     chosen = store.setting('benchmark_symbol')
     symbol = (chosen if chosen in done else done[0] if done
-              else next(iter(following)))
+              else downloads(store, snapshot, now)[1] or following[0])
 
     offered = benchmarks.offered(symbol)
     head: Dict[str, Any] = {
@@ -140,6 +145,9 @@ def comparison(store, snapshot, now: datetime) -> Dict[str, Any]:
     if symbol not in quotes.terminal_symbols(store, {symbol: window}, now):
         return {**head, 'state': REBUILDING,
                 'rebuild': _rebuild(store, symbol, window[0], now)}
+
+    if quotes.oldest_ts(store, symbol) is None:
+        return {**head, 'state': NOTHING_TO_COMPARE, 'reason': NEVER_PRICED}
 
     prices = quotes.price_series(store, symbol)
     if not prices:
@@ -207,6 +215,23 @@ def readiness(store, snapshot, symbols: List[str], now: datetime
             for symbol in symbols}
 
 
+def never_priced(store, snapshot, symbols: List[str], now: datetime
+                 ) -> Set[str]:
+    """The ``symbols`` whose backward pass finished with no price stored (#1510).
+
+    The same fact as the System page's ``benchmark_never_priced`` advisory, read
+    over the same window: terminal against ``tracked_windows`` and not one
+    ``price_point``. Nothing more will be fetched for them, so the download
+    queue steps over them.
+    """
+    windows = snapshot.tracked_windows(*symbols)
+    terminal = quotes.terminal_symbols(
+        store, {symbol: windows[symbol] for symbol in symbols
+                if symbol in windows}, now)
+    return {symbol for symbol in terminal
+            if quotes.oldest_ts(store, symbol) is None}
+
+
 def ready(store, snapshot, symbol: str, now: datetime) -> bool:
     """Whether ``symbol`` can be compared against right now."""
     return readiness(store, snapshot, [symbol], now)[symbol]
@@ -218,12 +243,21 @@ def downloads(store, snapshot, now: datetime
 
     **One at a time, in the order they were turned on.** The first incomplete
     ETF is the only one the backward pass works on; the complete ones keep their
-    forward pass so they stay current.
+    forward pass so they stay current. One that finished with no price at all
+    (#1510) is neither: it would hold up every ETF behind it forever.
     """
     following = followed(store)
     done = readiness(store, snapshot, following, now)
     return ([symbol for symbol in following if done[symbol]],
-            next((symbol for symbol in following if not done[symbol]), None))
+            _current(following, done,
+                     never_priced(store, snapshot, following, now)))
+
+
+def _current(following: List[str], done: Dict[str, bool],
+             empty: Set[str]) -> Optional[str]:
+    """The first followed ETF neither complete nor :func:`never_priced`."""
+    return next((symbol for symbol in following
+                 if not done[symbol] and symbol not in empty), None)
 
 
 def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
@@ -241,7 +275,8 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
     done = readiness(store, snapshot, following, now)
     windows = snapshot.tracked_windows(*following)
     kept = ledger.consulted_benchmarks(store)
-    current = next((symbol for symbol in following if not done[symbol]), None)
+    empty = never_priced(store, snapshot, following, now)
+    current = _current(following, done, empty)
 
     rows = []
     for entry in benchmarks.BENCHMARKS:
@@ -252,7 +287,8 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
                'followed': is_followed, 'ready': done.get(symbol, False),
                'kept': False, 'freed': False, 'waiting': None, 'after': None,
                'reached': None, 'target': None, 'ratio': None,
-               'requested': False, 'failing': False}
+               'requested': False, 'failing': False,
+               'never_priced': symbol in empty}
         if not is_followed and quotes.oldest_ts(store, symbol) is not None:
             row['kept'] = symbol in kept
             row['freed'] = symbol not in kept
@@ -262,7 +298,7 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
                 row['waiting'] = NO_EVENTS
             else:
                 row.update(_rebuild(store, symbol, window[0], now))
-                if symbol != current:
+                if symbol != current and not row['never_priced']:
                     row['waiting'], row['after'] = 'queued', current
         rows.append(row)
     return rows

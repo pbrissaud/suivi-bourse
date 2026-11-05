@@ -446,7 +446,10 @@ words, and give NO GAP FOR THE PORTFOLIO. The one exception is a row of
 - "nothing_to_compare": `reason` says why. "no_events" is an empty ledger;
   "not_computed" means the daily figures are not computed yet; "nothing_held"
   means no securities were held while the fund was quoted; "no_rate_on_seed"
-  means an exchange rate is missing on the first day. `per_account` may still
+  means an exchange rate is missing on the first day; "never_priced" means the
+  market returned no price at all for the fund over the ledger's period:
+  nothing is being fetched, so never say it is in progress or will come, and
+  promise no duration; the System page says more. `per_account` may still
   carry rows. Each is a real comparison of its own account: quote its
   `per_account.gap_gross` only with that row's `per_account.covered_from` to
   `per_account.covered_to`, never as the portfolio's.

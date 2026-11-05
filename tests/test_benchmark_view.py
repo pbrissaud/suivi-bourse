@@ -749,6 +749,46 @@ def test_the_references_say_why_an_incomplete_one_is_not_moving(named):
     assert rows['MSE.PA']['waiting'] is None
 
 
+def _walk_back_empty(store, symbol=REFERENCE, first='2024-01-01'):
+    """#1510: every window came back empty, down to the target. No price stored."""
+    store.execute('INSERT INTO symbol (symbol) VALUES (?) '
+                  'ON CONFLICT (symbol) DO NOTHING', [symbol])
+    quotes.record_window_tried(store, symbol, date.fromisoformat(first))
+
+
+def test_a_reference_the_market_answered_empty_never_reads_as_starting(store):
+    """#1510: terminal with no price is nothing to compare, not a rebuild."""
+    _follow(store)
+    _walk_back_empty(store)
+
+    payload = benchmark_view.comparison(
+        store, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    assert payload['state'] == benchmark_view.NOTHING_TO_COMPARE
+    assert payload['reason'] == benchmark_view.NEVER_PRICED
+    assert 'rebuild' not in payload
+
+
+def test_a_reference_answered_empty_steps_out_of_the_download_queue(store):
+    """#1510: it would otherwise hold up every reference behind it forever."""
+    _follow(store, REFERENCE, 'CSPX.AS', 'C40.PA')
+    _walk_back_empty(store)
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
+
+    assert benchmark_view.downloads(store, snapshot, NOW) == ([], 'CSPX.AS')
+    rows = {row['symbol']: row
+            for row in benchmark_view.references(store, snapshot, NOW)}
+    assert rows[REFERENCE]['never_priced'] is True
+    assert rows[REFERENCE]['waiting'] is None
+    assert rows['CSPX.AS']['never_priced'] is False
+    assert rows['CSPX.AS']['waiting'] is None
+    assert rows['C40.PA']['after'] == 'CSPX.AS'
+    # With none ready, the page names the one actually downloading.
+    payload = benchmark_view.comparison(store, snapshot, NOW)
+    assert (payload['state'], payload['reference']) == (
+        benchmark_view.REBUILDING, 'CSPX.AS')
+
+
 def test_an_empty_ledger_downloads_nothing_and_says_so(store):
     _follow(store)
 
