@@ -362,6 +362,9 @@ export function LedgerTable({
       // The wrapper eats the page's bottom padding (`Ledger`'s negative
       // margin), so the tail sits on the window's last line.
       const below = wrapper.getBoundingClientRect().bottom - boxRect.bottom
+      // The box's top in **document** coordinates, on purpose: the ceiling is
+      // what fits the window with the page at its top, so it does not depend on
+      // where the page happened to be scrolled when the window was resized.
       setCeiling(window.innerHeight - (boxRect.top + window.scrollY) - below)
     }
     fit()
