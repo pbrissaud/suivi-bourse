@@ -441,6 +441,8 @@ words, and give NO GAP FOR THE PORTFOLIO. The one exception is a row of
   `rebuild.ratio` the share done, from 0 to 1. Quote the ratio when it is not
   null; promise no duration. `rebuild.requested` is false while the fund is
   still waiting for its turn: nothing has been asked for yet.
+  `rebuild.failing` is true when its last request failed: its turn came, so
+  never say it is waiting; the System page says more.
 - "nothing_to_compare": `reason` says why. "no_events" is an empty ledger;
   "not_computed" means the daily figures are not computed yet; "nothing_held"
   means no securities were held while the fund was quoted; "no_rate_on_seed"
@@ -681,6 +683,7 @@ class BenchmarkRebuild(TypedDict):
     target: Optional[str]
     ratio: Optional[float]
     requested: bool
+    failing: bool
 
 
 class BenchmarkAccount(TypedDict):

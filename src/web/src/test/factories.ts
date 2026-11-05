@@ -1338,6 +1338,7 @@ export function aBenchmarkReferences(
     target: null,
     ratio: null,
     requested: false,
+    failing: false,
     ...overrides[entry.symbol],
   }))
 }

@@ -2638,6 +2638,7 @@ describe('the comparison card (#1205)', () => {
             target: '2009-06-16',
             ratio: 0.4,
             requested: true,
+            failing: false,
           },
         } as Partial<BenchmarkResponse>),
       )

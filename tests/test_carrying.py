@@ -758,6 +758,19 @@ def test_a_long_chunk_is_clamped_to_the_acquisition(store, mocker):
     assert start == target
 
 
+def test_a_failed_backward_request_is_persisted(store, mocker):
+    """#1460: the recorder forgets on restart; the store is what the page reads."""
+    _declare_symbol(store, 'AAPL')
+    metrics = _metrics(store)
+    fake_history(mocker, metrics, return_value=None)
+
+    metrics['backfill'].backward('AAPL', datetime(2024, 1, 15, tzinfo=UTC),
+                                 datetime(2024, 6, 1, tzinfo=UTC))
+
+    assert quotes.backward_failed(store, 'AAPL')
+    assert quotes.oldest_window_tried(store, 'AAPL') is None
+
+
 # --------------------------------------------------------------------------- #
 # Where carrying diverges from a valuation (criterion 8)
 # --------------------------------------------------------------------------- #

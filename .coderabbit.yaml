@@ -88,7 +88,10 @@ reviews:
           one named exception (#703, #854): a watermark is derived because it
           recomputes itself from the rows, which is exactly what a symbol with
           no rows cannot do — so those two are stored, on the row the module
-          that owns them already writes.
+          that owns them already writes. `symbol_quote.backward_failed_at`
+          (#1460) belongs with them: it describes the backward pass of a
+          symbol that may have no rows, and the anchor's write clears it in
+          the same transaction.
 
         THE SCHEMA MOVES IN ONE PLACE.
         - `ALTER TABLE` appears in `packages/store/src/application/store_steps.py` and nowhere else. A

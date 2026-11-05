@@ -331,6 +331,32 @@ def record_window_tried(store, symbol: str, oldest: date) -> None:
             ' WHERE symbol = ? '
             '   AND (oldest_window_tried IS NULL OR ? < oldest_window_tried)',
             [oldest, symbol, oldest])
+        # A request that landed: the last one failing is no longer the news.
+        store.execute(
+            'UPDATE symbol_quote SET backward_failed_at = NULL '
+            ' WHERE symbol = ? AND backward_failed_at IS NOT NULL', [symbol])
+
+
+def record_backward_failure(store, symbol: str, at: datetime) -> None:
+    """Remember that the backward pass's last request for ``symbol`` failed (#1460).
+
+    The recorder knows it too, and forgets it on restart: this is what lets the
+    Benchmark page say a reference's turn came and failed, rather than that it
+    is still waiting for it.
+    """
+    with store.transaction():
+        _ensure_row(store, symbol)
+        store.execute(
+            'UPDATE symbol_quote SET backward_failed_at = ? WHERE symbol = ?',
+            [at, symbol])
+
+
+def backward_failed(store, symbol: str) -> bool:
+    """Whether the backward pass's last request for ``symbol`` failed."""
+    rows = store.query(
+        'SELECT backward_failed_at FROM symbol_quote WHERE symbol = ?',
+        [symbol])
+    return bool(rows) and rows[0][0] is not None
 
 
 def oldest_window_tried(store, symbol: str) -> Optional[date]:
