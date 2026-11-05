@@ -103,7 +103,7 @@ function AgentRows({ config }: { config: AgentConfig }) {
         <Switch
           id="agent-enabled"
           aria-describedby={configured ? undefined : 'agent-enabled-description'}
-          className="max-md:after:-inset-3.5"
+          className="pointer-coarse:after:-inset-3.5"
           checked={toggle.chosen?.value ?? config.enabled}
           // On needs a model: the one a passed test stored.
           disabled={!configured && !config.enabled}

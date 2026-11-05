@@ -325,7 +325,7 @@ function FacetButton({
       aria-label={t('data.facet.label', { label, count: facet.count })}
       onClick={onPress}
       className={cn(
-        'flex items-center justify-between gap-2 rounded-md px-2 py-1 text-sm transition-colors',
+        'flex items-center justify-between gap-2 rounded-md px-2 py-1 text-sm transition-colors pointer-coarse:min-h-11',
         'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
         facet.active
           ? 'bg-primary/12 font-medium text-primary'

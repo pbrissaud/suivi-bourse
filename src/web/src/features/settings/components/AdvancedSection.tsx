@@ -142,8 +142,8 @@ function ReleaseRow() {
       <Switch
         id={id}
         aria-describedby={`${id}-description`}
-        // The hit area grows to 44 px under 768 px, the track stays 18 px.
-        className="max-md:after:-inset-3.5"
+        // The hit area grows to 44 px on touch, the track stays 18 px.
+        className="pointer-coarse:after:-inset-3.5"
         checked={dial.draft === 'true'}
         onCheckedChange={(on) => dial.set(String(on))}
       />

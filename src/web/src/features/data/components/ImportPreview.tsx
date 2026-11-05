@@ -468,11 +468,17 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
                 </>
               ) : null}
             </span>
-            <Button type="button" variant="outline" onClick={() => upload.discard()}>
+            <Button
+              type="button"
+              variant="outline"
+              className="pointer-coarse:min-h-11"
+              onClick={() => upload.discard()}
+            >
               {t('data.import.cancel')}
             </Button>
             <Button
               type="button"
+              className="pointer-coarse:min-h-11"
               disabled={
                 !ready ||
                 forecast.writing === undefined ||
