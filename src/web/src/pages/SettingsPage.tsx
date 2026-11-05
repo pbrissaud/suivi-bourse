@@ -12,7 +12,7 @@ import { PortfolioSection } from '@/features/settings/components/PortfolioSectio
 import { REFERENCES_HASH } from '@/features/settings/components/ReferencesRow'
 import { SecuritySection } from '@/features/settings/components/SecuritySection'
 import type { SectionRead } from '@/features/settings/components/SettingsSection'
-import { TaxationBlock } from '@/features/settings/components/TaxationBlock'
+import { TaxationSection } from '@/features/settings/components/TaxationSection'
 import { ThemeBlock } from '@/features/settings/components/ThemeBlock'
 import { settingsApi } from '@/features/settings/lib/api'
 import { api } from '@/lib/api'
@@ -26,7 +26,7 @@ const SECTIONS = [
   { id: 'portfolio', title: 'settings.portfolio.title' },
   { id: 'agent', title: 'settings.agent.title' },
   { id: 'security', title: 'settings.security.title' },
-  { id: 'taxation', title: 'settings.taxation' },
+  { id: 'taxation', title: 'settings.taxation.title' },
   { id: 'theme', title: 'settings.theme.title' },
   { id: 'advanced', title: 'settings.advanced.title' },
 ] as const satisfies readonly { id: string; title: MessageKey }[]
@@ -47,7 +47,7 @@ export default function SettingsPage() {
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   const agent = useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig })
   const theme = useQuery({ queryKey: ['theme'], queryFn: settingsApi.theme })
-  // The taxation block draws nothing until this lands; it reads the same key.
+  // The taxation section reads the same key for its rows.
   const taxation = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
 
   const settingsFailure = oneFailure(readConditions({ queries: [config] }))
@@ -65,6 +65,12 @@ export default function SettingsPage() {
     agentFailure !== null
       ? { kind: 'failed', failure: agentFailure, retry: () => void agent.refetch() }
       : agent.data
+        ? { kind: 'ready' }
+        : { kind: 'pending' }
+  const taxationRead: SectionRead =
+    taxationFailure !== null
+      ? { kind: 'failed', failure: taxationFailure, retry: () => void taxation.refetch() }
+      : taxation.data
         ? { kind: 'ready' }
         : { kind: 'pending' }
 
@@ -126,11 +132,9 @@ export default function SettingsPage() {
         <PortfolioSection read={settingsRead} />
         <AgentSection read={agentRead} config={agent.data} />
         <SecuritySection read={settingsRead} />
-        {/* Until each block moves onto `SettingsSection`, these wrappers wear its
+        <TaxationSection read={taxationRead} />
+        {/* The theme has its own anatomy (#1314); this wrapper wears a section's
           box: same id, focus and scroll offset, same rule above. */}
-        <div id="taxation" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
-          <TaxationBlock />
-        </div>
         <div id="theme" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
           {themeFailure !== null ? (
             <Unreadable failure={themeFailure} />
