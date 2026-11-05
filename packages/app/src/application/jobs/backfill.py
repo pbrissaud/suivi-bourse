@@ -337,6 +337,7 @@ class BackfillJob(base.Job):
             if failures >= scheduling.BACKWARD_GIVE_UP:
                 self.unreachable[symbol] = target
                 fields['terminal'] = runtime_state.TERMINAL_UNREACHABLE
+            self.record_backward_failure(symbol, now)
             publish(anchor=end_date, oldest=oldest_timestamp,
                     window=(start_date, end_date), failed=True, **fields)
 
@@ -388,6 +389,15 @@ class BackfillJob(base.Job):
         except Exception as e:
             app_logger.error(
                 f"Failed to persist the backfill anchor for {symbol}: {e}")
+
+    def record_backward_failure(self, symbol: str, at: datetime) -> None:
+        """Persist that the backward pass's request failed (#1460), guarded like every other write."""
+        try:
+            with self.ctx.config_manager.writing() as opened:
+                quotes.record_backward_failure(opened, symbol, at)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to persist the backfill failure for {symbol}: {e}")
 
     def record_forward_window_tried(self, symbol: str, newest: date) -> None:
         """Persist the forward pass's anchor, guarded like every other write."""

@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS symbol_quote (
     last_price_ts         TIMESTAMPTZ,
     oldest_window_tried   DATE,                     -- the persisted backward-pass anchor
     newest_window_tried   DATE,                     -- and the forward pass's own (#854)
-    splits_read_at        TIMESTAMPTZ);             -- when the split history was last read (#760)
+    splits_read_at        TIMESTAMPTZ,              -- when the split history was last read (#760)
+    backward_failed_at    TIMESTAMPTZ);             -- the backward pass's last failed request, cleared by the next that lands (#1460)
 """
 
 _DDL_PRICE_POINT = """

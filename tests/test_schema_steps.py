@@ -27,6 +27,7 @@ RELEASED = (
     'add_symbol_quote_long_name',
     'forget_ticker_names',
     'add_auth_session_seconds',
+    'add_backward_failed_at',
 )
 
 
@@ -187,6 +188,24 @@ def test_the_long_name_step_adds_a_null_column_and_keeps_the_quote(tmp_path):
     try:
         assert opened.query(
             'SELECT currency, long_name FROM symbol_quote') == [('USD', None)]
+    finally:
+        opened.close()
+
+
+def test_the_backward_failure_step_adds_a_null_column(tmp_path):
+    """A store from before #1460 keeps its quotes, and none of them has failed."""
+    path, connection = _before(tmp_path, 'add_backward_failed_at')
+    connection.execute("INSERT INTO symbol VALUES ('AAPL')")
+    connection.execute(
+        "INSERT INTO symbol_quote (symbol, currency) VALUES ('AAPL', 'USD')")
+    connection.execute('ALTER TABLE symbol_quote DROP COLUMN backward_failed_at')
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query(
+            'SELECT currency, backward_failed_at FROM symbol_quote'
+        ) == [('USD', None)]
     finally:
         opened.close()
 

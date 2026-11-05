@@ -63,6 +63,16 @@ def _add_symbol_quote_long_name(connection) -> None:
     store_steps.add_column(connection, 'symbol_quote', 'long_name', 'VARCHAR')
 
 
+def _add_backward_failed_at(connection) -> None:
+    """Give ``symbol_quote`` the backward pass's last failed request (#1460).
+
+    NULL until a request fails. A no-op on a new store, whose table already has
+    the column.
+    """
+    store_steps.add_column(
+        connection, 'symbol_quote', 'backward_failed_at', 'TIMESTAMPTZ')
+
+
 def _forget_ticker_names(connection) -> None:
     """Undo the ticker the app used to write as a security's name (#1386).
 
@@ -136,6 +146,7 @@ STEPS = store_steps.STEPS + (
     ('add_symbol_quote_long_name', _add_symbol_quote_long_name),
     ('forget_ticker_names', _forget_ticker_names),
     ('add_auth_session_seconds', auth_gate.add_session_seconds),
+    ('add_backward_failed_at', _add_backward_failed_at),
 )
 
 __all__ = ['STEPS']
