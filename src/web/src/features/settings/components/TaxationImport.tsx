@@ -53,6 +53,7 @@ function ownCountry(): string | null {
   }
 }
 
+/** The import row: the registry's wrappers in a combobox, a pick stored at once. */
 export function TaxationImport({ catalogue, accounts, onImported }: TaxationImportProps) {
   const { t, language } = useI18n()
   const { docsPageHref } = useDocs()

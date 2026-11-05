@@ -47,6 +47,7 @@ export function TaxationSection({ read }: { read: SectionRead }) {
   )
 }
 
+/** The section's rows, once the catalogue is read: they hold the Sheet and the removal Dialog. */
 function TaxationRows({ catalogue }: { catalogue: TaxationModelsResponse }) {
   const { t, language } = useI18n()
   const { docsPageHref } = useDocs()
