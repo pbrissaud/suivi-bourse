@@ -854,7 +854,7 @@ describe('taxation', () => {
     await openSettings()
     const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
 
-    expect(taxation).toHaveTextContent('PEA')
+    await within(taxation).findByText('PEA')
     expect(taxation).toHaveTextContent(/12,8\s%, puis 0\s% après 5 ans/)
     expect(taxation).toHaveTextContent(/prélèvements sociaux 17,2\s%/)
   })
@@ -870,7 +870,7 @@ describe('taxation', () => {
     const { user } = await openSettings()
     const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
 
-    await user.click(within(taxation).getByRole('button', { name: 'Nouveau modèle' }))
+    await user.click(await within(taxation).findByRole('button', { name: 'Nouveau modèle' }))
     const sheet = await screen.findByRole('dialog', { name: 'Nouveau modèle' })
     await user.type(within(sheet).getByLabelText('Le nom de ce modèle'), 'CTO')
     await user.selectOptions(within(sheet).getByLabelText('Forme'), 'flat_realised')
@@ -899,11 +899,63 @@ describe('taxation', () => {
     const { user } = await openSettings()
     const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
 
-    await user.click(within(taxation).getByRole('button', { name: 'Supprimer A flat model' }))
+    await user.click(
+      await within(taxation).findByRole('button', { name: 'Supprimer A flat model' }),
+    )
     const confirm = await screen.findByRole('dialog', { name: 'Supprimer « A flat model » ?' })
     await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
 
     expect(await within(confirm).findByText(/alpha/)).toBeInTheDocument()
+  })
+
+  it('makes « Nouveau modèle » the way forward when no model is stored', async () => {
+    server.use(
+      http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue({ models: [] }))),
+    )
+    await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+
+    const add = await within(taxation).findByRole('button', { name: 'Nouveau modèle' })
+    expect(taxation).toHaveTextContent('Aucun modèle d’imposition.')
+    expect(within(taxation).queryByRole('button', { name: /^Corriger/ })).toBeNull()
+    // Primary here; beside stored models it is outline.
+    expect(add).toHaveClass('bg-primary')
+  })
+
+  it('keeps no control in its title row', async () => {
+    await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+    await within(taxation).findByRole('button', { name: 'Nouveau modèle' })
+
+    const header = within(taxation).getByRole('heading', { name: 'Fiscalité' }).closest('header')
+    expect(header).not.toBeNull()
+    expect(within(header as HTMLElement).queryAllByRole('button')).toEqual([])
+  })
+
+  it('says its read failed, offers to read again, and leaves the rest of the page', async () => {
+    let reads = 0
+    server.use(
+      http.get(ROUTES.taxationModels, () => {
+        reads += 1
+        return reads === 1
+          ? HttpResponse.json({ title: 'boom' }, { status: 500 })
+          : HttpResponse.json(aTaxationCatalogue())
+      }),
+    )
+    const { user } = await openSettings()
+    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+
+    const retry = await within(taxation).findByRole('button', { name: 'Réessayer' })
+    expect(screen.getByRole('region', { name: 'Avancé' })).toBeInTheDocument()
+
+    await user.click(retry)
+    expect(await within(taxation).findByText('A flat model')).toBeInTheDocument()
+  })
+
+  it('lands on /settings#taxation, the link the account form gives, with focus', async () => {
+    await openSettings(undefined, undefined, undefined, '/settings#taxation')
+
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Fiscalité' })).toHaveFocus())
   })
 
   it('does not offer to remove a model an account carries', async () => {
@@ -946,7 +998,7 @@ describe('importing a taxation model', () => {
   async function openImport() {
     const view = await openSettings()
     const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-    await view.user.click(within(taxation).getByLabelText('Importer pour mon pays'))
+    await view.user.click(await within(taxation).findByLabelText('Importer pour mon pays'))
     return { ...view, taxation }
   }
 
@@ -960,9 +1012,11 @@ describe('importing a taxation model', () => {
     )
     const { user } = await openSettings()
     const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+    // Once the rows are drawn, so that « nothing » is not just « not yet ».
+    const field = await within(taxation).findByLabelText('Importer pour mon pays')
     expect(reads).toBe(0)
 
-    await user.click(within(taxation).getByLabelText('Importer pour mon pays'))
+    await user.click(field)
     await waitFor(() => expect(reads).toBe(1))
   })
 
@@ -1056,19 +1110,22 @@ describe('importing a taxation model', () => {
     await user.keyboard('cto')
     await user.click(await screen.findByRole('option', { name: /CTO/ }))
 
-    const card = await within(taxation).findByRole('region', {
+    // A Dialog now, never a card inside the section (#1279).
+    const confirm = await screen.findByRole('alertdialog', {
       name: /Remplacer les taux de « Compte-titres ordinaire \(CTO\) »/,
     })
-    expect(card).toHaveTextContent('Porté par Alpha.')
-    expect(within(card).getByRole('button', { name: 'Annuler' })).toHaveFocus()
+    expect(confirm).toHaveAccessibleDescription('Porté par Alpha.')
+    expect(within(confirm).getByRole('button', { name: 'Annuler' })).toHaveFocus()
     expect(patched).toEqual([])
 
     await user.keyboard('{Escape}')
-    expect(within(taxation).queryByRole('region', { name: /Remplacer/ })).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(within(taxation).getByLabelText('Importer pour mon pays')).toHaveFocus()
 
     await user.keyboard('cto')
     await user.click(await screen.findByRole('option', { name: /CTO/ }))
-    await user.click(await within(taxation).findByRole('button', { name: 'Remplacer' }))
+    const again = await screen.findByRole('alertdialog', { name: /Remplacer/ })
+    await user.click(within(again).getByRole('button', { name: 'Remplacer' }))
 
     await waitFor(() =>
       expect(patched).toEqual([
@@ -1076,6 +1133,9 @@ describe('importing a taxation model', () => {
       ]),
     )
     expect(created).toBe(0)
+    // The closing Dialog does not take focus back from the model it opened.
+    const sheet = await screen.findByRole('dialog', { name: 'A flat model' })
+    await waitFor(() => expect(within(sheet).getByLabelText('Le nom de ce modèle')).toHaveFocus())
   })
 
   it('says why the registry could not be read, and reads it again on request', async () => {
@@ -1207,7 +1267,7 @@ describe('importing a taxation model', () => {
     )
     const { user, taxation } = await openImport()
     await waitFor(() => expect(reads).toBe(1))
-    await user.click(within(taxation).getByRole('button', { name: 'Nouveau modèle' }))
+    await user.click(await within(taxation).findByRole('button', { name: 'Nouveau modèle' }))
     await user.keyboard('{Escape}')
     await user.click(within(taxation).getByLabelText('Importer pour mon pays'))
     expect(reads).toBe(1)

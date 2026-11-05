@@ -9,13 +9,21 @@
  * the one write path there is, `POST /api/taxation-models`. A name that is
  * already stored is replaced after a confirmation that names the accounts
  * carrying it: nothing records where a model came from (#1162), so the name is
- * the only match, and the carriers are what makes the replacement a decision.
+ * the only match, and the carriers are what makes the replacement a decision,
+ * asked in a Dialog (#1279).
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   type Account,
   accountsApi,
@@ -24,6 +32,7 @@ import {
   type TaxationRegistryItem,
 } from '@/features/accounts/lib/api'
 import { declaredLabel } from '@/features/accounts/lib/accounts'
+import { SettingRow } from '@/features/settings/components/SettingRow'
 import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey, problemSentence, providerRefusal } from '@/lib/problem'
@@ -44,6 +53,7 @@ function ownCountry(): string | null {
   }
 }
 
+/** The import row: the registry's wrappers in a combobox, a pick stored at once. */
 export function TaxationImport({ catalogue, accounts, onImported }: TaxationImportProps) {
   const { t, language } = useI18n()
   const { docsPageHref } = useDocs()
@@ -87,11 +97,6 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
   useEffect(() => {
     if (stored.isError) focusField()
   }, [stored.isError])
-
-  // The card opens on its safe answer.
-  useEffect(() => {
-    if (replacing !== null) keep.current?.focus()
-  }, [replacing])
 
   const known = useMemo(() => new Set(catalogue.kinds.map((entry) => entry.kind)), [catalogue])
   const items = useMemo<ComboboxItem[]>(() => {
@@ -161,24 +166,43 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
       ? []
       : accounts.filter((account) => account.taxation_model === replacing.model.id)
 
+  const closeReplace = () => setReplacing(null)
+
   return (
-    <div className="mb-4 space-y-2">
-      <label htmlFor="taxation-import" className="block text-sm font-medium">
-        {t('settings.taxation.import')}
-      </label>
-      <Combobox
-        id="taxation-import"
-        value={query}
-        onValueChange={(value, chosen) => (chosen ? pick(value) : setQuery(value))}
-        items={items}
-        listLabel={t('settings.taxation.import.list')}
-        placeholder={t('settings.taxation.import.search')}
-        disabled={stored.isPending}
-        aria-describedby={failure === null ? undefined : 'taxation-import-error'}
-        openOnFocus
-        onFocus={() => setAsked(true)}
-        onClick={() => setAsked(true)}
-      />
+    <SettingRow
+      id="taxation-import"
+      label={t('settings.taxation.import')}
+      description={
+        <>
+          {t('settings.taxation.import.hint')}{' '}
+          <a
+            href={docsPageHref(language, 'taxation-models-in-europe', 'top')}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline underline-offset-4"
+          >
+            {t('accounts.taxation.regimesLink')}
+          </a>
+        </>
+      }
+    >
+      <div className="w-72 max-w-full">
+        <Combobox
+          id="taxation-import"
+          value={query}
+          onValueChange={(value, chosen) => (chosen ? pick(value) : setQuery(value))}
+          items={items}
+          listLabel={t('settings.taxation.import.list')}
+          placeholder={t('settings.taxation.import.search')}
+          disabled={stored.isPending}
+          aria-describedby={
+            failure === null ? 'taxation-import-description' : 'taxation-import-error'
+          }
+          openOnFocus
+          onFocus={() => setAsked(true)}
+          onClick={() => setAsked(true)}
+        />
+      </div>
 
       {registry.isFetching ? (
         <p role="status" className="text-xs text-muted-foreground">
@@ -191,92 +215,82 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
         </p>
       ) : null}
 
-      {failureSaid === null ? (
-        <p className="text-xs text-muted-foreground">{t('settings.taxation.import.hint')}</p>
-      ) : (
-        <div className="space-y-2">
-          <p id="taxation-import-error" role="alert" className="text-sm text-destructive">
+      {failureSaid === null ? null : (
+        <div className="flex max-w-72 flex-col items-end gap-2 text-right">
+          <p id="taxation-import-error" role="alert" className="text-xs text-destructive">
             {failureSaid}
           </p>
-          <div className="flex flex-wrap items-center gap-3">
-            {registry.isError ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="max-md:h-11"
-                // The refetch unmounts this button (the error is cleared while
-                // it reads), so focus goes back to the field once it settles:
-                // onto the open list, or onto the field the error describes.
-                onClick={() => void registry.refetch().then(focusField)}
-              >
-                {t('settings.taxation.import.retry')}
-              </Button>
-            ) : null}
-            <span className="text-xs text-muted-foreground">
-              {t('settings.taxation.import.fallback')}
-            </span>
-          </div>
+          {registry.isError ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="max-md:h-11"
+              // The refetch unmounts this button (the error is cleared while
+              // it reads), so focus goes back to the field once it settles:
+              // onto the open list, or onto the field the error describes.
+              onClick={() => void registry.refetch().then(focusField)}
+            >
+              {t('settings.taxation.import.retry')}
+            </Button>
+          ) : null}
+          <span className="text-xs text-muted-foreground">
+            {t('settings.taxation.import.fallback')}
+          </span>
         </div>
       )}
 
-      <a
-        href={docsPageHref(language, 'taxation-models-in-europe', 'top')}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-block text-xs font-medium underline underline-offset-4"
+      <Dialog
+        open={replacing !== null}
+        onOpenChange={(open) => (open ? undefined : closeReplace())}
       >
-        {t('accounts.taxation.regimesLink')}
-      </a>
-
-      {replacing === null ? null : (
-        <section
-          aria-labelledby="taxation-replace-title"
-          className="space-y-3 rounded-md bg-card p-3.5"
-          onKeyDown={(pressed) => {
-            if (pressed.key === 'Escape') {
-              pressed.stopPropagation()
-              setReplacing(null)
-              focusField()
-            }
+        <DialogContent
+          role="alertdialog"
+          className="sm:max-w-sm"
+          // It opens on its safe answer, and gives the field back on close,
+          // unless the replacement went through: then the model's Sheet has
+          // opened, and its exit animation ends after the Sheet took focus.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            keep.current?.focus()
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            if (!stored.isSuccess) focusField()
           }}
         >
-          <div className="space-y-1">
-            <h3 id="taxation-replace-title" className="text-sm font-medium">
-              {t('settings.taxation.import.replace.title', { name: replacing.model.name })}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {carriers.length === 0
-                ? t('settings.taxation.import.replace.none')
-                : t('settings.taxation.import.replace.carriers', {
-                    accounts: carriers
-                      .map((account) => declaredLabel(account) ?? account.id)
-                      .join(', '),
-                  })}
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              ref={keep}
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setReplacing(null)
-                focusField()
-              }}
-            >
-              {t('taxation.cancel')}
-            </Button>
-            <Button
-              type="button"
-              disabled={stored.isPending}
-              onClick={() => stored.mutate({ item: replacing.item, model: replacing.model })}
-            >
-              {t('settings.taxation.import.replace')}
-            </Button>
-          </div>
-        </section>
-      )}
-    </div>
+          {replacing === null ? null : (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {t('settings.taxation.import.replace.title', { name: replacing.model.name })}
+                </DialogTitle>
+                <DialogDescription>
+                  {carriers.length === 0
+                    ? t('settings.taxation.import.replace.none')
+                    : t('settings.taxation.import.replace.carriers', {
+                        accounts: carriers
+                          .map((account) => declaredLabel(account) ?? account.id)
+                          .join(', '),
+                      })}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button ref={keep} type="button" variant="outline" onClick={closeReplace}>
+                  {t('taxation.cancel')}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={stored.isPending}
+                  onClick={() => stored.mutate({ item: replacing.item, model: replacing.model })}
+                >
+                  {t('settings.taxation.import.replace')}
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </SettingRow>
   )
 }
