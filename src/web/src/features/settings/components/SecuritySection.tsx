@@ -238,7 +238,8 @@ function LifetimeRow() {
         throw error
       }
     },
-    onAnswer: (answer) => update({ ...status, session_seconds: answer.session_seconds }),
+    onAnswer: (answer) =>
+      update((current) => ({ ...current, session_seconds: answer.session_seconds })),
     reason: lifetimeRefusal,
   })
   const stored = status.session_seconds ?? DEFAULT_LIFETIME

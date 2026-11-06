@@ -28,8 +28,8 @@ export const AUTH_STATUS_KEY = ['auth-status'] as const
 
 interface AuthContextValue {
   status: AuthStatus
-  /** What a gesture in the *Accès* block left true. */
-  update: (status: AuthStatus) => void
+  /** What a gesture in the *Accès* block left true; a function reads the cached status, not a render's. */
+  update: (status: AuthStatus | ((current: AuthStatus) => AuthStatus)) => void
   /** This device signed out: back to the PIN screen, nothing of the page kept. */
   signedOut: () => void
 }
@@ -74,7 +74,10 @@ export function AuthBoot({ children }: { children: ReactNode }) {
     )
   }
 
-  const update = (next: AuthStatus) => client.setQueryData(AUTH_STATUS_KEY, next)
+  const update = (next: AuthStatus | ((current: AuthStatus) => AuthStatus)) =>
+    client.setQueryData<AuthStatus>(AUTH_STATUS_KEY, (current) =>
+      typeof next !== 'function' ? next : current && next(current),
+    )
   const unlocked = () => {
     sessionResumed()
     update({ ...status.data, enabled: true, authenticated: true })
