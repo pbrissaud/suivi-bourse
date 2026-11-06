@@ -74,6 +74,7 @@ function Revert({ name, onClick }: { name: string; onClick: () => void }) {
       type="button"
       variant="ghost"
       size="icon-sm"
+      className="pointer-coarse:size-11"
       aria-label={t('settings.theme.revert', { name })}
       onClick={onClick}
     >
