@@ -2,9 +2,10 @@
 
 ``RuntimeRecorder`` keeps the **last** record of each job; this keeps the last
 24 hours of them, so the System page can tell a job that failed once from one
-that has failed every pass since yesterday. Memory only: at a 10 s cadence a
-write per pass would contend with the global writer (#972), and the page says
-*since start* instead.
+that has failed every pass since yesterday. A pass writes to memory only: at
+a 10 s cadence a write per pass would contend with the global writer (#972).
+What changed since the last flush is buffered here, and ``job_store`` writes it
+in one batch and reloads it at boot (#1254).
 
 Each key holds 24 hourly slots (counts, summed duration, last error) and the 20
 most recent passes in full. A per-pass cap could not hold 24 hours at every
@@ -15,9 +16,10 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Deque, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import (Any, Deque, Dict, Iterable, Iterator, List, Optional, Set,
+                    Tuple)
 
 from application import instants
 
@@ -142,17 +144,41 @@ class _Track:
     recent: Deque[Pass] = field(default_factory=lambda: deque(maxlen=RECENT))
 
 
+@dataclass(frozen=True)
+class Schedule:
+    """A member's last known arming: when it fires next, and its back-off."""
+
+    next_run: Optional[datetime]
+    failure_count: int = 0
+    paused: bool = False
+
+
+@dataclass
+class Drained:
+    """What changed since the last flush, handed to ``job_store.flush``."""
+
+    slots: Dict[Tuple[Key, datetime], Slot]
+    passes: List[Tuple[Key, Pass]]
+    schedule: Dict[Key, Schedule]
+    gone: Set[str]
+
+
 def _hour(at: datetime) -> datetime:
     return instants.utc(at).replace(minute=0, second=0, microsecond=0)
 
 
 class JobHistory:
-    """Every job's last 24 hours, one lock, no store."""
+    """Every job's last 24 hours, one lock; ``job_store`` persists it."""
 
     def __init__(self, now: Optional[datetime] = None):
         self.started = now or datetime.now(timezone.utc)
         self._lock = threading.Lock()
         self._tracks: Dict[Key, _Track] = {}
+        # What the next flush writes (#1254).
+        self._dirty: Set[Tuple[Key, datetime]] = set()
+        self._pending: List[Tuple[Key, Pass]] = []
+        self._schedule: Dict[Key, Schedule] = {}
+        self._gone: Set[str] = set()
 
     def record(self, job: str, symbol: Optional[str], one: Pass) -> None:
         hour = _hour(one.at)
@@ -172,18 +198,84 @@ class JobHistory:
             elif one.outcome == IDLE:
                 slot.idles += 1
             track.recent.append(one)
+            self._dirty.add(((job, symbol), hour))
+            self._pending.append(((job, symbol), one))
+
+    def schedule(self, job: str, symbol: Optional[str],
+                 next_run: Optional[datetime], failure_count: int) -> None:
+        """Note a member's arming, for the next flush. Memory only."""
+        with self._lock:
+            self._schedule[(job, symbol)] = Schedule(next_run, failure_count)
 
     def forget(self, symbol: str) -> None:
         """Drop a departed symbol's scrape history, with its record."""
         with self._lock:
-            self._tracks.pop((SCRAPE, symbol), None)
+            self._drop((SCRAPE, symbol))
 
     def retain(self, symbols: Iterable[str]) -> None:
         keep = set(symbols)
         with self._lock:
             for key in [k for k in self._tracks
                         if k[0] == SCRAPE and k[1] not in keep]:
-                del self._tracks[key]
+                self._drop(key)
+
+    def _drop(self, key: Key) -> None:
+        """Under the lock: the key gone from memory, and from the store next."""
+        self._tracks.pop(key, None)
+        self._schedule.pop(key, None)
+        self._dirty = {d for d in self._dirty if d[0] != key}
+        self._pending = [p for p in self._pending if p[0] != key]
+        if key[1] is not None:
+            self._gone.add(key[1])
+
+    def drain(self) -> Drained:
+        """Hand over and clear what changed since the last flush."""
+        with self._lock:
+            slots = {}
+            for key, hour in self._dirty:
+                track = self._tracks.get(key)
+                if track is not None and hour in track.slots:
+                    slots[(key, hour)] = replace(track.slots[hour])
+            drained = Drained(slots, self._pending, self._schedule, self._gone)
+            self._dirty, self._pending = set(), []
+            self._schedule, self._gone = {}, set()
+        return drained
+
+    def undrain(self, drained: Drained) -> None:
+        """Put back a batch the flush could not write, so the next one does."""
+        with self._lock:
+            # A symbol forgotten since the drain is in ``_gone`` (the drain
+            # emptied it): its old batch stays dropped, even if a pass has
+            # recorded it again since.
+            def alive(key):
+                return key in self._tracks and key[1] not in self._gone
+            self._dirty |= {d for d in drained.slots if alive(d[0])}
+            # ponytail: one cap for every key, a store down for hours keeps
+            # the newest passes and the slots still count the rest.
+            cap = RECENT * max(1, len(self._tracks))
+            kept = [p for p in drained.passes if alive(p[0])]
+            self._pending = (kept + self._pending)[-cap:]
+            for key, schedule in drained.schedule.items():
+                if key[1] not in self._gone:
+                    self._schedule.setdefault(key, schedule)
+            self._gone |= drained.gone
+
+    def load(self, slots: Iterable[Tuple[Key, datetime, Slot]],
+             passes: Iterable[Tuple[Key, Pass]]) -> None:
+        """Rebuild the tracks the store kept, at boot, before any pass records.
+
+        ``started`` moves back to the oldest hour loaded: the history reaches
+        past this process's start, and the page reads ``started`` as the
+        instant it begins (#1254).
+        """
+        with self._lock:
+            oldest = self.started
+            for key, hour, slot in slots:
+                self._tracks.setdefault(key, _Track()).slots[hour] = slot
+                oldest = min(oldest, hour)
+            for key, one in sorted(passes, key=lambda pair: pair[1].at):
+                self._tracks.setdefault(key, _Track()).recent.append(one)
+            self.started = oldest
 
     def read(self, now: datetime, jobs: Iterable[str]) -> Dict[str, Any]:
         """The 24 hours ending at ``now``'s hour, aged on read and never written.
@@ -291,5 +383,6 @@ __all__ = [
     'SCRAPE', 'BACKFILL', 'PERFORMANCE', 'INGESTION',
     'OK', 'ATTENTION', 'ERROR', 'IDLE',
     'SLOTS', 'RECENT', 'MAX_LINES', 'LINE_CHARS',
-    'Lines', 'capturing', 'Slot', 'Pass', 'JobHistory', 'Run', 'timed',
+    'Lines', 'capturing', 'Slot', 'Pass', 'Schedule', 'Drained', 'JobHistory',
+    'Run', 'timed',
 ]

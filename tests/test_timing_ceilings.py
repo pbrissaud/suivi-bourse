@@ -425,3 +425,47 @@ def test_the_full_pass_after_a_write_reads_only_recent_closes(wide, mocker):
         f'{uncached:.3f} s reading them whole, ceiling '
         f'{FULL_AFTER_WRITE_SHARE:.0%} — is it reading the whole history '
         f'again? (#1256)')
+
+
+# --------------------------------------------------------------------------- #
+# The job history flush (#1254)
+# --------------------------------------------------------------------------- #
+
+#: One 30 s batch at 500 symbols held under the writers' mutex. The issue's
+#: ceiling: a flush is the only writer of the history, and it must not be the
+#: next #972. Measured 10.7 ms on an M-series laptop (2026-11-06).
+FLUSH_CEILING_S = 0.2
+
+
+def test_a_flush_at_500_symbols_holds_the_writer_mutex_briefly(store):
+    from contextlib import contextmanager
+
+    from application import job_history
+    from application import job_store
+
+    held = []
+
+    class _Timed:
+        @contextmanager
+        def writing(self):
+            started = time.perf_counter()
+            yield store
+            held.append(time.perf_counter() - started)
+
+    now = datetime.now(timezone.utc)
+
+    def one_batch():
+        history = job_history.JobHistory(now=now)
+        for i in range(500):
+            symbol = f'S{i:03d}'
+            for k in range(3):
+                history.record('scrape', symbol, job_history.Pass(
+                    at=now - timedelta(seconds=10 * k), duration=0.4,
+                    outcome=job_history.OK, error=None))
+            history.schedule('scrape', symbol, now + timedelta(minutes=2), 0)
+        job_store.flush(_Timed(), history, now=now)
+
+    _median_of(3, one_batch)
+    assert statistics.median(held) < FLUSH_CEILING_S, (
+        f'a flush at 500 symbols held the writer for '
+        f'{statistics.median(held):.3f} s, ceiling {FLUSH_CEILING_S} s (#1254)')

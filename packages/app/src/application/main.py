@@ -16,6 +16,7 @@ from application import boot_env
 from application import build_info
 from application import carrying
 from application import installation_facts
+from application import job_store
 from application import ledger
 from application import positions
 from application import runtime_state
@@ -456,6 +457,13 @@ def start_runtime(runtime: Runtime) -> Runtime:
     running = registry.build(runtime.config_manager, recorder=runtime.recorder)
     running.ctx.apply_dials(dials)
     runtime.jobs = running
+    if runtime.store is not None:
+        # Before the ingestion's reconcile arms the scrape (#1254).
+        try:
+            running['scrape'].restore(job_store.restore(
+                runtime.store, runtime.recorder.history))
+        except Exception as e:
+            app_logger.error(f"Failed to reload the job history: {e}")
 
     pool_size = scheduling.compute_pool_size(
         running.ctx.shares, running['scrape'].read_exchange_of())
@@ -464,6 +472,11 @@ def start_runtime(runtime: Runtime) -> Runtime:
     runtime.scheduler = scheduler
     running['ingestion']()
     registry.register(scheduler, running, dials)
+    if runtime.store is not None:
+        scheduler.add_job(job_store.flush, 'interval',
+                          seconds=job_store.FLUSH_SECONDS,
+                          args=[runtime.config_manager, runtime.recorder.history],
+                          id=job_store.FLUSH_JOB_ID, name='Job history flush')
     scheduler.start()
     app_logger.info(
         f"Scheduler started: per-symbol scraping (REGULAR every "
@@ -493,5 +506,7 @@ def shutdown_runtime(runtime: Runtime) -> None:
     if runtime.scheduler is not None and runtime.scheduler.running:
         runtime.scheduler.shutdown(wait=False)
     if runtime.store is not None:
+        if runtime.jobs is not None:
+            job_store.flush(runtime.config_manager, runtime.recorder.history)
         runtime.store.close()
         runtime.store = None
