@@ -502,7 +502,7 @@ const POINTS_DECIMALS = 3
 
 /**
  * What shortened the period, under the verdict — the period itself is the
- * header's subtitle, which truncates and is hidden under 768 px, so a sentence
+ * header's subtitle, which truncates (and wraps under the title below 768 px), so a sentence
  * about what the gap leaves out stays next to the gap.
  *
  * It reads the **computed** period and never the fund's inception alone: the
