@@ -269,7 +269,7 @@ export function Notifications() {
               type="button"
               variant="ghost"
               size="sm"
-              className="ml-auto"
+              className="ml-auto pointer-coarse:min-h-11"
               // Disabled, it says **why** in prose underneath.
               disabled={ackable.length === 0 || acknowledgeAll.isPending}
               onClick={() => acknowledgeAll.mutate()}
@@ -326,7 +326,7 @@ export function Notifications() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="ml-auto"
+                          className="ml-auto pointer-coarse:min-h-11"
                           disabled={acknowledge.isPending || acknowledgeAll.isPending}
                           onClick={() => acknowledge.mutate(entry.acknowledge!)}
                         >
