@@ -6,10 +6,11 @@
  * stored and flips only once its Dialog's action has succeeded — turning it on
  * asks *new code, then confirm*, turning it off asks the current code in an
  * `alertdialog`. With the code off the section is that one row. With it on,
- * three rows follow — the code, the MCP token, this device — and each procedure
- * opens a Dialog, never a card under its row. The token is shown once, in a
- * Dialog only *J’ai copié le jeton* closes. Focus returns to the control that
- * opened a Dialog when it closes.
+ * four rows follow — the code, the auto-lock, the access token, this device.
+ * The auto-lock is a value saved on change (#1313); each other procedure opens
+ * a Dialog, never a card under its row. The token is shown once, in a Dialog
+ * only *J’ai copié le jeton* closes. Focus returns to the control that opened a
+ * Dialog when it closes.
  */
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
@@ -25,6 +26,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/features/auth/components/AuthBoot'
 import {
@@ -35,7 +43,9 @@ import {
 } from '@/features/auth/lib/api'
 import { SettingRow } from '@/features/settings/components/SettingRow'
 import { SettingsSection, type SectionRead } from '@/features/settings/components/SettingsSection'
+import { useRowSave } from '@/features/settings/lib/useRowSave'
 import { useFormatters } from '@/lib/format'
+import { sessionEnded } from '@/lib/session'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 
@@ -43,6 +53,17 @@ type Procedure = 'enable' | 'disable' | 'change' | 'regenerate'
 
 const PIN = /^[0-9]{6}$/
 const SWITCH_ID = 'security-ask'
+
+/** `auth_rules.SESSION_PRESETS`, in seconds; the server refuses any other. */
+const LIFETIME_LABEL: Record<number, MessageKey> = {
+  900: 'settings.security.lock.900',
+  3600: 'settings.security.lock.3600',
+  86400: 'settings.security.lock.86400',
+  604800: 'settings.security.lock.604800',
+  2592000: 'settings.security.lock.2592000',
+}
+/** What a stored `NULL` means: `auth_rules.DEFAULT_SESSION_SECONDS`. */
+const DEFAULT_LIFETIME = 2592000
 
 /**
  * `read` is the settings read its neighbours stand on: while the app does not
@@ -72,7 +93,12 @@ export function SecuritySection({ read }: { read: SectionRead }) {
   const issued = (answer: IssuedToken) => {
     setOpen(null)
     setToken(answer)
-    update({ enabled: true, authenticated: true, token_created_at: answer.token_created_at })
+    update({
+      ...status,
+      enabled: true,
+      authenticated: true,
+      token_created_at: answer.token_created_at,
+    })
   }
 
   const logout = useMutation({ mutationFn: authApi.logout, onSuccess: signedOut })
@@ -103,13 +129,17 @@ export function SecuritySection({ read }: { read: SectionRead }) {
               {t('settings.security.changeCode')}
             </Button>
           </SettingRow>
+          <LifetimeRow />
           <SettingRow
             label={t('settings.access.token')}
-            description={
+            description={[
+              t('settings.access.token.use'),
               status.token_created_at
                 ? t('settings.security.token.made', { date: f.date(status.token_created_at) })
-                : undefined
-            }
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           >
             <Button
               variant="outline"
@@ -186,6 +216,64 @@ export function SecuritySection({ read }: { read: SectionRead }) {
       <TokenDialog token={token} refocus={refocus} onDone={() => setToken(null)} />
     </SettingsSection>
   )
+}
+
+/**
+ * « Verrouillage automatique »: how long a session lives without activity,
+ * saved on change. The answer re-signs this device, so lowering it does not
+ * lock out the one who lowered it.
+ */
+function LifetimeRow() {
+  const { t } = useI18n()
+  const { status, update } = useAuth()
+  const id = 'security-lifetime'
+  const save = useRowSave({
+    send: async (seconds: number) => {
+      try {
+        return await authApi.lifetime(seconds)
+      } catch (error) {
+        // `authFetch` leaves a 401 under `/auth/*` to its caller: here it is a
+        // session that lapsed while the page was read.
+        if (refusedWith(error, 401)) sessionEnded()
+        throw error
+      }
+    },
+    onAnswer: (answer) =>
+      update((current) => ({ ...current, session_seconds: answer.session_seconds })),
+    reason: lifetimeRefusal,
+  })
+  const stored = status.session_seconds ?? DEFAULT_LIFETIME
+  const value = save.chosen?.value ?? (stored in LIFETIME_LABEL ? stored : DEFAULT_LIFETIME)
+
+  return (
+    <SettingRow
+      id={id}
+      label={t('settings.security.lock')}
+      description={t('settings.security.lock.help')}
+      state={save.state}
+    >
+      <Select value={String(value)} onValueChange={(next) => save.save(Number(next))}>
+        <SelectTrigger id={id} aria-describedby={`${id}-description`} className="w-44 max-md:h-11">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.entries(LIFETIME_LABEL).map(([seconds, label]) => (
+            <SelectItem key={seconds} value={seconds}>
+              {t(label)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </SettingRow>
+  )
+}
+
+/** The gate's refusals all carry `/problems/auth`: the status says which one. */
+function lifetimeRefusal(error: unknown): MessageKey {
+  if (refusedWith(error, 401)) return 'settings.security.lock.ended'
+  if (refusedWith(error, 409)) return 'settings.security.lock.off'
+  if (refusedWith(error, 503)) return 'problem.storageUnavailable'
+  return problemMessageKey(error)
 }
 
 /** A procedure's Dialog: a form, Escape and the close button give up. */
@@ -560,6 +648,14 @@ function TokenDialog({
                 {config.split('\n').map((line, index) => (
                   <CodeBlockLine key={index}>{line}</CodeBlockLine>
                 ))}
+              </CodeBlockContent>
+            </CodeBlock>
+            <p className="text-xs text-muted-foreground">{t('settings.access.token.script')}</p>
+            <CodeBlock size="sm">
+              <CodeBlockContent wrap>
+                <CodeBlockLine>
+                  {`curl -H "Authorization: Bearer ${token.token}" ${window.location.origin}/api/positions`}
+                </CodeBlockLine>
               </CodeBlockContent>
             </CodeBlock>
           </>

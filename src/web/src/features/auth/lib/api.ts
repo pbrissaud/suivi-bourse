@@ -34,6 +34,9 @@ export const authApi = {
     send<{ enabled: true }>(ROUTES.authChange, 'POST', { current, pin }),
   disable: (current: string) => send<{ enabled: false }>(ROUTES.authDisable, 'POST', { current }),
   regenerate: (current: string) => send<IssuedToken>(ROUTES.authToken, 'POST', { current }),
+  /** One of the server's presets; the answer re-signs this device's cookie (#1313). */
+  lifetime: (seconds: number) =>
+    send<{ session_seconds: number }>(ROUTES.authLifetime, 'POST', { seconds }),
 }
 
 /** A number member of a refusal, or `null`. */

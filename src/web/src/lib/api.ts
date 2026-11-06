@@ -185,6 +185,7 @@ export const ROUTES = {
   authChange: '/auth/change',
   authDisable: '/auth/disable',
   authToken: '/auth/token',
+  authLifetime: '/auth/lifetime',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */

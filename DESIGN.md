@@ -536,9 +536,10 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
   non-dismissable dialog over the mounted page. The *Sécurité* settings section opens on
   the row "Demander un code", whose `Switch` flips only once its Dialog's action
   succeeds (on: the new code twice; off: the current code in an `alertdialog` with a
-  destructive primary). With the code off the section is that one row; with it on, three
-  more rows (Code, Jeton MCP, Cet appareil) each open a Dialog, never a card under the
-  row. A regenerated token is shown once, in a Dialog without a close button that only
+  destructive primary). With the code off the section is that one row; with it on, four
+  more follow: Code, Verrouillage automatique (a `Select` saved on change, #1313), Jeton
+  d’accès and Cet appareil. Each procedure opens a Dialog, never a card under the row.
+  A regenerated token is shown once, in a Dialog without a close button that only
   "J'ai copié le jeton" closes. Every Dialog gives the focus back to the control that
   opened it.
 - **Agent section (#1279):** "Agent activé" is its first row, a `Switch` saved on change
