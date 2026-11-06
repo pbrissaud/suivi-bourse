@@ -67,6 +67,25 @@ class ScrapeJob(base.JobFamily):
         self.sonde_lock = threading.Lock()
         self.sonde_state: Dict[str, scheduling.SondeState] = {}
 
+        #: Each symbol's arming as the store kept it, until it is armed (#1254).
+        self.restored: Dict[str, job_history.Schedule] = {}
+
+    def restore(self, schedules: Dict[str, job_history.Schedule]) -> None:
+        """Take the stored arming at boot: the back-off resumes where it was.
+
+        A symbol sold while the process was down is forgotten, so the next
+        flush deletes its rows rather than keeping its back-off for a rebuy.
+        """
+        held = self.held_symbols()
+        self.restored = {symbol: schedule for symbol, schedule
+                         in schedules.items() if symbol in held}
+        with self.failure_counts_lock:
+            for symbol, schedule in self.restored.items():
+                if schedule.failure_count:
+                    self.failure_counts[symbol] = schedule.failure_count
+        for symbol in set(schedules) - held:
+            self.ctx.recorder.history.forget(symbol)
+
     @property
     def info_cache(self) -> Dict[str, Dict]:
         """The attributes the last quote of each symbol came with — shared."""
@@ -163,6 +182,25 @@ class ScrapeJob(base.JobFamily):
             args=[symbol], id=_scrape_job_id(symbol),
             name=f'Scrape {symbol}', replace_existing=True,
             misfire_grace_time=None, max_instances=1)
+        with self.failure_counts_lock:
+            failures = self.failure_counts.get(symbol, 0)
+        # Memory only: the flush writes it (#1254).
+        self.ctx.recorder.history.schedule(self.id, symbol, run_date, failures)
+
+    def boot_delay(self, symbol: str, now: datetime) -> Optional[float]:
+        """A new entry's delay: the stored arming's, ``None`` while it is paused.
+
+        A ``next_run`` already past fires now, and the jitter spreads those.
+        """
+        stored = self.restored.get(symbol)
+        if stored is not None and stored.paused:
+            return None    # kept: a later reconcile must not arm it either
+        self.restored.pop(symbol, None)
+        if stored is None:
+            return 0
+        if stored.next_run is None:
+            return 0
+        return max(0.0, (stored.next_run - now).total_seconds())
 
     def rearm_regular_scrapes(self) -> Tuple[int, int]:
         """Re-arm the symbols a new ``regular_interval`` reaches (issue #701)."""
@@ -217,7 +255,9 @@ class ScrapeJob(base.JobFamily):
             return
         for symbol in held - scheduled:
             try:
-                self.arm_symbol(symbol, 0, now)
+                delay = self.boot_delay(symbol, now)
+                if delay is not None:
+                    self.arm_symbol(symbol, delay, now)
             except Exception as e:
                 app_logger.error(f"Failed to arm scrape job for {symbol}: {e}")
         for symbol in scheduled - held:

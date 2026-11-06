@@ -192,6 +192,46 @@ CREATE TABLE IF NOT EXISTS proposal (
     decided_at  TIMESTAMPTZ);
 """
 
+# What the scheduler knew, so a restart does not wipe it (#1254). Written by
+# ``job_store.flush`` alone, every 30 s and at shutdown, never on a pass's own
+# path. ``member`` is the scrape's symbol, and '' for a singleton job: a key
+# column takes no NULL. ``job_slot`` keeps 24 hours, ``job_pass`` the last
+# ``job_history.RECENT`` per key; the flush enforces both.
+_DDL_JOB_STATE = """
+CREATE TABLE IF NOT EXISTS job_slot (
+    job            VARCHAR NOT NULL,
+    member         VARCHAR NOT NULL,
+    hour           TIMESTAMPTZ NOT NULL,
+    passes         INTEGER NOT NULL,
+    attentions     INTEGER NOT NULL,
+    errors         INTEGER NOT NULL,
+    idles          INTEGER NOT NULL,
+    duration       DOUBLE NOT NULL,
+    last_error     VARCHAR,
+    last_error_at  TIMESTAMPTZ,
+    PRIMARY KEY (job, member, hour));
+
+CREATE TABLE IF NOT EXISTS job_pass (
+    job       VARCHAR NOT NULL,
+    member    VARCHAR NOT NULL,
+    ran_at    TIMESTAMPTZ NOT NULL,
+    duration  DOUBLE NOT NULL,
+    outcome   VARCHAR NOT NULL,
+    error     VARCHAR,
+    lines     VARCHAR NOT NULL,       -- JSON: the pass's WARNING+ lines
+    overflow  INTEGER NOT NULL,
+    PRIMARY KEY (job, member, ran_at));
+
+-- ``paused`` is read at boot and set by #1255.
+CREATE TABLE IF NOT EXISTS job_schedule (
+    job            VARCHAR NOT NULL,
+    member         VARCHAR NOT NULL,
+    next_run       TIMESTAMPTZ,
+    failure_count  INTEGER NOT NULL DEFAULT 0,
+    paused         BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (job, member));
+"""
+
 DDL = ''.join((
     _DDL_DECLARED,
     _DDL_DERIVED_FROM_EVENTS,
@@ -199,6 +239,7 @@ DDL = ''.join((
     _DDL_PRICE_POINT,
     _DDL_DERIVED_FROM_COMPUTATION,
     _DDL_SETTINGS_AND_FACTS,
+    _DDL_JOB_STATE,
 ))
 
 TABLES = (
@@ -208,6 +249,7 @@ TABLES = (
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
     'agent_config', 'auth_secret', 'profile_fact', 'proposal',
+    'job_slot', 'job_pass', 'job_schedule',
 )
 
 #: The tables whose surrogate key this store hands out — see
