@@ -253,6 +253,12 @@ class ScrapeJob(base.JobFamily):
         except Exception as e:
             app_logger.error(f"Failed to reconcile per-symbol jobs: {e}")
             return
+        # A paused symbol has no entry, so ``scheduled - held`` misses it.
+        for symbol in set(self.restored) - held:
+            self.restored.pop(symbol, None)
+            with self.failure_counts_lock:
+                self.failure_counts.pop(symbol, None)
+            self.ctx.recorder.forget_scrape(symbol)
         for symbol in held - scheduled:
             try:
                 delay = self.boot_delay(symbol, now)

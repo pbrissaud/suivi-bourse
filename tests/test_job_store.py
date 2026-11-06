@@ -197,3 +197,31 @@ def test_a_failed_flush_does_not_bring_back_a_symbol_dropped_since(store):
 
     for table in ('job_slot', 'job_pass', 'job_schedule'):
         assert _count(store, table) == 0
+
+
+def test_a_symbol_recorded_again_after_a_failed_flush_keeps_only_its_new_passes(store):
+    history = JobHistory(now=NOW)
+    history.record('scrape', 'AAPL', _pass(NOW - timedelta(minutes=5)))
+    drained = history.drain()
+    history.forget('AAPL')
+    history.record('scrape', 'AAPL', _pass(NOW))
+    history.undrain(drained)
+    job_store.flush(_Manager(store), history, now=NOW)
+
+    assert [r[0] for r in store.query('SELECT ran_at FROM job_pass')] == [NOW]
+
+
+def test_a_paused_symbol_sold_then_bought_again_is_armed(store, mocker):
+    store.execute("INSERT INTO job_schedule (job, member, paused) "
+                  "VALUES ('scrape', 'ALO', TRUE)")
+    manager, jobs = _scrape(store, mocker, [])
+    scrape = jobs['scrape']
+    scrape.restored = job_store.restore(store, jobs.ctx.recorder.history)
+    scrape.reconcile_jobs()                       # ALO is not held: dropped
+
+    manager._shares = [{'symbol': 'ALO', 'account': 'default', 'quantity': 10}]
+    scrape.reconcile_jobs()
+    assert 'ALO' in _armed(jobs)
+    job_store.flush(manager, jobs.ctx.recorder.history)
+    assert store.query("SELECT paused FROM job_schedule WHERE member = 'ALO'") \
+        == [(False,)]

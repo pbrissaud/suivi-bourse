@@ -244,12 +244,16 @@ class JobHistory:
     def undrain(self, drained: Drained) -> None:
         """Put back a batch the flush could not write, so the next one does."""
         with self._lock:
-            self._dirty |= {d for d in drained.slots if d[0] in self._tracks}
+            # A symbol forgotten since the drain is in ``_gone`` (the drain
+            # emptied it): its old batch stays dropped, even if a pass has
+            # recorded it again since.
+            def alive(key):
+                return key in self._tracks and key[1] not in self._gone
+            self._dirty |= {d for d in drained.slots if alive(d[0])}
             # ponytail: one cap for every key, a store down for hours keeps
             # the newest passes and the slots still count the rest.
             cap = RECENT * max(1, len(self._tracks))
-            # A key dropped since the drain stays dropped.
-            kept = [p for p in drained.passes if p[0] in self._tracks]
+            kept = [p for p in drained.passes if alive(p[0])]
             self._pending = (kept + self._pending)[-cap:]
             for key, schedule in drained.schedule.items():
                 if key[1] not in self._gone:

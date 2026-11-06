@@ -12,6 +12,7 @@ arming, so a symbol backing off resumes its back-off rather than starting over.
 """
 import json
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
@@ -22,6 +23,10 @@ logger = logging.getLogger("suivi_bourse")
 
 FLUSH_SECONDS = 30
 FLUSH_JOB_ID = 'job-history-flush'
+
+#: One flush at a time, drain to commit: the interval's and the shutdown's
+#: could otherwise commit out of order, an older slot over a newer one.
+_flushing = threading.Lock()
 
 _SLOT_COLUMNS = ('job', 'member', 'hour', 'passes', 'attentions', 'errors',
                  'idles', 'duration', 'last_error', 'last_error_at')
@@ -51,7 +56,11 @@ def _upsert(store, table: str, columns, keys, rows) -> None:
 def flush(config_manager, history: job_history.JobHistory,
           now: Optional[datetime] = None) -> None:
     """Write what the history buffered, in one transaction. Never raises."""
-    now = now or datetime.now(timezone.utc)
+    with _flushing:
+        _flush(config_manager, history, now or datetime.now(timezone.utc))
+
+
+def _flush(config_manager, history, now: datetime) -> None:
     drained = history.drain()
     oldest = now.replace(minute=0, second=0, microsecond=0) - timedelta(
         hours=job_history.SLOTS - 1)
