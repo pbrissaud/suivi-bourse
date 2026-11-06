@@ -6,7 +6,7 @@ version = "0.0.0"
 requires-python = ">=3.15"
 dependencies = [
     "core",
-    "yfinance==1.7.0",
+    "yfinance==1.8.0",
     "pandas>=2.0.0",       # NaN-safe close prices (also required by yfinance)
     "numpy>=2.0.0",        # float32 closes read back as quoted (#1458)
     "urllib3==2.8.0",
