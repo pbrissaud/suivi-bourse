@@ -10,16 +10,19 @@
 import { useRef, useState } from 'react'
 
 import type { DialState } from '@/features/settings/lib/useDial'
-import { useI18n } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 
 export function useRowSave<T, A>({
   send,
   onAnswer,
+  reason = problemMessageKey,
 }: {
   send: (value: T) => Promise<A>
   /** The last answer, once nothing else is waiting. */
   onAnswer: (answer: A) => void
+  /** What a refusal is said as; the API's problem types by default. */
+  reason?: (error: unknown) => MessageKey
 }) {
   const { t } = useI18n()
   const [state, setState] = useState<DialState>({ kind: 'idle' })
@@ -41,7 +44,7 @@ export function useRowSave<T, A>({
         // An earlier answer of this run, if any, is still what the server holds.
         setState({
           kind: 'failed',
-          reason: t('settings.row.notSaved', { reason: t(problemMessageKey(error)) }),
+          reason: t('settings.row.notSaved', { reason: t(reason(error)) }),
         })
       }
       const next = queued.current

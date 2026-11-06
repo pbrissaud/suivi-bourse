@@ -219,6 +219,7 @@ describe('the Sécurité section', () => {
     ).toBeInTheDocument()
     // Off, the section is that one row.
     expect(within(block).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(block).queryByRole('combobox')).not.toBeInTheDocument()
 
     await user.click(toggle)
     // Only once the dialog's action succeeds.
@@ -233,8 +234,13 @@ describe('the Sécurité section', () => {
     await user.type(within(dialog).getByLabelText('Confirmez le code'), '246810')
     await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
 
-    const shown = await screen.findByRole('dialog', { name: 'Votre jeton MCP' })
+    const shown = await screen.findByRole('dialog', { name: 'Votre jeton d’accès' })
     expect(within(shown).getByText('tok-shown-once')).toBeInTheDocument()
+    expect(
+      within(shown).getByText(
+        `curl -H "Authorization: Bearer tok-shown-once" ${window.location.origin}/api/positions`,
+      ),
+    ).toBeInTheDocument()
     expect(within(shown).getByText('Il ne sera plus affiché.')).toBeInTheDocument()
     expect(within(shown).queryByRole('button', { name: 'Fermer' })).not.toBeInTheDocument()
     expect(toggle).toBeChecked()
@@ -243,8 +249,91 @@ describe('the Sécurité section', () => {
 
     await user.click(within(shown).getByRole('button', { name: 'J’ai copié le jeton' }))
     await waitFor(() => expect(screen.queryByText('tok-shown-once')).not.toBeInTheDocument())
-    expect(within(block).getByText(/^Créé le 16/)).toBeInTheDocument()
+    expect(
+      within(block).getByText(/^MCP et API, Authorization: Bearer … · créé le 16/),
+    ).toBeInTheDocument()
     expect(await screen.findByText('Code activé')).toBeInTheDocument()
+    // Just enabled, the lifetime is the default.
+    expect(
+      within(block).getByRole('combobox', { name: 'Verrouillage automatique' }),
+    ).toHaveTextContent('30 jours')
+  })
+
+  function pinOn(lifetime: () => Response | Promise<Response>) {
+    const sent: unknown[] = []
+    server.use(
+      http.get(ROUTES.authStatus, () =>
+        HttpResponse.json({
+          enabled: true,
+          authenticated: true,
+          token_created_at: null,
+          session_seconds: 2592000,
+        }),
+      ),
+      http.post(ROUTES.authLifetime, async ({ request }) => {
+        sent.push(await request.json())
+        return lifetime()
+      }),
+    )
+    return sent
+  }
+
+  it('saves the auto-lock on change, with no dialog', async () => {
+    const sent = pinOn(() => HttpResponse.json({ session_seconds: 900 }))
+    const { user } = renderApp({ url: '/settings' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const lock = await within(block).findByRole('combobox', { name: 'Verrouillage automatique' })
+    expect(lock).toHaveTextContent('30 jours')
+
+    await user.click(lock)
+    expect(screen.getAllByRole('option').map((one) => one.textContent)).toEqual([
+      '15 minutes',
+      '1 heure',
+      '1 jour',
+      '7 jours',
+      '30 jours',
+    ])
+    await user.click(screen.getByRole('option', { name: '15 minutes' }))
+
+    expect(await within(block).findByText('✓ Enregistré')).toBeInTheDocument()
+    expect(sent).toEqual([{ seconds: 900 }])
+    expect(lock).toHaveTextContent('15 minutes')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('says a refused auto-lock on its row', async () => {
+    pinOn(() => refused(503))
+    const { user } = renderApp({ url: '/settings' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const lock = await within(block).findByRole('combobox', { name: 'Verrouillage automatique' })
+
+    await user.click(lock)
+    await user.click(screen.getByRole('option', { name: '1 heure' }))
+
+    expect(
+      await within(block).findByText(
+        'Non enregistré : Vos données sont illisibles pour l’instant. L’application tourne, mais son magasin ne répond pas.',
+      ),
+    ).toBeInTheDocument()
+    // The row goes back to what the server holds.
+    await waitFor(() => expect(lock).toHaveTextContent('30 jours'))
+  })
+
+  it('opens the code dialog when the session lapsed under the auto-lock row', async () => {
+    pinOn(() => refused(401))
+    const { user } = renderApp({ url: '/settings' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const lock = await within(block).findByRole('combobox', { name: 'Verrouillage automatique' })
+
+    await user.click(lock)
+    await user.click(screen.getByRole('option', { name: '1 heure' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(
+      within(block).getByText(
+        'Non enregistré : la session a pris fin, entrez le code puis choisissez à nouveau.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('refuses to turn the code off with a wrong current code, in an alertdialog', async () => {

@@ -123,6 +123,7 @@ const WRITE_ONLY_ROUTES = [
   'authChange',
   'authDisable',
   'authToken',
+  'authLifetime',
   // The ticker field's own keystrokes inside EventForm (#1268): any surface
   // opening the form would be red by construction (#775 against #729), so its
   // in-flight silence is proven in `data.test.tsx` instead.
