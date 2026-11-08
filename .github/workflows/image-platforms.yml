@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    uses: docker/github-builder/.github/workflows/build.yml@v1.18.1
+    uses: docker/github-builder/.github/workflows/build.yml@v1.19.0
     permissions:
       contents: read
       id-token: write
