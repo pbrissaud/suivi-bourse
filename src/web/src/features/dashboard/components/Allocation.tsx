@@ -42,8 +42,7 @@ import {
 import { accountReading } from '@/features/dashboard/lib/dashboard'
 import type { RuntimeState } from '@/lib/api'
 import type { PositionsResponse } from '@/features/shares/lib/api'
-import type { Width } from '@/features/dashboard/lib/dashboardBlocks'
-import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
+import type { RenderState, Width } from '@/features/dashboard/lib/dashboardBlocks'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { allocation, type AllocationSlice, type ShareRow } from '@/features/shares/lib/shares'
@@ -56,7 +55,7 @@ interface AllocationCardProps {
   /** `/api/accounts`, `null` while unanswered: the account view's own read (#1426). */
   accounts: readonly AccountRow[] | null
   runtime: RuntimeState | null
-  /** The width the grid draws the card at — not the saved one (`lib/dashboardLayout`). */
+  /** The width the page draws the card at. */
   width?: Width
 }
 

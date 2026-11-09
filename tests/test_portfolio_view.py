@@ -20,7 +20,6 @@ from types import SimpleNamespace
 
 from application.portfolio_view import (
     build_accounts,
-    build_movers,
     build_shares,
     latent_gains_by_account,
     unit_cost,
@@ -348,100 +347,6 @@ def test_a_carried_in_price_is_superseded_by_a_close_inside_the_window():
 
 def test_an_empty_window_is_an_empty_series():
     assert valuation_series([], lambda day: []) == []
-
-
-# --------------------------------------------------------------------- #
-# Movers
-# --------------------------------------------------------------------- #
-
-def test_movers_rank_by_percentage_and_report_what_the_move_was_worth():
-    shares = build_shares([
-        row(symbol='AAPL', price=110.0, quantity=10.0),
-        row(symbol='MSFT', name='Microsoft', price=380.0, quantity=5.0),
-    ])
-    movers = build_movers(shares, [
-        {'symbol': 'AAPL', 'price': 100.0},
-        {'symbol': 'MSFT', 'price': 400.0},
-    ])
-
-    assert [m.symbol for m in movers] == ['AAPL', 'MSFT']
-    assert movers[0].change_pct == 0.1
-    assert movers[0].contribution == 100.0     # +10 € × 10 shares
-    assert movers[1].change == -20.0
-    assert movers[1].contribution == -100.0
-
-
-def test_a_market_that_has_not_opened_today_reports_zero_not_absence():
-    """Its last point *is* the baseline point, so the change is a real zero —
-    the share has genuinely not traded since its close."""
-    shares = build_shares([row(symbol='AAPL', price=100.0)])
-    movers = build_movers(shares, [{'symbol': 'AAPL', 'price': 100.0}])
-
-    assert movers[0].change == 0.0
-    assert movers[0].change_pct == 0.0
-
-
-def test_a_share_with_no_baseline_is_left_out_rather_than_shown_flat():
-    """Its first day. It has not failed to move — there is nothing to compare
-    against, and a zero in a movers list is a claim."""
-    shares = build_shares([
-        row(symbol='AAPL', price=110.0),
-        row(symbol='NEW', name='Fresh', price=50.0),
-    ])
-    movers = build_movers(shares, [{'symbol': 'AAPL', 'price': 100.0}])
-
-    assert [m.symbol for m in movers] == ['AAPL']
-
-
-def test_a_sold_position_is_left_out_rather_than_shown_flat():
-    """The same rule as the one above, on the population that slipped past it.
-
-    A position at zero quantity is no longer polled, so its stored quote is
-    frozen at the day it stopped being one — it therefore *equals* its own
-    baseline, the `change is None` guard lets it through, and it lands in the
-    list at exactly zero. Seven of them on the real portfolio, on a block whose
-    entire subject is movement. The page filtered them out again on its side, so
-    nothing showed; the rule was written on the server and applied on the
-    client, and a second consumer saw all seven.
-    """
-    shares = build_shares([
-        row(symbol='AAPL', price=110.0, quantity=10.0),
-        row(symbol='GONE', name='Sold long ago', price=50.0, quantity=0.0),
-    ])
-    movers = build_movers(shares, [
-        {'symbol': 'AAPL', 'price': 100.0},
-        {'symbol': 'GONE', 'price': 50.0},
-    ])
-
-    assert [m.symbol for m in movers] == ['AAPL']
-
-
-def test_a_share_whose_price_was_never_observed_is_left_out_too():
-    shares = build_shares([row(symbol='AAPL', price=None)])
-    movers = build_movers(shares, [{'symbol': 'AAPL', 'price': 100.0}])
-
-    assert movers == []
-
-
-def test_a_mover_carries_no_currency_of_its_own():
-    """#702: every amount on the block is in the reporting currency.
-
-    The row used to state the security's quote currency, which is what let the
-    block survive the mixed-currency mode the head refused. There is no such
-    mode and no such mixture: `price` is converted, so `change` and
-    `contribution` are too, and a column repeating one identical code down the
-    block is a fact about the block.
-    """
-    shares = build_shares([
-        row(symbol='AAPL', currency='USD', price=110.0),
-        row(symbol='AIR.PA', name='Airbus', currency='EUR', price=180.0),
-    ])
-    movers = build_movers(shares, [
-        {'symbol': 'AAPL', 'price': 100.0},
-        {'symbol': 'AIR.PA', 'price': 200.0},
-    ])
-
-    assert movers and all('currency' not in m.to_dict() for m in movers)
 
 
 # --------------------------------------------------------------------- #

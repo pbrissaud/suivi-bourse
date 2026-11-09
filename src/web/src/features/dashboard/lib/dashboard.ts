@@ -21,24 +21,10 @@
  *    exactly on the head's figure instead of contradicting it.
  *  - **The allocation is not here any more** (#831). It divided the *shares*
  *    page's own table from the day the maquette was read rendered, so
- *    `allocation` moved to `features/shares/lib/shares.ts` with the block that draws it. What
- *    stays behind is the one line of it this file still needs: `moversSplit`
- *    reduces the payload with `isClosed`, which was `features/shares/lib/shares.ts`'s all
- *    along.
- *  - **The movers count what they do not show.** Measured: the portfolio's
- *    second line, at 16,6 % of it, moved 0,00 % — so it entered neither column
- *    and vanished from both. Silence on the second line of a portfolio reads as
- *    *nothing to say*; counting it costs one sentence. And **the sentence's two
- *    members describe one set**: `moversSplit` reduces the payload to the held
- *    lines with the allocation's own predicate — `isClosed`, one module over —
- *    before counting either of them, a sold line being served on purpose and
- *    comparing equal to its own frozen baseline.
- *
- * `isClosed` comes from there for the same reason.
+ *    `allocation` moved to `features/shares/lib/shares.ts` with the block that draws it.
  */
 import type { PerfPoint } from '@/features/accounts/lib/api'
 import type {
-  Mover,
   PortfolioTotals,
   PortfolioTotalsResponse,
   ValuationPoint,
@@ -47,7 +33,6 @@ import type { Position, PositionsResponse } from '@/features/shares/lib/api'
 import type { RuntimeState } from '@/lib/api'
 import { absenceCase } from '@/lib/absence'
 import { shifted, type AccountRow } from '@/features/accounts/lib/accounts'
-import { isClosed, type ShareRow } from '@/features/shares/lib/shares'
 import type { AxisUnit } from '@/lib/format'
 
 // ------------------------------------------------------------------------- //
@@ -379,74 +364,6 @@ export function timeTicks(
   }
   // ponytail: past ten-year periods (a 50-year series) the budget is cut, not honoured evenly
   return { ...result, ticks: result.ticks.slice(0, max) }
-}
-
-// ------------------------------------------------------------------------- //
-// The movers
-// ------------------------------------------------------------------------- //
-
-/**
- * Five lines on half the width, ten across the full width (Paul, 11/10/2026):
- * a card takes the full width only if it shows more there, and the movers'
- * more is the next five. Twenty would be the table one page down. Across
- * three tracks (`wide`, from 1 600 px) it is the next five again (#1325): the
- * lines flow in columns of five.
- */
-export const MOVERS_ROWS = { half: 5, full: 10, wide: 15 } as const
-
-/**
- * The ticker as a badge: what comes before the first `.` or `-`, four
- * characters at most — `MC.PA` is `MC`, `BTC-EUR` is `BTC`. The place suffix
- * and the quote currency are noise at this size; the name beside it says the rest.
- */
-export function tickerBadge(symbol: string): string {
-  return (symbol.split(/[.-]/)[0] || symbol).slice(0, 4)
-}
-
-/**
- * **One list, ordered by what moved most** (#838).
- *
- * The block was two columns — *Hausses* over *Baisses* — and the drawing has
- * one: the `limit` lines that moved most (five, or ten across the full
- * width), either way, ranked by the size of the move — `−3,8 %` above
- * `+1,4 %`. The rank is what the block is about: which lines moved the most,
- * the sign being the colour's to say. The split cost a heading and a *nothing
- * went down* per column to say what the list says by being short.
- *
- * The three members still describe **one set**: the payload is reduced to the
- * lines actually held (`isClosed`, the shares page's own predicate), so a
- * position sold this morning is neither in the list nor in the sentence under
- * it.
- */
-interface MoversReading {
-  rows: Mover[]
-  others: number
-  unchanged: number
-}
-
-export function moversList(
-  movers: readonly Mover[],
-  rows: readonly ShareRow[],
-  limit: number = MOVERS_ROWS.half,
-): MoversReading {
-  const held = rows.filter((row) => !isClosed(row))
-  const holds = new Set(held.map((row) => row.symbol))
-  const shown = movers.filter((mover) => holds.has(mover.symbol))
-  // **Chosen and ranked by size** (#1096). Sorted best first and cut at five,
-  // the list was the day's five best and never its worst: on a day when twelve
-  // lines moved, `BNP.PA −3,82 %` sat under the cut while `EUNL.DE −0,44 %`
-  // closed the list. The cut is taken on the magnitude, and so is the order: a
-  // list re-laid from the best to the worst put a `+0,09 %` above a `−1,02 %`
-  // under ranks that then said nothing about how much either moved.
-  const moved = shown
-    .filter((mover) => mover.change_pct !== null && mover.change_pct !== 0)
-    .sort((left, right) => Math.abs(right.change_pct ?? 0) - Math.abs(left.change_pct ?? 0))
-    .slice(0, limit)
-  return {
-    rows: moved,
-    others: Math.max(held.length - moved.length, 0),
-    unchanged: shown.filter((mover) => mover.change_pct === 0).length,
-  }
 }
 
 export function dayMove(points: readonly PerfPoint[] | null, now: Date): number | null {

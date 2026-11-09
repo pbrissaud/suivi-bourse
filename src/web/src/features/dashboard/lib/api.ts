@@ -1,6 +1,6 @@
 /**
  * What the dashboard reads: the portfolio's totals and their series, the
- * valuation curve, the movers, the investment rhythm, and the saved layout.
+ * valuation curve and the investment rhythm.
  *
  * The types are the contract of #712 §11 for this domain, and the calls go
  * through the transport of `lib/api.ts`, which also holds every path in
@@ -9,25 +9,7 @@
  */
 
 import { type PerfPoint, SERIES_ORIGIN } from '@/features/accounts/lib/api'
-import { forget, get, ROUTES, send } from '@/lib/api'
-
-// ------------------------------------------------------------------------- //
-// The dashboard's layout
-// ------------------------------------------------------------------------- //
-
-/** Where a card sits: its order is its index in `blocks`. */
-export interface DashboardPlacement {
-  id: string
-  /** `Width` in `./dashboardBlocks`, spelled here so the wire types do not import the registry. */
-  width: 'half' | 'full'
-  hidden: boolean
-}
-
-/** What the store keeps. Read back as `unknown`: `normalizeLayout` vets it. */
-export interface DashboardLayout {
-  version: 1
-  blocks: DashboardPlacement[]
-}
+import { get, ROUTES } from '@/lib/api'
 
 export interface PortfolioTotalsHistoryResponse {
   from: string
@@ -67,33 +49,6 @@ export interface PositionsHistoryResponse {
   from: string
   to: string
   points: ValuationPoint[]
-}
-
-/**
- * One security's move since the previous session close (#727).
- *
- * A share with **no baseline** (its first day) or no current price is simply not
- * in the collection: it has not failed to move, it has nothing to compare
- * against, and a zero in a movers list is a claim. It is still in the
- * allocation, which needs no history — and the block counts what it does not
- * show rather than letting it disappear.
- */
-export interface Mover {
-  symbol: string
-  name: string | null
-  price: number | null
-  previous_price: number | null
-  change: number | null
-  /** The ratio, signed. **`0` is a value**: it is what the block must not hide. */
-  change_pct: number | null
-  market_value: number | null
-  /** What the move did in money — `change × quantity`. */
-  contribution: number | null
-}
-
-export interface MoversResponse {
-  /** Each against the last price before the day of its own latest quote (#1142). */
-  movers: Mover[]
 }
 
 /**
@@ -192,6 +147,29 @@ export interface PortfolioTotals {
    * from the first cycle.
    */
   ytd: { gain: number | null; twr: number | null } | null
+  /**
+   * The change over each range: the amount (the change in gain, so a deposit
+   * is not a performance), the percentage over the value at the start, and the
+   * day it counts from. `null` where the series does not reach back that far.
+   */
+  variation: Record<'1M' | 'YTD' | '1Y' | 'MAX', Variation | null>
+  /** The cash held, summed over the accounts' ledgers. */
+  cash: number | null
+  /**
+   * The official gain: latent + realised + dividends - fees, and the same over
+   * the net contribution. `null` members while a held line has no value.
+   */
+  gain_total: { amount: number | null; pct: number | null }
+  /** The value less the projected tax; an account with no model counts gross. */
+  net_if_sold_today: number | null
+  /** The accounts whose tax was estimated, for the tooltip's « sur le PEA seul ». */
+  estimated_accounts: string[]
+}
+
+export interface Variation {
+  amount: number | null
+  pct: number | null
+  start_date: string
 }
 
 export interface PortfolioTotalsResponse {
@@ -205,10 +183,5 @@ export const dashboardApi = {
   portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
   portfolioTotalsHistory: () => get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
   positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
-  movers: () => get<MoversResponse>(ROUTES.movers),
   investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
-  dashboardLayout: () => get<unknown>(ROUTES.dashboardLayout),
-  saveDashboardLayout: (layout: DashboardLayout) =>
-    send<DashboardLayout>(ROUTES.dashboardLayout, 'PUT', layout),
-  forgetDashboardLayout: () => forget(ROUTES.dashboardLayout),
 }

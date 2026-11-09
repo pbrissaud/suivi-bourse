@@ -216,6 +216,8 @@ export interface Position {
   cost_basis: number;
   dividends: number;
   fundamentals: Fundamentals | null;
+  latent_gain: number | null;
+  latent_gain_pct: number | null;
   name: string | null;
   price: Price | null;
   quantity: number;

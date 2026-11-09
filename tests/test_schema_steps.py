@@ -32,6 +32,7 @@ RELEASED = (
     'move_agent_provider',
     'backfill_agent_usage',
     'make_account_label_optional',
+    'forget_dashboard_layout',
 )
 
 
@@ -245,6 +246,24 @@ def test_the_ticker_names_are_forgotten_once_and_only_those(tmp_path):
         try:
             assert opened.query('SELECT id, name FROM event ORDER BY id') == [
                 (1, None), (2, 'Apple Inc')]
+        finally:
+            opened.close()
+
+
+def test_the_saved_dashboard_layout_is_forgotten_and_nothing_else(tmp_path):
+    """The dashboard is fixed now: its layout row goes, its neighbours stay."""
+    path, connection = _before(tmp_path, 'forget_dashboard_layout')
+    connection.execute(
+        "INSERT INTO setting (key, value) VALUES "
+        "('dashboard_layout', '{}'), ('theme', '{}')")
+    connection.close()
+
+    for _ in range(2):  # the second open runs nothing, and changes nothing
+        opened = store_module.open_store(path, schema_steps.STEPS)
+        try:
+            assert opened.query(
+                "SELECT key FROM setting WHERE key IN ('dashboard_layout', 'theme')"
+            ) == [('theme',)]
         finally:
             opened.close()
 

@@ -488,6 +488,26 @@
             }
           ]
         },
+        "latent_gain": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latent_gain_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "anyOf": [
             {
@@ -529,6 +549,8 @@
         "cost_basis",
         "realised",
         "dividends",
+        "latent_gain",
+        "latent_gain_pct",
         "price",
         "converted",
         "closed_at",

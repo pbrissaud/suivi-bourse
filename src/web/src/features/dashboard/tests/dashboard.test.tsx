@@ -14,20 +14,15 @@
  */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, delay, http } from 'msw'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
-  aBenchmark,
-  aBenchmarkAccountRow,
   aClosedPosition,
   anAccount,
   anAccountsPayload,
   theSeededAccount,
-  aMover,
-  aMoversPayload,
   aPosition,
   aPerfPoint,
   aPortfolioHistory,
@@ -40,7 +35,6 @@ import {
   defaultPositions,
   NOW,
 } from '@/test/factories'
-import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -51,8 +45,7 @@ function figure(name: string) {
 
 /**
  * The hero: the portfolio's value, the gain total under it, and a row of three
- * figures — the year, today, and the IRR (#1149, #1280). The gain's four terms are not in it; they
- * are on the breakdown card, under the `Gain total` they add up to.
+ * figures — the year, today, and the IRR (#1149, #1280).
  */
 function hero() {
   return screen.findByRole('group', { name: 'Valeur du portefeuille' })
@@ -161,7 +154,7 @@ describe('the value is the hero (direction 1a)', () => {
     )
     renderApp()
     await hero()
-    await screen.findByRole('list', { name: 'Mouvements' })
+    await screen.findByRole('group', { name: 'Gain total' })
 
     expect(screen.queryByText(/net d.impôt/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Il vous resterait/)).not.toBeInTheDocument()
@@ -183,18 +176,6 @@ describe('the value is the hero (direction 1a)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('puts the four terms in a section of their own, under the total they add up to', async () => {
-    renderApp()
-    await hero()
-
-    const card = within(await screen.findByRole('region', { name: 'D’où vient le gain' }))
-    expect(card.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/300,00/)
-    expect(card.getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(/50,00/)
-    expect(card.getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/25,00/)
-    expect(card.getByRole('group', { name: 'Frais de virement' })).toHaveTextContent(/5,00/)
-    expect(card.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
-  })
-
   it('no longer compares the accounts here, and reads none of their series', async () => {
     const requested: string[] = []
     server.events.on('request:start', ({ request }) => {
@@ -202,7 +183,7 @@ describe('the value is the hero (direction 1a)', () => {
     })
     renderApp()
     await hero()
-    await screen.findByRole('list', { name: 'Mouvements' })
+    await screen.findByRole('group', { name: 'Gain total' })
 
     expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
     expect(requested.some((path) => /\/api\/accounts\/[^/]+\/history/.test(path))).toBe(false)
@@ -244,23 +225,6 @@ describe('the gain is computed, never read', () => {
     expect(screen.queryByText(/99\D?999/)).not.toBeInTheDocument()
   })
 
-  it('shows the four terms on their own row, never on the head’s', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /300,00/,
-    )
-    expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
-    expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
-    expect(figure('Frais de virement')).toHaveTextContent(/5,00/)
-
-    // A total and its terms never share a line: the terms are not inside the
-    // head's group, or the form would invite adding them to it.
-    const head = figure('Gain total')
-    expect(within(head).queryByRole('group')).not.toBeInTheDocument()
-  })
-
   it('puts the value on the gain’s instant when prices moved since the pass (#1049)', async () => {
     // The pass wrote `2 800 − 2 430 = 370`; the scrape has since lifted the line
     // from 130 to 140, so the gain is 470 — and the value read beside it has to
@@ -300,126 +264,6 @@ describe('the gain is computed, never read', () => {
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/375,00/)
     expect(screen.queryByRole('group', { name: 'Frais de virement' })).not.toBeInTheDocument()
     expect(screen.queryByText('Frais de virement')).not.toBeInTheDocument()
-  })
-})
-
-describe('the breakdown is a statement, with no drawing and no window (#1175)', () => {
-  const breakdown = async () => {
-    const card = await screen.findByRole('region', { name: 'D’où vient le gain' })
-    await within(card).findByRole('group', { name: 'Gain total' })
-    return card
-  }
-  const TERMS = [
-    'Plus-value latente',
-    'Plus-value réalisée',
-    'Dividendes reçus',
-    'Frais de virement',
-  ]
-  /** `+1 234,56 €` → 1234.56, whatever spaces and minus sign `fr-FR` writes. */
-  const amountOf = (text: string) =>
-    Number(
-      text
-        .replace(/[^\d,−-]/g, '')
-        .replace('−', '-')
-        .replace(',', '.'),
-    )
-
-  it('writes four rows and the total as text, and draws nothing', async () => {
-    renderApp()
-    const card = await breakdown()
-
-    expect(
-      within(card)
-        .getAllByRole('group')
-        .map((group) => group.getAttribute('aria-label')),
-    ).toEqual([...TERMS, 'Gain total'])
-    // The ⓘ's icon is the one svg, inside its button.
-    expect([...card.querySelectorAll('svg')].every((svg) => svg.closest('button'))).toBe(true)
-    expect(card.querySelector('[data-cascade-step]')).toBeNull()
-    expect(card.querySelector('[style*="width"]')).toBeNull()
-    expect(within(card).queryByRole('radiogroup')).not.toBeInTheDocument()
-  })
-
-  it('adds its four rows up to its total', async () => {
-    renderApp()
-    const card = await breakdown()
-
-    const figure = (name: string) =>
-      amountOf(within(card).getByRole('group', { name }).lastElementChild?.textContent ?? '')
-    const sum = TERMS.reduce((acc, name) => acc + figure(name), 0)
-    expect(sum).toBeCloseTo(370, 2)
-    expect(figure('Gain total')).toBeCloseTo(sum, 2)
-  })
-
-  it('dashes the fee row and the total when the fees have no bound', async () => {
-    server.use(totalsOf({ transfer_fees: null }))
-    renderApp()
-    const card = await breakdown()
-
-    expect(within(card).getByRole('group', { name: 'Frais de virement' })).toHaveTextContent(/—/)
-    expect(within(card).getByRole('group', { name: 'Gain total' })).toHaveTextContent(/—/)
-  })
-
-  it('names a pending rate on the latent row and the total', async () => {
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([aPosition({ price: 125, currency: 'USD', rate: null })]),
-        ),
-      ),
-    )
-    renderApp()
-    const card = await breakdown()
-
-    for (const name of ['Plus-value latente', 'Gain total']) {
-      expect(within(card).getByRole('group', { name })).toHaveTextContent(/en attente du taux/)
-    }
-  })
-
-  it('names a rebuild on the latent row and the total', async () => {
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload(
-            defaultPositions().map((position) => ({
-              ...position,
-              terminal: false,
-              price: null,
-              converted: null,
-            })),
-          ),
-        ),
-      ),
-    )
-    renderApp()
-    const card = await breakdown()
-
-    for (const name of ['Plus-value latente', 'Gain total']) {
-      expect(within(card).getByRole('group', { name })).toHaveTextContent(
-        /historique en cours de reconstitution/,
-      )
-    }
-  })
-
-  it('asks for no window, even when a saved layout still carries one', async () => {
-    const asked: string[] = []
-    const record = ({ request }: { request: Request }) => {
-      asked.push(new URL(request.url).pathname)
-    }
-    server.events.on('request:start', record)
-    onTestFinished(() => server.events.removeListener('request:start', record))
-    server.use(
-      http.get(ROUTES.dashboardLayout, () =>
-        HttpResponse.json({
-          version: 1,
-          blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false, period: 'ytd' }],
-        }),
-      ),
-    )
-    renderApp()
-    await breakdown()
-
-    expect(asked.some((path) => path.endsWith('-baseline'))).toBe(false)
   })
 })
 
@@ -570,23 +414,6 @@ describe('the two periods of the total', () => {
     ...aPerfPoint(t, 100),
     total_value: totalValue,
     net_contributed: contributed,
-  })
-
-  it('keeps them with the total and out of the row of four terms', async () => {
-    renderApp()
-    const head = await hero()
-
-    // A period is the same figure through another window; a term is a *part* of
-    // it.
-    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
-    for (const term of [
-      'Plus-value latente',
-      'Plus-value réalisée',
-      'Dividendes reçus',
-      'Frais de virement',
-    ]) {
-      expect(figure(term)).not.toHaveTextContent(/Aujourd’hui|janvier/)
-    }
   })
 
   it('counts the movement of the gain, which a deposit made today does not move', async () => {
@@ -1110,7 +937,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     await theHeadStandsWhole()
     // The movers answer on a read of their own, so their list standing is the
     // proof the page has otherwise settled and the sentence is not late.
-    await screen.findByRole('list', { name: 'Mouvements' })
+    await screen.findByRole('group', { name: 'Gain total' })
     expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
     expect(document.querySelector('[data-empty]')).toBeNull()
     // The chart's frame is not drawn: its reading selector is what would carry
@@ -1125,7 +952,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     // owed a reason for. What must never happen is a third sentence with no
     // slot under it — so the count is exactly the number of blocks that lost
     // their content.
-    server.use(unreadable(ROUTES.portfolioTotalsHistory), unreadable(ROUTES.movers))
+    server.use(unreadable(ROUTES.portfolioTotalsHistory), unreadable(ROUTES.investmentRhythm))
     renderApp()
 
     await waitFor(() => expect(screen.getAllByText('Lecture impossible')).toHaveLength(2))
@@ -1680,46 +1507,10 @@ describe('the allocation is not on this page', () => {
 })
 
 describe('the allocation card (#1206)', () => {
-  function showAllocation(width: 'half' | 'full') {
-    server.use(
-      http.get(ROUTES.dashboardLayout, () =>
-        HttpResponse.json({
-          version: 1,
-          blocks: [{ id: 'allocation', width, hidden: false }],
-        }),
-      ),
-    )
-  }
-
   const useAccounts = (...accounts: Parameters<typeof anAccountsPayload>[0][]) =>
     server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(...accounts))))
 
-  it('is shown on a fresh install, with nothing « Nouveau »', async () => {
-    renderApp()
-
-    expect(await screen.findByRole('region', { name: 'Répartition' })).toBeInTheDocument()
-    expect(screen.queryByText(/nouvelles? cartes?/)).not.toBeInTheDocument()
-  })
-
-  it('arrives under « Nouveau » on a saved layout without it, and draws nothing until it is shown', async () => {
-    server.use(
-      http.get(ROUTES.dashboardLayout, () =>
-        HttpResponse.json({
-          version: 1,
-          blocks: [{ id: 'gain-breakdown', width: 'half', hidden: false }],
-        }),
-      ),
-    )
-    renderApp()
-    fireEvent.click(await screen.findByRole('button', { name: 'Modifier le tableau de bord' }))
-
-    const hidden = await screen.findByRole('region', { name: 'Cartes masquées' })
-    expect(within(hidden).getByText('Répartition').closest('li')).toHaveTextContent('Nouveau')
-    expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
-  })
-
   it('links the account view to the accounts page, and the security view to nothing (#1280)', async () => {
-    showAllocation('half')
     renderApp()
     const card = await screen.findByRole('region', { name: 'Répartition' })
 
@@ -1732,7 +1523,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it('at half width, sets the total on the title row and draws a legend with no ring', async () => {
-    showAllocation('half')
     renderApp()
     const card = await screen.findByRole('region', { name: 'Répartition' })
 
@@ -1761,7 +1551,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it('switches the view from the keyboard', async () => {
-    showAllocation('half')
     const { user } = renderApp()
     const card = await screen.findByRole('region', { name: 'Répartition' })
 
@@ -1778,7 +1567,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it('folds past five lines into « Autres · N lignes » and says so', async () => {
-    showAllocation('half')
     server.use(
       http.get(ROUTES.positions, () =>
         HttpResponse.json(
@@ -1800,7 +1588,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it('names an account by its declared label, and the seeded one from the catalogue (#1426)', async () => {
-    showAllocation('half')
     useAccounts([theSeededAccount(), anAccount({ id: 'alpha', label: 'Mon PEA' })])
     const { user } = renderApp()
     const card = await screen.findByRole('region', { name: 'Répartition' })
@@ -1812,44 +1599,7 @@ describe('the allocation card (#1206)', () => {
     expect(within(legend).queryByText('default')).not.toBeInTheDocument()
   })
 
-  it('at full width, draws the ring with the total in its hole and the amounts', async () => {
-    showAllocation('full')
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
-    const row = within(card).getByText('Zeta Alpha').closest('li')!
-    expect(row).toHaveTextContent(/1\D?300,00/)
-    expect(within(card).getByRole('group', { name: 'Répartir par' })).toBeInTheDocument()
-
-    // By account: the accounts' value in the hole, each account with its amount (#1426).
-    fireEvent.click(within(card).getByRole('button', { name: 'Compte' }))
-    expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
-    expect(within(card).getByRole('group', { name: 'Valeur des comptes' })).toHaveTextContent(
-      /3\D?300,00/,
-    )
-    expect(within(card).getByText('Alpha').closest('li')).toHaveTextContent(/1\D?800,00/)
-    expect(within(card).getByText('Gamma').closest('li')).toHaveTextContent(/600,00/)
-  })
-
-  it('at full width, lays the legend in one column, two from xl and three from 3xl (#1325)', async () => {
-    showAllocation('full')
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-    const legend = within(card).getByRole('list', { name: 'Répartition' })
-    const slices = within(legend).getAllByRole('listitem').length
-
-    expect(legend).toHaveClass(
-      'grid-cols-1',
-      'xl:grid-cols-2',
-      '3xl:grid-cols-3',
-      '3xl:[grid-template-rows:repeat(var(--legend-rows-three),auto)]',
-    )
-    expect(legend.style.getPropertyValue('--legend-rows-three')).toBe(String(Math.ceil(slices / 3)))
-  })
-
   it('folds past five accounts into « Autres · N comptes » and counts accounts', async () => {
-    showAllocation('half')
     useAccounts(
       Array.from({ length: 9 }, (_, index) =>
         anAccount({ id: `acct${index}`, label: null, total_value: 900 - index }),
@@ -1865,33 +1615,7 @@ describe('the allocation card (#1206)', () => {
     expect(card).toHaveTextContent('9 comptes · top 4 détaillé, 5 regroupés')
   })
 
-  it('freezes the selector on the title row while the grid is arranged', async () => {
-    showAllocation('full')
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-    expect(within(card).getByRole('group', { name: 'Répartir par' }).closest('[inert]')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Modifier le tableau de bord' }))
-    await waitFor(() =>
-      expect(
-        within(card).getByRole('group', { name: 'Répartir par' }).closest('[inert]'),
-      ).not.toBeNull(),
-    )
-  })
-
-  it('at 390 px, draws the half-width legend whatever the saved width', async () => {
-    setViewportWidth(390)
-    showAllocation('full')
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
-    const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
-    expect(titleRow).toHaveTextContent(/2\D?300,00/)
-  })
-
   it('names the lines it could not place, even when it could place none', async () => {
-    showAllocation('half')
     server.use(
       http.get(ROUTES.positions, () =>
         HttpResponse.json(
@@ -1912,7 +1636,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it('offers no selector while fewer than two accounts hold a placed line', async () => {
-    showAllocation('half')
     // Owing and unwritten accounts have no weight, so they are no slice (#1426).
     useAccounts([
       anAccount({ id: 'alpha' }),
@@ -1926,7 +1649,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it("divides by the accounts' worth, as the accounts bar does (#1426)", async () => {
-    showAllocation('half')
     useAccounts([
       anAccount({ id: 'pea', label: 'PEA', total_value: 42670, holdings_value: 40000 }),
       anAccount({ id: 'cto', label: 'CTO', total_value: 5545.4, holdings_value: 5000 }),
@@ -1945,7 +1667,6 @@ describe('the allocation card (#1206)', () => {
   })
 
   it('waits for the rebuild instead of stating shares of a partial whole (#1285, #1426)', async () => {
-    showAllocation('half')
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     // One row stale, and it is the one left out of the split: it still counts.
     useAccounts([
@@ -1961,196 +1682,6 @@ describe('the allocation card (#1206)', () => {
     expect(card).not.toHaveTextContent('%')
     expect(card).not.toHaveTextContent('Valeur des comptes')
     expect(within(card).queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
-  })
-})
-
-describe('the movers', () => {
-  it('shows one list, biggest move first, and counts what it does not show', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // **One list and no headings** (#838): what moved most at the top, either
-    // way, which is what a five-row list says without a column
-    // called *Hausses* and a *Rien n'a baissé* under an empty one.
-    const list = within(await screen.findByRole('list', { name: 'Mouvements' }))
-    expect(screen.queryByText('Hausses')).not.toBeInTheDocument()
-    expect(screen.queryByText('Baisses')).not.toBeInTheDocument()
-
-    // The **ticker** on every line (#790, #838): it is the identity the rest of
-    // the product addresses a security by, and a rail of names alone cannot be
-    // matched to the allocation's legend or to a broker's own screen. It is a
-    // badge and `aria-hidden`, so the symbol is said beside the name.
-    expect(list.getByText('Zeta Alpha').closest('li')).toHaveTextContent('ZZA')
-
-    // Three lines held, one of them shown: `ZZB` moved by exactly 0,00 % and is
-    // in neither column, `ZZC` has never been quoted and has nothing to compare
-    // a first day against. Silence about them reads as *nothing to say*.
-    expect(
-      screen.getByText(/2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé/),
-    ).toBeInTheDocument()
-  })
-
-  it('says nothing of a closed line the server serves at 0,00 %', async () => {
-    // `/api/positions` carries a sold line on purpose and
-    // `/api/portfolio/movers` compares its frozen quote against a baseline equal
-    // to it, so the payload holds a `change_pct: 0` about a line nobody owns.
-    // Counted, it inflated *dont N n’a pas bougé* — the qualifier of a set it is
-    // not in — while the count of the lines *not shown* was taken over the held
-    // ones alone.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            ...defaultPositions(),
-            aClosedPosition({
-              account: 'alpha',
-              symbol: 'ZZD',
-              name: 'Zeta Delta',
-              closed_at: '2025-11-04',
-            }),
-          ]),
-        ),
-      ),
-      http.get(ROUTES.movers, () =>
-        HttpResponse.json(
-          aMoversPayload([
-            aMover(),
-            aMover({ symbol: 'ZZB', name: 'Zeta Beta', change: 0, change_pct: 0, contribution: 0 }),
-            aMover({
-              symbol: 'ZZD',
-              name: 'Zeta Delta',
-              change: 0,
-              change_pct: 0,
-              market_value: 0,
-              contribution: 0,
-            }),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // Unchanged still, and *one*: the three held lines, of which `ZZB` moved by
-    // nothing and `ZZC` was never quoted. The closed one is in neither figure.
-    expect(
-      await screen.findByText(/2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé/),
-    ).toBeInTheDocument()
-    expect(screen.queryByText('Zeta Delta')).not.toBeInTheDocument()
-  })
-
-  describe('says *dont 11* out of 11 once (#1146)', () => {
-    // One line moved, `others` held lines behind it, `unchanged` of them at 0,00 %
-    // and the rest never quoted.
-    const hidden = (others: number, unchanged: number) => {
-      const symbols = Array.from({ length: others }, (_, i) => `ZH${i}`)
-      server.use(
-        http.get(ROUTES.positions, () =>
-          HttpResponse.json(
-            aPositionsPayload([
-              aPosition(),
-              ...symbols.map((symbol) => aPosition({ symbol, name: `Hidden ${symbol}` })),
-            ]),
-          ),
-        ),
-        http.get(ROUTES.movers, () =>
-          HttpResponse.json(
-            aMoversPayload([
-              aMover(),
-              ...symbols.slice(0, unchanged).map((symbol) =>
-                aMover({
-                  symbol,
-                  name: `Hidden ${symbol}`,
-                  change: 0,
-                  change_pct: 0,
-                  contribution: 0,
-                }),
-              ),
-            ]),
-          ),
-        ),
-      )
-      renderApp()
-    }
-
-    it.each([
-      [11, 11, 'Les 11 autres lignes n’ont pas bougé.'],
-      [11, 3, '11 autres lignes n’apparaissent pas ici, dont 3 n’ont pas bougé.'],
-      [1, 1, 'L’autre ligne n’a pas bougé.'],
-    ])('%i hidden, %i unchanged', async (others, unchanged, sentence) => {
-      hidden(others, unchanged)
-      expect(await screen.findByText(sentence)).toBeInTheDocument()
-    })
-  })
-
-  it('draws a rank only when there is something to rank against (#1147)', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-    // The default payload moves one line: a « 1 » beside it is noise.
-    const one = within(await screen.findByRole('list', { name: 'Mouvements' }))
-    expect(one.queryByText('1')).not.toBeInTheDocument()
-  })
-
-  it('ranks two lines « 1 » and « 2 »', async () => {
-    server.use(
-      http.get(ROUTES.movers, () =>
-        HttpResponse.json(
-          aMoversPayload([
-            aMover(),
-            aMover({ symbol: 'ZZB', name: 'Zeta Beta', change_pct: -0.01, contribution: -4 }),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-    const two = within(await screen.findByRole('list', { name: 'Mouvements' }))
-    expect(two.getByText('1')).toBeInTheDocument()
-    expect(two.getByText('2')).toBeInTheDocument()
-  })
-
-  it('says what it compares against, once, and dates nothing', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // Undated (#1142): each line has its own previous close, and on a weekend a
-    // stock's and a 24/7 line's are not on the same day.
-    expect(
-      await within(await screen.findByRole('region', { name: 'Mouvements' })).findAllByText(
-        'Aujourd’hui',
-      ),
-    ).toHaveLength(1)
-  })
-})
-
-describe('the page is a grid of sections, never of cards (DESIGN.md)', () => {
-  it('draws its four blocks as sections and no card at all', async () => {
-    const { container } = renderApp()
-    await screen.findByRole('list', { name: 'Mouvements' })
-    await screen.findByRole('region', { name: 'Rythme d’investissement' })
-
-    // A card is for something the user decides; nothing on this page is.
-    expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(0)
-    const sections = container.querySelectorAll('[data-slot="section"]')
-    // The default layout of the dashboard grid (#1280): the allocation, the
-    // gain and the rhythm, then the movers (#1325).
-    expect([...sections].map((one) => one.querySelector('h2')?.textContent)).toEqual([
-      'Répartition',
-      'D’où vient le gain',
-      'Rythme d’investissement',
-      'Mouvements',
-    ])
-    // And never one inside another.
-    expect(container.querySelectorAll('[data-slot="section"] [data-slot="section"]')).toHaveLength(
-      0,
-    )
-  })
-
-  it('sets the close the movements compare against on the title’s row', async () => {
-    renderApp()
-    const movers = await screen.findByRole('region', { name: 'Mouvements' })
-    const titleRow = within(movers).getByRole('heading', { name: 'Mouvements' }).parentElement!
-    expect(titleRow).toHaveTextContent(/Aujourd’hui/)
   })
 })
 
@@ -2302,7 +1833,7 @@ describe('the investment rhythm', () => {
     )
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
-    await screen.findByRole('list', { name: 'Mouvements' })
+    await screen.findByRole('group', { name: 'Gain total' })
 
     expect(screen.queryByText('Rythme d’investissement')).not.toBeInTheDocument()
   })
@@ -2313,12 +1844,8 @@ describe('the time announcers', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // The page's own mention of when its prices were read, and the movers'
-    // reference close — a *different* instant, and the subject of that block.
+    // The page's own mention of when its prices were read.
     expect(await screen.findByText(/Cours au 2 mars 2026/)).toBeInTheDocument()
-    expect(
-      within(screen.getByRole('region', { name: 'Mouvements' })).getAllByText('Aujourd’hui'),
-    ).toHaveLength(1)
     // The two transitory ones are absent here: the reconstruction is over, so
     // the base date is not news and the notifications panel raises no card for
     // it (#829).
@@ -2354,7 +1881,6 @@ describe('the four states of the page', () => {
     // Not a third copy of the pair of entries (#723's, which the first-run
     // modal is the second of): this page reads, it is not where one enters.
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Mouvements')).not.toBeInTheDocument()
     expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
     // And the route is the dashboard unconditionally: a bookmark valid
     // yesterday is valid at zero events too.
@@ -2380,7 +1906,6 @@ describe('the four states of the page', () => {
         ),
       ),
       totalsOf({ holdings_value: 0 }),
-      http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload([]))),
     )
     renderApp()
 
@@ -2390,15 +1915,6 @@ describe('the four states of the page', () => {
     expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent('—')
     expect(figure('Plus-value réalisée')).toHaveTextContent(/75,00/)
     expect(head).toHaveTextContent(/dont 500,00\D?€ de liquidités/)
-
-    // And the block says **why** it is empty rather than being absent. There is
-    // one of them here since #831: the allocation, which said the same thing
-    // about the same portfolio, is on the shares page and says it there.
-    expect(await screen.findByText('Rien à comparer')).toBeInTheDocument()
-    // Nothing is compared, so the block names no close it compares against.
-    expect(
-      within(screen.getByRole('region', { name: 'Mouvements' })).queryByText('Aujourd’hui'),
-    ).not.toBeInTheDocument()
   })
 })
 
@@ -2482,274 +1998,5 @@ describe('the head in English', () => {
     // and pointed the English way.
     expect(figure('Portfolio value')).toHaveTextContent(/2,800\.00/)
     expect(figure('Portfolio value')).toHaveTextContent(/\+€370\.00\s*total P&L/)
-    expect(screen.getByRole('heading', { name: 'Where the P&L comes from' })).toBeInTheDocument()
-  })
-})
-
-describe('the comparison card (#1205)', () => {
-  /** A saved layout with the card shown, at the width asked. */
-  function shown(width: 'half' | 'full' = 'half') {
-    return http.get(ROUTES.dashboardLayout, () =>
-      HttpResponse.json({
-        version: 1,
-        blocks: [
-          { id: 'gain-breakdown', width: 'half', hidden: false },
-          { id: 'rhythm', width: 'half', hidden: false },
-          { id: 'movers', width: 'full', hidden: false },
-          { id: 'benchmark', width, hidden: false },
-        ],
-      }),
-    )
-  }
-
-  function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkResponse> {
-    return {
-      state: 'ready',
-      reference: 'CW8.PA',
-      index: 'MSCI World',
-      followed: ['CW8.PA'],
-      ready: ['CW8.PA'],
-      covered_from: '2019-03-04',
-      covered_to: '2026-09-17',
-      ended: null,
-      portfolio_value: 98_765.43,
-      reference_value: 94_552.63,
-      gap_gross: 4212.8,
-      ...overrides,
-    }
-  }
-
-  function renderCard(payload: Partial<BenchmarkResponse>, width: 'half' | 'full' = 'half') {
-    server.use(
-      shown(width),
-      http.get(ROUTES.benchmark, () => HttpResponse.json(aBenchmark(payload))),
-    )
-    return renderApp()
-  }
-
-  const card = (name: string | RegExp = /^Face au/) => screen.findByRole('region', { name })
-
-  it('states the gap, signed, with the period — and neither of the two values', async () => {
-    renderCard(ready())
-    const region = await card('Face au MSCI World')
-
-    expect(within(region).getByText('+4 212,80 €')).toHaveClass('text-foreground', 'text-2xl')
-    expect(region).toHaveTextContent(
-      'd’avance, avec les mêmes versements · 4 mars 2019 → 17 sept. 2026',
-    )
-    expect(region).not.toHaveTextContent(/98\D?765/)
-    expect(region).not.toHaveTextContent(/94\D?552/)
-    expect(within(region).getByRole('link', { name: 'Voir la comparaison →' })).toHaveAttribute(
-      'href',
-      '/benchmark',
-    )
-  })
-
-  it('the benchmark card writes its gap in the colour of text', async () => {
-    renderCard(
-      ready({
-        gap_gross: -12.5,
-        per_account: [
-          aBenchmarkAccountRow({ account: 'PEA', gap_gross: 5000 }),
-          aBenchmarkAccountRow({ account: 'CTO', gap_gross: -787.2 }),
-        ],
-      }),
-    )
-    const region = await card()
-
-    for (const figure of [/^[-−]12,50 €$/, /^[-−]787,20 €$/, /^\+5\D?000,00 €$/]) {
-      const node = within(region).getByText(figure)
-      expect(node).toHaveClass('text-foreground')
-      expect(node).not.toHaveClass('text-loss')
-      expect(node).not.toHaveClass('text-gain')
-    }
-  })
-
-  // To the cent: `−0,004 €` is a zero, not a loss printed as `−0,00 €`.
-  it.each([
-    [-12.5, /^[-−]12,50 €$/, 'de retard', 'text-foreground'],
-    [0.004, /^0,00 €$/, 'à égalité', 'text-foreground'],
-    [-0.004, /^0,00 €$/, 'à égalité', 'text-foreground'],
-    // Half a cent is a cent on either side, as `Intl` would round it.
-    [0.005, /^\+0,01 €$/, 'd’avance', 'text-foreground'],
-    [-0.005, /^[-−]0,01 €$/, 'de retard', 'text-foreground'],
-    // `1.005 * 100` is 100.4999… in binary: the cent is the decimal's.
-    [1.005, /^\+1,01 €$/, 'd’avance', 'text-foreground'],
-  ])('reads %s as %s, %s', async (gap, figure, verdict, tone) => {
-    renderCard(ready({ gap_gross: gap }))
-    const region = await card()
-
-    expect(within(region).getByText(figure)).toHaveClass(tone)
-    expect(region).toHaveTextContent(verdict)
-  })
-
-  it('says nothing of a gap it does not have, and keeps the em dash', async () => {
-    renderCard(ready({ gap_gross: null }))
-    const region = await card()
-
-    expect(within(region).getByText('—')).toBeInTheDocument()
-    expect(region).not.toHaveTextContent(/d’avance|de retard|à égalité/)
-    // The period stays: the em dash is about the figure, not the window.
-    expect(region).toHaveTextContent('4 mars 2019 → 17 sept. 2026')
-  })
-
-  it('breaks the gap down by account, only with two of them', async () => {
-    const row = (account: string, gap_gross: number | null) =>
-      aBenchmarkAccountRow({ account, gap_gross })
-    renderCard(ready({ per_account: [row('PEA', 5000), row('CTO', -787.2), row('AV', null)] }))
-    const list = within(await card()).getByRole('list', { name: 'Compte par compte' })
-
-    const [pea, cto, av] = within(list).getAllByRole('listitem')
-    expect(pea).toHaveTextContent(/^PEA\+5\D?000,00 €$/)
-    expect(cto).toHaveTextContent(/^CTO[-−]787,20 €$/)
-    // A null gap keeps its row, with the em dash.
-    expect(av).toHaveTextContent(/^AV—$/)
-  })
-
-  it('draws no row for a single account', async () => {
-    renderCard(
-      ready({
-        per_account: [aBenchmarkAccountRow({ gap_gross: 4212.8 })],
-      }),
-    )
-    expect(within(await card()).queryByRole('list')).not.toBeInTheDocument()
-  })
-
-  it('invites to choose an index when none is', async () => {
-    renderCard({ state: 'no_reference' })
-    const region = await card('Face à l’indice')
-
-    expect(within(region).getByText('Aucune référence suivie')).toBeInTheDocument()
-    expect(within(region).getByRole('link', { name: 'Choisir un indice' })).toHaveAttribute(
-      'href',
-      '/benchmark',
-    )
-  })
-
-  it.each(['rebuilding', 'splits_unknown'] as const)(
-    'shows the rebuild and no figure while %s',
-    async (state) => {
-      renderCard(
-        ready({
-          state,
-          rebuild: {
-            symbol: 'CW8.PA',
-            reached: '2015-01-02',
-            target: '2009-06-16',
-            ratio: 0.4,
-            requested: true,
-            failing: false,
-          },
-        } as Partial<BenchmarkResponse>),
-      )
-      const region = await card('Face au MSCI World')
-
-      expect(region).toHaveTextContent('MSCI World en cours de téléchargement')
-      expect(region).not.toHaveTextContent(/4\D?212/)
-    },
-  )
-
-  it('keeps its title and no figure while a rebuild has no progress to show yet', async () => {
-    renderCard(ready({ state: 'splits_unknown' }))
-    const region = await card('Face au MSCI World')
-
-    expect(region).not.toHaveTextContent(/4\D?212/)
-  })
-
-  // The page's sentence for each `reason` (#1207), and the ledger only where
-  // the cause lives there.
-  it.each([
-    ['no_events', /Enregistrez vos premiers événements/, true],
-    [undefined, /Enregistrez vos premiers événements/, true],
-    ['not_computed', /pas encore calculées/, false],
-    ['nothing_held', /pas sur les liquidités/, true],
-    ['no_rate_on_seed', /un taux de change manque/, false],
-  ] as const)('says why there is nothing to compare: %s', async (reason, body, ledger) => {
-    renderCard({ state: 'nothing_to_compare', reason, reference: 'CW8.PA', index: 'MSCI World' })
-    const region = await card('Face au MSCI World')
-
-    expect(region).toHaveTextContent(body)
-    expect(Boolean(within(region).queryByRole('link', { name: 'Aller au grand livre' }))).toBe(
-      ledger,
-    )
-  })
-
-  it('says why the total is missing when the accounts have theirs', async () => {
-    renderCard({
-      state: 'nothing_to_compare',
-      reason: 'no_rate_on_seed',
-      reference: 'CW8.PA',
-      per_account: [
-        aBenchmarkAccountRow({ account: 'PEA', gap_gross: 100 }),
-        aBenchmarkAccountRow({ account: 'CTO', gap_gross: -50 }),
-      ],
-    })
-    const region = await card('Face au CW8.PA')
-
-    expect(region).toHaveTextContent(
-      'Le total ne peut pas être comparé : un taux de change manque au premier jour.',
-    )
-    expect(within(region).getAllByRole('listitem')).toHaveLength(2)
-  })
-
-  it('shows no amount without a base currency', async () => {
-    renderCard(ready({ base_currency: null }))
-    const region = await card('Face à l’indice')
-
-    expect(region).not.toHaveTextContent('€')
-  })
-
-  it('names a failed read in its slot', async () => {
-    server.use(
-      shown(),
-      problemHandler(ROUTES.benchmark, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
-    renderApp()
-
-    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
-  })
-
-  it('asks again every minute while the reference is rebuilt, and stops once ready', async () => {
-    let calls = 0
-    let payload: Partial<BenchmarkResponse> = ready({ state: 'rebuilding' })
-    server.use(
-      shown(),
-      http.get(ROUTES.benchmark, () => {
-        calls += 1
-        return HttpResponse.json(aBenchmark(payload))
-      }),
-    )
-    renderApp({ fakeTimers: true })
-    expect(await card('Face au MSCI World')).not.toHaveTextContent('d’avance')
-    expect(calls).toBe(1)
-
-    payload = ready()
-    await vi.advanceTimersByTimeAsync(60_000)
-    await screen.findByText(/d’avance/)
-    expect(calls).toBe(2)
-
-    await vi.advanceTimersByTimeAsync(180_000)
-    expect(calls).toBe(2)
-  })
-
-  it('refreshes after an event write', async () => {
-    let calls = 0
-    server.use(
-      shown(),
-      http.get(ROUTES.benchmark, () => {
-        calls += 1
-        return HttpResponse.json(aBenchmark(ready()))
-      }),
-    )
-    const { queryClient } = renderApp()
-    await card()
-
-    // What every event write does on success.
-    await queryClient.invalidateQueries()
-    await waitFor(() => expect(calls).toBe(2))
   })
 })

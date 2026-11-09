@@ -251,13 +251,6 @@ export const ROUTES = {
    */
   positionsHistory: '/api/positions/history',
   /**
-   * What moved since the last session close (#727).
-   *
-   * What the rule *"a resource carries the name of the store's table"* forbids
-   * is reusing a v4 name for a **different** payload, and this is the same one.
-   */
-  movers: '/api/portfolio/movers',
-  /**
    * How much the owner buys in a month, and how often (#751).
    *
    * Derived on every read and stored nowhere, like {@link ROUTES.advisories}:
@@ -266,11 +259,6 @@ export const ROUTES = {
    * describe one ledger.
    */
   investmentRhythm: '/api/investment-rhythm',
-  /**
-   * The dashboard's saved layout — one row of the store, its shape checked and
-   * its cards not: the registry of cards is the front's (`features/dashboard/lib/dashboardBlocks`).
-   */
-  dashboardLayout: '/api/dashboard/layout',
   /** The theme over the bundled Atelier — one row of the store, tweakcn's `cssVars` (#1248). */
   theme: '/api/theme',
   /** Fetch a tweakcn theme by id and keep it: the only call to tweakcn.com. */

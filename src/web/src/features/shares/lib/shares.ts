@@ -511,9 +511,8 @@ export interface Allocation {
  * A **closed** line is not a slice: it is worth exactly zero and a legend of
  * zeros is noise, so the folded section of the shares page is where it lives. A
  * held line worth zero stays — that is a figure about a line the owner holds.
- * The predicate is `isClosed`, above, and `moversList` calls the same one one
- * module over: the two blocks describe one portfolio, so what is *in* it cannot
- * be two questions — which is why the predicate did not travel with the block.
+ * The predicate is `isClosed`, above: what is *in* the portfolio is one question,
+ * which is why the predicate did not travel with the block.
  */
 export function allocation(rows: readonly ShareRow[]): Allocation {
   const placed: AllocationSlice[] = []

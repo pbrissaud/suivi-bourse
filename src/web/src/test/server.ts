@@ -32,7 +32,6 @@ import {
   someJobs,
   aTypedEvent,
   aLedgerPayload,
-  aMoversPayload,
   aPortfolioHistory,
   aPositionsHistory,
   aPositionsPayload,
@@ -139,21 +138,15 @@ export function defaultHandlers() {
       HttpResponse.json(anAccountHistory(String(params.account))),
     ),
     http.get(ROUTES.portfolioTotalsHistory, () => HttpResponse.json(aPortfolioHistory())),
-    // The dashboard's bottom (#727): the chart's fallback series and the
-    // movers. Both are answered whole — the range control is a filter over a
+    // The dashboard's bottom (#727): the chart's fallback series,
+    // answered whole — the range control is a filter over a
     // series kept entire, there being no ladder on a daily one.
     http.get(ROUTES.positionsHistory, () => HttpResponse.json(aPositionsHistory())),
-    http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload())),
     // The investment rhythm (#751). Derived on every read and stored
     // nowhere, so there is nothing to vary by parameter: the handler answers the
     // fixture's own pair — six covered months of twelve — and a test about
     // another rhythm overrides it.
     http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm())),
-    http.get(ROUTES.dashboardLayout, () => HttpResponse.json(null)),
-    http.put(ROUTES.dashboardLayout, async ({ request }) =>
-      HttpResponse.json(await request.json()),
-    ),
-    http.delete(ROUTES.dashboardLayout, () => new HttpResponse(null, { status: 204 })),
     http.get(ROUTES.theme, () => HttpResponse.json(null)),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window: a

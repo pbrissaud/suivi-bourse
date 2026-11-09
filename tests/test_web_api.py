@@ -334,119 +334,6 @@ ACCOUNTS_EVENTS = (
 
 
 # --------------------------------------------------------------------- #
-# Movers
-# --------------------------------------------------------------------- #
-
-def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path):
-    """#652 déc. 8's trap. The newest stored point is a Friday close; the
-    baseline is the last price before *that* day, so a weekend still shows
-    Friday's session instead of a column of zeros."""
-    def seed(opened):
-        seed_position(opened, quantity=10.0, cost_basis=1000.0)
-        seed_quote(opened, price=100.0,
-                   at=datetime(2026, 7, 30, 20, 0, tzinfo=timezone.utc))
-        seed_quote(opened, price=110.0,
-                   at=datetime(2026, 7, 31, 21, 0, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    assert payload['movers'][0]['change_pct'] == pytest.approx(0.1)
-    assert payload['movers'][0]['contribution'] == pytest.approx(100.0)
-
-
-def test_movers_read_the_auction_stamped_closes(tmp_path):
-    """#1352. Two closes stamped at the closing auction's own instant."""
-    def seed(opened):
-        seed_position(opened, symbol='SAN.PA', quantity=10.0, cost_basis=700.0)
-        seed_quote(opened, symbol='SAN.PA', price=71.01,
-                   at=datetime(2026, 10, 19, 15, 35, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='SAN.PA', price=73.44,
-                   at=datetime(2026, 10, 20, 15, 29, 59, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='SAN.PA', price=73.58,
-                   at=datetime(2026, 10, 20, 15, 35, 46, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    move = client.get('/api/portfolio/movers').get_json()['movers'][0]
-
-    assert move['change_pct'] == pytest.approx(0.0362, abs=0.0001)
-
-
-def test_movers_compare_each_line_against_its_own_previous_close(tmp_path):
-    """#1142. A 24/7 line quoted on Sunday must not drag every other line's
-    baseline to Sunday midnight: the equity's price there *is* its Friday
-    close, so it read as unchanged and left the block."""
-    def seed(opened):
-        seed_position(opened, quantity=10.0, cost_basis=1000.0)
-        seed_quote(opened, price=100.0,
-                   at=datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc))
-        seed_quote(opened, price=110.0,
-                   at=datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc))
-        seed_position(opened, symbol='BTC-EUR', name='Bitcoin',
-                      quantity=1.0, cost_basis=50000.0)
-        seed_quote(opened, symbol='BTC-EUR', price=60000.0,
-                   at=datetime(2026, 10, 10, 23, 59, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='BTC-EUR', price=57000.0,
-                   at=datetime(2026, 10, 11, 16, 41, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    moves = {m['symbol']: m for m in payload['movers']}
-    assert moves['AAPL']['previous_price'] == pytest.approx(100.0)
-    assert moves['AAPL']['change_pct'] == pytest.approx(0.1)
-    assert moves['BTC-EUR']['previous_price'] == pytest.approx(60000.0)
-    assert moves['BTC-EUR']['change_pct'] == pytest.approx(-0.05)
-
-
-def test_movers_leave_out_a_line_whose_quotes_stopped(tmp_path):
-    """#1142's own regression. A line no longer quoted (delisted, halted, a
-    scrape that fails) would show its move from weeks ago as *since the
-    previous close*; trailing the newest quote by more than five days, it has
-    no previous close worth naming. A line quoted on one day only has none
-    either."""
-    def seed(opened):
-        seed_position(opened, quantity=10.0, cost_basis=1000.0)
-        seed_quote(opened, price=100.0,
-                   at=datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc))
-        seed_quote(opened, price=110.0,
-                   at=datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc))
-        seed_position(opened, symbol='GONE.PA', name='Gone', quantity=5.0)
-        seed_quote(opened, symbol='GONE.PA', price=50.0,
-                   at=datetime(2026, 9, 16, 15, 30, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='GONE.PA', price=30.0,
-                   at=datetime(2026, 9, 17, 15, 30, tzinfo=timezone.utc))
-        seed_position(opened, symbol='NEW.PA', name='New', quantity=5.0)
-        seed_quote(opened, symbol='NEW.PA', price=20.0,
-                   at=datetime(2026, 10, 9, 15, 30, tzinfo=timezone.utc))
-        # The bound's two sides. Easter's gap, Thursday's close to Monday's,
-        # is 4 days and some hours: kept. Six days behind: left out.
-        seed_position(opened, symbol='EASTER.PA', name='Easter', quantity=5.0)
-        seed_quote(opened, symbol='EASTER.PA', price=40.0,
-                   at=datetime(2026, 10, 4, 15, 30, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='EASTER.PA', price=42.0,
-                   at=datetime(2026, 10, 5, 15, 30, tzinfo=timezone.utc))
-        seed_position(opened, symbol='LATE.PA', name='Late', quantity=5.0)
-        seed_quote(opened, symbol='LATE.PA', price=40.0,
-                   at=datetime(2026, 10, 2, 15, 30, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='LATE.PA', price=44.0,
-                   at=datetime(2026, 10, 3, 15, 30, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    assert [m['symbol'] for m in payload['movers']] == ['AAPL', 'EASTER.PA']
-
-
-def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
-    """No observation means no session to anchor on, and nothing to compare."""
-    client = build_client(tmp_path)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    assert payload == {'movers': []}
-
-
-# --------------------------------------------------------------------- #
 # The v5 pair the front reads (contract #745, issue #763)
 #
 # `/api/positions` and `/api/portfolio-totals` were declared in `lib/api.ts`
@@ -487,11 +374,15 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
     row = payload['positions'][0]
     assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
                         'realised', 'dividends', 'price', 'converted',
+                        'latent_gain', 'latent_gain_pct',
                         'closed_at', 'terminal', 'fundamentals'}
     assert (row['account'], row['symbol'], row['name']) == (
         'pea', 'AAPL', 'Apple Inc')
     assert row['quantity'] == 10.0 and row['cost_basis'] == 1500.0
     assert row['realised'] == 25.0 and row['dividends'] == 12.5
+    # 10 shares at 180 against a cost of 1 500: on the securities' cost alone.
+    assert row['latent_gain'] == pytest.approx(300.0)
+    assert row['latent_gain_pct'] == pytest.approx(0.2)
     assert row['price'] == {'value': 200.0, 'currency': 'USD',
                             'at': '2024-06-01T12:00:00+00:00'}
     assert row['converted'] == {'value': 180.0, 'currency': 'EUR', 'rate': 0.9,
@@ -755,8 +646,8 @@ def test_positions_storage_failure_is_503_and_never_an_empty_list(tmp_path):
     assert response.get_json()['type'] == '/problems/storage-unavailable'
 
 
-def test_portfolio_totals_serves_the_eleven_members(tmp_path):
-    """Eight columns and three derivations, under the names #745 froze."""
+def test_portfolio_totals_serves_its_members(tmp_path):
+    """Eight columns, three derivations (#745) and what the hero reads."""
     payload = build_client(
         tmp_path, seed=seed_totals).get('/api/portfolio-totals').get_json()
 
@@ -764,7 +655,8 @@ def test_portfolio_totals_serves_the_eleven_members(tmp_path):
     assert set(payload['totals']) == {
         'day', 'total_value', 'holdings_value', 'cash_balance',
         'net_contributed', 'xirr', 'twr_index', 'twr_since', 'transfer_fees',
-        'gain_absolu', 'ytd'}
+        'gain_absolu', 'ytd', 'variation', 'cash', 'gain_total',
+        'net_if_sold_today', 'estimated_accounts'}
     assert payload['totals']['day'] == '2026-08-05'
     assert payload['totals']['total_value'] == 12500.0
     # The index counts from the first day of the series, and there is one here.
@@ -772,6 +664,77 @@ def test_portfolio_totals_serves_the_eleven_members(tmp_path):
     # An install whose broker moves money for free: a figure worth nothing, not
     # an absence — the page drops it for being zero.
     assert payload['totals']['transfer_fees'] == 0.0
+
+
+def test_variation_is_the_change_in_gain_over_the_value_at_the_start(tmp_path):
+    """+5 021 over a year is a performance: the deposit made since is not in it."""
+    def seed(opened):
+        seed_totals(opened, day=date(2025, 8, 5), total_value=40000.0,
+                    gain_absolu=1000.0)
+        seed_totals(opened, day=date(2025, 12, 31), total_value=44000.0,
+                    gain_absolu=2000.0)
+        seed_totals(opened, day=date(2026, 7, 5), total_value=50000.0,
+                    gain_absolu=4000.0, net_contributed=46000.0)
+        seed_totals(opened, day=date(2026, 8, 5), total_value=52000.0,
+                    gain_absolu=5000.0, net_contributed=47000.0)
+
+    variation = build_client(tmp_path, seed=seed).get(
+        '/api/portfolio-totals').get_json()['totals']['variation']
+
+    assert set(variation) == {'1M', 'YTD', '1Y', 'MAX'}
+    assert variation['1M'] == {'amount': 1000.0, 'pct': pytest.approx(0.02),
+                               'start_date': '2026-07-05'}
+    assert variation['YTD'] == {'amount': 3000.0, 'pct': pytest.approx(3000 / 44000),
+                                'start_date': '2025-12-31'}
+    assert variation['1Y'] == {'amount': 4000.0, 'pct': pytest.approx(0.1),
+                               'start_date': '2025-08-05'}
+    # The whole series: the whole gain, over what was paid in.
+    assert variation['MAX'] == {'amount': 5000.0,
+                                'pct': pytest.approx(5000 / 47000),
+                                'start_date': '2025-08-05'}
+
+
+def test_a_range_the_series_does_not_reach_has_no_variation(tmp_path):
+    variation = build_client(tmp_path, seed=seed_totals).get(
+        '/api/portfolio-totals').get_json()['totals']['variation']
+
+    assert variation['1M'] is None and variation['YTD'] is None
+    assert variation['1Y'] is None
+    assert variation['MAX']['start_date'] == '2026-08-05'
+
+
+def test_the_totals_reconcile_to_the_cent(tmp_path):
+    """`value = securities + cash`; `gain_total` is the four terms, and the
+    shares' latent gain is the sum of the rows."""
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1500.0,
+                      realized_gain=25.0, received_dividend=12.5)
+        seed_quote(opened, price=200.0, currency='USD', converted=180.0,
+                   rate=0.9)
+        seed_totals(opened, total_value=2300.0, holdings_value=1800.0,
+                    cash_balance=500.0, net_contributed=2000.0)
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=FEE_EVENTS,
+                          seed=seed)
+    totals = client.get('/api/portfolio-totals').get_json()['totals']
+    rows = client.get('/api/positions').get_json()['positions']
+
+    assert totals['total_value'] == pytest.approx(
+        totals['holdings_value'] + totals['cash'])
+    latent = sum(row['latent_gain'] for row in rows)
+    assert latent == pytest.approx(300.0)
+    assert totals['gain_total']['amount'] == pytest.approx(
+        latent + 25.0 + 12.5 + totals['transfer_fees'])
+    assert totals['gain_total']['pct'] == pytest.approx(
+        totals['gain_total']['amount'] / totals['net_contributed'])
+
+
+def test_net_if_sold_today_counts_an_account_without_a_model_gross(tmp_path):
+    totals = build_client(tmp_path, seed=seed_totals).get(
+        '/api/portfolio-totals').get_json()['totals']
+
+    assert totals['net_if_sold_today'] == totals['total_value']
+    assert totals['estimated_accounts'] == []
 
 
 def test_portfolio_totals_with_no_figures_at_all_is_200_and_null(tmp_path):

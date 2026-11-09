@@ -21,7 +21,7 @@ import { Explain } from '@/components/Explain'
 import { Section } from '@/components/ui/section'
 import type { PortfolioTotalsResponse } from '@/features/dashboard/lib/api'
 import type { PositionsResponse } from '@/features/shares/lib/api'
-import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
+import type { RenderState } from '@/features/dashboard/lib/dashboardBlocks'
 import { renderFigure } from '@/lib/absence'
 import { useFormatters } from '@/lib/format'
 import {
@@ -54,9 +54,9 @@ interface GainBreakdownProps {
 
 /**
  * What this block renders, and the **one** place it is decided: the block
- * calls it for its own `null`, and the dashboard's grid calls it to know
- * whether the card holds a place (`features/dashboard/lib/dashboardLayout`). Two copies of the
- * rule would leave a half-row empty the day they disagree.
+ * calls it for its own `null`, and the page calls it to know whether the card
+ * holds a place. Two copies of the rule would leave a half-row empty the day
+ * they disagree.
  *
  * *No events at all* is the head's sentence and link; there is no gain to
  * decompose under it.

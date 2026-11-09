@@ -178,40 +178,6 @@ describe('ICU is the format, and it is needed', () => {
   })
 })
 
-describe('the movers’ sentence', () => {
-  it('drops its second clause when every hidden line moved (#1096)', () => {
-    // *dont aucune n’a bougé de rien* read as *none of them moved* — the
-    // opposite of the truth. With nothing unchanged there is nothing to qualify.
-    expect(formatMessage('fr', 'dashboard.movers.others', { count: 7, unchanged: 0 })).toBe(
-      '7 autres lignes n’apparaissent pas ici.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.others', { count: 7, unchanged: 0 })).toBe(
-      '7 other holdings are not shown here.',
-    )
-    expect(formatMessage('fr', 'dashboard.movers.others', { count: 2, unchanged: 1 })).toBe(
-      '2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.others', { count: 3, unchanged: 1 })).toBe(
-      '3 other holdings are not shown here, 1 of which did not move.',
-    )
-  })
-
-  it('says it once when every hidden line is unchanged (#1146)', () => {
-    expect(formatMessage('fr', 'dashboard.movers.othersAllUnchanged', { count: 11 })).toBe(
-      'Les 11 autres lignes n’ont pas bougé.',
-    )
-    expect(formatMessage('fr', 'dashboard.movers.othersAllUnchanged', { count: 1 })).toBe(
-      'L’autre ligne n’a pas bougé.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.othersAllUnchanged', { count: 11 })).toBe(
-      'The 11 other holdings did not move.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.othersAllUnchanged', { count: 1 })).toBe(
-      'The other holding did not move.',
-    )
-  })
-})
-
 describe('the language is the reader’s, and lives in the browser', () => {
   it('reads absence, and anything unrecognised, as auto', () => {
     const storage = new Map<string, string>()

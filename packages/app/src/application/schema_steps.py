@@ -96,6 +96,15 @@ def _add_agent_thinking(connection) -> None:
                            "VARCHAR DEFAULT 'low'")
 
 
+def _forget_dashboard_layout(connection) -> None:
+    """Drop the saved dashboard layout: the dashboard is fixed now.
+
+    Nothing reads the row any more; deleting it keeps ``setting`` from carrying
+    a dead key for ever. Idempotent: a store without the row deletes nothing.
+    """
+    connection.execute("DELETE FROM setting WHERE key = 'dashboard_layout'")
+
+
 def _follow_the_references(connection) -> None:
     """Follow what the install already compares against (#1312).
 
@@ -188,6 +197,7 @@ STEPS = store_steps.STEPS + (
     ('move_agent_provider', _move_agent_provider),
     ('backfill_agent_usage', _backfill_agent_usage),
     ('make_account_label_optional', store_steps._make_account_label_optional),
+    ('forget_dashboard_layout', _forget_dashboard_layout),
 )
 
 __all__ = ['STEPS']

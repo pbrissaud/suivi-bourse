@@ -9,7 +9,6 @@ from logfmt_logger import getLogger
 from application import access_tokens
 from application import auth_rules
 from application import benchmark_view
-from application import dashboard_layout
 from application import settings as settings_module
 from application import settings_registry
 from application import tweakcn
@@ -64,38 +63,6 @@ def put_settings():
         'changed': [change.key for change in changes],
         'effect': effect,
     })
-
-
-@bp.get('/dashboard/layout')
-def get_dashboard_layout():
-    """The dashboard's saved layout, or ``null`` when none was ever saved."""
-    return jsonify(dashboard_layout.read(_store()))
-
-
-@bp.put('/dashboard/layout')
-def put_dashboard_layout():
-    """Keep the dashboard's layout. The shape is checked, the cards are not."""
-    body = _json_object()
-    if body is None:
-        return bad_request("a JSON object is required")
-    try:
-        layout = dashboard_layout.validate(body)
-    except dashboard_layout.InvalidLayout as exc:
-        return unprocessable_request(str(exc))
-
-    runtime = current_runtime()
-    with runtime.config_manager.writing() as opened:
-        dashboard_layout.write(opened, layout)
-    return jsonify(layout)
-
-
-@bp.delete('/dashboard/layout')
-def delete_dashboard_layout():
-    """Forget the layout: the dashboard goes back to its default."""
-    runtime = current_runtime()
-    with runtime.config_manager.writing() as opened:
-        dashboard_layout.delete(opened)
-    return Response(status=204)
 
 
 #: The theme's row in ``setting``: tweakcn's ``cssVars``, normalised (#1248).

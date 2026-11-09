@@ -568,6 +568,10 @@ class Position(TypedDict):
     cost_basis: float
     realised: float
     dividends: float
+    # Market value less `cost_basis`, **on the securities' cost only** (never on
+    # what was paid in). `null` while the line has no value; zero when closed.
+    latent_gain: Optional[float]
+    latent_gain_pct: Optional[float]
     # `null` — never observed. The position is carried at its cost.
     price: Optional[Price]
     # `null` with a non-null `price` — quoted, and the rate is missing.
@@ -598,6 +602,19 @@ class Ytd(TypedDict):
     twr: Optional[float]
 
 
+class Variation(TypedDict):
+    # The change in gain over the range, and over the value at its start.
+    amount: Optional[float]
+    pct: Optional[float]
+    start_date: Optional[str]
+
+
+class GainTotal(TypedDict):
+    # Latent + realised + dividends - fees, and over the net contribution.
+    amount: Optional[float]
+    pct: Optional[float]
+
+
 class Totals(TypedDict):
     day: Optional[str]
     total_value: Optional[float]
@@ -610,6 +627,11 @@ class Totals(TypedDict):
     gain_absolu: Optional[float]
     transfer_fees: Optional[float]
     ytd: Optional[Ytd]
+    variation: Dict[str, Optional[Variation]]
+    cash: Optional[float]
+    gain_total: GainTotal
+    net_if_sold_today: Optional[float]
+    estimated_accounts: List[str]
 
 
 class PortfolioTotals(TypedDict):
@@ -1009,7 +1031,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         """The newest day of the global perf series, plus its three derivations."""
         def _body():
             """The read itself, so :func:`reading` can wrap a fault around it."""
-            return portfolio_facts.totals_payload(_store())
+            return portfolio_facts.totals_payload(
+                _store(), _snapshot(), datetime.now(timezone.utc))
         return reading(_body, PortfolioTotals)
 
     @mcp.tool(description=GET_PORTFOLIO_HISTORY_DESCRIPTION)

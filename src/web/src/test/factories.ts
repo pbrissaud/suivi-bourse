@@ -89,8 +89,6 @@ import type {
 } from '@/features/benchmark/lib/api'
 import type {
   InvestmentRhythmResponse,
-  Mover,
-  MoversResponse,
   PortfolioTotals,
   PortfolioTotalsHistoryResponse,
   PortfolioTotalsResponse,
@@ -333,6 +331,9 @@ export function aPosition(options: PositionOptions = {}): Position {
     cost_basis: 1000,
     realised: 0,
     dividends: 0,
+    // Market value less cost on the fixture's default quantity and basis.
+    latent_gain: price === null || rate === null ? null : 10 * price * rate - 1000,
+    latent_gain_pct: price === null || rate === null ? null : (10 * price * rate - 1000) / 1000,
     price: price === null ? null : { value: price, currency, at: NOW },
     converted:
       price === null || rate === null
@@ -536,6 +537,16 @@ export function aTotals(overrides: Partial<PortfolioTotals> = {}): PortfolioTota
     transfer_fees: -5,
     gain_absolu: 370,
     ytd: { gain: 40.69, twr: -0.0125 },
+    variation: {
+      '1M': { amount: 120, pct: 0.045, start_date: '2026-02-02' },
+      YTD: { amount: 40.69, pct: 0.0157, start_date: '2025-12-31' },
+      '1Y': { amount: 310, pct: 0.14, start_date: '2025-03-02' },
+      MAX: { amount: 370, pct: 0.152, start_date: '2019-10-30' },
+    },
+    cash: 500,
+    gain_total: { amount: 370, pct: 0.152 },
+    net_if_sold_today: 2800,
+    estimated_accounts: [],
     ...overrides,
   }
 }
@@ -668,35 +679,6 @@ export function aPositionsHistory(
 }
 
 /**
- * THE MOVERS (#727), and the shape the block exists for.
- *
- * Three held lines, and **only two of them are in the collection**:
- *
- *   ZZA  +2,00 %   a riser
- *   ZZB   0,00 %   moved by exactly nothing — so it is in neither column, and
- *                  it is the measured case: on the real portfolio the second
- *                  line, at 16,6 % of it, disappeared from both
- *   ZZC     —      never quoted, therefore nothing to compare a first day
- *                  against, therefore not served at all
- *
- * One riser, no faller, and **two** held lines shown nowhere — one of which
- * moved by nothing. The sentence under the two columns is what says so.
- */
-export function aMover(overrides: Partial<Mover> = {}): Mover {
-  return {
-    symbol: 'ZZA',
-    name: 'Zeta Alpha',
-    price: 130,
-    previous_price: 127.45,
-    change: 2.55,
-    change_pct: 0.02,
-    market_value: 1300,
-    contribution: 25.5,
-    ...overrides,
-  }
-}
-
-/**
  * THE INVESTMENT RHYTHM (#751) — **six covered months of twelve**.
  *
  * The pair the record is about, chosen so the two wrong readings are both
@@ -725,26 +707,6 @@ export function aRhythm(
     ...figures,
     accounts: [{ account: 'alpha', ...figures }],
     ...overrides,
-  }
-}
-
-export function aMoversPayload(
-  movers: Mover[] = [
-    aMover(),
-    aMover({
-      symbol: 'ZZB',
-      name: 'Zeta Beta',
-      price: 100,
-      previous_price: 100,
-      change: 0,
-      change_pct: 0,
-      market_value: 400,
-      contribution: 0,
-    }),
-  ],
-): MoversResponse {
-  return {
-    movers,
   }
 }
 

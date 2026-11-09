@@ -187,7 +187,6 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
       'features/data/components/UploadZone.tsx': 'a drop zone',
       'features/data/components/Ledger.tsx': 'the ledger’s drop',
       'components/FirstRun.tsx': 'the first-run declare button',
-      'features/dashboard/components/DashboardGrid.tsx': 'a free grid slot',
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
       'features/dashboard/components/InvestmentRhythm.tsx': 'a month with no purchase (a drawing)',
       'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',
