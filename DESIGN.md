@@ -140,8 +140,6 @@ components:
     width: 200px
   content-column:
     maxWidth: 720px
-  content-settings:
-    maxWidth: 1040px
   content-reading:
     maxWidth: 768px
 ---
@@ -355,7 +353,7 @@ and in a mockup alike.
 - **The shell:** a 200 px navigation (a 64 px rail when folded, a drawer under 768 px), then a 56 px header bar holding, in order, the fold, the page title with its dated subtitle or nothing, the search (⌘K) and the bell. Nothing else lives in the bar.
 - **Navigation:** two groups and no group label. The top holds what the owner reads and records: Tableau de bord, Titres, Comptes, Grand livre, Comparaison, Agent. The foot holds the administration: Système, Réglages. Journal is reached from Système › Installation, Statistiques from the agent's rail, Thème from Réglages › Affichage; each is a page with its own title and a « ← Parent » text link on its first line.
 - **The page's envelope** is `32px 32px 56px` of padding on every page. The first line of the content is the page's control line: on the left the tabs, the back link or the file name; on the right the page's actions (outline buttons, then the one filled button). A table page's filters share that line or the one under it. Page actions never get a row of their own.
-- **Content width is set per kind of content:** a table or a chart takes the full width; a form is a 460 px sheet on the right; Réglages is 1 040 px, each section a `220px | 1fr` grid inside its plane; the agent's conversation is centred at 768 px; a paragraph keeps 65 characters.
+- **Content width is set per kind of content:** a table or a chart takes the full width; a form is a 460 px sheet on the right; Réglages takes the full width, each section a `220px | 1fr` grid inside its plane; the agent's conversation is centred at 768 px; a paragraph keeps 65 characters.
 - **Tables sit on the ground**, with no plane and no frame: a header row in Label, `border` rules under every row including the last, totals as the last row. Row heights: 40 px for one line of text, 48 px for a name with a sub-line and for totals. Figures right-aligned in mono. A sortable column is `foreground` 500 with `aria-sort`, no glyph. A clickable row underlines its name on hover (offset 4); no row background, no chevron.
 - **Lists inside a setting** (tokens, funds, tax models, providers, notification channels) are ruled rows directly in the section's plane under their name, ending on a « + Ajouter … » text row. Never a nested plane.
 - **A table page has no side panel**: its filters are text buttons on the control line (`muted-foreground`, 13 px, the chosen value in `foreground`, a ChevronDown 14 px), its selection's actions appear only with a selection.
@@ -508,8 +506,8 @@ dialog, the notifications popover, a picker) are `background` with a 1 px `borde
   Technical facts (series rebuilt, orphans, tokens) never reach the bell.
 - **⌘K palette:** centred, 600 px, radius 14: a 16 px search line with `esc`, groups in
   Label (Titres, Événements, Fils de l'agent; or Récents, Actions, Pages), rows 40 px with
-  the match in 600, a sub-line in Table-muted, the amount or the shortcut (`kbd`, bordered)
-  in mono on the right. « Rien pour « x » » when empty.
+  a 16 px lucide icon (the sidebar's for a page), the match in 600, a sub-line in Table-muted,
+  the amount in mono on the right. No « G puis X » navigation shortcuts; « Verrouiller » locks. « Rien pour « x » » when empty.
 - **Chart axes (#1265):** unchanged: three to five value ticks, compact euros, dashed
   `border` grid, Label mono ticks, no axis line.
 - **Agent page:** a 240 px `muted` rail (« Nouveau fil ⌘N », search, threads grouped by
@@ -664,4 +662,4 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 | 2026-11-08 | Système: no pause, no backup, no action per title; alerts are a mark and a notification | Successive owner decisions: Lancer/Pause text (misaligned), play/pause icons (« how can one both play and pause? ») and a « Planifiée » switch (« not clearer ») were rejected for one « Lancer » per job; « nobody pauses the scraping »; « Relever » on a frozen title does nothing the next pass would not do. The frozen title keeps a ⚠ in the followed-titles list and the bell carries the notice. The app has no backup, so no backup row. Journal becomes a page. |
 | 2026-11-08 | Coherence pass over the 27 refonte sources | An independent audit found four page-button styles, four tab grammars, three envelope paddings, seven row heights, two section grammars. Unified: `32px 32px 56px`; page buttons 32 px / sheet 36 px; page tabs 15/22 with a 2 px rule; filters as text + chevron; rows 40 / 48; Réglages on the same planes as the other pages; links in `foreground`; floating surfaces radius 14 without shadow; one TokenCreated source. Full report: `claude/coherence-refonte.md` in the project. |
 | 2026-11-08 | Four personas reviewed the refonte; eight changes applied | Théo (first PEA), Hélène (multi-wrapper, spreadsheet), Mehdi (homelab SRE), Claire (monthly reader). Common findings: several totals and gains that did not reconcile, a « −837,20 € » hero read as a loss, jargon without a net, contradictory tax rates in the mockups, no reassurance before a write, technical alerts in the bell. Applied: *Référence* becomes *Comparaison* with a sentence hero; the dashboard gains the variation over the period, the cash and « Net si tout vendu »; one official gain (the dashboard's) and labelled bases elsewhere; « prix moyen d'achat », periods in words, « Ajouter un compte »; the effect line in the event sheet; the import names its account, its matching criterion and offers « Associer »; the bell speaks French and keeps the technical state in Système; a *Notifications* section in Réglages; mock data aligned (prices of 6 Nov. 2026, PS 18,6 %, CTO 31,4 %). Report: `claude/personas-retours-refonte.md`. |
-
+| 2026-11-09 | Staging feedback, first pass | The owner's staging walk: Réglages and the Thème preview take the full width (the 1 040 px cap goes); the palette loses the « G puis X » shortcuts and « Revoir la mise en route » and gains an icon per entry; « Se déconnecter » becomes « Verrouiller »; the PIN is set with the same six cells as the lock screen; no password-manager suggestion outside the unlock; the broker import profiles go (written without real statements), only the app's own layout is read, each row keeping its own account. |

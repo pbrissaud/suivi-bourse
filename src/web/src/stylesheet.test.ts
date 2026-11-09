@@ -262,9 +262,6 @@ describe('index.css says what DESIGN.md says about the layout', () => {
     expect(declared(source, '--container-column')).toBe(
       rem(designComponent('content-column', 'maxWidth')),
     )
-    expect(declared(source, '--container-settings')).toBe(
-      rem(designComponent('content-settings', 'maxWidth')),
-    )
     expect(declared(source, '--container-reading')).toBe(
       rem(designComponent('content-reading', 'maxWidth')),
     )
@@ -278,7 +275,6 @@ describe('index.css says what DESIGN.md says about the layout', () => {
     const inline = source.slice(source.indexOf('@theme inline'))
     for (const name of [
       '--container-column',
-      '--container-settings',
       '--container-reading',
       '--breakpoint-3xl',
     ]) {
