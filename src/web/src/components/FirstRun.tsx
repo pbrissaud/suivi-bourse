@@ -362,7 +362,7 @@ export function FirstRun() {
             {passage === 'events' ? (
               <div className="flex flex-col border-t">
                 <Door
-                  to="/ledger"
+                  to="/ledger/import"
                   name={t('firstRun.events.import')}
                   hint={t('firstRun.events.import.hint')}
                   onGo={leave}
@@ -500,7 +500,7 @@ function Door({
   muted = false,
   onGo,
 }: {
-  to: '/' | '/ledger'
+  to: '/' | '/ledger' | '/ledger/import'
   search?: { open: 'event' }
   name: string
   hint: string
