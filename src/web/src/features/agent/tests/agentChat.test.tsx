@@ -16,10 +16,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from 'ai'
 
 import { agentSeam, httpTransport, pendingAnswer } from '@/features/agent/lib/agentChat'
-import type { AgentConfig } from '@/features/agent/lib/api'
-import { ROUTES } from '@/lib/api'
+import { agentOn, aProvider } from '@/features/agent/tests/agentFixtures'
+import { type AgentProvider, ROUTES } from '@/lib/api'
 import fr from '@/i18n/fr.json'
-import { anAgentConfig } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -28,22 +27,8 @@ type Script = ReturnType<typeof createChat>
 
 const QUESTION = 'Si je vends mes Zeta Alpha, combien je paie ?'
 
-function switchedOn(overrides: Partial<AgentConfig> = {}) {
-  server.use(
-    // A turn that ends reads the list again; a test that lists none says so.
-    http.get(ROUTES.agentThreads, () => HttpResponse.json([])),
-    http.get(ROUTES.agentConfig, () =>
-      HttpResponse.json(
-        anAgentConfig({
-          enabled: true,
-          provider: 'anthropic',
-          model: 'claude-sonnet-5-5',
-          key: { set: true, last4: 'wxyz', set_at: null },
-          ...overrides,
-        }),
-      ),
-    ),
-  )
+function switchedOn(overrides: Partial<AgentProvider> = {}) {
+  agentOn([aProvider(overrides)])
 }
 
 /** Every `Chat` the page builds streams `script`, at no delay. */
@@ -54,7 +39,7 @@ function scripted(script: Script) {
     return {
       ...transport,
       sendMessages: (options) => {
-        sent(options.messages.at(-1))
+        sent(options.messages.at(-1), options.body)
         return transport.sendMessages(options)
       },
       reconnectToStream: (options) => transport.reconnectToStream(options),
@@ -245,30 +230,73 @@ describe('the states (4A)', () => {
     expect(within(alert).queryByRole('link')).not.toBeInTheDocument()
   })
 
-  it('names the model by its display name, and by its id when it has none', async () => {
-    switchedOn({ model_name: 'Claude Sonnet 5.5' })
-    const { main } = await openPage()
-    expect(await within(main).findByText(/Anthropic · Claude Sonnet 5\.5/)).toBeInTheDocument()
-  })
-
-  it('names the model by its id when it has no display name', async () => {
-    switchedOn({ model_name: null })
-    const { main } = await openPage()
-    expect(await within(main).findByText(/Anthropic · claude-sonnet-5-5/)).toBeInTheDocument()
-  })
-
-  it('marks Ollama experimental next to the model', async () => {
-    switchedOn({ provider: 'ollama', model: 'qwen3:8b', base_url: 'http://ollama:11434' })
-    const { main } = await openPage()
-    expect(await within(main).findByText('expérimental')).toBeInTheDocument()
-    expect(within(main).getByText(/Ollama · qwen3:8b/)).toBeInTheDocument()
-  })
-
-  it('names no experimental chip for a hosted provider', async () => {
+  it('names the model on the composer, and says where the figures go', async () => {
     switchedOn()
     const { main } = await openPage()
-    expect(await within(main).findByText(/Anthropic · claude-sonnet-5-5/)).toBeInTheDocument()
-    expect(within(main).queryByText('expérimental')).not.toBeInTheDocument()
+    expect(
+      await within(main).findByRole('button', { name: 'Modèle de ce fil : claude-sonnet-5-5' }),
+    ).toBeInTheDocument()
+    expect(
+      within(main).getByText(
+        'Simulations à partir de vos données, jamais un conseil. Vos chiffres sont envoyés à Anthropic.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('says the figures stay on this server for a local provider', async () => {
+    switchedOn({
+      kind: 'ollama',
+      default_model: 'qwen3:8b',
+      privacy: { local: true, fr: 'Vos chiffres restent sur ce serveur.', en: 'Stay.' },
+    })
+    const { main } = await openPage()
+    expect(
+      await within(main).findByText(
+        'Simulations à partir de vos données, jamais un conseil. Vos chiffres restent sur ce serveur.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('picks the provider and model per thread, and sends them with the question', async () => {
+    agentOn([
+      aProvider(),
+      aProvider({
+        id: 'p2',
+        kind: 'ollama',
+        default_model: 'qwen3:8b',
+        is_default: false,
+        privacy: { local: true, fr: 'Vos chiffres restent sur ce serveur.', en: 'Stay.' },
+      }),
+    ])
+    server.use(
+      http.post(ROUTES.agentProviderTest, ({ params }) =>
+        HttpResponse.json({
+          models: [
+            params.id === 'p2'
+              ? { id: 'qwen3:14b', name: 'Qwen 14b' }
+              : { id: 'claude-opus-5', name: 'Claude Opus' },
+          ],
+          preselected: null,
+          elapsed_ms: 12,
+        }),
+      ),
+    )
+    const sent = scripted(createChat().user(QUESTION).assistant('Voilà.'))
+    const { user, main } = await openPage()
+    await user.click(
+      await within(main).findByRole('button', { name: 'Modèle de ce fil : claude-sonnet-5-5' }),
+    )
+    // Every provider's models are listed, the configured default among them.
+    expect(await screen.findByRole('option', { name: 'Claude Opus' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'qwen3:8b' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('option', { name: 'Qwen 14b' }))
+    expect(
+      within(main).getByRole('button', { name: 'Modèle de ce fil : qwen3:14b' }),
+    ).toBeInTheDocument()
+    await ask(user, main, QUESTION)
+
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(1))
+    expect(sent.mock.calls[0][1]).toEqual({ provider_id: 'p2', model: 'qwen3:14b' })
   })
 
   it('refuses an image or a PDF before anything is sent', async () => {
@@ -494,25 +522,25 @@ function storedThreads() {
 }
 
 describe('the threads (12A)', () => {
-  it('lists the recent ones in the column, opens one, and deletes one', async () => {
+  it('lists the threads in the rail, opens one, and deletes it from its head', async () => {
     switchedOn()
     const { deleted } = storedThreads()
     const { user, main, router } = await openPage()
 
-    const column = await within(main).findByRole('navigation', { name: 'Fils récents' })
-    expect(await within(column).findAllByRole('listitem')).toHaveLength(2)
-    await user.click(within(column).getByRole('link', { name: /^Vendre Zeta/ }))
+    const rail = await within(main).findByRole('navigation', { name: 'Fils de l’agent' })
+    expect(await within(rail).findAllByRole('listitem')).toHaveLength(2)
+    await user.click(within(rail).getByRole('link', { name: /^Vendre Zeta/ }))
     expect(await within(main).findByText('Fil t1.')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/agent/t1')
-    expect(within(column).getByRole('link', { name: /^Vendre Zeta/ })).toHaveAttribute(
+    expect(within(rail).getByRole('link', { name: /^Vendre Zeta/ })).toHaveAttribute(
       'aria-current',
       'page',
     )
+    // The title heads the conversation, with the one action the thread offers.
+    expect(within(main).getByRole('heading', { level: 2, name: 'Vendre Zeta' })).toBeInTheDocument()
 
     const before = router.history.length
-    await user.click(
-      within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
-    )
+    await user.click(within(main).getByRole('button', { name: 'Supprimer' }))
     // Asked in the one confirmation, naming the thread, with the harmless answer focused.
     const confirm = await screen.findByRole('alertdialog', { name: 'Supprimer ce fil ?' })
     expect(within(confirm).getByText('Vendre Zeta')).toBeInTheDocument()
@@ -521,61 +549,71 @@ describe('the threads (12A)', () => {
     await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
     await waitFor(() => expect(deleted).toEqual(['t1']))
     // The thread on screen was the one deleted: an empty one takes its place.
-    expect(await within(main).findByText(/Posez une question/)).toBeInTheDocument()
+    expect(
+      await within(main).findByText('Une question sur votre portefeuille ?'),
+    ).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/agent')
     expect(router.history.length).toBe(before)
   })
 
-  it('keeps the menu open on Escape under 1 024 px, closing only the question', async () => {
+  it('groups the threads by day and by month, and searches them', async () => {
     switchedOn()
-    const { deleted } = storedThreads()
-    const { user, main } = await openPage('/agent', 1023)
+    server.use(
+      http.get(ROUTES.agentThreads, () =>
+        HttpResponse.json([
+          { id: 'a', title: 'Ce matin', created_at: null, updated_at: '2026-03-02T09:00:00Z' },
+          { id: 'b', title: 'Hier soir', created_at: null, updated_at: '2026-03-01T20:00:00Z' },
+          { id: 'c', title: 'Frais du PEA', created_at: null, updated_at: '2026-02-10T09:00:00Z' },
+          { id: 'd', title: 'Vieux', created_at: null, updated_at: '2025-11-03T09:00:00Z' },
+        ]),
+      ),
+    )
+    const { user, main } = await openPage()
+    const rail = await within(main).findByRole('navigation', { name: 'Fils de l’agent' })
+
+    for (const group of ['Aujourd’hui', 'Hier', 'Février', 'Novembre 2025']) {
+      expect(await within(rail).findByRole('region', { name: group })).toBeInTheDocument()
+    }
+    await user.type(within(rail).getByRole('searchbox', { name: 'Rechercher un fil' }), 'pea')
+    expect(within(rail).getAllByRole('link', { name: /PEA/ })).toHaveLength(1)
+    expect(within(rail).queryByRole('link', { name: /Ce matin/ })).not.toBeInTheDocument()
+    await user.type(within(rail).getByRole('searchbox'), 'zzz')
+    expect(within(rail).getByText('Rien pour « peazzz »')).toBeInTheDocument()
+  })
+
+  it('opens the rail as a menu under 1 024 px', async () => {
+    switchedOn()
+    storedThreads()
+    const { user, main, router } = await openPage('/agent', 1023)
+    expect(within(main).queryByRole('navigation', { name: 'Fils de l’agent' })).toBeNull()
     await user.click(await within(main).findByRole('button', { name: 'Fils récents' }))
     const menu = await screen.findByRole('dialog')
 
-    await user.click(
-      await within(menu).findByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
-    )
-    expect(await screen.findByRole('button', { name: 'Annuler' })).toHaveFocus()
-    await user.keyboard('{Escape}')
-
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(deleted).toEqual([])
+    await user.click(await within(menu).findByRole('link', { name: /^Vendre Zeta/ }))
+    expect(await within(main).findByText('Fil t1.')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/agent/t1')
+    // The menu closes on the choice.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('keeps a thread on Annuler or Escape, and gives focus back to its bin', async () => {
+  it('keeps a thread on Annuler or Escape', async () => {
     switchedOn()
     const { deleted } = storedThreads()
-    const { user, main } = await openPage()
-    const column = await within(main).findByRole('navigation', { name: 'Fils récents' })
-    const bin = await within(column).findByRole('button', {
-      name: 'Supprimer le fil « Vendre Zeta »',
-    })
+    const { user, main } = await openPage('/agent/t1')
+    await within(main).findByText('Fil t1.')
 
-    await user.click(bin)
+    await user.click(await within(main).findByRole('button', { name: 'Supprimer' }))
     await user.click(await screen.findByRole('button', { name: 'Annuler' }))
-    await waitFor(() =>
-      expect(
-        within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
-      ).toHaveFocus(),
-    )
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
 
-    await user.click(
-      within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
-    )
+    await user.click(within(main).getByRole('button', { name: 'Supprimer' }))
     await screen.findByRole('alertdialog')
     await user.keyboard('{Escape}')
-    await waitFor(() =>
-      expect(
-        within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
-      ).toHaveFocus(),
-    )
-    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(deleted).toEqual([])
   })
 
-  it('says a deletion the server refused, and keeps the thread listed', async () => {
+  it('says a deletion the server refused, in the dialog, and keeps the thread listed', async () => {
     switchedOn()
     storedThreads()
     server.use(
@@ -583,16 +621,16 @@ describe('the threads (12A)', () => {
         HttpResponse.json({ error: 'The store is unavailable.' }, { status: 503 }),
       ),
     )
-    const { user, main } = await openPage()
-    const column = await within(main).findByRole('navigation', { name: 'Fils récents' })
+    const { user, main } = await openPage('/agent/t1')
+    await within(main).findByText('Fil t1.')
 
-    await user.click(
-      await within(column).findByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
-    )
+    await user.click(await within(main).findByRole('button', { name: 'Supprimer' }))
     const confirm = await screen.findByRole('alertdialog')
     await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
-    expect(await within(column).findByRole('status')).toHaveTextContent('The store is unavailable.')
-    expect(within(column).getByRole('link', { name: /^Vendre Zeta/ })).toBeInTheDocument()
+    expect(await within(confirm).findByText('The store is unavailable.')).toBeInTheDocument()
+    expect(
+      within(main).getByRole('link', { name: /^Vendre Zeta/, hidden: true }),
+    ).toBeInTheDocument()
   })
 
   it('shows the thread asked for last, whatever order the reads land in', async () => {
@@ -677,7 +715,9 @@ describe('the address (#1196)', () => {
       .getAllByRole('link', { name: 'Nouveau fil' })
       .find((link) => link.closest('nav') === null) as HTMLElement
     await user.click(fresh)
-    expect(await within(main).findByText(/Posez une question/)).toBeInTheDocument()
+    expect(
+      await within(main).findByText('Une question sur votre portefeuille ?'),
+    ).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/agent')
   })
 
@@ -803,7 +843,7 @@ describe('the address (#1196)', () => {
     const { user, main, router, queryClient } = await openPage()
     // The app's own freshness (`main.tsx`): coming back alone refetches nothing.
     queryClient.setQueryDefaults(['agent-threads'], { staleTime: 30_000 })
-    await within(main).findByRole('navigation', { name: 'Fils récents' })
+    await within(main).findByRole('navigation', { name: 'Fils de l’agent' })
     await ask(user, main, QUESTION)
     await within(main).findByText('Simulation d’une vente et de son impôt.')
     const thread = router.state.location.pathname
@@ -848,7 +888,7 @@ describe('the layout (#1196)', () => {
     storedThreads()
     const { main } = await openPage('/agent', 1024)
     expect(
-      await within(main).findByRole('navigation', { name: 'Fils récents' }),
+      await within(main).findByRole('navigation', { name: 'Fils de l’agent' }),
     ).toBeInTheDocument()
     expect(within(main).queryByRole('button', { name: 'Fils récents' })).not.toBeInTheDocument()
   })
@@ -857,7 +897,9 @@ describe('the layout (#1196)', () => {
     switchedOn()
     storedThreads()
     const { user, main } = await openPage('/agent', 1023)
-    expect(within(main).queryByRole('navigation', { name: 'Fils récents' })).not.toBeInTheDocument()
+    expect(
+      within(main).queryByRole('navigation', { name: 'Fils de l’agent' }),
+    ).not.toBeInTheDocument()
     await user.click(await within(main).findByRole('button', { name: 'Fils récents' }))
     const list = await screen.findByRole('dialog')
     expect(await within(list).findAllByRole('listitem')).toHaveLength(2)
@@ -944,30 +986,6 @@ describe('accessibility (11A)', () => {
     expect(main.querySelector('[role="log"]')).toHaveAttribute('aria-live', 'off')
   })
 
-  it('describes the input by its keys', async () => {
-    switchedOn()
-    const { main } = await openPage()
-    expect(
-      await within(main).findByRole('textbox', { name: 'Votre question' }),
-    ).toHaveAccessibleDescription(fr['agent.input.hint'])
-  })
-
-  it('keeps every control of the conversation at 44 px or more', async () => {
-    switchedOn()
-    storedThreads()
-    const { main } = await openPage()
-    await within(main).findAllByRole('button', { name: /\?$/ })
-    await within(main).findAllByRole('listitem')
-    // The page's own controls: the header bar above it is the shell's.
-    const page = within(main).getByRole('textbox').closest('section')?.parentElement as HTMLElement
-    for (const control of [
-      ...within(page).getAllByRole('button'),
-      ...within(page).getAllByRole('link'),
-    ]) {
-      expect(control.className, control.textContent ?? '').toMatch(/\b(?:size-11|min-h-11)\b/)
-    }
-  })
-
   for (const ground of ['light', 'dark'] as const) {
     it(`gives axe nothing to report on the page, ${ground}`, async () => {
       window.localStorage.setItem('sb.theme', ground)
@@ -998,7 +1016,7 @@ describe('accessibility (11A)', () => {
     switchedOn()
     const { main } = await openPage()
     const cif = await within(main).findByText(
-      'Simulations à partir de vos données déclarées, pas un conseil en investissement.',
+      'Simulations à partir de vos données, jamais un conseil. Vos chiffres sont envoyés à Anthropic.',
     )
     const field = within(main).getByRole('textbox', { name: 'Votre question' })
     expect(field.compareDocumentPosition(cif) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

@@ -6,6 +6,7 @@ import { Shell } from '@/components/Shell'
 import { validateLedgerSearch, type LedgerSearch } from '@/features/data/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
 import AgentPage from '@/pages/AgentPage'
+import AgentStatsPage from '@/pages/AgentStatsPage'
 import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
@@ -231,6 +232,13 @@ const journalRoute = createRoute({
   component: JournalPage,
 })
 
+/** The agent's statistics: a page of its own, reached from the rail's foot. */
+const agentStatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent/stats',
+  component: AgentStatsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
@@ -244,6 +252,7 @@ const routeTree = rootRoute.addChildren([
   agentRoute,
   agentThreadRoute,
   journalRoute,
+  agentStatsRoute,
 ])
 
 /**

@@ -39,7 +39,8 @@ import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { type RouteName, ROUTES } from '@/lib/api'
-import { anAgentConfig, aTotals, aTotalsPayload } from '@/test/factories'
+import { aProvider, aStats } from '@/features/agent/tests/agentFixtures'
+import { aTotals, aTotalsPayload } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -144,11 +145,9 @@ const WRITE_ONLY_ROUTES = [
  * its routes from here when it wires them, and the net then covers them.
  */
 const AWAITING_THEIR_PAGE = [
-  'agentProviders',
   'agentProvider',
   'agentProviderTest',
   'agentProviderDefault',
-  'agentStats',
   'installationFacts',
   'notificationChannels',
   'notificationChannel',
@@ -373,6 +372,14 @@ const SURFACES: readonly Surface[] = [
     open: () => screen.findByRole('link', { name: /^Ma question/ }),
   },
   {
+    // The agent's statistics: the hero, the bar, the weeks and the two tables
+    // are all drawn from one read, and nothing is said over it in flight.
+    name: 'les statistiques de l’agent',
+    url: '/agent/stats',
+    heading: 'Statistiques',
+    handlers: () => server.use(...agentHandlers()),
+  },
+  {
     // And a thread read back by its address: nothing of it is drawn, not even
     // the empty thread's questions, until it has landed.
     name: 'l’agent, un fil gardé rouvert',
@@ -406,11 +413,9 @@ const EVENTS_PROPOSAL = {
 /** The agent switched on, with one kept thread. */
 function agentHandlers() {
   return [
-    http.get(ROUTES.agentConfig, () =>
-      HttpResponse.json(
-        anAgentConfig({ enabled: true, provider: 'anthropic', model: 'claude-sonnet-5-5' }),
-      ),
-    ),
+    http.get(ROUTES.agentConfig, () => HttpResponse.json({ enabled: true, reasoning: 'low' })),
+    http.get(ROUTES.agentProviders, () => HttpResponse.json([aProvider()])),
+    http.get(ROUTES.agentStats, () => HttpResponse.json(aStats())),
     http.get(ROUTES.agentThreads, () =>
       HttpResponse.json([{ id: 't1', title: 'Ma question', created_at: null, updated_at: null }]),
     ),

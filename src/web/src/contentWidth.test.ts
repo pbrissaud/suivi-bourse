@@ -79,9 +79,8 @@ describe('the layout widths are the ones DESIGN.md sets', () => {
     expect(Number(rem) * 16).toBe(Number(px))
   })
 
-  it('sets the conversation on the column and reading widths', () => {
-    expect(AGENT_CHAT).toMatch(/\bmax-w-column\b/)
-    expect(AGENT_CHAT).toMatch(/\blg:max-w-reading\b/)
+  it('sets the conversation on the reading width', () => {
+    expect(AGENT_CHAT).toMatch(/\bmax-w-reading\b/)
   })
 
   it('writes no width the tokens already name', () => {
@@ -187,6 +186,7 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
       'features/dashboard/components/InvestmentRhythm.tsx': 'a month with no purchase (a drawing)',
       'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',
+      'features/agent/components/AgentStats.tsx': 'the weekly chart’s grid (a drawing)',
       'features/dashboard/components/PortfolioChart.tsx':
         'the contributed curve’s legend (a drawing)',
     }

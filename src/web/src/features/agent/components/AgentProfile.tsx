@@ -1,11 +1,11 @@
 /**
  * The investor's profile on the agent's page (#1116): the proposal cards in a
- * thread, and the chips of what is confirmed in its header.
+ * thread, and the line of what is confirmed on the empty thread.
  *
  * **The agent proposes, only this page decides.** A `propose_profile_fact`
  * call is drawn as a card reading its stored state (5A): *Confirmer* and
  * *Ignorer* while it is ready, one status line once decided or expired. The
- * chips are the confirmed facts, each opening its value, its date, *Modifier*
+ * line is the confirmed facts, each opening its value, its date, *Modifier*
  * and *Oublier* (13A).
  */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -37,14 +37,15 @@ import {
   RISK_TOLERANCES,
 } from '@/features/agent/lib/profile'
 import { type EventsProposal, eventProposalsApi } from '@/features/agent/lib/eventProposals'
+import { INLINE_LINK } from '@/features/agent/lib/styles'
 import { settingsApi } from '@/features/settings/lib/api'
 import { ApiProblem } from '@/lib/api'
 import { baseCurrency } from '@/lib/firstRun'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 
-/** Beyond this many chips, a *+N* chip opens the whole profile. */
-const CHIPS = 4
+/** Beyond this many values, « N autres » opens the whole profile. */
+const SHOWN = 3
 
 /** The `<select>` skin of the other forms (`AgentProviderSheet`, `EventForm`), copied as they copy it. */
 const SELECT =
@@ -203,7 +204,7 @@ interface IncomeValue {
   currency: string
 }
 
-// ---------------------------------------------------------------- chips --
+// ---------------------------------------------------------------- profile --
 
 interface Entry {
   /** The fact's key, a project's being `project:<id>`. */
@@ -227,37 +228,47 @@ function entries(profile: Profile): Entry[] {
   ]
 }
 
-/** The confirmed profile as chips (13A). Nothing while it is read, nor when empty. */
-export function ProfileChips() {
+/**
+ * The confirmed profile as a sentence of underlined values (DESIGN.md › Agent
+ * page: « une ligne de valeurs soulignées que le propriétaire peut changer »).
+ * Nothing while it is read, nor when empty. Each value opens its date,
+ * *Modifier* and *Oublier* (13A); past three, « N autres » opens them all.
+ */
+export function ProfileLine() {
   const { t } = useI18n()
-  const list = useRef<HTMLUListElement>(null)
-  // A forgotten chip takes its popover and the focus with it: the list keeps it.
+  const list = useRef<HTMLSpanElement>(null)
+  // A forgotten value takes its popover and the focus with it: the line keeps it.
   const forgotten = () => list.current?.focus()
   const profile = useQuery({ queryKey: ['profile'], queryFn: profileApi.profile })
   if (profile.data === undefined) return null
   const all = entries(profile.data)
   if (all.length === 0) return null
-  const shown = all.length > CHIPS ? all.slice(0, CHIPS) : all
+  const shown = all.length > SHOWN ? all.slice(0, SHOWN) : all
+  const others = all.length - shown.length
 
   return (
-    <ul
+    <span
       ref={list}
+      role="group"
       tabIndex={-1}
       aria-label={t('agent.profile')}
-      className="flex flex-wrap gap-1.5 pt-1.5 focus:outline-none"
+      className="focus:outline-none"
     >
-      {shown.map((entry) => (
-        <li key={entry.key}>
-          <Chip label={<EntryLabel entry={entry} />}>
+      {t('agent.profile.lead')}{' '}
+      {shown.map((entry, index) => (
+        <span key={entry.key}>
+          {index > 0 ? ' · ' : null}
+          <ProfileValue label={<EntryLabel entry={entry} />}>
             <FactDetail entry={entry} onForgotten={forgotten} />
-          </Chip>
-        </li>
+          </ProfileValue>
+        </span>
       ))}
-      {all.length > shown.length ? (
-        <li>
-          <Chip
-            label={t('agent.profile.more', { count: all.length - shown.length })}
-            name={`${t('agent.profile.all')} (${t('agent.profile.more', { count: all.length - shown.length })})`}
+      {others > 0 ? (
+        <>
+          {' · '}
+          <ProfileValue
+            label={t('agent.profile.more', { count: others })}
+            name={`${t('agent.profile.all')} (${t('agent.profile.more', { count: others })})`}
           >
             <div className="flex flex-col divide-y">
               {all.map((entry) => (
@@ -266,10 +277,11 @@ export function ProfileChips() {
                 </div>
               ))}
             </div>
-          </Chip>
-        </li>
+          </ProfileValue>
+        </>
       ) : null}
-    </ul>
+      .
+    </span>
   )
 }
 
@@ -279,15 +291,19 @@ function EntryLabel({ entry }: { entry: Entry }) {
   return <>{t(label.key, label.values)}</>
 }
 
-function Chip({ label, name, children }: { label: ReactNode; name?: string; children: ReactNode }) {
+function ProfileValue({
+  label,
+  name,
+  children,
+}: {
+  label: ReactNode
+  name?: string
+  children: ReactNode
+}) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={name}
-          className="label min-h-8 rounded-full border px-2.5 text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none pointer-coarse:min-h-11"
-        >
+        <button type="button" aria-label={name} className={`${INLINE_LINK} text-foreground`}>
           {label}
         </button>
       </PopoverTrigger>

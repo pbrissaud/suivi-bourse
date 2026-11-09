@@ -2,13 +2,13 @@
  * The ledger events the agent proposed (#1119): the card read in its stored
  * state, five of them, with the marks and the overflow.
  */
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import type { EventsProposal } from '@/features/agent/lib/eventProposals'
 import { ROUTES } from '@/lib/api'
-import { anAgentConfig } from '@/test/factories'
+import { aProvider } from '@/features/agent/tests/agentFixtures'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -56,10 +56,11 @@ function aProposal(
 function threadWith(read: (ids: string[]) => EventsProposal[]) {
   server.use(
     http.get(ROUTES.agentThreads, () => HttpResponse.json([])),
-    http.get(ROUTES.agentConfig, () =>
-      HttpResponse.json(
-        anAgentConfig({ enabled: true, provider: 'anthropic', model: 'claude-sonnet-5-5' }),
-      ),
+    http.get(ROUTES.agentConfig, () => HttpResponse.json({ enabled: true, reasoning: 'low' })),
+    http.get(ROUTES.agentProviders, () => HttpResponse.json([aProvider()])),
+    // The import's own dry run: what the ledger would take of the proposal.
+    http.post(ROUTES.agentProposalPreview, () =>
+      HttpResponse.json({ written: 1, duplicates: 0, duplicate_rows: [] }),
     ),
     http.get(ROUTES.agentThread, () =>
       HttpResponse.json({
@@ -99,15 +100,81 @@ async function openPage() {
 }
 
 describe('the events card (#1119)', () => {
-  it('lists the lines while ready and leads to the ledger’s preview', async () => {
+  it('lists the lines as ruled rows while ready, and offers to add them', async () => {
     threadWith(() => [aProposal('ready')])
     const { main } = await openPage()
 
     expect(await within(main).findByText('Achat CW8')).toBeInTheDocument()
-    expect(within(main).getByText(/Achat · CW8\.PA · 10 × 512,00 · cto/)).toBeInTheDocument()
-    const review = within(main).getByRole('link', { name: 'Revoir et fusionner' })
+    const rows = within(main).getAllByRole('row')
+    expect(rows).toHaveLength(2) // the header, and the one line
+    expect(within(rows[1]).getByText('Achat')).toBeInTheDocument()
+    expect(within(rows[1]).getByText(/CW8\.PA · cto/)).toBeInTheDocument()
+    expect(await within(main).findByRole('button', { name: 'Ajouter 1 événement' })).toBeEnabled()
+    const review = within(main).getByRole('link', { name: 'Revoir dans le grand livre' })
     expect(review).toHaveAttribute('href', `/ledger?proposal=${ID}`)
     expect(within(main).getByRole('button', { name: 'Ignorer' })).toBeInTheDocument()
+  })
+
+  it('marks a line the ledger already holds, unchecked, and adds only the others', async () => {
+    const events = [
+      aLine({
+        event_type: 'DIVIDEND',
+        symbol: 'AI.PA',
+        quantity: null,
+        unit_price: null,
+        amount: 18.4,
+      }),
+      aLine({
+        event_type: 'DIVIDEND',
+        symbol: 'TTE.PA',
+        date: '2026-10-01',
+        quantity: null,
+        unit_price: null,
+        amount: 79.3,
+      }),
+    ]
+    threadWith(() => [aProposal('ready', { events })])
+    let merged = 0
+    server.use(
+      http.post(ROUTES.agentProposalPreview, () =>
+        HttpResponse.json({
+          written: 1,
+          duplicates: 1,
+          duplicate_rows: [
+            {
+              date: '2026-10-01',
+              event_type: 'DIVIDEND',
+              symbol: 'TTE.PA',
+              name: null,
+              quantity: null,
+              unit_price: null,
+              fee: null,
+              amount: 79.3,
+              notes: null,
+              account: 'cto',
+              duplicate_of: 'e1',
+              repeat_of: null,
+              file: 0,
+              repeat_of_file: null,
+            },
+          ],
+        }),
+      ),
+      http.post(ROUTES.agentProposalMerge, () => {
+        merged += 1
+        return HttpResponse.json({ written: 1, proposal: { id: ID, status: 'merged' } })
+      }),
+    )
+    const { user, main } = await openPage()
+
+    const add = await within(main).findByRole('button', { name: 'Ajouter 1 événement' })
+    const boxes = within(main).getAllByRole('checkbox')
+    expect(boxes[0]).toBeChecked()
+    expect(boxes[1]).not.toBeChecked()
+    expect(within(main).getByText('déjà dans le grand livre')).toBeInTheDocument()
+
+    await user.click(add)
+    await waitFor(() => expect(merged).toBe(1))
   })
 
   it('shows the marks, and says “et N autres” past eight lines', async () => {
@@ -120,15 +187,15 @@ describe('the events card (#1119)', () => {
     threadWith(() => [aProposal('ready', { events })])
     const { main } = await openPage()
 
-    expect(await within(main).findByText('extrait du relevé')).toBeInTheDocument()
-    expect(within(main).getByText('déduit d’un écart')).toBeInTheDocument()
-    expect(within(main).getByText('prix estimé')).toBeInTheDocument()
-    expect(within(main).getAllByRole('listitem')).toHaveLength(9)
+    expect(await within(main).findByText(/extrait du relevé/)).toBeInTheDocument()
+    expect(within(main).getByText(/déduit d’un écart/)).toBeInTheDocument()
+    expect(within(main).getByText(/prix estimé/)).toBeInTheDocument()
+    expect(within(main).getAllByRole('row')).toHaveLength(9) // the header, and eight lines
     expect(within(main).getByText('et 2 autres')).toBeInTheDocument()
   })
 
   for (const [status, line] of [
-    ['merged', /^Fusionnée le /],
+    ['merged', /^Ajoutée le /],
     ['ignored', 'Ignorée'],
     ['expired', 'Expirée'],
   ] as const) {
@@ -137,7 +204,7 @@ describe('the events card (#1119)', () => {
       const { main } = await openPage()
 
       expect(await within(main).findByText(line)).toBeInTheDocument()
-      expect(within(main).queryByRole('link', { name: 'Revoir et fusionner' })).toBeNull()
+      expect(within(main).queryByRole('link', { name: 'Revoir dans le grand livre' })).toBeNull()
       expect(within(main).queryByRole('button', { name: 'Ignorer' })).toBeNull()
       expect(within(main).queryByRole('button', { name: 'Relancer' })).toBeNull()
     })
@@ -177,10 +244,10 @@ describe('the events card (#1119)', () => {
     expect(
       await within(main).findByText('Le grand livre a changé depuis cette proposition'),
     ).toBeInTheDocument()
-    expect(within(main).queryByRole('link', { name: 'Revoir et fusionner' })).toBeNull()
+    expect(within(main).queryByRole('link', { name: 'Revoir dans le grand livre' })).toBeNull()
     await user.click(within(main).getByRole('button', { name: 'Relancer' }))
 
-    const review = await within(main).findByRole('link', { name: 'Revoir et fusionner' })
+    const review = await within(main).findByRole('link', { name: 'Revoir dans le grand livre' })
     expect(review).toHaveAttribute('href', `/ledger?proposal=${NEXT}`)
     expect(within(main).getByText('Achat CW8 (relancé)')).toBeInTheDocument()
   })
@@ -256,9 +323,9 @@ describe('the events card (#1119)', () => {
       ])
       const { main } = await openPage()
 
-      expect(await within(main).findByText('extrait du relevé')).toBeInTheDocument()
-      expect(within(main).getByText('déduit d’un écart')).toBeInTheDocument()
-      expect(within(main).getByText(/AMUNDI MSCI WORLD · titre à choisir/)).toBeInTheDocument()
+      expect(await within(main).findByText(/extrait du relevé/)).toBeInTheDocument()
+      expect(within(main).getByText(/déduit d’un écart/)).toBeInTheDocument()
+      expect(within(main).getByText(/titre à choisir/)).toBeInTheDocument()
       expect(
         within(main).getByText('2 lignes du relevé n’ont pas pu être lues'),
       ).toBeInTheDocument()
@@ -303,7 +370,7 @@ describe('the events card (#1119)', () => {
       threadWith(() => [aProposal('ready')])
       const { main } = await openPage()
 
-      await within(main).findByRole('link', { name: 'Revoir et fusionner' })
+      await within(main).findByRole('link', { name: 'Revoir dans le grand livre' })
       expect(within(main).queryByRole('button', { name: /Lire comme relevé/ })).toBeNull()
     })
   })

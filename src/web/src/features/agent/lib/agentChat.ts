@@ -35,8 +35,11 @@ export function httpTransport(): ChatTransport<UIMessage> {
     },
     // No `page` (#1196): the agent is a page of its own now, and reads the
     // portfolio through its tools rather than off the reader's location.
-    prepareSendMessagesRequest: ({ id, messages, trigger, messageId }) => ({
-      body: { id, trigger, messageId, messages: messages.slice(-1) },
+    // The question's own `body` carries the picker's `provider_id` and `model`
+    // (per thread, DESIGN.md › Agent page): the server falls back to the
+    // thread's, then to the default provider's, when they are absent.
+    prepareSendMessagesRequest: ({ id, messages, trigger, messageId, body }) => ({
+      body: { ...body, id, trigger, messageId, messages: messages.slice(-1) },
     }),
   })
 }

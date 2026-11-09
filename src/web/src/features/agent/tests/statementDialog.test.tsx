@@ -6,29 +6,15 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
+import { agentOn } from '@/features/agent/tests/agentFixtures'
 import { ROUTES } from '@/lib/api'
-import { anAgentConfig } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
 const ID = 'e'.repeat(32)
 
-function switchedOn() {
-  server.use(
-    http.get(ROUTES.agentThreads, () => HttpResponse.json([])),
-    http.get(ROUTES.agentConfig, () =>
-      HttpResponse.json(
-        anAgentConfig({
-          enabled: true,
-          provider: 'anthropic',
-          model: 'claude-sonnet-5-5',
-          key: { set: true, last4: 'wxyz', set_at: null },
-        }),
-      ),
-    ),
-  )
-}
+const switchedOn = () => agentOn()
 
 async function openPage() {
   setViewportWidth(1024)
@@ -76,7 +62,7 @@ describe('giving the agent a statement (#1120)', () => {
     )
     const { user, main } = await openPage()
 
-    await user.click(await within(main).findByRole('button', { name: 'Donner un relevé' }))
+    await user.click(await within(main).findByRole('button', { name: 'Joindre un relevé' }))
     const dialog = await screen.findByRole('dialog')
     expect(
       within(dialog).getByText(
@@ -100,7 +86,7 @@ describe('giving the agent a statement (#1120)', () => {
       {
         thread_id: expect.any(String),
         account: 'beta',
-        provider: 'anthropic',
+        provider_id: 'p1',
         name: 'texte collé',
         text: STATEMENT,
       },
@@ -116,7 +102,7 @@ describe('giving the agent a statement (#1120)', () => {
       ),
     )
     const { user, main } = await openPage()
-    await user.click(await within(main).findByRole('button', { name: 'Donner un relevé' }))
+    await user.click(await within(main).findByRole('button', { name: 'Joindre un relevé' }))
     const dialog = await screen.findByRole('dialog')
     await user.type(within(dialog).getByRole('textbox', { name: 'Texte du relevé' }), STATEMENT)
     await user.selectOptions(
@@ -142,7 +128,7 @@ describe('giving the agent a statement (#1120)', () => {
       }),
     )
     const { user, main } = await openPage()
-    await user.click(await within(main).findByRole('button', { name: 'Donner un relevé' }))
+    await user.click(await within(main).findByRole('button', { name: 'Joindre un relevé' }))
     const dialog = await screen.findByRole('dialog')
     await user.selectOptions(
       within(dialog).getByRole('combobox', { name: 'Compte du relevé' }),

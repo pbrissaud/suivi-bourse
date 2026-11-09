@@ -1,18 +1,21 @@
 /**
  * The agent (#1117, #1196): a conversation about the portfolio through the
- * MCP tools, streamed by `useChat` from `/api/agent/chat`, on its own page.
+ * MCP tools, streamed by `useChat` from `/api/agent/chat`, on its own page, in
+ * the « Relevé » composition (`Agent-Refonte.dc.html`).
  *
- * **A page, not a panel** (#1196). Docked beside the page, the panel took
- * 380 px from content designed for 1 040, and bought one line of context the
- * agent reads through its tools anyway. From 1 024 px the recent threads are a
- * 240 px column beside the conversation; below, they are the header's menu.
- *
- * **Built on the shadcn AI components**: `message-scroller` keeps a streamed
- * answer in view while the reader is at the live edge, `message` and `bubble`
- * lay the turns out, `attachment` shows a refused file. The answers are read
- * in Prose (15/22), their Markdown drawn rather than shown; a tool call is one
+ * **A page, not a panel** (#1196). From 1 024 px the threads are a 240 px rail
+ * on `muted` (`ThreadRail`) beside a conversation centred at 768 px; below, the
+ * rail is the header's menu. The user's turn has no bubble; the answer is read
+ * in Prose (15/22), its Markdown drawn rather than shown; a tool call is one
  * muted `trace` line in plain words whose chevron opens the raw call in a
  * `code-block` (2A).
+ *
+ * **What the thread runs on is the thread's**: the composer's provider · model
+ * picker rides with each question, and the server stores it with the thread.
+ *
+ * **Built on the shadcn AI components**: `message-scroller` keeps a streamed
+ * answer in view while the reader is at the live edge, `message` lays the
+ * turns out, `attachment` shows a refused file.
  *
  * **Announced once** (11A): the scroller's content is a `log` live region,
  * which would read every streamed token; it is silenced, and one polite
@@ -22,34 +25,15 @@ import { useChat } from '@ai-sdk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import type { UIMessage } from 'ai'
-import { ArrowUp, History, SquarePen, Trash2, X } from 'lucide-react'
-import {
-  type ClipboardEvent,
-  type ComponentProps,
-  type DragEvent,
-  type FormEvent,
-  type KeyboardEvent,
-  memo,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { ChevronRight, History, SquarePen, X } from 'lucide-react'
+import { type ComponentProps, memo, useEffect, useMemo, useRef, useState } from 'react'
 import Markdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import {
-  Attachment,
-  AttachmentContent,
-  AttachmentDescription,
-  AttachmentTitle,
-} from '@/components/ui/attachment'
 import { ConfirmDestructive } from '@/components/ConfirmDestructive'
-import { Bubble, BubbleContent } from '@/components/ui/bubble'
+import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
 import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block'
-import { useHighlightedCode } from '@/hooks/use-highlighted-code'
 import { Message, MessageContent } from '@/components/ui/message'
 import {
   MessageScroller,
@@ -60,7 +44,6 @@ import {
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Trace,
   TraceCollapsible,
@@ -71,6 +54,19 @@ import {
   TraceTitle,
 } from '@/components/ui/trace'
 import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/features/accounts/lib/accounts'
+import { accountsApi } from '@/features/accounts/lib/api'
+import { Composer } from '@/features/agent/components/Composer'
+import { defaultRunner, providerName, type Runner } from '@/features/agent/components/ModelPicker'
+import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
+import { EventsCard } from '@/features/agent/components/EventsCard'
+import {
+  FactCard,
+  ProfileLine,
+  proposalOf,
+  type ThreadProposal,
+  useProposals,
+} from '@/features/agent/components/AgentProfile'
+import { RailBody, ThreadRail } from '@/features/agent/components/ThreadRail'
 import {
   type AgentToolPart,
   errorSentence,
@@ -83,294 +79,88 @@ import {
   toolRunning,
   toolSentence,
   turnRefusal,
-  unreadableFiles,
-  isStatementFile,
 } from '@/features/agent/lib/agentChat'
-import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
-import {
-  FactCard,
-  ProfileChips,
-  proposalOf,
-  type ThreadProposal,
-  useProposals,
-} from '@/features/agent/components/AgentProfile'
-import { EventsCard } from '@/features/agent/components/EventsCard'
-import { StatementDialog, type StatementDraftIn } from '@/features/agent/components/StatementDialog'
-import { accountsApi } from '@/features/accounts/lib/api'
-import { agentApi, type AgentConfig } from '@/features/agent/lib/api'
+import { agentApi, type ConfiguredProvider } from '@/features/agent/lib/api'
+import { ACT } from '@/features/agent/lib/styles'
+import { useHighlightedCode } from '@/hooks/use-highlighted-code'
 import { sharesApi } from '@/features/shares/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { isSessionEnded } from '@/lib/session'
-
-/** At most this many threads under *Fils récents*. */
-const RECENT = 20
 
 /** The thread the address names; `undefined` on `/agent`, a thread not yet asked. */
 export function useThreadParam(): string | undefined {
   return useParams({ strict: false }).threadId
 }
 
-/** The page's body: the thread column from 1 024 px, then the conversation. */
+/** The page's body: the rail from 1 024 px, then the conversation. */
 export function AgentChat({ wide }: { wide: boolean }) {
-  const { t } = useI18n()
-  const config = useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig })
+  const settings = useQuery({ queryKey: ['agent-settings'], queryFn: agentApi.settings })
 
   // A read that has not answered renders nothing (#795).
-  if (config.data === undefined) return null
-  if (!config.data.enabled) return <AgentOff />
+  if (settings.data === undefined) return null
+  if (!settings.data.enabled) return <AgentOff />
   return (
     <div className="flex h-full min-h-0">
-      {wide ? (
-        // A rail, flush with the navigation and as tall as the page: a box
-        // floating in the corner read as detached from the conversation.
-        <nav
-          aria-labelledby="agent-threads"
-          className="flex w-60 shrink-0 flex-col gap-1 border-r bg-muted p-2"
-        >
-          <NewThread />
-          <p id="agent-threads" className="label px-2 pt-2 pb-1">
-            {t('agent.recent')}
-          </p>
-          <ThreadList />
-        </nav>
-      ) : null}
-      {/* Centred in what the rail leaves, at 768 px: wider, a line ran past 110
-          characters; pinned to the rail, the right of the screen stood empty. */}
-      <section className="mx-auto flex min-h-0 w-full max-w-column min-w-0 flex-col lg:max-w-reading lg:pt-5">
-        <AgentHeader config={config.data} wide={wide} />
+      {wide ? <ThreadRail /> : null}
+      <section className="flex min-h-0 w-full min-w-0 flex-col">
+        {wide ? null : <NarrowBar />}
         <AgentThread />
       </section>
     </div>
   )
 }
 
-function AgentHeader({ config, wide }: { config: AgentConfig; wide: boolean }) {
-  const { t } = useI18n()
-
-  return (
-    <header className="flex items-center gap-1 px-4 pb-2">
-      <div className="min-w-0 flex-1">
-        {config.provider !== null ? (
-          <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="truncate">
-              {t(`agent.provider.${config.provider}`)} · {config.model_name ?? config.model}
-            </span>
-            {config.provider === 'ollama' ? (
-              <span className="shrink-0 text-xs">{t('agent.experimental')}</span>
-            ) : null}
-          </p>
-        ) : null}
-        <ProfileChips />
-      </div>
-      {wide ? null : (
-        <>
-          <NewThread icon />
-          <RecentThreads />
-        </>
-      )}
-    </header>
-  )
-}
-
-/** *Nouveau fil*: `/agent`, which starts an empty thread. */
-function NewThread({ icon = false }: { icon?: boolean }) {
-  const { t } = useI18n()
-  return (
-    <Button
-      asChild
-      variant="outline"
-      size={icon ? 'icon' : 'default'}
-      className={icon ? 'size-11' : 'min-h-11 justify-start'}
-    >
-      <Link
-        to="/agent"
-        aria-label={t('agent.newThread')}
-        title={t('agent.newThread')}
-        // Exact: `/agent/x` starts with `/agent` and is not a new thread.
-        activeOptions={{ exact: true }}
-      >
-        <SquarePen />
-        {icon ? null : t('agent.newThread')}
-      </Link>
-    </Button>
-  )
-}
-
-/** *Fils récents* under 1 024 px: the same list, in the header's menu. */
-function RecentThreads() {
+/** Under 1 024 px the rail is two buttons: a new thread, and the recent ones. */
+function NarrowBar() {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-11"
-          aria-label={t('agent.recent')}
-          title={t('agent.recent')}
+    <header className="flex items-center justify-end gap-1 px-4 pt-2 pb-2">
+      <Button asChild variant="outline" size="icon">
+        <Link
+          to="/agent"
+          aria-label={t('agent.newThread')}
+          title={t('agent.newThread')}
+          // Exact: `/agent/x` starts with `/agent` and is not a new thread.
+          activeOptions={{ exact: true }}
         >
-          <History />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-80 p-1"
-        // A deletion being asked lives in an `alertdialog` drawn outside this
-        // menu: what happens there (its focus, its Escape, a click on it) must
-        // not dismiss the menu, or the dialog would be unmounted with it.
-        onEscapeKeyDown={(event) => {
-          if (document.querySelector('[role="alertdialog"]')) event.preventDefault()
-        }}
-        onInteractOutside={(event) => {
-          if (
-            (event.target as HTMLElement | null)?.closest(
-              '[role="alertdialog"], [data-slot="dialog-overlay"]',
-            )
-          )
-            event.preventDefault()
-        }}
-      >
-        <p className="label px-2 py-1.5">{t('agent.recent')}</p>
-        <ThreadList onOpened={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-/**
- * The last twenty threads, opened (a push: Back returns) or deleted from here.
- *
- * **A deletion is asked in the one confirmation** (`ConfirmDestructive`), which
- * names the thread and opens on *Annuler*: the bin sits next to the link, and a
- * slip lost a whole conversation. Under 1 024 px the list lives in a popover
- * that would dismiss itself when the dialog took the focus, unmounting the
- * dialog with it — so the popover ignores whatever happens inside an
- * `alertdialog`.
- */
-function ThreadList({ onOpened }: { onOpened?: () => void }) {
-  const { t } = useI18n()
-  const f = useFormatters()
-  const client = useQueryClient()
-  const navigate = useNavigate()
-  const threadId = useThreadParam()
-  const threads = useQuery({ queryKey: ['agent-threads'], queryFn: agentApi.agentThreads })
-  const [doomed, setDoomed] = useState<string | null>(null)
-  const list = useRef<HTMLUListElement>(null)
-  const doomedThread = threads.data?.find((thread) => thread.id === doomed) ?? null
-  // The bin that asked, remembered for the focus once the question is closed.
-  const asked = useRef<string | null>(null)
-  if (doomed !== null) asked.current = doomed
-  const remove = useMutation({
-    mutationFn: agentApi.forgetAgentThread,
-    onSuccess: (_, id) => {
-      // The thread on screen is gone: an empty one takes its place, and the
-      // address that named it is not kept in the history.
-      if (id === threadId) void navigate({ to: '/agent', replace: true })
-    },
-    onSettled: () => client.invalidateQueries({ queryKey: ['agent-threads'] }),
-  })
-
-  return (
-    <>
-      {threads.error ? (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">
-          {t('agent.recent.unreadable', { reason: threads.error.message })}
-        </p>
-      ) : threads.data === undefined ? null : threads.data.length === 0 ? (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">{t('agent.recent.empty')}</p>
-      ) : (
-        // `-m-1 p-1`: room inside the scroll box for the focus rings it would clip.
-        <ul ref={list} className="-m-1 max-h-80 min-h-0 overflow-y-auto p-1 lg:max-h-none">
-          {threads.data.slice(0, RECENT).map((thread) => {
-            const title = thread.title || t('agent.recent.untitled')
-            return (
-              <li key={thread.id} className="flex items-center gap-1">
-                <Link
-                  to="/agent/$threadId"
-                  params={{ threadId: thread.id }}
-                  className="flex min-h-11 min-w-0 flex-1 flex-col items-start rounded-md px-2 py-1 text-left hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-background aria-[current=page]:font-medium"
-                  onClick={onOpened}
-                >
-                  {/* Two lines: a title cut at 25 characters told two threads apart badly. */}
-                  <span className="line-clamp-2 w-full text-sm break-words">{title}</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {f.dateTime(thread.updated_at)}
-                  </span>
-                </Link>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-11"
-                  data-delete={thread.id}
-                  aria-label={t('agent.delete.named', { title })}
-                  title={t('agent.delete')}
-                  onClick={() => setDoomed(thread.id)}
-                >
-                  <Trash2 />
-                </Button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-      <ConfirmDestructive
-        open={doomedThread !== null}
-        onOpenChange={(open) => (open ? null : setDoomed(null))}
-        title={t('confirm.thread.title')}
-        items={
-          doomedThread === null
-            ? []
-            : [
-                {
-                  key: doomedThread.title || t('agent.recent.untitled'),
-                  value: f.date(doomedThread.updated_at),
-                },
-              ]
-        }
-        line={t('confirm.thread.line')}
-        confirmLabel={t('confirm.delete')}
-        onConfirm={() => {
-          if (doomedThread !== null) remove.mutate(doomedThread.id)
-          setDoomed(null)
-        }}
-        // Kept or deleted, focus goes back to the list: the bin that asked, or
-        // the top of it once the row is gone.
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          const bin =
-            asked.current === null
-              ? null
-              : list.current?.querySelector<HTMLElement>(
-                  `[data-delete="${CSS.escape(asked.current)}"]`,
-                )
-          ;(bin ?? list.current?.querySelector<HTMLElement>('a'))?.focus()
-        }}
-      />
-      {remove.error ? (
-        <p role="status" className="px-2 py-1.5 text-sm text-destructive">
-          {remove.error.message}
-        </p>
-      ) : null}
-    </>
+          <SquarePen />
+        </Link>
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t('agent.recent')}
+            title={t('agent.recent')}
+          >
+            <History />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="flex max-h-96 w-80 flex-col gap-1 p-2">
+          <RailBody onOpened={() => setOpen(false)} />
+        </PopoverContent>
+      </Popover>
+    </header>
   )
 }
 
 /**
  * Disabled (4A): the page says what is missing, and what the agent would do.
- * It sits where the conversation would, the page's gutter given back by
- * `AgentPage` from 1 024 px, and the link lands on the agent's own block.
+ * It sits where the conversation would, and the link lands on the agent's own
+ * block of the settings.
  */
 function AgentOff() {
   const { t } = useI18n()
   return (
-    <div className="mx-auto flex w-full max-w-column flex-col items-start gap-3 px-4 py-6 lg:max-w-reading lg:pt-12">
+    <div className="mx-auto flex w-full max-w-reading flex-col items-start gap-3 px-4 py-6 md:px-8 lg:pt-12">
       <p className="text-prose font-medium">{t('agent.disabled')}</p>
       <p className="max-w-prose text-prose text-muted-foreground">{t('agent.disabled.detail')}</p>
-      <Button asChild className="min-h-11">
+      <Button asChild variant="primary">
         <Link to="/settings" hash="agent">
           {t('agent.configure')}
         </Link>
@@ -395,10 +185,10 @@ function AgentThread() {
           {error}
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="min-h-11" onClick={() => openThread(id)}>
+          <Button variant="outline" onClick={() => openThread(id)}>
             {t('agent.retry')}
           </Button>
-          <Button asChild variant="outline" className="min-h-11">
+          <Button asChild variant="outline">
             <Link to="/agent">{t('agent.newThread')}</Link>
           </Button>
         </div>
@@ -406,19 +196,29 @@ function AgentThread() {
     )
   }
   // Keyed: what the conversation remembers of its stream (the announcement,
-  // the scroll) is one thread's, never carried into the next.
+  // the scroll, the model picked) is one thread's, never carried into the next.
   return <AgentConversation key={chat.id} />
 }
 
 /** The refusals the reader mends in Settings: another key, more credit, another model. */
 const SETTINGS_REASONS = ['key', 'quota', 'model']
 
+/** What a thread runs on: its stored provider while that still exists, else the default one. */
+function runnerOf(
+  stored: { provider_id: string | null; model: string | null } | null,
+  providers: readonly ConfiguredProvider[] | undefined,
+): Runner | null {
+  if (providers === undefined) return null
+  const kept = providers.find((p) => p.id === stored?.provider_id)
+  return kept
+    ? { provider_id: kept.id, model: stored?.model ?? kept.default_model }
+    : defaultRunner(providers)
+}
+
 function AgentConversation() {
   const { t } = useI18n()
-  // The page's own read, already in the cache: it names the provider a refusal blames.
-  const provider =
-    useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig }).data?.provider ?? null
-  const { chat, failedOnReload, settle, reloadThread } = useAgentChat()
+  const providers = useQuery({ queryKey: ['agent-providers'], queryFn: agentApi.providers })
+  const { chat, failedOnReload, settle, reloadThread, ranOn } = useAgentChat()
   const threadId = useThreadParam()
   const navigate = useNavigate()
   const { messages, sendMessage, status, error, stop, setMessages, clearError } = useChat({
@@ -428,6 +228,11 @@ function AgentConversation() {
   const notKept = useNotKept(chat.id, error)
   const announcement = useAnnouncement(status, messages)
   const proposals = useProposals(chat.id, messages, busy)
+  // The picker's choice is the thread's: it starts from what the thread ran
+  // on, and rides with each question from here on.
+  const [picked, setPicked] = useState<Runner | null>(null)
+  const runner = picked ?? runnerOf(ranOn, providers.data)
+  const provider = providers.data?.find((p) => p.id === runner?.provider_id)
 
   // A statement wrote a proposal and four messages into the thread on the
   // server: the thread is read back, and the card appears (#1120).
@@ -452,7 +257,17 @@ function AgentConversation() {
     }
     if (error) clearError()
     settle()
-    void sendMessage({ text })
+    void sendMessage(
+      { text },
+      runner
+        ? {
+            body: {
+              provider_id: runner.provider_id,
+              ...(runner.model ? { model: runner.model } : {}),
+            },
+          }
+        : undefined,
+    )
   }
 
   // *Réessayer*: the question again, as a new turn, in place of the failed one.
@@ -483,27 +298,24 @@ function AgentConversation() {
   const failed = streamFailed || failedOnReload
   const refusal = streamFailed ? turnRefusal(error) : null
   const retryButton = (
-    <div className="flex flex-wrap items-center gap-3 pt-1">
-      <Button variant="outline" className="min-h-11" onClick={retry}>
+    <div className="flex flex-wrap items-center gap-4 pt-1">
+      <Button variant="outline" onClick={retry}>
         {t('agent.retry')}
       </Button>
       {refusal && SETTINGS_REASONS.includes(refusal.reason) ? (
-        <Link
-          to="/settings"
-          hash="agent"
-          className="text-sm text-primary underline underline-offset-4"
-        >
+        <Link to="/settings" hash="agent" className={ACT}>
           {t('agent.refusal.settings')}
         </Link>
       ) : null}
     </div>
   )
   const waiting = pendingAnswer(status, messages.at(-1))
+  const model = runner?.model ?? provider?.default_model ?? null
 
   return (
     <>
       {notKept ? (
-        <p role="status" className="mx-4 mb-2 rounded-md bg-card px-3 py-2 text-sm">
+        <p role="status" className="mx-4 mb-2 text-sm text-muted-foreground">
           {t('agent.notKept')}
         </p>
       ) : null}
@@ -514,14 +326,21 @@ function AgentConversation() {
             grow the thread under the reader without pulling the view down. */}
         <MessageScrollerProvider autoScroll={busy} defaultScrollPosition="last-anchor">
           <MessageScroller>
-            <MessageScrollerViewport aria-label={t('agent.messages')} className="px-4">
+            <MessageScrollerViewport aria-label={t('agent.messages')}>
               {/* Silenced: the polite region below announces the whole answer once. */}
-              <MessageScrollerContent aria-live="off" className="gap-5 py-3">
-                {messages.length === 0 ? (
+              <MessageScrollerContent
+                aria-live="off"
+                className="mx-auto w-full max-w-reading gap-7 px-4 py-7 md:px-8"
+              >
+                {messages.length > 0 ? (
+                  <MessageScrollerItem messageId="head">
+                    <ThreadHead threadId={chat.id} />
+                  </MessageScrollerItem>
+                ) : (
                   <MessageScrollerItem messageId="examples">
                     <Examples onAsk={ask} />
                   </MessageScrollerItem>
-                ) : null}
+                )}
                 {messages.map((message) => (
                   <MessageScrollerItem
                     key={message.id}
@@ -532,6 +351,7 @@ function AgentConversation() {
                       message={message}
                       live={busy && message === messages.at(-1)}
                       proposals={proposals}
+                      model={model}
                     />
                   </MessageScrollerItem>
                 ))}
@@ -550,7 +370,7 @@ function AgentConversation() {
                     <div role={refusal && provider ? undefined : 'alert'}>
                       {refusal && provider ? (
                         <RefusalNotice
-                          provider={t(`agent.provider.${provider}`)}
+                          provider={providerName(provider, t)}
                           reason={refusal.reason}
                           said={refusal.said}
                         >
@@ -570,7 +390,7 @@ function AgentConversation() {
               </MessageScrollerContent>
             </MessageScrollerViewport>
             {/* Bordered: over the text, a bare arrow on the page's ground hid words. */}
-            <MessageScrollerButton className="size-11 border" />
+            <MessageScrollerButton className="size-8 border" />
           </MessageScroller>
         </MessageScrollerProvider>
       </div>
@@ -585,8 +405,61 @@ function AgentConversation() {
         onStop={() => void stop()}
         onStatementSent={statementSent}
         returned={returned}
+        providers={providers.data ?? []}
+        runner={runner}
+        onRunner={setPicked}
       />
     </>
+  )
+}
+
+/**
+ * The thread's head: its title in 15/22/500 and « Supprimer », the one text
+ * action the thread offers. Drawn once the list of threads names the thread —
+ * the list is where a title lives, and where a thread the server holds is told
+ * from one it does not yet (a first question still streaming has no file to
+ * delete, and its title is the question already on screen). A deletion is asked in the one confirmation (`ConfirmDestructive`),
+ * which names the thread.
+ */
+function ThreadHead({ threadId }: { threadId: string }) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const client = useQueryClient()
+  const navigate = useNavigate()
+  const [asked, setAsked] = useState(false)
+  const threads = useQuery({ queryKey: ['agent-threads'], queryFn: agentApi.agentThreads })
+  const remove = useMutation({
+    mutationFn: () => agentApi.forgetAgentThread(threadId),
+    onSuccess: () => {
+      setAsked(false)
+      // The thread on screen is gone: an empty one takes its place, and the
+      // address that named it is not kept in the history.
+      void navigate({ to: '/agent', replace: true })
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['agent-threads'] }),
+  })
+  const known = threads.data?.find((thread) => thread.id === threadId)
+  if (known === undefined) return null
+  const title = known.title || t('agent.recent.untitled')
+
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5 border-b pb-3">
+      <h2 className="text-prose font-medium">{title}</h2>
+      <button type="button" className={ACT} onClick={() => setAsked(true)}>
+        {t('agent.delete')}
+      </button>
+      <ConfirmDestructive
+        open={asked}
+        onOpenChange={setAsked}
+        title={t('confirm.thread.title')}
+        items={[{ key: title, value: f.date(known.updated_at) }]}
+        line={t('confirm.thread.line')}
+        confirmLabel={t('confirm.delete')}
+        pending={remove.isPending}
+        error={remove.error ? <Refusal>{remove.error.message}</Refusal> : null}
+        onConfirm={() => remove.mutate()}
+      />
+    </div>
   )
 }
 
@@ -625,7 +498,12 @@ function useAnnouncement(status: string, messages: UIMessage[]): string {
   return said
 }
 
-/** Empty thread (4A): three questions from the portfolio, each one click. */
+/**
+ * The empty thread (`Agent-Vide-Refonte.dc.html`): a question as the title, one
+ * paragraph on what the agent reads and does — with the profile it knows, as
+ * underlined values — and three questions built from the portfolio, each one
+ * click, as ruled rows.
+ */
 function Examples({ onAsk }: { onAsk: (text: string) => void }) {
   const { t } = useI18n()
   const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
@@ -646,18 +524,22 @@ function Examples({ onAsk }: { onAsk: (text: string) => void }) {
   }, [positions.data, accounts.data, accounts.error, t])
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-prose">{t('agent.empty')}</p>
+    <div className="flex flex-col gap-5 pt-12">
+      <p className="text-2xl font-semibold">{t('agent.empty.title')}</p>
+      <p className="max-w-prose text-muted-foreground">
+        {t('agent.empty.lead')} <ProfileLine />
+      </p>
       {questions === null ? null : (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col">
           {questions.map((question) => (
-            <li key={question}>
+            <li key={question} className="border-t last:border-b">
               <button
                 type="button"
-                className="min-h-11 w-full rounded-card border bg-card px-3 py-2 text-left text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="flex min-h-11 w-full items-center justify-between gap-3 py-2.5 text-left text-md hover:[&_svg]:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                 onClick={() => onAsk(question)}
               >
-                {question}
+                <span>{question}</span>
+                <ChevronRight className="size-4 text-border" aria-hidden="true" />
               </button>
             </li>
           ))}
@@ -732,26 +614,31 @@ function Turn({
   message,
   live,
   proposals,
+  model,
 }: {
   message: UIMessage
   live: boolean
   proposals: Map<string, ThreadProposal> | undefined
+  /** The model the thread runs on, named on the answer; `null` while unread. */
+  model: string | null
 }) {
+  const { t } = useI18n()
   if (message.role === 'user') {
+    // No bubble: a label, then the question in the term's rung.
     return (
-      <Message align="end">
-        <Bubble variant="outline" align="end">
-          <BubbleContent className="bg-card text-prose whitespace-pre-wrap">
-            {textOf(message)}
-          </BubbleContent>
-        </Bubble>
-      </Message>
+      <div className="flex flex-col gap-1.5">
+        <p className="label">{t('agent.you')}</p>
+        <p className="text-lg font-medium whitespace-pre-wrap">{textOf(message)}</p>
+      </div>
     )
   }
   const { steps, cards } = stepsAndText(message.parts, proposals)
   return (
     <Message>
-      <MessageContent className="gap-2">
+      <MessageContent className="gap-3.5">
+        <p className="label">
+          {model ? t('agent.assistant.model', { model }) : t('agent.assistant')}
+        </p>
         {steps.map((group, index) => {
           const key = `${message.id}-${index}`
           if (Array.isArray(group)) {
@@ -890,154 +777,4 @@ function sixFigures(_: string, value: unknown): unknown {
   return typeof value === 'number' && !Number.isInteger(value)
     ? Number(value.toPrecision(6))
     : value
-}
-
-/** The input, *Envoyer* or *Arrêter*, and the CIF line fixed under it (3A). */
-function Composer({
-  busy,
-  threadId,
-  onAsk,
-  onStop,
-  onStatementSent,
-  returned,
-}: {
-  busy: boolean
-  threadId: string
-  onAsk: (text: string) => void
-  onStop: () => void
-  onStatementSent: () => void
-  /** A question the server refused for want of a session, handed back. */
-  returned: { text: string } | null
-}) {
-  const { t } = useI18n()
-  const [text, setText] = useState('')
-  const [refused, setRefused] = useState<string[]>([])
-  // The statement being given, in its box: a dropped file's text, or empty (#1120).
-  const [statement, setStatement] = useState<StatementDraftIn | null>(null)
-  const input = useRef<HTMLTextAreaElement>(null)
-  const fieldId = useId()
-  const hintId = useId()
-
-  // Focus goes to the input when the page mounts (11A).
-  useEffect(() => {
-    input.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    if (returned !== null) setText(returned.text)
-  }, [returned])
-
-  const submit = (event?: FormEvent) => {
-    event?.preventDefault()
-    const question = text.trim()
-    if (busy || question === '') return
-    setRefused([])
-    setText('')
-    onAsk(question)
-  }
-
-  // Image or PDF with a text-only model (4A): refused before anything is sent.
-  // Every model the agent runs on reads text only (`agent_routes` refuses
-  // any other part), so a file is never sent. A `.txt` or `.csv` is text: it is
-  // read here and offered as a statement, in a box that asks before it leaves.
-  const refuse = (files: FileList) => {
-    if (files.length === 0) return false
-    if (unreadableFiles(files)) {
-      setRefused(Array.from(files, (file) => file.name))
-      return true
-    }
-    if (files.length === 1 && isStatementFile(files[0])) {
-      const file = files[0]
-      setRefused([])
-      void file.text().then((text) => setStatement({ name: file.name, text }))
-      return true
-    }
-    return false
-  }
-  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (refuse(event.clipboardData.files)) event.preventDefault()
-  }
-  const onDrop = (event: DragEvent<HTMLTextAreaElement>) => {
-    if (refuse(event.dataTransfer.files)) event.preventDefault()
-  }
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) submit(event)
-  }
-
-  // The scroller's gutter, reserved here too: the input and *Envoyer* end where
-  // the messages do, not 11 px past them.
-  return (
-    <div className="flex scrollbar-thin scrollbar-gutter-stable flex-col gap-2 overflow-hidden px-4 pt-2 pb-3">
-      {refused.length > 0 ? (
-        <div role="alert" className="flex flex-col gap-1">
-          {refused.map((name) => (
-            <Attachment key={name} state="error" size="sm">
-              <AttachmentContent>
-                <AttachmentTitle>{name}</AttachmentTitle>
-                <AttachmentDescription>{t('agent.files.refused')}</AttachmentDescription>
-              </AttachmentContent>
-            </Attachment>
-          ))}
-        </div>
-      ) : null}
-      <form onSubmit={submit} className="flex items-end gap-2">
-        <label htmlFor={fieldId} className="sr-only">
-          {t('agent.input')}
-        </label>
-        <Textarea
-          id={fieldId}
-          ref={input}
-          value={text}
-          rows={1}
-          placeholder={t('agent.input.placeholder')}
-          aria-describedby={hintId}
-          // Body 14/20 like every control. Focused from the mount (11A), so the
-          // focus is the border alone: the ring read as an alert on arrival.
-          className="max-h-40 min-h-11 resize-none bg-card md:text-md focus-visible:ring-0"
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          onDrop={onDrop}
-        />
-        {busy ? (
-          <Button type="button" variant="outline" className="min-h-11" onClick={onStop}>
-            {t('agent.stop')}
-          </Button>
-        ) : (
-          // An arrow under 640 px: the word left the input 241 px on a phone.
-          <Button
-            type="submit"
-            className="min-h-11 max-sm:size-11 max-sm:px-0"
-            disabled={text.trim() === ''}
-          >
-            <ArrowUp className="sm:hidden" />
-            <span className="max-sm:sr-only">{t('agent.send')}</span>
-          </Button>
-        )}
-      </form>
-      <StatementDialog
-        draft={statement}
-        threadId={threadId}
-        onClose={() => setStatement(null)}
-        onSent={onStatementSent}
-      />
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="min-h-11"
-          disabled={busy}
-          onClick={() => setStatement({ name: '', text: '' })}
-        >
-          {t('agent.statement.button')}
-        </Button>
-        <p className="text-xs text-muted-foreground">{t('agent.cif')}</p>
-        {/* Keys only where there is a keyboard to press them. */}
-        <p id={hintId} className="hidden text-xs text-muted-foreground pointer-fine:block">
-          {t('agent.input.hint')}
-        </p>
-      </div>
-    </div>
-  )
 }
