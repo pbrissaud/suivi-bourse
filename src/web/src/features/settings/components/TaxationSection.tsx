@@ -2,15 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PlusIcon } from 'lucide-react'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import {
   Sheet,
   SheetContent,
@@ -96,7 +90,7 @@ function TaxationRows({ catalogue }: { catalogue: TaxationModelsResponse }) {
             <span className="flex gap-2">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 className="max-md:h-11"
                 aria-label={`${t('settings.taxation.edit')} ${model.name}`}
                 onClick={() => setEditing(model)}
@@ -105,7 +99,7 @@ function TaxationRows({ catalogue }: { catalogue: TaxationModelsResponse }) {
               </Button>
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 className="max-md:h-11"
                 aria-label={`${t('settings.taxation.remove')} ${model.name}`}
                 // A model an account carries cannot go; the title says why.
@@ -132,7 +126,7 @@ function TaxationRows({ catalogue }: { catalogue: TaxationModelsResponse }) {
         <Button
           type="button"
           // The empty list has one way forward that needs nothing from outside.
-          variant={models.length === 0 ? 'default' : 'outline'}
+          variant={models.length === 0 ? 'primary' : 'outline'}
           className="max-md:h-11"
           onClick={() => setEditing(null)}
         >
@@ -185,37 +179,20 @@ function TaxationRows({ catalogue }: { catalogue: TaxationModelsResponse }) {
         </SheetContent>
       </Sheet>
 
-      <Dialog
+      <ConfirmDestructive
         open={removing !== null}
         onOpenChange={(open) => (open ? undefined : setRemoving(null))}
-      >
-        <DialogContent>
-          {removing === null ? null : (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {t('settings.taxation.remove.title', { name: removing.name })}
-                </DialogTitle>
-                <DialogDescription>{t('settings.taxation.remove.body')}</DialogDescription>
-              </DialogHeader>
-              {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setRemoving(null)}>
-                  {t('settings.taxation.remove.cancel')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(removing.id)}
-                >
-                  {t('settings.taxation.remove')}
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+        title={
+          removing === null ? '' : t('settings.taxation.remove.title', { name: removing.name })
+        }
+        line={t('settings.taxation.remove.line')}
+        confirmLabel={t('settings.taxation.remove')}
+        pending={remove.isPending}
+        error={remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
+        onConfirm={() => {
+          if (removing !== null) remove.mutate(removing.id)
+        }}
+      />
     </>
   )
 }

@@ -174,13 +174,13 @@ function BuildLine() {
   const shown = build?.version ?? build?.revision?.slice(0, 7)
   if (!build || !shown) return null
   return (
-    <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-2xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+    <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
       <p
         title={[t('installation.build.source', { source: build.source }), build.revision]
           .filter(Boolean)
           .join(' · ')}
       >
-        {t('nav.version')} <span className="tabular">{shown}</span>
+        {t('nav.version')} <span className="fig">{shown}</span>
       </p>
       {latest ? (
         <a
@@ -188,7 +188,7 @@ function BuildLine() {
           target="_blank"
           rel="noreferrer"
           aria-label={t('nav.release.label', { version: latest.version })}
-          className="tabular block w-fit rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="fig block w-fit rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>

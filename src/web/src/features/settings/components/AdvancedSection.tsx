@@ -116,7 +116,7 @@ function DialRow({
           min={setting.minimum ?? undefined}
           max={setting.maximum ?? undefined}
           aria-describedby={`${id}-description`}
-          className="tabular h-9.5 w-27 rounded-lg bg-background max-md:h-11"
+          className="fig h-9.5 w-27 rounded-lg bg-background max-md:h-11"
           {...dial.field}
         />
         {/* One width for every unit, so the inputs line up whatever theirs (#1359). */}

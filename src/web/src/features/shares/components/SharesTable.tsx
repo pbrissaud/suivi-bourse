@@ -277,7 +277,7 @@ function TotalRow({
   const f = useFormatters()
   const { valuation, terms } = totals
   const term = (name: Exclude<GainTermName, 'transferFees'>) => (
-    <TableCell className={`text-right tabular ${termTone(terms, name)}`}>
+    <TableCell className={`text-right fig ${termTone(terms, name)}`}>
       {renderFigure(
         termRendering(terms, name),
         () => f.currency(termAmount(terms, name), currency),
@@ -303,7 +303,7 @@ function TotalRow({
         <TableCell />
         <TableCell />
         <TableCell />
-        <TableCell className="text-right tabular">
+        <TableCell className="text-right fig">
           {renderFigure(
             sumRendering(valuation),
             () => f.currency(valuation.known ? valuation.value : null, currency),
@@ -338,7 +338,7 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
       <th scope="rowgroup" colSpan={9} className="px-1.5 py-2 text-left label text-primary xl:px-4">
         {group.account}
         {' · '}
-        <span className="tabular">
+        <span className="fig">
           {renderFigure(
             sumRendering(valuation),
             () => f.currency(valuation.known ? valuation.value : null, currency),
@@ -392,7 +392,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
               truncated — it is what the reader recognises the line by. */}
           {/* Nobody named it (#1386): the button already reads the ticker. */}
           {row.name === null ? null : (
-            <span className="shrink-0 font-mono text-2xs text-muted-foreground">{row.symbol}</span>
+            <span className="shrink-0 fig text-xs text-muted-foreground">{row.symbol}</span>
           )}
           {isAnomalous(row) ? (
             <span className="inline-flex items-center text-attention">
@@ -410,7 +410,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
       {/* The native quote, deliberately: it is the price the reader's
           broker shows them, and the converted one is what the value
           column is built from. */}
-      <TableCell className="text-right tabular">
+      <TableCell className="text-right fig">
         {renderFigure(
           renderings.price,
           () => f.currency(row.price?.value ?? null, row.price?.currency ?? currency),
@@ -418,11 +418,11 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
         )}
       </TableCell>
 
-      <TableCell className="text-right tabular">{f.quantity(row.quantity)}</TableCell>
+      <TableCell className="text-right fig">{f.quantity(row.quantity)}</TableCell>
 
       {/* Undefined on a closed position, which is the truth: it has a
           realised gain instead. */}
-      <TableCell className="text-right tabular">{f.currency(unitCost(row), currency)}</TableCell>
+      <TableCell className="text-right fig">{f.currency(unitCost(row), currency)}</TableCell>
 
       {/* **The valuation takes no sign colour** (#907, ADR-0018): it is a market
           value, positive on every line that holds anything, so `signClass` on it
@@ -431,11 +431,11 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
           one predicate keeps the other two answers intact: the colour of text
           on a figure, the grey of absence on a rendering that is not one. It is
           `gain.ts`'s own idiom for a term that carries no sign. */}
-      <TableCell className={`text-right tabular ${toneOf(renderings.valuation, 0)}`}>
+      <TableCell className={`text-right fig ${toneOf(renderings.valuation, 0)}`}>
         {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
       </TableCell>
 
-      <TableCell className={`text-right tabular ${toneOf(renderings.unrealised, gain)}`}>
+      <TableCell className={`text-right fig ${toneOf(renderings.unrealised, gain)}`}>
         {renderFigure(renderings.unrealised, () => f.currency(gain, currency), t)}
         {/* The percentage follows the amount, never a tenth column. */}
         {renderings.unrealised.kind === 'figure' && ratio !== null ? (
@@ -446,10 +446,10 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
       {/* Realised and dividends are figures on **every** row, closed or
           not — a zero is a figure and wears the colour of text, never
           the grey of absence. */}
-      <TableCell className={`text-right tabular ${signClass(row.realised)}`}>
+      <TableCell className={`text-right fig ${signClass(row.realised)}`}>
         {f.currency(row.realised, currency)}
       </TableCell>
-      <TableCell className={`text-right tabular ${signClass(0)}`}>
+      <TableCell className={`text-right fig ${signClass(0)}`}>
         {f.currency(row.dividends, currency)}
       </TableCell>
 
@@ -465,8 +465,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
  * may name two of them — where a comma-separated sentence in a cell of nine
  * would be the only prose in the table.
  */
-const ACCOUNT_CHIP =
-  'inline-block rounded-md bg-accent px-2 py-0.5 font-mono text-2xs text-foreground/85'
+const ACCOUNT_CHIP = 'inline-block rounded-md bg-accent px-2 py-0.5 fig text-xs text-foreground/85'
 
 export function renderAccounts(accounts: readonly string[]) {
   if (accounts.length === 0) return ABSENT

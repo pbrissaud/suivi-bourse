@@ -383,7 +383,7 @@ export function DashboardHead({
                 not its equal. It keeps its named absences (#775): a rate on its
                 way is said, a fourth term nothing can bound is the em dash. */}
                 {total.known ? (
-                  <p className="tabular flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold">
+                  <p className="fig flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold">
                     <SignedFigure
                       amount={total.value}
                       text={f.signedCurrency(total.value, currency)}
@@ -402,7 +402,7 @@ export function DashboardHead({
                   </p>
                 )}
                 {facts.length === 0 ? null : (
-                  <div className="tabular flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">{facts}</div>
+                  <div className="fig flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">{facts}</div>
                 )}
               </>
             )}

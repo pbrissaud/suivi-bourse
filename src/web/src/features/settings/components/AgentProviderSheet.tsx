@@ -217,7 +217,7 @@ function ProviderForm({ config, onClose }: { config: AgentConfig; onClose: () =>
                 />
                 <span className="space-y-0.5">
                   <span className="block text-sm">{t(PROVIDER_LABEL[one])}</span>
-                  <span className="block text-2xs leading-relaxed text-muted-foreground">
+                  <span className="block text-xs leading-relaxed text-muted-foreground">
                     {t(PROVIDER_HINT[one])}
                   </span>
                 </span>
@@ -241,9 +241,9 @@ function ProviderForm({ config, onClose }: { config: AgentConfig; onClose: () =>
                   type="url"
                   value={draft.baseUrl}
                   onChange={(event) => edit({ baseUrl: event.target.value })}
-                  className="font-mono"
+                  className="fig"
                 />
-                <p className="text-2xs leading-relaxed text-muted-foreground">
+                <p className="text-xs leading-relaxed text-muted-foreground">
                   {t(
                     provider === 'ollama'
                       ? 'settings.agent.address.ollama.hint'
@@ -279,10 +279,10 @@ function ProviderForm({ config, onClose }: { config: AgentConfig; onClose: () =>
                   value={draft.key}
                   placeholder={keyLast4 ? `…${keyLast4}` : undefined}
                   onChange={(event) => edit({ key: event.target.value })}
-                  className="font-mono"
+                  className="fig"
                 />
                 {keyLast4 ? (
-                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     {t('settings.agent.key.keep', { last4: keyLast4 })}
                   </p>
                 ) : null}
@@ -364,10 +364,15 @@ function ProviderForm({ config, onClose }: { config: AgentConfig; onClose: () =>
           <p className="text-xs text-muted-foreground">{t('settings.agent.save.why')}</p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" className="max-md:h-11" onClick={onClose}>
+          <Button type="button" variant="outline" className="max-md:h-11" onClick={onClose}>
             {t('settings.access.cancel')}
           </Button>
-          <Button type="submit" className="max-md:h-11" disabled={!savable || save.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            className="max-md:h-11"
+            disabled={!savable || save.isPending}
+          >
             {t('settings.agent.save')}
           </Button>
         </div>

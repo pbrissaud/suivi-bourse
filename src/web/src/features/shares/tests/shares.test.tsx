@@ -41,11 +41,11 @@ function renderShares(positions = sharesPortfolio()) {
 
 /** The live table, by its own accessible name — the folded one has another. */
 function liveTable() {
-  return screen.getByRole('table', { name: 'Positions détenues' })
+  return screen.getByRole('table', { name: 'Lignes détenues' })
 }
 
 function fold() {
-  return screen.getByRole('button', { name: /position(s)? soldée(s)?/ })
+  return screen.getByRole('button', { name: /ligne(s)? soldée(s)?/ })
 }
 
 /**
@@ -141,7 +141,7 @@ describe('the total row (#1281)', () => {
     expect(figure('Latente')).toHaveTextContent(/300,00/)
     expect(figure('Réalisée')).toHaveTextContent(/125,00/)
     expect(figure('Dividendes')).toHaveTextContent(/35,00/)
-    for (const name of ['Cours', 'Détenu', 'PRU', 'Compte'])
+    for (const name of ['Cours', 'Détenu', 'Prix moyen d’achat', 'Compte'])
       expect(figure(name), name).toBeEmptyDOMElement()
   })
 
@@ -232,7 +232,7 @@ describe('the table’s toolbar (#1281)', () => {
 
     const block = document.querySelector('[data-slot="shares-table"]') as HTMLElement
     expect(within(block).getByRole('button', { name: '1 titre en anomalie' })).toBeInTheDocument()
-    expect(within(block).getByRole('table', { name: 'Positions détenues' })).toBeInTheDocument()
+    expect(within(block).getByRole('table', { name: 'Lignes détenues' })).toBeInTheDocument()
     const group = within(block).getByRole('button', { name: 'Grouper par compte' })
     expect(group).toHaveAttribute('aria-pressed', 'false')
     await user.click(group)
@@ -313,7 +313,7 @@ describe('the folded section', () => {
     // +120,00 − 45,00 = 75,00 realised, and 10,00 of dividends.
     expect(section).toHaveTextContent(/Réalisée\s*75,00/)
     expect(section).toHaveTextContent(/Dividendes\s*10,00/)
-    expect(fold()).toHaveTextContent('2 positions soldées')
+    expect(fold()).toHaveTextContent('2 lignes soldées')
   })
 
   it('has its own five columns — no price, no held, no unit cost, no latent', async () => {
@@ -321,10 +321,10 @@ describe('the folded section', () => {
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
     await user.click(fold())
 
-    const table = screen.getByRole('table', { name: 'Positions soldées' })
+    const table = screen.getByRole('table', { name: 'Lignes soldées' })
     expect(columnNames(table)).toEqual(['Titre', 'Soldée le', 'Réalisée', 'Dividendes', 'Compte'])
     // Those four would be an em dash on every row of the section.
-    for (const absent of ['Cours', 'Détenu', 'PRU', 'Latente']) {
+    for (const absent of ['Cours', 'Détenu', 'Prix moyen d’achat', 'Latente']) {
       expect(within(table).queryByRole('columnheader', { name: absent })).not.toBeInTheDocument()
     }
   })
@@ -334,7 +334,7 @@ describe('the folded section', () => {
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
     await user.click(fold())
 
-    const table = screen.getByRole('table', { name: 'Positions soldées' })
+    const table = screen.getByRole('table', { name: 'Lignes soldées' })
     const names = within(table)
       .getAllByRole('button')
       .map((button) => button.textContent)
@@ -366,7 +366,7 @@ describe('the nine columns of the live table', () => {
       'Titre',
       'Cours',
       'Détenu',
-      'PRU',
+      'Prix moyen d’achat',
       'Valorisation',
       'Latente',
       'Réalisée',
@@ -396,10 +396,12 @@ describe('the nine columns of the live table', () => {
     const { user } = renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
-    expect(within(liveTable()).getByRole('columnheader', { name: /PRU/ })).toBeInTheDocument()
+    expect(
+      within(liveTable()).getByRole('columnheader', { name: /Prix moyen d’achat/ }),
+    ).toBeInTheDocument()
     expect(screen.queryByText('PMP')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire PRU' }))
+    await user.click(screen.getByRole('button', { name: 'Ce que veut dire Prix moyen d’achat' }))
     expect(await screen.findByRole('dialog')).toHaveTextContent(/prix moyen payé/)
   })
 
@@ -736,7 +738,7 @@ describe('four icons on the page', () => {
     // none.
     const bubbles = screen.getAllByRole('button', { name: /^Ce que veut dire/ })
     expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Ce que veut dire PRU',
+      'Ce que veut dire Prix moyen d’achat',
       'Ce que veut dire Latente',
       'Ce que veut dire Réalisée',
       'Ce que veut dire Dividendes',
@@ -861,7 +863,7 @@ describe('the page’s own reads', () => {
 
   it('says the portfolio is empty, and where to go, when it really is', async () => {
     renderShares([])
-    expect(await screen.findByText('Aucune position')).toBeInTheDocument()
+    expect(await screen.findByText('Aucune ligne')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toHaveAttribute(
       'href',
       '/ledger',
@@ -877,9 +879,9 @@ describe('the page in English', () => {
     )
     renderApp({ url: '/shares', browserLanguages: ['en-GB'] })
 
-    const table = await screen.findByRole('table', { name: 'Held positions' })
+    const table = await screen.findByRole('table', { name: 'Held lines' })
     expect(within(table).getByRole('row', { name: /^Total/ })).toHaveTextContent(/2,300\.00/)
-    expect(columnNames(screen.getByRole('table', { name: 'Held positions' }))).toEqual([
+    expect(columnNames(screen.getByRole('table', { name: 'Held lines' }))).toEqual([
       'Share',
       'Price',
       'Held',
@@ -901,9 +903,7 @@ describe('a portfolio with nothing closed', () => {
     renderShares(defaultPositions())
     // 1 300,00 + 400,00 + 600,00 carried at its cost = 2 300,00.
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    expect(
-      screen.queryByRole('button', { name: /position(s)? soldée(s)?/ }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /ligne(s)? soldée(s)?/ })).not.toBeInTheDocument()
   })
 })
 
@@ -973,8 +973,8 @@ describe('the reduction to one account', () => {
 
     // *No positions* is a claim about the reader's data; here the cause is a
     // filter they can lift in one click, and the sentence says so.
-    expect(await screen.findByText('Aucune position sur ce compte')).toBeInTheDocument()
-    expect(screen.queryByText('Aucune position')).not.toBeInTheDocument()
+    expect(await screen.findByText('Aucune ligne sur ce compte')).toBeInTheDocument()
+    expect(screen.queryByText('Aucune ligne')).not.toBeInTheDocument()
     // The bar's, and the empty state's own — a reader who has scrolled past the
     // first must not have to scroll back up to undo what emptied the page.
     expect(screen.getAllByRole('link', { name: 'Afficher tous les comptes' })).toHaveLength(2)
@@ -1479,7 +1479,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
   }
 
   function heldList() {
-    return screen.getByRole('list', { name: 'Positions détenues' })
+    return screen.getByRole('list', { name: 'Lignes détenues' })
   }
 
   function names() {
@@ -1503,16 +1503,16 @@ describe('on a phone, the lines are a list (#1338)', () => {
     renderApp({ url: '/shares' })
     await screen.findByRole('heading', { level: 1, name: 'Titres' })
 
-    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Lignes détenues' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
 
     land()
-    expect(await screen.findByRole('list', { name: 'Positions détenues' })).toBeInTheDocument()
+    expect(await screen.findByRole('list', { name: 'Lignes détenues' })).toBeInTheDocument()
   })
 
   it('has no table, one item per held line, and no card around them', async () => {
     phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
 
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(within(list).getAllByRole('listitem')).toHaveLength(3)
@@ -1524,20 +1524,24 @@ describe('on a phone, the lines are a list (#1338)', () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
 
-    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Lignes détenues' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
   })
 
   it('shows the valuation and the latent gain, and opens the sheet from the name', async () => {
     const { user } = phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
     const item = within(list)
       .getByRole('button', { name: 'Zeta Alpha' })
       .closest('li') as HTMLElement
 
     expect(item).toHaveTextContent(/1\D?300,00/)
     // The gain element alone: `300,00` is also the tail of the `1 300,00` valuation.
-    expect(item.querySelector('span.text-xs.tabular')).toHaveTextContent(/^300,00/)
+    expect(
+      [...item.querySelectorAll('span.text-xs.fig')].find((node) =>
+        /^\d/.test(node.textContent ?? ''),
+      ),
+    ).toHaveTextContent(/^300,00/)
     expect(item).toHaveTextContent(/30,00\s?%/)
     expect(item).toHaveTextContent('ZZA · alpha')
 
@@ -1545,13 +1549,15 @@ describe('on a phone, the lines are a list (#1338)', () => {
     expect(await screen.findByRole('dialog', { name: 'Zeta Alpha' })).toBeInTheDocument()
   })
 
-  it('sets only the ticker and the account ids in Geist Mono', async () => {
+  it('sets the ticker and the account ids as figures too', async () => {
     phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
     const page = list.parentElement as HTMLElement
 
-    // The tickers and nothing else: no figure of the list, nor of its totals.
-    const mono = [...page.querySelectorAll('.font-mono')].map((node) => node.textContent)
+    // Every figure is `fig`; the tickers are among them.
+    const mono = [...page.querySelectorAll('.fig')]
+      .map((node) => node.textContent ?? '')
+      .filter((text) => /^ZZ[A-Z] · /.test(text))
     expect(mono).toEqual(['ZZA · alpha', 'ZZC · gamma', 'ZZB · beta'])
   })
 
@@ -1579,7 +1585,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
           : position,
       ),
     )
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
     const item = within(list)
       .getByRole('button', { name: 'Zeta Gamma' })
       .closest('li') as HTMLElement
@@ -1597,7 +1603,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
       ),
     )
     phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
     const item = within(list)
       .getByRole('button', { name: 'Zeta Gamma' })
       .closest('li') as HTMLElement
@@ -1608,7 +1614,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
 
   it('cuts the list by account, a heading each, when grouped', async () => {
     const { user } = phone()
-    await screen.findByRole('list', { name: 'Positions détenues' })
+    await screen.findByRole('list', { name: 'Lignes détenues' })
     await user.click(await screen.findByRole('button', { name: 'Grouper par compte' }))
 
     const headings = screen.getAllByRole('heading', { level: 3 })
@@ -1627,7 +1633,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
 
   it('reads the totals the table’s footer reads, closed lines included', async () => {
     phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
     const totals = list.parentElement?.querySelector('dl') as HTMLElement
 
     const rows = within(totals).getAllByRole('term')
@@ -1647,7 +1653,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
 
   it('sorts from a select and a direction button', async () => {
     const { user } = phone(reorderable())
-    await screen.findByRole('list', { name: 'Positions détenues' })
+    await screen.findByRole('list', { name: 'Lignes détenues' })
     expect(names()).toEqual(['Zeta Alpha', 'Zeta Beta', 'Zeta Gamma'])
 
     await user.selectOptions(screen.getByLabelText('Trier par'), 'Latente')
@@ -1664,7 +1670,7 @@ describe('on a phone, the lines are a list (#1338)', () => {
 
     act(() => setViewportWidth(1024))
 
-    expect(await screen.findByRole('table', { name: 'Positions détenues' })).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: 'Lignes détenues' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /Latente/ })).toHaveAttribute(
       'aria-sort',
       'descending',
@@ -1705,9 +1711,9 @@ describe('on a phone, the lines are a list (#1338)', () => {
         closed_at: '2025-11-04',
       }),
     ])
-    await screen.findByRole('button', { name: /position soldée/ })
+    await screen.findByRole('button', { name: /ligne soldée/ })
 
-    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Lignes détenues' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
     // The totals are still the totals of what is on screen.
     expect(screen.getAllByRole('term')[0]).toHaveTextContent(/^Total/)
@@ -1728,10 +1734,10 @@ describe('on a phone, the lines are a list (#1338)', () => {
         closed_at: null,
       },
     ])
-    await screen.findByRole('list', { name: 'Positions détenues' })
+    await screen.findByRole('list', { name: 'Lignes détenues' })
     await user.click(fold())
 
-    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
+    const closed = await screen.findByRole('list', { name: 'Lignes soldées' })
     const items = within(closed).getAllByRole('listitem')
     expect(items).toHaveLength(3)
     const epsilon = items.find((item) => item.textContent?.includes('Zeta Epsilon')) as HTMLElement
@@ -1744,10 +1750,10 @@ describe('on a phone, the lines are a list (#1338)', () => {
 
   it('opens the closed lines as a list, not a table', async () => {
     const { user } = phone()
-    await screen.findByRole('list', { name: 'Positions détenues' })
+    await screen.findByRole('list', { name: 'Lignes détenues' })
     await user.click(fold())
 
-    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
+    const closed = await screen.findByRole('list', { name: 'Lignes soldées' })
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     const items = within(closed).getAllByRole('listitem')
     expect(items).toHaveLength(2)

@@ -248,7 +248,7 @@ export function Notifications() {
         {pending || count === 0 ? null : (
           <span
             aria-hidden
-            className="tabular absolute top-0.5 right-0 inline-flex h-3.75 min-w-3.75 items-center justify-center rounded-full bg-muted-foreground px-1 text-2xs leading-none font-bold text-background"
+            className="fig absolute top-0.5 right-0 inline-flex h-3.75 min-w-3.75 items-center justify-center rounded-full bg-muted-foreground px-1 text-xs leading-none font-bold text-background"
           >
             {count}
           </span>
@@ -260,14 +260,14 @@ export function Notifications() {
         sideOffset={8}
         collisionPadding={16}
         aria-label={t('notification.title')}
-        className="flex max-h-[min(72vh,calc(100vh-6rem))] w-[min(26.25rem,calc(100vw-2rem))] flex-col gap-0 rounded-xl p-0"
+        className="flex max-h-[min(72vh,calc(100vh-6rem))] w-[min(25rem,calc(100vw-2rem))] flex-col gap-0 rounded-card p-0"
       >
         <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3.5">
           <h2 className="text-sm font-semibold tracking-tight">{t('notification.title')}</h2>
           {pending ? null : (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               className="ml-auto pointer-coarse:min-h-11"
               // Disabled, it says **why** in prose underneath.
@@ -304,7 +304,7 @@ export function Notifications() {
                         {t(SUBJECT_LABELS[group.subject])}
                       </span>
                       {entry.at === null ? null : (
-                        <span className="ml-auto text-2xs text-muted-foreground">
+                        <span className="ml-auto text-xs text-muted-foreground">
                           {t('notification.seen', { date: f.dateTime(entry.at) })}
                         </span>
                       )}
@@ -324,7 +324,7 @@ export function Notifications() {
                       {entry.acknowledge === null ? null : (
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           className="ml-auto pointer-coarse:min-h-11"
                           disabled={acknowledge.isPending || acknowledgeAll.isPending}
@@ -342,7 +342,7 @@ export function Notifications() {
                         it is the difference between the two acknowledgements
                         and the reader has no other way to know it. */}
                     {entry.register === 'advisory' ? (
-                      <p className="text-2xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         {t('notification.ack.advisory.note')}
                       </p>
                     ) : null}

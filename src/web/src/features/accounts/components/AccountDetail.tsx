@@ -337,7 +337,7 @@ export function AccountDetail({
               (#829). It says what the panel's card says in one line; what it
               does not carry is the acknowledgement. */}
           {cash === null ? null : (
-            <span className="shrink-0 rounded-md bg-attention/14 px-1.5 py-0.5 text-2xs font-medium text-attention">
+            <span className="shrink-0 rounded-md bg-attention/14 px-1.5 py-0.5 text-xs font-medium text-attention">
               {t('accounts.advisory.cash', { share: cash })}
             </span>
           )}
@@ -412,7 +412,7 @@ export function AccountDetail({
                     {row.cash_balance === null || currency === null ? null : ' · '}
                     <span role="group" aria-label={t('accounts.figure.netContributed')}>
                       {t('accounts.figure.netContributed')}{' '}
-                      <span className="tabular text-foreground">
+                      <span className="fig text-foreground">
                         {f.currency(row.net_contributed, currency)}
                       </span>
                     </span>
@@ -424,7 +424,7 @@ export function AccountDetail({
                   <p
                     role="group"
                     aria-label={t('accounts.figure.gain')}
-                    className="tabular flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold"
+                    className="fig flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold"
                   >
                     <SignedFigure
                       amount={row.gain_absolu}
@@ -441,7 +441,7 @@ export function AccountDetail({
                       anchor="total-gain"
                     />
                   </p>
-                  <div className="tabular flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">
+                  <div className="fig flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">
                     {/* **The one rate on this screen, the annualised IRR** (#1112). The
                 TWR went into its bubble, which says why the two differ: three
                 rates on one head read as three answers to one question. A null
@@ -550,7 +550,7 @@ export function AccountDetail({
                   denominator, and it is cut like everything else (#1285).
                   Phrased as the fees' line beside it, « x % du versé » (#1432). */}
                   {!valued ? null : (
-                    <p className="tabular text-xs text-muted-foreground">
+                    <p className="fig text-xs text-muted-foreground">
                       {t('accounts.detail.dividends.onContributed', {
                         percent:
                           dividendsOnContributed === null
@@ -573,7 +573,7 @@ export function AccountDetail({
                     value={f.currency(row.transfer_fees ?? null, currency)}
                   >
                     {feesOnContributed === null ? null : (
-                      <p className="tabular text-xs text-muted-foreground">
+                      <p className="fig text-xs text-muted-foreground">
                         {t('accounts.figure.feesOnContributed', {
                           percent: f.percentPoints(Math.abs(feesOnContributed) * 100),
                         })}
@@ -601,7 +601,7 @@ export function AccountDetail({
                 <span
                   role="group"
                   aria-label={t('accounts.figure.holdings')}
-                  className="tabular text-2xl font-semibold"
+                  className="fig text-2xl font-semibold"
                 >
                   {f.currency(row.holdings_value, currency)}
                 </span>
@@ -639,7 +639,7 @@ export function AccountDetail({
                         {line.name ?? line.symbol}
                       </span>
                       {line.name === null ? null : (
-                        <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                        <span className="shrink-0 fig text-xs text-muted-foreground">
                           {line.symbol}
                         </span>
                       )}
@@ -656,7 +656,7 @@ export function AccountDetail({
                         className="min-w-0 flex-1"
                         fill={accountColour(hue)}
                       />
-                      <span className="tabular w-11 shrink-0 text-right text-xs text-muted-foreground">
+                      <span className="fig w-11 shrink-0 text-right text-xs text-muted-foreground">
                         {renderFigure(
                           weightRendering(line, placed),
                           // `?? 0` is never reached: `weightRendering` answers
@@ -668,12 +668,12 @@ export function AccountDetail({
                         )}
                       </span>
                     </span>
-                    <span className="tabular w-23 shrink-0 text-right lg:w-27.5">
+                    <span className="fig w-23 shrink-0 text-right lg:w-27.5">
                       {f.currency(marketValue(line), currency)}
                     </span>
                     <span
                       className={cn(
-                        'tabular w-15.5 shrink-0 text-right text-xs lg:w-20',
+                        'fig w-15.5 shrink-0 text-right text-xs lg:w-20',
                         signClass(ratio, RATIO_DECIMALS),
                       )}
                     >
@@ -724,7 +724,7 @@ export function AccountDetail({
                           {payer.name ?? payer.symbol}
                         </span>
                         {payer.name === null ? null : (
-                          <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                          <span className="shrink-0 fig text-xs text-muted-foreground">
                             {payer.symbol}
                           </span>
                         )}
@@ -734,8 +734,8 @@ export function AccountDetail({
                           </span>
                         ) : null}
                       </span>
-                      <span className="tabular shrink-0">{f.currency(payer.amount, currency)}</span>
-                      <span className="tabular w-16 shrink-0 text-right text-muted-foreground">
+                      <span className="fig shrink-0">{f.currency(payer.amount, currency)}</span>
+                      <span className="fig w-16 shrink-0 text-right text-muted-foreground">
                         {f.percentPoints(payer.share * 100)}
                       </span>
                     </span>
@@ -774,7 +774,7 @@ export function AccountDetail({
                     </span>
                     {/* The ledger's own amount, the cash the event moved
                       (#1425): one component, so the two pages agree. */}
-                    <span className="tabular shrink-0">
+                    <span className="fig shrink-0">
                       <EventFigure event={event} currency={currency} />
                     </span>
                   </li>
@@ -902,14 +902,14 @@ function ProjectedTax({ row, currency }: { row: AccountRow; currency: string | n
             {row.projected_base === undefined ? null : (
               <span role="group" aria-label={t('accounts.detail.projectedTax.base')}>
                 {t('accounts.detail.projectedTax.base')}{' '}
-                <span className="tabular text-foreground">
+                <span className="fig text-foreground">
                   {f.currency(row.projected_base, currency)}
                 </span>
               </span>
             )}
             <span role="group" aria-label={ratesName}>
               {ratesName}{' '}
-              <span className="tabular text-foreground">
+              <span className="fig text-foreground">
                 {rates.map((rate) => f.percentPoints(rate * 100)).join(' · ')}
               </span>
             </span>
@@ -1006,6 +1006,7 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
             </select>
           </div>
           <Button
+            variant="primary"
             type="button"
             disabled={chosen === '' || move.isPending}
             onClick={() => move.mutate(chosen)}

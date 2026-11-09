@@ -66,7 +66,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
           opening another account from the rail redraws this curve in place, and
           the sentence below is what says the new shape. */}
       <figure aria-live="polite">
-        <div className="h-40 tabular">
+        <div className="h-40 fig">
           <ResponsiveContainer width="100%" height="100%">
             {/* **Named, and the name is not the section's** (#1003). The `<svg>`
                 is focusable and its arrows walk the series, so it needs a name of
@@ -135,7 +135,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
       {/* The legend is written rather than drawn by the chart: it has to be
           readable by a test and by a screen reader, and Recharts' own is
           neither. */}
-      <ul className="flex flex-wrap gap-x-4 gap-y-2 text-2xs text-muted-foreground">
+      <ul className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
         <li className="flex items-baseline gap-2">
           <span
             aria-hidden

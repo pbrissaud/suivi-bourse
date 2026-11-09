@@ -86,11 +86,11 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
         {/* The summary line — the information is legible folded. */}
         <span className="text-sm text-muted-foreground">
           {t('shares.column.realised')}{' '}
-          <span className={`tabular ${signClass(realised)}`}>{f.currency(realised, currency)}</span>
+          <span className={`fig ${signClass(realised)}`}>{f.currency(realised, currency)}</span>
         </span>
         <span className="text-sm text-muted-foreground">
           {t('shares.column.dividends')}{' '}
-          <span className={`tabular ${signClass(0)}`}>{f.currency(dividends, currency)}</span>
+          <span className={`fig ${signClass(0)}`}>{f.currency(dividends, currency)}</span>
         </span>
       </div>
 
@@ -121,18 +121,16 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
                       {row.name ?? row.symbol}
                     </button>
                     {row.name === null ? null : (
-                      <span className="block font-mono text-2xs text-muted-foreground">
-                        {row.symbol}
-                      </span>
+                      <span className="block fig text-xs text-muted-foreground">{row.symbol}</span>
                     )}
                   </TableCell>
                   {/* The one column that discriminates these rows. An em dash
                     where the store has no date: there is nothing to compute. */}
                   <TableCell>{row.closedAt === null ? ABSENT : f.date(row.closedAt)}</TableCell>
-                  <TableCell className={`text-right tabular ${signClass(row.realised)}`}>
+                  <TableCell className={`text-right fig ${signClass(row.realised)}`}>
                     {f.currency(row.realised, currency)}
                   </TableCell>
-                  <TableCell className={`text-right tabular ${signClass(0)}`}>
+                  <TableCell className={`text-right fig ${signClass(0)}`}>
                     {f.currency(row.dividends, currency)}
                   </TableCell>
                   <TableCell>{renderAccounts(row.accounts)}</TableCell>
@@ -166,17 +164,17 @@ function ClosedList({ rows, currency, onSelect }: ClosedSharesProps) {
             <span className="label">
               {t('shares.column.closedOn')} {row.closedAt === null ? ABSENT : f.date(row.closedAt)}
             </span>
-            <span className="truncate font-mono text-2xs text-muted-foreground">
+            <span className="truncate fig text-xs text-muted-foreground">
               {[row.name === null ? null : row.symbol, row.accounts.join(', ')]
                 .filter(Boolean)
                 .join(' · ')}
             </span>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-0.5">
-            <span className={`text-md font-medium tabular ${signClass(row.realised)}`}>
+            <span className={`text-md font-medium fig ${signClass(row.realised)}`}>
               {f.currency(row.realised, currency)}
             </span>
-            <span className={`text-xs font-medium tabular ${signClass(0)}`}>
+            <span className={`text-xs font-medium fig ${signClass(0)}`}>
               {f.currency(row.dividends, currency)}
             </span>
           </div>

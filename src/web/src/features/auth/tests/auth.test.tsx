@@ -349,9 +349,9 @@ describe('the Sécurité section', () => {
     expect(toggle).toBeChecked()
 
     await user.click(toggle)
-    const dialog = await screen.findByRole('alertdialog', { name: 'Désactiver le code' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Désactiver le code d’accès ?' })
     await user.type(within(dialog).getByLabelText('Code actuel'), '999999')
-    await user.click(within(dialog).getByRole('button', { name: 'Désactiver le code' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Désactiver' }))
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Code actuel incorrect.')
     expect(toggle).toBeChecked()

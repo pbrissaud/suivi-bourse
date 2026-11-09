@@ -176,7 +176,7 @@ export function TaxationModelField({
             invalid={write.error !== null}
           />
           {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
-          <Button type="button" variant="ghost" size="sm" onClick={() => onEditing(null)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onEditing(null)}>
             {t(
               editing.mode === 'edit'
                 ? 'accounts.form.taxation.revertEdit'

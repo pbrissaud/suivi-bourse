@@ -172,21 +172,12 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
 
   it('writes no size off the ladder', () => {
     // Any variant prefix (`md:text-xl`), and an arbitrary `text-[…]` size.
-    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|3xl|[5-9]xl|\[)/)).toEqual([])
+    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|2xs|3xl|[5-9]xl|\[)/)).toEqual([])
   })
 
-  it('sets no figure in mono, and drops font-heavy', () => {
-    const className = /(['"`])((?:(?!\1)[^\n])*)\1/g
-    const mixed = all
-      .filter(({ text }) =>
-        [...text.matchAll(className)].some(
-          ([, , classes]) =>
-            /(?<![\w-])font-mono(?![\w-])/.test(classes) &&
-            /(?<![\w-])tabular(?![\w-])/.test(classes),
-        ),
-      )
-      .map(({ file }) => file)
-    expect(mixed).toEqual([])
+  it('has no Geist-tabular figure class left, and drops font-heavy', () => {
+    // A figure is `fig` (Geist Mono, tabular): the `tabular` class of #1281 is gone.
+    expect(holding(/(?<![\w-])tabular(?![\w-])/)).toEqual([])
     expect(holding(/font-heavy/)).toEqual([])
   })
 

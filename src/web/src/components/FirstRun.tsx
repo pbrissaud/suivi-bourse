@@ -393,7 +393,7 @@ export function FirstRun() {
                             <span className="truncate">
                               {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
                             </span>
-                            <span className="ml-auto shrink-0 font-mono text-2xs">
+                            <span className="ml-auto shrink-0 fig text-xs">
                               {/* The id alone since #916, in the column it
                                 already shared with the type: it is what the
                                 owner's own files name, and the word it used to
@@ -466,7 +466,7 @@ export function FirstRun() {
           ) : (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               className="text-muted-foreground"
               onClick={() => setPassage(back)}
             >
@@ -480,19 +480,24 @@ export function FirstRun() {
               <p className="text-xs text-muted-foreground">{t('firstRun.pass.settings.final')}</p>
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 className="text-muted-foreground"
                 disabled={save.isPending}
                 onClick={forward}
               >
                 {t('firstRun.skip')}
               </Button>
-              <Button type="submit" form={FORM_ID} disabled={!choice || save.isPending}>
+              <Button
+                variant="primary"
+                type="submit"
+                form={FORM_ID}
+                disabled={!choice || save.isPending}
+              >
                 {t('firstRun.saveAndContinue')}
               </Button>
             </div>
           ) : (
-            <Button type="button" variant="secondary" onClick={forward}>
+            <Button type="button" variant="outline" onClick={forward}>
               {last ? t('firstRun.finish') : t('firstRun.next')}
             </Button>
           )}
@@ -540,7 +545,7 @@ function PassageRail({ current }: { current: Passage }) {
           >
             <span
               className={cn(
-                'inline-flex size-5.5 shrink-0 items-center justify-center rounded-full border font-mono text-2xs font-semibold',
+                'inline-flex size-5.5 shrink-0 items-center justify-center rounded-full border fig text-xs font-semibold',
                 walked && 'border-primary bg-primary text-primary-foreground',
                 standing && 'border-primary/60 bg-primary/15 text-foreground',
                 !walked && !standing && 'border-border text-muted-foreground',
@@ -679,7 +684,7 @@ function DeclareAccount() {
               value={draft.id}
               autoComplete="off"
               placeholder="pea"
-              className="font-mono"
+              className="fig"
               aria-invalid={errors.id !== undefined}
               aria-describedby={described}
               onChange={(changed) => set('id', changed.target.value)}
@@ -705,10 +710,10 @@ function DeclareAccount() {
       {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={write.isPending}>
+        <Button variant="primary" type="submit" size="sm" disabled={write.isPending}>
           {t('accounts.form.submit')}
         </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={close}>
+        <Button type="button" size="sm" variant="outline" onClick={close}>
           {t('accounts.form.cancel')}
         </Button>
       </div>
@@ -752,7 +757,7 @@ function Field({
           {t(label)}
         </label>
         {optional ? (
-          <span className="text-2xs text-muted-foreground">— {t('data.form.optional')}</span>
+          <span className="text-xs text-muted-foreground">— {t('data.form.optional')}</span>
         ) : null}
       </div>
       {children(id, error ? errorId : hint ? hintId : undefined)}
@@ -761,7 +766,7 @@ function Field({
           {t(error)}
         </p>
       ) : hint ? (
-        <p id={hintId} className="text-2xs leading-relaxed text-muted-foreground text-pretty">
+        <p id={hintId} className="text-xs leading-relaxed text-muted-foreground text-pretty">
           {t(hint)}
         </p>
       ) : null}

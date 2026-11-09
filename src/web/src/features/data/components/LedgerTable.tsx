@@ -31,7 +31,7 @@
  * the body scrolls inside its own container, and how many rows are in it is the
  * caller's business — this component draws what it is handed and says nothing
  * about what it was not. The type is a coloured badge and the four money
- * columns are set in tabular numerals, both for the same reason: forty rows are
+ * columns are set in fig numerals, both for the same reason: forty rows are
  * read by scanning down a column, not across a row.
  *
  * **The ninth column left with its subject** (#816). It said *"row 14 of
@@ -104,25 +104,6 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
   WITHDRAWAL: 'event.type.WITHDRAWAL',
 }
 
-/**
- * The six types wear one unhued `muted` pill, and the word in it says which (#1283).
- *
- * A type is a kind of event, and a hue would say more than the ledger knows: a
- * tinted *Sell* read as a loss and a mint *Buy* as a gain, when the sign of a
- * row is the amount's and **no figure in this table is coloured** (`f.currency`,
- * never `signClass`). So `lib/sign.ts` keeps its monopoly on colouring a
- * *figure*, which is the invariant `index.css` states. The foreground on the
- * `muted` plane clears 4,5:1 on both grounds, a hovered row included.
- */
-const TYPE_BADGE: Record<LedgerEventType, string> = {
-  BUY: 'bg-muted',
-  SELL: 'bg-muted',
-  GRANT: 'bg-muted',
-  DIVIDEND: 'bg-muted',
-  DEPOSIT: 'bg-muted',
-  WITHDRAWAL: 'bg-muted',
-}
-
 interface LedgerTableProps {
   /** Every row the reduction retains — not only the ones drawn. */
   events: readonly LedgerEvent[]
@@ -162,21 +143,21 @@ interface LedgerColumn {
 
 /**
  * **The ledger's column budget** (#1264). A figure is estimated at 7.8 px per digit
- * at 13 px (Geist, tabular numerals); each threshold is the first `rem` step at or above the worst-case
+ * at 13 px (Geist, fig numerals); each threshold is the first `rem` step at or above the worst-case
  * sum of the columns shown there. What hides first as the table narrows: fee,
  * then unit price, then quantity, then account. `ledgerColumns.test.ts` checks
  * the arithmetic and that `from` and `show` say the same width.
  */
 export const LEDGER_COLUMNS: Record<LedgerColumnId, LedgerColumn> = {
   select: { min: 36 },
-  date: { min: 110 },
+  date: { min: 126 },
   type: { min: 104 },
   what: { min: 240 },
   amount: { min: 149 },
-  account: { min: 128, from: 768, show: 'hidden @min-[48rem]/ledger:table-cell' },
+  account: { min: 128, from: 800, show: 'hidden @min-[50rem]/ledger:table-cell' },
   quantity: { min: 110, from: 896, show: 'hidden @min-[56rem]/ledger:table-cell' },
   unitPrice: { min: 126, from: 1024, show: 'hidden @min-[64rem]/ledger:table-cell' },
-  fee: { min: 110, from: 1120, show: 'hidden @min-[70rem]/ledger:table-cell' },
+  fee: { min: 110, from: 1136, show: 'hidden @min-[71rem]/ledger:table-cell' },
 }
 
 /** The classes a column's heading and cells share, by column id. */
@@ -208,7 +189,7 @@ export function LedgerTable({
   const f = useFormatters()
 
   const columns = useMemo<ColumnDef<typeof features, LedgerEvent>[]>(() => {
-    // The four money columns are Geist with tabular numerals (#1281): read down
+    // The four money columns are Geist with fig numerals (#1281): read down
     // a column of forty rows, that is what lets a comma line up with a comma.
     const money = (
       id: string,
@@ -217,7 +198,7 @@ export function LedgerTable({
     ): ColumnDef<typeof features, LedgerEvent> => ({
       id,
       header: () => t(heading),
-      cell: ({ row }) => <span className="tabular">{value(row.original)}</span>,
+      cell: ({ row }) => <span className="fig">{value(row.original)}</span>,
     })
     return [
       {
@@ -260,7 +241,7 @@ export function LedgerTable({
         id: 'date',
         header: () => t('data.column.date'),
         cell: ({ row }) => (
-          <span className="tabular whitespace-nowrap">{f.day(row.original.date)}</span>
+          <span className="fig whitespace-nowrap">{f.date(row.original.date)}</span>
         ),
       },
       {
@@ -281,7 +262,7 @@ export function LedgerTable({
               {identity.ticker !== null && identity.label !== null ? (
                 <span
                   title={identity.label}
-                  className="block truncate text-2xs text-muted-foreground"
+                  className="block truncate text-xs text-muted-foreground"
                 >
                   {identity.label}
                 </span>
@@ -306,7 +287,7 @@ export function LedgerTable({
           const event = row.original
           const figure = <EventFigure event={event} currency={currency} />
           return (
-            <span className="tabular">
+            <span className="fig">
               {cashFlow(event) !== null ? (
                 figure
               ) : (
@@ -450,16 +431,10 @@ export function LedgerTable({
   )
 }
 
-/** A ledger type: the word in the one unhued `muted` pill, the table's and the phone list's alike. */
+/** A ledger type: a word in `muted-foreground` — no pill — the table's and the phone list's alike. */
 export function TypePill({ type }: { type: LedgerEventType }) {
   const { t } = useI18n()
-  return (
-    <span
-      className={cn('inline-block rounded-md px-2 py-0.5 text-2xs font-medium', TYPE_BADGE[type])}
-    >
-      {t(TYPE_LABEL[type])}
-    </span>
-  )
+  return <span className="text-muted-foreground">{t(TYPE_LABEL[type])}</span>
 }
 
 /**
@@ -490,7 +465,7 @@ export function AccountChip({ event }: { event: LedgerEvent }) {
   return (
     <span
       title={accountOf(event)}
-      className="inline-block max-w-[calc(12ch+1rem)] truncate rounded-md bg-accent px-2 py-0.5 align-middle font-mono text-2xs text-foreground/85"
+      className="fig inline-block max-w-[calc(12ch+1rem)] truncate align-middle text-xs text-muted-foreground"
     >
       {accountOf(event)}
     </span>
@@ -543,5 +518,5 @@ function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: Ledge
 
 /** A ticker beside a security's name: Geist Mono, small, muted — every page alike (#1433). */
 export function Ticker({ symbol }: { symbol: string }) {
-  return <span className="shrink-0 font-mono text-2xs text-muted-foreground">{symbol}</span>
+  return <span className="fig shrink-0 text-xs text-muted-foreground">{symbol}</span>
 }

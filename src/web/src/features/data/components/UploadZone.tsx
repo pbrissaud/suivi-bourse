@@ -624,7 +624,7 @@ export function UploadReceipt({ upload }: { upload: EventUpload }) {
       </span>
       <Button
         type="button"
-        variant="ghost"
+        variant="outline"
         size="icon"
         className="pointer-coarse:size-11"
         aria-label={t('data.import.dismiss')}

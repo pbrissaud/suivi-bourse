@@ -9,7 +9,7 @@
  * cannot disagree: `positionRenderings` and `renderFigure` give the absences,
  * `sharesTotals` the foot. Nothing is boxed — the list sits on the page's
  * background like the table it stands in for (#1273) — and every figure is
- * Geist with tabular numerals; Geist Mono is the ticker and the account ids.
+ * Geist with fig numerals; Geist Mono is the ticker and the account ids.
  */
 import { TriangleAlert } from 'lucide-react'
 import { useId } from 'react'
@@ -123,7 +123,7 @@ function GroupHead({
     <h3 id={id} className="label border-b py-2 text-primary">
       {group.account}
       {' · '}
-      <span className="tabular">
+      <span className="fig">
         {renderFigure(
           sumRendering(valuation),
           () => f.currency(valuation.known ? valuation.value : null, currency),
@@ -164,12 +164,12 @@ function ShareItem({ row, grouped, currency, onSelect }: ShareItemProps) {
             </span>
           ) : null}
         </span>
-        <span className={`shrink-0 text-md font-medium tabular ${toneOf(renderings.valuation, 0)}`}>
+        <span className={`shrink-0 text-md font-medium fig ${toneOf(renderings.valuation, 0)}`}>
           {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
         </span>
       </div>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground">
+        <span className="min-w-0 truncate fig text-xs text-muted-foreground">
           {/* The ticker is the title when nobody named the line (#1386). */}
           {[
             row.name === null ? null : row.symbol,
@@ -178,9 +178,7 @@ function ShareItem({ row, grouped, currency, onSelect }: ShareItemProps) {
             .filter(Boolean)
             .join(' · ')}
         </span>
-        <span
-          className={`shrink-0 text-xs font-medium tabular ${toneOf(renderings.unrealised, gain)}`}
-        >
+        <span className={`shrink-0 text-xs font-medium fig ${toneOf(renderings.unrealised, gain)}`}>
           {renderFigure(renderings.unrealised, () => f.currency(gain, currency), t)}
           {renderings.unrealised.kind === 'figure' && ratio !== null ? (
             <span className="label ml-1.5">{f.percent(ratio)}</span>
@@ -207,7 +205,7 @@ function Totals({
   const term = (name: Exclude<GainTermName, 'transferFees'>, label: MessageKey) => (
     <div className="flex items-baseline justify-between gap-3 py-2.5 text-md">
       <dt className="text-muted-foreground">{t(label)}</dt>
-      <dd className={`text-right tabular ${termTone(terms, name)}`}>
+      <dd className={`text-right fig ${termTone(terms, name)}`}>
         {renderFigure(
           termRendering(terms, name),
           () => f.currency(termAmount(terms, name), currency),
@@ -228,7 +226,7 @@ function Totals({
             </span>
           ) : null}
         </dt>
-        <dd className="text-right font-semibold tabular">
+        <dd className="text-right font-semibold fig">
           {renderFigure(
             sumRendering(valuation),
             () => f.currency(valuation.known ? valuation.value : null, currency),

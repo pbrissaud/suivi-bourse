@@ -160,9 +160,7 @@ export function AllocationCard({
           // every share in the list divides, by security or by account.
           <span className="flex items-baseline gap-2">
             <span className="label">{totalLabel}</span>
-            <span className="tabular text-2xl font-semibold">
-              {f.currency(split.total, currency)}
-            </span>
+            <span className="fig text-2xl font-semibold">{f.currency(split.total, currency)}</span>
           </span>
         )
       }

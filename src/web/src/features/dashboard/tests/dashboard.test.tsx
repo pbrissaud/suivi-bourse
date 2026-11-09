@@ -1908,7 +1908,7 @@ describe('the allocation card (#1206)', () => {
     // No total on the title row and the empty state's reason, with nothing placed.
     const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
     expect(titleRow).not.toHaveTextContent(/€/)
-    expect(card).toHaveTextContent('Aucune position détenue')
+    expect(card).toHaveTextContent('Aucune ligne détenue')
   })
 
   it('offers no selector while fewer than two accounts hold a placed line', async () => {

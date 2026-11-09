@@ -195,7 +195,7 @@ function MonthStrip({
                   <Bar amount={one.amount} scaleTop={scaleTop} current={one.month === current} />
                 )}
               </span>
-              <span aria-hidden className="h-4 whitespace-nowrap text-2xs text-muted-foreground">
+              <span aria-hidden className="h-4 whitespace-nowrap text-xs text-muted-foreground">
                 {slot % 3 === 0 ? label(one.month, false) : null}
               </span>
             </li>

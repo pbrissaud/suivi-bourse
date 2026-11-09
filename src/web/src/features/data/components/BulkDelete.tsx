@@ -19,15 +19,9 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { dataApi } from '@/features/data/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
@@ -88,37 +82,22 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
         {t('data.selection.delete')}
       </Button>
 
-      <Dialog open={open} onOpenChange={(next) => (next ? null : close())}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('data.bulk.confirm.title', { count: selected.length })}</DialogTitle>
-            <DialogDescription>{t('data.bulk.confirm.body')}</DialogDescription>
-          </DialogHeader>
-
-          <p className="text-sm text-muted-foreground">{t('data.bulk.confirm.undo')}</p>
-
-          {/* Rendered **here** and not on the page: the box stays open on a
-              failure, and Radix marks everything behind the overlay
-              `aria-hidden`, so a refusal outside it is a sentence nobody can
-              read while the only thing on screen is the box that produced it. */}
-          {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
-
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" onClick={close}>
-              {t('data.bulk.confirm.cancel')}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              // A refetch can take the ticked rows away while the box is open.
-              disabled={remove.isPending || selected.length === 0}
-              onClick={() => remove.mutate(selected)}
-            >
-              {t('data.bulk.confirm.submit')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDestructive
+        open={open}
+        onOpenChange={(next) => (next ? null : close())}
+        title={t('data.bulk.confirm.title', { count: selected.length })}
+        line={t('confirm.events.line')}
+        confirmLabel={t('confirm.delete')}
+        pending={remove.isPending}
+        // A refetch can take the ticked rows away while the box is open.
+        disabled={selected.length === 0}
+        // Rendered **here** and not on the page: the box stays open on a
+        // failure, and Radix marks everything behind the overlay
+        // `aria-hidden`, so a refusal outside it is a sentence nobody can
+        // read while the only thing on screen is the box that produced it.
+        error={remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
+        onConfirm={() => remove.mutate(selected)}
+      />
     </>
   )
 }

@@ -250,6 +250,7 @@ export function TaxationModelEditor({ model, onSaved, onCancel }: TaxationModelE
 
       <div className="flex gap-2">
         <Button
+          variant="primary"
           type="button"
           size="sm"
           disabled={write.isPending}
@@ -376,7 +377,7 @@ function Brackets({
             {rows.length > 1 ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 aria-label={t('taxation.brackets.remove')}
                 onClick={() => onChange(rows.filter((_, at) => at !== index))}

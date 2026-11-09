@@ -130,7 +130,7 @@ describe('the navigation, eight entries in six and two', () => {
       'Titres',
       'Comptes',
       'Grand livre',
-      'Référence',
+      'Comparaison',
       'Agent',
       'Système',
       'Réglages',

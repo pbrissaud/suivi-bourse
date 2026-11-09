@@ -465,7 +465,7 @@ export function DashboardGrid({
               </span>
             ) : null}
             <Button
-              variant="ghost"
+              variant="outline"
               data-reset
               disabled={atDefault || write.isPending}
               aria-describedby={atDefault ? 'dashboard-at-default' : undefined}
@@ -510,7 +510,7 @@ export function DashboardGrid({
             {t('dashboard.edit.confirmYes')}
           </Button>
           <Button
-            variant="ghost"
+            variant="outline"
             onClick={() => {
               setConfirming(false)
               setFocus({ kind: 'reset' })

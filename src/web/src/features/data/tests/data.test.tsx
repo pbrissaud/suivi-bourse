@@ -208,10 +208,10 @@ describe('the columns of the ledger', () => {
     // A ledger is opened to check what has just happened.
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[1].textContent)).toEqual([
-      '10/02/2026',
-      '12/01/2026',
-      '05/01/2026',
-      '24/12/2025',
+      '10 févr. 2026',
+      '12 janv. 2026',
+      '5 janv. 2026',
+      '24 déc. 2025',
     ])
     expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
@@ -261,12 +261,12 @@ describe('the columns of the ledger', () => {
     expect(label).toHaveAttribute('title', 'Ordre au marché, exécution partielle')
   })
 
-  it('writes the date as dd/mm/yyyy in the table and in full in the checkbox name', async () => {
+  it('writes the date in its medium form, in the table and in the checkbox name', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('24/12/2025')
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('24 déc. 2025')
     expect(within(row).getByRole('checkbox')).toHaveAccessibleName(/24 déc\. 2025/)
   })
 
@@ -780,7 +780,7 @@ describe('a reduction in force always has the chip that releases it', () => {
     await user.click(within(rowsOf(ledger())[0]).getByRole('checkbox'))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
 
     // The reduction survives the re-read, so the way out has to survive it too.
@@ -862,11 +862,11 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 2))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(
       within(box).getByRole('heading', { name: 'Supprimer les 2 événements sélectionnés ?' }),
     ).toBeInTheDocument()
-    await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
+    await user.click(within(box).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() => expect(asked).toEqual({ search: '', body: { ids: ['1', '3'] } }))
     expect(await screen.findByText('2 événements supprimés.')).toBeInTheDocument()
@@ -891,7 +891,7 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 1))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les garder' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Annuler' }),
     )
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -984,7 +984,7 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 0))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
     await waitFor(() => expect(asked).toEqual({ ids: ['1'] }))
   })
@@ -1017,9 +1017,9 @@ describe('deleting the ticked rows (#1113)', () => {
       screen.getByRole('checkbox', { name: 'Sélectionner les 4 événements filtrés' }),
     )
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(within(box).queryByText(/Vider le grand livre/)).not.toBeInTheDocument()
-    await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
+    await user.click(within(box).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() => expect(asked).toEqual({ ids: ['1', '2', '3', 'typed-1'] }))
   })
@@ -1044,10 +1044,10 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 1))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
       'L’application a refusé la requête faite par cette page.',
     )
@@ -1092,10 +1092,10 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 1))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
       'L’application a refusé et n’a rien retiré : une vente postérieure de AAPL repose ' +
         'dessus — elle vend 10 parts, et il n’en resterait que 0.',
@@ -1158,7 +1158,7 @@ async function askToRemove(user: ReturnType<typeof renderApp>['user'], name = 'Z
   await user.click(within(ledger()).getByRole('button', { name }))
   const sheet = await screen.findByRole('dialog')
   await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
-  return screen.findByRole('dialog', { name: 'Supprimer cet événement ?' })
+  return screen.findByRole('alertdialog', { name: 'Supprimer cet événement ?' })
 }
 
 describe('a row is removed at the unit', () => {
@@ -1172,7 +1172,7 @@ describe('a row is removed at the unit', () => {
     ).toBeInTheDocument()
     // What names a row is what the row shows — its type, its identity, its day
     // — and never its key: a ledger row has no address.
-    expect(within(box).getByText(/Attribution · ZZC · 24 déc\. 2025/)).toBeInTheDocument()
+    expect(within(box).getByText(/24 déc\. 2025 · Attribution ZZC/)).toBeInTheDocument()
   })
 
   it('sends the row’s own key and says what left', async () => {
@@ -1193,9 +1193,7 @@ describe('a row is removed at the unit', () => {
       }),
     )
 
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() => expect(asked).toBe('typed-1'))
     expect(await screen.findByText('1 événement supprimé.')).toBeInTheDocument()
@@ -1211,9 +1209,7 @@ describe('a row is removed at the unit', () => {
         HttpResponse.json({ id: String(params.id), removed: true }),
       ),
     )
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() =>
       expect(
@@ -1227,7 +1223,7 @@ describe('a row is removed at the unit', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Le garder' }))
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Annuler' }))
 
     expect(
       await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
@@ -1269,11 +1265,9 @@ describe('a row is removed at the unit', () => {
       ),
     )
 
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(/une vente postérieure de ZZC/)
     expect(
       within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
@@ -1303,11 +1297,9 @@ describe('a row is removed at the unit', () => {
       }),
     )
 
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
       'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs, ' +
         'et rien n’a été modifié ici.',
@@ -1318,7 +1310,7 @@ describe('a row is removed at the unit', () => {
     // The table is `aria-hidden` under the overlay, so what the re-read bought
     // is read where the reader reads it: the box comes down on a ledger that
     // no longer shows the row it was about.
-    await user.click(within(box).getByRole('button', { name: 'Le garder' }))
+    await user.click(within(box).getByRole('button', { name: 'Annuler' }))
     // The sheet the box was asked from is still up, and modal.
     await user.click(await screen.findByRole('button', { name: 'Annuler' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
@@ -1661,8 +1653,8 @@ describe('the create form, which is the onboarding', () => {
 
     const sheet = screen.getByRole('dialog')
     await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
-    const box = await screen.findByRole('dialog', { name: 'Supprimer cet événement ?' })
-    await user.click(within(box).getByRole('button', { name: 'Supprimer cet événement' }))
+    const box = await screen.findByRole('alertdialog', { name: 'Supprimer cet événement ?' })
+    await user.click(within(box).getByRole('button', { name: 'Supprimer' }))
     await waitFor(() =>
       expect(
         screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' }),
@@ -2742,13 +2734,8 @@ describe('the ledger on a phone (#1339)', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(items()).toHaveLength(40)
     expect(list().closest('[data-slot="card"]')).toBeNull()
-    // Only the account chip and the ticker beside a name (#1433) are set in
-    // Geist Mono; the amount is Geist, tabular.
-    expect(
-      Array.from(list().querySelectorAll('.font-mono')).every(
-        (node) => node.hasAttribute('title') || /^ZZ[A-Z]$/.test(node.textContent ?? ''),
-      ),
-    ).toBe(true)
+    // Every figure is `fig` (Geist Mono, tabular): no stray `font-mono` is left.
+    expect(list().querySelectorAll('.font-mono')).toHaveLength(0)
 
     reachTheEnd()
     expect(items()).toHaveLength(80)
@@ -2768,11 +2755,10 @@ describe('the ledger on a phone (#1339)', () => {
     const item = items()[0]
     expect(within(item).getByRole('button', { name: 'Zeta Alpha' })).toBeInTheDocument()
     // The ticker beside the name, outside the button (#1433).
-    expect(within(item).getByText('ZZA')).toHaveClass('font-mono')
+    expect(within(item).getByText('ZZA')).toHaveClass('fig')
     expect(within(item).getByText('Dividende')).toBeInTheDocument()
-    expect(within(item).getByText('alpha')).toHaveClass('font-mono')
-    expect(within(item).getByText(/480/)).toHaveClass('tabular')
-    expect(within(item).getByText(/480/)).not.toHaveClass('font-mono')
+    expect(within(item).getByText('alpha')).toHaveClass('fig')
+    expect(within(item).getByText(/480/)).toHaveClass('fig')
     expect(within(item).getByText(/2026/)).toBeInTheDocument()
     // Quantity, price, fee and the label under a ticker live in the form.
     expect(within(item).queryByText(/Ordre au marché/)).not.toBeInTheDocument()
@@ -2828,7 +2814,7 @@ describe('the ledger on a phone (#1339)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
     await waitFor(() => expect(asked?.ids).toHaveLength(120))
   })

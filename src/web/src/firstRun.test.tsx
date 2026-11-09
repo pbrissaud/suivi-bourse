@@ -518,7 +518,7 @@ describe('the walk is three passages, and they are walked in order', () => {
     const passage = within(modal())
     expect(
       await passage.findByText(
-        'Tant que vous n’en déclarez pas, vos événements vont dans « Non affecté ».',
+        'Tant que vous n’en ajoutez pas, vos événements vont dans « Non affecté ».',
       ),
     ).toBeInTheDocument()
     expect(passage.queryByText('Non affecté')).not.toBeInTheDocument()
@@ -656,9 +656,9 @@ describe('an account can be declared from inside the walk', () => {
     await walk(user)
 
     const passage = within(modal())
-    await user.click(await passage.findByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(await passage.findByRole('button', { name: 'Ajouter un compte' }))
     await user.type(passage.getByLabelText('Identifiant'), 'pea')
-    await user.click(passage.getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(passage.getByRole('button', { name: 'Ajouter ce compte' }))
 
     // The name and, beside it, the value a `.csv` would have to spell to land on
     // it — the id alone since #916. The seeded row is still not listed.
@@ -673,7 +673,7 @@ describe('an account can be declared from inside the walk', () => {
     await walk(user)
 
     const passage = within(modal())
-    expect(await passage.findByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
+    expect(await passage.findByRole('button', { name: 'Ajouter un compte' })).toBeInTheDocument()
     // Nothing is being asked for: no field is on screen, and walking on never
     // waits on one. *Mandatory* here is traversed, never answered.
     expect(passage.queryByRole('textbox')).not.toBeInTheDocument()
@@ -685,9 +685,9 @@ describe('an account can be declared from inside the walk', () => {
     const { user } = await firstRun()
     await walk(user)
 
-    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'pea')
-    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
 
     // Declared, and read back: the list is the installation's own accounts, so
     // the row is there because the server has it and not because a form said so.
@@ -708,8 +708,8 @@ describe('an account can be declared from inside the walk', () => {
     const { user } = await firstRun()
     await walk(user)
 
-    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
-    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
+    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
 
     // The one required field says so where it is, and nothing crossed the wire
     // to be told what this form already knew. It was two until #916: the type
@@ -724,9 +724,9 @@ describe('an account can be declared from inside the walk', () => {
     const { user } = await firstRun()
     await walk(user)
 
-    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'pea/lcl')
-    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
 
     // The server's `refuse_unaddressable_id` reaches the page as a generic
     // refusal; the rule is said where the identifier is typed instead.
@@ -747,9 +747,9 @@ describe('an account can be declared from inside the walk', () => {
     const { user } = await firstRun()
     await walk(user)
 
-    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
     await user.type(within(modal()).getByLabelText('Identifiant'), 'default')
-    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
 
     // The refusal is in the form, and the form stays open on what was typed:
     // a gesture the server refused is answered beside the control that made it.
@@ -764,7 +764,7 @@ describe('an account can be declared from inside the walk', () => {
 
     const passage = within(modal())
     expect(await passage.findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(passage.queryByRole('button', { name: 'Déclarer un compte' })).not.toBeInTheDocument()
+    expect(passage.queryByRole('button', { name: 'Ajouter un compte' })).not.toBeInTheDocument()
   })
 })
 

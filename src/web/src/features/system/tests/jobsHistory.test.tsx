@@ -54,7 +54,7 @@ describe('the job history (#1236)', () => {
       'Relevé des cours',
       'Reconstruction de l’historique',
       'Calcul de la performance',
-      'Relecture du registre',
+      'Relecture du grand livre',
     ]) {
       const strip = await within(region).findByRole('listbox', { name })
       expect(within(strip).getAllByRole('option')).toHaveLength(24)
@@ -215,7 +215,7 @@ describe('the job history (#1236)', () => {
       ),
     )
     const { region, unmount } = await jobs()
-    const strip = await within(region).findByRole('listbox', { name: 'Relecture du registre' })
+    const strip = await within(region).findByRole('listbox', { name: 'Relecture du grand livre' })
 
     expect(region).toHaveTextContent('Échec de la dernière relecture')
     expect(within(strip).getAllByRole('option')[23]).toHaveAttribute('aria-selected', 'true')
@@ -234,8 +234,8 @@ describe('the job history (#1236)', () => {
       ),
     )
     const again = await jobs()
-    await within(again.region).findByRole('listbox', { name: 'Relecture du registre' })
-    expect(again.region).toHaveTextContent(/Relecture du registreJamais/)
+    await within(again.region).findByRole('listbox', { name: 'Relecture du grand livre' })
+    expect(again.region).toHaveTextContent(/Relecture du grand livreJamais/)
   })
 
   it('says the last 24 hours once the process is older than a day', async () => {
@@ -299,10 +299,10 @@ describe('the job history (#1236)', () => {
       ),
     )
     const { region } = await jobs()
-    await within(region).findByRole('listbox', { name: 'Relecture du registre' })
+    await within(region).findByRole('listbox', { name: 'Relecture du grand livre' })
 
-    expect(region).not.toHaveTextContent(/Relecture du registreJamais/)
-    expect(region).toHaveTextContent(/Relecture du registre.*À jour\./)
+    expect(region).not.toHaveTextContent(/Relecture du grand livreJamais/)
+    expect(region).toHaveTextContent(/Relecture du grand livre.*À jour\./)
   })
 
   it('keeps the open hour when the window moves an hour on', async () => {

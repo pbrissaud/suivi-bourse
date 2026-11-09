@@ -226,7 +226,7 @@ export function LineText({ line, detailed = false }: { line: Line; detailed?: bo
     <>
       {parts.join(' · ')}
       {(line.marks ?? []).map((mark) => (
-        <span key={mark} className="ml-2 rounded-md bg-muted px-2 py-0.5 text-2xs font-medium">
+        <span key={mark} className="ml-2 rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
           {t(`agent.events.mark.${mark}`)}
         </span>
       ))}

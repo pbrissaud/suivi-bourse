@@ -279,12 +279,9 @@
      DESIGN.md names: label 12/16 (`text-xs`), mono 13 (`text-sm`), body 14/20
      (`text-md` and `text-base`, which `<body>` reads), prose 15/22
      (`text-prose`), section title 20/28 (`text-2xl`), figure 28/32
-     (`text-4xl`), hero 60/64 (`text-hero`), and the term 16/24 (`text-lg`), the
-     rung of a term under a figure. `--text-2xs` is the tickers' 11 px. The
-     rungs `xl`, `3xl`, `5xl`, `6xl` and `7xl` are gone, and a guard
+     (`text-4xl`), hero 56/1.05 (`text-hero`), and the term 16/24 (`text-lg`), the
+     rung of a term under a figure. The rungs `xl`, `3xl`, `5xl`, `6xl` and `7xl` are gone, and a guard
      (`contentWidth.test.ts`) keeps them from coming back. */
-  --text-2xs: 0.6875rem;
-  --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -303,12 +300,12 @@
   --text-4xl--line-height: 2rem;
 
   /* **The one figure a screen leads with, and it is the only fluid rung.**
-     DESIGN.md sets it at 60/64, which a phone cannot hold: a six-figure amount
-     at 60 px is wider than a 390 px screen. The `clamp` reaches 60 px from
+     DESIGN.md sets it at 56 px, which a phone cannot hold: a six-figure amount
+     at 56 px is wider than a 390 px screen. The `clamp` reaches 56 px from
      978 px and floors at 36 px, so the value stays on one line on a phone. */
-  --text-hero: clamp(2.25rem, 1rem + 4.5vw, 3.75rem);
-  --text-hero--line-height: calc(64 / 60);
-  --tracking-hero: -0.03em;
+  --text-hero: clamp(2.25rem, 1rem + 4.5vw, 3.5rem);
+  --text-hero--line-height: 1.05;
+  --tracking-hero: -0.02em;
 
   /* **The 976 px reflow target, as a breakpoint of its own.** It is the width
      the redesign was measured at — the worst realistic case, a narrow laptop
@@ -372,6 +369,21 @@
   color: var(--color-muted-foreground);
 }
 
+/**
+ * **Every figure is Geist Mono with fixed-width digits** (« Relevé », November
+ * 2026, reversing #1281 and the figure half of #838): an amount, a percentage,
+ * a quantity, a date, a time, a version, an identifier. The digits line a
+ * column up; the negative word spacing closes the thin spaces of `42 658,79 €`;
+ * a figure never wraps. Words stay in Geist. A figure inside a sentence is
+ * `fig` too, at the sentence's size.
+ */
+@utility fig {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  word-spacing: -0.32em;
+  white-space: nowrap;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -381,12 +393,6 @@
        size is read off the ladder here like it is everywhere else. */
     @apply bg-background text-base text-foreground;
     letter-spacing: var(--tracking-normal);
-  }
-  /* Numbers in a portfolio are read *down a column*, so their glyphs have to
-     line up. Tabular figures are the difference between a table you can scan
-     and one you have to read. */
-  .tabular {
-    font-variant-numeric: tabular-nums;
   }
   html {
     @apply font-sans;

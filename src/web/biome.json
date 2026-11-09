@@ -114,6 +114,7 @@
         "!**/features/settings/components/ThemeForm.tsx"
       ]
     },
+    { "path": "./lint/one-primary-per-page.grit", "includes": ["**/src/pages/*Page.tsx"] },
     {
       "path": "./lint/no-runtime-error-on-surfaces.grit",
       "includes": ["**/src/pages/*Page.tsx", "**/features/data/components/Ledger.tsx"]

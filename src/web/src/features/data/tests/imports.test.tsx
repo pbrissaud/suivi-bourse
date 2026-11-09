@@ -187,7 +187,7 @@ describe('the export', () => {
       // The count is part of the entry: what it will produce, said before the
       // click rather than discovered in a file.
       'La sélection filtrée4 lignes retenuesCSV',
-      'Comptes et positionsSoldes, PRU et valorisationsCSV',
+      'Comptes et lignesSoldes, prix moyens d’achat et valorisationsCSV',
     ])
     // And the menu says once what its four entries answer.
     expect(within(menu).getByText('Ce que vous exportez')).toBeInTheDocument()
@@ -206,9 +206,9 @@ describe('the export', () => {
     expect(
       within(declared).queryByRole('menuitem', { name: 'Vos comptes' }),
     ).not.toBeInTheDocument()
-    expect(
-      within(declared).getByRole('menuitem', { name: /Comptes et positions/ }),
-    ).toHaveTextContent('Soldes, PRU et valorisations')
+    expect(within(declared).getByRole('menuitem', { name: /Comptes et lignes/ })).toHaveTextContent(
+      'Soldes, prix moyens d’achat et valorisations',
+    )
   })
 
   it('asks the portfolio route for the accounts and their positions, with no reduction', async () => {
@@ -227,7 +227,7 @@ describe('the export', () => {
 
     await pickType(user, /^Achat/)
     await user.click(
-      within(await openExport(user)).getByRole('menuitem', { name: /Comptes et positions/ }),
+      within(await openExport(user)).getByRole('menuitem', { name: /Comptes et lignes/ }),
     )
 
     await waitFor(() => expect(asked).toHaveLength(1))
@@ -237,7 +237,7 @@ describe('the export', () => {
     await waitFor(() => expect(saved).toEqual(['suivi-bourse-portfolio.csv']))
     // The receipt names what was made, and it is not *your events*.
     expect(
-      await screen.findByText('Vos comptes et positions sont sur votre disque.'),
+      await screen.findByText('Vos comptes et lignes sont sur votre disque.'),
     ).toBeInTheDocument()
   })
 
@@ -1037,7 +1037,7 @@ describe('what this import would do', () => {
     await hand(user)
     await user.selectOptions(
       await screen.findByLabelText('Cible pour TR'),
-      screen.getByRole('option', { name: 'Déclarer « TR » comme un nouveau compte' }),
+      screen.getByRole('option', { name: 'Ajouter « TR » comme nouveau compte' }),
     )
 
     expect(await screen.findByText('« TR » sera déclaré avec le fichier')).toBeInTheDocument()

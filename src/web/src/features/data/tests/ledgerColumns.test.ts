@@ -11,7 +11,7 @@ import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { LEDGER_COLUMNS } from '@/features/data/components/LedgerTable'
-import { formatCurrency, formatDay, formatQuantity } from '@/lib/format'
+import { formatCurrency, formatDate, formatQuantity } from '@/lib/format'
 import { ROUTES } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
 import { aLedgerPayload } from '@/test/factories'
@@ -31,12 +31,12 @@ const sum = (cells: { min: number }[]) => cells.reduce((total, { min }) => total
 // 1440 px, the sidebar open, the content gutter, the card's 1 px borders.
 const SIDEBAR =
   Number(/const SIDEBAR_WIDTH = '([\d.]+)rem'/.exec(read('components/ui/sidebar.tsx'))?.[1]) * 16
-const GUTTER = Number(/\blg:p-(\d+)\b/.exec(read('components/Shell.tsx'))?.[1]) * 4
+const GUTTER = Number(/\bmd:px-(\d+)\b/.exec(read('components/Shell.tsx'))?.[1]) * 4
 const CONTAINER_AT_1440 = 1440 - SIDEBAR - 2 * GUTTER - 2
 
 describe('the ledger’s column budget', () => {
   it('fits every column at 1440 px with the sidebar open', () => {
-    expect(CONTAINER_AT_1440).toBe(1190)
+    expect(CONTAINER_AT_1440).toBe(1174)
     for (const [, column] of columns)
       expect(column.from ?? 0).toBeLessThanOrEqual(CONTAINER_AT_1440)
     expect(sum(Object.values(LEDGER_COLUMNS))).toBeLessThanOrEqual(CONTAINER_AT_1440)
@@ -62,7 +62,7 @@ describe('the ledger’s column budget', () => {
       unitPrice: formatCurrency(FR, 123456.78, 'EUR'),
       fee: formatCurrency(FR, 1234.56, 'EUR'),
       quantity: formatQuantity(FR, 0.12345678),
-      date: formatDay(FR, '2026-12-31'),
+      date: formatDate(FR, '2026-12-31'),
     }
     for (const [id, text] of Object.entries(widest)) {
       const need = text.length * CHAR + PADDING

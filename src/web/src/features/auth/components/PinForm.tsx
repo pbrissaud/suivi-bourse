@@ -135,7 +135,7 @@ export function PinForm({
         </p>
       ) : null}
       {waiting ? (
-        <p id={waitId} aria-hidden="true" className="text-sm text-destructive tabular-nums">
+        <p id={waitId} aria-hidden="true" className="text-sm text-destructive fig">
           {t('auth.pin.throttled', { wait: clock(left) })}
         </p>
       ) : null}
@@ -143,7 +143,7 @@ export function PinForm({
         {said}
       </p>
 
-      <Button type="submit" className="h-11 w-full" disabled={busy || waiting}>
+      <Button variant="primary" type="submit" className="h-11 w-full" disabled={busy || waiting}>
         {t(busy ? 'auth.pin.checking' : 'auth.pin.unlock')}
       </Button>
 

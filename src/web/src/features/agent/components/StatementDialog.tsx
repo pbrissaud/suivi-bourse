@@ -150,7 +150,7 @@ export function StatementDialog({
             id={textId}
             value={text}
             rows={8}
-            className="max-h-64 font-mono text-xs"
+            className="max-h-64 fig text-xs"
             aria-invalid={tooLong}
             onChange={(event) => setText(event.target.value)}
           />
@@ -180,7 +180,12 @@ export function StatementDialog({
           <Button type="button" variant="outline" disabled={write.isPending} onClick={close}>
             {t('agent.statement.cancel')}
           </Button>
-          <Button type="button" disabled={!ready || write.isPending} onClick={() => write.mutate()}>
+          <Button
+            variant="primary"
+            type="button"
+            disabled={!ready || write.isPending}
+            onClick={() => write.mutate()}
+          >
             {write.isPending ? t('agent.statement.sending') : t('agent.statement.send')}
           </Button>
         </div>

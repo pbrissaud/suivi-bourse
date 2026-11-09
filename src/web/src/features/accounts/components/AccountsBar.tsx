@@ -131,10 +131,10 @@ export function AccountsBar({
               <span className="max-w-56 truncate text-sm font-semibold whitespace-nowrap">
                 {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
               </span>
-              <span className="tabular text-sm whitespace-nowrap">
+              <span className="fig text-sm whitespace-nowrap">
                 {readings[index] === 'valued' ? f.currency(accountWorth(row), currency) : ABSENT}
               </span>
-              <span className="tabular text-xs whitespace-nowrap">
+              <span className="fig text-xs whitespace-nowrap">
                 {share === null ? ABSENT : f.percentPoints(share * 100)}
               </span>
             </Link>

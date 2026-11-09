@@ -178,8 +178,8 @@ describe('results you can tell apart', () => {
   it('offers every page the sidebar has', async () => {
     const { user } = render()
     await open(user)
-    await user.type(field(), 'Réf')
-    expect(within(section('Pages') as HTMLElement).getByText('Référence')).toBeInTheDocument()
+    await user.type(field(), 'Comp')
+    expect(within(section('Pages') as HTMLElement).getByText('Comparaison')).toBeInTheDocument()
     await user.clear(field())
     await user.type(field(), 'Agent')
     expect(within(section('Pages') as HTMLElement).getByText('Agent')).toBeInTheDocument()

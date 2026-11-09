@@ -326,7 +326,7 @@ describe('the tool lines (2A)', () => {
     await ask(user, main, QUESTION)
     await within(main).findAllByText('Fini.')
 
-    const trigger = within(main).getByRole('button', { name: 'Lecture de vos positions.' })
+    const trigger = within(main).getByRole('button', { name: 'Lecture de vos lignes.' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     await user.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
@@ -513,14 +513,12 @@ describe('the threads (12A)', () => {
     await user.click(
       within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
     )
-    // Asked in the row, naming the thread, with the harmless answer focused.
-    expect(
-      within(column).getByText('Supprimer ce fil ? La conversation est effacée.'),
-    ).toBeInTheDocument()
-    expect(within(column).getByText('Vendre Zeta')).toBeInTheDocument()
-    expect(within(column).getByRole('button', { name: 'Le garder' })).toHaveFocus()
+    // Asked in the one confirmation, naming the thread, with the harmless answer focused.
+    const confirm = await screen.findByRole('alertdialog', { name: 'Supprimer ce fil ?' })
+    expect(within(confirm).getByText('Vendre Zeta')).toBeInTheDocument()
+    expect(within(confirm).getByRole('button', { name: 'Annuler' })).toHaveFocus()
     expect(deleted).toEqual([])
-    await user.click(within(column).getByRole('button', { name: 'Supprimer' }))
+    await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
     await waitFor(() => expect(deleted).toEqual(['t1']))
     // The thread on screen was the one deleted: an empty one takes its place.
     expect(await within(main).findByText(/Posez une question/)).toBeInTheDocument()
@@ -538,15 +536,15 @@ describe('the threads (12A)', () => {
     await user.click(
       await within(menu).findByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
     )
-    expect(within(menu).getByRole('button', { name: 'Le garder' })).toHaveFocus()
+    expect(await screen.findByRole('button', { name: 'Annuler' })).toHaveFocus()
     await user.keyboard('{Escape}')
 
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(within(menu).queryByRole('button', { name: 'Le garder' })).toBeNull()
     expect(deleted).toEqual([])
   })
 
-  it('keeps a thread on Le garder or Escape, and gives focus back to its bin', async () => {
+  it('keeps a thread on Annuler or Escape, and gives focus back to its bin', async () => {
     switchedOn()
     const { deleted } = storedThreads()
     const { user, main } = await openPage()
@@ -556,7 +554,7 @@ describe('the threads (12A)', () => {
     })
 
     await user.click(bin)
-    await user.click(within(column).getByRole('button', { name: 'Le garder' }))
+    await user.click(await screen.findByRole('button', { name: 'Annuler' }))
     await waitFor(() =>
       expect(
         within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
@@ -566,13 +564,14 @@ describe('the threads (12A)', () => {
     await user.click(
       within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
     )
+    await screen.findByRole('alertdialog')
     await user.keyboard('{Escape}')
     await waitFor(() =>
       expect(
         within(column).getByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
       ).toHaveFocus(),
     )
-    expect(within(column).queryByRole('button', { name: 'Le garder' })).toBeNull()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(deleted).toEqual([])
   })
 
@@ -590,7 +589,8 @@ describe('the threads (12A)', () => {
     await user.click(
       await within(column).findByRole('button', { name: 'Supprimer le fil « Vendre Zeta »' }),
     )
-    await user.click(within(column).getByRole('button', { name: 'Supprimer' }))
+    const confirm = await screen.findByRole('alertdialog')
+    await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
     expect(await within(column).findByRole('status')).toHaveTextContent('The store is unavailable.')
     expect(within(column).getByRole('link', { name: /^Vendre Zeta/ })).toBeInTheDocument()
   })
@@ -1311,7 +1311,7 @@ describe('a turn that did not complete (#1324)', () => {
     const halted = await within(main).findAllByRole('button', { name: /interrompu$/ })
     expect(halted.map((b) => b.textContent)).toEqual([
       'Simulation d’une vente et de son impôt. interrompu',
-      'Lecture de vos positions. interrompu',
+      'Lecture de vos lignes. interrompu',
     ])
     for (const button of halted) {
       const line = button.querySelector('[data-slot=trace-line]')

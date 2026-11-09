@@ -170,7 +170,7 @@ export function AllocationBars({
             <span className="truncate">{name(slice)}</span>
             {/* A share of a whole, never a change: `formatPercent` signs what it
                 renders (`+56,52 %`), which reads as a movement here. */}
-            <span className="label tabular shrink-0">{f.percentPoints(slice.share * 100, 1)}</span>
+            <span className="label fig shrink-0">{f.percentPoints(slice.share * 100, 1)}</span>
           </span>
           <ShareBar
             share={slice.share}
@@ -334,9 +334,9 @@ export function AllocationFigure({
                         movement and reads as one here. */}
                   <span className="flex shrink-0 items-baseline gap-3">
                     {amounts ? (
-                      <span className="tabular text-xs">{f.currency(slice.value, currency)}</span>
+                      <span className="fig text-xs">{f.currency(slice.value, currency)}</span>
                     ) : null}
-                    <span className="tabular text-xs text-muted-foreground">
+                    <span className="fig text-xs text-muted-foreground">
                       {f.percentPoints(slice.share * 100, 1)}
                     </span>
                   </span>

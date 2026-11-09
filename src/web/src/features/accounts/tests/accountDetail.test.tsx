@@ -648,7 +648,7 @@ describe('the bubbles', () => {
 
     await user.click(within(detail).getByRole('button', { name: 'Ce que veut dire Gain' }))
     const bubble = (await screen.findAllByRole('dialog')).find((node) =>
-      /positions soldées de ce compte/.test(node.textContent ?? ''),
+      /lignes soldées de ce compte/.test(node.textContent ?? ''),
     ) as HTMLElement
     expect(bubble).toBeDefined()
     expect(within(bubble).getByRole('link')).toHaveAttribute(

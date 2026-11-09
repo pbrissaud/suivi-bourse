@@ -243,7 +243,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                     </span>
                     <span
                       className={cn(
-                        'tabular text-lg font-semibold',
+                        'fig text-lg font-semibold',
                         termTone(terms, term as GainTermName),
                       )}
                     >
@@ -358,8 +358,8 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                         className="flex min-h-15 flex-col justify-center gap-0.5 py-2.5"
                       >
                         <div className="flex items-baseline justify-between gap-3">
-                          <span className="font-mono text-2xs">{line.accounts[0]}</span>
-                          <span className="text-md font-medium tabular">
+                          <span className="fig text-xs">{line.accounts[0]}</span>
+                          <span className="text-md font-medium fig">
                             {renderFigure(
                               lineRenderings.valuation,
                               () => f.currency(marketValue(line), currency),
@@ -368,14 +368,14 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                           </span>
                         </div>
                         <div className="flex items-baseline justify-between gap-3">
-                          <span className="label tabular">
+                          <span className="label fig">
                             {t('shares.breakdown.holding', {
                               quantity: f.quantity(line.quantity),
                               avgCost: f.currency(unitCost(line), currency),
                             })}
                           </span>
                           <span
-                            className={`text-xs font-medium tabular ${toneOf(
+                            className={`text-xs font-medium fig ${toneOf(
                               lineRenderings.unrealised,
                               lineGain,
                             )}`}
@@ -413,13 +413,13 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                           {/* One account per line by construction, so plain text
                               and never a list of one (#684 D11). */}
                           <TableCell>{line.accounts[0]}</TableCell>
-                          <TableCell className="text-right tabular">
+                          <TableCell className="text-right fig">
                             {f.quantity(line.quantity)}
                           </TableCell>
-                          <TableCell className="text-right tabular">
+                          <TableCell className="text-right fig">
                             {f.currency(unitCost(line), currency)}
                           </TableCell>
-                          <TableCell className="text-right tabular">
+                          <TableCell className="text-right fig">
                             {renderFigure(
                               lineRenderings.valuation,
                               () => f.currency(lineValue, currency),
@@ -427,7 +427,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                             )}
                           </TableCell>
                           <TableCell
-                            className={`text-right tabular ${toneOf(
+                            className={`text-right fig ${toneOf(
                               lineRenderings.unrealised,
                               lineGain,
                             )}`}
@@ -503,7 +503,7 @@ function Fundamentals({ row }: { row: ShareRow }) {
         {lines.map((line) => (
           <div key={line.label} className="min-w-0">
             <dt className="text-xs text-muted-foreground">{t(line.label)}</dt>
-            <dd className="tabular">{line.value}</dd>
+            <dd className="fig">{line.value}</dd>
           </div>
         ))}
       </dl>

@@ -108,7 +108,7 @@ function Row({ entry }: { entry: OfferedBenchmark }) {
         <span className="min-w-0 flex-1 truncate">
           {entry.index} · {entry.symbol.split('.')[0]}
         </span>
-        <span className="tabular shrink-0 text-xs text-muted-foreground">
+        <span className="fig shrink-0 text-xs text-muted-foreground">
           {t('benchmark.select.since', { year: entry.inception.slice(0, 4) })}
         </span>
       </span>

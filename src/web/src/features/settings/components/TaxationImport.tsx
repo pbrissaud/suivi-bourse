@@ -12,18 +12,12 @@
  * the only match, and the carriers are what makes the replacement a decision,
  * asked in a Dialog (#1279).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import {
   type Account,
   accountsApi,
@@ -66,7 +60,6 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
     model: TaxationModel
   } | null>(null)
   const focusField = () => document.getElementById('taxation-import')?.focus()
-  const keep = useRef<HTMLButtonElement>(null)
 
   const registry = useQuery({
     queryKey: ['taxation-registry'],
@@ -240,57 +233,29 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
         </div>
       )}
 
-      <Dialog
+      <ConfirmDestructive
         open={replacing !== null}
         onOpenChange={(open) => (open ? undefined : closeReplace())}
-      >
-        <DialogContent
-          role="alertdialog"
-          className="sm:max-w-sm"
-          // It opens on its safe answer, and gives the field back on close,
-          // unless the replacement went through: then the model's Sheet has
-          // opened, and its exit animation ends after the Sheet took focus.
-          onOpenAutoFocus={(event) => {
-            event.preventDefault()
-            keep.current?.focus()
-          }}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault()
-            if (!stored.isSuccess) focusField()
-          }}
-        >
-          {replacing === null ? null : (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {t('settings.taxation.import.replace.title', { name: replacing.model.name })}
-                </DialogTitle>
-                <DialogDescription>
-                  {carriers.length === 0
-                    ? t('settings.taxation.import.replace.none')
-                    : t('settings.taxation.import.replace.carriers', {
-                        accounts: carriers
-                          .map((account) => declaredLabel(account) ?? account.id)
-                          .join(', '),
-                      })}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button ref={keep} type="button" variant="outline" onClick={closeReplace}>
-                  {t('taxation.cancel')}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={stored.isPending}
-                  onClick={() => stored.mutate({ item: replacing.item, model: replacing.model })}
-                >
-                  {t('settings.taxation.import.replace')}
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+        title={
+          replacing === null
+            ? ''
+            : t('settings.taxation.import.replace.title', { name: replacing.model.name })
+        }
+        items={carriers.map((account) => ({ key: declaredLabel(account) ?? account.id }))}
+        line={t('settings.taxation.import.replace.line')}
+        confirmLabel={t('settings.taxation.import.replace')}
+        pending={stored.isPending}
+        onConfirm={() => {
+          if (replacing !== null) stored.mutate({ item: replacing.item, model: replacing.model })
+        }}
+        // It gives the field back on close, unless the replacement went through:
+        // then the model's Sheet has opened, and its exit animation ends after
+        // the Sheet took focus.
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          if (!stored.isSuccess) focusField()
+        }}
+      />
     </SettingRow>
   )
 }

@@ -121,7 +121,7 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
                     same line in the table one page over. */}
               <span
                 aria-hidden
-                className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-accent font-mono text-2xs font-semibold text-muted-foreground"
+                className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-accent fig text-xs font-semibold text-muted-foreground"
               >
                 {tickerBadge(mover.symbol)}
               </span>
@@ -136,11 +136,11 @@ export function Movers({ movers, rows, currency, failure = null, width = 'half' 
                     the same news, and a percentage alone cannot say which. */}
               <span className="flex shrink-0 flex-col items-end">
                 <span
-                  className={`tabular text-sm font-semibold ${signClass(mover.change_pct, RATIO_DECIMALS)}`}
+                  className={`fig text-sm font-semibold ${signClass(mover.change_pct, RATIO_DECIMALS)}`}
                 >
                   {f.percent(mover.change_pct)}
                 </span>
-                <span className="tabular text-2xs text-muted-foreground">
+                <span className="fig text-xs text-muted-foreground">
                   {f.signedCurrency(mover.contribution, currency)}
                 </span>
               </span>

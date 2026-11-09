@@ -134,7 +134,7 @@ export function Benchmark({ benchmark, failure = null, width = 'half' }: Benchma
       }
       aside={
         ready ? (
-          <p className={`tabular text-2xl font-semibold ${figureClass(gap)}`}>
+          <p className={`fig text-2xl font-semibold ${figureClass(gap)}`}>
             {gap === null ? '—' : f.signedCurrency(gap, currency)}
           </p>
         ) : null
@@ -166,7 +166,7 @@ function Accounts({
             className="flex items-baseline justify-between gap-3 border-t py-2.25 text-sm first:border-t-0"
           >
             <span className="min-w-0 truncate">{row.account}</span>
-            <span className={`tabular shrink-0 font-semibold ${figureClass(gap)}`}>
+            <span className={`fig shrink-0 font-semibold ${figureClass(gap)}`}>
               {gap === null ? '—' : f.signedCurrency(gap, currency)}
             </span>
           </li>

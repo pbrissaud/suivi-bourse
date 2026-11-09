@@ -95,10 +95,10 @@ export function ShareEvents({
                     selected ? 'bg-secondary font-medium' : undefined,
                   )}
                 >
-                  <span className="tabular text-muted-foreground">{f.date(event.date)}</span>
+                  <span className="fig text-muted-foreground">{f.date(event.date)}</span>
                   <span>{t(TYPE_LABEL[event.event_type])}</span>
                   {fields.quantity ? (
-                    <span className="tabular">
+                    <span className="fig">
                       {t('shares.events.quantity', {
                         count: event.quantity ?? 0,
                         quantity: f.quantity(event.quantity),
@@ -106,10 +106,10 @@ export function ShareEvents({
                     </span>
                   ) : null}
                   {fields.unitPrice !== 'none' && event.unit_price !== null ? (
-                    <span className="tabular">{f.currency(event.unit_price, currency)}</span>
+                    <span className="fig">{f.currency(event.unit_price, currency)}</span>
                   ) : null}
                   {fields.amount && event.amount !== null ? (
-                    <span className="tabular">{f.currency(event.amount, currency)}</span>
+                    <span className="fig">{f.currency(event.amount, currency)}</span>
                   ) : null}
                   <span className="ml-auto text-xs text-muted-foreground">{accountOf(event)}</span>
                 </button>

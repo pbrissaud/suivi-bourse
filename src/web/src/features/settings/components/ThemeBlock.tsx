@@ -88,7 +88,7 @@ function ImportDialog({
               setId(event.target.value)
               importing.reset()
             }}
-            className="font-mono"
+            className="fig"
           />
           {importing.isError ? (
             <p id="theme-id-error" role="alert" className="text-sm text-destructive">
@@ -101,10 +101,11 @@ function ImportDialog({
           ) : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose}>
             {t('settings.theme.cancel')}
           </Button>
           <Button
+            variant="primary"
             type="button"
             disabled={themeId(id) === '' || importing.isPending}
             onClick={() => importing.mutate()}
@@ -179,7 +180,7 @@ function JsonDialog({
             setUnparsable(null)
             applying.reset()
           }}
-          className="max-h-96 font-mono text-xs md:text-xs"
+          className="max-h-96 fig text-xs md:text-xs"
         />
         {error !== null ? (
           <p id="theme-json-error" role="alert" className="text-sm text-destructive">
@@ -187,10 +188,15 @@ function JsonDialog({
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose}>
             {t('settings.theme.cancel')}
           </Button>
-          <Button type="button" disabled={json.trim() === '' || applying.isPending} onClick={apply}>
+          <Button
+            variant="primary"
+            type="button"
+            disabled={json.trim() === '' || applying.isPending}
+            onClick={apply}
+          >
             {t('settings.theme.apply')}
           </Button>
         </div>
@@ -266,13 +272,13 @@ export function ThemeBlock({ stored }: { stored: ThemeVars | null }) {
               <Button type="button" onClick={() => setEditing(saved)}>
                 {t('settings.theme.edit')}
               </Button>
-              <Button type="button" variant="secondary" onClick={() => setDialog('import')}>
+              <Button type="button" variant="outline" onClick={() => setDialog('import')}>
                 {t('settings.theme.import.open')}
               </Button>
               {stored ? (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   disabled={resetting.isPending}
                   onClick={() => resetting.mutate()}
                 >

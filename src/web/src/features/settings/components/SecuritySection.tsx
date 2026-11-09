@@ -16,6 +16,7 @@ import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Button } from '@/components/ui/button'
 import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block'
 import {
@@ -180,7 +181,7 @@ export function SecuritySection({ read }: { read: SectionRead }) {
         refocus={refocus}
         open={open === 'disable'}
         title="settings.access.disable"
-        note="settings.access.disable.note"
+        note="settings.access.disable.line"
         action="settings.access.disable"
         destructive
         onClose={close}
@@ -343,7 +344,7 @@ function CodeField({
         maxLength={6}
         value={value}
         onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ''))}
-        className="font-mono max-md:h-11"
+        className="fig max-md:h-11"
       />
     </div>
   )
@@ -381,12 +382,12 @@ function Actions({
   const { t } = useI18n()
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      <Button type="button" variant="ghost" className="max-md:h-11" onClick={onClose}>
+      <Button type="button" variant="outline" className="max-md:h-11" onClick={onClose}>
         {t('settings.access.cancel')}
       </Button>
       <Button
         type="submit"
-        variant={destructive ? 'destructive' : 'default'}
+        variant={destructive ? 'destructive' : 'primary'}
         className="max-md:h-11"
         disabled={pending}
       >
@@ -561,13 +562,39 @@ function CurrentCodeDialog({
     onClose()
   }
 
+  if (destructive) {
+    return (
+      <ConfirmDestructive
+        open={open}
+        onOpenChange={(next) => (next ? undefined : give())}
+        title={t('settings.access.disable.title')}
+        line={t('settings.access.disable.line')}
+        confirmLabel={t('settings.access.disable.cta')}
+        pending={mutation.isPending}
+        onCloseAutoFocus={refocus}
+        error={<Refused error={invalid ?? mutation.error} />}
+        onConfirm={() => {
+          const wrong = PIN.test(current) ? null : 'settings.access.sixDigits'
+          setInvalid(wrong)
+          if (wrong === null) mutation.mutate()
+        }}
+      >
+        <CodeField
+          label={t('settings.access.current')}
+          value={current}
+          onChange={setCurrent}
+          current
+        />
+      </ConfirmDestructive>
+    )
+  }
+
   return (
     <CodeDialog
       refocus={refocus}
       open={open}
       title={title}
       note={note}
-      destructive={destructive}
       onClose={give}
       onSubmit={(event) => {
         event.preventDefault()
@@ -583,12 +610,7 @@ function CurrentCodeDialog({
         current
       />
       <Refused error={invalid ?? mutation.error} />
-      <Actions
-        label={action}
-        pending={mutation.isPending}
-        destructive={destructive}
-        onClose={give}
-      />
+      <Actions label={action} pending={mutation.isPending} onClose={give} />
     </CodeDialog>
   )
 }
@@ -632,7 +654,7 @@ function TokenDialog({
         {token ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <code className="font-mono text-sm break-all">{token.token}</code>
+              <code className="fig text-sm break-all">{token.token}</code>
               <Button
                 type="button"
                 variant="outline"
@@ -662,6 +684,7 @@ function TokenDialog({
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
           <Button
+            variant="primary"
             type="button"
             className="max-md:h-11"
             onClick={() => {

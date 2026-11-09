@@ -163,13 +163,13 @@ export function LedgerList({
                     {/* The ticker beside the name, as on Titres (#1433). */}
                     {identity.name === null ? null : <Ticker symbol={identity.ticker as string} />}
                   </span>
-                  <span className="tabular shrink-0">
+                  <span className="fig shrink-0">
                     <EventFigure event={event} currency={currency} />
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="label tabular whitespace-nowrap">{f.day(event.date)}</span>
+                    <span className="label fig whitespace-nowrap">{f.date(event.date)}</span>
                     <span aria-hidden className="label">
                       ·
                     </span>

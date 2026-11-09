@@ -107,7 +107,7 @@ export function Stat({
       </div>
       <div
         className={cn(
-          'tabular font-semibold',
+          'fig font-semibold',
           size !== 'head' && 'tracking-tight',
           SIZES[size],
           valueClassName,

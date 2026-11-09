@@ -69,7 +69,7 @@ describe('the first declaration carries the reassignment', () => {
       }),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     // The count is the reader's own, and it is on the box rather than in a
     // paragraph beside it: what is being agreed to is what is written on it.
@@ -79,7 +79,7 @@ describe('the first declaration carries the reassignment', () => {
     expect(box).toBeChecked()
 
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter ce compte' }))
 
     // **One request**, which is what *dans le même geste* means: the declaration
     // and the move are not two gestures a reader can be interrupted between.
@@ -101,11 +101,11 @@ describe('the first declaration carries the reassignment', () => {
       }),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     await user.click(within(panel).getByRole('checkbox'))
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter ce compte' }))
 
     await waitFor(() => expect(sent).toEqual({ id: 'pea', label: 'pea' }))
   })
@@ -119,7 +119,7 @@ describe('the first declaration carries the reassignment', () => {
 
     expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: REASSIGN })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument()
   })
@@ -131,7 +131,7 @@ describe('the first declaration carries the reassignment', () => {
     await rail()
 
     expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument()
   })

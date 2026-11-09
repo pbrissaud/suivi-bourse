@@ -73,7 +73,7 @@ describe('the walking skeleton', () => {
     for (const entry of [
       'Shares',
       'Accounts',
-      'Reference',
+      'Comparison',
       'Agent',
       'Ledger',
       'System',

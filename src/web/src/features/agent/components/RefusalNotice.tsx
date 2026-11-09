@@ -52,7 +52,7 @@ export function RefusalNotice({
           {t('agent.refusal.raw', { provider })}
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-1">
-          <p className="font-mono text-xs break-words">{said}</p>
+          <p className="fig text-xs break-words">{said}</p>
         </CollapsibleContent>
       </Collapsible>
       {children}

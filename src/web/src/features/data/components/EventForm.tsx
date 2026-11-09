@@ -947,7 +947,7 @@ export function EventForm({
               </Field>
 
               {cash !== null ? (
-                <p className="text-sm tabular-nums">
+                <p className="text-sm fig">
                   {t(cashLabel(cash), { amount: format.currency(Math.abs(cash), currency) })}
                 </p>
               ) : null}
@@ -962,7 +962,7 @@ export function EventForm({
                     Neither of the two states is repairable from inside this
                     panel, and a save that did nothing and said nothing is the
                     failure this ticket inherited (#764). */}
-                <Button type="submit" disabled={write.isPending || blocked}>
+                <Button variant="primary" type="submit" disabled={write.isPending || blocked}>
                   {t('data.form.submit')}
                 </Button>
                 <Button type="button" variant="outline" onClick={close}>
@@ -973,7 +973,7 @@ export function EventForm({
                 {event !== null && isEditable(event) ? (
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                     className="ml-auto text-destructive"
                     onClick={onDelete}
                   >

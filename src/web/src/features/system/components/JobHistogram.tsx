@@ -271,7 +271,7 @@ function HourDetail({ id, slot, passes }: { id: string; slot: JobSlot; passes: J
 
   return (
     <div id={id} className="mt-2 divide-y text-xs [overflow-wrap:anywhere]">
-      <p aria-live="polite" className="tabular py-1.5 text-muted-foreground">
+      <p aria-live="polite" className="fig py-1.5 text-muted-foreground">
         {t('settings.jobs.hour.totals', {
           from: clock(slot.hour),
           to: clock(end),
@@ -293,7 +293,7 @@ function HourDetail({ id, slot, passes }: { id: string; slot: JobSlot; passes: J
       )}
       {passes.map((one) => (
         <div key={`${one.symbol ?? ''}${one.at}`} className="py-1.5">
-          <p className="tabular flex flex-wrap gap-x-3">
+          <p className="fig flex flex-wrap gap-x-3">
             <span>{clock(one.at)}</span>
             {one.symbol === undefined ? null : <span>{one.symbol}</span>}
             <span className="text-muted-foreground">{seconds(one.duration)}</span>
@@ -303,7 +303,7 @@ function HourDetail({ id, slot, passes }: { id: string; slot: JobSlot; passes: J
           </p>
           {one.error === null ? null : <p className="mt-0.5 text-destructive">{one.error}</p>}
           {one.lines.map((line, i) => (
-            <p key={i} className="mt-0.5 font-mono text-muted-foreground">
+            <p key={i} className="mt-0.5 fig text-muted-foreground">
               {line.level} {line.logger}: {line.message}
             </p>
           ))}

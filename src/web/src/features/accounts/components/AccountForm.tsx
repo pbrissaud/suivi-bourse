@@ -33,6 +33,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Refusal } from '@/components/Refusal'
 import {
   bodyOf,
@@ -168,9 +169,11 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     (editing === null ? carried?.parameters.age_basis : editing.draft.fields.age_basis) ===
     'opening'
 
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   const remove = useMutation({
     mutationFn: (id: string) => accountsApi.removeAccount(id),
     onSuccess: () => {
+      setConfirmingRemoval(false)
       // The whole cache: an account that is gone changes what every page groups
       // by, not only the list this panel was opened from.
       void queryClient.invalidateQueries()
@@ -367,7 +370,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
             // this value is what the ledger names.
             <div className="space-y-1">
               <p className="text-sm font-medium">{t('accounts.form.id')}</p>
-              <p className="font-mono text-sm">{account.id}</p>
+              <p className="fig text-sm">{account.id}</p>
               <p className="max-w-prose text-xs text-muted-foreground">
                 {t('accounts.form.id.fixed')}
               </p>
@@ -446,7 +449,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
           ) : null}
 
           <div className="flex gap-2">
-            <Button type="submit" disabled={write.isPending || waiting}>
+            <Button variant="primary" type="submit" disabled={write.isPending || waiting}>
               {t(account === null ? 'accounts.form.submit' : 'accounts.form.save')}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
@@ -470,14 +473,21 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
                 <p className="max-w-prose text-sm text-muted-foreground">
                   {t('accounts.remove.offered')}
                 </p>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(account.id)}
-                >
+                <Button type="button" onClick={() => setConfirmingRemoval(true)}>
                   {t('accounts.remove')}
                 </Button>
+                <ConfirmDestructive
+                  open={confirmingRemoval}
+                  onOpenChange={setConfirmingRemoval}
+                  title={t('confirm.account.title', { name: declaredLabel(account) ?? account.id })}
+                  line={t('confirm.account.line')}
+                  confirmLabel={t('confirm.account.cta')}
+                  pending={remove.isPending}
+                  error={
+                    remove.error ? <Refusal>{t(problemMessageKey(remove.error))}</Refusal> : null
+                  }
+                  onConfirm={() => remove.mutate(account.id)}
+                />
               </>
             ) : (
               /* **Absent and naming its reason**, never present and refusing: a

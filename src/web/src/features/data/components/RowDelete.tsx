@@ -18,16 +18,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Refusal } from '@/components/Refusal'
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -77,7 +70,7 @@ export function RowDelete({ event, onClose, onDeleted }: RowDeleteProps) {
   const key = typeof event?.id === 'string' ? event.id : null
 
   return (
-    <Dialog
+    <ConfirmDestructive
       open={event !== null}
       onOpenChange={(open) => {
         if (open) return
@@ -87,52 +80,31 @@ export function RowDelete({ event, onClose, onDeleted }: RowDeleteProps) {
         remove.reset()
         onClose()
       }}
-    >
-      <DialogContent>
-        {event === null ? null : (
-          <>
-            <DialogHeader>
-              <DialogTitle>{t('data.row.delete.title')}</DialogTitle>
-              <DialogDescription>
-                {t('data.row.delete.body', {
+      title={t('data.row.delete.title')}
+      items={
+        event === null
+          ? []
+          : [
+              {
+                key: t('data.row.delete.item', {
                   type: t(TYPE_LABEL[event.event_type]),
                   what: identity?.ticker ?? identity?.label ?? ABSENT,
                   date: f.date(event.date),
-                })}
-              </DialogDescription>
-            </DialogHeader>
-
-            <p className="text-sm text-muted-foreground">{t('data.bulk.confirm.undo')}</p>
-
-            {/* Rendered **here** and not on the page: the box stays open on a
-                failure, and everything behind the overlay is `aria-hidden`. */}
-            {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
-
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  remove.reset()
-                  onClose()
-                }}
-              >
-                {t('data.row.delete.cancel')}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={remove.isPending || key === null}
-                onClick={() => {
-                  if (key !== null) remove.mutate(key)
-                }}
-              >
-                {t('data.row.delete')}
-              </Button>
-            </div>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+                }),
+                value: event.account || undefined,
+              },
+            ]
+      }
+      line={t('confirm.event.line')}
+      confirmLabel={t('confirm.delete')}
+      pending={remove.isPending}
+      disabled={key === null}
+      // Rendered **here** and not on the page: the box stays open on a
+      // failure, and everything behind the overlay is `aria-hidden`.
+      error={remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
+      onConfirm={() => {
+        if (key !== null) remove.mutate(key)
+      }}
+    />
   )
 }

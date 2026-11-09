@@ -161,7 +161,7 @@ describe('the bar', () => {
     const { user } = renderAccounts()
     await settled()
 
-    await user.click(within(rail()).getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(within(rail()).getByRole('button', { name: 'Ajouter un compte' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
@@ -368,7 +368,7 @@ describe('the page’s own reads', () => {
     const { user } = renderAccounts([])
     expect(await screen.findByText('Aucun compte déclaré')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 

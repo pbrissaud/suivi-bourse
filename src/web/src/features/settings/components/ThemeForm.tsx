@@ -72,7 +72,7 @@ function Revert({ name, onClick }: { name: string; onClick: () => void }) {
   return (
     <Button
       type="button"
-      variant="ghost"
+      variant="outline"
       size="icon-sm"
       className="pointer-coarse:size-11"
       aria-label={t('settings.theme.revert', { name })}
@@ -107,7 +107,7 @@ function ColourRow({
       />
       <div className={cn('min-w-0 flex-1', edited && 'font-medium')}>
         <div className="text-sm">{name}</div>
-        <div className="truncate font-mono text-2xs text-muted-foreground">{value}</div>
+        <div className="truncate fig text-xs text-muted-foreground">{value}</div>
       </div>
       {edited ? <Revert name={name} onClick={onRevert} /> : null}
     </div>
@@ -245,9 +245,7 @@ export function ThemeForm({
                     value={[Number.isFinite(value) ? value : min]}
                     onValueChange={([n]) => edit('theme', key, fromNumber(key, n))}
                   />
-                  <span className="w-16 shrink-0 text-right text-sm tabular">
-                    {shown(key, value)}
-                  </span>
+                  <span className="w-16 shrink-0 text-right text-sm fig">{shown(key, value)}</span>
                   {key in edits.theme ? (
                     <Revert name={name} onClick={() => edit('theme', key, null)} />
                   ) : (
@@ -309,10 +307,11 @@ export function ThemeForm({
             {t('settings.theme.preview', { count: edited })}
           </p>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose}>
               {t(edited > 0 ? 'settings.theme.cancel' : 'settings.theme.close')}
             </Button>
             <Button
+              variant="primary"
               type="button"
               disabled={edited === 0 || saving.isPending}
               onClick={() => saving.mutate()}

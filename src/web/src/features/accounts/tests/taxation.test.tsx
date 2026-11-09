@@ -119,8 +119,8 @@ describe('the model an account carries', () => {
       }),
     )
 
-    await user.clear(within(panel).getByLabelText('Nom'))
-    await user.type(within(panel).getByLabelText('Nom'), 'Renamed')
+    await user.clear(within(panel).getByLabelText('Libellé'))
+    await user.type(within(panel).getByLabelText('Libellé'), 'Renamed')
     await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     await waitFor(() => expect(sent).toEqual({ label: 'Renamed' }))

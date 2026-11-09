@@ -187,7 +187,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
                     )}
                   >
                     <span aria-hidden>{f.month(year, facet.value)}</span>
-                    <span aria-hidden className="text-2xs tabular">
+                    <span aria-hidden className="text-xs fig">
                       {facet.count}
                     </span>
                   </button>
@@ -211,7 +211,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
               <Input
                 id="ledger-since"
                 type="date"
-                className="h-8 min-w-0 font-mono text-xs"
+                className="h-8 min-w-0 fig text-xs"
                 value={filters.since ?? ''}
                 onChange={(event) => onChange({ ...filters, since: parseDay(event.target.value) })}
               />
@@ -224,7 +224,7 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
               <Input
                 id="ledger-until"
                 type="date"
-                className="h-8 min-w-0 font-mono text-xs"
+                className="h-8 min-w-0 fig text-xs"
                 value={filters.until ?? ''}
                 onChange={(event) => onChange({ ...filters, until: parseDay(event.target.value) })}
               />
@@ -333,10 +333,10 @@ function FacetButton({
         !facet.active && facet.count === 0 && 'opacity-60',
       )}
     >
-      <span aria-hidden className={cn('truncate', mono && 'font-mono text-xs')}>
+      <span aria-hidden className={cn('truncate', mono && 'fig text-xs')}>
         {label}
       </span>
-      <span aria-hidden className="shrink-0 text-xs tabular">
+      <span aria-hidden className="shrink-0 text-xs fig">
         {facet.count}
       </span>
     </button>

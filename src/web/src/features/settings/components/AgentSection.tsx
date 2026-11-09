@@ -131,7 +131,7 @@ function AgentRows({ config }: { config: AgentConfig }) {
       >
         <Button
           ref={opener}
-          variant={configured ? 'outline' : 'default'}
+          variant={configured ? 'outline' : 'primary'}
           className="max-md:h-11"
           onClick={() => setSheet(true)}
         >

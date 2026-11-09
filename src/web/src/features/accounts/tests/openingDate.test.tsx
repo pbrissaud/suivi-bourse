@@ -237,7 +237,7 @@ describe('what the panel sends', () => {
     const sent = await sentBy(
       { taxation_model: 'model-one', first_payment: '2019-03-04' },
       async (panel) => {
-        await within(panel).findByLabelText('Nom')
+        await within(panel).findByLabelText('Libellé')
       },
     )
 

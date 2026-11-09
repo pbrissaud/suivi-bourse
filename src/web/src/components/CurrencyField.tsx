@@ -73,7 +73,7 @@ export function CurrencyField({
             explaining it — the sentence stays, one rung down, because *why* it
             cannot be taken back is not something a chip can say. */}
         <p className="flex items-center gap-2.5">
-          <span className="tabular text-lg font-semibold">
+          <span className="fig text-lg font-semibold">
             {value === ''
               ? t('currency.unanswered')
               : isSupported(value)
@@ -84,7 +84,7 @@ export function CurrencyField({
             {t('currency.fixed.mark')}
           </span>
         </p>
-        <p className="text-2xs leading-relaxed text-muted-foreground">{t('currency.fixed')}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{t('currency.fixed')}</p>
       </div>
     )
   }

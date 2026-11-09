@@ -343,7 +343,7 @@ export function PortfolioChart({
           <EmptyState title={t('dashboard.chart.empty')} />
         ) : (
           <figure>
-            <div className="h-75 tabular">
+            <div className="h-75 fig">
               <ResponsiveContainer width="100%" height="100%">
                 {/* **Named, and not hidden** (#1003). Recharts turns its own
                       `accessibilityLayer` on by default, so this `<svg>` is

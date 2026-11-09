@@ -252,7 +252,7 @@ export function Palette() {
           finger cannot use, and the button is the other half (#797). */}
       <Button
         type="button"
-        variant="ghost"
+        variant="outline"
         size="icon"
         aria-label={t('palette.open')}
         className="size-8 rounded-lg text-muted-foreground pointer-coarse:min-h-11 pointer-coarse:min-w-11 lg:h-8.5 lg:w-50 lg:justify-start lg:gap-2.5 lg:border lg:border-input lg:bg-card lg:pr-2 lg:pl-2.5 xl:w-70"
@@ -262,7 +262,7 @@ export function Palette() {
         <span className="hidden min-w-0 truncate text-sm lg:inline">{t('palette.open')}</span>
         <span
           aria-hidden
-          className="ml-auto hidden shrink-0 rounded-sm border px-1.25 py-px font-mono text-2xs lg:inline"
+          className="ml-auto hidden shrink-0 rounded-sm border px-1.25 py-px fig text-xs lg:inline"
         >
           {t('palette.shortcut')}
         </span>
@@ -275,7 +275,7 @@ export function Palette() {
           if (!next) setQuery('')
         }}
       >
-        <DialogContent className="top-24 max-w-xl translate-y-0 gap-0 p-0">
+        <DialogContent className="top-24 max-w-150 translate-y-0 gap-0 p-0">
           {/* The palette names itself for a screen reader and shows the name
               nowhere: the field says what the surface is for, and a heading over
               a search field is chrome in a surface whose whole subject is the

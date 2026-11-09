@@ -451,7 +451,7 @@ export function Ledger({
                     <p className="text-xs font-medium text-muted-foreground">
                       {t('data.empty.file.columns')}
                     </p>
-                    <p className="font-mono text-xs break-words">{EVENT_FILE_COLUMNS.join(', ')}</p>
+                    <p className="fig text-xs break-words">{EVENT_FILE_COLUMNS.join(', ')}</p>
                     <p className="text-xs text-muted-foreground">{t('data.empty.file.account')}</p>
                   </div>
                   <UploadZone upload={upload} />
@@ -576,7 +576,7 @@ export function Ledger({
                   <BulkDelete selected={selected} onDeleted={clearSelection} />
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className="pointer-coarse:min-h-11"
                     onClick={clearSelection}

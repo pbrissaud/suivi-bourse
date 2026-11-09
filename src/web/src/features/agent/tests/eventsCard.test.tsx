@@ -295,7 +295,7 @@ describe('the events card (#1119)', () => {
 
       expect(await within(main).findByText('Relevé (opérations)')).toBeInTheDocument()
       expect(
-        await within(main).findByRole('button', { name: 'Lire comme relevé de positions' }),
+        await within(main).findByRole('button', { name: 'Lire comme relevé de lignes' }),
       ).toBeInTheDocument()
     })
 

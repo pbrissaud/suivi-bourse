@@ -42,7 +42,7 @@ function renderShares(positions = sharesPortfolio(), events = shareLedger()) {
 
 /** The live table's total row (#1281). */
 function totalRow() {
-  return within(screen.getByRole('table', { name: 'Positions détenues' })).getByRole('row', {
+  return within(screen.getByRole('table', { name: 'Lignes détenues' })).getByRole('row', {
     name: /^Total/,
   })
 }
@@ -106,7 +106,7 @@ describe('The bubble’s form, naked', () => {
 
     // The five of them, and `Investi` — `Valorisation − latente` — is here
     // precisely because it is not a tenth column in the table.
-    for (const fact of ['Cours', 'PRU', 'Détenu', 'Valorisation', 'Investi']) {
+    for (const fact of ['Cours', 'Prix moyen d’achat', 'Détenu', 'Valorisation', 'Investi']) {
       expect(within(sheet).getByRole('group', { name: fact })).toBeInTheDocument()
     }
     expect(within(sheet).getByRole('group', { name: 'Investi' })).toHaveTextContent(/1 000,00/)
@@ -190,7 +190,7 @@ describe('the per-account breakdown', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((cell) => cell.textContent?.trim()),
-    ).toEqual(['Compte', 'Détenu', 'PRU', 'Valorisation', 'Latente'])
+    ).toEqual(['Compte', 'Détenu', 'Prix moyen d’achat', 'Valorisation', 'Latente'])
     // 2 × 110 = 220,00 against 200,00 and 3 × 110 = 330,00 against 300,00.
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows[0]).toHaveTextContent(/alpha/)
@@ -225,7 +225,7 @@ describe('the same dash is the same grey (#860)', () => {
     ])
     await waitFor(() => expect(totalRow()).toHaveTextContent(/2\D?300,00/))
     // A sold-out share is reached through the fold, which is where it lives.
-    await user.click(screen.getByRole('button', { name: /position(s)? soldée(s)?/ }))
+    await user.click(screen.getByRole('button', { name: /ligne(s)? soldée(s)?/ }))
     await user.click(screen.getByRole('button', { name: 'Zeta Phi' }))
     const sheet = await screen.findByRole('dialog', { name: 'Zeta Phi' })
 

@@ -285,7 +285,7 @@ const SURFACES: readonly Surface[] = [
   // and *the reference is still being fetched* are two different screens, and
   // guessing either one before the answer lands puts a gesture in front of a
   // reader who has already made it.
-  { name: 'la référence', url: '/benchmark', heading: 'Référence' },
+  { name: 'la comparaison', url: '/benchmark', heading: 'Comparaison' },
   { name: 'le grand livre', url: '/ledger', heading: 'Grand livre' },
   {
     // The account's own panel, which is where a taxation model is chosen and

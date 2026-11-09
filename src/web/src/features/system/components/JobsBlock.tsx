@@ -126,7 +126,7 @@ export function JobsBlock({
                     <dt>{labelOf(t, job)}</dt>
                     {/* No pass, no instant: the verdict under it says so, once (#1412). */}
                     {line.at === null ? null : (
-                      <dd className="tabular ml-auto text-xs text-muted-foreground">
+                      <dd className="fig ml-auto text-xs text-muted-foreground">
                         {format.dateTime(line.at)}
                       </dd>
                     )}
@@ -226,7 +226,7 @@ function PassRow({
     <div className="py-2.5">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <dt>{labelOf(t, job)}</dt>
-        <dd className="tabular ml-auto text-xs text-muted-foreground">
+        <dd className="fig ml-auto text-xs text-muted-foreground">
           {last !== null
             ? format.dateTime(last.at)
             : history === null

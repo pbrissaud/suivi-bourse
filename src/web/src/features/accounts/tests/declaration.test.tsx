@@ -89,7 +89,7 @@ describe('the same form as the ledger, not a second one', () => {
     // `Gamma` was declared here too: its pencil opens the panel.
     const panel = await openPanel(user, 'Gamma')
     expect(panel).toHaveAttribute('data-slot', 'sheet-content')
-    expect(within(panel).getByLabelText('Nom')).toHaveValue('Gamma')
+    expect(within(panel).getByLabelText('Libellé')).toHaveValue('Gamma')
   })
 
   it('does not offer the identifier for editing: it is what the events name', async () => {
@@ -105,11 +105,11 @@ describe('the form loses `currency`', () => {
   it('offers an identifier and a name, and no currency and no type', async () => {
     const { user } = renderAccounts()
     await detail('Alpha')
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
 
     const panel = await screen.findByRole('dialog')
     expect(within(panel).getByLabelText('Identifiant')).toBeInTheDocument()
-    expect(within(panel).getByLabelText('Nom')).toBeInTheDocument()
+    expect(within(panel).getByLabelText('Libellé')).toBeInTheDocument()
     // **And no type** (#916): the column was read by nothing, so the
     // declaration is two fields — what the events name, and what it is called.
     expect(within(panel).queryByLabelText('Type')).not.toBeInTheDocument()
@@ -123,11 +123,11 @@ describe('the form loses `currency`', () => {
   it('declares the account and takes the panel away', async () => {
     const { user } = renderAccounts()
     await detail('Alpha')
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
 
     const panel = await screen.findByRole('dialog')
     await user.type(within(panel).getByLabelText('Identifiant'), 'delta')
-    await user.type(within(panel).getByLabelText('Nom'), 'Delta')
+    await user.type(within(panel).getByLabelText('Libellé'), 'Delta')
 
     server.use(
       http.get(ROUTES.accounts, () =>
@@ -140,7 +140,7 @@ describe('the form loses `currency`', () => {
       ),
     )
 
-    await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter ce compte' }))
     expect(await within(rail()).findByRole('link', { name: /Delta/ })).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
@@ -201,6 +201,8 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     )
 
     await user.click(within(removal).getByRole('button', { name: 'Supprimer' }))
+    const confirm = await screen.findByRole('alertdialog', { name: 'Supprimer le compte Gamma ?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Supprimer le compte' }))
     await waitFor(() =>
       expect(within(rail()).queryByRole('link', { name: /Gamma/ })).not.toBeInTheDocument(),
     )
@@ -224,9 +226,11 @@ describe('a removal that cannot happen is absent and names its reason', () => {
 
     const removal = within(panel).getByRole('region', { name: 'Supprimer ce compte' })
     await user.click(within(removal).getByRole('button', { name: 'Supprimer' }))
+    const confirm = await screen.findByRole('alertdialog')
+    await user.click(within(confirm).getByRole('button', { name: 'Supprimer le compte' }))
 
     expect(
-      await within(panel).findByText(
+      await within(confirm).findByText(
         'Refusé : ce nom existe déjà, ou quelque chose en dépend encore.',
       ),
     ).toBeInTheDocument()
@@ -244,7 +248,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     ).not.toBeInTheDocument()
     // And the rest of the panel is there: the account is renameable whatever the
     // ledger says.
-    expect(within(panel).getByLabelText('Nom')).toBeInTheDocument()
+    expect(within(panel).getByLabelText('Libellé')).toBeInTheDocument()
   })
 })
 
@@ -283,8 +287,8 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // Both seeded columns open **empty**: neither `Default account` nor `OTHER`
     // is a value the reader typed, and handing one back had them typing `PEA`
     // into `OTHER` and saving `OTHERPEA`.
-    expect(within(panel).getByLabelText('Nom')).toHaveValue('')
-    await user.type(within(panel).getByLabelText('Nom'), 'Mon PEA')
+    expect(within(panel).getByLabelText('Libellé')).toHaveValue('')
+    await user.type(within(panel).getByLabelText('Libellé'), 'Mon PEA')
 
     // **The body the server can actually produce**: `declared` stays `false` —
     // renaming the row every install owns declares nothing beyond it — and the
@@ -326,7 +330,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
       http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared({ label: 'Mon PEA' }))),
     )
 
-    await user.type(within(panel).getByLabelText('Nom'), 'Mon PEA')
+    await user.type(within(panel).getByLabelText('Libellé'), 'Mon PEA')
     await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
     expect(await within(rail()).findByRole('link', { name: /Mon PEA/ })).toBeInTheDocument()
@@ -364,7 +368,7 @@ describe('the declaration is reachable at every N', () => {
     expect(await screen.findByText('Aucun compte déclaré')).toBeInTheDocument()
     expect(screen.getByText(/ni PEA ni compte-titres/)).toBeInTheDocument()
     expect(screen.queryByText('Non affecté')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ajouter un compte' })).toBeInTheDocument()
   })
 
   it('is there with a declaration and no event recorded under it yet', async () => {
@@ -372,7 +376,7 @@ describe('the declaration is reachable at every N', () => {
 
     await detail('Alpha')
     expect(within(rail()).getAllByRole('link')).toHaveLength(3)
-    expect(screen.getByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ajouter un compte' })).toBeInTheDocument()
   })
 
   it('is absent while the accounts read has not landed, and claims nothing', async () => {
@@ -383,7 +387,7 @@ describe('the declaration is reachable at every N', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
     expect(screen.queryByRole('group', { name: 'Vos comptes' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Déclarer un compte' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ajouter un compte' })).not.toBeInTheDocument()
   })
 })
 

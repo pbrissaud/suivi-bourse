@@ -14,7 +14,7 @@ import { aBenchmarkReferences, aConfig, aSetting } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
 
-const SHEET = /Références de comparaison/
+const SHEET = /Fonds de comparaison/
 
 /** The progress read, and the `PUT`s it receives, as one server would answer. */
 function serve(references: BenchmarkReference[], followed: string[] = []) {
@@ -85,7 +85,7 @@ describe('the row in Portfolio', () => {
 
     expect(
       await screen.findByText(
-        'MSCI World et S&P 500 sont proposés sur la page Référence. CAC 40 en téléchargement, 62 %.',
+        'MSCI World et S&P 500 sont proposés sur la page Comparaison. CAC 40 en téléchargement, 62 %.',
       ),
     ).toBeInTheDocument()
   })

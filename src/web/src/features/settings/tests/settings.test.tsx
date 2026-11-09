@@ -245,7 +245,7 @@ describe('the advanced section', () => {
       expect(within(advanced).getByText(dial)).toBeInTheDocument()
     }
     expect(within(advanced).queryByText('Devise de base')).not.toBeInTheDocument()
-    expect(within(advanced).queryByText('Référence de comparaison')).not.toBeInTheDocument()
+    expect(within(advanced).queryByText('Fonds de comparaison')).not.toBeInTheDocument()
   })
 
   it('says what a cadence change reaches, and that it is retroactive', async () => {
@@ -902,7 +902,7 @@ describe('taxation', () => {
     await user.click(
       await within(taxation).findByRole('button', { name: 'Supprimer A flat model' }),
     )
-    const confirm = await screen.findByRole('dialog', { name: 'Supprimer « A flat model » ?' })
+    const confirm = await screen.findByRole('alertdialog', { name: 'Supprimer « A flat model » ?' })
     await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
 
     expect(await within(confirm).findByText(/alpha/)).toBeInTheDocument()
@@ -1114,7 +1114,8 @@ describe('importing a taxation model', () => {
     const confirm = await screen.findByRole('alertdialog', {
       name: /Remplacer les taux de « Compte-titres ordinaire \(CTO\) »/,
     })
-    expect(confirm).toHaveAccessibleDescription('Porté par Alpha.')
+    expect(confirm).toHaveAccessibleDescription(/Immédiat\./)
+    expect(within(confirm).getByText('Alpha')).toBeInTheDocument()
     expect(within(confirm).getByRole('button', { name: 'Annuler' })).toHaveFocus()
     expect(patched).toEqual([])
 
@@ -1161,7 +1162,7 @@ describe('importing a taxation model', () => {
     const { user, taxation } = await openImport()
 
     expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Le registre a refusé : OSError: HTTP 503',
+      'Le catalogue a refusé : OSError: HTTP 503',
     )
     expect(taxation).toHaveTextContent('Vous pouvez aussi écrire un modèle.')
     expect(within(taxation).getByRole('button', { name: 'Nouveau modèle' })).toBeEnabled()
@@ -1191,7 +1192,7 @@ describe('importing a taxation model', () => {
     const { taxation } = await openImport()
 
     expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Le registre a refusé la demande.',
+      'Le catalogue a refusé la demande.',
     )
   })
 
@@ -1207,7 +1208,7 @@ describe('importing a taxation model', () => {
     const { taxation } = await openImport()
 
     expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Le site de documentation ne publie pas encore de registre fiscal pour cette version.',
+      'Le site de documentation ne publie pas encore de catalogue fiscal pour cette version.',
     )
     expect(within(taxation).getByRole('button', { name: 'Réessayer' })).toBeEnabled()
   })

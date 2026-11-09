@@ -45,6 +45,7 @@ import {
   AttachmentDescription,
   AttachmentTitle,
 } from '@/components/ui/attachment'
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
 import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block'
@@ -157,9 +158,7 @@ function AgentHeader({ config, wide }: { config: AgentConfig; wide: boolean }) {
               {t(`agent.provider.${config.provider}`)} · {config.model_name ?? config.model}
             </span>
             {config.provider === 'ollama' ? (
-              <span className="shrink-0 rounded-full border px-1.5 text-xs font-medium">
-                {t('agent.experimental')}
-              </span>
+              <span className="shrink-0 text-xs">{t('agent.experimental')}</span>
             ) : null}
           </p>
         ) : null}
@@ -181,7 +180,7 @@ function NewThread({ icon = false }: { icon?: boolean }) {
   return (
     <Button
       asChild
-      variant="ghost"
+      variant="outline"
       size={icon ? 'icon' : 'default'}
       className={icon ? 'size-11' : 'min-h-11 justify-start'}
     >
@@ -208,7 +207,7 @@ function RecentThreads() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon"
           className="size-11"
           aria-label={t('agent.recent')}
@@ -220,10 +219,19 @@ function RecentThreads() {
       <PopoverContent
         align="end"
         className="w-80 p-1"
-        // Escape on a deletion being asked answers the question, not the menu:
-        // Radix hears the key on the document before the row does.
+        // A deletion being asked lives in an `alertdialog` drawn outside this
+        // menu: what happens there (its focus, its Escape, a click on it) must
+        // not dismiss the menu, or the dialog would be unmounted with it.
         onEscapeKeyDown={(event) => {
-          if (document.activeElement?.closest('[data-confirm-delete]')) event.preventDefault()
+          if (document.querySelector('[role="alertdialog"]')) event.preventDefault()
+        }}
+        onInteractOutside={(event) => {
+          if (
+            (event.target as HTMLElement | null)?.closest(
+              '[role="alertdialog"], [data-slot="dialog-overlay"]',
+            )
+          )
+            event.preventDefault()
         }}
       >
         <p className="label px-2 py-1.5">{t('agent.recent')}</p>
@@ -236,10 +244,12 @@ function RecentThreads() {
 /**
  * The last twenty threads, opened (a push: Back returns) or deleted from here.
  *
- * **A deletion is asked in the row**, which names the thread and offers *Le
- * garder* first: the bin sits next to the link, and a slip lost a whole
- * conversation. In the row and not in a dialog, because under 1 024 px the list
- * lives in a popover that a dialog would close, unmounting the dialog with it.
+ * **A deletion is asked in the one confirmation** (`ConfirmDestructive`), which
+ * names the thread and opens on *Annuler*: the bin sits next to the link, and a
+ * slip lost a whole conversation. Under 1 024 px the list lives in a popover
+ * that would dismiss itself when the dialog took the focus, unmounting the
+ * dialog with it — so the popover ignores whatever happens inside an
+ * `alertdialog`.
  */
 function ThreadList({ onOpened }: { onOpened?: () => void }) {
   const { t } = useI18n()
@@ -250,13 +260,10 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
   const threads = useQuery({ queryKey: ['agent-threads'], queryFn: agentApi.agentThreads })
   const [doomed, setDoomed] = useState<string | null>(null)
   const list = useRef<HTMLUListElement>(null)
-  // Kept: focus goes back to the bin that asked, not to the top of the page.
-  const keep = (id: string) => {
-    setDoomed(null)
-    requestAnimationFrame(() =>
-      list.current?.querySelector<HTMLElement>(`[data-delete="${CSS.escape(id)}"]`)?.focus(),
-    )
-  }
+  const doomedThread = threads.data?.find((thread) => thread.id === doomed) ?? null
+  // The bin that asked, remembered for the focus once the question is closed.
+  const asked = useRef<string | null>(null)
+  if (doomed !== null) asked.current = doomed
   const remove = useMutation({
     mutationFn: agentApi.forgetAgentThread,
     onSuccess: (_, id) => {
@@ -280,41 +287,6 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
         <ul ref={list} className="-m-1 max-h-80 min-h-0 overflow-y-auto p-1 lg:max-h-none">
           {threads.data.slice(0, RECENT).map((thread) => {
             const title = thread.title || t('agent.recent.untitled')
-            if (doomed === thread.id) {
-              return (
-                <li
-                  key={thread.id}
-                  data-confirm-delete
-                  className="flex flex-col gap-2 rounded-md bg-card p-2"
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') keep(thread.id)
-                  }}
-                >
-                  <p className="line-clamp-2 text-sm break-words text-muted-foreground">{title}</p>
-                  <p className="text-sm">{t('agent.delete.question')}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      className="min-h-11"
-                      autoFocus
-                      onClick={() => keep(thread.id)}
-                    >
-                      {t('agent.delete.keep')}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      className="min-h-11"
-                      onClick={() => {
-                        setDoomed(null)
-                        remove.mutate(thread.id)
-                      }}
-                    >
-                      {t('agent.delete.confirm')}
-                    </Button>
-                  </div>
-                </li>
-              )
-            }
             return (
               <li key={thread.id} className="flex items-center gap-1">
                 <Link
@@ -330,7 +302,7 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
                   </span>
                 </Link>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
                   className="size-11"
                   data-delete={thread.id}
@@ -345,6 +317,39 @@ function ThreadList({ onOpened }: { onOpened?: () => void }) {
           })}
         </ul>
       )}
+      <ConfirmDestructive
+        open={doomedThread !== null}
+        onOpenChange={(open) => (open ? null : setDoomed(null))}
+        title={t('confirm.thread.title')}
+        items={
+          doomedThread === null
+            ? []
+            : [
+                {
+                  key: doomedThread.title || t('agent.recent.untitled'),
+                  value: f.date(doomedThread.updated_at),
+                },
+              ]
+        }
+        line={t('confirm.thread.line')}
+        confirmLabel={t('confirm.delete')}
+        onConfirm={() => {
+          if (doomedThread !== null) remove.mutate(doomedThread.id)
+          setDoomed(null)
+        }}
+        // Kept or deleted, focus goes back to the list: the bin that asked, or
+        // the top of it once the row is gone.
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const bin =
+            asked.current === null
+              ? null
+              : list.current?.querySelector<HTMLElement>(
+                  `[data-delete="${CSS.escape(asked.current)}"]`,
+                )
+          ;(bin ?? list.current?.querySelector<HTMLElement>('a'))?.focus()
+        }}
+      />
       {remove.error ? (
         <p role="status" className="px-2 py-1.5 text-sm text-destructive">
           {remove.error.message}
@@ -1019,7 +1024,7 @@ function Composer({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
           className="min-h-11"
           disabled={busy}

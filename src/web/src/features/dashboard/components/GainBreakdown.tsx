@@ -96,7 +96,7 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
               className="flex items-center justify-between gap-4 py-2"
             >
               <span className="truncate text-muted-foreground">{t(TERM_LABELS[term])}</span>
-              <span className={cn('tabular font-medium', termTone(terms, term))}>
+              <span className={cn('fig font-medium', termTone(terms, term))}>
                 {renderFigure(
                   termRendering(terms, term),
                   () => f.currency(termAmount(terms, term), currency),
@@ -122,9 +122,7 @@ export function GainBreakdown({ positions, totals }: GainBreakdownProps) {
               anchor="total-gain"
             />
           </span>
-          <span
-            className={cn('tabular font-semibold', signClass(total.known ? total.value : null))}
-          >
+          <span className={cn('fig font-semibold', signClass(total.known ? total.value : null))}>
             {renderFigure(
               sumRendering(total),
               () => f.currency(total.known ? total.value : null, currency),

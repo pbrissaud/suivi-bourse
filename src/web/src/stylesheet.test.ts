@@ -112,11 +112,11 @@ describe('index.css says what DESIGN.md says', () => {
     // The page title rides the prose rung: one size, two names in DESIGN.md.
     expect(said('--text-prose')).toBe(rem(designType('page-title', 'fontSize')))
     expect(said('--text-prose--line-height')).toBe(rem(designType('page-title', 'lineHeight')))
-    // The hero is fluid, and DESIGN.md's 60 px is its ceiling.
+    // The hero is fluid, and DESIGN.md's 56 px is its ceiling.
     expect(said('--text-hero')).toBe(
       `clamp(2.25rem, 1rem + 4.5vw, ${rem(designType('hero', 'fontSize'))})`,
     )
-    expect(said('--text-hero--line-height')).toBe('calc(64 / 60)')
+    expect(said('--text-hero--line-height')).toBe(designType('hero', 'lineHeight'))
     expect(said('--tracking-hero')).toBe(designType('hero', 'letterSpacing'))
   })
 })
@@ -146,10 +146,26 @@ describe('Stat draws only DESIGN.md’s figure rungs (#1284)', () => {
   })
 })
 
-describe('figures in tables (#1281)', () => {
-  it('sets no table cell in the mono face', () => {
-    // Geist Mono is for identifiers, which carry their own class: no rule
-    // reaches a `td` or `th` as a whole.
+describe('every figure is Geist Mono, tabular (« Relevé »)', () => {
+  /** The declarations of the `@utility fig` rule. */
+  const fig = () => /@utility fig\s*\{([^}]*)\}/.exec(read())?.[1] ?? ''
+
+  it('declares the .fig utility', () => {
+    const rule = fig()
+    expect(rule).toMatch(/font-family:\s*var\(--font-mono\)/)
+    expect(rule).toMatch(/font-variant-numeric:\s*tabular-nums/)
+    expect(rule).toMatch(/word-spacing:\s*-0\.32em/)
+    expect(rule).toMatch(/white-space:\s*nowrap/)
+  })
+
+  it('leaves no Geist-tabular figure rule nor ticker rung behind', () => {
+    const source = read()
+    expect(source).not.toMatch(/\.tabular\b/)
+    expect(source).not.toMatch(/--text-2xs/)
+  })
+
+  it('sets no table cell as a whole in the mono face', () => {
+    // A figure carries `fig`; no rule reaches a `td` or `th` as a whole.
     for (const rule of read().matchAll(/([^{}]*)\{([^{}]*)\}/g))
       if (/var\(--font-mono\)/.test(rule[2]))
         expect(rule[1], 'a mono rule on a table cell').not.toMatch(/\b(td|th)\b/)
@@ -157,10 +173,8 @@ describe('figures in tables (#1281)', () => {
 
   it('keeps DESIGN.md in step', () => {
     const design = fs.readFileSync(DESIGN_MD, 'utf8')
-    const mono = /^- \*\*Mono[\s\S]*?(?=\n- |\n\n)/m.exec(design)?.[0] ?? ''
-    expect(mono).toMatch(/Geist with\s+`font-variant-numeric: tabular-nums`/)
-    expect(mono).not.toMatch(/inside a table/)
-    expect(design).toMatch(/\| [^\n]*#1281[^\n]*\|/)
+    expect(design).toMatch(/\*\*Every figure is Geist Mono\*\*/)
+    expect(design).toMatch(/word-spacing: -0\.32em/)
   })
 })
 

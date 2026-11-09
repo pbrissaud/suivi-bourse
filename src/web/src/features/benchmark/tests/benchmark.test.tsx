@@ -54,7 +54,7 @@ const head = () => screen.findByRole('group', { name: /MSCI World/ })
 /** The card the verdict, the figure and the caveats share. */
 const headCard = async () => (await head()).closest('[aria-live]') as HTMLElement
 
-const picker = () => screen.findByRole('combobox', { name: 'Référence de comparaison' })
+const picker = () => screen.findByRole('combobox', { name: 'Fonds de comparaison' })
 
 describe('the comparison', () => {
   it('leads with the euro and files the percentages one weight down', async () => {
@@ -108,7 +108,9 @@ describe('the comparison', () => {
 
     await head()
     const header = screen.getByRole('banner')
-    expect(within(header).getByRole('heading', { level: 1, name: 'Référence' })).toBeInTheDocument()
+    expect(
+      within(header).getByRole('heading', { level: 1, name: 'Comparaison' }),
+    ).toBeInTheDocument()
     expect(within(header).getByText('Comparé du 16 juin 2009 au 17 sept. 2026')).toBeInTheDocument()
   })
 
@@ -372,7 +374,7 @@ describe('what the head says, and only that', () => {
     renderBenchmark(ready())
 
     await head()
-    expect(screen.getByRole('combobox', { name: 'Référence de comparaison' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Fonds de comparaison' })).toBeInTheDocument()
   })
 })
 

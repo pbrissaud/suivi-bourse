@@ -308,12 +308,10 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
               {t('data.import.files.count', { count: upload.filenames.length })}
             </span>
           ) : upload.filenames[0] ? (
-            <span className="font-mono text-sm font-medium">{upload.filenames[0]}</span>
+            <span className="fig text-sm font-medium">{upload.filenames[0]}</span>
           ) : null}
           {forecast ? (
-            <span className="text-sm text-muted-foreground tabular-nums">
-              {covers(t, f, forecast.file)}
-            </span>
+            <span className="text-sm text-muted-foreground fig">{covers(t, f, forecast.file)}</span>
           ) : null}
           <DialogDescription>
             {upload.proposal
@@ -456,7 +454,7 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
                   offer. */}
               {ready && forecast.writing ? (
                 <>
-                  <span className="text-sm font-medium tabular-nums">
+                  <span className="text-sm font-medium fig">
                     {foreseen(t, f, forecast.writing)}
                   </span>
                   {/* Nothing to write says it in the sentence above (#1397). */}
@@ -478,6 +476,7 @@ export function ImportPreview({ upload }: { upload: ImportReview }) {
             </Button>
             <Button
               type="button"
+              variant="primary"
               className="pointer-coarse:min-h-11"
               disabled={
                 !ready ||
@@ -586,8 +585,8 @@ function AccountRow({
   return (
     <li className="grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className={`text-sm font-medium ${line.name === '' ? '' : 'font-mono'}`}>{name}</span>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span className={`text-sm font-medium ${line.name === '' ? '' : 'fig'}`}>{name}</span>
+        <span className="text-xs text-muted-foreground fig">
           {t('data.import.accounts.volume', { count: line.rows })}
         </span>
       </span>
@@ -739,8 +738,8 @@ function ForeignBlock({
         <ul className="divide-y">
           {shown.map((line) => (
             <li key={line.symbol} className="flex items-baseline justify-between gap-3 py-2">
-              <span className="font-mono text-xs">{line.symbol}</span>
-              <span className="text-xs text-muted-foreground tabular-nums">
+              <span className="fig text-xs">{line.symbol}</span>
+              <span className="text-xs text-muted-foreground fig">
                 {t('data.import.foreign.rows', { currency: line.currency, count: line.rows })}
               </span>
             </li>
@@ -987,14 +986,14 @@ function FilesBlock({
               key={index}
               className="flex flex-col gap-1 py-2 md:flex-row md:items-center md:justify-between md:gap-3"
             >
-              <span className="min-w-0 truncate font-mono text-xs" title={name}>
+              <span className="min-w-0 truncate fig text-xs" title={name}>
                 {name}
               </span>
               <span className="flex items-center justify-between gap-2 md:justify-end">
                 {refused === name && names.indexOf(name) === index ? (
                   <span className="text-xs text-destructive">{t('data.import.files.refused')}</span>
                 ) : own === undefined ? null : (
-                  <span className="text-xs text-muted-foreground tabular-nums">
+                  <span className="text-xs text-muted-foreground fig">
                     {own.period === null
                       ? t('data.import.files.none')
                       : t('data.import.files.row', {
@@ -1010,7 +1009,7 @@ function FilesBlock({
                     buttons.current[index] = node
                   }}
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
                   className="pointer-coarse:size-11"
                   aria-label={t('data.import.files.remove', { file: name })}

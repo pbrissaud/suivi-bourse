@@ -110,7 +110,7 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
           <EmptyState title={t('benchmark.chart.empty')} />
         ) : (
           <figure>
-            <div className="h-60 tabular sm:h-75">
+            <div className="h-60 fig sm:h-75">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={rows} aria-label={t('benchmark.chart.plot')}>
                   <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />

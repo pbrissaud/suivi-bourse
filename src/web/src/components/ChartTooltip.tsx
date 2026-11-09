@@ -79,7 +79,7 @@ export function ChartTooltip({ format }: ChartTooltipProps) {
           // The drawing's own box: the sidebar's ground rather than the
           // popover's, a hairline, and the date above the figures at the size
           // of a caption. Each row is the curve's **name in the curve's own
-          // colour** and its figure in tabular numerals — the pairing is what
+          // colour** and its figure in fig numerals — the pairing is what
           // makes a tooltip readable without a legend under the pointer.
           //
           // `aria-live` sits **here** rather than on the library's wrapper,
@@ -90,11 +90,11 @@ export function ChartTooltip({ format }: ChartTooltipProps) {
             aria-live="polite"
             className="min-w-42.5 rounded-lg border bg-sidebar px-3 py-2.5 text-sm shadow-lg"
           >
-            <p className="mb-1.5 text-2xs text-muted-foreground">{f.date(label)}</p>
+            <p className="mb-1.5 text-xs text-muted-foreground">{f.date(label)}</p>
             {lines.map((line) => (
               <p key={line.key} className="flex items-baseline gap-3.5">
                 <span style={{ color: line.colour }}>{line.name}</span>
-                <span className="tabular ml-auto">{format(line.value)}</span>
+                <span className="fig ml-auto">{format(line.value)}</span>
               </p>
             ))}
           </div>

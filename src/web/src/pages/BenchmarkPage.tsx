@@ -381,7 +381,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
                 {/* Its own reason, on its own row: the head ran on, funded by
                     the other accounts' money. */}
                 {row.ended === null ? null : (
-                  <span className="block text-2xs">
+                  <span className="block text-xs">
                     {t(
                       row.ended === 'exhausted'
                         ? 'benchmark.accounts.ended.exhausted'
@@ -395,7 +395,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
                   <span className="text-xs text-muted-foreground sm:hidden">
                     {t('benchmark.accounts.column.gap')}
                   </span>
-                  <span className={`tabular ml-auto font-semibold ${figureClass(row.gap_gross)}`}>
+                  <span className={`fig ml-auto font-semibold ${figureClass(row.gap_gross)}`}>
                     {row.gap_gross === null ? '—' : f.signedCurrency(row.gap_gross, currency)}
                   </span>
                 </div>
@@ -409,7 +409,7 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
                 />
               </TableCell>
               <TableCell
-                className={`tabular text-xs text-muted-foreground sm:text-right sm:pr-0 xl:pr-0 ${stack}`}
+                className={`fig text-xs text-muted-foreground sm:text-right sm:pr-0 xl:pr-0 ${stack}`}
               >
                 <Returns f={f} yours={row.portfolio_return} theirs={row.reference_return} />
               </TableCell>
@@ -430,14 +430,14 @@ function PerAccount({ data, currency }: { data: BenchmarkResponse; currency: str
               </TableCell>
               <TableCell className={`max-sm:hidden ${stack}`} />
               <TableCell
-                className={`tabular text-right ${figureClass(data.gap_gross ?? null)} ${stack}`}
+                className={`fig text-right ${figureClass(data.gap_gross ?? null)} ${stack}`}
               >
                 {data.gap_gross === null || data.gap_gross === undefined
                   ? '—'
                   : f.signedCurrency(data.gap_gross, currency)}
               </TableCell>
               <TableCell
-                className={`tabular text-xs font-normal text-muted-foreground sm:pr-0 sm:text-right xl:pr-0 ${stack}`}
+                className={`fig text-xs font-normal text-muted-foreground sm:pr-0 sm:text-right xl:pr-0 ${stack}`}
               >
                 <Returns f={f} yours={data.portfolio_return} theirs={data.reference_return} />
               </TableCell>

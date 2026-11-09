@@ -466,7 +466,7 @@ function FactEditor({ entry, onDone }: { entry: Entry; onDone: () => void }) {
         </>
       ) : null}
       <div className="flex gap-2">
-        <Button type="submit" className="min-h-11" disabled={save.isPending}>
+        <Button variant="primary" type="submit" className="min-h-11" disabled={save.isPending}>
           {t('agent.profile.save')}
         </Button>
         <Button type="button" variant="outline" className="min-h-11" onClick={onDone}>
