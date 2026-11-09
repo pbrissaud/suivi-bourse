@@ -62,10 +62,6 @@ const WRITE_ONLY_ROUTES = [
   'event',
   // The effect line of the event sheet: a dry run answering the typed fields.
   'eventsPreview',
-  // A gesture, and the plainest one on this list: nothing on any page is
-  // rendered on the strength of an upload in flight — the receipt is what the
-  // gesture answers, and it is the reader's own act rather than a read.
-  'eventsImport',
   // The import's two steps and the event write's dry run: each answers the
   // reader's own press, and nothing is drawn from them while in flight.
   'eventsImportPreview',

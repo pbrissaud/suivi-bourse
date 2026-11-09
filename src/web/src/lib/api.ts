@@ -90,15 +90,6 @@ export const ROUTES = {
   event: '/api/events/:id',
   /** The dry run of a write: what an event would do to its account's cash (W3). */
   eventsPreview: '/api/events/preview',
-  /**
-   * A file handed over, read once, and written as ordinary events (#811).
-   *
-   * It is `/api/events/import` and not `/api/imports` because **an import is no
-   * longer a resource**: nothing persists that could be named, so it is a
-   * gesture on the collection it writes. What comes back is a receipt — what
-   * the gesture produced — and never an id to come back to.
-   */
-  eventsImport: '/api/events/import',
   /** The same file read against one account's ledger, nothing written: rows with a status and a token. */
   eventsImportPreview: '/api/events/import/preview',
   /** The previewed rows written, by token, with the owner's resolutions. */

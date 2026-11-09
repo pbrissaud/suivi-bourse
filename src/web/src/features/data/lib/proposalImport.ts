@@ -1,11 +1,10 @@
 /**
- * **The agent's proposal as the import preview's source** (#1119).
+ * **The agent's proposal as `ProposalReview`'s source** (#1119).
  *
- * `useProposalImport` has the shape of `useEventUpload` (`EventUpload`) so that
- * `ImportPreview` is drawn once for both, but **the server remembers this
- * one**: the proposal is a stored row that expires in seven days, so nothing is
- * re-uploaded. `hand` and `drop` do not exist, *Importer* calls `/merge`, and an
- * answer re-runs `/preview`. A ledger that changed since the proposal answers
+ * **The server remembers this one**: the proposal is a stored row that expires
+ * in seven days, so nothing is re-uploaded. *Importer* calls `/merge`, and an
+ * answer re-runs `/preview`. (A statement file is imported on its own page,
+ * `ImportPreview`, through the two-step preview/commit routes.) A ledger that changed since the proposal answers
  * `409 proposal-stale`: the window closes on that sentence and the card reads
  * *stale*.
  */
@@ -14,23 +13,169 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import {
-  type Answer,
-  type Forecast,
-  type ImportReview,
-  NO_ANSWER,
-  repeatsToWrite,
-} from '@/features/data/components/UploadZone'
-import {
   editsBody,
   eventProposalsApi,
   NO_EDITS,
   proposalPath,
+  type StatementEdit,
   type StatementEdits,
+  type StatementPreview,
 } from '@/features/agent/lib/eventProposals'
-import type { ImportReceipt } from '@/features/data/lib/api'
+import type { AmountsIn, ImportReceipt } from '@/features/data/lib/api'
+import {
+  keptAsOne,
+  NO_CORRESPONDENCE,
+  repeatGroups,
+  type Correspondence,
+} from '@/features/data/lib/imports'
+import type { ProposedLine } from '@/lib/api.gen'
 import { ApiProblem, ROUTES, send } from '@/lib/api'
 import { type MessageKey, useI18n } from '@/lib/i18n'
 import { PROBLEM_TYPES } from '@/lib/problem'
+
+/**
+ * **The whole answer the window collects**, and the parameter of every preview
+ * (#835).
+ *
+ * The correspondence and the duplicates travel together because they are judged
+ * together: the duplicate key carries the account, so *where these rows go* and
+ * *what becomes of the ones the ledger already holds* are one question asked in
+ * two halves. Either half changing costs a fresh forecast, and that is what
+ * makes *no refusal arrives after the button* true rather than merely intended —
+ * a flag the preview never carried would be a flag the server judges for the
+ * first time under the button.
+ */
+export interface Answer {
+  correspondence: Correspondence
+  /** *These are real orders, write them* — the rows the ledger already holds. */
+  writeDuplicates: boolean
+  /**
+   * **Which currency the foreign-quoted amounts are written in** (#1261).
+   * `undefined` is *nobody said*, and nothing is preselected: the window blocks
+   * the write until the reader answers.
+   */
+  amountsIn: AmountsIn | undefined
+  /**
+   * The groups of identical lines the file repeats that the reader keeps **one
+   * copy** of, by the index of their first copy (#1267). `undefined` is *the
+   * reader has not said*, and then the default stands (#1266): a group inside one
+   * file is written whole, since only the reader knows whether two identical
+   * lines are one order filled twice; a group spanning files keeps one copy,
+   * since two overlapping exports are the usual cause.
+   */
+  collapsed: ReadonlySet<number> | undefined
+}
+
+/** Nothing answered yet — the first preview's answer, and a reset. */
+export const NO_ANSWER: Answer = {
+  correspondence: NO_CORRESPONDENCE,
+  writeDuplicates: false,
+  amountsIn: undefined,
+  collapsed: undefined,
+}
+
+/**
+ * **The groups to write whole**: every group the census names, but the ones the
+ * reader collapsed — or, until they have said, the ones spanning files (#1266).
+ * Computed from the census just read and never held, so an id a remapped
+ * account has dropped is never sent (#1267).
+ */
+export function repeatsToWrite(
+  census: ImportReceipt,
+  collapsed: ReadonlySet<number> | undefined,
+): number[] {
+  const kept = keptAsOne(collapsed, census.duplicate_rows)
+  return repeatGroups(census.duplicate_rows)
+    .map((group) => group.first)
+    .filter((first) => !kept.has(first))
+}
+
+/**
+ * **What one answer forecasts**: the file, and what that answer would land.
+ *
+ * Two receipts and not one, and the reason is the server's own reading of
+ * `?write_duplicates=1` — it moves the rows the ledger already holds out of
+ * `duplicates` and into `written`, leaving **none to name**. So a preview taken
+ * under the flag can no longer say which lines are duplicated, and the window is
+ * drawn from exactly that. The file is therefore read with the duplicates
+ * skipped — `file`, the census every block stands on — and, where the reader has
+ * ticked the box, read a **second** time under the flag: `writing`, what the
+ * button would really do, judged by the same `entries.judge` the write runs.
+ *
+ * `refused` is that second reading turned back — the `SELL` that only replays
+ * because its duplicate was skipped, and stops replaying once it is not. It is
+ * the refusal arriving **at the box** instead of after the button, which is the
+ * criterion itself; and the census stands beside it rather than being replaced
+ * by it, so the reader can untick and go on instead of being left with *Annuler*
+ * as their only move.
+ */
+export interface Forecast {
+  /** The file read with the duplicates skipped: the census, and its figures. */
+  file: ImportReceipt
+  /** What the answer would write, or nothing at all where it is refused. */
+  writing: ImportReceipt | undefined
+  /** The refusal that answer meets — the same problem the write would raise. */
+  refused: unknown
+}
+
+/**
+ * What `ProposalReview` reads: the proposal the agent made (`useProposalImport`,
+ * #1119). The file import left for its own page (`ImportPreview`).
+ */
+export interface ImportReview {
+  /**
+   * Write the files that were previewed — by **re-uploading them**, in the
+   * order they were first sent.
+   *
+   * The `File`s the reader chose are held in this hook for exactly as long as
+   * their forecast stands, and they are sent again. There is no import id to
+   * commit instead, because the server remembers no import: a pending-import
+   * token would be `import_source` under another name, with a lifetime and a
+   * sweeper to write.
+   */
+  commit: (options?: { declineCurrency?: boolean }) => void
+  /** Put the batch down without writing it — the refusal the preview is for. */
+  discard: () => void
+  /**
+   * **Read the same file again under a new answer** (#835).
+   *
+   * Not a convenience: the duplicate key carries the account, so a line sent
+   * from `TR` into `pea` may be one the ledger already holds — and the forecast
+   * the reader is looking at would say otherwise. The box about the duplicates
+   * is the same question from the other end, and it is re-read for the harder
+   * reason: writing the rows the ledger already holds is a **different ledger**
+   * to replay, and one that skipped a `SELL` may stop replaying once it does
+   * not. Every answer therefore costs a fresh preview, which is the same double
+   * upload #813 already pays for and for the same reason: the server remembers
+   * no import, ever.
+   */
+  reconsider: (answer: Answer) => void
+  pending: boolean
+  /**
+   * A file is in hand — handed over and neither written nor put down.
+   *
+   * What the modal is open on, and it is **not** `forecast !== undefined`: a
+   * file whose forecast was refused is still in hand, and that refusal is
+   * exactly what the reader has to be shown, with the button disabled beside it.
+   */
+  held: boolean
+  /** The files in hand, in the order they are sent (#1266). */
+  filenames: string[]
+  /** What *would* be written, while a file stands unwritten. */
+  forecast: Forecast | undefined
+  receipt: ImportReceipt | undefined
+  error: unknown
+  /**
+   * The rows are the agent's proposal and not files (#1119): there is no file
+   * to take out of the batch, and the window says whose rows they are.
+   */
+  proposal?: {
+    lines: readonly ProposedLine[]
+    /** A broker statement's preview, with the gestures it offers (#1120). */
+    statement?: StatementPreview
+    edit?: StatementEdit
+  }
+}
 
 /** What a merge answers: the receipt, and the ids of the rows it wrote. */
 export interface MergedReceipt extends ImportReceipt {
@@ -84,7 +229,7 @@ export function useProposalImport(
   // A statement's answers: the server keeps none, so every reading carries them.
   const [edits, setEdits] = useState<StatementEdits>(NO_EDITS)
   // The forecast on screen, held beside the mutation for the reason
-  // `useEventUpload` gives: TanStack empties `data` on every `mutate`.
+  // TanStack gives: it empties `data` on every `mutate`.
   const [standing, setStanding] = useState<Forecast | undefined>(undefined)
   // The proposal on screen now: a reading that lands for another is let go of.
   const latest = useRef(id)
@@ -166,7 +311,7 @@ export function useProposalImport(
         editsBody(edits),
       ),
     onSuccess: (receipt) => {
-      // Every figure is downstream of the ledger (`useEventUpload` says why).
+      // Every figure is downstream of the ledger (the ledger moved).
       void client.invalidateQueries()
       setStanding(undefined)
       setAnswer(NO_ANSWER)

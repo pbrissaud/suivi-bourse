@@ -472,7 +472,7 @@ describe('the control line', () => {
     expect(screen.queryByRole('button', { name: /les filtres/ })).not.toBeInTheDocument()
     // The table is not a track of a grid: nothing sits beside it. It sits on
     // the page's background, with no plane and no frame (#1273).
-    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
+    const table = ledger().closest('[data-slot="table-container"]')?.parentElement as HTMLElement
     expect(table.parentElement?.className).not.toMatch(/\bgrid\b/)
     expectNoBox()
     expect(ledger().closest('[data-slot="table-container"]')?.className).not.toMatch(/border/)
@@ -517,7 +517,7 @@ describe('the control line', () => {
     const line = screen.getByRole('searchbox').closest('div.flex-wrap')
     expect(line).toBeTruthy()
     const inside = within(line as HTMLElement)
-    expect(inside.getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    expect(inside.getByRole('link', { name: 'Importer' })).toBeInTheDocument()
     expect(inside.getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
     expect(inside.getByRole('button', { name: 'Saisir un événement' })).toHaveAttribute(
       'data-variant',
@@ -1655,7 +1655,7 @@ describe('the ledger at zero', () => {
     // **Both entrances are gestures now** (#811): the file one is a real target
     // rather than the name of a folder, so the pair is two doors and not a
     // door beside an instruction.
-    expect(within(file).getByLabelText('Parcourir…')).toBeInTheDocument()
+    expect(within(file).getByRole('link', { name: 'Importer' })).toBeInTheDocument()
 
     // Neither entry is the recommended one.
     const action = within(manual).getByRole('button', { name: 'Saisir un événement' })

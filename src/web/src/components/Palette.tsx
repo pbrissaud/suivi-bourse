@@ -576,6 +576,11 @@ const ACTIONS = [
     go: { to: '/ledger', search: { open: 'event' } },
   },
   {
+    label: 'palette.action.import',
+    keywords: 'palette.action.import.keywords',
+    go: { to: '/ledger/import' },
+  },
+  {
     label: 'palette.action.account',
     keywords: 'palette.action.account.keywords',
     go: { to: '/accounts', search: { open: 'account' } },

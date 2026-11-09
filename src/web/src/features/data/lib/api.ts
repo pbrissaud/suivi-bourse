@@ -284,47 +284,6 @@ interface DeclaredCurrency {
   adopting: boolean
 }
 
-/** How the file is to be read — the gesture's parameters (#813, #835). */
-export interface ImportOptions {
-  /** Judge and count, and **write nothing**: the forecast the owner may refuse. */
-  dryRun?: boolean
-  /** *These are real orders, write them* — the rows the ledger already has. */
-  writeDuplicates?: boolean
-  /**
-   * The groups of identical lines in the file to write **whole** (#1267): the
-   * index of each group's first copy. Sent as form fields, not on the query
-   * string — see `upload`.
-   */
-  writeRepeats?: readonly number[]
-  /**
-   * **Where each account the file names is to go** (#835) — file label to the id
-   * of a declared account. Sent as one JSON object, on the query string with the
-   * rest of *how the file is to be read*.
-   *
-   * Its **presence** is itself an answer: it says the modal is collecting the
-   * correspondence, so the preview reports the account column rather than
-   * refusing a file over the very question it is being asked to put. That is why
-   * it is sent from the first preview on, empty object and all.
-   */
-  mapping?: Record<string, string>
-  /** The labels to declare as accounts with the import — repeated `declare=`. */
-  declaring?: readonly string[]
-  /** Decline the reporting currency the file offers. Absent means *take it up*. */
-  declineCurrency?: boolean
-  /**
-   * **The one question about the foreign-quoted lines** (#1261). Absent means
-   * unanswered: on a forecast it converts nothing, and on a write it keeps the
-   * behaviour of a caller that never heard of the question.
-   */
-  amountsIn?: AmountsIn
-  /**
-   * The `SYMBOL:CCY` pairs the last forecast listed — write only. The server
-   * applies the answer to exactly these, without a lookup, so it converts what
-   * the forecast judged.
-   */
-  foreign?: readonly string[]
-}
-
 // ------------------------------------------------------------------------- //
 // The import in two steps (IMPLEMENTATION.md § 3.4), and the dry run of a write
 // (§ 3.5). The preview persists nothing; the commit takes its token back.
@@ -419,29 +378,6 @@ export const dataApi = {
    * skipped by the server, and the answer counts what actually left.
    */
   deleteEvents: (ids: readonly string[]) => send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
-  // The way in (#811), and since #813 it is made twice on purpose: once with
-  // `dryRun` for the forecast, once without it to commit — **the same file**,
-  // re-sent. There is no pending-import id to hold instead, because holding one
-  // would be the table this lot deleted under another name.
-  importEvents: (files: readonly File[], options: ImportOptions = {}) =>
-    upload<ImportReceipt>(
-      ROUTES.eventsImport,
-      files,
-      [
-        ...(options.dryRun ? ['dry_run=1'] : []),
-        ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
-        // The correspondence and its two companions (#835). `mapping` is sent
-        // whenever there is one to send, empty object included: the parameter's
-        // presence is what tells the preview it is being asked a question rather
-        // than being asked to judge.
-        ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
-        ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
-        ...(options.declineCurrency ? ['adopt_currency=0'] : []),
-        ...(options.amountsIn ? [`amounts_in=${options.amountsIn}`] : []),
-        ...(options.foreign ?? []).map((pair) => `foreign=${encodeURIComponent(pair)}`),
-      ],
-      { write_repeat: (options.writeRepeats ?? []).map(String) },
-    ),
   /** Read `file` against `accountId`'s ledger; `format` overrides the detection. */
   previewImport: (file: File, accountId: string, format?: string) =>
     upload<ImportPreview>(ROUTES.eventsImportPreview, [file], [], {

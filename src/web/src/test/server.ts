@@ -37,7 +37,6 @@ import {
   aPositionsPayload,
   aPriceAt,
   aPriceSeries,
-  aReceipt,
   aRhythm,
   aRuntime,
   aStore,
@@ -209,28 +208,6 @@ export function defaultHandlers() {
         direction: 'debit',
       }),
     ),
-
-    // The way in (#811): one file, one receipt. The receipt is the fixture's
-    // and is not computed from what was sent — what a file holds is the
-    // server's business, and a handler parsing a CSV would be a second
-    // implementation of the loader living in the test harness.
-    //
-    // **The file itself does not survive this environment**, and that is worth
-    // knowing before writing an assertion about it: jsdom builds the `File`,
-    // undici serialises the body, and the two disagree — the part arrives named
-    // `blob` and empty. What is observable here is the request the app made,
-    // which is what these tests are about; what the server reads out of a real
-    // multipart body is asserted on the Python side, over the real route.
-    //
-    // **The gesture is made twice** since #813, and this handler answers both
-    // with the same object: `?dry_run=1` is the forecast, and it is a `200`
-    // because nothing was created; the second call, with no parameter, is the
-    // write and answers `201`. The receipt is the fixture's at both moments,
-    // which is what *one object, two moments* means seen from a client.
-    http.post(ROUTES.eventsImport, ({ request }) => {
-      const previewing = new URL(request.url).searchParams.has('dry_run')
-      return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
-    }),
 
     // The way back out (#710, #796). It is fetched by the client since the
     // receipt has to last as long as the operation, so it is a faked edge like

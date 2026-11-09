@@ -9,6 +9,7 @@ import AgentPage from '@/pages/AgentPage'
 import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
+import ImportPage from '@/pages/ImportPage'
 import SettingsPage from '@/pages/SettingsPage'
 import SystemPage from '@/pages/SystemPage'
 import SharesPage from '@/pages/SharesPage'
@@ -150,6 +151,18 @@ const dataRoute = createRoute({
 })
 
 /**
+ * The import, a page under the ledger (« Relevé »): `?account=` pre-selects
+ * the account the file goes into.
+ */
+const importRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/ledger/import',
+  component: ImportPage,
+  validateSearch: (search: Record<string, unknown>): { account?: string } =>
+    typeof search.account === 'string' && search.account !== '' ? { account: search.account } : {},
+})
+
+/**
  * The fifth route, and the only one of the five that reads nothing off its own
  * address.
  *
@@ -217,6 +230,7 @@ const routeTree = rootRoute.addChildren([
   accountsRoute,
   benchmarkRoute,
   dataRoute,
+  importRoute,
   settingsRoute,
   systemRoute,
   agentRoute,

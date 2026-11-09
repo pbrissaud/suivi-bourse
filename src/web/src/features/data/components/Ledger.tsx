@@ -27,7 +27,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import type { RowSelectionState } from '@tanstack/react-table'
+import { Upload } from 'lucide-react'
 
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
@@ -35,18 +37,12 @@ import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/features/data/components/BulkDelete'
 import { ExportMenu } from '@/features/data/components/ExportMenu'
 import { EventForm } from '@/features/data/components/EventForm'
-import { ImportPreview } from '@/features/data/components/ImportPreview'
+import { ProposalReview } from '@/features/data/components/ProposalReview'
 import { LedgerFacets } from '@/features/data/components/LedgerFacets'
 import { LedgerSearch, SymbolsReduction } from '@/features/data/components/LedgerFilters'
 import { LedgerList } from '@/features/data/components/LedgerList'
 import { LedgerTable } from '@/features/data/components/LedgerTable'
 import { RowDelete } from '@/features/data/components/RowDelete'
-import {
-  UploadReceipt,
-  UploadZone,
-  useEventUpload,
-  useFileDrop,
-} from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
@@ -66,7 +62,6 @@ import {
   type LedgerFilters as Filters,
   type Title,
 } from '@/features/data/lib/ledger'
-import { cn } from '@/lib/utils'
 import { oneFailure, readConditions } from '@/lib/status'
 
 export interface LedgerFocus {
@@ -129,15 +124,7 @@ export function Ledger({
   const { docsPageHref } = useDocs()
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  // **The gesture is held here and nowhere lower** (#811): the first import
-  // fills an empty ledger, which unmounts the entry pair the zone was in and
-  // mounts the control line's own — so a receipt held by the zone would be
-  // destroyed by the write it announces, for the one reader who has never seen
-  // this work.
-  const upload = useEventUpload()
-  // The drop half of it, taken by the table once the ledger has rows.
-  const drop = useFileDrop(upload.hand)
-  // The same window over the agent's proposal (#1119), and the rows its merge
+  // The window over the agent's proposal (#1119), and the rows its merge
   // wrote, marked for a moment so the reader sees where they landed.
   const [fresh, setFresh] = useState<ReadonlySet<string>>(NO_ROWS)
   const reviewed = useProposalImport(proposal, {
@@ -290,15 +277,9 @@ export function Ledger({
 
   return (
     <div className="space-y-6">
-      {/* The receipt of the import gesture, mounted **outside** both surfaces
-          that offer it: the empty state's door and the control line's button are
-          two mounts of one control, and the first import swaps one for the
-          other. */}
-      {ledgerFailure ? null : <UploadReceipt upload={upload} />}
-
-      {/* And the window the forecast is read in (#835), mounted here for the
-          same reason: it is open across the swap the first import makes. */}
-      {ledgerFailure ? null : <ImportPreview upload={proposal ? reviewed : upload} />}
+      {/* The window the agent's proposal is read in. A file is imported on its
+          own page (`/ledger/import`). */}
+      {ledgerFailure ? null : <ProposalReview upload={reviewed} />}
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
@@ -311,12 +292,13 @@ export function Ledger({
             {
               title: t('data.empty.file.title'),
               body: t('data.empty.file.body'),
-              // The door, here and only here: it is the empty ledger's state,
-              // and a populated one imports from the control line. One gesture
-              // (the picker), and the format's page quietly under it.
+              // The door, here and on the control line: the import page. The
+              // format's page quietly under it.
               action: (
                 <div className="space-y-3">
-                  <UploadZone upload={upload} />
+                  <Button asChild>
+                    <Link to="/ledger/import">{t('data.toolbar.import')}</Link>
+                  </Button>
                   <a
                     href={docsPageHref(language, 'import-your-events', 'format')}
                     target="_blank"
@@ -394,7 +376,12 @@ export function Ledger({
             </div>
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <UploadZone upload={upload} compact label={t('data.toolbar.import')} />
+              <Button asChild size="sm" className="pointer-coarse:min-h-11">
+                <Link to="/ledger/import">
+                  <Upload aria-hidden />
+                  {t('data.toolbar.import')}
+                </Link>
+              </Button>
               {files.events ? (
                 <ExportMenu
                   files={files}
@@ -432,28 +419,10 @@ export function Ledger({
             />
           ) : (
             // **The table sits on the page's background** (#1273), with no plane
-            // and no frame. It is also **where a file is dropped** once the
-            // ledger has rows: a file over the table draws the outline and says
-            // what dropping it does. The overlay is `aria-hidden` — the picker is
-            // the accessible way in.
-            <div
-              {...drop.handlers}
-              data-drop="ledger"
-              className={cn(
-                '@container/ledger relative',
-                drop.over && 'outline-[1.5px] -outline-offset-1 outline-primary outline-dashed',
-              )}
-            >
-              {drop.over ? (
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/80 px-6 text-center text-sm font-medium"
-                >
-                  {t('data.drop.over')}
-                </div>
-              ) : null}
+            // and no frame.
+            <div className="@container/ledger relative">
               {/* Below 768 px the table is a list (#1339): same props, same
-                  wrapper, so the drop and the reveal tail are shared. */}
+                  wrapper, so the reveal tail is shared. */}
               {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} />}
 
               {/* The reveal's sentinel: nothing is said under the table. */}

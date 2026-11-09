@@ -185,7 +185,6 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
     const REASONS: Record<string, string> = {
       'features/accounts/components/AccountsBar.tsx': 'the slot for a new account',
       'features/data/components/UploadZone.tsx': 'a drop zone',
-      'features/data/components/Ledger.tsx': 'the ledger’s drop',
       'components/FirstRun.tsx': 'the first-run declare button',
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
       'features/dashboard/components/InvestmentRhythm.tsx': 'a month with no purchase (a drawing)',
