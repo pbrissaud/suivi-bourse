@@ -11,6 +11,7 @@ import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import type { ImportPreview, ImportPreviewRow } from '@/features/data/lib/api'
+import { handOver as handOverFile } from '@/features/data/lib/handoff'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import { renderApp } from '@/test/render'
@@ -31,6 +32,7 @@ function aRow(overrides: Partial<ImportPreviewRow> = {}): ImportPreviewRow {
     fee: null,
     amount: null,
     notes: 'ACHAT COMPTANT',
+    account: 'alpha',
     matched_event_id: null,
     matched_on: null,
     ...overrides,
@@ -43,8 +45,7 @@ function aPreview(rows: ImportPreviewRow[], overrides: Partial<ImportPreview> = 
     token: 'tok-1',
     filename: 'releve.csv',
     account_id: 'alpha',
-    format: 'Bourse Direct',
-    format_key: 'bourse_direct',
+    has_accounts: false,
     counts: {
       new: count('new'),
       duplicate: count('duplicate'),
@@ -112,6 +113,25 @@ async function handOver(user: ReturnType<typeof renderApp>['user']) {
 }
 
 describe('the import page', () => {
+  it('reads at once a file chosen on the empty ledger', async () => {
+    const sent = previewing()
+    handOverFile(new File(['date,event_type\n'], 'releve.csv', { type: 'text/csv' }))
+    renderApp({ url: '/ledger/import' })
+
+    expect(await screen.findByRole('table', { name: 'Aperçu de l’import' })).toBeInTheDocument()
+    expect(sent).toHaveLength(1)
+  })
+
+  it('shows the account of each line when the file names them', async () => {
+    previewing(aPreview(ROWS, { has_accounts: true }))
+    const { user } = renderApp({ url: '/ledger/import' })
+    await handOver(user)
+
+    const table = await screen.findByRole('table', { name: 'Aperçu de l’import' })
+    expect(within(table).getByRole('columnheader', { name: 'Compte' })).toBeInTheDocument()
+    expect(screen.getByText(/Compte des lignes sans compte/)).toBeInTheDocument()
+  })
+
   it('asks for a file first, naming the account it goes into, and reads nothing yet', async () => {
     const sent = previewing()
     renderApp({ url: '/ledger/import' })
@@ -136,7 +156,6 @@ describe('the import page', () => {
     const table = await screen.findByRole('table', { name: 'Aperçu de l’import' })
     expect(sent).toHaveLength(1)
     expect(fieldOf(sent[0], 'account_id')).toBe('alpha')
-    expect(fieldOf(sent[0], 'format')).toBeNull()
     expect(within(table).getByText('Nouveau')).toBeInTheDocument()
     expect(
       within(table).getByText('Déjà présent · même ISIN, date, quantité, prix'),
@@ -163,7 +182,7 @@ describe('the import page', () => {
     expect(within(table).getAllByText(/^Déjà présent/)).toHaveLength(2)
   })
 
-  it('reads the file again for another account, and again for another format', async () => {
+  it('reads the file again for another account', async () => {
     const sent = previewing()
     const { user } = renderApp({ url: '/ledger/import' })
     await handOver(user)
@@ -173,11 +192,6 @@ describe('the import page', () => {
     await user.click(await screen.findByRole('option', { name: 'Beta' }))
     await waitFor(() => expect(sent).toHaveLength(2))
     expect(fieldOf(sent[1], 'account_id')).toBe('beta')
-
-    await user.click(screen.getByRole('button', { name: /Format/ }))
-    await user.click(await screen.findByRole('option', { name: 'Fortuneo' }))
-    await waitFor(() => expect(sent).toHaveLength(3))
-    expect(fieldOf(sent[2], 'format')).toBe('fortuneo')
   })
 
   it('associates a stranger with a ticker, and commits it with the token', async () => {

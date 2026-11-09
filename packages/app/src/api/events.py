@@ -447,6 +447,7 @@ def _preview_row_to_dict(row: import_preview.Row) -> dict:
         **{name: fields[name] for name in _ROW_FIELDS},
         'isin': row.isin,
         'reason': row.reason,
+        'account': None if row.event is None else row.event.account,
         'matched_event_id': (None if row.matched_event_id is None
                              else str(row.matched_event_id)),
         'matched_on': row.matched_on,
@@ -457,7 +458,7 @@ def _preview_row_to_dict(row: import_preview.Row) -> dict:
 def preview_import():
     """A file read against one account's ledger, and nothing written (§ 3.4).
 
-    Multipart: ``file``, ``account_id`` and optionally ``format``. The answer
+    Multipart: ``file``, ``account_id``. The answer
     carries a ``token`` the commit takes back.
     """
     if uploads.oversize(request.content_length):
@@ -475,7 +476,7 @@ def preview_import():
 
     try:
         reading = import_formats.read(
-            sent.filename or '', sent.stream, request.form.get('format'))
+            sent.filename or '', sent.stream)
     except uploads.UploadTooLarge as exc:
         return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
     except uploads.UploadRefused as exc:
@@ -486,8 +487,7 @@ def preview_import():
         'token': import_preview.keep(account_id, reading),
         'filename': reading.filename,
         'account_id': account_id,
-        'format': reading.format_name,
-        'format_key': reading.profile.key,
+        'has_accounts': reading.has_accounts,
         'counts': {status: sum(1 for row in rows if row.status == status)
                    for status in (import_preview.NEW, import_preview.DUPLICATE,
                                   import_preview.UNKNOWN_SECURITY,

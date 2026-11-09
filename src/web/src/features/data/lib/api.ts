@@ -313,6 +313,8 @@ export interface ImportPreviewRow {
   fee: number | null
   amount: number | null
   notes: string | null
+  /** The account the line goes into: the one it names, else the picked one. */
+  account: string | null
   /** Set on a `duplicate`: the held event it repeats, and what matched. */
   matched_event_id: string | null
   matched_on: ImportMatchCriterion[] | null
@@ -322,9 +324,8 @@ export interface ImportPreview {
   token: string
   filename: string
   account_id: string
-  /** The format detected from the header line (or the one asked for). */
-  format: string
-  format_key: string
+  /** The file names an account per line (the app's own export does). */
+  has_accounts: boolean
   counts: Record<ImportRowStatus, number>
   rows: ImportPreviewRow[]
 }
@@ -378,11 +379,10 @@ export const dataApi = {
    * skipped by the server, and the answer counts what actually left.
    */
   deleteEvents: (ids: readonly string[]) => send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
-  /** Read `file` against `accountId`'s ledger; `format` overrides the detection. */
-  previewImport: (file: File, accountId: string, format?: string) =>
+  /** Read `file` against `accountId`'s ledger: the account of the lines that name none. */
+  previewImport: (file: File, accountId: string) =>
     upload<ImportPreview>(ROUTES.eventsImportPreview, [file], [], {
       account_id: [accountId],
-      ...(format ? { format: [format] } : {}),
     }),
   commitImport: (token: string, associate: readonly ImportResolution[] = []) =>
     send<ImportCommitReceipt>(ROUTES.eventsImportCommit, 'POST', { token, associate }),

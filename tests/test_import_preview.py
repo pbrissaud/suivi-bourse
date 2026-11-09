@@ -14,22 +14,21 @@ HELD = (
     "2026-10-01,DEPOSIT,pea,,,,,,450,\n"
 )
 
-TRADE_REPUBLIC = (
-    "datetime,date,account_type,category,type,asset_class,name,symbol,shares,"
-    "price,amount,fee,tax,currency\n"
-    "2026-10-01T10:00:00,2026-10-01,DEFAULT,TRADING,BUY,FUND,Amundi MSCI World,"
-    "LU1681043599,1,541.20,-541.20,0,0,EUR\n"
-    "2026-10-01T10:00:00,2026-10-01,DEFAULT,CASH,CUSTOMER_INBOUND,CASH,,,,,450,0,0,EUR\n"
-    "2026-10-27T10:00:00,2026-10-27,DEFAULT,TRADING,BUY,FUND,iShares Core,"
-    "IE00B5BMR087,3,41.20,-123.60,1,0,EUR\n"
-    "2026-10-28T10:00:00,2026-10-28,DEFAULT,CARD,CARD_TRANSACTION,CASH,Shop,,,,-5,0,0,EUR\n"
+HEADER = "date,event_type,symbol,isin,name,quantity,unit_price,fee,amount,notes\n"
+UNKNOWN_ISIN = (
+    HEADER
+    + "2026-10-01,BUY,,LU1681043599,Amundi MSCI World,1,541.20,1.35,,\n"
+    + "2026-10-01,DEPOSIT,,,,,,,450,\n"
+    + "2026-10-27,BUY,,IE00B5BMR087,iShares Core,3,41.20,1,,\n"
+    + "2026-10-28,CARD_TRANSACTION,,,,,,,5,\n"
 )
 
-BOURSORAMA = (
-    "Date opération;Opération;Valeur;ISIN;Quantité;Cours;Frais;Montant net;Libellé\n"
-    "06/11/2026;Achat comptant;Amundi MSCI World;LU1681043599;2;512,30;1,35;1 025,95;CW8\n"
-    "03/11/2026;Coupon;Air Liquide;FR0000120073;;;;18,40;AI\n"
-    "30/09/2026;Vente comptant;TotalEnergies;FR0000120271;5;58,12;0;290,60;TTE\n"
+# Semicolons, decimal commas and day-first dates, as a spreadsheet saves them.
+FRENCH = (
+    "date;event_type;symbol;isin;name;quantity;unit_price;fee;amount;notes\n"
+    "06/11/2026;BUY;;LU1681043599;Amundi MSCI World;2;512,30;1,35;;CW8\n"
+    "03/11/2026;DIVIDEND;;FR0000120073;Air Liquide;;;;18,40;AI\n"
+    "30/09/2026;SELL;;FR0000120271;TotalEnergies;5;58,12;0;;TTE\n"
 )
 
 
@@ -51,13 +50,12 @@ def statuses(answer):
     return [(row['row'], row['status']) for row in answer['rows']]
 
 
-def test_a_trade_republic_file_is_detected_and_judged_line_by_line(ledger):
+def test_a_file_is_judged_line_by_line(ledger):
     client, _ = ledger
-    answer = upload(client, TRADE_REPUBLIC, 'tr.csv')
+    answer = upload(client, UNKNOWN_ISIN, 'unknown.csv')
 
     assert answer.status_code == 200
     body = answer.get_json()
-    assert body['format'] == 'Trade Republic'
     # No ISIN is known to the store yet, but the ledger already calls a security
     # "Amundi MSCI World": the first line is found by its name, and it repeats a
     # held purchase. The other ISIN names nothing the store knows.
@@ -73,11 +71,10 @@ def test_a_trade_republic_file_is_detected_and_judged_line_by_line(ledger):
                               'unreadable': 1}
 
 
-def test_a_french_export_reads_decimal_commas_and_dates(ledger):
+def test_a_spreadsheet_file_reads_decimal_commas_and_dates(ledger):
     client, _ = ledger
-    body = upload(client, BOURSORAMA, 'boursorama.csv').get_json()
+    body = upload(client, FRENCH, 'french.csv').get_json()
 
-    assert body['format'] == 'Boursorama'
     first = body['rows'][0]
     assert (first['date'], first['event_type'], first['quantity'],
             first['unit_price'], first['fee']) == ('2026-11-06', 'BUY', 2.0, 512.3, 1.35)
@@ -88,7 +85,7 @@ def test_a_french_export_reads_decimal_commas_and_dates(ledger):
 
 def test_association_commits_the_file_and_teaches_the_isin(ledger):
     client, opened = ledger
-    body = upload(client, BOURSORAMA, 'boursorama.csv').get_json()
+    body = upload(client, FRENCH, 'french.csv').get_json()
     # Row 1 is found by the name the ledger already gives its security.
     assert statuses(body) == [(1, 'new'), (2, 'unknown_security'),
                               (3, 'unknown_security')]
@@ -112,7 +109,7 @@ def test_association_commits_the_file_and_teaches_the_isin(ledger):
     # written are what the same file repeats.
     again = client.post('/api/events/import/commit', json={'token': body['token']})
     assert again.status_code == 404
-    second = upload(client, BOURSORAMA, 'boursorama.csv').get_json()
+    second = upload(client, FRENCH, 'french.csv').get_json()
     assert statuses(second) == [(1, 'duplicate'), (2, 'duplicate'),
                                 (3, 'unknown_security')]
     assert second['rows'][0]['matched_on'] == ['isin', 'date', 'quantity', 'price']
@@ -124,7 +121,6 @@ def test_the_commit_judges_again_and_writes_each_row_once(ledger):
            "2026-11-02,BUY,CW8.PA,1,500,,,\n")
     first = upload(client, csv, 'a.csv').get_json()
     second = upload(client, csv, 'b.csv').get_json()
-    assert first['format'] == 'CSV'
     assert first['counts']['new'] == 1
 
     one = client.post('/api/events/import/commit', json={'token': first['token']})
@@ -148,23 +144,19 @@ def test_an_excel_file_is_read_like_a_csv(ledger):
 
     body = upload(client, out.getvalue(), 'ledger.xlsx').get_json()
 
-    assert body['format'] == 'Excel'
     assert [row['status'] for row in body['rows']] == ['new', 'new']
 
 
-def test_a_file_that_is_no_ledger_is_refused_and_a_format_can_be_named(ledger):
+def test_a_file_that_is_no_ledger_is_refused(ledger):
     client, _ = ledger
     assert upload(client, "a,b\n1,2\n", 'x.csv').status_code == 422
     assert upload(client, "a,b\n1,2\n", 'x.txt').status_code == 422
-    assert upload(client, TRADE_REPUBLIC, 'tr.csv', format='nope').status_code == 422
-    assert upload(client, TRADE_REPUBLIC, 'tr.csv', account='ghost').status_code == 422
-    named = upload(client, TRADE_REPUBLIC, 'tr.csv', format='trade_republic')
-    assert named.get_json()['format'] == 'Trade Republic'
+    assert upload(client, UNKNOWN_ISIN, 'unknown.csv', account='ghost').status_code == 422
 
 
 def test_a_commit_refuses_a_resolution_for_a_row_that_does_not_exist(ledger):
     client, _ = ledger
-    body = upload(client, BOURSORAMA, 'boursorama.csv').get_json()
+    body = upload(client, FRENCH, 'french.csv').get_json()
 
     answer = client.post('/api/events/import/commit', json={
         'token': body['token'], 'associate': [{'row': 99, 'security': 'X.PA'}]})
@@ -220,3 +212,35 @@ def test_the_effect_is_refused_as_the_write_would_be(ledger):
     assert oversell.status_code == 409
     assert unknown_account.status_code == 422
     assert gone.status_code == 404
+
+
+TWO_ACCOUNTS = "id,type,label\npea,PEA,PEA\ncto,CTO,CTO\n"
+EXPORT = (
+    "date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes\n"
+    "2026-09-01,DEPOSIT,pea,,,,,,2000,\n"
+    "2026-09-01,DEPOSIT,cto,,,,,,2000,\n"
+    "2026-09-02,DEPOSIT,,,,,,,10,\n"
+    "2026-09-03,DEPOSIT,nope,,,,,,10,\n"
+)
+
+
+def test_a_full_export_keeps_each_row_in_its_own_account(tmp_path):
+    client, opened = build_client_and_store(
+        tmp_path, accounts=TWO_ACCOUNTS,
+        events="date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes\n"
+               "2026-09-01,DEPOSIT,pea,,,,,,2000,\n")
+    body = upload(client, EXPORT, 'export.csv', account='cto').get_json()
+
+    assert body['has_accounts'] is True
+    # Row 1 repeats the PEA deposit; row 2 is the same day and amount in the
+    # CTO, whose ledger is empty: a duplicate is sought in the row's own account.
+    assert [(r['row'], r['status'], r['account']) for r in body['rows'][:3]] == [
+        (1, 'duplicate', 'pea'), (2, 'new', 'cto'), (3, 'new', 'cto')]
+    assert body['rows'][3]['status'] == 'unreadable'
+    assert 'nope' in body['rows'][3]['reason']
+
+    done = client.post('/api/events/import/commit', json={'token': body['token']})
+    assert done.get_json()['imported'] == 2
+    rows = opened.query("SELECT account FROM event WHERE event_type = 'DEPOSIT'")
+    assert sorted(r[0] for r in rows) == ['cto', 'cto', 'pea']
+    opened.close()

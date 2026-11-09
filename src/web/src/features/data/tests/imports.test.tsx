@@ -403,7 +403,7 @@ describe('an install that has imported nothing', () => {
     renderImports({ events: [], accounts: [anAccount({ id: 'zeta' })] })
     await screen.findByText('Importer un fichier')
 
-    expect(screen.getAllByRole('link', { name: 'Importer' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Importer' })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument()
   })
 })

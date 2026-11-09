@@ -1,16 +1,9 @@
-"""The files a broker hands over, read into lines of the ledger (IMPLEMENTATION.md § 3.4).
+"""The file the app's own export writes, read into lines of the ledger (IMPLEMENTATION.md § 3.4).
 
-One engine and a registry of :class:`Profile` s. A profile is a name, the header
-columns that tell the file apart, and where each field of an event lives; the
-format of a file is **detected from its header line**, or named by the caller.
-Reading is lenient per line: a line that cannot be read is a :class:`Line` with
-a ``reason``, never a refusal of the file. Only a file that is no ledger at all
-(no known header, not a ``.csv``/``.xlsx``) is refused.
-
-The broker profiles follow the columns those exports are known for; none has
-been checked against a real statement of every broker, which is why the header
-match is on the few columns that name a broker and the rest is looked up by
-alternatives.
+The layout is recognised from its **header line**. Reading is lenient per line:
+a line that cannot be read is a :class:`Line` with a ``reason``, never a
+refusal of the file. Only a file that is no ledger at all (no known header, not
+a ``.csv``/``.xlsx``) is refused.
 """
 import csv
 import io
@@ -19,7 +12,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence
 
 from application import uploads
 from application.events.loader import EventLoader
@@ -31,92 +24,19 @@ ISIN = re.compile(r'[A-Z]{2}[A-Z0-9]{9}[0-9]')
 SECURITY_TYPES = frozenset({EventType.BUY, EventType.SELL, EventType.GRANT,
                             EventType.DIVIDEND})
 
-#: What an operation label says, first match wins (folded: lower case, no accent).
-_LABELS = (
-    ('customer inbound', EventType.DEPOSIT),
-    ('customer outbound', EventType.WITHDRAWAL),
-    ('virement recu', EventType.DEPOSIT),
-    ('virement emis', EventType.WITHDRAWAL),
-    ('versement', EventType.DEPOSIT),
-    ('deposit', EventType.DEPOSIT),
-    ('depot', EventType.DEPOSIT),
-    ('retrait', EventType.WITHDRAWAL),
-    ('withdrawal', EventType.WITHDRAWAL),
-    ('achat', EventType.BUY),
-    ('buy', EventType.BUY),
-    ('vente', EventType.SELL),
-    ('cession', EventType.SELL),
-    ('sell', EventType.SELL),
-    ('dividende', EventType.DIVIDEND),
-    ('dividend', EventType.DIVIDEND),
-    ('coupon', EventType.DIVIDEND),
-    ('attribution', EventType.GRANT),
-    ('grant', EventType.GRANT),
-)
-
 _DATE_FORMATS = ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y', '%d/%m/%y')
 
 
-@dataclass(frozen=True)
-class Profile:
-    """One broker's layout: how to recognise it, and where each field lives.
-
-    Every column name is folded (see :func:`fold`). A field lists alternatives,
-    the first one the file has wins.
-    """
-
-    key: str
-    name: str
-    detect: frozenset
-    date: Tuple[str, ...]
-    kind: Tuple[str, ...]
-    symbol: Tuple[str, ...] = ()
-    isin: Tuple[str, ...] = ()
-    label: Tuple[str, ...] = ()
-    quantity: Tuple[str, ...] = ()
-    price: Tuple[str, ...] = ()
-    fee: Tuple[str, ...] = ()
-    amount: Tuple[str, ...] = ()
-    notes: Tuple[str, ...] = ()
-
-
-#: Most specific first; the generic layout, the app's own, closes the list.
-PROFILES: Tuple[Profile, ...] = (
-    Profile(
-        key='bourse_direct', name='Bourse Direct',
-        detect=frozenset({'operation', 'courtage', 'code isin'}),
-        date=('date operation', 'date'), kind=('operation',),
-        isin=('code isin',), label=('valeur',), quantity=('quantite',),
-        price=('cours',), fee=('courtage',),
-        amount=('montant net', 'montant'), notes=('libelle',)),
-    Profile(
-        key='fortuneo', name='Fortuneo',
-        detect=frozenset({'date operation', 'operation', 'valeur', 'code isin', 'frais'}),
-        date=('date operation',), kind=('operation',),
-        isin=('code isin',), label=('valeur',), quantity=('quantite',),
-        price=('cours',), fee=('frais',),
-        amount=('montant net', 'montant'), notes=('libelle',)),
-    Profile(
-        key='boursorama', name='Boursorama',
-        detect=frozenset({'date operation', 'operation', 'isin', 'frais'}),
-        date=('date operation',), kind=('operation',),
-        isin=('isin',), label=('valeur', 'libelle'), quantity=('quantite',),
-        price=('cours', 'prix'), fee=('frais',),
-        amount=('montant net', 'montant'), notes=('libelle',)),
-    Profile(
-        key='trade_republic', name='Trade Republic',
-        detect=frozenset({'datetime', 'asset class', 'shares', 'type'}),
-        date=('date',), kind=('type',), symbol=('symbol',),
-        label=('name',), quantity=('shares',), price=('price',),
-        fee=('fee',), amount=('amount',), notes=('description',)),
-    Profile(
-        key='generic', name='CSV',
-        detect=frozenset({'date', 'event type'}),
-        date=('date',), kind=('event type',), symbol=('symbol',),
-        isin=('isin',), label=('name',), quantity=('quantity',),
-        price=('unit price',), fee=('fee',), amount=('amount',),
-        notes=('notes',)),
-)
+#: The app's own layout (what the export writes): the header columns that tell
+#: it apart, and where each field of an event lives. Folded names, the first
+#: alternative the file has wins.
+DETECT = frozenset({'date', 'event type'})
+COLUMNS = {
+    'date': ('date',), 'kind': ('event type',), 'symbol': ('symbol',),
+    'isin': ('isin',), 'label': ('name',), 'quantity': ('quantity',),
+    'price': ('unit price',), 'fee': ('fee',), 'amount': ('amount',),
+    'notes': ('notes',), 'account': ('account',),
+}
 
 
 @dataclass(frozen=True)
@@ -127,16 +47,18 @@ class Line:
     event: Optional[Event] = None
     isin: Optional[str] = None
     reason: Optional[str] = None
+    #: The account the line names, when the file has an account column.
+    account: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class Reading:
-    """A file, read: the format it was read as, and its lines in file order."""
+    """A file, read: its lines in file order."""
 
     filename: str
-    profile: Profile
-    format_name: str
     lines: List[Line]
+    #: Does the file name an account per line (the app's own export does)?
+    has_accounts: bool = False
 
 
 def fold(value) -> str:
@@ -146,7 +68,7 @@ def fold(value) -> str:
     return re.sub(r'[^a-z0-9]+', ' ', text).strip()
 
 
-def read(filename: str, stream, format_key: Optional[str] = None) -> Reading:
+def read(filename: str, stream) -> Reading:
     """The uploaded file as lines, or a named refusal (:class:`uploads.UploadRefused`)."""
     name = Path(filename or '').name
     suffix = Path(name).suffix.lower()
@@ -154,7 +76,6 @@ def read(filename: str, stream, format_key: Optional[str] = None) -> Reading:
         raise uploads.UploadRefused(
             f"{name or 'the file'} is not a ledger this app reads: an import "
             f"file is a {' or a '.join(uploads.IMPORT_SUFFIXES)}", file=name or None)
-    wanted = _named(format_key)
 
     data = stream.read(uploads.MAX_UPLOAD_BYTES + 1)
     if len(data) > uploads.MAX_UPLOAD_BYTES:
@@ -172,37 +93,13 @@ def read(filename: str, stream, format_key: Optional[str] = None) -> Reading:
         raise uploads.UploadRefused(f"{name} is empty", file=name or None)
 
     header = [fold(cell) for cell in table[0]]
-    profile = wanted or _detected(header)
-    if profile is None:
+    if not DETECT <= set(header):
         raise uploads.UploadRefused(
-            f"{name} has a header this app does not recognise; the formats it "
-            f"reads are {', '.join(p.name for p in PROFILES)}", file=name or None)
-    # The same CSV layout read from a workbook is called what it is.
-    shown = 'Excel' if suffix == '.xlsx' and profile.key == 'generic' else profile.name
-    return Reading(name, profile, shown, _lines(profile, header, table[1:]))
-
-
-def format_keys() -> Tuple[str, ...]:
-    """The keys the ``format`` parameter takes."""
-    return tuple(profile.key for profile in PROFILES)
-
-
-def _named(key: Optional[str]) -> Optional[Profile]:
-    if not key:
-        return None
-    wanted = fold(key).replace(' ', '')
-    for profile in PROFILES:
-        if wanted in (profile.key.replace('_', ''), fold(profile.name).replace(' ', '')):
-            return profile
-    if wanted == 'excel':
-        return PROFILES[-1]
-    raise uploads.UploadRefused(
-        f"format {key!r} is not one of {', '.join(format_keys())}")
-
-
-def _detected(header: Sequence[str]) -> Optional[Profile]:
-    columns = set(header)
-    return next((p for p in PROFILES if p.detect <= columns), None)
+            f"{name} has a header this app does not recognise; an import file "
+            f"carries the columns of the export (at least "
+            f"{', '.join(sorted(DETECT))})", file=name or None)
+    has_accounts = any(c in header for c in COLUMNS['account'])
+    return Reading(name, _lines(header, table[1:]), has_accounts)
 
 
 def _csv_rows(data: bytes) -> List[List]:
@@ -228,11 +125,11 @@ def _xlsx_rows(data: bytes) -> List[List]:
     return []
 
 
-def _lines(profile: Profile, header: Sequence[str], rows: Sequence[Sequence]) -> List[Line]:
+def _lines(header: Sequence[str], rows: Sequence[Sequence]) -> List[Line]:
     where: Dict[str, Optional[int]] = {
-        field: next((header.index(c) for c in getattr(profile, field) if c in header), None)
+        field: next((header.index(c) for c in COLUMNS[field] if c in header), None)
         for field in ('date', 'kind', 'symbol', 'isin', 'label', 'quantity',
-                      'price', 'fee', 'amount', 'notes')}
+                      'price', 'fee', 'amount', 'notes', 'account')}
     lines = []
     for row in rows:
         if not any(cell not in (None, '') for cell in row):
@@ -294,7 +191,8 @@ def _line(n: int, cell) -> Line:
         fee=fee,
         amount=amount if kind == EventType.DIVIDEND or not security else None,
         notes=_text(cell('notes')))
-    return Line(n, event=event, isin=isin if security else None)
+    return Line(n, event=event, isin=isin if security else None,
+                account=_text(cell('account')))
 
 
 def _day(value) -> date:
@@ -315,9 +213,9 @@ def _day(value) -> date:
 
 
 def _kind(value) -> EventType:
-    label = fold(value)
-    for needle, kind in _LABELS:
-        if needle in label:
+    label = fold(value).upper()
+    for kind in EventType:
+        if label == kind.value:
             return kind
     raise ValueError(f"{_text(value) or 'an empty operation'!r} is not an operation the ledger records")
 
@@ -354,5 +252,4 @@ def _number(value, field: str) -> Optional[float]:
     return abs(number)
 
 
-__all__ = ['PROFILES', 'SECURITY_TYPES', 'ISIN', 'Line', 'Profile', 'Reading',
-           'fold', 'format_keys', 'read']
+__all__ = ['SECURITY_TYPES', 'ISIN', 'Line', 'Reading', 'fold', 'read']

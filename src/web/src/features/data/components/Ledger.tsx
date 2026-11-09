@@ -27,7 +27,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import type { RowSelectionState } from '@tanstack/react-table'
 import { Upload } from 'lucide-react'
 
@@ -35,6 +35,7 @@ import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/features/data/components/BulkDelete'
+import { FormatDocsButton } from '@/features/data/components/FormatDocsButton'
 import { ExportMenu } from '@/features/data/components/ExportMenu'
 import { EventForm } from '@/features/data/components/EventForm'
 import { ProposalReview } from '@/features/data/components/ProposalReview'
@@ -48,9 +49,9 @@ import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { useProposalImport } from '@/features/data/lib/proposalImport'
+import { handOver } from '@/features/data/lib/handoff'
 import { exportable } from '@/features/data/lib/imports'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import {
   accountsNamed,
@@ -120,8 +121,9 @@ export function Ledger({
   proposal,
   onProposalClosed,
 }: LedgerProps = {}) {
-  const { t, language } = useI18n()
-  const { docsPageHref } = useDocs()
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const chooser = useRef<HTMLInputElement>(null)
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   // The window over the agent's proposal (#1119), and the rows its merge
@@ -295,18 +297,27 @@ export function Ledger({
               // The door, here and on the control line: the import page. The
               // format's page quietly under it.
               action: (
-                <div className="space-y-3">
-                  <Button asChild>
-                    <Link to="/ledger/import">{t('data.toolbar.import')}</Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* One gesture: the chosen file goes straight to the preview. */}
+                  <input
+                    ref={chooser}
+                    type="file"
+                    accept=".csv,.xlsx"
+                    className="sr-only"
+                    tabIndex={-1}
+                    aria-label={t('import.choose')}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ''
+                      if (!file) return
+                      handOver(file)
+                      void navigate({ to: '/ledger/import', search: {} })
+                    }}
+                  />
+                  <Button type="button" onClick={() => chooser.current?.click()}>
+                    {t('data.toolbar.import')}
                   </Button>
-                  <a
-                    href={docsPageHref(language, 'import-your-events', 'format')}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block text-sm text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground"
-                  >
-                    {t('data.empty.file.docs')}
-                  </a>
+                  <FormatDocsButton />
                 </div>
               ),
             },

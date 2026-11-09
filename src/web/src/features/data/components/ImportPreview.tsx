@@ -11,7 +11,7 @@
  * owner's resolutions, and the server writes the new rows only, judging them
  * again under its lock.
  *
- * The account and the format are answers like the others: changing either
+ * The account is an answer like the others: changing it
  * reads the same file again, since a line may be a duplicate in one account and
  * new in another. Resolutions are dropped with the reading they were about.
  *
@@ -40,7 +40,9 @@ import {
 } from '@/components/ui/table'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { EventFigure, TypeWord } from '@/features/data/components/LedgerTable'
+import { FormatDocsButton } from '@/features/data/components/FormatDocsButton'
 import { UploadZone } from '@/features/data/components/UploadZone'
+import { takeHandover } from '@/features/data/lib/handoff'
 import {
   dataApi,
   type ImportMatchCriterion,
@@ -53,7 +55,6 @@ import {
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { type MessageKey, useI18n } from '@/lib/i18n'
-import { useDocs } from '@/lib/docs'
 import { problemSentence } from '@/lib/problem'
 import { oneFailure, readConditions } from '@/lib/status'
 
@@ -62,15 +63,6 @@ const SHOWN = 25
 const SEARCH_PAUSE_MS = 300
 const SEARCH_MIN = 2
 const SEARCH_MAX = 64
-
-/** The profiles the server reads (`import_formats.PROFILES`); the brand names are not translated. */
-const FORMATS = ['bourse_direct', 'boursorama', 'fortuneo', 'trade_republic', 'generic'] as const
-const FORMAT_NAMES: Record<string, string> = {
-  bourse_direct: 'Bourse Direct',
-  boursorama: 'Boursorama',
-  fortuneo: 'Fortuneo',
-  trade_republic: 'Trade Republic',
-}
 
 type Tab = 'all' | ImportRowStatus
 
@@ -84,13 +76,11 @@ const CRITERIA: Record<ImportMatchCriterion, MessageKey> = {
 }
 
 export function ImportPreview({ account: asked }: { account?: string }) {
-  const { t, language } = useI18n()
-  const { docsPageHref } = useDocs()
+  const { t } = useI18n()
   const client = useQueryClient()
   const navigate = useNavigate()
   const [file, setFile] = useState<File | null>(null)
   const [account, setAccount] = useState<string | undefined>(asked)
-  const [format, setFormat] = useState<string | undefined>(undefined)
   const [tab, setTab] = useState<Tab>('all')
   const [all, setAll] = useState(false)
   // The ticker the owner gave a line, by its row number: dropped with the reading.
@@ -103,20 +93,19 @@ export function ImportPreview({ account: asked }: { account?: string }) {
   const target = account ?? declared[0]?.id
 
   const read = useMutation({
-    mutationFn: (next: { file: File; account: string; format?: string }) =>
-      dataApi.previewImport(next.file, next.account, next.format),
+    mutationFn: (next: { file: File; account: string }) =>
+      dataApi.previewImport(next.file, next.account),
   })
   const preview: Preview | undefined = read.data
 
   /** Read `next` again under the answers standing now, with `change` applied. */
-  const reading = (next: File, change: { account?: string; format?: string | null } = {}) => {
+  const reading = (next: File, change: { account?: string } = {}) => {
     const into = change.account ?? target
     if (into === undefined) return
-    const how = change.format === null ? undefined : (change.format ?? format)
     setResolved({})
     setTab('all')
     setAll(false)
-    read.mutate({ file: next, account: into, format: how })
+    read.mutate({ file: next, account: into })
   }
 
   const commit = useMutation({
@@ -134,6 +123,16 @@ export function ImportPreview({ account: asked }: { account?: string }) {
       void navigate({ to: '/ledger', search: {} })
     },
   })
+
+  // A file chosen on the empty ledger arrives here already picked: read it as
+  // soon as an account is there to read it against.
+  useEffect(() => {
+    if (target === undefined) return
+    const handed = takeHandover()
+    if (!handed) return
+    setFile(handed)
+    read.mutate({ file: handed, account: target })
+  }, [target, read.mutate])
 
   const failure = oneFailure(readConditions({ queries: [accounts] }))
   if (failure !== null) return <Unreadable failure={failure} />
@@ -166,9 +165,8 @@ export function ImportPreview({ account: asked }: { account?: string }) {
 
   const pick = (next: File) => {
     setFile(next)
-    setFormat(undefined)
     commit.reset()
-    reading(next, { format: null })
+    reading(next)
   }
 
   const into = (
@@ -194,16 +192,9 @@ export function ImportPreview({ account: asked }: { account?: string }) {
           </span>
         </div>
         <UploadZone onFile={pick} disabled={read.isPending} />
-        <p>
-          <a
-            href={docsPageHref(language, 'import-your-events', 'format')}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground"
-          >
-            {t('data.empty.file.docs')}
-          </a>
-        </p>
+        <div>
+          <FormatDocsButton />
+        </div>
       </div>
     )
   }
@@ -249,6 +240,7 @@ export function ImportPreview({ account: asked }: { account?: string }) {
   return (
     <Reading
       preview={preview}
+      accountNames={Object.fromEntries(declared.map((a) => [a.id, a.label ?? a.id]))}
       file={file}
       back={back}
       into={into}
@@ -267,11 +259,6 @@ export function ImportPreview({ account: asked }: { account?: string }) {
         })
       }
       currency={currency}
-      format={format ?? preview.format_key}
-      onFormat={(next) => {
-        setFormat(next)
-        reading(file, { format: next })
-      }}
       pending={read.isPending || commit.isPending}
       error={commit.error}
       anotherFile={anotherFile}
@@ -282,6 +269,7 @@ export function ImportPreview({ account: asked }: { account?: string }) {
 
 interface ReadingProps {
   preview: Preview
+  accountNames: Readonly<Record<string, string>>
   file: File
   back: React.ReactNode
   into: React.ReactNode
@@ -292,8 +280,6 @@ interface ReadingProps {
   resolved: Readonly<Record<number, string>>
   onResolve: (row: number, symbol: string) => void
   currency: string | null
-  format: string
-  onFormat: (format: string) => void
   pending: boolean
   error: unknown
   anotherFile: React.ReactNode
@@ -302,6 +288,7 @@ interface ReadingProps {
 
 function Reading({
   preview,
+  accountNames,
   file,
   back,
   into,
@@ -312,8 +299,6 @@ function Reading({
   resolved,
   onResolve,
   currency,
-  format,
-  onFormat,
   pending,
   error,
   anotherFile,
@@ -398,17 +383,8 @@ function Reading({
         />
         <div className="flex items-center gap-5 pb-3">
           <span className="flex items-center gap-1 text-sm text-muted-foreground">
-            {t('import.into')}&nbsp;{into}
+            {t(preview.has_accounts ? 'import.intoUnnamed' : 'import.into')}&nbsp;{into}
           </span>
-          <FilterButton
-            label={t('import.format')}
-            options={FORMATS.map((key) => ({
-              value: key,
-              label: FORMAT_NAMES[key] ?? t('import.format.generic'),
-            }))}
-            value={format}
-            onChange={onFormat}
-          />
         </div>
       </div>
 
@@ -419,6 +395,7 @@ function Reading({
             <TableHead>{t('import.column.row')}</TableHead>
             <TableHead>{t('data.column.date')}</TableHead>
             <TableHead>{t('data.column.type')}</TableHead>
+            {preview.has_accounts ? <TableHead>{t('import.column.account')}</TableHead> : null}
             <TableHead>{t('data.column.what')}</TableHead>
             <TableHead numeric>{t('data.column.quantity')}</TableHead>
             <TableHead numeric>{t('data.column.unitPrice')}</TableHead>
@@ -432,6 +409,7 @@ function Reading({
               key={row.row}
               row={row}
               currency={currency}
+              accounts={preview.has_accounts ? accountNames : null}
               resolved={resolved[row.row]}
               onResolve={(symbol) => onResolve(row.row, symbol)}
               disabled={pending}
@@ -475,12 +453,14 @@ function asEvent(row: ImportPreviewRow): LedgerEvent | null {
 function Line({
   row,
   currency,
+  accounts,
   resolved,
   onResolve,
   disabled,
 }: {
   row: ImportPreviewRow
   currency: string | null
+  accounts: Readonly<Record<string, string>> | null
   resolved: string | undefined
   onResolve: (symbol: string) => void
   disabled: boolean
@@ -496,6 +476,9 @@ function Line({
       <TableCell className="fig text-muted-foreground">{row.row}</TableCell>
       <TableCell className="fig">{row.date ? f.date(row.date) : ABSENT}</TableCell>
       <TableCell>{row.event_type ? <TypeWord type={row.event_type} /> : ABSENT}</TableCell>
+      {accounts ? (
+        <TableCell>{row.account ? (accounts[row.account] ?? row.account) : ABSENT}</TableCell>
+      ) : null}
       <TableCell className="max-w-0 min-w-48">
         <span className="block truncate font-medium">
           {settled ? resolved : (row.name ?? row.symbol ?? ABSENT)}

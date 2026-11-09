@@ -13,7 +13,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Dict, List, Mapping, Optional, Sequence
 
-from application import ledger
+from application import accounts, ledger
 from application.events.schemas import DEFAULT_ACCOUNT, Event, EventType, canonical_symbol, is_ascii_symbol
 from application.import_formats import SECURITY_TYPES, Line, Reading
 
@@ -91,7 +91,10 @@ def release(token: str) -> None:
 
 def judge(store, account_id: str, lines: Sequence[Line],
           associate: Optional[Mapping[int, str]] = None) -> List[Row]:
-    """Every line against the ledger of ``account_id``: its status, and what it repeats.
+    """Every line against the ledger of its account: its status, and what it repeats.
+
+    A line takes the account it names, else ``account_id``; its duplicates are
+    sought among that account's events only.
 
     ``associate`` maps a row number to the symbol the owner says its security
     is; it settles every row of the file that carries the same ISIN.
@@ -103,16 +106,24 @@ def judge(store, account_id: str, lines: Sequence[Line],
                   if line.isin and line.n in chosen})
     names = {(row.name or '').casefold(): row.symbol
              for row in ledger.read_events(store) if row.symbol and row.name}
-    held = _held_by_day(store, account_id)
+    held = _held_by_day(store)
+    declared = accounts.account_ids(store)
 
     rows = []
     for line in lines:
         if line.event is None:
             rows.append(Row(line.n, UNREADABLE, reason=line.reason))
             continue
-        event = replace(line.event, account=account_id)
+        # A row that names an account keeps it; the picked one fills the rest.
+        into = line.account or account_id
+        if into not in declared:
+            rows.append(Row(line.n, UNREADABLE,
+                            reason=f"the account {into!r} is not declared in the app"))
+            continue
+        event = replace(line.event, account=into)
+        held_here = held.get(into, {})
         if event.event_type not in SECURITY_TYPES:
-            rows.append(_matched(line, event, held, 'date'))
+            rows.append(_matched(line, event, held_here, 'date'))
             continue
         symbol = chosen.get(line.n) or event.symbol
         via = 'isin' if line.isin else 'symbol'
@@ -123,7 +134,7 @@ def judge(store, account_id: str, lines: Sequence[Line],
         if not symbol:
             rows.append(Row(line.n, UNKNOWN_SECURITY, event, line.isin))
             continue
-        rows.append(_matched(line, replace(event, symbol=symbol), held, via))
+        rows.append(_matched(line, replace(event, symbol=symbol), held_here, via))
     return rows
 
 
@@ -140,11 +151,12 @@ def _chosen(associate: Mapping[int, str], lines: Sequence[Line]) -> Dict[int, st
     return chosen
 
 
-def _held_by_day(store, account_id: str) -> Dict:
+def _held_by_day(store) -> Dict:
+    """The held events, by account then by (kind, day)."""
     held: Dict = {}
     for event in ledger.read_events(store):
-        if (event.account or DEFAULT_ACCOUNT) == account_id:
-            held.setdefault((event.event_type, event.date), []).append(event)
+        held.setdefault(event.account or DEFAULT_ACCOUNT, {}).setdefault(
+            (event.event_type, event.date), []).append(event)
     return held
 
 

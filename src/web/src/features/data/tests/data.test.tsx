@@ -1655,7 +1655,10 @@ describe('the ledger at zero', () => {
     // **Both entrances are gestures now** (#811): the file one is a real target
     // rather than the name of a folder, so the pair is two doors and not a
     // door beside an instruction.
-    expect(within(file).getByRole('link', { name: 'Importer' })).toBeInTheDocument()
+    expect(within(file).getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    expect(
+      within(file).getByRole('link', { name: 'Le format, colonne par colonne' }),
+    ).toBeInTheDocument()
 
     // Neither entry is the recommended one.
     const action = within(manual).getByRole('button', { name: 'Saisir un événement' })
