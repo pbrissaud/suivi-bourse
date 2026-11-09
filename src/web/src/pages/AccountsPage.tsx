@@ -181,7 +181,8 @@ export default function AccountsPage() {
           <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b">
             <TextTabs
               label={t('accounts.rail.label')}
-              className="min-w-0 flex-1 overflow-x-auto border-b-0"
+              // pb-px/-mb-px: room for the active tab's 1 px overlap, or `overflow-x-auto` grows a vertical scrollbar.
+              className="-mb-px min-w-0 flex-1 overflow-x-auto border-b-0 pb-px"
               value={opened.id}
               onChange={(id) => void navigate({ to: '/accounts', search: { account: id } })}
               tabs={rows.map((row) => ({

@@ -106,14 +106,11 @@ function JobRow({
       ]),
   })
 
-  const when = [
-    job.last_run_at === null ? null : clock.when(job.last_run_at, now),
+  const last = job.last_run_at === null ? null : clock.when(job.last_run_at, now)
+  const next =
     job.next_run_at === null
       ? job.cadence
-      : t('system.jobs.next', { at: clock.when(job.next_run_at, now) }),
-  ]
-    .filter((part) => part !== null && part !== '')
-    .join(' · ')
+      : t('system.jobs.next', { at: clock.when(job.next_run_at, now) })
 
   return (
     <div className="border-b">
@@ -131,7 +128,16 @@ function JobRow({
             <JobTicks label={name} track={track} started={started} />
           ) : null}
         </div>
-        <span className="fig text-muted-foreground md:text-right">{when}</span>
+        {/* A figure never wraps: the two halves do, so a long date drops under the time. */}
+        <span className="flex flex-wrap justify-end gap-x-1.5 text-muted-foreground md:text-right">
+          {last === null ? null : (
+            <span className="fig">
+              {last}
+              {next ? ' ·' : ''}
+            </span>
+          )}{' '}
+          {next ? <span className="fig">{next}</span> : null}
+        </span>
         <div className="md:text-right">
           <Button
             type="button"

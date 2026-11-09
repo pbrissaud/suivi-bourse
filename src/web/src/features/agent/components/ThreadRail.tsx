@@ -24,6 +24,9 @@ export function RailBody({ onOpened }: { onOpened?: () => void }) {
   const { t, locale } = useI18n()
   const [search, setSearch] = useState('')
   const threads = useQuery({ queryKey: ['agent-threads'], queryFn: agentApi.agentThreads })
+  // The server answers 404 « The agent is off. » then: said in the page's language instead.
+  const settings = useQuery({ queryKey: ['agent-settings'], queryFn: agentApi.settings })
+  const off = settings.data?.enabled === false
 
   const groups = useMemo(() => {
     const asked = search.trim().toLocaleLowerCase(locale)
@@ -65,9 +68,11 @@ export function RailBody({ onOpened }: { onOpened?: () => void }) {
         />
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-        {threads.error ? (
+        {off ? (
+          <p className="px-2.5 py-1.5 text-sm text-muted-foreground">{t('agent.rail.off')}</p>
+        ) : threads.error ? (
           <p className="px-2.5 py-1.5 text-sm text-muted-foreground">
-            {t('agent.recent.unreadable', { reason: threads.error.message })}
+            {t('agent.recent.unreadable')}
           </p>
         ) : threads.data === undefined ? null : threads.data.length === 0 ? (
           <p className="px-2.5 py-1.5 text-sm text-muted-foreground">{t('agent.recent.empty')}</p>

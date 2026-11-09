@@ -352,6 +352,16 @@ export function AccountDetail({
                       {f.currency(row.net_contributed, currency)}
                     </span>
                   </span>
+                  {earned > 0 && row.gain_absolu !== null ? (
+                    <span>
+                      <span className="text-muted-foreground">{t('accounts.figure.gain')}</span>{' '}
+                      <span
+                        className={`fig text-prose ${signClass(row.gain_absolu, MONEY_DECIMALS)}`}
+                      >
+                        {f.signedCurrency(row.gain_absolu, currency)}
+                      </span>
+                    </span>
+                  ) : null}
                 </p>
                 {monthly === null || currency === null ? null : (
                   <p className="text-sm text-muted-foreground">

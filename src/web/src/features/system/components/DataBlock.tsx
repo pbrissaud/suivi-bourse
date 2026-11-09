@@ -33,7 +33,7 @@ export function DataBlock({ events, sizeBytes, orphans }: DataBlockProps) {
     <Section title={t('system.data')}>
       <dl className="text-sm">
         <FactRow label={t('system.data.events')}>
-          <span className="fig">{events === null ? null : f.number(events)}</span>
+          <span className="fig">{events === null ? null : f.number(events, 0)}</span>
         </FactRow>
         <FactRow label={t('system.data.size')}>
           <span className="fig">{sizeBytes === undefined ? null : f.bytes(sizeBytes)}</span>
