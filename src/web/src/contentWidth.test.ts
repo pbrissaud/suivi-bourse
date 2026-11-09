@@ -183,9 +183,7 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
 
   it('draws a dashed outline only where something can be put', () => {
     const REASONS: Record<string, string> = {
-      'features/accounts/components/AccountsBar.tsx': 'the slot for a new account',
       'features/data/components/UploadZone.tsx': 'a drop zone',
-      'components/FirstRun.tsx': 'the first-run declare button',
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
       'features/dashboard/components/InvestmentRhythm.tsx': 'a month with no purchase (a drawing)',
       'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',

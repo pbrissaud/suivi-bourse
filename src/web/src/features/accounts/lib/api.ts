@@ -202,6 +202,9 @@ export const accountsApi = {
   updateTaxationModel: (id: string, draft: TaxationModelDraft) =>
     send<TaxationModel>(taxationModelPath(id), 'PATCH', draft),
   taxationRegistry: () => send<TaxationRegistryResponse>(ROUTES.taxationRegistry, 'POST', {}),
+  // First run, step 2: import the ticked models in one all-or-nothing call.
+  importTaxationModels: (ids: string[]) =>
+    send<{ models: TaxationModel[]; skipped: string[] }>(ROUTES.taxationRegistry, 'POST', { ids }),
   removeTaxationModel: (id: string) =>
     remove<{ id: string; removed: boolean }>(taxationModelPath(id)),
   reassignEvents: (id: string) =>

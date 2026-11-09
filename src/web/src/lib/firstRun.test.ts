@@ -41,7 +41,7 @@ describe('the one predicate', () => {
 
     expect(requiredUnanswered(withASecondRequiredDial)).toBe(true)
     expect(currencyUnanswered(withASecondRequiredDial)).toBe(false)
-    expect(firstRunStands({ settings: withASecondRequiredDial, mark: null })).toBe(true)
+    expect(firstRunStands(withASecondRequiredDial)).toBe(true)
   })
 
   it('says nothing at all while the read has not landed', () => {
@@ -51,49 +51,38 @@ describe('the one predicate', () => {
     expect(requiredUnanswered([aSetting()])).toBeUndefined()
   })
 
-  it('never opens the modal on a silence, nor once the reader has been through', () => {
-    expect(firstRunStands({ settings: unanswered(), mark: null })).toBe(true)
-    expect(firstRunStands({ settings: unanswered(), mark: 'unanswered' })).toBe(false)
-    expect(firstRunStands({ settings: undefined, mark: null })).toBe(false)
-    expect(firstRunStands({ settings: defaultSettings(), mark: null })).toBe(false)
-  })
-
-  it('walks again the reader who left having answered, their store being gone', () => {
-    // A required dial unanswered under an *answered* mark can only be a store
-    // that no longer holds the answer.
-    expect(firstRunStands({ settings: unanswered(), mark: 'answered' })).toBe(true)
-    // And nothing changes for the reader who walked away from an open question:
-    // an emptied ledger, a reload, a second container — the mark still fits
-    // what the server says, and they are left alone.
-    expect(firstRunStands({ settings: unanswered(), mark: 'unanswered' })).toBe(false)
-    // Answered and answered: no walk either way.
-    expect(firstRunStands({ settings: defaultSettings(), mark: 'answered' })).toBe(false)
+  it('stands on a missing answer, and on nothing else', () => {
+    expect(firstRunStands(unanswered())).toBe(true)
+    expect(firstRunStands(defaultSettings())).toBe(false)
+    // Never on a silence: one that appears and disappears when the read lands
+    // is worse than one that arrives late.
+    expect(firstRunStands(undefined)).toBe(false)
   })
 })
 
-describe('the three passages', () => {
+describe('the four steps', () => {
   it('are walked in the order the record names', () => {
-    // The required settings first — the app cannot convert or compute without
-    // the answer — then the accounts, so the notion exists before a file that
-    // names them is handed over, then the events themselves.
-    expect(PASSAGES).toEqual(['settings', 'accounts', 'events'])
-    expect(nextPassage('settings')).toBe('accounts')
-    expect(nextPassage('accounts')).toBe('events')
-    expect(previousPassage('events')).toBe('accounts')
-    expect(previousPassage('accounts')).toBe('settings')
+    // The currency first — the app cannot convert or compute without it — then
+    // the tax models, so the first account can carry one, then the account,
+    // then where the first events come from.
+    expect(PASSAGES).toEqual(['currency', 'models', 'account', 'events'])
+    expect(nextPassage('currency')).toBe('models')
+    expect(nextPassage('models')).toBe('account')
+    expect(nextPassage('account')).toBe('events')
+    expect(previousPassage('events')).toBe('account')
+    expect(previousPassage('models')).toBe('currency')
   })
 
   it('end, rather than looping: the last passage has nothing after it', () => {
-    // What that `null` is read as, one file over, is *leave* — and leaving is
-    // what writes the browser's mark. A fourth passage would be a line here.
+    // What that `null` is read as, one file over, is *leave*.
     expect(nextPassage('events')).toBeNull()
     // And the first has no way back, which is what makes the walk a sequence
     // rather than three tabs.
-    expect(previousPassage('settings')).toBeNull()
+    expect(previousPassage('currency')).toBeNull()
   })
 
   it('are counted from one, because that is what a reader is told', () => {
-    expect(PASSAGES.map(passageNumber)).toEqual([1, 2, 3])
+    expect(PASSAGES.map(passageNumber)).toEqual([1, 2, 3, 4])
   })
 })
 
@@ -130,8 +119,8 @@ describe('the currency is fixed the moment it is answered', () => {
 })
 
 describe('the gesture that reopens the walk', () => {
-  it('reopens on the accounts once every required dial is answered, and on the question otherwise', () => {
-    expect(reopenedPassage(defaultSettings())).toBe('accounts')
-    expect(reopenedPassage(unanswered())).toBe('settings')
+  it('reopens on the tax models once every required dial is answered, and on the question otherwise', () => {
+    expect(reopenedPassage(defaultSettings())).toBe('models')
+    expect(reopenedPassage(unanswered())).toBe('currency')
   })
 })

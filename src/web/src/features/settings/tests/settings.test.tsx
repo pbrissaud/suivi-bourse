@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 
 import { taxationModelPath, type TaxationModelDraft } from '@/features/accounts/lib/api'
 import type { StoreState } from '@/features/settings/lib/api'
-import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
 import { type HealthState, type InstallationFact, ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
@@ -160,37 +159,6 @@ describe('the portfolio section', () => {
     const section = block('Portefeuille')
     expect(await within(section).findByText('Figée')).toBeInTheDocument()
     expect(within(section).queryByRole('combobox')).not.toBeInTheDocument()
-  })
-
-  it('saves the currency the moment it is chosen, while nobody has answered', async () => {
-    // The walk is closed: it is what normally takes the question.
-    window.localStorage.setItem(FIRST_RUN_STORAGE_KEY, 'dismissed')
-    server.use(
-      http.get(ROUTES.config, () =>
-        HttpResponse.json(
-          aConfig({
-            settings: aConfig().settings.map((setting) =>
-              setting.key === 'base_currency'
-                ? { ...setting, value: null, stored: false }
-                : setting,
-            ),
-          }),
-        ),
-      ),
-    )
-    let sent: unknown = null
-    server.use(
-      http.put(ROUTES.settings, async ({ request }) => {
-        sent = await request.json()
-        return HttpResponse.json({ settings: aConfig().settings, changed: ['base_currency'] })
-      }),
-    )
-    const { user } = await openSettings()
-    const currency = await screen.findByLabelText('Devise de base')
-    await user.selectOptions(currency, 'CHF')
-
-    await waitFor(() => expect(sent).toEqual({ base_currency: 'CHF' }))
-    expect(await within(block('Portefeuille')).findByRole('status')).toHaveTextContent('Enregistré')
   })
 })
 
@@ -667,33 +635,6 @@ describe('an unreadable store', () => {
 
     expect(await screen.findByLabelText('Cadence de relevé')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Réessayer' })).not.toBeInTheDocument()
-  })
-})
-
-describe('the currency row', () => {
-  it('says a refusal on its own row', async () => {
-    window.localStorage.setItem(FIRST_RUN_STORAGE_KEY, 'dismissed')
-    server.use(
-      http.get(ROUTES.config, () =>
-        HttpResponse.json(
-          aConfig({
-            settings: aConfig().settings.map((setting) =>
-              setting.key === 'base_currency'
-                ? { ...setting, value: null, stored: false }
-                : setting,
-            ),
-          }),
-        ),
-      ),
-      http.put(ROUTES.settings, () => HttpResponse.error()),
-    )
-    const { user } = renderApp({ url: '/settings' })
-
-    await user.selectOptions(await screen.findByLabelText('Devise de base'), 'CHF')
-
-    expect((await within(block('Portefeuille')).findByRole('alert')).textContent).toBe(
-      'Non enregistré : l’application ne répond pas.',
-    )
   })
 })
 

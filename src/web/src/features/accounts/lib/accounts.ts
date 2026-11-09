@@ -320,6 +320,10 @@ export interface AccountRow {
    * The id of the model this account carries (#752) — **absent where it carries
    * none**, which is what the projection card's whole presence turns on.
    */
+  /** The day the account was opened, where it was declared. */
+  opened_on?: string
+  /** Its first payment on record: the offer when no opening day was declared. */
+  first_payment?: string
   taxation_model_id?: string
   /**
    * The `kind` of the model this account carries — what decides the sentence
@@ -352,6 +356,9 @@ export interface AccountRow {
    * sentences, and `null` says neither.
    */
   projected_tax?: number
+  /** `projected_tax` as its two parts: the income tax (IR) and the social levies (PS). */
+  projected_income_tax?: number
+  projected_social_levy?: number
 }
 
 /**
@@ -382,6 +389,8 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     twr_index: account.twr_index ?? null,
     // Spread, never `?? null` (#919): the five optional members carry the
     // distinction between *absent* and *null*, and the idiom above erases it.
+    ...(account.opened_on === undefined ? {} : { opened_on: account.opened_on }),
+    ...(account.first_payment === undefined ? {} : { first_payment: account.first_payment }),
     ...(account.taxation_model_id === undefined
       ? {}
       : { taxation_model_id: account.taxation_model_id }),
@@ -392,6 +401,12 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
       ? {}
       : { projected_rate_changes_on: account.projected_rate_changes_on }),
     ...(account.projected_tax === undefined ? {} : { projected_tax: account.projected_tax }),
+    ...(account.projected_income_tax === undefined
+      ? {}
+      : { projected_income_tax: account.projected_income_tax }),
+    ...(account.projected_social_levy === undefined
+      ? {}
+      : { projected_social_levy: account.projected_social_levy }),
   }))
 }
 
@@ -881,4 +896,38 @@ export function submittedAccount(choice: AccountChoice, typed: string): Submitte
  */
 export function accountColour(index: number): string {
   return `var(--alloc-${(index % 4) + 1})`
+}
+
+/**
+ * One line saying what a registry model does, built from its own parameters
+ * (« 12,8 % puis 0 % après 5 ans · PS 18,6 % ») and never from a rate typed
+ * here: the catalogue is the only place the rates live.
+ */
+export function ruleOf(
+  model: { kind: string; parameters: Record<string, unknown> },
+  t: (key: MessageKey, values?: Record<string, string | number>) => string,
+  percent: (ratio: number) => string,
+): string {
+  const rate = (name: string): number | null => {
+    const value = model.parameters[name]
+    return typeof value === 'number' ? value : null
+  }
+  const levy = rate('social_rate')
+  const tail = levy === null ? '' : ` · ${t('accounts.rule.levy', { rate: percent(levy) })}`
+  const main = rate('rate')
+  const before = rate('rate_before')
+  if (model.kind === 'flat_realised' && main !== null)
+    return t('accounts.rule.flat', { rate: percent(main) }) + tail
+  if (model.kind === 'aged_flat_realised' && before !== null)
+    return (
+      t('accounts.rule.aged', {
+        before: percent(before),
+        after: percent(rate('rate_after') ?? 0),
+        years: rate('threshold_years') ?? 0,
+      }) + tail
+    )
+  if (model.kind === 'bracketed_realised') return t('accounts.rule.brackets') + tail
+  if (model.kind === 'withholding_income' && main !== null)
+    return t('accounts.rule.withholding', { rate: percent(main) })
+  return t(`taxation.kind.${model.kind}` as MessageKey)
 }

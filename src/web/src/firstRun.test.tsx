@@ -1,26 +1,19 @@
 /**
- * The first run (#726, #823),
- * at the one seam: the whole app in jsdom, HTTP the only faked edge.
+ * The first run (« Relevé », `Bienvenue-Refonte.dc.html`), at the one seam: the
+ * whole app in jsdom, HTTP the only faked edge.
  *
- * Every case names what it prevents, and four of them are the ticket's own
- * arguments rather than opinions:
+ * Four centred steps, served until a currency is stored: the currency, the tax
+ * models of a country, the first account, then three doors. Every case names
+ * what it prevents:
  *
- *  - **an onboarding screen reopening on somebody who has used the app for six
- *    months** — which is what three steps *derived from the data they collect*
- *    would have done the day that reader emptied their ledger. The passages are
- *    a sequence inside one predicate, and the predicate is a required dial with
- *    nothing stored;
- *  - **a trial run walled in** — a bare `docker run` is a trial by design, so
- *    the three passages are traversed with nothing supplied and no write leaves
- *    the browser;
- *  - **a wall of announcements** — the banner was validated in production on a
- *    `503`, something that happens and passes; two conditions that stand until
- *    somebody acts stack into a wall, which is why it rendered one band or none
- *    in causal order, and why #829 retired the strip altogether:
- *    those conditions are cards of the notifications panel now, and the sentence
- *    is one floor down, in the empty state of the page it explains;
- *  - **an escape hatch given the weight of the answer** — no *Later* button
- *    beside *Save*: the cross, `Escape` and the click outside are the *later*.
+ *  - **an app that can be used without a currency** — nothing is converted or
+ *    computed without one, so the screen has no cross, no Escape and no click
+ *    outside;
+ *  - **a wall in front of a trial run** — only the first step is owed: a blank
+ *    account writes nothing, no model ticked imports nothing, and the last
+ *    step has a « Plus tard »;
+ *  - **a half-written setup** — the models are imported all or nothing, and a
+ *    refused account stays on its step with the refusal under its field.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -30,22 +23,19 @@ import type { ConfigResponse } from '@/features/settings/lib/api'
 import { ROUTES } from '@/lib/api'
 import { CURRENCIES } from '@/lib/currencies'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
 import {
   aConfig,
-  aLedgerPayload,
-  aFrozenScrape,
-  aPositionsPayload,
-  aTotalsPayload,
-  noAccountsDeclared,
-  theSeededAccount,
+  aRegistryItem,
+  aTaxationCatalogue,
+  aTaxationModel,
+  anAccount,
 } from '@/test/factories'
 import { renderApp, type RenderAppOptions } from '@/test/render'
 import { server } from '@/test/server'
 
 /** The one predicate: the reporting currency unanswered. */
-function unanswered(overrides: Partial<ConfigResponse> = {}): ConfigResponse {
-  const config = aConfig(overrides)
+function unanswered(): ConfigResponse {
+  const config = aConfig()
   return {
     ...config,
     settings: config.settings.map((setting) =>
@@ -56,11 +46,11 @@ function unanswered(overrides: Partial<ConfigResponse> = {}): ConfigResponse {
 
 /**
  * The config route, **stateful**: answering the dial has to make the predicate
- * false, and a handler frozen on *unanswered* would re-arm the modal on the
- * refetch that follows the write — testing the fixture rather than the app.
+ * false, and a handler frozen on *unanswered* would re-arm the screen on the
+ * refetch that follows the write.
  */
-function withNoCurrency(config: ConfigResponse = unanswered()) {
-  let current = config
+function withNoCurrency() {
+  let current = unanswered()
   server.use(
     http.get(ROUTES.config, () => HttpResponse.json(current)),
     http.put(ROUTES.settings, async ({ request }) => {
@@ -82,7 +72,41 @@ function withNoCurrency(config: ConfigResponse = unanswered()) {
   )
 }
 
-function modal() {
+const PEA = aRegistryItem({
+  id: 'fr/pea',
+  name: 'Plan d’épargne en actions (PEA)',
+  kind: 'aged_flat_realised',
+  parameters: {
+    rate_before: 0.128,
+    rate_after: 0,
+    threshold_years: 5,
+    age_basis: 'first_payment',
+    social_rate: 0.186,
+  },
+})
+const CTO = aRegistryItem({
+  id: 'fr/cto',
+  name: 'Compte-titres ordinaire (CTO)',
+  kind: 'flat_realised',
+  parameters: { rate: 0.128, social_rate: 0.186 },
+})
+const DEPOT = aRegistryItem({ id: 'de/depot', country: 'DE', name: 'Wertpapierdepot' })
+
+/** What the registry route has been asked to import, `null` while nothing was. */
+function withRegistry(items = [PEA, CTO, DEPOT]) {
+  const asked: { ids: string[] | null } = { ids: null }
+  server.use(
+    http.post(ROUTES.taxationRegistry, async ({ request }) => {
+      const body = (await request.json()) as { ids?: string[] }
+      if (body.ids === undefined) return HttpResponse.json({ items })
+      asked.ids = body.ids
+      return HttpResponse.json({ models: [], skipped: [] }, { status: 201 })
+    }),
+  )
+  return asked
+}
+
+function screenOf() {
   return screen.getByRole('dialog')
 }
 
@@ -95,45 +119,40 @@ async function firstRun(options: RenderAppOptions = {}) {
 
 type Reader = ReturnType<typeof renderApp>['user']
 
-/**
- * Walk on from the first passage, one passage at a time: past the question with
- * *Passer*, then *Continuer* — nothing is answered on the way.
- */
-async function walk(user: Reader, passages = 1) {
-  await user.click(within(modal()).getByRole('button', { name: 'Passer' }))
-  for (let step = 1; step < passages; step += 1) {
-    await user.click(within(modal()).getByRole('button', { name: 'Continuer' }))
-  }
+async function next(user: Reader) {
+  await user.click(within(screenOf()).getByRole('button', { name: 'Continuer' }))
 }
 
-/**
- * Every request the app makes that is **not a read**, recorded off the wire.
- *
- * This is how *no `onboarding_done` row* is asserted: not by inspecting a
- * module, but by watching what the walk sends. A traversal that recorded itself
- * server-side would have to write, and there is nothing on the other end of
- * this list to write to.
- */
+/** Walk past the currency, which is the one owed answer. */
+async function pastTheCurrency(user: Reader) {
+  await user.selectOptions(within(screenOf()).getByLabelText('Devise'), 'EUR')
+  await next(user)
+  await within(screenOf()).findByRole('heading', { name: /Comment vos gains sont-ils imposés/ })
+}
+
+/** Every request the app makes that is **not a read**, recorded off the wire. */
 function writesMade(): string[] {
   const writes: string[] = []
   server.events.on('request:start', ({ request }) => {
-    if (request.method !== 'GET') writes.push(`${request.method} ${new URL(request.url).pathname}`)
+    // The registry is read with a POST: it stores nothing unless it carries ids.
+    if (request.method !== 'GET' && !request.url.endsWith(ROUTES.taxationRegistry))
+      writes.push(`${request.method} ${new URL(request.url).pathname}`)
   })
   return writes
 }
 
 afterEach(() => server.events.removeAllListeners())
 
-describe('the modal opens on a predicate, never on a moment', () => {
-  it('opens wherever the reader landed, because first run is not a place', async () => {
+describe('it stands on a missing currency, wherever the reader landed', () => {
+  it('serves the screen on any page, the page being behind it', async () => {
     await firstRun({ url: '/shares' })
 
     expect(
-      within(modal()).getByRole('heading', { name: /Bienvenue dans SuiviBourse/ }),
+      within(screenOf()).getByRole('heading', {
+        name: 'Dans quelle devise tenez-vous vos comptes ?',
+      }),
     ).toBeInTheDocument()
-    // The page the reader asked for is behind it — no route of its own, and no
-    // redirection conditioned on the data. `hidden`, because a modal dialog
-    // hides the rest of the document from the accessibility tree.
+    expect(within(screenOf()).getByText('1 sur 4')).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Titres', level: 1, hidden: true }),
     ).toBeInTheDocument()
@@ -153,918 +172,318 @@ describe('the modal opens on a predicate, never on a moment', () => {
     await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
-})
 
-describe('what it says, and what it refuses to say', () => {
-  it('carries three sentences about what the app is and no rule of calculation', async () => {
-    await firstRun()
-
-    const described = within(modal())
-    expect(
-      described.getByText(/vos achats et vos ventes : le titre, la date, le prix/),
-    ).toBeInTheDocument()
-    expect(described.getByText(/relève les cours tout seul/)).toBeInTheDocument()
-    expect(described.getByText(/Trois passages pour démarrer/)).toBeInTheDocument()
-    expect(described.queryByText(/PRU|prix de revient|moyen pondéré/i)).not.toBeInTheDocument()
-  })
-})
-
-describe('closing it', () => {
-  it('offers no Later button — the cross, Échap and the click outside are the later', async () => {
+  it('has no way out: no cross, no Escape, no click outside', async () => {
     const { user } = await firstRun()
 
-    const buttons = within(modal())
-      .getAllByRole('button')
-      .map((button) => button.textContent?.trim())
-    expect(buttons).not.toContain('Plus tard')
-
+    expect(within(screenOf()).queryByRole('button', { name: 'Fermer' })).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  })
-
-  it('closes on the click outside, the third of the three ways', async () => {
-    const { user } = await firstRun()
-
     const overlay = document.querySelector('[data-slot="dialog-overlay"]')
-    expect(overlay).not.toBeNull()
-    await user.click(overlay as Element)
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  })
-
-  it('closes on the cross and leaves an app that works', async () => {
-    const { user } = await firstRun({ url: '/ledger' })
-
-    await user.click(within(modal()).getByRole('button', { name: 'Fermer' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    // The ledger is writable: the app runs, it scrapes in the security's own
-    // currency, and what waits is the conversion — which the panel's pinned card
-    // and each valued page's empty state then say (#829).
-    await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
-    expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
-  })
-
-  it('remembers the closing in the browser alone, so a second browser sees it again', async () => {
-    const { user, unmount } = await firstRun()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
-    unmount()
-
-    // Same browser, same server: still shut.
-    withNoCurrency()
-    const again = renderApp()
-    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    again.unmount()
-
-    // Another browser — nothing on the server changed, and the question is back.
-    window.localStorage.clear()
-    withNoCurrency()
-    renderApp()
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    if (overlay) await user.click(overlay)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 })
 
-describe('the currency itself', () => {
-  it('is a closed list bounded by what the rate source quotes', async () => {
-    await firstRun()
+describe('step 1 — the currency', () => {
+  it('offers the closed list, says it is final, and holds « Continuer » until one is chosen', async () => {
+    await firstRun({ browserLanguages: ['fr'] })
 
-    const field = within(modal()).getByLabelText('Devise de base')
-    expect(field.tagName).toBe('SELECT')
-    const offered = within(field as HTMLSelectElement)
-      .getAllByRole('option')
-      .map((option) => (option as HTMLOptionElement).value)
-    expect(offered).toEqual(['', ...CURRENCIES])
-    // Shape-valid and never quoted: the field cannot express it at all.
-    expect(offered).not.toContain('XYZ')
+    const field = within(screenOf()).getByLabelText('Devise')
+    expect(within(field).getAllByRole('option')).toHaveLength(CURRENCIES.length + 1)
+    expect(within(screenOf()).getByText('Ne se change plus ensuite.')).toBeInTheDocument()
+    expect(within(screenOf()).getByRole('button', { name: 'Continuer' })).toBeDisabled()
+    expect(within(screenOf()).queryByRole('button', { name: /Retour/ })).toBeNull()
   })
 
-  it('is pre-filled from the browser locale as a suggestion and not as an answer', async () => {
-    await firstRun({ browserLanguages: ['fr-CH'] })
+  it('pre-fills the browser’s currency as a suggestion', async () => {
+    await firstRun({ browserLanguages: ['fr-FR'] })
 
-    const field = within(modal()).getByLabelText('Devise de base') as HTMLSelectElement
-    expect(field.value).toBe('CHF')
-    // A suggestion poses nothing: the reservation is on screen where it applies.
-    expect(
-      within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/),
-    ).toBeInTheDocument()
+    expect(within(screenOf()).getByLabelText('Devise')).toHaveValue('EUR')
   })
 
-  it('drops the pre-filled note the moment the reader overrides the suggestion', async () => {
+  it('writes the dial, receipts it and walks on', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    withRegistry()
+    const writes = writesMade()
 
-    const field = within(modal()).getByLabelText('Devise de base')
+    await next(user)
+
     expect(
-      within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/),
+      await within(screenOf()).findByRole('heading', {
+        name: /Comment vos gains sont-ils imposés/,
+      }),
     ).toBeInTheDocument()
-
-    await user.selectOptions(field, 'CHF')
-    // The reservation is about a value the browser named. Left standing over a
-    // code the reader chose, it says something that is simply not true of it.
-    expect(within(modal()).queryByText(/il nomme un pays/)).not.toBeInTheDocument()
+    expect(within(screenOf()).getByText('2 sur 4')).toBeInTheDocument()
+    expect(writes).toContain('PUT /api/settings')
   })
 
-  it('does not attach a past refusal to the code just picked', async () => {
+  it('says a refusal on the step and writes nothing more', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
-    // Registered after the harness's own writer, which `use` would otherwise
-    // shadow: the last handler installed is the one that answers.
     server.use(
       http.put(ROUTES.settings, () =>
         HttpResponse.json(
-          { type: PROBLEM_TYPES.badRequest, title: 'refused', status: 422 },
-          { status: 422, headers: { 'content-type': 'application/problem+json' } },
+          { status: 422, type: PROBLEM_TYPES.invalidSetting, title: 'Refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
         ),
       ),
     )
 
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-    expect(await within(modal()).findByRole('alert')).toHaveTextContent(/a refusé cette valeur/)
+    await next(user)
 
-    await user.selectOptions(within(modal()).getByLabelText('Devise de base'), 'CHF')
-    expect(within(modal()).queryByRole('alert')).not.toBeInTheDocument()
+    expect(await within(screenOf()).findByText(/a refusé cette valeur/)).toBeInTheDocument()
+    expect(within(screenOf()).getByText('1 sur 4')).toBeInTheDocument()
   })
+})
 
-  it('opens empty rather than guessing when the locale names no currency it can offer', async () => {
-    await firstRun({ browserLanguages: ['fr'] })
-
-    const field = within(modal()).getByLabelText('Devise de base') as HTMLSelectElement
-    expect(field.value).toBe('')
-    expect(within(modal()).queryByText(/il nomme un pays/)).not.toBeInTheDocument()
-  })
-
-  it('says where the choice is made that answering it is what fixes it', async () => {
-    // The one sentence the reader has to have before they answer, and the one
-    // the screen used to get wrong: *you can still change this, your ledger is
-    // empty* over a dial whose second answer re-reads three years of euros as
-    // dollars. The window that sentence described is real on the server and it
-    // is not one the app offers (#794, `CONTEXT.md`).
-    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
-    await firstRun()
-
-    await waitFor(() =>
-      expect(
-        within(modal()).getByText('Une fois enregistrée, elle ne se change plus.'),
-      ).toBeInTheDocument(),
-    )
-    expect(within(modal()).queryByText(/^Fixée /)).not.toBeInTheDocument()
-  })
-
-  it('is still asked on a full ledger, this dial having never been answered', async () => {
-    // The modal's whole population, and the v4 arrival is the ordinary case of
-    // it: files carrying no `base_currency` column (#710) leave the dial
-    // unanswered under hundreds of events. It is the *answer* that fixes it, so
-    // the question is still asked here — and it is asked in a field.
-    await firstRun()
-
-    await waitFor(() =>
-      expect((within(modal()).getByLabelText('Devise de base') as HTMLElement).tagName).toBe(
-        'SELECT',
-      ),
-    )
-  })
-
-  it('stops being drawn as a field on the settings page once it is answered', async () => {
-    // Greyed out, a field invites the click and reads as a form that refused;
-    // open, it lets a reader choose a code the write will not take. What is
-    // left is the answer and the sentence that says it cannot be taken back.
-    renderApp({ url: '/settings' })
-
-    expect(
-      await screen.findByText('Vos montants sont enregistrés dans cette devise.'),
-    ).toBeInTheDocument()
-    expect(screen.queryByLabelText('Devise de base')).not.toBeInTheDocument()
-    expect(screen.getByText('Devise de base')).toBeInTheDocument()
-  })
-
-  it('shows a code another road stored, and names it as being outside the list', async () => {
-    // **What is closed is what the field offers, not what it can show**: the
-    // stored answer is rendered whatever it is, and named as one the field
-    // would not have offered.
-    const config = aConfig()
-    server.use(
-      http.get(ROUTES.config, () =>
-        HttpResponse.json({
-          ...config,
-          settings: config.settings.map((setting) =>
-            setting.key === 'base_currency' ? { ...setting, value: 'AED' } : setting,
-          ),
-        }),
-      ),
-    )
-    renderApp({ url: '/settings' })
-
-    expect(await screen.findByText(/AED — enregistrée hors de cette liste/)).toBeInTheDocument()
-  })
-
-  it('answering it writes the dial, receipts the gesture and walks on', async () => {
+describe('step 2 — the tax models of a country', () => {
+  it('lists the models of the first country with their rule, unticked', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    withRegistry()
+    await next(user)
 
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-
-    // `findAllBy`: a toast renders its text twice, once drawn and once in the
-    // live region that announces it.
-    expect(await screen.findAllByText(/Devise de base enregistrée : EUR/)).not.toHaveLength(0)
-    // **The answer no longer closes anything**. It made the predicate
-    // false, and the predicate is what *armed* the modal rather than what holds
-    // it open — otherwise the two passages after the question would be
-    // unreachable to everybody who answers it, which is everybody it is for.
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(within(modal()).queryByLabelText('Devise de base')).not.toBeInTheDocument()
-  })
-})
-
-describe('the band is gone and its sentence descends (#829)', () => {
-  const bell = () => screen.getByRole('button', { name: /^Notifications/ })
-
-  it('says why each page is empty, and keeps the ledger readable', async () => {
-    const { user } = await firstRun()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    // **No band, anywhere.** The strip that took the top of every route for
-    // this one condition is retired without replacement.
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-
-    // What replaces it is one floor down, on the page whose figures are the
-    // ones that are missing — and it *says why*, in place of the em dashes it
-    // would otherwise line up.
-    expect(await screen.findByText('Aucune devise de base')).toBeInTheDocument()
-    expect(screen.getByText(/Rien n’est valorisé et aucun gain n’est calculé/)).toBeInTheDocument()
-
-    // **The ledger stays readable throughout**: the events are declared, and it
-    // is their valuation that waits.
-    await user.click(screen.getByRole('link', { name: 'Grand livre' }))
-    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
-    expect(screen.queryByText('Aucune devise de base')).not.toBeInTheDocument()
+    const pea = await within(screenOf()).findByRole('checkbox', {
+      name: /Plan d’épargne en actions \(PEA\)/,
+    })
+    expect(pea).not.toBeChecked()
+    // The rule is built from the parameters, never typed in the front.
+    expect(
+      within(screenOf()).getByText(/12,8\s%\spuis 0,0\s%\saprès 5 ans · PS 18,6\s%/),
+    ).toBeInTheDocument()
+    expect(within(screenOf()).getByText(/Forfaitaire 12,8\s% · PS 18,6\s%/)).toBeInTheDocument()
+    // Another country is a choice, and not on the list.
+    expect(within(screenOf()).queryByText('Wertpapierdepot')).not.toBeInTheDocument()
+    const country = within(screenOf()).getByLabelText('Pays')
+    expect(within(country).getAllByRole('option')).toHaveLength(2)
   })
 
-  it('leaves the panel empty: the walk is the question, the bell holds no card for it', async () => {
-    const { user } = await firstRun()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    await user.click(bell())
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-
-    // The bell holds the `user` register of the advisories and nothing else
-    // (#829): the missing currency is answered in Réglages, not here.
-    expect(within(panel).getByText('Rien à signaler')).toBeInTheDocument()
-    expect(within(panel).queryByText(/Aucune devise de base/)).not.toBeInTheDocument()
-  })
-
-  it('takes the entry away the moment the question is answered', async () => {
+  it('imports the ticked models in one call, all of them or none', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    const asked = withRegistry()
+    await next(user)
 
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await user.click(await within(screenOf()).findByRole('checkbox', { name: /PEA/ }))
+    await user.click(within(screenOf()).getByRole('checkbox', { name: /CTO/ }))
+    await next(user)
 
-    await waitFor(() => expect(screen.queryByText('Aucune devise de base')).not.toBeInTheDocument())
-  })
-})
-
-describe('the ceiling loses nothing: the field is where the dial is', () => {
-  it('keeps the currency answerable on the settings page, and posts no notice about it', async () => {
-    const { user } = await firstRun({ url: '/settings' })
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    // The same field the modal mounts, still there — the panel holds it anyway,
-    // which is what licenses the walk being escapable.
-    const field = await screen.findByLabelText('Devise de base')
-    expect((field as HTMLSelectElement).value).toBe('')
-    // And the bell holds no card for it (#829).
-    await user.click(screen.getByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    expect(within(panel).queryByText(/Aucune devise de base/)).not.toBeInTheDocument()
-  })
-})
-
-describe('the bell is a state and a link, and the link arrives', () => {
-  it('leads to Système from any page, through the footer', async () => {
-    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    const { user } = renderApp({ url: '/shares' })
-
-    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Système' }))
-
-    expect(await screen.findByRole('heading', { name: 'Tâches', level: 2 })).toBeInTheDocument()
-  })
-})
-
-describe('the walk is three passages, and they are walked in order', () => {
-  it('names each one as the reader arrives on it', async () => {
-    const { user } = await firstRun()
-
-    // One: what the app has to be told, which is one thing and has no default.
-    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
-    expect(
-      within(modal()).getByRole('heading', { name: 'Votre devise de base' }),
-    ).toBeInTheDocument()
-    expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument()
-
-    // Two: the accounts, so the notion exists **before** a file naming them is
-    // handed over, which is the whole reason it comes second and not third.
-    await walk(user)
-    expect(await within(modal()).findByText('Passage 2 sur 3')).toBeInTheDocument()
-    expect(within(modal()).getByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-
-    // Three: the events, named for the events and never for the import.
-    await user.click(within(modal()).getByRole('button', { name: 'Continuer' }))
-    expect(await within(modal()).findByText('Passage 3 sur 3')).toBeInTheDocument()
-    expect(
-      within(modal()).getByRole('heading', { name: 'Vos premiers événements' }),
-    ).toBeInTheDocument()
-    // The file is one of two doors inside the passage, never the passage
-    // itself.
-    expect(
-      within(modal()).queryByRole('heading', { name: /premier import/i }),
-    ).not.toBeInTheDocument()
+    await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
+    expect(asked.ids).toEqual(['fr/pea', 'fr/cto'])
   })
 
-  it('walks back, the sequence being one and not three tabs', async () => {
-    const { user } = await firstRun()
+  it('imports nothing when nothing is ticked, and walks on', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    const asked = withRegistry()
+    await next(user)
+    await within(screenOf()).findByRole('checkbox', { name: /PEA/ })
 
-    // The first passage has no way back, so nothing offers one there.
-    expect(within(modal()).queryByRole('button', { name: 'Revenir' })).not.toBeInTheDocument()
+    await next(user)
 
-    await walk(user, 2)
-    await user.click(within(modal()).getByRole('button', { name: 'Revenir' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
+    expect(asked.ids).toBeNull()
   })
 
-  it('does not show the unassigned bucket to a reader who has declared nothing', async () => {
-    // The install that has declared nothing — which is every install on its
-    // first day. The seeded row is an implementation detail, so it is not
-    // listed; one sentence says where events go in the meantime.
-    server.use(http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())))
-    const { user } = await firstRun()
-    await walk(user)
-
-    const passage = within(modal())
-    expect(
-      await passage.findByText(
-        'Tant que vous n’en ajoutez pas, vos événements vont dans « Non affecté ».',
-      ),
-    ).toBeInTheDocument()
-    expect(passage.queryByText('Non affecté')).not.toBeInTheDocument()
-    expect(passage.queryByText('default')).not.toBeInTheDocument()
-    expect(passage.queryByText('Vos comptes actuels')).not.toBeInTheDocument()
-    expect(passage.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(passage.getByRole('button', { name: 'Continuer' })).toBeEnabled()
-  })
-
-  it('says nothing about the accounts while that read is in flight', async () => {
-    // The passage's own two sentences are about the product and stand; the
-    // block that names rows does not exist yet.
-    server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
-    const { user } = await firstRun()
-    await walk(user)
-
-    const passage = within(modal())
-    expect(await passage.findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(passage.queryByText(/Vos comptes actuels/)).not.toBeInTheDocument()
-    expect(passage.queryByText('Non affecté')).not.toBeInTheDocument()
-  })
-})
-
-/**
- * **What the drawing decided** (`docs/design-revamp-v2-onboarding.html`), and
- * what each case here prevents.
- *
- * The four are not styling: each one is a thing a reader could not do, or could
- * not know, before the drawing was read.
- *
- *  - a walk whose **length is a sentence and not a shape** — `Passage 2 sur 3`
- *    is read by whoever reads that line, and by nobody who is scanning;
- *  - **three ways out and none of them written down** — the reader looking for
- *    a *Later* button found the cross by not finding anything else;
- *  - **a passage that names accounts and will not let one be declared**, which
- *    sent a reader who already knew their split off to another page and back;
- *  - and, under all three, **a body that changed height** between passages, so
- *    the control the reader was aiming at moved as they arrived.
- */
-describe('the walk is drawn, and the drawing carries the facts', () => {
-  it('states where the reader is, as a shape and as a sentence', async () => {
-    const { user } = await firstRun()
-
-    const rail = within(modal()).getByRole('navigation', { name: 'Passages' })
-    // The three nouns of the product, in the order they are walked.
-    expect(rail).toHaveTextContent(/Devise.*Comptes.*Premiers événements/s)
-
-    // Which one is standing is said to the machine as well as drawn.
-    const standing = () => rail.querySelector('[aria-current="step"]')
-    expect(standing()).toHaveTextContent('Devise')
-    // And how far along it is stays a sentence: a rule filling with colour is
-    // not something a screen reader can be handed.
-    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
-
-    await walk(user)
-    expect(standing()).toHaveTextContent('Comptes')
-    expect(await within(modal()).findByText('Passage 2 sur 3')).toBeInTheDocument()
-  })
-
-  it('says of a crossed passage that it is crossed, and not merely which one it was', async () => {
-    const { user } = await firstRun()
-
-    const rail = () => within(modal()).getByRole('navigation', { name: 'Passages' })
-    expect(within(rail()).queryByText('franchi')).not.toBeInTheDocument()
-
-    await walk(user)
-    // One behind, and the mark has dropped its number for the word: at that
-    // point *which one it was* has stopped being the news.
-    await waitFor(() => expect(within(rail()).getAllByText('franchi')).toHaveLength(1))
-
-    await user.click(within(modal()).getByRole('button', { name: 'Continuer' }))
-    expect(within(rail()).getAllByText('franchi')).toHaveLength(2)
-  })
-
-  it('writes the way out where a reader is still deciding whether to be here', async () => {
-    const { user } = await firstRun()
-
-    // The first passage: no way back, so the corner that would carry one
-    // carries the sentence that says how to leave instead.
-    expect(within(modal()).getByText('Échap pour fermer')).toBeInTheDocument()
-
-    // Past it, the corner is the way back, and the way out is no longer the
-    // question: the reader has already chosen to walk.
-    await walk(user)
-    await waitFor(() =>
-      expect(within(modal()).queryByText('Échap pour fermer')).not.toBeInTheDocument(),
-    )
-    expect(within(modal()).getByRole('button', { name: 'Revenir' })).toBeInTheDocument()
-
-    // And it is still true, which is the only reason it may be written.
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  })
-
-  it('holds one height across the three, so the control does not move under the cursor', async () => {
-    const { user } = await firstRun()
-
-    const body = () => modal().querySelector('.min-h-56')
-    expect(body()).not.toBeNull()
-
-    await walk(user, 2)
-    expect(await within(modal()).findByText('Passage 3 sur 3')).toBeInTheDocument()
-    expect(body()).not.toBeNull()
-  })
-})
-
-/**
- * **The accounts passage offers what it was only naming** — and the offer is an
- * offer.
- *
- * The passage comes second so the notion of an account exists *before* a file
- * naming accounts is handed over; until the drawing was read it stopped at
- * naming them, and a reader who already knew their holdings were split had to
- * leave the walk to act on it. Every case below holds one half of *offer*: the
- * gesture is there, and nothing waits on it.
- */
-describe('an account can be declared from inside the walk', () => {
-  /** The declaration route, **stateful**: a row declared has to join the list. */
-  function withAccounts(payload = noAccountsDeclared()) {
-    let current = payload
+  it('says when the catalogue cannot be read, and offers to try again', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
     server.use(
-      http.get(ROUTES.accounts, () => HttpResponse.json(current)),
-      http.post(ROUTES.accounts, async ({ request }) => {
-        const draft = (await request.json()) as { id: string; label: string }
-        const row = { ...theSeededAccount(), ...draft }
-        current = { declared: true, accounts: [...current.accounts, row] }
-        return HttpResponse.json(row, { status: 201 })
-      }),
+      http.post(ROUTES.taxationRegistry, () =>
+        HttpResponse.json(
+          { status: 502, type: PROBLEM_TYPES.providerRefused, title: 'Refused' },
+          { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
     )
+    await next(user)
+
+    expect(await within(screenOf()).findByRole('alert')).toBeInTheDocument()
+    expect(within(screenOf()).getByRole('button', { name: 'Réessayer' })).toBeVisible()
+    // And the walk is not held: nothing is owed on this step.
+    expect(within(screenOf()).getByRole('button', { name: 'Continuer' })).toBeEnabled()
+  })
+
+  it('leads to Réglages to write one’s own model, and leaves the walk', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    withRegistry()
+    await next(user)
+
+    await user.click(
+      await within(screenOf()).findByRole('link', { name: 'Écrire mon propre modèle' }),
+    )
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+describe('step 3 — the first account', () => {
+  async function toTheAccount(user: Reader) {
+    withRegistry()
+    server.use(
+      http.get(ROUTES.taxationModels, () =>
+        HttpResponse.json(
+          aTaxationCatalogue({ models: [aTaxationModel({ id: 'pea', name: 'PEA maison' })] }),
+        ),
+      ),
+    )
+    await pastTheCurrency(user)
+    await next(user)
+    await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
   }
 
-  it('names the rows by the identifier events carry, which is why this comes before the file', async () => {
-    withAccounts()
-    const { user } = await firstRun()
-    await walk(user)
-
-    const passage = within(modal())
-    await user.click(await passage.findByRole('button', { name: 'Ajouter un compte' }))
-    await user.type(passage.getByLabelText('Identifiant'), 'pea')
-    await user.click(passage.getByRole('button', { name: 'Ajouter ce compte' }))
-
-    // The name and, beside it, the value a `.csv` would have to spell to land on
-    // it — the id alone since #916. The seeded row is still not listed.
-    expect(await passage.findByText('Vos comptes actuels')).toBeInTheDocument()
-    expect(passage.getAllByText('pea')).toHaveLength(2)
-    expect(passage.queryByText('default')).not.toBeInTheDocument()
-  })
-
-  it('is closed until it is asked for, and the passage is satisfied without it', async () => {
-    withAccounts()
-    const { user } = await firstRun()
-    await walk(user)
-
-    const passage = within(modal())
-    expect(await passage.findByRole('button', { name: 'Ajouter un compte' })).toBeInTheDocument()
-    // Nothing is being asked for: no field is on screen, and walking on never
-    // waits on one. *Mandatory* here is traversed, never answered.
-    expect(passage.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(passage.getByRole('button', { name: 'Continuer' })).toBeEnabled()
-  })
-
-  it('declares, and the row joins the list the reader is looking at', async () => {
-    withAccounts()
-    const { user } = await firstRun()
-    await walk(user)
-
-    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
-    await user.type(within(modal()).getByLabelText('Identifiant'), 'pea')
-    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
-
-    // Declared, and read back: the list is the installation's own accounts, so
-    // the row is there because the server has it and not because a form said so.
-    // The declaration carried no name, so the label falls back to the id — and
-    // the row therefore renders `pea` **exactly twice**, as its name and as the
-    // identifier beside it (#916). Asserting the count rather than *at least
-    // one* is what makes this fail if either half stops rendering.
-    expect(await within(modal()).findAllByText('pea')).toHaveLength(2)
-    // The form closes behind it — the offer is not a place the reader stays.
-    await waitFor(() =>
-      expect(within(modal()).queryByLabelText('Identifiant')).not.toBeInTheDocument(),
-    )
-  })
-
-  it('does not ask the server for a row it can see is incomplete', async () => {
-    withAccounts()
-    const writes = writesMade()
-    const { user } = await firstRun()
-    await walk(user)
-
-    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
-    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
-
-    // The one required field says so where it is, and nothing crossed the wire
-    // to be told what this form already knew. It was two until #916: the type
-    // was the other, and there is no type to require.
-    expect(within(modal()).getAllByText('Ce champ est obligatoire.')).toHaveLength(1)
-    expect(writes).not.toContain('POST /api/accounts')
-  })
-
-  it('says why an identifier the URLs cannot carry is refused, before the server does', async () => {
-    withAccounts()
-    const writes = writesMade()
-    const { user } = await firstRun()
-    await walk(user)
-
-    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
-    await user.type(within(modal()).getByLabelText('Identifiant'), 'pea/lcl')
-    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
-
-    // The server's `refuse_unaddressable_id` reaches the page as a generic
-    // refusal; the rule is said where the identifier is typed instead.
-    expect(within(modal()).getByText(/ne contient pas de « \/ »/)).toBeInTheDocument()
-    expect(writes).not.toContain('POST /api/accounts')
-  })
-
-  it('carries the server’s refusal beside the button that earned it', async () => {
+  it('declares the account with the model chosen', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    let sent: unknown = null
     server.use(
-      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
+      http.post(ROUTES.accounts, async ({ request }) => {
+        sent = await request.json()
+        return HttpResponse.json(anAccount({ id: 'pea' }), { status: 201 })
+      }),
+    )
+    await toTheAccount(user)
+
+    await user.type(within(screenOf()).getByLabelText('Identifiant'), 'pea')
+    await user.type(within(screenOf()).getByLabelText(/Libellé/), 'PEA Bourse Direct')
+    await user.selectOptions(
+      await within(screenOf()).findByRole('combobox', { name: 'Modèle d’imposition' }),
+      'PEA maison',
+    )
+    await next(user)
+
+    await within(screenOf()).findByRole('heading', {
+      name: /D’où viennent vos premiers événements/,
+    })
+    expect(sent).toEqual({ id: 'pea', label: 'PEA Bourse Direct', taxation_model_id: 'pea' })
+  })
+
+  it('writes nothing for a blank identifiant: the step is traversed, not answered', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await toTheAccount(user)
+    const writes = writesMade()
+
+    await next(user)
+
+    await within(screenOf()).findByRole('heading', {
+      name: /D’où viennent vos premiers événements/,
+    })
+    expect(writes).toEqual([])
+  })
+
+  it('says a duplicate identifiant under its field and stays on the step', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    server.use(
       http.post(ROUTES.accounts, () =>
         HttpResponse.json(
-          { type: PROBLEM_TYPES.conflict, title: 'Conflict', status: 409 },
-          { status: 409, headers: { 'content-type': 'application/problem+json' } },
+          { status: 409, type: PROBLEM_TYPES.conflict, title: 'Conflict' },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
         ),
       ),
     )
-    const { user } = await firstRun()
-    await walk(user)
+    await toTheAccount(user)
 
-    await user.click(await within(modal()).findByRole('button', { name: 'Ajouter un compte' }))
-    await user.type(within(modal()).getByLabelText('Identifiant'), 'default')
-    await user.click(within(modal()).getByRole('button', { name: 'Ajouter ce compte' }))
+    await user.type(within(screenOf()).getByLabelText('Identifiant'), 'pea')
+    await next(user)
 
-    // The refusal is in the form, and the form stays open on what was typed:
-    // a gesture the server refused is answered beside the control that made it.
-    expect(await within(modal()).findByRole('status')).toBeInTheDocument()
-    expect(within(modal()).getByLabelText('Identifiant')).toHaveValue('default')
+    expect(await within(screenOf()).findByText(/déjà celui d’un autre compte/)).toBeInTheDocument()
+    expect(within(screenOf()).getByText('3 sur 4')).toBeInTheDocument()
   })
 
-  it('offers nothing at all while the accounts read is in flight', async () => {
-    server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
-    const { user } = await firstRun()
-    await walk(user)
+  it('refuses an identifiant the URLs cannot carry before asking the server', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await toTheAccount(user)
+    const writes = writesMade()
 
-    const passage = within(modal())
-    expect(await passage.findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(passage.queryByRole('button', { name: 'Ajouter un compte' })).not.toBeInTheDocument()
+    await user.type(within(screenOf()).getByLabelText('Identifiant'), 'a/b')
+    await next(user)
+
+    expect(await within(screenOf()).findByText(/ne contient pas de « \/ »/)).toBeInTheDocument()
+    expect(writes).toEqual([])
   })
 })
 
-describe('the third passage is the ledger’s own pair of entrances', () => {
-  it('mounts the same component, at equal weight and with no primary action', async () => {
-    const { user } = await firstRun()
-    await walk(user, 2)
+describe('step 4 — three doors', () => {
+  async function toTheDoors(user: Reader) {
+    withRegistry()
+    await pastTheCurrency(user)
+    await next(user)
+    await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
+    await next(user)
+    await within(screenOf()).findByRole('heading', {
+      name: /D’où viennent vos premiers événements/,
+    })
+  }
 
-    const pair = within(modal())
-    expect(await pair.findByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument()
-    expect(pair.getByRole('region', { name: 'Saisir un premier événement' })).toBeInTheDocument()
-    // Both entries are **available**, and that is a property of the product
-    // rather than of this install (#811): a file is handed to the app
-    // by a gesture, so there is no mount left whose absence could take an
-    // entrance away — and the sentence names no folder, there being none left
-    // to name.
-    expect(
-      pair.getByText(/Un ou plusieurs fichiers .csv ou .xlsx de vos événements/),
-    ).toBeInTheDocument()
-    expect(pair.queryByText(/\/import/)).not.toBeInTheDocument()
-    // No primary action: a filled button beside an outlined one is a
-    // recommendation, and it would be wrong for whichever reader it misses. Both
-    // doors are outlined, which is what *equal weight* is made of.
-    expect(pair.getByRole('link', { name: 'Saisir un événement' }).className).toContain('border')
-    expect(pair.getByRole('link', { name: 'Choisir un fichier…' }).className).toContain('border')
+  it('offers the import, the event sheet and « Plus tard », and no « Continuer »', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await toTheDoors(user)
+
+    const doors = within(screenOf()).getAllByRole('link')
+    expect(doors.map((door) => door.textContent)).toEqual([
+      'Importer un relevéFichier CSV ou Excel',
+      'Saisir à la mainUn versement, un achat',
+      'Plus tardDepuis le grand livre, quand vous voulez',
+    ])
+    expect(within(screenOf()).queryByRole('button', { name: 'Continuer' })).not.toBeInTheDocument()
   })
 
-  it('states no emptiness: it offers two doors before anything has been read', async () => {
-    const { user } = await firstRun()
-    await walk(user, 2)
+  it('« Saisir à la main » ends the walk where the event is typed', async () => {
+    const { user, router } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await toTheDoors(user)
 
-    // `data-empty` is the mount's and not the component's — here nothing is
-    // being claimed about the reader's own data.
-    await within(modal()).findByRole('region', { name: 'Importer un fichier' })
-    expect(modal().querySelector('[data-empty]')).toBeNull()
-  })
+    await user.click(within(screenOf()).getByRole('link', { name: /Saisir à la main/ }))
 
-  it('is traversed by the file door, which lands where a file is handed over', async () => {
-    const { user } = await firstRun()
-    await walk(user, 2)
-
-    await user.click(await within(modal()).findByRole('link', { name: 'Choisir un fichier…' }))
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    // Not merely `/ledger`: the target the file is actually handed to, which is
-    // reached by its own label rather than by a rectangle a pointer must find.
-    // The fixture's ledger has rows, so it is the toolbar's *Importer* (#1278).
-    expect(await screen.findByLabelText('Importer')).toBeInTheDocument()
-    // The walk is over however it ended, and the browser holds that.
-    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
-  })
-
-  it('is traversed by the typed event, which is a way in', async () => {
-    const { user } = await firstRun()
-    await walk(user, 2)
-
-    await user.click(await within(modal()).findByRole('link', { name: 'Saisir un événement' }))
-
-    // The door opens the form itself and not a page with a button on it: a
-    // reader with no file must be able to record a first purchase from here,
-    // because typing a position *is* creating dated events.
-    expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
-    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
-  })
-})
-
-describe('mandatory means traversed, never answered', () => {
-  it('lets a bare docker run through the three without supplying anything', async () => {
-    // A screen that will not release this reader without a CSV in hand turns
-    // the trial into a wall, so the three passages are walked and the only
-    // thing that happens is that they end.
-    server.use(
-      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
-      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))),
-    )
-    const writes = writesMade()
-    const { user } = await firstRun()
-
-    await walk(user, 2)
-    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    // **Nothing was extracted, and nothing was recorded server-side.** No dial
-    // was answered, no account declared, no event written — and no
-    // `onboarding_done` either, there being no write at all to carry one.
-    expect(writes).toEqual([])
-    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
-  })
-
-  it('keeps the walk out of the store: the memory is the browser’s, and only that', async () => {
-    const writes = writesMade()
-    const { user, unmount } = await firstRun()
-
-    await walk(user, 2)
-    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(writes).toEqual([])
-    unmount()
-
-    // It holds between two mounts, the server having answered nothing new.
-    withNoCurrency()
-    renderApp()
-    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('does not reopen on a ledger emptied after six months', async () => {
-    // #726's refusal, answered on its merits. What used to reopen the screen was
-    // not the number of steps: it was deriving its existence from the data it is
-    // about to collect. Nothing here reads the ledger, so emptying one — which
-    // the bulk delete makes an ordinary gesture — changes nothing.
-    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
-    renderApp({ url: '/ledger' })
-
-    await screen.findByRole('heading', { name: 'Grand livre', level: 1 })
     await waitFor(() =>
-      expect(screen.getByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument(),
+      expect(screen.queryByRole('dialog', { name: /Dans quelle|Comment|premier/ })).toBeNull(),
     )
-    // The ledger is empty on screen, and the walk is nowhere.
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/ledger')
   })
 
-  it('re-poses the question on a wiped store, in the very browser that answered', async () => {
-    // The other half of the same property, and the case a plain *been through*
-    // mark gets wrong: this reader answered, walked the three and came back to
-    // an install whose volume is gone. Nothing server-side remembers the walk —
-    // there is no row to survive the wipe — so the question is asked again, and
-    // the browser's memory does not swallow it, because what it holds is *what
-    // was still unanswered when I left*.
-    const { user, unmount } = await firstRun({ browserLanguages: ['fr-FR'] })
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    await user.click(within(modal()).getByRole('button', { name: 'Continuer' }))
-    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    unmount()
+  it('« Plus tard » ends the walk on the dashboard', async () => {
+    const { user, router } = await firstRun({ url: '/shares', browserLanguages: ['fr-FR'] })
+    await toTheDoors(user)
 
-    // Same browser, same address — and a store that answers *unanswered* again,
-    // which is what a wiped volume is.
-    withNoCurrency()
-    renderApp()
+    await user.click(within(screenOf()).getByRole('link', { name: /Plus tard/ }))
 
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
-  })
-
-  it('leaves alone the reader who walked away from the question still open', async () => {
-    // The counterweight, and the reason the mark is not simply cleared when the
-    // predicate stands again: a bare `docker run` answers nothing on purpose, so
-    // this reader must not be walked through the product's explanation on every
-    // page load — nor on the next container, which is indistinguishable to them.
-    const { user, unmount } = await firstRun()
-    await walk(user, 2)
-    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    unmount()
-
-    withNoCurrency()
-    renderApp()
-    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 })
 
-/** The dashboard of a reader who has recorded nothing: the empty state's payload. */
-function anEmptyLedger() {
-  server.use(
-    http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([], null))),
-    http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null, null))),
-  )
-}
+describe('walking back', () => {
+  it('leads back to the step before, and is absent on the first', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    withRegistry()
+    await pastTheCurrency(user)
+
+    await user.click(within(screenOf()).getByRole('button', { name: /Retour/ }))
+
+    expect(
+      await within(screenOf()).findByRole('heading', { name: /Dans quelle devise/ }),
+    ).toBeInTheDocument()
+    // The currency is stored by now: shown fixed, and « Continuer » walks on.
+    expect(within(screenOf()).getByText('EUR')).toBeInTheDocument()
+  })
+})
 
 describe('the walk can be found again', () => {
-  it('leads back to the accounts from the palette after a reload past the first passage', async () => {
-    const { user, unmount } = await firstRun({ browserLanguages: ['fr-FR'] })
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    unmount()
-    window.localStorage.clear()
-
-    // The reload: the currency is answered, nothing arms the walk.
-    anEmptyLedger()
-    const again = renderApp()
-    await screen.findByText('Aucun événement')
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-
-    // The empty dashboard keeps one action (#1435): the walk is the palette's.
-    await again.user.click(screen.getByRole('button', { name: /^Rechercher/ }))
-    await again.user.click(await screen.findByRole('button', { name: 'Revoir la mise en route' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(within(modal()).getByText('Passage 2 sur 3')).toBeInTheDocument()
-  })
-
-  it('reopens a walk closed by mistake, from the palette', async () => {
-    anEmptyLedger()
-    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('answered')
-
-    await user.click(await screen.findByRole('button', { name: /^Rechercher/ }))
-    await user.click(await screen.findByRole('button', { name: 'Revoir la mise en route' }))
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-  })
-
-  it('spends the address it was opened by', async () => {
+  it('reopens past the currency from the palette’s gesture, and spends the address', async () => {
+    withRegistry()
     const { router } = renderApp({ url: '/?open=first-run' })
 
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    await waitFor(() => expect(router.state.location.search).not.toHaveProperty('open'))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-  })
-
-  it('waits for the settings read before opening on a gesture', async () => {
-    server.use(http.get(ROUTES.config, () => new Promise(() => {})))
-    renderApp({ url: '/?open=first-run' })
-
-    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('opens on the question when the gesture arrives with it unanswered', async () => {
-    window.localStorage.setItem(FIRST_RUN_STORAGE_KEY, 'dismissed')
-    withNoCurrency()
-    renderApp({ url: '/?open=first-run' })
-
     expect(
-      await within(await screen.findByRole('dialog')).findByRole('heading', {
-        name: 'Votre devise de base',
-      }),
+      await screen.findByRole('heading', { name: /Comment vos gains sont-ils imposés/ }),
     ).toBeInTheDocument()
+    expect(router.state.location.search).toEqual({})
   })
 
-  it('writes nothing to the server when reopened', async () => {
+  it('writes nothing to the server when reopened and walked through', async () => {
+    withRegistry()
     const writes = writesMade()
     const { user } = renderApp({ url: '/?open=first-run' })
+    await screen.findByRole('heading', { name: /Comment vos gains sont-ils imposés/ })
 
-    await within(await screen.findByRole('dialog')).findByRole('heading', { name: 'Vos comptes' })
-    await user.click(within(modal()).getByRole('button', { name: 'Continuer' }))
-    await user.click(within(modal()).getByRole('button', { name: 'Terminer' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await next(user)
+    await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
+    await next(user)
+
+    await within(screenOf()).findByRole('heading', {
+      name: /D’où viennent vos premiers événements/,
+    })
     expect(writes).toEqual([])
-  })
-})
-
-describe('the first passage carries one primary control', () => {
-  it('carries one primary control on the question, and a quieter way past it', async () => {
-    await firstRun()
-
-    const passage = within(modal())
-    expect(passage.getAllByRole('button', { name: 'Enregistrer et continuer' })).toHaveLength(1)
-    expect(passage.getAllByRole('button', { name: 'Passer' })).toHaveLength(1)
-    expect(passage.queryByRole('button', { name: 'Enregistrer' })).not.toBeInTheDocument()
-    expect(passage.queryByRole('button', { name: 'Continuer' })).not.toBeInTheDocument()
-    expect(passage.getByText('Échap pour fermer')).toBeInTheDocument()
-  })
-
-  it('walks past the question without answering it', async () => {
-    const writes = writesMade()
-    const { user } = await firstRun()
-
-    await user.click(within(modal()).getByRole('button', { name: 'Passer' }))
-
-    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(writes).toEqual([])
-  })
-
-  it('says why the answer is disabled while the field is empty', async () => {
-    await firstRun({ browserLanguages: ['fr'] })
-
-    expect(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' })).toBeDisabled()
-    expect(
-      within(modal()).getByText('Choisissez une devise, ou passez cette étape.'),
-    ).toBeInTheDocument()
-  })
-
-  it('shows only Continuer on a question already answered', async () => {
-    const { user } = renderApp({ url: '/?open=first-run' })
-    await within(await screen.findByRole('dialog')).findByRole('heading', { name: 'Vos comptes' })
-
-    await user.click(within(modal()).getByRole('button', { name: 'Revenir' }))
-
-    const passage = within(modal())
-    expect(await passage.findByRole('button', { name: 'Continuer' })).toBeInTheDocument()
-    expect(
-      passage.queryByRole('button', { name: 'Enregistrer et continuer' }),
-    ).not.toBeInTheDocument()
-    expect(passage.queryByRole('button', { name: 'Passer' })).not.toBeInTheDocument()
-  })
-
-  it('states the stored currency on a reopened question, not the browser’s suggestion', async () => {
-    const { user } = renderApp({ url: '/?open=first-run', browserLanguages: ['fr-CH'] })
-    await within(await screen.findByRole('dialog')).findByRole('heading', { name: 'Vos comptes' })
-
-    await user.click(within(modal()).getByRole('button', { name: 'Revenir' }))
-
-    // The default config answers EUR; the locale would have suggested CHF.
-    expect(await within(modal()).findByText('EUR')).toBeInTheDocument()
-    expect(within(modal()).queryByText('CHF')).not.toBeInTheDocument()
-  })
-
-  it('does not let Passer race a save in flight', async () => {
-    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
-    server.use(http.put(ROUTES.settings, () => new Promise(() => {})))
-
-    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer et continuer' }))
-
-    await waitFor(() =>
-      expect(within(modal()).getByRole('button', { name: 'Passer' })).toBeDisabled(),
-    )
   })
 })

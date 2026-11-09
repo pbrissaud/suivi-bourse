@@ -24,28 +24,17 @@
  * nothing and stores nothing.
  */
 import type { SettingDescription } from '@/features/settings/lib/api'
-import { browserStorage, rememberPreference } from '@/lib/storage'
-
-/** Same shape as the theme and language keys, deliberately. */
-export const FIRST_RUN_STORAGE_KEY = 'sb.firstRun'
 
 /**
- * The three passages, **in order**: the required settings, the
- * accounts, the first events.
+ * The four steps, **in order** (« Relevé »): the currency, the tax models of a
+ * country, the first account, then where the first events come from.
  *
- * They are a list rather than three booleans because that is the whole of what
- * changed: the modal already stood on one predicate, and what the reader walks
- * is a sequence inside it. Three *independent* steps on three predicates is the
- * shape #726 refused, and it is refused here too — nothing below reads the
- * accounts or the ledger to decide whether a passage is owed.
- *
- * **Mandatory means traversed, never answered.** Each of the three is walked
- * and none of them extracts anything: the settings passage carries the one
- * question and releases a reader who does not answer it, the accounts passage
- * is satisfied by the seeded row every install owns, and the events passage
- * offers two doors and no obligation to take either.
+ * Only the first is owed: the app serves the walk until a currency is stored,
+ * and every other step is traversed rather than answered — a blank account
+ * writes nothing, no model ticked imports nothing, and the last step offers
+ * three doors, one of them « Plus tard ».
  */
-export const PASSAGES = ['settings', 'accounts', 'events'] as const
+export const PASSAGES = ['currency', 'models', 'account', 'events'] as const
 
 export type Passage = (typeof PASSAGES)[number]
 
@@ -175,12 +164,12 @@ export function currencyFixed(settings: readonly SettingDescription[] | undefine
 }
 
 /**
- * Where a **reopened** walk starts (#1262): on the accounts once every required
- * dial is answered, on the question otherwise. *Revenir* still leads back to the
- * first passage.
+ * Where a **reopened** walk starts (#1262): on the tax models once every required
+ * dial is answered, on the question otherwise. « Retour » still leads back to the
+ * first step.
  */
 export function reopenedPassage(settings: readonly SettingDescription[] | undefined): Passage {
-  return requiredUnanswered(settings) === false ? 'accounts' : 'settings'
+  return requiredUnanswered(settings) === false ? 'models' : 'currency'
 }
 
 /**
@@ -190,78 +179,15 @@ export function reopenedPassage(settings: readonly SettingDescription[] | undefi
  * onboarding — the explanation of the product included — on every reader who has
  * been through. What the mark means widened; what it is written as did not.
  */
-const STILL_UNANSWERED = 'dismissed'
-const ANSWERED = 'answered'
-
 /**
- * What the browser remembers of the walk: **that the reader has been through,
- * and what was still unanswered when they left.**
- *
- * The second half is what makes *a wiped store asks again* true rather than
- * merely true of a second browser. So the mark is compared against what the
- * server says **now**: a reader who left with the question still open is left
- * alone, and a reader who left having answered is asked again the day the store
- * no longer holds the answer, because that is a different installation wearing
- * the same address.
- *
- * `'unanswered'` is written as `dismissed`, the string every browser that has
- * already closed this modal holds. That is deliberate: the old modal only ever
- * stood on an unanswered dial, so the legacy value already *means* this, and a
- * new spelling would walk every one of those readers through the product's
- * explanation a second time.
- */
-export type FirstRunMark = 'unanswered' | 'answered'
-
-/** What this browser holds, or `null` — nobody has been through here. */
-export function readFirstRunMark(): FirstRunMark | null {
-  try {
-    const stored = browserStorage()?.getItem(FIRST_RUN_STORAGE_KEY)
-    if (stored === STILL_UNANSWERED) return 'unanswered'
-    if (stored === ANSWERED) return 'answered'
-    return null
-  } catch {
-    // A browser that refuses storage has no memory: it walks again, which is
-    // the degradation `lib/storage.ts` chose for the three preferences too.
-    return null
-  }
-}
-
-/**
- * Remember the traversal — **however the reader left**, the cross, a door and
- * the last passage writing the same kind of mark: what is recorded is *this
- * reader has been through*, and the way out never had the weight of the answer.
- *
- *
- * A browser that refuses storage simply shows the modal again next time — the
- * reader still leaves it, it just is not remembered, which is `lib/storage.ts`'s
- * rule for the three preferences and the right degradation here too: nothing is
- * lost but a second walk.
- */
-export function rememberFirstRunWalked(mark: FirstRunMark) {
-  rememberPreference(FIRST_RUN_STORAGE_KEY, mark === 'answered' ? ANSWERED : STILL_UNANSWERED)
-}
-
-/**
- * Does the modal stand? The predicate and the browser's memory, composed.
- *
- * The predicate is the registry's mark and not a key, so the day a
- * second dial is marked required the modal opens for it with nothing changed
- * here. **The browser's memory is the other half and it is the only other
- * half**: no read of the accounts and no read of the ledger reaches this
- * function, which is what keeps an emptied ledger from reopening the walk.
- *
- * The two are composed rather than and-ed: a browser that walked away from an
- * **open** question is left alone, and one that walked away having answered is
- * walked again the day a required dial is unanswered — which can only mean the
- * store that held the answer is gone.
+ * Does the first run stand? The registry's `required` mark and nothing else:
+ * the app serves it until a currency is stored, wherever the reader landed, and
+ * no browser memory lets it be put off.
  *
  * `false` while the settings read has not landed, which is the same rule every
  * other surface follows: one that appears on a silence and disappears when the
  * answer arrives is worse than one that arrives late.
  */
-export function firstRunStands(input: {
-  settings: readonly SettingDescription[] | undefined
-  mark: FirstRunMark | null
-}): boolean {
-  return requiredUnanswered(input.settings) === true && input.mark !== 'unanswered'
+export function firstRunStands(settings: readonly SettingDescription[] | undefined): boolean {
+  return requiredUnanswered(settings) === true
 }

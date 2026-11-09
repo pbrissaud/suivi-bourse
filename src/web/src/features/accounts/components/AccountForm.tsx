@@ -1,253 +1,132 @@
 /**
- * The declaration form — **the ledger's form, for an account** (#729).
+ * The account panel — « Ajouter un compte » and « Modifier le compte »
+ * (`AccountSheet-Refonte.dc.html`).
  *
- * Nothing about it is invented: a lateral panel, opened from the account's own
- * name, one field per thing the row carries, a `Refusal` for what the server
- * refuses — beside the button that asked, never as a strip at the top of a
- * page. That sameness is the criterion rather than a convenience — one shape
- * for one rule, a second shape for it being the defect *individually right,
- * collectively unreadable* by definition.
- *
- * That move is the point of the removal rather than a side effect of it: the
- * two refusals are **prose** — the account every install owns, and the *n*
- * events that name it — and prose in a table cell is a sentence nobody has room
- * to read. Here it has a paragraph.
- *
- * Three decisions of its own:
- *
- *  The page built during the prototype still carried the field, which is why
- *  the criterion names it.
- *  - **The identifier is fixed once the row exists.** It is the value events
- *    name, and an event is addressed by its own key rather than by a column
- *    somebody else may rewrite. The panel says so where the field would be,
- *    rather than showing a control the server would refuse.
- *  - **The first declaration carries the reassignment** (#725). It is one box,
- *    checked by default, and it is here rather than beside the panel because
- *    *dans le même geste* is the criterion: at that instant there is no list of
- *    accounts to assign to, the one being declared is the only possible answer,
- *    and the request that declares is the request that moves. Unchecking it —
- *    or shutting the panel — declares the account all the same: the declaration
- *    is **never** refused because events are unassigned, which is the trap this
- *    ticket is named after.
+ * Four fields: Identifiant · Libellé (optional) · Ouvert le (optional) ·
+ * Modèle d'imposition. The identifiant is what the owner's files name, so it is
+ * chosen once and read-only afterwards; the server answers a duplicate with a
+ * 409, which is said under the field that earned it. The tax models are the
+ * owner's own, imported at first run or from Réglages: this panel only picks
+ * one. In edition the body ends on what the account carries, and the footer
+ * holds the removal as a text link, through `ConfirmDestructive`.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X } from 'lucide-react'
 
 import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Refusal } from '@/components/Refusal'
-import {
-  bodyOf,
-  draftOf,
-  type ModelDraft,
-} from '@/features/accounts/components/TaxationModelEditor'
-import {
-  type ModelEditing,
-  TaxationModelField,
-} from '@/features/accounts/components/TaxationModelField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   declaredLabel,
-  DEFAULT_ACCOUNT_LABEL,
   isAddressableAccountId,
   type Reassignment,
   type Removal,
 } from '@/features/accounts/lib/accounts'
-import {
-  type Account,
-  type AccountDraft,
-  accountsApi,
-  type TaxationModelDraft,
-} from '@/features/accounts/lib/api'
+import { type Account, type AccountDraft, accountsApi } from '@/features/accounts/lib/api'
+import { ApiProblem } from '@/lib/api'
+import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { problemMessageKey, problemSentence } from '@/lib/problem'
+import { PROBLEM_TYPES, problemMessageKey, problemSentence } from '@/lib/problem'
 
-/**
- * The two refusals, in `accounts.delete_account`'s own order.
- *
- * There was a third — a row an accounts **file** had declared, revoked by
- * forgetting that import — and it left with the file. What the map
- * mirrors is the server's classification, so it holds exactly what that
- * classification now holds.
- */
 const REFUSALS: Record<Exclude<Removal['kind'], 'offered'>, MessageKey> = {
   seeded: 'accounts.remove.seeded',
   namedByEvents: 'accounts.remove.namedByEvents',
 }
 
+const SELECT =
+  'h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-md shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
+
 interface Draft {
   id: string
   label: string
-  /** The declared opening day, `''` for none — a `YYYY-MM-DD`, as it is stored. */
   openedOn: string
+  model: string
 }
 
-type FieldName = keyof Draft
+type FieldName = 'id' | 'label' | 'openedOn' | 'model'
 
-/** What one press of the submit button writes: the model if there is one to write, then the account. */
-interface Submission {
-  model: { mode: 'new' | 'edit'; draft: ModelDraft; body: TaxationModelDraft } | null
-  /** The account's body once the id of the model it carries is known. */
-  build: (modelId: string | null) => AccountDraft
+const EMPTY: Draft = { id: '', label: '', openedOn: '', model: '' }
+
+/** What an account carries, for the edition panel's last block. */
+export interface Carried {
+  events: number
+  since: string | null
+  lines: number | null
+  value: number | null
 }
-
-const EMPTY: Draft = { id: '', label: '', openedOn: '' }
 
 interface AccountFormProps {
   open: boolean
-  /** The row being edited — `null` is a declaration. */
   account: Account | null
-  /**
-   * The reassignment as the page reads it, or **`null` while the ledger has not
-   * landed**.
-   *
-   * The offer rides on the declaration rather than beside it because *in the
-   * same gesture* is the criterion: at this instant there is no list to pick
-   * from, and the account the reader is in the middle of creating is the only
-   * answer the question can have.
-   *
-   * `null` is not *nothing to move*, and the difference is the whole promise
-   * #725 is named after: the accounts payload is small and the ledger is the
-   * big one, so a reader who opens this panel in between saw **no box** and
-   * declared without it — the two gestures the flag exists to make one. So a
-   * declaration waits for the answer, exactly as the removal below does.
-   */
   offer: Reassignment | null
-  /**
-   * Whether this account may be removed, and the reason it may not — the
-   * module's own classification, in `accounts.delete_account`'s order.
-   *
-   * **`null` is the ledger read still in flight**, never *no reason*:
-   * the count a refusal is made of comes off the ledger, and a removal offered
-   * before it lands would offer a gesture the server is about to refuse. The
-   * block renders nothing at all until then, title included.
-   */
   removal: Removal | null
+  carried: Carried | null
+  currency: string | null
   onClose: () => void
 }
 
-export function AccountForm({ open, account, offer, removal, onClose }: AccountFormProps) {
+export function AccountForm({
+  open,
+  account,
+  offer,
+  removal,
+  carried,
+  currency,
+  onClose,
+}: AccountFormProps) {
   const { t } = useI18n()
+  const f = useFormatters()
   const queryClient = useQueryClient()
 
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({})
-  // **Checked by default**, which is the ticket's own word. What it proposes is
-  // the repair of a state the app created, so the reader unchecks it rather than
-  // having to discover it — and unchecking it declares the account all the same:
-  // the declaration is *never* refused because events are unassigned.
   const [reassign, setReassign] = useState(true)
-  // **Its own state, and not a member of `Draft`** (#752): the two fields above
-  // are strings a `Field` validates, and the model is an id a `<select>` either
-  // has or has not. `null` is *no model*, which is an ordinary answer and the
-  // one a declaration opens on.
-  const [taxationModel, setTaxationModel] = useState<string | null>(null)
-  // **The model written with the account** (#1290): no Save of its own, the
-  // declaration below writes it first. Once written it is `edit` on the id the
-  // select now holds, so a retry after an account refusal PATCHes that model
-  // instead of creating a second one.
-  const [editing, setEditing] = useState<ModelEditing>(null)
-  // What the server refused about the model, kept apart from the account's own
-  // refusal: it is shown at the editor, and focus goes there.
-  const [modelError, setModelError] = useState<unknown>(null)
+  const [confirming, setConfirming] = useState(false)
 
-  // **The same query as the field below**, which react-query serves from one
-  // cache. What it decides is whether the opening date is asked for at all, and
-  // the answer is **the model's own `age_basis`** rather than its kind: a shape
-  // that counts years from the *first payment* — which is what a PEA does, and
-  // what `taxation.py` warns is not the opening date — has an age threshold and
-  // still no use for this date. Asked on the kind, that reader would be filling
-  // in a day that moves no figure, under a hint telling them it moves one.
-  // Nothing at all while the read is in flight.
   const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
-  const carried = catalogue.data?.models.find((model) => model.id === taxationModel)
-  const kinds = catalogue.data?.kinds ?? []
-  // **Read from the draft while one is open**: a model being written is not
-  // stored yet, and its `age_basis` is what decides whether this date is asked.
-  const ageMatters =
-    (editing === null ? carried?.parameters.age_basis : editing.draft.fields.age_basis) ===
-    'opening'
+  const models = catalogue.data?.models ?? []
 
-  const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   const remove = useMutation({
     mutationFn: (id: string) => accountsApi.removeAccount(id),
     onSuccess: () => {
-      setConfirmingRemoval(false)
-      // The whole cache: an account that is gone changes what every page groups
-      // by, not only the list this panel was opened from.
+      setConfirming(false)
       void queryClient.invalidateQueries()
       onClose()
     },
   })
 
   const write = useMutation({
-    mutationFn: async ({ build, model }: Submission) => {
-      let modelId = taxationModel
-      if (model !== null) {
-        try {
-          const saved =
-            model.mode === 'edit' && modelId !== null
-              ? await accountsApi.updateTaxationModel(modelId, model.body)
-              : await accountsApi.createTaxationModel(model.body)
-          modelId = saved.id
-          // Remembered: from here a retry corrects this model, never adds one.
-          setTaxationModel(saved.id)
-          setEditing({ mode: 'edit', draft: model.draft })
-          void queryClient.invalidateQueries({ queryKey: ['taxation-models'] })
-        } catch (error) {
-          setModelError(error)
-          throw error
-        }
-      }
-      const body = build(modelId)
-      return account === null
+    mutationFn: (body: AccountDraft) =>
+      account === null
         ? accountsApi.createAccount(body)
-        : accountsApi.updateAccount(account.id, body)
-    },
+        : accountsApi.updateAccount(account.id, body),
     onSuccess: () => {
-      // A declaration moves what an event file is allowed to say and what every
-      // page groups by, so the whole cache goes rather than a list of keys that
-      // would drift from the pages reading them.
       void queryClient.invalidateQueries()
       onClose()
     },
   })
 
+  // Re-armed on every opening: the panel is mounted once for the page.
   useEffect(() => {
     if (!open) return
     setErrors({})
     setReassign(true)
-    // **The mutations are reset with the panel.** It is mounted once for the
-    // page and reused for every account, so a `409` earned declaring `delta`
-    // was still on screen when the next account's name opened it — and a
-    // removal that failed on Gamma rendered its refusal under Alpha's,
-    // attributing one account's failure to another.
     write.reset()
     remove.reset()
-    setTaxationModel(account?.taxation_model_id ?? null)
-    setEditing(null)
-    setModelError(null)
     setDraft(
       account === null
         ? EMPTY
         : {
-            // **The offer is the interface's, and the declaration wins it.**
-            // Where the account declared a day, that day is what shows; where it
-            // declared none, the form offers its earliest declared payment,
-            // which is the guess its owner accepts nine times out of ten. Either
-            // way nothing is written until they submit — and what is then
-            // written is what they submitted, never re-derived (#918).
-            openedOn: account.opened_on ?? account.first_payment ?? '',
             id: account.id,
-            // **The seeded name opens empty.** `Default account` is what the
-            // *server* wrote about a row nobody declared, so it is not a value
-            // the reader typed — and handing it back had them typing over it and
-            // saving a name the form had given them. There was a second column
-            // under this rule until #916 took the type away.
             label: declaredLabel(account) ?? '',
+            openedOn: account.opened_on ?? account.first_payment ?? '',
+            model: account.taxation_model_id ?? '',
           },
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, account])
 
   function set(field: FieldName, value: string) {
@@ -255,78 +134,46 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     setErrors((previous) => ({ ...previous, [field]: undefined }))
   }
 
-  // The offer exists on a declaration alone, and only where there is something
-  // to move: a box proposing to reassign nothing is a question with no subject.
+  // The first declaration offers to take the events nobody assigned. It waits
+  // for the ledger: the flag and the declaration are one gesture.
   const unassigned = offer?.kind === 'firstDeclaration' ? offer.count : null
   const offered = account === null && unassigned !== null
-  /** A declaration cannot be submitted before the offer is known. See {@link AccountFormProps.offer}. */
   const waiting = account === null && offer === null
 
-  // Focus follows the refusal of the model to the editor it is shown at.
-  useEffect(() => {
-    if (modelError !== null) document.getElementById('taxation-name')?.focus()
-  }, [modelError])
+  // A 409 on a creation is a duplicate identifiant, and it is said under it.
+  const taken =
+    account === null &&
+    write.error instanceof ApiProblem &&
+    write.error.type === PROBLEM_TYPES.conflict
 
   function submit() {
     const found: Partial<Record<FieldName, MessageKey>> = {}
     const id = draft.id.trim()
-
     if (account === null && id === '') found.id = 'accounts.form.required'
     else if (account === null && !isAddressableAccountId(id)) found.id = 'accounts.form.id.shape'
-
     setErrors(found)
     if (Object.values(found).some(Boolean)) return
 
-    // On a declaration the label falls back to the id, which is the store's own
-    // rule for a file's empty cell (`accounts.create_account`) — one rule for
-    // the two roads. On an edit a blank is sent as a blank: `update_account`
-    // keeps what is there, so clearing the field cannot rewrite the row's name
-    // to its own identifier behind the reader's back.
     const label = draft.label.trim()
-    // **Sent only where the field was shown, and only where it moved** (#918).
-    // Shown and left on the pre-filled day, it is sent: submitting is how the
-    // offer becomes a declaration. Never shown, it is absent — a client that
-    // did not ask the question must not answer it, and the server reads an
-    // absent member as *leave it alone*. Emptied, it is `null`: taking the
-    // declaration away is a gesture, and it is that one.
-    const opening =
-      ageMatters && draft.openedOn !== (account?.opened_on ?? '')
-        ? { opened_on: draft.openedOn || null }
-        : {}
-    // **Written only if it was moved**: a model opened for correction and left
-    // as it was is not rewritten, so a rename stays a rename.
-    const model =
-      editing === null ||
-      (editing.mode === 'edit' &&
-        carried !== undefined &&
-        JSON.stringify(editing.draft) === JSON.stringify(draftOf(carried, kinds)))
-        ? null
-        : { mode: editing.mode, draft: editing.draft, body: bodyOf(editing.draft, kinds) }
-    setModelError(null)
+    if (account === null) {
+      write.mutate({
+        id,
+        label,
+        ...(draft.model === '' ? {} : { taxation_model_id: draft.model }),
+        ...(draft.openedOn === '' ? {} : { opened_on: draft.openedOn }),
+        ...(offered && reassign ? { reassign: true } : {}),
+      })
+      return
+    }
+    // Sent when the reader moved it, `null` included: detaching is a gesture.
     write.mutate({
-      model,
-      build: (modelId) =>
-        account === null
-          ? {
-              id,
-              label: label || id,
-              ...(modelId === null ? {} : { taxation_model_id: modelId }),
-              ...opening,
-              // Sent only where the box was shown **and** left ticked: `reassign`
-              // is a request, and a client that never asks must never perform one.
-              ...(offered && reassign ? { reassign: true } : {}),
-            }
-          : // **Sent when the reader moved it**, `null` included — detaching is a
-            // gesture, and it is this one. Left alone, the member is absent, which
-            // is what a client with no such control sends and what keeps a rename a
-            // rename: the server reads an absent member as *leave it alone*.
-            {
-              label,
-              ...(modelId === (account.taxation_model_id ?? null)
-                ? {}
-                : { taxation_model_id: modelId }),
-              ...opening,
-            },
+      label,
+      ...(draft.model === (account.taxation_model_id ?? '')
+        ? {}
+        : { taxation_model_id: draft.model === '' ? null : draft.model }),
+      ...(draft.openedOn === (account.opened_on ?? account.first_payment ?? '')
+        ? {}
+        : { opened_on: draft.openedOn === '' ? null : draft.openedOn }),
     })
   }
 
@@ -334,221 +181,211 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <SheetContent
         aria-describedby={undefined}
-        className="w-full gap-6 overflow-y-auto sm:max-w-md"
+        showCloseButton={false}
+        className="w-full gap-0 shadow-none sm:max-w-115"
       >
-        <SheetHeader>
-          <SheetTitle>
-            {t(account === null ? 'accounts.form.create.title' : 'accounts.form.edit.title')}
-          </SheetTitle>
-        </SheetHeader>
-
         <form
-          className="space-y-5 px-4 pb-6"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(submitted) => {
             submitted.preventDefault()
             submit()
           }}
         >
-          {account === null ? (
-            <Field
-              name="id"
-              label="accounts.form.id"
-              hint="accounts.form.id.hint"
-              error={errors.id}
+          <header className="flex items-start justify-between gap-3 px-6 pt-5">
+            <SheetTitle className="text-2xl leading-7">
+              {t(account === null ? 'accounts.form.create.title' : 'accounts.form.edit.title')}
+            </SheetTitle>
+            <SheetClose
+              aria-label={t('sheet.close')}
+              className="-mt-1.5 -mr-1.5 rounded-md p-1.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
-              {(id, described) => (
-                <Input
-                  id={id}
-                  value={draft.id}
-                  aria-invalid={errors.id !== undefined}
-                  aria-describedby={described}
-                  onChange={(changed) => set('id', changed.target.value)}
-                />
-              )}
-            </Field>
-          ) : (
-            // Stated, not disabled: a greyed-out input invites the click and
-            // reads as a form that refused, where the honest sentence is that
-            // this value is what the ledger names.
-            <div className="space-y-1">
-              <p className="text-sm font-medium">{t('accounts.form.id')}</p>
-              <p className="fig text-sm">{account.id}</p>
-              <p className="max-w-prose text-xs text-muted-foreground">
-                {t('accounts.form.id.fixed')}
-              </p>
-            </div>
-          )}
+              <X aria-hidden className="size-4" />
+            </SheetClose>
+          </header>
 
-          <Field name="label" label="accounts.form.label" error={errors.label} optional>
-            {(id, described) => (
-              <Input
-                id={id}
-                value={draft.label}
-                // The catalogue's name as a placeholder on the row that still
-                // wears it: what the field would keep saying if nothing is
-                // typed, rather than a value pretending to have been given.
-                placeholder={
-                  account !== null && declaredLabel(account) === null
-                    ? t(DEFAULT_ACCOUNT_LABEL)
-                    : undefined
-                }
-                aria-describedby={described}
-                onChange={(changed) => set('label', changed.target.value)}
-              />
-            )}
-          </Field>
-
-          <TaxationModelField
-            accountId={account?.id ?? null}
-            value={taxationModel}
-            onChange={setTaxationModel}
-            editing={editing}
-            onEditing={setEditing}
-            write={{ error: modelError }}
-          />
-
-          {/* **Asked for only where it changes a figure**: the shape this
-              account carries counts its threshold from the wrapper's age, and
-              nothing else on this panel does. */}
-          {ageMatters ? (
-            <Field name="openedOn" label="accounts.form.openedOn" optional>
-              {(id) => (
-                <>
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pt-5 pb-6">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-3.5">
+              <Field name="id" label="accounts.form.id" error={errors.id} taken={taken}>
+                {(id, described) => (
+                  <Input
+                    id={id}
+                    className="fig md:text-md"
+                    value={draft.id}
+                    readOnly={account !== null}
+                    aria-invalid={errors.id !== undefined || taken}
+                    aria-describedby={described}
+                    onChange={(changed) => set('id', changed.target.value)}
+                  />
+                )}
+              </Field>
+              <Field name="label" label="accounts.form.label" optional>
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={draft.label}
+                    onChange={(changed) => set('label', changed.target.value)}
+                  />
+                )}
+              </Field>
+              <Field name="openedOn" label="accounts.form.openedOn" full optional>
+                {(id) => (
                   <Input
                     id={id}
                     type="date"
+                    className="fig md:text-md"
                     value={draft.openedOn}
-                    aria-describedby={`${id}-hint`}
                     onChange={(changed) => set('openedOn', changed.target.value)}
                   />
-                  <p id={`${id}-hint`} className="max-w-prose text-xs text-muted-foreground">
-                    {t('accounts.form.openedOn.hint')}
-                  </p>
-                </>
-              )}
-            </Field>
-          ) : null}
-
-          {offered ? (
-            <div className="space-y-1 rounded-md border border-border p-3">
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={reassign}
-                  onChange={(changed) => setReassign(changed.target.checked)}
-                />
-                <span>{t('accounts.form.reassign', { count: unassigned })}</span>
-              </label>
-              <p className="max-w-prose text-xs text-muted-foreground">
-                {t('accounts.form.reassign.hint')}
-              </p>
+                )}
+              </Field>
+              <Field name="model" label="accounts.form.taxation" full>
+                {(id) => (
+                  <select
+                    id={id}
+                    className={SELECT}
+                    value={draft.model}
+                    onChange={(changed) => set('model', changed.target.value)}
+                  >
+                    <option value="">{t('accounts.form.taxation.none')}</option>
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
             </div>
-          ) : null}
 
-          {write.error && write.error !== modelError ? (
-            <Refusal>{problemSentence(t, write.error)}</Refusal>
-          ) : null}
+            {offered ? (
+              <div className="space-y-1 rounded-md border border-border p-3">
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={reassign}
+                    onChange={(changed) => setReassign(changed.target.checked)}
+                  />
+                  <span>{t('accounts.form.reassign', { count: unassigned })}</span>
+                </label>
+              </div>
+            ) : null}
 
-          <div className="flex gap-2">
-            <Button variant="primary" type="submit" disabled={write.isPending || waiting}>
-              {t(account === null ? 'accounts.form.submit' : 'accounts.form.save')}
-            </Button>
-            <Button type="button" variant="outline" onClick={onClose}>
-              {t('accounts.form.cancel')}
-            </Button>
-          </div>
-        </form>
+            {account === null || carried === null ? null : (
+              <div className="flex flex-col gap-2 pt-1">
+                <span className="label">{t('accounts.form.carries')}</span>
+                <CarriedRow name={t('accounts.form.carries.events')}>
+                  {carried.since === null
+                    ? String(carried.events)
+                    : t('accounts.form.carries.since', {
+                        count: carried.events,
+                        year: carried.since.slice(0, 4),
+                      })}
+                </CarriedRow>
+                {carried.lines === null ? null : (
+                  <CarriedRow name={t('accounts.form.carries.lines')}>{carried.lines}</CarriedRow>
+                )}
+                {carried.value === null ? null : (
+                  <CarriedRow name={t('accounts.form.carries.value')}>
+                    {f.currency(carried.value, currency)}
+                  </CarriedRow>
+                )}
+              </div>
+            )}
 
-        {/* The removal, and it is **outside the form**: submitting the panel
-            saves the account, and a destructive control inside a form is one
-            Enter key away from being the thing that submits. Nothing at all on
-            a declaration — there is no row yet to remove — and nothing while
-            the ledger has not landed. */}
-        {account === null || removal === null ? null : (
-          <section aria-labelledby="account-removal" className="space-y-2 border-t px-4 pb-8 pt-6">
-            <h3 id="account-removal" className="text-sm font-medium">
-              {t('accounts.remove.title')}
-            </h3>
-            {removal.kind === 'offered' ? (
-              <>
-                <p className="max-w-prose text-sm text-muted-foreground">
-                  {t('accounts.remove.offered')}
-                </p>
-                <Button type="button" onClick={() => setConfirmingRemoval(true)}>
-                  {t('accounts.remove')}
-                </Button>
-                <ConfirmDestructive
-                  open={confirmingRemoval}
-                  onOpenChange={setConfirmingRemoval}
-                  title={t('confirm.account.title', { name: declaredLabel(account) ?? account.id })}
-                  line={t('confirm.account.line')}
-                  confirmLabel={t('confirm.account.cta')}
-                  pending={remove.isPending}
-                  error={
-                    remove.error ? <Refusal>{t(problemMessageKey(remove.error))}</Refusal> : null
-                  }
-                  onConfirm={() => remove.mutate(account.id)}
-                />
-              </>
-            ) : (
-              /* **Absent and naming its reason**, never present and refusing: a
-                 control the app knows will be refused teaches nothing by being
-                 there, while the sentence is the exact thing its owner has to
-                 act on. */
+            {account === null || removal === null || removal.kind === 'offered' ? null : (
               <p className="max-w-prose text-sm text-muted-foreground">
                 {t(REFUSALS[removal.kind], removal.kind === 'namedByEvents' ? removal : undefined)}
               </p>
             )}
-            {/* A refusal the reader could not foresee — the declaration moved
-                under them between the render and the click. */}
-            {remove.error ? <Refusal>{t(problemMessageKey(remove.error))}</Refusal> : null}
-          </section>
+
+            {write.error && !taken ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+          </div>
+
+          <footer className="flex items-center justify-end gap-2 border-t px-6 py-4">
+            {account !== null && removal?.kind === 'offered' ? (
+              <button
+                type="button"
+                className="mr-auto text-md text-destructive underline decoration-border underline-offset-3 outline-none focus-visible:rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                onClick={() => setConfirming(true)}
+              >
+                {t('accounts.remove.title')}
+              </button>
+            ) : null}
+            <Button type="button" size="sheet" onClick={onClose}>
+              {t('accounts.form.cancel')}
+            </Button>
+            <Button
+              variant="primary"
+              size="sheet"
+              type="submit"
+              disabled={write.isPending || waiting}
+            >
+              {t(account === null ? 'accounts.form.submit' : 'accounts.form.save')}
+            </Button>
+          </footer>
+        </form>
+
+        {account === null ? null : (
+          <ConfirmDestructive
+            open={confirming}
+            onOpenChange={setConfirming}
+            title={t('confirm.account.title', { name: declaredLabel(account) ?? account.id })}
+            items={[{ key: declaredLabel(account) ?? account.id, value: account.id }]}
+            line={t('confirm.account.line')}
+            confirmLabel={t('confirm.account.cta')}
+            pending={remove.isPending}
+            error={remove.error ? <Refusal>{t(problemMessageKey(remove.error))}</Refusal> : null}
+            onConfirm={() => remove.mutate(account.id)}
+          />
         )}
       </SheetContent>
     </Sheet>
   )
 }
 
-/** The ledger form's field, to the letter — the refusal bound to its input. */
+function CarriedRow({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-9 items-center justify-between gap-4 border-b text-sm">
+      <span>{name}</span>
+      <span className="fig">{children}</span>
+    </div>
+  )
+}
+
 function Field({
   name,
   label,
-  hint,
   error,
+  taken = false,
   optional,
+  full,
   children,
 }: {
   name: FieldName
   label: MessageKey
-  hint?: MessageKey
   error?: MessageKey
+  /** The server refused the identifiant: it is already an account's. */
+  taken?: boolean
   optional?: boolean
+  full?: boolean
   children: (id: string, describedBy: string | undefined) => ReactNode
 }) {
   const { t } = useI18n()
   const id = `account-${name}`
   const errorId = `${id}-error`
-  const hintId = `${id}-hint`
+  const sentence = error ? t(error) : taken ? t('accounts.form.id.taken') : null
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5">
-        <label htmlFor={id} className="text-sm font-medium">
-          {t(label)}
-        </label>
-        {optional ? (
-          <span className="text-xs text-muted-foreground">{t('data.form.optional')}</span>
-        ) : null}
+    <div className={full ? 'col-span-2 flex flex-col gap-1.5' : 'flex flex-col gap-1.5'}>
+      <div className="label flex items-baseline whitespace-pre">
+        <label htmlFor={id}>{t(label)}</label>
+        {optional ? <span className="font-normal">{` · ${t('data.form.optional')}`}</span> : null}
       </div>
-      {children(id, error ? errorId : hint ? hintId : undefined)}
-      {error ? (
-        <p id={errorId} className="text-sm text-destructive">
-          {t(error)}
-        </p>
-      ) : hint ? (
-        <p id={hintId} className="text-xs text-muted-foreground">
-          {t(hint)}
+      {children(id, sentence ? errorId : undefined)}
+      {sentence ? (
+        <p id={errorId} role="alert" className="text-sm text-destructive">
+          {sentence}
         </p>
       ) : null}
     </div>
