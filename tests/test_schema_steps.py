@@ -29,6 +29,8 @@ RELEASED = (
     'add_auth_session_seconds',
     'add_backward_failed_at',
     'move_token_to_access_tokens',
+    'move_agent_provider',
+    'backfill_agent_usage',
 )
 
 

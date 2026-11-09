@@ -148,10 +148,13 @@ CREATE TABLE IF NOT EXISTS schema_step (
     step        VARCHAR PRIMARY KEY,
     applied_at  TIMESTAMPTZ NOT NULL);
 
--- **The agent's provider, and its key in clear** (#1114). One row. Because
--- of ``api_key`` this file now holds a secret: no route may ever serve the
--- store file or a dump of a whole table, and the key leaves the server as its
--- last four characters only (``agent.describe``).
+-- **The agent's switch and its reasoning level** (#1114). One row. It held the
+-- one provider and its key in clear until the « Relevé » redesign; those
+-- columns stay for the stores that have them, and ``agent_provider`` below holds
+-- the providers (the step ``move_agent_provider`` moved the old one). Because of
+-- ``api_key`` this file holds a secret: no route may ever serve the store file or
+-- a dump of a whole table, and a key leaves the server as its last four
+-- characters only (``agent.describe``).
 CREATE TABLE IF NOT EXISTS agent_config (
     id          INTEGER PRIMARY KEY CHECK (id = 1),
     enabled     BOOLEAN NOT NULL DEFAULT FALSE,
@@ -163,6 +166,42 @@ CREATE TABLE IF NOT EXISTS agent_config (
     key_set_at  TIMESTAMPTZ,
     thinking    VARCHAR DEFAULT 'low',
     updated_at  TIMESTAMPTZ NOT NULL);
+
+-- **The agent's providers** (« Relevé » redesign). Several rows, one of them the
+-- default; the keys are in clear as ``agent_config.api_key`` was, and leave the
+-- server as their last four characters only (``agent.describe``). ``enabled``
+-- and ``thinking`` stay on the ``agent_config`` row, which no longer holds a
+-- provider: the migration moved the one it held here.
+CREATE TABLE IF NOT EXISTS agent_provider (
+    id             VARCHAR PRIMARY KEY,
+    label          VARCHAR,
+    kind           VARCHAR NOT NULL,
+    base_url       VARCHAR,
+    api_key        VARCHAR,
+    key_set_at     TIMESTAMPTZ,
+    default_model  VARCHAR,
+    is_default     BOOLEAN NOT NULL DEFAULT FALSE,
+    last_test_at   TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL);
+
+-- **What each model response of each thread cost in tokens.** An index of the
+-- thread files, which stay the truth: ``agent_usage.record`` replaces a
+-- thread's rows from its messages on every save, and the migration filled it
+-- from the threads that existed. ``seq`` is the response's place in the
+-- thread's messages.
+CREATE TABLE IF NOT EXISTS agent_usage (
+    thread_id           VARCHAR NOT NULL,
+    seq                 INTEGER NOT NULL,
+    responded_at        TIMESTAMPTZ NOT NULL,
+    model               VARCHAR NOT NULL,
+    provider            VARCHAR,
+    input_tokens        BIGINT NOT NULL,
+    output_tokens       BIGINT NOT NULL,
+    cache_read_tokens   BIGINT NOT NULL,
+    cache_write_tokens  BIGINT NOT NULL,
+    requests            INTEGER NOT NULL,
+    tool_calls          INTEGER NOT NULL,
+    PRIMARY KEY (thread_id, seq));
 
 -- **The PIN and what it opens** (#1203). One row, absent while the PIN is off,
 -- so a store from before it boots unlocked. Written and read by ``auth_gate``
@@ -271,8 +310,8 @@ TABLES = (
     'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
-    'agent_config', 'auth_secret', 'access_tokens', 'profile_fact', 'proposal',
-    'job_slot', 'job_pass', 'job_schedule', 'symbol_isin',
+    'agent_config', 'agent_provider', 'agent_usage', 'auth_secret', 'access_tokens',
+    'profile_fact', 'proposal', 'job_slot', 'job_pass', 'job_schedule', 'symbol_isin',
 )
 
 #: The tables whose surrogate key this store hands out — see

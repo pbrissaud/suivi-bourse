@@ -152,6 +152,20 @@ export const ROUTES = {
    */
   agentTest: '/api/agent/test',
   /**
+   * The agent's providers (« Relevé » redesign): `GET` lists them (the default
+   * first), `POST` adds one. The `:id` ones are patterns: `PATCH`/`DELETE` the
+   * provider, `POST …/test` lists its models (`:id` is `new` for one not yet
+   * saved, the body naming the candidate), `PUT …/default` makes it the default.
+   * They replace `agentConfig`'s provider fields, `agentKey` and `agentTest`,
+   * which the page chantiers drop.
+   */
+  agentProviders: '/api/agent/providers',
+  agentProvider: '/api/agent/providers/:id',
+  agentProviderTest: '/api/agent/providers/:id/test',
+  agentProviderDefault: '/api/agent/providers/:id/default',
+  /** Tokens exchanged with the models since a date (`?range=1M|YTD|1Y|MAX`), no price. */
+  agentStats: '/api/agent/stats',
+  /**
    * The agent's turn (#1114): a Vercel AI SDK UI stream, on the ASGI half
    * (`boot._is_agent`). The `/agent` page's `useChat` posts here (#1196).
    */
@@ -936,4 +950,102 @@ export const api = {
   standingAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
   acknowledgeAdvisory: (key: string) =>
     send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
+
+  /** The agent's providers, the default first. */
+  agentProviders: () => get<AgentProvider[]>(ROUTES.agentProviders),
+  createAgentProvider: (body: AgentProviderBody) =>
+    send<AgentProvider>(ROUTES.agentProviders, 'POST', body),
+  updateAgentProvider: (id: string, body: AgentProviderBody) =>
+    send<AgentProvider>(agentProviderPath(id), 'PATCH', body),
+  deleteAgentProvider: (id: string) =>
+    send<{ id: string; removed: true; disabled: boolean }>(agentProviderPath(id), 'DELETE', {}),
+  makeAgentProviderDefault: (id: string) =>
+    send<AgentProvider>(`${agentProviderPath(id)}/default`, 'PUT', {}),
+  /** `id` is `new` for a provider not saved yet; the body then names the candidate. */
+  testAgentProvider: (
+    id: string,
+    body: Pick<AgentProviderBody, 'kind' | 'base_url' | 'key'> = {},
+  ) => send<AgentProviderTest>(`${agentProviderPath(id)}/test`, 'POST', body),
+  agentStats: (range: AgentStatsRange = 'YTD') =>
+    get<AgentStats>(`${ROUTES.agentStats}?range=${range}`),
+}
+
+function agentProviderPath(id: string): string {
+  return ROUTES.agentProvider.replace(':id', encodeURIComponent(id))
+}
+
+/** The four kinds of provider (`agent.PROVIDERS`). */
+export type AgentProviderKind = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
+
+/**
+ * One configured provider, as `GET /api/agent/providers` serves it. Of the key
+ * only `last4`. `privacy` is computed by the server from the address: `local`
+ * only when it resolves to this machine or a private network.
+ */
+export interface AgentProvider {
+  id: string
+  label: string | null
+  kind: AgentProviderKind
+  base_url: string | null
+  default_model: string | null
+  is_default: boolean
+  last_test_at: string | null
+  key: { set: boolean; last4: string | null; set_at: string | null }
+  privacy: { local: boolean; fr: string; en: string }
+  /** On a `PATCH` or `PUT …/default` that left the agent nothing to run on. */
+  disabled?: true
+}
+
+/** The body of `POST`/`PATCH /api/agent/providers[/:id]`: any subset on a `PATCH`. */
+export interface AgentProviderBody {
+  label?: string | null
+  kind?: AgentProviderKind
+  base_url?: string | null
+  /** Written, never read back; `null` forgets it. */
+  key?: string | null
+  default_model?: string | null
+}
+
+/** `POST /api/agent/providers/:id/test`: the models listed, and how long it took. */
+export interface AgentProviderTest {
+  models: { id: string; name: string }[]
+  preselected: string | null
+  elapsed_ms: number
+}
+
+/** `GET /api/agent/config` since providers: the agent's own two settings. */
+export interface AgentSettings {
+  enabled: boolean
+  reasoning: 'low' | 'medium' | 'high'
+}
+
+export type AgentStatsRange = '1M' | 'YTD' | '1Y' | 'MAX'
+
+/**
+ * `GET /api/agent/stats`. `fresh` is the input the provider did not read from
+ * its cache; `weeks` are Mondays (ISO dates), empty weeks included. No price.
+ */
+export interface AgentStats {
+  range: AgentStatsRange
+  since: string | null
+  totals: {
+    tokens: number
+    input: number
+    output: number
+    cache_read: number
+    fresh: number
+    threads: number
+    requests: number
+    tool_calls: number
+  }
+  weeks: { week: string; cache_read: number; fresh: number; output: number }[]
+  models: {
+    model: string
+    provider: string | null
+    requests: number
+    tokens: number
+    cache_read: number
+    cache_ratio: number | null
+  }[]
+  threads: { id: string; title: string | null; last_at: string; requests: number; tokens: number }[]
 }

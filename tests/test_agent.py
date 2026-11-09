@@ -1,11 +1,11 @@
-"""The agent's configuration, its model and its prompt cache (#1114, #1190).
+"""The agent's providers, its model and its prompt cache (#1114, #1190).
 
 The routes are driven through Flask's test client over a real store, as the
 rest of ``/api`` is; no provider is ever called.
 """
 import pytest
 
-from api import create_app, current_runtime
+from api import create_app
 from application import agent
 from test_mcp_server import build_runtime
 
@@ -18,29 +18,21 @@ def client(tmp_path):
     return create_app(runtime).test_client()
 
 
-def configured(client, **fields):
-    """Write ``fields``, the key after the provider it belongs to and before
-    ``enabled``. The key goes straight to the store: no route stores a key
-    that was not tested (#1269)."""
-    key = fields.pop('key', None)
-    enabled = fields.pop('enabled', None)
-    answer = client.put('/api/agent/config', json=fields)
-    assert answer.status_code == 200, answer.get_json()
-    if key:
-        with current_runtime().config_manager.writing() as opened:
-            agent.write(opened, agent.with_key(
-                agent.read(opened), key, agent.now()), agent.now())
-        answer = client.get('/api/agent/config')
-    if enabled is not None:
-        answer = client.put('/api/agent/config', json={'enabled': enabled})
-        assert answer.status_code == 200, answer.get_json()
-    return answer.get_json()
+def configured(client, kind='anthropic', **fields):
+    """A default provider that can run, and the agent on. Returns the provider."""
+    fields = {'kind': kind, 'default_model': 'claude-sonnet-5-5',
+              **({'key': KEY} if kind in agent.KEY_REQUIRED else {}), **fields}
+    made = client.post('/api/agent/providers', json=fields)
+    assert made.status_code == 201, made.get_json()
+    on = client.put('/api/agent/config', json={'enabled': True})
+    assert on.status_code == 200, on.get_json()
+    return made.get_json()
 
 
 # ------------------------------------------------------------ the model --
 
 def config(provider, base_url=None, key=KEY):
-    return {**agent.EMPTY, 'enabled': True, 'provider': provider,
+    return {**agent.BLANK, 'provider': provider,
             'model': 'some-model', 'base_url': base_url, 'api_key': key}
 
 
@@ -219,153 +211,272 @@ def test_ollama_and_an_older_gpt_get_no_breakpoint(tmp_path, provider, base_url)
 
 # ------------------------------------------------------------ the routes --
 
-def test_the_agent_is_off_and_keyless_until_configured(client):
+def test_the_agent_is_off_and_has_no_provider_until_configured(client):
     assert client.get('/api/agent/config').get_json() == {
-        'enabled': False, 'provider': None, 'model': None, 'model_name': None,
-        'base_url': None, 'thinking': 'low',
-        'key': {'set': False, 'last4': None, 'set_at': None}}
+        'enabled': False, 'reasoning': 'low'}
+    assert client.get('/api/agent/providers').get_json() == []
+
+
+def test_the_config_holds_enabled_and_reasoning_only(client):
+    configured(client)
+
+    assert client.get('/api/agent/config').get_json() == {
+        'enabled': True, 'reasoning': 'low'}
+
+
+def test_the_first_provider_is_the_default_and_the_second_is_not(client):
+    first = client.post('/api/agent/providers', json={
+        'kind': 'anthropic', 'key': KEY}).get_json()
+    second = client.post('/api/agent/providers', json={
+        'kind': 'ollama', 'base_url': 'http://ollama:11434'}).get_json()
+
+    assert (first['is_default'], second['is_default']) == (True, False)
+    assert [p['id'] for p in client.get('/api/agent/providers').get_json()] == [
+        first['id'], second['id']]
 
 
 def test_a_key_is_served_back_as_its_last_four_characters_only(client):
-    configured(client, provider='anthropic', key=KEY)
-    shown = client.get('/api/agent/config')
+    made = client.post('/api/agent/providers', json={
+        'kind': 'anthropic', 'key': KEY, 'label': 'Maison'})
 
-    assert shown.get_json()['key']['set'] is True
-    assert shown.get_json()['key']['last4'] == 'abcd'
-    assert shown.get_json()['key']['set_at']
-    for path in ('/api/agent/config', '/api/settings', '/api/config'):
+    assert made.status_code == 201
+    shown = client.get('/api/agent/providers').get_json()[0]
+    assert shown['key']['set'] is True
+    assert shown['key']['last4'] == 'abcd'
+    assert shown['key']['set_at']
+    for path in ('/api/agent/config', '/api/agent/providers', '/api/settings',
+                 '/api/config'):
         assert KEY not in client.get(path).get_data(as_text=True), path
-
-
-def test_deleting_the_key_switches_a_provider_that_needs_one_off(client):
-    configured(client, key=KEY, enabled=True, provider='anthropic',
-               model='claude-sonnet-5-5')
-
-    answer = client.delete('/api/agent/key').get_json()
-
-    assert answer['enabled'] is False and answer['disabled'] is True
-    assert answer['key'] == {'set': False, 'last4': None, 'set_at': None}
-    assert client.get('/api/agent/config').get_json()['enabled'] is False
-
-
-def test_a_compatible_endpoint_stays_on_without_its_key(client):
-    configured(client, key=KEY, enabled=True, provider='openai_compatible',
-               model='m', base_url='http://litellm:4000')
-
-    answer = client.delete('/api/agent/key').get_json()
-
-    assert answer['enabled'] is True and 'disabled' not in answer
-
-
-@pytest.mark.parametrize('fields, missing', [
-    ({}, 'provider'),
-    ({'provider': 'anthropic'}, 'model'),
-    ({'provider': 'anthropic', 'model': 'm'}, 'key'),
-    ({'provider': 'ollama', 'model': 'm'}, 'base_url'),
-    ({'provider': 'openai_compatible', 'model': 'm'}, 'base_url'),
-])
-def test_switching_on_names_what_is_missing(client, fields, missing):
-    answer = client.put('/api/agent/config', json={**fields, 'enabled': True})
-
-    assert answer.status_code == 422
-    assert answer.get_json()['key'] == missing
-
-
-def test_switching_provider_under_an_enabled_agent_switches_it_off(client):
-    configured(client, enabled=True, provider='ollama', model='llama',
-               base_url='http://ollama:11434')
-
-    answer = client.put('/api/agent/config',
-                        json={'provider': 'anthropic', 'base_url': None})
-
-    assert answer.status_code == 200
-    assert answer.get_json()['enabled'] is False
-    assert answer.get_json()['disabled'] is True
-
-
-@pytest.mark.parametrize('body', [
-    {'provider': 'openai', 'base_url': None},
-    {'base_url': 'http://other:4000'},
-    {'provider': 'ollama', 'base_url': 'http://ollama:11434'},
-])
-def test_another_provider_or_address_forgets_the_key(client, body):
-    configured(client, key=KEY, provider='openai_compatible',
-               base_url='http://litellm:4000')
-
-    answer = client.put('/api/agent/config', json=body).get_json()
-
-    assert answer['key'] == {'set': False, 'last4': None, 'set_at': None}
-
-
-def test_the_same_provider_and_address_keep_the_key(client):
-    configured(client, key=KEY, provider='openai_compatible',
-               base_url='http://litellm:4000')
-
-    answer = client.put('/api/agent/config', json={
-        'provider': 'openai_compatible', 'base_url': 'http://litellm:4000',
-        'model': 'm'}).get_json()
-
-    assert answer['key']['last4'] == 'abcd'
-
-
-def test_a_new_provider_with_enabled_true_is_refused_without_its_key(client):
-    configured(client, key=KEY, enabled=True, provider='anthropic', model='m')
-
-    answer = client.put('/api/agent/config',
-                        json={'provider': 'openai', 'enabled': True})
-
-    assert answer.status_code == 422 and answer.get_json()['key'] == 'key'
-    assert client.get('/api/agent/config').get_json()['key']['set'] is True
+    assert KEY not in made.get_data(as_text=True)
 
 
 @pytest.mark.parametrize('body, key', [
-    ({'provider': 'mistral'}, 'provider'),
-    ({'enabled': 'yes'}, 'enabled'),
-    ({'base_url': 'ftp://x'}, 'base_url'),
-    ({'provider': 'anthropic', 'base_url': 'https://x'}, 'base_url'),
-    ({'api_key': KEY}, 'api_key'),
-    *[({'thinking': value}, 'thinking')
-      for value in ('off', 'xhigh', '', None, 3)],
+    ({}, 'kind'),
+    ({'kind': 'mistral'}, 'kind'),
+    ({'kind': 'anthropic'}, 'key'),
+    ({'kind': 'openai'}, 'key'),
+    ({'kind': 'ollama'}, 'base_url'),
+    ({'kind': 'openai_compatible'}, 'base_url'),
+    ({'kind': 'anthropic', 'key': KEY, 'base_url': 'https://x'}, 'base_url'),
+    ({'kind': 'ollama', 'base_url': 'http://o', 'key': KEY}, 'key'),
+    ({'kind': 'ollama', 'base_url': 'ftp://x'}, 'base_url'),
+    ({'kind': 'anthropic', 'key': 'short'}, 'key'),
+    ({'kind': 'anthropic', 'key': KEY, 'label': 'x' * 61}, 'label'),
+    ({'kind': 'anthropic', 'key': KEY, 'default_model': 'two\nlines'}, 'default_model'),
+    ({'kind': 'anthropic', 'key': KEY, 'api_key': KEY}, 'api_key'),
 ])
-def test_a_bad_value_is_refused_by_name(client, body, key):
-    answer = client.put('/api/agent/config', json=body)
+def test_a_provider_that_cannot_run_is_refused_by_name(client, body, key):
+    answer = client.post('/api/agent/providers', json=body)
 
     assert answer.status_code == 422
     assert answer.get_json()['key'] == key
     assert KEY not in answer.get_data(as_text=True)
+    assert client.get('/api/agent/providers').get_json() == []
 
 
-def test_the_key_route_takes_no_put(client):
-    configured(client, provider='anthropic', key=KEY)
+def test_a_compatible_endpoint_needs_no_key(client):
+    made = client.post('/api/agent/providers', json={
+        'kind': 'openai_compatible', 'base_url': 'http://litellm:4000'})
 
-    answer = client.put('/api/agent/key', json={'key': 'test-key-other-0000'})
-
-    assert answer.status_code == 405
-    assert answer.mimetype == 'application/problem+json'
-    assert client.get('/api/agent/config').get_json()['key']['last4'] == 'abcd'
-    assert client.delete('/api/agent/key').status_code == 200
+    assert made.status_code == 201
+    assert made.get_json()['key'] == {'set': False, 'last4': None, 'set_at': None}
 
 
-def test_a_model_name_is_kept_with_its_model_and_cleared_without_it(client):
-    named = client.put('/api/agent/config', json={
-        'provider': 'anthropic', 'model': 'claude-x',
-        'model_name': 'Claude X'}).get_json()
-    assert (named['model'], named['model_name']) == ('claude-x', 'Claude X')
+def test_switching_on_needs_a_default_provider_with_a_model(client):
+    refused = client.put('/api/agent/config', json={'enabled': True})
+    assert refused.status_code == 422 and refused.get_json()['key'] == 'enabled'
 
-    kept = client.put('/api/agent/config', json={'model_name': 'Claude Y'})
-    assert kept.get_json()['model_name'] == 'Claude Y'
+    client.post('/api/agent/providers', json={'kind': 'anthropic', 'key': KEY})
+    modelless = client.put('/api/agent/config', json={'enabled': True})
+    assert modelless.status_code == 422
 
-    moved = client.put('/api/agent/config', json={'model': 'claude-z'})
-    assert (moved.get_json()['model'], moved.get_json()['model_name']) == (
-        'claude-z', None)
+    default = client.get('/api/agent/providers').get_json()[0]
+    client.patch(f"/api/agent/providers/{default['id']}",
+                 json={'default_model': 'claude-sonnet-5-5'})
+    assert client.put('/api/agent/config', json={'enabled': True}).get_json() == {
+        'enabled': True, 'reasoning': 'low'}
 
 
-@pytest.mark.parametrize('name', ['', '   ', 'two\nlines', 'x' * 201, 3])
-def test_a_bad_model_name_is_refused_by_name(client, name):
-    answer = client.put('/api/agent/config', json={'model_name': name})
+def test_deleting_the_last_provider_switches_the_agent_off(client):
+    made = configured(client)
+
+    answer = client.delete(f"/api/agent/providers/{made['id']}")
+
+    assert answer.get_json() == {'id': made['id'], 'removed': True, 'disabled': True}
+    assert client.get('/api/agent/config').get_json()['enabled'] is False
+    assert client.get('/api/agent/providers').get_json() == []
+
+
+def test_deleting_the_default_hands_it_to_the_oldest_left(client):
+    first = configured(client)
+    second = client.post('/api/agent/providers', json={
+        'kind': 'ollama', 'base_url': 'http://ollama:11434',
+        'default_model': 'llama'}).get_json()
+    third = client.post('/api/agent/providers', json={
+        'kind': 'openai', 'key': KEY}).get_json()
+
+    answer = client.delete(f"/api/agent/providers/{first['id']}")
+
+    assert answer.get_json()['disabled'] is False
+    listed = client.get('/api/agent/providers').get_json()
+    assert [(p['id'], p['is_default']) for p in listed] == [
+        (second['id'], True), (third['id'], False)]
+    assert client.get('/api/agent/config').get_json()['enabled'] is True
+
+
+def test_deleting_the_default_for_one_without_a_model_switches_the_agent_off(client):
+    first = configured(client)
+    client.post('/api/agent/providers', json={'kind': 'openai', 'key': KEY})
+
+    answer = client.delete(f"/api/agent/providers/{first['id']}")
+
+    assert answer.get_json()['disabled'] is True
+    assert client.get('/api/agent/config').get_json()['enabled'] is False
+
+
+def test_the_default_moves_to_the_provider_asked(client):
+    first = configured(client)
+    second = client.post('/api/agent/providers', json={
+        'kind': 'openai', 'key': KEY, 'default_model': 'gpt-x'}).get_json()
+
+    answer = client.put(f"/api/agent/providers/{second['id']}/default")
+
+    assert answer.get_json()['is_default'] is True
+    listed = client.get('/api/agent/providers').get_json()
+    assert [(p['id'], p['is_default']) for p in listed] == [
+        (second['id'], True), (first['id'], False)]
+
+
+@pytest.mark.parametrize('method, path', [
+    ('patch', '/api/agent/providers/nope'),
+    ('delete', '/api/agent/providers/nope'),
+    ('put', '/api/agent/providers/nope/default'),
+    ('post', '/api/agent/providers/nope/test'),
+])
+def test_an_unknown_provider_is_a_404(client, method, path):
+    assert getattr(client, method)(path, json={}).status_code == 404
+
+
+@pytest.mark.parametrize('body', [
+    {'kind': 'openai', 'base_url': None},
+    {'base_url': 'http://other:4000'},
+    {'kind': 'ollama', 'base_url': 'http://ollama:11434'},
+])
+def test_another_kind_or_address_forgets_the_key_and_the_model(client, body):
+    made = client.post('/api/agent/providers', json={
+        'kind': 'openai_compatible', 'base_url': 'http://litellm:4000',
+        'key': KEY, 'default_model': 'm'}).get_json()
+
+    answer = client.patch(f"/api/agent/providers/{made['id']}", json=body)
+
+    # openai needs a key, so it is refused by name; the others keep nothing.
+    if body.get('kind') == 'openai':
+        assert answer.status_code == 422 and answer.get_json()['key'] == 'key'
+    else:
+        assert answer.get_json()['key'] == {
+            'set': False, 'last4': None, 'set_at': None}
+        assert answer.get_json()['default_model'] is None
+
+
+def test_the_same_kind_and_address_keep_the_key_and_a_new_key_replaces_it(client):
+    made = client.post('/api/agent/providers', json={
+        'kind': 'openai_compatible', 'base_url': 'http://litellm:4000',
+        'key': KEY}).get_json()
+    path = f"/api/agent/providers/{made['id']}"
+
+    kept = client.patch(path, json={
+        'base_url': 'http://litellm:4000', 'default_model': 'm'}).get_json()
+    assert kept['key']['last4'] == 'abcd' and kept['default_model'] == 'm'
+
+    moved = client.patch(path, json={
+        'base_url': 'http://other:4000', 'key': 'test-key-other-0000'}).get_json()
+    assert moved['key']['last4'] == '0000'
+
+    gone = client.patch(path, json={'key': None}).get_json()
+    assert gone['key']['set'] is False
+
+
+def test_clearing_the_model_of_the_default_switches_the_agent_off(client):
+    made = configured(client)
+
+    answer = client.patch(f"/api/agent/providers/{made['id']}",
+                          json={'default_model': None})
+
+    assert answer.get_json()['disabled'] is True
+    assert client.get('/api/agent/config').get_json()['enabled'] is False
+
+
+@pytest.mark.parametrize('body, key', [
+    ({'enabled': 'yes'}, 'enabled'),
+    ({'provider': 'anthropic'}, 'provider'),
+    ({'thinking': 'low'}, 'thinking'),
+    *[({'reasoning': value}, 'reasoning')
+      for value in ('off', 'xhigh', '', None, 3)],
+])
+def test_a_bad_config_value_is_refused_by_name(client, body, key):
+    answer = client.put('/api/agent/config', json=body)
 
     assert answer.status_code == 422
-    assert answer.get_json()['key'] == 'model_name'
+    assert answer.get_json()['key'] == key
+
+
+def test_the_old_single_config_routes_are_gone(client):
+    assert client.delete('/api/agent/key').status_code in (404, 405)
+    assert client.post('/api/agent/test').status_code in (404, 405)
+
+
+# -------------------------------------------------------------- privacy --
+
+def test_a_hosted_provider_sends_the_figures_to_it(client):
+    made = client.post('/api/agent/providers', json={
+        'kind': 'anthropic', 'key': KEY}).get_json()
+
+    assert made['privacy'] == {
+        'local': False, 'fr': 'Vos chiffres sont envoyés à Anthropic.',
+        'en': 'Your figures are sent to Anthropic.'}
+
+
+def test_a_label_names_the_provider_in_the_sentence(client):
+    made = client.post('/api/agent/providers', json={
+        'kind': 'anthropic', 'key': KEY, 'label': 'Mon proxy'}).get_json()
+
+    assert made['privacy']['fr'] == 'Vos chiffres sont envoyés à Mon proxy.'
+
+
+@pytest.mark.parametrize('url', [
+    'http://localhost:11434', 'http://127.0.0.1:11434', 'http://[::1]:11434',
+    'http://192.168.1.20:4000', 'http://10.0.0.3/v1', 'http://172.16.4.2',
+])
+def test_an_address_on_this_machine_or_a_private_network_stays_here(
+        client, url):
+    made = client.post('/api/agent/providers', json={
+        'kind': 'ollama', 'base_url': url}).get_json()
+
+    assert made['privacy'] == {
+        'local': True, 'fr': 'Vos chiffres restent sur ce serveur.',
+        'en': 'Your figures stay on this server.'}
+
+
+def test_a_name_is_resolved_and_every_address_must_be_private(monkeypatch):
+    import socket
+
+    def answers(*addresses):
+        def getaddrinfo(host, port):
+            return [(socket.AF_INET, 0, 0, '', (a, 0)) for a in addresses]
+        return getaddrinfo
+
+    monkeypatch.setattr(socket, 'getaddrinfo', answers('172.18.0.2'))
+    assert agent.is_private('http://ollama:11434') is True
+    monkeypatch.setattr(socket, 'getaddrinfo', answers('172.18.0.2', '93.184.216.34'))
+    assert agent.is_private('http://ollama:11434') is False
+    monkeypatch.setattr(socket, 'getaddrinfo', answers('93.184.216.34'))
+    assert agent.is_private('https://llm.example.com') is False
+
+    def unresolved(host, port):
+        raise socket.gaierror('no such host')
+    monkeypatch.setattr(socket, 'getaddrinfo', unresolved)
+    assert agent.is_private('http://nowhere.invalid') is False
+    assert agent.is_private(None) is False
 
 
 def test_refusal_reads_the_status_before_the_body():
@@ -411,47 +522,67 @@ def test_a_404_is_an_address_only_for_a_provider_that_takes_one():
     assert agent.refusal(404, None, 'turn', 'openai_compatible') == 'model'
 
 
-# ---------------------------------------------------------- the thinking --
+# ---------------------------------------------------------- the reasoning --
 
 @pytest.mark.parametrize('level', agent.THINKING)
-def test_each_thinking_level_is_kept_without_touching_the_rest(client, level):
-    before = configured(client, key=KEY, enabled=True, provider='anthropic',
-                        model='claude-sonnet-5-5', model_name='Sonnet',
-                        thinking='medium' if level == 'low' else 'low')
+def test_each_reasoning_level_is_kept_without_touching_the_rest(client, level):
+    configured(client)
+    client.put('/api/agent/config',
+               json={'reasoning': 'medium' if level == 'low' else 'low'})
 
-    answer = client.put('/api/agent/config', json={'thinking': level})
+    answer = client.put('/api/agent/config', json={'reasoning': level})
 
-    assert answer.status_code == 200
-    kept = client.get('/api/agent/config').get_json()
-    assert kept['thinking'] == level
-    assert 'disabled' not in answer.get_json()
-    assert {**kept, 'thinking': 'low'} == {**before, 'thinking': 'low'}
+    assert answer.get_json() == {'enabled': True, 'reasoning': level}
+    assert client.get('/api/agent/config').get_json() == {
+        'enabled': True, 'reasoning': level}
 
 
-def test_a_bad_thinking_level_leaves_the_row_unchanged(client):
-    configured(client, provider='anthropic', thinking='high')
+def test_a_bad_reasoning_level_leaves_the_row_unchanged(client):
+    configured(client)
+    client.put('/api/agent/config', json={'reasoning': 'high'})
 
-    answer = client.put('/api/agent/config', json={'thinking': 'off'})
-
-    assert answer.status_code == 422
-    assert answer.get_json()['key'] == 'thinking'
-    assert client.get('/api/agent/config').get_json()['thinking'] == 'high'
-
-
-def test_a_connection_test_does_not_carry_the_thinking_level(client):
-    configured(client, provider='anthropic', key=KEY)
-
-    answer = client.post('/api/agent/test', json={'thinking': 'low'})
+    answer = client.put('/api/agent/config', json={'reasoning': 'off'})
 
     assert answer.status_code == 422
-    assert answer.get_json()['key'] == 'thinking'
+    assert client.get('/api/agent/config').get_json()['reasoning'] == 'high'
 
 
-def test_a_provider_switch_keeps_the_thinking_level():
-    stored = {**config('anthropic'), 'thinking': 'high'}
-    tried = {**config('openai'), 'api_key': 'test-key-other-0000'}
+def test_a_turn_runs_on_the_provider_the_request_names_then_the_thread_s():
+    def listed(*kinds):
+        return [{**agent.BLANK, 'id': f'p{i}', 'provider': kind, 'model': f'm{i}',
+                 'api_key': KEY, 'is_default': i == 0}
+                for i, kind in enumerate(kinds)]
 
-    assert agent.adopted(stored, tried)['thinking'] == 'high'
+    providers = listed('anthropic', 'openai', 'openai')
+    # Nothing said: the default and its model.
+    assert agent.choose(providers, None, None, None)['id'] == 'p0'
+    assert agent.choose(providers, None, None, None)['model'] == 'm0'
+    # The request wins, and so does its model.
+    chosen = agent.choose(providers, 'p2', 'gpt-x', {'provider_id': 'p1', 'model': 'old'})
+    assert (chosen['id'], chosen['model']) == ('p2', 'gpt-x')
+    # The thread carries on, on its model.
+    chosen = agent.choose(providers, None, None, {'provider_id': 'p1', 'model': 'old'})
+    assert (chosen['id'], chosen['model']) == ('p1', 'old')
+    # A thread stored before ids names its kind: the first of that kind.
+    chosen = agent.choose(providers, None, None, {'provider': 'openai', 'model': 'old'})
+    assert (chosen['id'], chosen['model']) == ('p1', 'old')
+    # Its provider is gone: the default, on the default's model.
+    chosen = agent.choose(providers, None, None, {'provider_id': 'gone', 'model': 'old'})
+    assert (chosen['id'], chosen['model']) == ('p0', 'm0')
+    # Switching provider drops the thread's model.
+    chosen = agent.choose(providers, 'p1', None, {'provider_id': 'p0', 'model': 'old'})
+    assert (chosen['id'], chosen['model']) == ('p1', 'm1')
+
+
+def test_a_turn_with_no_provider_or_model_is_refused_by_name():
+    bare = [{**agent.BLANK, 'id': 'p0', 'provider': 'ollama', 'model': None,
+             'is_default': True}]
+    for providers, asked, key in (([], None, 'provider_id'),
+                                  (bare, 'gone', 'provider_id'),
+                                  (bare, None, 'model')):
+        with pytest.raises(agent.InvalidAgentConfig) as raised:
+            agent.choose(providers, asked, None, None)
+        assert raised.value.key == key
 
 
 def test_the_thinking_level_is_what_the_agent_is_built_with(tmp_path):

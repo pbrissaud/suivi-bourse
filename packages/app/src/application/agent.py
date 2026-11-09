@@ -1,24 +1,32 @@
-"""The in-app agent (#1114): its configuration, its model, its instructions.
+"""The in-app agent (#1114): its providers, its model, its instructions.
 
-**The configuration lives in the store, key included**, in the one row of
-``agent_config``. No environment variable provides the key: the app is
-configured from the app since v5, and an ``SB_`` name nobody reads is reported
-by ``boot_env.unread``. The key leaves this module as its last four characters
-and nothing else (:func:`describe`).
+**The providers live in the store, keys included**, in ``agent_provider``: one
+row each, one of them the default. ``enabled`` and the reasoning level stay on
+the one row of ``agent_config``. No environment variable provides a key: the app
+is configured from the app since v5, and an ``SB_`` name nobody reads is
+reported by ``boot_env.unread``. A key leaves this module as its last four
+characters and nothing else (:func:`describe`).
 
-**Only a configuration that passed a test is stored** (#1269): the connection
-test takes the candidate provider, address and key, and :func:`adopted` is what
-the route keeps once the provider listed its models. A key the provider refused
-is never written, and :func:`refusal` is how a failure becomes the ``reason`` the
-front translates.
+Inside the app a provider keeps the names the model builder and the probe read:
+``provider`` is the API's ``kind``, ``model`` its ``default_model``. A turn runs
+on what :func:`choose` picks: the provider and model the request names, else the
+thread's, else the default's.
+
+A connection test (:func:`candidate`) tries a provider that need not be saved
+yet; :func:`refusal` is how a failure becomes the ``reason`` the front
+translates.
 
 The provider SDKs are imported inside :func:`build_model`, so the Flask half,
-which only reads and writes the row, never loads them.
+which only reads and writes the rows, never loads them.
 """
+import ipaddress
 import os
 import re
+import secrets
+import socket
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from application import instants
 
@@ -74,12 +82,27 @@ BASE_URL_MAX = 500
 #: the model would think at the API's own default, which costs more than ``low``.
 THINKING = ('low', 'medium', 'high')
 
-_COLUMNS = ('enabled', 'provider', 'model', 'model_name', 'base_url',
-            'api_key', 'key_set_at', 'thinking', 'updated_at')
+PROVIDER_COLUMNS = (
+    'id', 'label', 'kind AS provider', 'base_url', 'api_key', 'key_set_at',
+    'default_model AS model', 'is_default', 'last_test_at', 'created_at')
+_PROVIDER_NAMES = ('id', 'label', 'provider', 'base_url', 'api_key',
+                   'key_set_at', 'model', 'is_default', 'last_test_at',
+                   'created_at')
 
-EMPTY = {'enabled': False, 'provider': None, 'model': None, 'model_name': None,
-         'base_url': None, 'api_key': None, 'key_set_at': None,
-         'thinking': 'low', 'updated_at': None}
+LABEL_MAX = 60
+
+#: The provider fields a body may name, as the API spells them.
+PROVIDER_FIELDS = ('label', 'kind', 'base_url', 'key', 'default_model')
+
+#: What a provider is before anything is said about it. Inside the app it keeps
+#: the names the model builder and the probe read: ``provider`` is the API's
+#: ``kind``, ``model`` its ``default_model``.
+BLANK = {'id': None, 'label': None, 'provider': None, 'base_url': None,
+         'api_key': None, 'key_set_at': None, 'model': None,
+         'is_default': False, 'last_test_at': None, 'created_at': None}
+
+#: ``enabled`` and ``thinking`` are all the ``agent_config`` row holds now.
+EMPTY = {'enabled': False, 'thinking': 'low', 'updated_at': None}
 
 _HTTP_URL = re.compile(r'https?://\S+')
 
@@ -93,197 +116,349 @@ class InvalidAgentConfig(ValueError):
 
 
 def read(store) -> dict:
-    """The row, or :data:`EMPTY` when the agent was never configured."""
+    """``enabled`` and ``thinking``, or :data:`EMPTY` when never written."""
     rows = store.query(
-        f"SELECT {', '.join(_COLUMNS)} FROM agent_config WHERE id = 1")
-    return dict(zip(_COLUMNS, rows[0])) if rows else dict(EMPTY)
+        'SELECT enabled, thinking, updated_at FROM agent_config WHERE id = 1')
+    return dict(zip(EMPTY, rows[0])) if rows else dict(EMPTY)
+
+
+def providers(store) -> list:
+    """Every provider, the default first, then the oldest."""
+    rows = store.query(
+        f"SELECT {', '.join(PROVIDER_COLUMNS)} FROM agent_provider "
+        'ORDER BY is_default DESC, created_at, id')
+    return [dict(zip(_PROVIDER_NAMES, row)) for row in rows]
+
+
+def provider(store, provider_id: str) -> Optional[dict]:
+    """The provider by that id, or ``None``."""
+    return next((p for p in providers(store) if p['id'] == provider_id), None)
+
+
+def default_of(listed: list) -> Optional[dict]:
+    """The default provider among ``listed``, or ``None`` when there is none."""
+    return next((p for p in listed if p['is_default']), None)
+
+
+def runnable(config: Optional[dict]) -> bool:
+    """Can a turn run on this provider? It holds a model; :func:`check` made
+    sure of the key and the address."""
+    return config is not None and config['model'] is not None
+
+
+def describe_settings(config: dict, **extra: Any) -> dict:
+    """``GET /api/agent/config``: ``enabled`` and ``reasoning``, and nothing else."""
+    return {'enabled': config['enabled'], 'reasoning': config['thinking'],
+            **extra}
 
 
 def describe(config: dict, **extra: Any) -> dict:
-    """The configuration as it may leave the server: the key as ``last4``."""
+    """A provider as it may leave the server: the key as ``last4``."""
     key = config['api_key']
     return {
-        'enabled': config['enabled'],
-        'provider': config['provider'],
-        'model': config['model'],
-        'model_name': config['model_name'],
+        'id': config['id'],
+        'label': config['label'],
+        'kind': config['provider'],
         'base_url': config['base_url'],
-        'thinking': config['thinking'],
+        'default_model': config['model'],
+        'is_default': config['is_default'],
+        'last_test_at': instants.iso(config['last_test_at']),
         'key': {'set': key is not None,
                 'last4': key[-4:] if key is not None else None,
                 'set_at': instants.iso(config['key_set_at'])},
+        'privacy': privacy(config),
         **extra,
     }
 
 
-def change(config: dict, body: Any) -> tuple:
-    """``config`` with ``body`` (any subset of the fields) applied, and
-    whether that turned the agent off.
+def is_private(base_url: Optional[str]) -> bool:
+    """Does ``base_url`` name this machine or a private network?
 
-    A key belongs to the provider and the address it was typed for: a
-    different ``provider`` or ``base_url`` forgets it in the same write, as
-    :func:`without_key` does, unless ``body`` says itself whether the agent
-    is on. A ``model`` without its ``model_name`` clears the name, which
-    belongs to its model.
+    A host name is resolved, and **every** address it gives must be loopback or
+    private: a name that does not resolve is not known to be private.
+    """
+    host = urlsplit(base_url or '').hostname
+    if not host:
+        return False
+    try:
+        addresses = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            found = socket.getaddrinfo(host, None)
+        except OSError:
+            return False
+        addresses = [ipaddress.ip_address(info[4][0].split('%')[0])
+                     for info in found]
+    return bool(addresses) and all(
+        a.is_loopback or a.is_private for a in addresses)
+
+
+def privacy(config: dict) -> dict:
+    """Where the figures go when the agent answers, in both languages.
+
+    ``local`` only when the address resolves to this machine or a private
+    network; a hosted provider (no address) never is.
+    """
+    local = is_private(config['base_url'])
+    name = label_of(config)
+    return {
+        'local': local,
+        'fr': ('Vos chiffres restent sur ce serveur.' if local
+               else f'Vos chiffres sont envoyés à {name}.'),
+        'en': ('Your figures stay on this server.' if local
+               else f'Your figures are sent to {name}.'),
+    }
+
+
+def _clean(value: Any) -> Any:
+    """A text field as stored: stripped, and blank is none."""
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+def create(body: Any, now: datetime, first: bool) -> dict:
+    """A new provider from ``body``, the default when it is the ``first``."""
+    body = _fields(body)
+    key = _clean(body.get('key'))
+    return check({
+        **BLANK, 'id': secrets.token_hex(6), 'label': _clean(body.get('label')),
+        'provider': body.get('kind'), 'base_url': _clean(body.get('base_url')),
+        'api_key': key, 'key_set_at': now if key else None,
+        'model': _clean(body.get('default_model')), 'is_default': first,
+        'created_at': now})
+
+
+def change(stored: dict, body: Any, now: datetime) -> dict:
+    """``stored`` with ``body`` (any subset of the fields) applied.
+
+    A key belongs to the kind and the address it was typed for: moving either
+    forgets it (and the default model, which belongs to its provider) unless
+    ``body`` brings its own. ``key: null`` forgets the key.
+    """
+    body = _fields(body)
+    changed = dict(stored)
+    for name, own in (('label', 'label'), ('kind', 'provider'),
+                      ('base_url', 'base_url'), ('default_model', 'model')):
+        if name in body:
+            changed[own] = _clean(body[name])
+    moved = any(changed[name] != stored[name] for name in ('provider', 'base_url'))
+    if 'key' in body:
+        changed['api_key'] = _clean(body['key'])
+    elif moved:
+        changed['api_key'] = None
+    if changed['api_key'] != stored['api_key']:
+        changed['key_set_at'] = now if changed['api_key'] else None
+    if moved and 'default_model' not in body:
+        changed['model'] = None
+    return check(changed)
+
+
+def _fields(body: Any) -> dict:
+    """``body`` itself if it is an object naming only provider fields."""
+    if not isinstance(body, dict):
+        raise InvalidAgentConfig('a JSON object is required', 'body')
+    for name in body:
+        if name not in PROVIDER_FIELDS:
+            raise InvalidAgentConfig(
+                f"{name!r} is not a field of a provider; the fields are "
+                f"{', '.join(PROVIDER_FIELDS)}", name)
+    return body
+
+
+def candidate(stored: Optional[dict], body: Any, at: datetime) -> dict:
+    """What a connection test tries: ``stored`` (none for a provider not yet
+    saved) with ``body``'s kind, address and key. Any other field is refused.
+
+    The stored key is used only with the kind and address it was stored for: a
+    candidate moving either must bring its own.
     """
     if not isinstance(body, dict):
         raise InvalidAgentConfig('a JSON object is required', 'body')
-    allowed = ('enabled', 'provider', 'model', 'model_name', 'base_url',
-               'thinking')
     for name in body:
-        if name not in allowed:
+        if name not in ('kind', 'base_url', 'key'):
+            raise InvalidAgentConfig(
+                f"{name!r} is not a field of a connection test; the fields "
+                f"are kind, base_url, key", name)
+    tried = dict(stored or BLANK)
+    if 'kind' in body:
+        tried['provider'] = body['kind']
+    if 'base_url' in body:
+        tried['base_url'] = _clean(body['base_url'])
+    if stored is not None and any(
+            tried[name] != stored[name] for name in ('provider', 'base_url')):
+        tried.update(api_key=None, key_set_at=None)
+    if body.get('key') is not None:
+        tried.update(api_key=_clean(body['key']), key_set_at=at)
+    return check(tried, require=False)
+
+
+def change_settings(current: dict, body: Any, default: Optional[dict]) -> dict:
+    """``current`` with ``body``'s ``enabled`` and ``reasoning`` applied.
+
+    The agent is on only over a default provider that holds a model.
+    """
+    if not isinstance(body, dict):
+        raise InvalidAgentConfig('a JSON object is required', 'body')
+    for name in body:
+        if name not in ('enabled', 'reasoning'):
             raise InvalidAgentConfig(
                 f"{name!r} is not a field of the agent's configuration; "
-                f"the fields are {', '.join(allowed)}", name)
+                f"the fields are enabled, reasoning", name)
     if 'enabled' in body and not isinstance(body['enabled'], bool):
         raise InvalidAgentConfig("'enabled' is true or false", 'enabled')
-    provider = body.get('provider')
-    if provider is not None and provider not in PROVIDERS:
+    if 'reasoning' in body and body['reasoning'] not in THINKING:
         raise InvalidAgentConfig(
-            f"the provider is one of {', '.join(PROVIDERS)}", 'provider')
-    model = body.get('model')
-    if model is not None and not _text(model, MODEL_MAX):
+            f"the reasoning level is one of {', '.join(THINKING)}", 'reasoning')
+    changed = dict(current)
+    if 'enabled' in body:
+        changed['enabled'] = body['enabled']
+    if 'reasoning' in body:
+        changed['thinking'] = body['reasoning']
+    if 'enabled' in body and changed['enabled'] and not runnable(default):
+        raise InvalidAgentConfig(
+            'the agent cannot be on without a default provider and its model',
+            'enabled')
+    return changed
+
+
+def choose(listed: list, asked_id: Any, asked_model: Any,
+           thread: Optional[dict]) -> dict:
+    """The provider and model a turn runs on, as a config :func:`build_model` reads.
+
+    What the request names wins; else what the thread ran on last; else the
+    default provider and its model. A thread stored before providers had ids
+    names its kind: the default of that kind carries on.
+    """
+    thread = thread or {}
+    # A thread stored before providers had ids names its kind only.
+    stored_id, stored_kind = thread.get('provider_id'), thread.get('provider')
+    if asked_id is not None:
+        chosen = next((p for p in listed if p['id'] == asked_id), None)
+        if chosen is None:
+            raise InvalidAgentConfig('no provider has this id', 'provider_id')
+    else:
+        chosen = next((p for p in listed if p['id'] == stored_id), None)
+        if chosen is None and stored_id is None:
+            chosen = next((p for p in listed if p['provider'] == stored_kind), None)
+        chosen = chosen or default_of(listed)
+    if chosen is None:
+        raise InvalidAgentConfig('no provider is configured', 'provider_id')
+    continuing = chosen['id'] == stored_id or (
+        stored_id is None and chosen['provider'] == stored_kind)
+    if asked_model is not None and not _text(asked_model, MODEL_MAX):
         raise InvalidAgentConfig(
             f"the model is a name of 1 to {MODEL_MAX} characters", 'model')
-    model_name = body.get('model_name')
-    if model_name is not None and not _text(model_name, MODEL_MAX):
+    model = asked_model.strip() if asked_model is not None else None
+    model = model or (thread.get('model') if continuing else None) or chosen['model']
+    if model is None:
+        raise InvalidAgentConfig('this provider has no model chosen', 'model')
+    return {**chosen, 'model': model}
+
+
+def label_of(config: dict) -> str:
+    """How an error names the provider: its label, else its kind."""
+    return config['label'] or PROVIDERS[config['provider']]
+
+
+def check(config: dict, require: bool = True) -> dict:
+    """``config`` itself, or :class:`InvalidAgentConfig` naming the field.
+
+    ``require``: also that a kind which cannot run without a key or an address
+    holds one. A connection test checks that itself, in its own words.
+    """
+    kind = config['provider']
+    if kind not in PROVIDERS:
         raise InvalidAgentConfig(
-            f"the model name is a line of 1 to {MODEL_MAX} characters",
-            'model_name')
-    base_url = body.get('base_url')
-    if base_url is not None and not (_text(base_url, BASE_URL_MAX) and _HTTP_URL.fullmatch(base_url)):
+            f"the kind is one of {', '.join(PROVIDERS)}", 'kind')
+    for name, own, most in (('label', 'label', LABEL_MAX),
+                            ('default_model', 'model', MODEL_MAX)):
+        if config[own] is not None and not _text(config[own], most):
+            raise InvalidAgentConfig(
+                f"the {name.replace('_', ' ')} is a line of 1 to {most} "
+                f"characters", name)
+    url = config['base_url']
+    if url is not None and not (_text(url, BASE_URL_MAX) and _HTTP_URL.fullmatch(url)):
         raise InvalidAgentConfig(
             f"the base URL is an http:// or https:// address of at most "
             f"{BASE_URL_MAX} characters", 'base_url')
-    if 'thinking' in body and body['thinking'] not in THINKING:
-        raise InvalidAgentConfig(
-            f"the thinking level is one of {', '.join(THINKING)}", 'thinking')
-    changed = dict(config)
-    changed.update(body)
-    if isinstance(changed['model'], str):
-        changed['model'] = changed['model'].strip()
-    if isinstance(changed['model_name'], str):
-        changed['model_name'] = changed['model_name'].strip()
-    if 'model' in body and 'model_name' not in body:
-        changed['model_name'] = None
-    moved = any(name in body and body[name] != config[name]
-                for name in ('provider', 'base_url'))
-    if moved and 'enabled' not in body:
-        return without_key(changed)
-    if moved:
-        changed.update(api_key=None, key_set_at=None)
-    return check(changed), False
-
-
-def with_key(config: dict, key: Any, now: datetime) -> dict:
-    """``config`` holding ``key``."""
-    # Stripped: a key pasted with its newline would be refused by the HTTP
-    # client as a header value, and reach the user as "Connection error.".
-    key = key.strip() if isinstance(key, str) else key
-    if not isinstance(key, str) or not KEY_MIN <= len(key) <= KEY_MAX or not key.isprintable():
+    key = config['api_key']
+    # Stripped by _clean already: a key pasted with its newline would be
+    # refused by the HTTP client as a header value, and reach the user as
+    # "Connection error.".
+    if key is not None and not (isinstance(key, str) and KEY_MIN <= len(key) <= KEY_MAX and key.isprintable()):
         raise InvalidAgentConfig(
             f"the key is {KEY_MIN} to {KEY_MAX} printable characters", 'key')
-    return check({**config, 'api_key': key, 'key_set_at': now})
-
-
-def candidate(stored: dict, body: Any, at: datetime) -> dict:
-    """What a connection test tries: ``stored`` with ``body``'s provider,
-    address and key (#1269). Any other field is refused by name.
-
-    Built on :func:`change` and :func:`with_key`: a candidate naming another
-    provider or address must bring its own key, the stored one being used only
-    with what it was stored for. The agent is off in the result, which is only
-    ever tried, never written: :func:`adopted` is what is kept.
-    """
-    if not isinstance(body, dict):
-        raise InvalidAgentConfig('a JSON object is required', 'body')
-    for name in body:
-        if name not in ('provider', 'base_url', 'key'):
-            raise InvalidAgentConfig(
-                f"{name!r} is not a field of a connection test; the fields "
-                f"are provider, base_url, key", name)
-    tried, _ = change({**stored, 'enabled': False},
-                      {k: v for k, v in body.items() if k != 'key'})
-    # A null key is no key: the stored one stands, as when the field is left out.
-    return with_key(tried, body['key'], at) if body.get('key') is not None else tried
-
-
-def adopted(stored: dict, tried: dict) -> dict:
-    """``stored`` holding the provider, address and key of ``tried``, which a
-    provider listed its models for (#1269).
-
-    A different provider or address clears the model and its name, and a
-    different provider, address or key switches the agent off: *Activer
-    l'agent* puts it back. The same key keeps its ``key_set_at``.
-    """
-    moved = any(tried[name] != stored[name] for name in ('provider', 'base_url'))
-    rekeyed = tried['api_key'] != stored['api_key']
-    kept = {**stored, 'provider': tried['provider'],
-            'base_url': tried['base_url'], 'api_key': tried['api_key']}
-    if rekeyed:
-        kept['key_set_at'] = tried['key_set_at']
-    if moved:
-        kept.update(model=None, model_name=None)
-    if moved or rekeyed:
-        kept['enabled'] = False
-    return check(kept)
-
-
-def without_key(config: dict) -> tuple:
-    """``config`` without its key, and whether that turned the agent off.
-
-    A provider that cannot run without a key is switched off in the same
-    write, rather than the deletion being refused.
-    """
-    changed = {**config, 'api_key': None, 'key_set_at': None}
-    disabled = changed['enabled'] and changed['provider'] in KEY_REQUIRED
-    if disabled:
-        changed['enabled'] = False
-    return check(changed), disabled
-
-
-def check(config: dict) -> dict:
-    """``config`` itself, or :class:`InvalidAgentConfig` naming the field.
-
-    Run on **every** write, not only on ``enabled: true``: a provider switched,
-    an address cleared or a key deleted under an enabled agent is caught here
-    too.
-    """
-    provider = config['provider']
-    if config['enabled']:
+    if kind in BASE_URL_REFUSED and url is not None:
+        raise InvalidAgentConfig(
+            f"{PROVIDERS[kind]} takes no base URL; clear it", 'base_url')
+    if kind in KEY_REFUSED and key is not None:
+        raise InvalidAgentConfig(
+            f"{PROVIDERS[kind]} takes no key; delete it", 'key')
+    if require:
         for name, missing in (
-                ('provider', provider is None),
-                ('model', config['model'] is None),
-                ('key', provider in KEY_REQUIRED and config['api_key'] is None),
-                ('base_url', provider in BASE_URL_REQUIRED and config['base_url'] is None)):
+                ('key', kind in KEY_REQUIRED and key is None),
+                ('base_url', kind in BASE_URL_REQUIRED and url is None)):
             if missing:
-                named = f" for {PROVIDERS[provider]}" if provider else ''
                 raise InvalidAgentConfig(
-                    f"the agent cannot be on without its "
-                    f"{name.replace('_', ' ')}{named}", name)
-    if provider in BASE_URL_REFUSED and config['base_url'] is not None:
-        raise InvalidAgentConfig(
-            f"{PROVIDERS[provider]} takes no base URL; clear it", 'base_url')
-    if provider in KEY_REFUSED and config['api_key'] is not None:
-        raise InvalidAgentConfig(
-            f"{PROVIDERS[provider]} takes no key; delete it", 'key')
+                    f"{PROVIDERS[kind]} needs its {name.replace('_', ' ')}",
+                    name)
     return config
 
 
-def write(store, config: dict, now: datetime) -> None:
+def write_provider(store, config: dict) -> None:
     """Keep ``config``, which :func:`check` has passed. Under the write lock."""
     store.execute(
-        'INSERT INTO agent_config (id, enabled, provider, model, model_name, '
-        'base_url, api_key, key_set_at, thinking, updated_at) '
-        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+        'INSERT INTO agent_provider (id, label, kind, base_url, api_key, '
+        'key_set_at, default_model, is_default, last_test_at, created_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+        'ON CONFLICT (id) DO UPDATE SET label = excluded.label, '
+        'kind = excluded.kind, base_url = excluded.base_url, '
+        'api_key = excluded.api_key, key_set_at = excluded.key_set_at, '
+        'default_model = excluded.default_model, '
+        'is_default = excluded.is_default, last_test_at = excluded.last_test_at',
+        [config['id'], config['label'], config['provider'], config['base_url'],
+         config['api_key'], config['key_set_at'], config['model'],
+         config['is_default'], config['last_test_at'], config['created_at']])
+
+
+def make_default(store, provider_id: str) -> None:
+    """Make ``provider_id`` the one default. Under the write lock."""
+    store.execute('UPDATE agent_provider SET is_default = (id = ?)', [provider_id])
+
+
+def remove_provider(store, provider_id: str) -> None:
+    """Delete the provider; the oldest left becomes the default if it was.
+
+    Under the write lock. The threads that ran on it keep their id, and carry
+    on on the default.
+    """
+    store.execute('DELETE FROM agent_provider WHERE id = ?', [provider_id])
+    left = providers(store)
+    if left and default_of(left) is None:
+        make_default(store, left[0]['id'])
+
+
+def settle(store, now: datetime) -> bool:
+    """Switch the agent off if a provider write left it nothing to run on.
+
+    Under the write lock; whether it did.
+    """
+    current = read(store)
+    if current['enabled'] and not runnable(default_of(providers(store))):
+        write(store, {**current, 'enabled': False}, now)
+        return True
+    return False
+
+
+def write(store, config: dict, now: datetime) -> None:
+    """Keep ``enabled`` and ``thinking``. Under the write lock."""
+    store.execute(
+        'INSERT INTO agent_config (id, enabled, thinking, updated_at) '
+        'VALUES (1, ?, ?, ?) '
         'ON CONFLICT (id) DO UPDATE SET enabled = excluded.enabled, '
-        'provider = excluded.provider, model = excluded.model, '
-        'model_name = excluded.model_name, base_url = excluded.base_url, api_key = excluded.api_key, '
-        'key_set_at = excluded.key_set_at, thinking = excluded.thinking, '
-        'updated_at = excluded.updated_at',
-        [config['enabled'], config['provider'], config['model'],
-         config['model_name'], config['base_url'], config['api_key'], config['key_set_at'],
-         config['thinking'], now])
+        'thinking = excluded.thinking, updated_at = excluded.updated_at',
+        [config['enabled'], config['thinking'], now])
     config['updated_at'] = now
 
 

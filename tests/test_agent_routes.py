@@ -33,11 +33,15 @@ def runtime(tmp_path):
     return rich_runtime(tmp_path)
 
 
-def switched_on(runtime, provider='anthropic', key=KEY):
+def switched_on(runtime, provider='anthropic', key=KEY, provider_id='p1',
+                model='claude-sonnet-5-5', default=True):
+    """The agent on, over a provider written straight to the store."""
     with runtime.config_manager.writing() as opened:
-        agent.write(opened, {**agent.EMPTY, 'enabled': True,
-                             'provider': provider, 'model': 'claude-sonnet-5-5',
-                             'api_key': key}, agent.now())
+        agent.write_provider(opened, {
+            **agent.BLANK, 'id': provider_id, 'provider': provider,
+            'model': model, 'api_key': key, 'is_default': default,
+            'created_at': agent.now()})
+        agent.write(opened, {**agent.EMPTY, 'enabled': True}, agent.now())
 
 
 def scripted(model):
@@ -185,7 +189,8 @@ def test_agents_is_still_flask_s(runtime):
     ('/api/agent/statements', True),
     ('/api/agent/proposals', False),
     ('/api/agent/config', False),
-    ('/api/agent/key', False),
+    ('/api/agent/providers', False),
+    ('/api/agent/stats', False),
     ('/agent', False),
     ('/api/agents', False),
     ('/api/agent/chatx', False),
@@ -877,3 +882,89 @@ def test_a_fallback_save_that_fails_is_logged_and_the_thread_released(
     monkeypatch.setattr(agent, 'build_model', scripted(
         FunctionModel(stream_function=quick)))
     assert run(runtime, post('k1', text='again')).status_code == 200
+
+
+# ----------------------------------------------- providers and their usage --
+
+async def just_text(messages, info):
+    yield 'Voici.'
+
+
+def second_provider(runtime):
+    with runtime.config_manager.writing() as opened:
+        agent.write_provider(opened, {
+            **agent.BLANK, 'id': 'p2', 'provider': 'openai', 'model': 'gpt-x',
+            'api_key': KEY, 'created_at': agent.now()})
+
+
+def test_a_turn_runs_on_the_provider_and_model_the_request_names_then_keeps_them(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    second_provider(runtime)
+    seen = []
+
+    def build(config):
+        seen.append((config['id'], config['model'], config['thinking']))
+        return FunctionModel(stream_function=just_text)
+    monkeypatch.setattr(agent, 'build_model', build)
+
+    assert run(runtime, post('k1')).status_code == 200
+    assert run(runtime, post('k1', provider_id='p2', model='gpt-y')).status_code == 200
+    assert run(runtime, post('k1', text='Et ensuite ?')).status_code == 200
+
+    assert seen == [('p1', 'claude-sonnet-5-5', 'low'), ('p2', 'gpt-y', 'low'),
+                    ('p2', 'gpt-y', 'low')]
+    thread = stored(runtime, 'k1')
+    assert (thread['provider_id'], thread['provider'], thread['model']) == (
+        'p2', 'openai', 'gpt-y')
+    shown = run(runtime, get('/api/agent/threads/k1')).json()
+    assert (shown['provider_id'], shown['model']) == ('p2', 'gpt-y')
+
+
+def test_a_provider_gone_or_a_bad_request_is_refused_by_name(runtime, monkeypatch):
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=just_text)))
+
+    gone = run(runtime, post('k1', provider_id='gone'))
+    assert gone.status_code == 422 and 'no provider has this id' in gone.json()['error']
+    assert run(runtime, post('k1', provider_id=3)).status_code == 400
+    assert run(runtime, post('k1', model=['x'])).status_code == 400
+    assert run(runtime, post('k1', model='two\nlines')).status_code == 422
+    assert not stored(runtime, 'k1')
+
+
+def test_a_thread_whose_provider_was_deleted_carries_on_on_the_default(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    second_provider(runtime)
+    seen = []
+
+    def build(config):
+        seen.append(config['id'])
+        return FunctionModel(stream_function=just_text)
+    monkeypatch.setattr(agent, 'build_model', build)
+    run(runtime, post('k1', provider_id='p2'))
+    with runtime.config_manager.writing() as opened:
+        agent.remove_provider(opened, 'p2')
+
+    assert run(runtime, post('k1', text='Encore ?')).status_code == 200
+
+    assert seen == ['p2', 'p1']
+
+
+def test_every_turn_is_indexed_in_the_usage_and_forgetting_the_thread_drops_it(
+        runtime, monkeypatch):
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=two_tools_then_text)))
+    rows = 'SELECT seq, tool_calls FROM agent_usage WHERE thread_id = ? ORDER BY seq'
+
+    run(runtime, post('k1'))
+    # Three responses: each tool call, then the answer.
+    assert runtime.store.query(rows, ['k1']) == [(1, 1), (3, 1), (5, 0)]
+    run(runtime, post('k1', text='Et ensuite ?'))
+    assert len(runtime.store.query(rows, ['k1'])) == 4
+
+    assert run(runtime, delete('/api/agent/threads/k1')).status_code == 204
+    assert runtime.store.query(rows, ['k1']) == []

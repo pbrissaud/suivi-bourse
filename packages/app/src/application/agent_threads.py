@@ -148,9 +148,11 @@ def title_of(text: str) -> str:
 
 def saved(thread: Optional[dict], thread_id: str, title: str,
           history: list, provider: str, model: str,
-          failed: bool = False) -> dict:
+          failed: bool = False, provider_id: Optional[str] = None) -> dict:
     """``thread`` (or a new one) holding ``history``.
 
+    ``provider`` is the kind and ``provider_id`` the configured provider the
+    thread ran on last, with its ``model``: a thread switches both per turn.
     ``failed``: the last turn ended on an error, not on an answer or a stop.
     """
     stamp = instants.iso(datetime.now(timezone.utc))
@@ -161,6 +163,7 @@ def saved(thread: Optional[dict], thread_id: str, title: str,
         'created_at': (thread or {}).get('created_at') or stamp,
         'updated_at': stamp,
         'provider': provider,
+        'provider_id': provider_id,
         'model': model,
         'failed': failed,
         'messages': ModelMessagesTypeAdapter.dump_python(history, mode='json'),
