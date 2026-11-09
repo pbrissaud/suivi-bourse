@@ -266,12 +266,17 @@ export function Palette() {
   const titleEntry = (title: (typeof titles)[number]): Entry => ({
     key: `title:${title.symbol}`,
     label: title.name ?? title.symbol,
-    sub: [
-      title.name === null ? null : title.symbol,
-      ...title.accounts.map((id) => nameOf.get(id) ?? id),
-    ]
-      .filter((part) => part !== null)
-      .join(' · '),
+    // The sub-line is one sentence: it waits whole for the accounts' read,
+    // an id not being an account's name.
+    sub:
+      accounts.data === undefined
+        ? ''
+        : [
+            title.name === null ? null : title.symbol,
+            ...title.accounts.map((id) => nameOf.get(id) ?? id),
+          ]
+            .filter((part) => part !== null)
+            .join(' · '),
     right: money(title.value),
     run: () =>
       leave(() => {

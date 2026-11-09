@@ -2778,7 +2778,16 @@ describe('the effect line, which the server writes (#1461)', () => {
     server.use(
       http.post(ROUTES.eventsPreview, async ({ request }) => {
         asked.push((await request.json()) as Record<string, unknown>)
-        return HttpResponse.json(answer)
+        // The cases below state the move signed; the server answers a magnitude
+        // and a direction.
+        return HttpResponse.json({
+          account: 'alpha',
+          cash_before: answer.cash_after - answer.amount,
+          cash_after: answer.cash_after,
+          amount: Math.abs(answer.amount),
+          fee: answer.fees,
+          direction: answer.amount < 0 ? 'debit' : answer.amount > 0 ? 'credit' : 'none',
+        })
       }),
     )
     return asked
@@ -2862,7 +2871,7 @@ describe('the effect line, which the server writes (#1461)', () => {
       quantity: 2,
       unit_price: 10,
     })
-    expect(asked[0]).not.toHaveProperty('event_id')
+    expect(asked[0]).not.toHaveProperty('id')
   })
 
   it('asks once the reader pauses, not at every keystroke', async () => {
@@ -2886,7 +2895,7 @@ describe('the effect line, which the server writes (#1461)', () => {
     await screen.findByLabelText('Quantité')
 
     await waitFor(() => expect(said()).toMatch(/^2 707,35 € quittent le compte alpha/))
-    expect(asked[0]).toMatchObject({ event_id: 'row-7', quantity: 5, unit_price: 541.2, fee: 1.35 })
+    expect(asked[0]).toMatchObject({ id: 'row-7', quantity: 5, unit_price: 541.2, fee: 1.35 })
   })
 
   it('is a bare number while the base currency is unknown', async () => {

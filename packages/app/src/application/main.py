@@ -49,7 +49,7 @@ MANAGED_LOGGERS = (
     'advisories',
     'market',
     'agent', 'auth',
-    'update_check',
+    'update_check', 'api.system', 'notifications',
 )
 
 

@@ -254,10 +254,10 @@ describe('when the app is not answering', () => {
     await waitFor(() => expect(bell).toHaveAccessibleName(/ne répond pas/))
 
     // And it *leads* somewhere rather than indicating without pointing: the
-    // panel's health card offers a link to where one repairs.
+    // panel's footer links to where one repairs.
     await user.click(bell)
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    expect(within(panel).getByRole('link', { name: 'Voir dans Système' })).toHaveAttribute(
+    expect(within(panel).getByRole('link', { name: 'Système' })).toHaveAttribute(
       'href',
       expect.stringContaining('/system'),
     )

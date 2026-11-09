@@ -23,10 +23,14 @@ def positions_payload(store, snapshot, now: datetime) -> Dict[str, Any]:
     """Every (account, symbol) row, in the base currency."""
     currency = store.setting('base_currency')
     carried = quotes.terminal_symbols(store, snapshot.backfill_windows(), now)
+    reader = PortfolioReader(store)
+    previous = {row['symbol']: row['price']
+                for row in reader.previous_closes()}
     return {
         'base_currency': currency,
-        'positions': portfolio_view.build_positions(
-            PortfolioReader(store).positions(), currency, carried),
+        'positions': portfolio_view.with_day_change(
+            portfolio_view.build_positions(reader.positions(), currency,
+                                           carried), previous),
     }
 
 

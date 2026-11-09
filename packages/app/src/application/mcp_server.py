@@ -63,10 +63,14 @@ every purchase — NOT a unit price and not a purchase price. The weighted avera
 paid per unit is `cost_basis` / `quantity`, and you must do that division
 yourself.
 
-THERE IS NO market_value MEMBER AND NO UNREALISED-GAIN MEMBER. Both are yours to
-compute: the holding is worth `quantity` x `converted.value`, and its unrealised
-gain is that figure minus `cost_basis`. Say you computed them; do not attribute
-them to this app.
+THERE IS NO market_value MEMBER. It is yours to compute: the holding is worth
+`quantity` x `converted.value`. The unrealised gain is served: `latent_gain` is
+that value minus `cost_basis` and `latent_gain_pct` the same over `cost_basis`
+(a ratio: 0.05 is 5%), both on the securities' cost only and never on what was
+paid in; both are null while the line has no value, and `latent_gain` is zero on
+a closed position. `day_change_pct` is the move of `converted.value` since the
+previous close, a ratio, null when either price is unknown. Say you computed the market value; do not attribute it to
+this app.
 
 {_CURRENCY}
 
@@ -115,6 +119,18 @@ The portfolio as a whole, on the most recent day the app has computed.
 `net_contributed`, the money-weighted return (`xirr`, annualised), the
 time-weighted return (`twr_index`, based at 100, with its `twr_since`),
 `gain_absolu`, `transfer_fees`, and `ytd`.
+
+Also served: `cash` (the same figure as `cash_balance`), `gain_total` (the
+gain counted in four terms, latent + realised + dividends - fees, as
+`gain_total.amount` and over `net_contributed` as `gain_total.pct`, a ratio;
+both null while a held line has no value) and `net_if_sold_today` (the total
+value less the tax a sale of everything would owe today, an ESTIMATE). Tax is
+projected only for the accounts named in `estimated_accounts`; every other
+account counts gross, so say which accounts the net figure covers.
+`variation` holds, for each of the ranges 1M, YTD, 1Y and MAX, the change in
+the gain over that range, that change over the value at the start of the range
+(a ratio) and the day it counts from; a range the series is too short for is
+null.
 
 `ytd` IS A PAIR AND ITS `ytd.twr` IS NOT AN INDEX. `ytd.gain` is an amount;
 `ytd.twr` is a RETURN FRACTION — 0.019 means 1.9% — and not a figure based at
@@ -471,6 +487,8 @@ that the period stopped early, and why.
 positive means the owner is ahead of the fund. `accounts` is the perimeter those
 figures are summed over. THE GAP IS GROSS: no tax on either side.
 
+`contributed` is the money put in over the period (net of what came back out of
+the securities), the denominator of the two returns below.
 `portfolio_return` and `reference_return` are the GAIN ON THE MONEY INVESTED
 over the period, the value minus what was put in, over what was put in. They are
 NOT PER YEAR, and they are not `get_portfolio_totals.xirr`: never annualise
@@ -485,7 +503,8 @@ app has no figure.
 `per_account.covered_from` to `per_account.covered_to`, and `per_account.ended`
 when it stopped early. Each `per_account.account` is a `list_accounts.id`: name
 it by its `list_accounts.label`, or its `list_accounts.id` when it has no label. Its figures are `per_account.portfolio_value`,
-`per_account.reference_value`, `per_account.gap_gross`,
+`per_account.contributed`, `per_account.reference_value`,
+`per_account.gap_gross`,
 `per_account.portfolio_return` and `per_account.reference_return`. The rows add
 up to the head only when every one of them runs to `covered_to`.
 
@@ -572,6 +591,8 @@ class Position(TypedDict):
     # what was paid in). `null` while the line has no value; zero when closed.
     latent_gain: Optional[float]
     latent_gain_pct: Optional[float]
+    # The converted price over the previous close, as a ratio.
+    day_change_pct: Optional[float]
     # `null` — never observed. The position is carried at its cost.
     price: Optional[Price]
     # `null` with a non-null `price` — quoted, and the rate is missing.
@@ -721,6 +742,7 @@ class BenchmarkAccount(TypedDict):
     covered_from: Optional[str]
     covered_to: Optional[str]
     ended: Optional[str]
+    contributed: Optional[float]
     portfolio_value: Optional[float]
     reference_value: Optional[float]
     gap_gross: Optional[float]
@@ -747,6 +769,7 @@ class BenchmarkComparison(TypedDict):
     truncated_by_fund: NotRequired[bool]
     ended: NotRequired[Optional[str]]
     accounts: NotRequired[List[str]]
+    contributed: NotRequired[Optional[float]]
     portfolio_value: NotRequired[Optional[float]]
     reference_value: NotRequired[Optional[float]]
     gap_gross: NotRequired[Optional[float]]

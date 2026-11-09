@@ -45,7 +45,6 @@ import {
   dataApi,
   EVENT_TYPES,
   type EventDraft,
-  type EventPreviewBody,
   type LedgerEvent,
   type LedgerEventType,
 } from '@/features/data/lib/api'
@@ -513,7 +512,7 @@ export function EventForm({
    * missing or unreadable: the line then says nothing rather than guess. The
    * refusals are `submit()`'s to name; this only decides whether to ask.
    */
-  const asking: EventPreviewBody | null = (() => {
+  const asking: (EventDraft & { id?: string }) | null = (() => {
     const day = parseDay(draft.date.trim())
     const submitted = submittedAccount(choice, draft.account)
     if (day === null || 'error' in submitted) return null
@@ -539,7 +538,7 @@ export function EventForm({
       unit_price: unitPrice,
       fee,
       amount,
-      ...(event?.id ? { event_id: event.id } : {}),
+      ...(event?.id ? { id: event.id } : {}),
     }
   })()
   const previewKey = asking === null ? null : JSON.stringify(asking)
@@ -553,7 +552,10 @@ export function EventForm({
   }, [open, previewKey])
   const previewed = useQuery({
     queryKey: ['event-preview', settled],
-    queryFn: () => dataApi.previewEvent(JSON.parse(settled as string) as EventPreviewBody),
+    queryFn: () => {
+      const { id, ...draft } = JSON.parse(settled as string) as EventDraft & { id?: string }
+      return dataApi.previewEvent(draft, id)
+    },
     enabled: open && settled !== null,
     retry: false,
     // The line holds its last words while the next ones are on their way.
@@ -563,10 +565,12 @@ export function EventForm({
     asking === null || previewed.data === undefined
       ? undefined
       : {
-          amount: previewed.data.amount,
-          fees: previewed.data.fees,
+          // The server answers a magnitude and a direction; the line reads a sign.
+          amount:
+            previewed.data.direction === 'debit' ? -previewed.data.amount : previewed.data.amount,
+          fees: previewed.data.fee,
           cashAfter: previewed.data.cash_after,
-          account: previewed.data.account_label ?? (asking.account || t(DEFAULT_ACCOUNT_LABEL)),
+          account: asking.account || t(DEFAULT_ACCOUNT_LABEL),
         }
 
   function set(field: FieldName, value: string) {

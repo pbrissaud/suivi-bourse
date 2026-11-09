@@ -200,7 +200,14 @@ export function defaultHandlers() {
     // The dry run behind the event sheet's effect line: the same figures for
     // every body, so a test that cares overrides it with its own.
     http.post(ROUTES.eventsPreview, () =>
-      HttpResponse.json({ cash_after: 1040, amount: -542.55, fees: 1.35 }),
+      HttpResponse.json({
+        account: 'alpha',
+        cash_before: 1582.55,
+        cash_after: 1040,
+        amount: 542.55,
+        fee: 1.35,
+        direction: 'debit',
+      }),
     ),
 
     // The way in (#811): one file, one receipt. The receipt is the fixture's

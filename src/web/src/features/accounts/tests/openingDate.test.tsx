@@ -26,7 +26,6 @@ import {
   aLedgerPayload,
   anAccount,
   anAccountsPayload,
-  anAdvisory,
   aTaxationCatalogue,
   aTaxationModel,
   ledgerEvents,
@@ -245,89 +244,7 @@ describe('what the panel sends', () => {
   })
 })
 
-describe('the contradiction, said out loud', () => {
-  const CONTRADICTED = anAdvisory({
-    key: 'opened_after_first_payment:alpha',
-    kind: 'opened_after_first_payment',
-    message: 'Alpha is declared as opened on 2021-01-01, and it received a payment on 2019-03-04.',
-    detail: {
-      account: 'alpha',
-      label: 'Alpha',
-      opened_on: '2021-01-01',
-      first_payment: '2019-03-04',
-    },
-  })
-
-  async function openNotifications(language: readonly string[]) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([CONTRADICTED])))
-    const rendered = renderApp({ browserLanguages: language })
-    await rendered.user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    return screen.findByRole('dialog', { name: 'Notifications' })
-  }
-
-  it('names the account, both dates, and where to go — in French', async () => {
-    const panel = await openNotifications(['fr-FR'])
-
-    expect(
-      within(panel).getByText(/Alpha · ouvert après son premier versement/),
-    ).toBeInTheDocument()
-    expect(panel.textContent).toContain('déclaré ce compte ouvert le 2021-01-01')
-    expect(panel.textContent).toContain('versement le 2019-03-04')
-    // It states the contradiction and does not decide which side is wrong.
-    expect(panel.textContent).toContain('l’application ne peut pas dire laquelle')
-    expect(within(panel).getByRole('link', { name: 'Voir le compte' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('account=alpha'),
-    )
-  })
-
-  it('and in English', async () => {
-    const panel = await openNotifications(['en-GB'])
-
-    expect(within(panel).getByText(/Alpha · opened after its first payment/)).toBeInTheDocument()
-    expect(panel.textContent).toContain('opened on 2021-01-01')
-    expect(panel.textContent).toContain('payment on 2019-03-04')
-    expect(within(panel).getByRole('link', { name: 'See the account' })).toBeInTheDocument()
-  })
-})
-
-describe('the day that has not happened, said out loud', () => {
-  const TO_COME = anAdvisory({
-    key: 'opened_in_the_future:alpha',
-    kind: 'opened_in_the_future',
-    message: 'Alpha is declared as opened on 2099-01-01, a day that has not happened yet.',
-    detail: { account: 'alpha', label: 'Alpha', opened_on: '2099-01-01' },
-  })
-
-  async function openNotifications(language: readonly string[]) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([TO_COME])))
-    const rendered = renderApp({ browserLanguages: language })
-    await rendered.user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    return screen.findByRole('dialog', { name: 'Notifications' })
-  }
-
-  it('names the date and what it does to the projection — in French', async () => {
-    const panel = await openNotifications(['fr-FR'])
-
-    expect(
-      within(panel).getByText(/Alpha · ouvert un jour qui n’est pas arrivé/),
-    ).toBeInTheDocument()
-    expect(panel.textContent).toContain('ouvert le 2099-01-01')
-    // The figure is the reason this is said at all.
-    expect(panel.textContent).toContain('n’est jamais atteint')
-    expect(within(panel).getByRole('link', { name: 'Voir le compte' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('account=alpha'),
-    )
-  })
-
-  it('and in English', async () => {
-    const panel = await openNotifications(['en-GB'])
-
-    expect(
-      within(panel).getByText(/Alpha · opened on a day that has not happened/),
-    ).toBeInTheDocument()
-    expect(panel.textContent).toContain('opened on 2099-01-01')
-    expect(panel.textContent).toContain('never reached')
-  })
-})
+// The advisories that used to be phrased here, in the bell (an account opened
+// after its first payment, opened on a day to come, carrying no taxation model),
+// are `system` register since #829: the bell holds the `user` register only.
+// Their sentences are re-pinned where the System page draws them.

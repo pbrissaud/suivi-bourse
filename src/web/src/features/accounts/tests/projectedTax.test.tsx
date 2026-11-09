@@ -26,13 +26,7 @@ import { describe, expect, it } from 'vitest'
 import type { Account } from '@/features/accounts/lib/api'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import {
-  aLedgerPayload,
-  anAccount,
-  anAccountsPayload,
-  anAdvisory,
-  ledgerEvents,
-} from '@/test/factories'
+import { aLedgerPayload, anAccount, anAccountsPayload, ledgerEvents } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -301,41 +295,7 @@ describe('the footing names the rate that produced the figure', () => {
   })
 })
 
-describe('the sentence that says why a modelless account is silent', () => {
-  const NO_MODEL = anAdvisory({
-    key: 'no_taxation_model:alpha',
-    kind: 'no_taxation_model',
-    subject: 'accounts',
-    message: 'Alpha carries no taxation model.',
-    detail: { account: 'alpha', label: 'Alpha', total_value: 5766.22 },
-  })
-
-  async function openNotifications(language: readonly string[]) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([NO_MODEL])))
-    const rendered = renderApp({ browserLanguages: language })
-    await rendered.user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    return screen.findByRole('dialog', { name: 'Notifications' })
-  }
-
-  it('names the account, says what is missing, and links back to it', async () => {
-    // The card cannot explain its own absence — it would be an empty block on
-    // every account for ever. The bell says it once, and the link is the repair
-    // the advisory exists to offer: an unknown kind falls back to the server's
-    // raw message with no link at all, which is the failure this pins.
-    const panel = await openNotifications(['fr-FR'])
-
-    expect(within(panel).getByText(/Alpha · aucun modèle d’imposition/)).toBeInTheDocument()
-    expect(panel.textContent).toContain('ne peut donc pas dire ce que vous devriez dessus')
-    expect(within(panel).getByRole('link', { name: 'Voir le compte' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('account=alpha'),
-    )
-  })
-
-  it('and in English', async () => {
-    const panel = await openNotifications(['en-GB'])
-
-    expect(within(panel).getByText(/Alpha · no taxation model/)).toBeInTheDocument()
-    expect(panel.textContent).toContain('cannot say what you would owe on it')
-  })
-})
+// The advisories that used to be phrased here, in the bell (an account opened
+// after its first payment, opened on a day to come, carrying no taxation model),
+// are `system` register since #829: the bell holds the `user` register only.
+// Their sentences are re-pinned where the System page draws them.

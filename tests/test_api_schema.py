@@ -27,7 +27,8 @@ def test_a_quantity_is_never_null_and_may_be_nan():
     position = {
         'account': 'pea', 'symbol': 'AAPL', 'name': None, 'quantity': 1.0,
         'cost_basis': 1.0, 'realised': 0.0, 'dividends': 0.0,
-        'latent_gain': None, 'latent_gain_pct': None, 'price': None,
+        'latent_gain': None, 'latent_gain_pct': None, 'day_change_pct': None,
+        'price': None,
         'converted': None, 'closed_at': None, 'terminal': True,
         'fundamentals': None}
     adapter = TypeAdapter(Position)

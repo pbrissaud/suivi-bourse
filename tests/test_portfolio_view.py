@@ -18,6 +18,8 @@ it prevents:
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from application.portfolio_view import (
     build_accounts,
     build_shares,
@@ -530,3 +532,15 @@ def test_a_held_line_with_no_price_still_makes_the_account_unknown():
     ]), ['pea'])
 
     assert gains == {'pea': None}
+
+
+def test_the_day_change_is_the_converted_price_over_the_previous_close():
+    from application.portfolio_view import with_day_change
+    rows = [{'symbol': 'A', 'converted': {'value': 110.0}},
+            {'symbol': 'B', 'converted': {'value': 110.0}},
+            {'symbol': 'C', 'converted': None}]
+
+    moved = with_day_change(rows, {'A': 100.0, 'C': 100.0})
+
+    assert [row['day_change_pct'] for row in moved] == [
+        pytest.approx(0.1), None, None]

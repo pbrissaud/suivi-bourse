@@ -399,7 +399,7 @@ describe('the band is gone and its sentence descends (#829)', () => {
     expect(screen.queryByText('Aucune devise de base')).not.toBeInTheDocument()
   })
 
-  it('is a pinned card in the panel, offering an answer and no acknowledgement', async () => {
+  it('leaves the panel empty: the walk is the question, the bell holds no card for it', async () => {
     const { user } = await firstRun()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -407,16 +407,10 @@ describe('the band is gone and its sentence descends (#829)', () => {
     await user.click(bell())
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
 
-    expect(
-      within(panel).getByText('Aucune devise de base : rien n’est calculé'),
-    ).toBeInTheDocument()
-    // A link to its own field, never an acknowledgement: acknowledging *I have
-    // no currency* means nothing, which is why it was never one of the
-    // acknowledgement table's keys.
-    const card = within(panel).getByText('Aucune devise de base : rien n’est calculé')
-      .parentElement as HTMLElement
-    expect(within(card).getByRole('link', { name: 'Répondre dans Réglages' })).toBeInTheDocument()
-    expect(within(card).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
+    // The bell holds the `user` register of the advisories and nothing else
+    // (#829): the missing currency is answered in Réglages, not here.
+    expect(within(panel).getByText('Rien à signaler')).toBeInTheDocument()
+    expect(within(panel).queryByText(/Aucune devise de base/)).not.toBeInTheDocument()
   })
 
   it('takes the entry away the moment the question is answered', async () => {
@@ -441,26 +435,21 @@ describe('the ceiling loses nothing: the field is where the dial is', () => {
     // which is what licenses the walk being escapable.
     const field = await screen.findByLabelText('Devise de base')
     expect((field as HTMLSelectElement).value).toBe('')
-    // And it is a **condition with a gesture**, never an acknowledgeable
-    // installation fact: it has no row in `installation_fact` and its card
-    // offers no acknowledgement either — which is asked of *that* card, the
-    // panel holding others that legitimately do.
+    // And the bell holds no card for it (#829).
     await user.click(screen.getByRole('button', { name: /^Notifications/ }))
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    const card = within(panel).getByText('Aucune devise de base : rien n’est calculé')
-      .parentElement as HTMLElement
-    expect(within(card).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
+    expect(within(panel).queryByText(/Aucune devise de base/)).not.toBeInTheDocument()
   })
 })
 
 describe('the bell is a state and a link, and the link arrives', () => {
-  it('opens the settings from any page, which is a trial user’s only hold', async () => {
+  it('leads to Système from any page, through the footer', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     const { user } = renderApp({ url: '/shares' })
 
     await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Voir dans Système' }))
+    await user.click(within(panel).getByRole('link', { name: 'Système' }))
 
     expect(await screen.findByRole('heading', { name: 'Tâches', level: 2 })).toBeInTheDocument()
   })

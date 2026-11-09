@@ -137,9 +137,34 @@ const WRITE_ONLY_ROUTES = [
   'securities',
 ] as const satisfies readonly RouteName[]
 
+/**
+ * **Declared by the API chantiers of the « Relevé » redesign for pages that are
+ * not built yet** (the settings sections W9, the System page W10): no surface
+ * reads them today, so the net has nothing to visit. Each page chantier removes
+ * its routes from here when it wires them, and the net then covers them.
+ */
+const AWAITING_THEIR_PAGE = [
+  'agentProviders',
+  'agentProvider',
+  'agentProviderTest',
+  'agentProviderDefault',
+  'agentStats',
+  'installationFacts',
+  'notificationChannels',
+  'notificationChannel',
+  'notificationChannelTest',
+  'jobRun',
+  'logs',
+  'logsDownload',
+  'tokens',
+  'token',
+  'tokenRegenerate',
+] as const satisfies readonly RouteName[]
+
 /** Every route a page reads — the net, computed and never written down twice. */
 const READ_ROUTES: readonly string[] = (Object.keys(ROUTES) as RouteName[])
   .filter((name) => !(WRITE_ONLY_ROUTES as readonly string[]).includes(name))
+  .filter((name) => !(AWAITING_THEIR_PAGE as readonly string[]).includes(name))
   .map((name) => ROUTES[name])
 
 // ------------------------------------------------------------------------- //
@@ -331,7 +356,7 @@ const SURFACES: readonly Surface[] = [
     open: async ({ user }) => {
       await user.click(await screen.findByRole('button', { name: /^Rechercher/ }))
       const field = await screen.findByRole('searchbox', {
-        name: 'Rechercher dans votre portefeuille',
+        name: 'Rechercher',
       })
       await user.type(field, 'alpha')
       return field

@@ -334,6 +334,7 @@ export function aPosition(options: PositionOptions = {}): Position {
     // Market value less cost on the fixture's default quantity and basis.
     latent_gain: price === null || rate === null ? null : 10 * price * rate - 1000,
     latent_gain_pct: price === null || rate === null ? null : (10 * price * rate - 1000) / 1000,
+    day_change_pct: null,
     price: price === null ? null : { value: price, currency, at: NOW },
     converted:
       price === null || rate === null
@@ -434,7 +435,13 @@ export function defaultAccounts(): Account[] {
 
 export function defaultPositions(): Position[] {
   return [
-    aPosition({ account: 'alpha', symbol: 'ZZA', name: 'Zeta Alpha', dividends: 25 }),
+    aPosition({
+      account: 'alpha',
+      symbol: 'ZZA',
+      name: 'Zeta Alpha',
+      dividends: 25,
+      day_change_pct: 0.02,
+    }),
     // Held, quoted in dollars, converted at 0,80.
     aPosition({
       account: 'beta',
@@ -446,6 +453,7 @@ export function defaultPositions(): Position[] {
       price: 125,
       currency: 'USD',
       rate: 0.8,
+      day_change_pct: 0,
     }),
     // Held, never quoted: carried at its cost.
     aPosition({

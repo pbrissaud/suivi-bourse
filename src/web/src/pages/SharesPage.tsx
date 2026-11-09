@@ -23,7 +23,6 @@ import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { SharesList } from '@/features/shares/components/SharesList'
 import { SharesTable } from '@/features/shares/components/SharesTable'
-import { dashboardApi } from '@/features/dashboard/lib/api'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { settingsApi } from '@/features/settings/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
@@ -58,17 +57,16 @@ export default function SharesPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
-  // The day's move under the price. An optional read: without it the cell says
-  // nothing rather than something false, and the table is not withheld for it.
-  const movers = useQuery({ queryKey: ['movers'], queryFn: dashboardApi.movers })
 
   const failures = useMemo(
     () => new Map((runtime.data?.symbols ?? []).map((s) => [s.symbol, s.failure_count])),
     [runtime.data],
   )
+  // The day's move under the price rides on the position row; null says nothing
+  // rather than something false.
   const moves = useMemo(
-    () => new Map((movers.data?.movers ?? []).map((m) => [m.symbol, m.change_pct])),
-    [movers.data],
+    () => new Map((positions.data?.positions ?? []).map((p) => [p.symbol, p.day_change_pct])),
+    [positions.data],
   )
 
   // The reduction is applied to the positions before the folding: reducing

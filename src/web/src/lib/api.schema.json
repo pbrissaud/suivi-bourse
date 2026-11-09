@@ -475,6 +475,16 @@
         "cost_basis": {
           "type": "number"
         },
+        "day_change_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "dividends": {
           "type": "number"
         },
@@ -551,6 +561,7 @@
         "dividends",
         "latent_gain",
         "latent_gain_pct",
+        "day_change_pct",
         "price",
         "converted",
         "closed_at",

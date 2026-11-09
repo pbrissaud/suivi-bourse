@@ -13,7 +13,6 @@ import { useQuery } from '@tanstack/react-query'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Unreadable } from '@/components/Unreadable'
-import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi } from '@/features/data/lib/api'
 import { ShareDetail } from '@/features/shares/components/ShareDetail'
 import { sharesApi, type ChartWindow } from '@/features/shares/lib/api'
@@ -36,7 +35,6 @@ export default function ShareDetailPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
-  const movers = useQuery({ queryKey: ['movers'], queryFn: dashboardApi.movers })
   const ledger = useQuery({ queryKey: ['events'], queryFn: dataApi.events })
 
   const failures = useMemo(
@@ -46,7 +44,7 @@ export default function ShareDetailPage() {
   const all = useMemo(() => positions.data?.positions ?? [], [positions.data])
   const rows = useMemo(() => buildShareRows(all, failures), [all, failures])
   const row = rows.find((candidate) => candidate.symbol === symbol) ?? null
-  const move = movers.data?.movers.find((m) => m.symbol === symbol)?.change_pct ?? null
+  const move = all.find((p) => p.symbol === symbol)?.day_change_pct ?? null
   const currency = positions.data?.base_currency ?? null
   const failure = oneFailure(readConditions({ queries: [positions] }))
 

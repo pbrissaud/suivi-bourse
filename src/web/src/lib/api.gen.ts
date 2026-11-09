@@ -214,6 +214,7 @@ export interface Position {
   closed_at: string | null;
   converted: Converted | null;
   cost_basis: number;
+  day_change_pct: number | null;
   dividends: number;
   fundamentals: Fundamentals | null;
   latent_gain: number | null;

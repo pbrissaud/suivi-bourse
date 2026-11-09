@@ -374,7 +374,7 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
     row = payload['positions'][0]
     assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
                         'realised', 'dividends', 'price', 'converted',
-                        'latent_gain', 'latent_gain_pct',
+                        'latent_gain', 'latent_gain_pct', 'day_change_pct',
                         'closed_at', 'terminal', 'fundamentals'}
     assert (row['account'], row['symbol'], row['name']) == (
         'pea', 'AAPL', 'Apple Inc')

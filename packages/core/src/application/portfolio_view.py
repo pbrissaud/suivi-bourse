@@ -208,6 +208,19 @@ def build_positions(rows: Sequence[Dict[str, Any]],
     return [_build_position(row, base_currency, terminal) for row in rows]
 
 
+def with_day_change(positions: List[Dict[str, Any]],
+                    previous: Mapping[str, float]) -> List[Dict[str, Any]]:
+    """Add ``day_change_pct`` to each row: the converted price over the symbol's
+    previous close, as a ratio. ``None`` when either term is unknown."""
+    for position in positions:
+        converted = position.get('converted') or {}
+        position['day_change_pct'] = _ratio(
+            _difference(converted.get('value'),
+                        previous.get(position.get('symbol'))),
+            previous.get(position.get('symbol')))
+    return positions
+
+
 def _build_position(row: Dict[str, Any],
                     base_currency: Optional[str],
                     terminal: Collection[str]) -> Dict[str, Any]:
@@ -598,7 +611,7 @@ def _first_value(rows: Sequence[Dict[str, Any]], field: str) -> Any:
 __all__ = [
     'AccountPosition', 'AccountSummary', 'SharePosition',
     'build_shares', 'build_accounts', 'latent_gains_by_account', 'unit_cost',
-    'build_positions', 'build_portfolio_totals', 'ytd_base_day',
+    'build_positions', 'with_day_change', 'build_portfolio_totals', 'ytd_base_day',
     'build_price_series', 'valuation_series', 'build_variation',
     'build_gain_total', 'variation_base_day',
 ]

@@ -29,7 +29,7 @@ async function followTheBell() {
   const { user } = renderApp({ url: '/' })
   await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
   const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-  await user.click(within(panel).getByRole('link', { name: 'Voir dans Système' }))
+  await user.click(within(panel).getByRole('link', { name: 'Système' }))
   await screen.findByRole('heading', { level: 1, name: 'Système' })
   return screen.findByRole('region', { name: 'Tâches' })
 }
@@ -83,7 +83,7 @@ describe('the orphaned securities', () => {
 })
 
 describe('the jobs', () => {
-  it('are where the bell’s health card lands', async () => {
+  it('are where the bell’s footer lands', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
 
     expect(await followTheBell()).toHaveTextContent(/Cours figés/)

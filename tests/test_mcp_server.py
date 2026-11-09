@@ -1152,6 +1152,10 @@ def rich_runtime(tmp_path):
     quotes.record_quote(
         opened, 'MC.PA', datetime.now(timezone.utc) - timedelta(hours=1),
         150.0, {'currency': 'EUR'}, 150.0, 1.0)
+    # A close before the latest quote's day, for the day's move.
+    quotes.record_quote(
+        opened, 'AAPL', datetime.now(timezone.utc) - timedelta(days=3),
+        190.0, {'currency': 'USD'}, 175.0, 0.92)
     quotes.record_quote(
         opened, 'AAPL', datetime.now(timezone.utc) - timedelta(hours=1),
         200.0, {'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',

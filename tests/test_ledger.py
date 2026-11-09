@@ -1319,14 +1319,16 @@ def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
     assert response.status_code == 201
     assert _declared(opened) == ['TR', 'default', 'pea']
     assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
-    # **And its name is its id**, which is what a row nobody named must carry.
+    # **And it carries no label** (the Relevé made it optional): a row nobody
+    # named is shown under its id, which is read at display time.
+    # (Historical note on the seeded word follows.)
     # There used to be a seeded word beside it, in the column nothing read, and
     # the moment it reached the *label* instead this account was called `OTHER`
     # on every screen with the whole suite green. #926 dropped that column,
     #so the trap is gone; the assertion stays, because what it
     # actually guards is that an unnamed account is named after its id.
     assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
-        [('TR',)]
+        [(None,)]
 
 
 def test_the_correspondence_applies_before_the_split_at_both_moments(tmp_path):
@@ -1489,7 +1491,7 @@ def test_a_label_declared_between_the_forecast_and_the_button_is_not_refused(
     # column for it to land in either (#926): the request is not refused for
     # carrying it, and the row holds the two fields an account has.
     assert opened.query('SELECT label FROM account WHERE id = ?', ['TR']) == \
-        [('TR',)]
+        [(None,)]
 
 
 def test_a_correspondence_that_is_not_one_is_refused_before_anything(tmp_path):

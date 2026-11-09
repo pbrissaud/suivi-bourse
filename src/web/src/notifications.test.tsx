@@ -23,10 +23,20 @@ function aNotification(overrides: Partial<UserNotification> = {}): UserNotificat
   return {
     key: 'late_price:AMUNDI',
     kind: 'late_price',
+    subject: 'AMUNDI',
     register: 'user',
-    title: 'Le cours d’Amundi PEA Nasdaq-100 n’a pas bougé depuis 16:25',
-    body: 'La valeur affichée peut être légèrement en retard',
     message: 'The price of Amundi PEA Nasdaq-100 has not moved since 16:25',
+    texts: {
+      fr: {
+        title: 'Le cours d’Amundi PEA Nasdaq-100 n’a pas bougé depuis 16:25',
+        sub: 'La valeur affichée peut être légèrement en retard',
+      },
+      en: {
+        title: 'The price of Amundi PEA Nasdaq-100 has not moved since 16:25',
+        sub: 'The value shown may be slightly behind',
+      },
+    },
+    detail: {},
     observed_at: NOW,
     acknowledged_until: null,
     ...overrides,
@@ -42,9 +52,12 @@ function yesterday() {
 const IMPORT = {
   key: 'import_finished:1',
   kind: 'import_finished',
-  title: 'Import terminé',
-  body: '41 événements ajoutés au PEA',
+  subject: '1',
   message: 'Import finished',
+  texts: {
+    fr: { title: 'Import terminé', sub: '41 événements ajoutés au PEA' },
+    en: { title: 'Import finished', sub: '41 events added to the PEA' },
+  },
   acknowledged_until: '2026-12-01T12:00:00.000Z',
 } satisfies Partial<UserNotification>
 

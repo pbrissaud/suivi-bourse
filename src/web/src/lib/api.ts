@@ -103,8 +103,6 @@ export const ROUTES = {
   eventsImportPreview: '/api/events/import/preview',
   /** The previewed rows written, by token, with the owner's resolutions. */
   eventsImportCommit: '/api/events/import/commit',
-  /** A dry run of one event write: the cash it would leave in its account. */
-  eventsPreview: '/api/events/preview',
   /**
    * The ledger back out, in the format it came in by (#710) — **the events, and
    * only them**. There was a second file, the declaration, because a

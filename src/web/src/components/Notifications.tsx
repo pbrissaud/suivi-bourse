@@ -35,7 +35,7 @@ import { toast } from 'sonner'
 
 import { Unreadable } from '@/components/Unreadable'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { api, get, ROUTES } from '@/lib/api'
+import { type Advisory, api, get, ROUTES } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { installationState, oneFailure, readConditions, type InstallationState } from '@/lib/status'
@@ -69,18 +69,7 @@ export const STATE_TONE: Record<InstallationState, string> = {
  * `acknowledged_until` is set on a read one, which is why the asleep ones are
  * asked for: a read notification stays in the list, in `muted-foreground`.
  */
-export interface UserNotification {
-  key: string
-  kind: string
-  register?: 'user' | 'system'
-  /** The server's sentence. Falls back to `message`, the English log line. */
-  title?: string
-  /** The second line, or none. */
-  body?: string | null
-  message: string
-  observed_at: string
-  acknowledged_until?: string | null
-}
+export type UserNotification = Advisory & { acknowledged_until?: string | null }
 
 const USER_NOTIFICATIONS = `${ROUTES.advisories}?register=user&asleep=include`
 
@@ -98,7 +87,7 @@ const OUTAGE_TOAST = 'outage'
 const DAY_MS = 86_400_000
 
 export function Notifications() {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -253,10 +242,10 @@ export function Notifications() {
                         <span
                           className={cn(read ? 'font-normal text-muted-foreground' : 'font-medium')}
                         >
-                          {item.title ?? item.message}
+                          {item.texts?.[language].title ?? item.message}
                         </span>
-                        {item.body ? (
-                          <span className="text-muted-foreground">{item.body}</span>
+                        {item.texts?.[language].sub ? (
+                          <span className="text-muted-foreground">{item.texts[language].sub}</span>
                         ) : null}
                       </span>
                       <span className="fig text-muted-foreground">{when(item.observed_at)}</span>

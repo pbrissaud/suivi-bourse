@@ -883,7 +883,7 @@ describe('the layout (#1196)', () => {
     await user.keyboard('{Control>}k{/Control}')
     await user.type(await screen.findByRole('searchbox'), 'Agent')
     const pages = await screen.findByRole('list', { name: 'Pages' })
-    await user.click(within(pages).getByRole('button', { name: 'Agent' }))
+    await user.click(within(pages).getByRole('button', { name: /^Agent/ }))
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/agent/t1'))
   })
