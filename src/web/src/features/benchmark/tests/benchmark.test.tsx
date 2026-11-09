@@ -1,17 +1,18 @@
 /**
- * The comparison screen (#760) — *the same money, in one fund instead*.
+ * The comparison screen (#760) — *the same money, in one fund instead*, in the
+ * « Relevé » composition.
  *
  * At the seam every page test here uses: the whole app in jsdom, HTTP the only
  * faked edge, every assertion on the accessible rendering. The arithmetic is
  * the server's and is never recomputed here.
  *
- * What this file is about is the five readings the screen has to keep apart:
+ * What this file is about is the readings the screen has to keep apart:
  *
  *  - **while the fund's history is being rebuilt, no figure at all** — head
  *    included. That is the likeliest shipping bug of the whole ticket, because
  *    a gap over a half-built series looks exactly like a gap;
- *  - **one reading and one verdict** since #1018 took the tax out: both sides
- *    sit in the same wrapper, so the tax answered a question about the wrapper;
+ *  - **the answer is a sentence**, whose figures are mono and whose gap takes no
+ *    sign colour: it is money not made, not money lost;
  *  - **truncation is a caption on a present figure**, not an absence.
  */
 import { screen, within } from '@testing-library/react'
@@ -19,6 +20,7 @@ import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
+import { inRange } from '@/features/benchmark/lib/comparison'
 import { ROUTES } from '@/lib/api'
 import { aBenchmark, aBenchmarkReferences } from '@/test/factories'
 import { expectNoBox } from '@/test/noBox'
@@ -30,7 +32,7 @@ function renderBenchmark(payload: Partial<BenchmarkResponse> = {}) {
   return renderApp({ url: '/benchmark' })
 }
 
-/** A comparison that answered, ahead by 4 210 € over 2009–2026. */
+/** A comparison that answered, behind by 837,20 € on 41 063 € put in. */
 function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkResponse> {
   return {
     state: 'ready',
@@ -39,68 +41,103 @@ function ready(overrides: Partial<BenchmarkResponse> = {}): Partial<BenchmarkRes
     inception: '2009-06-16',
     followed: ['CW8.PA'],
     ready: ['CW8.PA'],
-    covered_from: '2009-06-16',
-    covered_to: '2026-09-17',
+    covered_from: '2021-03-04',
+    covered_to: '2026-11-06',
     ended: null,
-    gap_gross: 4212.8,
-    portfolio_return: 0.112,
-    reference_return: 0.048,
+    contributed: 41063,
+    portfolio_value: 46975.4,
+    reference_value: 47812.6,
+    gap_gross: -837.2,
+    portfolio_return: 0.144,
+    reference_return: 0.164,
     ...overrides,
   }
 }
 
-const head = () => screen.findByRole('group', { name: /MSCI World/ })
+/** The region the sentence, the marks and the bars share. */
+const head = async () => (await screen.findByText(/dans le MSCI World\./)).closest('[aria-live]')
 
-/** The card the verdict, the figure and the caveats share. */
-const headCard = async () => (await head()).closest('[aria-live]') as HTMLElement
+/** The statement, French spaces normalised so expectations stay readable. */
+const sentence = async () =>
+  ((await screen.findByText(/dans le MSCI World\./)).textContent ?? '').replace(/[  ]/g, ' ')
 
-const picker = () => screen.findByRole('combobox', { name: 'Fonds de comparaison' })
+const picker = () => screen.findByRole('button', { name: /MSCI World/, expanded: false })
 
 describe('the comparison', () => {
-  it('leads with the euro and files the percentages one weight down', async () => {
+  it('leads with a sentence whose figure is mono, not with a bare amount', async () => {
     renderBenchmark(ready())
 
-    // The euro and the percentage never share a line: the head answers *how
-    // much is left*, and each side's return sits in the terms row under it.
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    within(screen.getByRole('group', { name: 'Votre portefeuille' })).getByText('+11,2 %')
-    within(screen.getByRole('group', { name: 'La référence' })).getByText('+4,8 %')
-    // And their gap in points is not a third percentage beside them (#1112).
-    expect(screen.queryByText('Écart en points')).not.toBeInTheDocument()
-    expect(screen.queryByText('+6,4 %')).not.toBeInTheDocument()
+    expect(await sentence()).toBe(
+      '837,20 € de moins qu’en plaçant le même argent dans le MSCI World.',
+    )
+    const statement = (await screen.findByText(/dans le MSCI World\./)) as HTMLElement
+    expect(statement).toHaveClass('statement')
+    expect(within(statement).getByText(/837,20/)).toHaveClass('fig')
+    // No hero figure beside the sentence: hero and statement never share a screen.
+    expect(document.querySelectorAll('.text-hero')).toHaveLength(0)
   })
 
-  it('colours your return’s figure by its sign and leaves both bars neutral (#1429)', async () => {
-    const yours = () => screen.getByRole('group', { name: 'Votre portefeuille' })
-    const fillOf = (name: string) =>
-      screen
-        .getByRole('group', { name })
-        .querySelector('[data-share-bar] > span')
-        ?.getAttribute('style')
+  it('says how big the gap is next to the money it is a gap of', async () => {
+    renderBenchmark(ready())
 
-    const { unmount } = renderBenchmark(ready())
-    await head()
-    expect(within(yours()).getByText('+11,2 %')).toHaveClass('text-gain')
-    expect(fillOf('Votre portefeuille')).toContain('var(--muted-foreground)')
-    expect(fillOf('La référence')).toContain('var(--muted-foreground)')
+    const verdict = await screen.findByText(/versés aux mêmes dates/)
+    const said = (verdict.textContent ?? '').replace(/[  ]/g, ' ')
+    expect(said).toBe('soit 2,0 % des 41 063,00 € versés aux mêmes dates.')
+    expect(within(verdict).getByText('41 063,00 €')).toHaveClass('fig')
+  })
+
+  it('reads ahead as « de plus » and a level finish as a plain sentence', async () => {
+    const { unmount } = renderBenchmark(ready({ gap_gross: 1200 }))
+    expect(await sentence()).toBe(
+      '1 200,00 € de plus qu’en plaçant le même argent dans le MSCI World.',
+    )
     unmount()
 
-    renderBenchmark(ready({ portfolio_return: -0.05, gap_gross: -1200 }))
-    await head()
-    expect(within(yours()).getByText(/5,0 %/)).toHaveClass('text-loss')
-    expect(fillOf('Votre portefeuille')).toContain('var(--muted-foreground)')
+    renderBenchmark(ready({ gap_gross: 0 }))
+    expect(
+      await screen.findByText(
+        'Vos titres et le MSCI World finissent au même montant, à l’euro près.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/versés aux mêmes dates/)).not.toBeInTheDocument()
   })
 
-  it('says the gap was made with the same money invested, which is the whole claim', async () => {
+  it('files the money invested and the two returns apart, each return in its own sign colour', async () => {
     renderBenchmark(ready())
 
-    // Drop the trailing clause and the screen lies without a line of wrong
-    // code: the reader takes the gap for a difference of returns, and it is a
-    // replay of their own purchases.
-    expect(
-      await screen.findByText(/de plus que le MSCI World, sur la même période/),
-    ).toBeInTheDocument()
-    expect(screen.getByText(/avec le même argent investi/)).toBeInTheDocument()
+    await head()
+    const marks = screen.getByLabelText('Repères')
+    expect(within(marks).getByText('Même argent investi')).toBeInTheDocument()
+    expect(within(marks).getByText(/41 063,00/)).toHaveClass('fig')
+    expect(within(marks).getByText('+14,4 %')).toHaveClass('text-gain')
+    expect(within(marks).getByText('+16,4 %')).toHaveClass('text-gain')
+    expect(within(marks).getByText('Gain du MSCI World')).toBeInTheDocument()
+  })
+
+  it('writes a loss as a loss and a shortfall in the colour of text', async () => {
+    renderBenchmark(ready({ portfolio_return: -0.05 }))
+
+    await head()
+    expect(within(screen.getByLabelText('Repères')).getByText(/5,0 %/)).toHaveClass('text-loss')
+    const statement = await screen.findByText(/dans le MSCI World\./)
+    expect(statement).not.toHaveClass('text-loss')
+    expect(statement).not.toHaveClass('text-gain')
+  })
+
+  it('draws the two values on one scale, in the chart hues', async () => {
+    renderBenchmark(ready())
+
+    const region = (await head()) as HTMLElement
+    const fills = [...region.querySelectorAll('[data-share-bar] > span')].map((bar) => ({
+      fill: bar.getAttribute('style'),
+    }))
+    expect(fills).toHaveLength(2)
+    expect(fills[0].fill).toContain('var(--alloc-1)')
+    expect(fills[0].fill).toContain('width: 98.2')
+    expect(fills[1].fill).toContain('var(--alloc-5)')
+    expect(fills[1].fill).toContain('width: 100%')
+    expect(within(region).getByText('46 975,40 €')).toHaveClass('fig')
+    expect(within(region).getByText('47 812,60 €')).toHaveClass('fig')
   })
 
   it('says the covered period in the header, after the page’s name', async () => {
@@ -111,7 +148,7 @@ describe('the comparison', () => {
     expect(
       within(header).getByRole('heading', { level: 1, name: 'Comparaison' }),
     ).toBeInTheDocument()
-    expect(within(header).getByText('Comparé du 16 juin 2009 au 17 sept. 2026')).toBeInTheDocument()
+    expect(within(header).getByText('Comparé du 4 mars 2021 au 6 nov. 2026')).toBeInTheDocument()
   })
 
   it('writes no period line in the page itself', async () => {
@@ -159,32 +196,16 @@ describe('the comparison', () => {
     expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
   })
 
-  it('puts the reference picker before the head', async () => {
+  it('puts the fund picker in the line above the sentence', async () => {
     renderBenchmark(ready())
 
-    const group = await head()
-    const select = await picker()
-    expect(select.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // And it is the row's own label that the eye reads, not a second name.
-    expect(screen.getByText('Comparer à')).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('names the gap, not the fund twice', async () => {
-    renderBenchmark(ready())
-
-    expect(await screen.findByRole('group', { name: 'Écart avec MSCI World' })).toBeInTheDocument()
-    expect(await picker()).toHaveTextContent('MSCI World · CW8')
-  })
-
-  it('writes a shortfall in the colour of text, not the colour of a loss', async () => {
-    for (const gap of [-1200, 4212.8]) {
-      const { unmount } = renderBenchmark(ready({ gap_gross: gap }))
-      const figure = within(await head()).getByText(/€/)
-      expect(figure).toHaveClass('text-foreground')
-      expect(figure).not.toHaveClass('text-loss')
-      expect(figure).not.toHaveClass('text-gain')
-      unmount()
-    }
+    const trigger = await picker()
+    const statement = await screen.findByText(/dans le MSCI World\./)
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
+    expect(
+      trigger.compareDocumentPosition(statement) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(trigger.parentElement).toHaveTextContent('Vos titres face au MSCI World')
   })
 
   it('renders no figure at all while the fund is still being rebuilt', async () => {
@@ -205,7 +226,7 @@ describe('the comparison', () => {
     // The load-bearing rule: a gap computed over half a series is a **wrong**
     // number, not a short one — −38 % that repairs itself an hour later.
     expect(await screen.findByText(/MSCI World en cours de téléchargement/)).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: /Écart avec/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/de moins qu’en plaçant/)).not.toBeInTheDocument()
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
   })
 
@@ -228,20 +249,18 @@ describe('the comparison', () => {
     // counting units could walk through a split it cannot see. Same wait, same
     // panel: a second explanation for one wait is one explanation too many.
     expect(await screen.findByText(/MSCI World en cours de téléchargement/)).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: /Écart avec/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/de moins qu’en plaçant/)).not.toBeInTheDocument()
   })
 
   it('sends the owner to the references when nothing is followed', async () => {
     renderBenchmark()
 
     expect(await screen.findByText('Aucune référence suivie')).toBeInTheDocument()
-    // One primary button, to the sheet that follows them — and no picker, since
-    // there is nothing to pick from.
     expect(screen.getByRole('link', { name: 'Choisir les références' })).toHaveAttribute(
       'href',
       '/settings#portfolio-references',
     )
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /MSCI World/ })).not.toBeInTheDocument()
     // No numbered steps and no promised duration.
     expect(screen.queryByText(/minutes/)).not.toBeInTheDocument()
   })
@@ -276,27 +295,37 @@ describe('the comparison', () => {
       '/settings#portfolio-references',
     )
     // Nothing to pick while nothing is ready.
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /MSCI World/ })).not.toBeInTheDocument()
   })
+})
 
-  it('offers only the followed funds whose history is complete', async () => {
-    const { user } = renderBenchmark(
-      ready({ followed: ['CW8.PA', 'CSPX.AS', 'C40.PA'], ready: ['CW8.PA', 'CSPX.AS'] }),
-    )
+describe('the fund picker', () => {
+  const followedTwo = () =>
+    ready({ followed: ['CW8.PA', 'CSPX.AS', 'C40.PA'], ready: ['CW8.PA', 'CSPX.AS'] })
+
+  it('lists the followed funds with their first year, and the way to add one', async () => {
+    const { user } = renderBenchmark(followedTwo())
 
     await user.click(await picker())
 
-    const options = await screen.findAllByRole('option')
+    const list = await screen.findByRole('listbox', { name: 'Choisir le fonds de comparaison' })
+    const options = within(list).getAllByRole('option')
     expect(options.map((option) => option.textContent)).toEqual([
-      expect.stringContaining('MSCI World · CW8'),
-      expect.stringContaining('S&P 500 · CSPX'),
+      expect.stringContaining('CW8MSCI Worlddepuis 2009'),
+      expect.stringContaining('CSPXS&P 500depuis 2010'),
+      expect.stringContaining('C40CAC 40depuis 2008'),
     ])
-    // The « déjà téléchargé » column is gone; the inception stays.
-    expect(screen.queryByText(/déjà téléchargé|à reconstituer/)).not.toBeInTheDocument()
-    expect(options[0]).toHaveTextContent('depuis 2009')
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('searchbox', { name: 'Rechercher un fonds…' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ajouter un fonds' })).toHaveAttribute(
+      'href',
+      '/settings#portfolio-references',
+    )
+    // A fund that is not followed is not a choice.
+    expect(screen.queryByRole('option', { name: /Euro Stoxx/ })).not.toBeInTheDocument()
   })
 
-  it('says what is still downloading under the picker, never inside the menu', async () => {
+  it('lists a fund still downloading, says how far it is, and cannot pick it', async () => {
     server.use(
       http.get(ROUTES.benchmarkReferences, () =>
         HttpResponse.json(
@@ -312,34 +341,94 @@ describe('the comparison', () => {
         ),
       ),
     )
-    renderBenchmark(ready({ followed: ['CW8.PA', 'C40.PA'], ready: ['CW8.PA'] }))
+    const { user } = renderBenchmark(ready({ followed: ['CW8.PA', 'C40.PA'], ready: ['CW8.PA'] }))
 
-    expect(await screen.findByText(/CAC 40 en téléchargement, 62 %/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Gérer les références' })).toHaveAttribute(
-      'href',
-      '/settings#portfolio-references',
+    await user.click(await picker())
+
+    const cac = await screen.findByRole('option', { name: /CAC 40/ })
+    expect(
+      await within(cac.closest('[role="listbox"]') as HTMLElement).findByText(
+        /téléchargement, 62 %/,
+      ),
+    ).toBeInTheDocument()
+    expect(cac).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('writes the chosen fund as the setting and nothing else', async () => {
+    let body: unknown = null
+    server.use(
+      http.put(ROUTES.settings, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ saved: ['benchmark_symbol'], restart_required: [] })
+      }),
     )
+    const { user } = renderBenchmark(followedTwo())
+
+    await user.click(await picker())
+    await user.click(await screen.findByRole('option', { name: /S&P 500/ }))
+
+    await screen.findByRole('button', { name: /MSCI World/, expanded: false })
+    expect(body).toEqual({ benchmark_symbol: 'CSPX.AS' })
+  })
+
+  it('narrows the list with the search field', async () => {
+    const { user } = renderBenchmark(followedTwo())
+
+    await user.click(await picker())
+    await user.type(await screen.findByRole('searchbox'), 'cac')
+
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option', { name: /CAC 40/ })).toBeInTheDocument()
   })
 })
 
-describe('the two curves', () => {
+describe('the chart', () => {
   const series = [
     { t: '2024-01-01', portfolio: 1000, reference: 1000 },
     { t: '2024-01-02', portfolio: 1100, reference: 1050 },
   ]
 
-  it('names the index and never the ticker', async () => {
+  it('opens on the gap and offers the amounts as the other tab', async () => {
+    const { user } = renderBenchmark(ready({ series }))
+
+    const tabs = await screen.findByRole('tablist', { name: 'Lecture' })
+    const [gap, amounts] = within(tabs).getAllByRole('tab')
+    expect(gap).toHaveTextContent('Écart')
+    expect(gap).toHaveAttribute('aria-selected', 'true')
+    expect(amounts).toHaveTextContent('Montants')
+    // The gap is drawn in euros against its zero line, with its own legend.
+    expect(screen.getByText(/Écart, en euros, au fil du temps/)).toBeInTheDocument()
+    expect(screen.queryByText('MSCI World, même argent investi')).not.toBeInTheDocument()
+
+    await user.click(amounts)
+
+    expect(amounts).toHaveAttribute('aria-selected', 'true')
+    // The two curves are named by the index, never by the ticker.
+    expect(await screen.findByText('MSCI World, même argent investi')).toBeInTheDocument()
+    expect(screen.queryByText(/Écart, en euros, au fil du temps/)).not.toBeInTheDocument()
+  })
+
+  it('puts the period in words on the tabs’ rule', async () => {
     renderBenchmark(ready({ series }))
 
-    // `CW8.PA` is an address; the MSCI World is what the owner is being
-    // compared against, and the legend is what pairs a curve to its name. The
-    // trailing clause is the same one the verdict carries — read off the chart
-    // rather than off the sentence, the two curves would otherwise look like
-    // two returns.
-    expect(await screen.findByText('MSCI World, même argent investi')).toBeInTheDocument()
-    // The portfolio's own name is deliberately the one the terms row already
-    // uses: one thing, one name, twice on the screen.
-    expect(screen.getAllByText('Votre portefeuille').length).toBeGreaterThan(1)
+    const range = await screen.findByRole('radiogroup', { name: 'Période' })
+    expect(
+      within(range)
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
+    ).toEqual(['1 mois', 'Cette année', '1 an', 'Tout'])
+    expect(within(range).getByRole('radio', { name: 'Tout' })).toBeChecked()
+  })
+
+  it('narrows the window to the last month of the curve, not of the clock', () => {
+    const days = ['2025-12-31', '2026-01-05', '2026-09-30', '2026-10-15', '2026-10-30']
+    const points = days.map((t) => ({ t }))
+
+    expect(inRange(points, '1M').map((p) => p.t)).toEqual(days.slice(2))
+    expect(inRange(points, 'YTD').map((p) => p.t)).toEqual(days.slice(1))
+    expect(inRange(points, '1Y').map((p) => p.t)).toEqual(days)
+    expect(inRange(points, 'MAX')).toHaveLength(5)
+    expect(inRange([], '1M')).toEqual([])
   })
 
   it('says it has nothing to draw rather than drawing an empty plot', async () => {
@@ -350,31 +439,65 @@ describe('the two curves', () => {
     expect(await screen.findByText('Rien à tracer sur cette période.')).toBeInTheDocument()
   })
 
-  it('leaves the chart’s header to its title and legend', async () => {
-    renderBenchmark(ready({ series }))
+  it('keeps the plot reachable and says the shape, crossings included', async () => {
+    const { user } = renderBenchmark(
+      ready({
+        // Chosen so the arrival is neither extreme: 1 050 is the last value and
+        // must appear nowhere in the sentence, because the head announces today.
+        series: [
+          { t: '2024-01-02', portfolio: 1000, reference: 1000 },
+          { t: '2024-01-03', portfolio: 1200, reference: 1000 },
+          { t: '2024-01-04', portfolio: 900, reference: 1000 },
+          { t: '2024-01-05', portfolio: 1050, reference: 1000 },
+        ],
+      }),
+    )
 
-    const chart = await screen.findByRole('region', {
-      name: 'Même argent investi, jour après jour',
-    })
-    expect(within(chart).queryByRole('combobox')).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('tab', { name: 'Montants' }))
+
+    // The legend stays readable.
+    const legend = await screen.findByText('MSCI World, même argent investi')
+    expect(legend.closest('[aria-hidden]')).toBeNull()
+
+    // The `<figure>` must not be hidden from a reader: the `<svg>` inside it is
+    // focusable and its arrows walk the series.
+    const figure = document.querySelector('figure')
+    expect(figure).not.toBeNull()
+    expect(figure?.closest('[aria-hidden]')).toBeNull()
+
+    // French formats with narrow no-break spaces inside its figures.
+    const said = (figure?.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
+    expect(said).toContain(
+      'Votre portefeuille et l’indice MSCI World, du 2 janv. 2024 au 5 janv. 2024',
+    )
+    expect(said).toContain('plus haut 1 200,00 € le 3 janv. 2024')
+    expect(said).toContain('croise l’indice MSCI World 2 fois, la dernière le 5 janv. 2024')
+    // **The arrival is never stated.** The head carries today (#1051).
+    expect(said).not.toContain('1 050,00')
   })
-})
 
-describe('what the head says, and only that', () => {
-  it('prints the gap alone, with no second statement under it', async () => {
+  it('reads the gap against its zero line on the first tab', async () => {
+    renderBenchmark(
+      ready({
+        series: [
+          { t: '2024-01-02', portfolio: 1000, reference: 1000 },
+          { t: '2024-01-03', portfolio: 1200, reference: 1000 },
+          { t: '2024-01-04', portfolio: 900, reference: 1000 },
+        ],
+      }),
+    )
+
+    await screen.findByText(/Écart, en euros, au fil du temps/)
+    const said = (document.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
+    expect(said).toContain('Écart, du 2 janv. 2024 au 4 janv. 2024')
+    expect(said).toContain('plus haut 200,00 € le 3 janv. 2024')
+    expect(said).toContain('plus bas -100,00 € le 4 janv. 2024')
+  })
+
+  it('announces the head as the result of a gesture, politely', async () => {
     renderBenchmark(ready())
 
-    // #1020 printed the date effect under the verdict; the redesign took it
-    // off the screen and #1048 took it out of the payload.
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    expect(screen.queryByText(/Vos dates/)).not.toBeInTheDocument()
-  })
-
-  it('keeps the selector on a page that answered', async () => {
-    renderBenchmark(ready())
-
-    await head()
-    expect(screen.getByRole('combobox', { name: 'Fonds de comparaison' })).toBeInTheDocument()
+    expect(await head()).toHaveAttribute('aria-live', 'polite')
   })
 })
 
@@ -394,15 +517,15 @@ describe('what the period costs', () => {
     )
 
     // Not an absence: the answer is complete and correct over a shorter window,
-    // so it is a caption and the figure stays.
+    // so it is a caption and the sentence stays.
     expect(
       await screen.findByText(/Comparé depuis le .*premier cours de ce fonds/),
     ).toBeInTheDocument()
     expect(screen.getByText(/11 années antérieures ne sont pas dans cet écart/)).toBeInTheDocument()
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
+    expect(await sentence()).toContain('837,20 € de moins')
   })
 
-  it('captions a truncated history under the verdict', async () => {
+  it('captions it inside the head, under the verdict', async () => {
     renderBenchmark(
       ready({
         covered_from: '2024-04-02',
@@ -411,16 +534,14 @@ describe('what the period costs', () => {
       }),
     )
 
-    const card = await headCard()
-    expect(within(card).getByText(/premier cours de ce fonds/)).toBeInTheDocument()
+    const region = (await head()) as HTMLElement
+    expect(within(region).getByText(/premier cours de ce fonds/)).toBeInTheDocument()
   })
 
   it('does not blame the fund for a period its own accounts shortened', async () => {
     renderBenchmark(
       ready({
         // The fund is quoted since 2009; the account simply opened in 2024.
-        // Same date on screen, and *this fund's first close* would send the
-        // reader hunting for a history that is sitting right there.
         inception: '2009-06-16',
         covered_from: '2024-02-26',
         portfolio_from: '2024-02-26',
@@ -435,96 +556,18 @@ describe('what the period costs', () => {
   it('says when the reference ran out rather than carrying a frozen figure', async () => {
     renderBenchmark(ready({ ended: 'exhausted', covered_to: '2019-03-14' }))
 
+    const region = (await head()) as HTMLElement
     expect(
-      await screen.findByText(
+      await within(region).findByText(
         /une sortie de titres à cette date, la référence n’aurait pas pu la financer/,
       ),
     ).toBeInTheDocument()
   })
 
-  it('says when the reference ran out, under the verdict', async () => {
-    renderBenchmark(ready({ ended: 'exhausted', covered_to: '2019-03-14' }))
-
-    expect(
-      within(await headCard()).getByText(/la référence n’aurait pas pu la financer/),
-    ).toBeInTheDocument()
-  })
-})
-
-describe('the contract a non-visual reader gets', () => {
-  it('reads the head back when the reference changes', async () => {
-    renderBenchmark(ready())
-
-    // The result of a **gesture**, not an ambient state — so it is announced,
-    // and politely: the reader is already looking at the control they pressed
-    // and an assertive region would interrupt them mid-sentence.
-    const card = (await head()).closest('[aria-live]')
-    expect(card).toHaveAttribute('aria-live', 'polite')
-  })
-
-  it('keeps the plot reachable and says the shape, crossings included', async () => {
-    renderBenchmark(
-      ready({
-        // Chosen so the arrival is neither extreme: 1 050 is the last value and
-        // must appear nowhere in the sentence, because the head announces today.
-        series: [
-          { t: '2024-01-02', portfolio: 1000, reference: 1000 },
-          { t: '2024-01-03', portfolio: 1200, reference: 1000 },
-          { t: '2024-01-04', portfolio: 900, reference: 1000 },
-          { t: '2024-01-05', portfolio: 1050, reference: 1000 },
-        ],
-      }),
-    )
-
-    // The legend stays readable, as it always was.
-    const legend = await screen.findByText('MSCI World, même argent investi')
-    expect(legend.closest('[aria-hidden]')).toBeNull()
-
-    // **Inverted at #1003.** This assertion used to require the plot to sit
-    // inside an `aria-hidden` subtree, on the argument that the head carries the
-    // whole answer — and it never ran: `.recharts-wrapper` does not exist under
-    // jsdom, so `querySelector` returned `null`, `?.closest()` returned
-    // `undefined`, and `expect(undefined).not.toBeNull()` passed on nothing. The
-    // contract is now the other way round and it is asserted on a node that
-    // exists: the `<figure>` this component writes, which must not be hidden
-    // from a reader because the `<svg>` inside it is focusable and its arrows
-    // walk the series.
-    const figure = document.querySelector('figure')
-    expect(figure).not.toBeNull()
-    expect(figure?.closest('[aria-hidden]')).toBeNull()
-
-    // The shape, and the crossings this screen exists to show. The gap of today
-    // is the head's and is deliberately absent from the sentence.
-    // French formats with narrow no-break spaces (U+202F, U+00A0) inside its
-    // figures. Normalising them here keeps the expectations below readable
-    // rather than seeded with invisible characters.
-    const said = (figure?.querySelector('figcaption')?.textContent ?? '').replace(
-      /[\u202f\u00a0]/g,
-      ' ',
-    )
-    expect(said).toContain(
-      'Votre portefeuille et l’indice MSCI World, du 2 janv. 2024 au 5 janv. 2024',
-    )
-    expect(said).toContain(
-      'Votre portefeuille part de 1 000,00 €, l’indice MSCI World de 1 000,00 €',
-    )
-    expect(said).toContain('plus haut 1 200,00 € le 3 janv. 2024')
-    expect(said).toContain('plus bas 900,00 € le 4 janv. 2024')
-    // The crossings are this screen's subject: above, above, below, above.
-    expect(said).toContain('croise l’indice MSCI World 2 fois, la dernière le 5 janv. 2024')
-    // **The arrival is never stated.** The head carries today, on the live
-    // instant, and a second figure for the same day would contradict it (#1051).
-    expect(said).not.toContain('1 050,00')
-  })
-})
-
-describe('what truncation is counted in', () => {
   it('counts whole elapsed years and not a difference of year parts', async () => {
     renderBenchmark(
       ready({
-        // 31 Dec 2023 → 1 Jan 2024 is one day, not "a year": subtracting the
-        // year parts would tell the owner a whole year of their history is
-        // outside a gap that misses a day of it.
+        // 31 Dec 2023 → 1 Jan 2024 is one day, not "a year".
         portfolio_from: '2023-12-31',
         covered_from: '2024-01-01',
         truncated_by_fund: true,
@@ -561,66 +604,85 @@ describe('the unit every figure is in', () => {
     renderBenchmark(ready({ base_currency: null }))
 
     expect(await screen.findByText('Aucune devise de base')).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: /MSCI World/ })).not.toBeInTheDocument()
-    // And no period is claimed over a screen with no figure on it.
+    expect(screen.queryByText(/de moins qu’en plaçant/)).not.toBeInTheDocument()
     expect(screen.getByRole('banner')).not.toHaveTextContent(/Comparé du/)
   })
 })
 
 describe('each account over its own period', () => {
-  /** A PEA running since 2019 beside a CTO opened in 2024 — the ticket's case. */
+  /** A PEA running since 2021 beside a CTO opened in 2023 — the mockup's case. */
   const TWO_ACCOUNTS = [
     {
-      account: 'PEA.LCL',
-      covered_from: '2019-10-30',
-      covered_to: '2026-09-17',
+      account: 'PEA',
+      covered_from: '2021-03-04',
+      covered_to: '2026-11-06',
       ended: null,
-      portfolio_value: 48_200,
-      reference_value: 43_988,
-      gap_gross: 4212,
-      portfolio_return: 0.181,
-      reference_return: 0.078,
+      contributed: 36285,
+      portfolio_value: 41618.79,
+      reference_value: 42131.19,
+      gap_gross: -512.4,
+      portfolio_return: 0.147,
+      reference_return: 0.161,
     },
     {
-      account: 'CTO.BD',
-      covered_from: '2024-02-26',
-      covered_to: '2026-09-17',
+      account: 'Compte-titres',
+      covered_from: '2023-09-12',
+      covered_to: '2026-11-06',
       ended: null,
-      portfolio_value: 9_100,
-      reference_value: 9_800,
-      gap_gross: -700,
-      portfolio_return: 0.021,
-      reference_return: 0.055,
+      contributed: 4800,
+      portfolio_value: 5356.61,
+      reference_value: 5681.41,
+      gap_gross: -324.8,
+      portfolio_return: 0.112,
+      reference_return: 0.18,
     },
   ]
 
-  it('states each account’s own period beside its own figures', async () => {
-    renderBenchmark(ready({ covered_from: '2019-10-30', per_account: TWO_ACCOUNTS }))
-
-    // A CTO opened in 2024 is not judged on 2019, and the PEA is judged on
-    // every year it ran: the reader has to see which years each gap covers.
-    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
-    expect(within(row).getByText(/2019/)).toBeInTheDocument()
-    expect(within(row).getByText('+4 212,00 €')).toBeInTheDocument()
-    expect(within(row).getByText('+18,1 %')).toBeInTheDocument()
-    expect(within(row).getByText('+7,8 %')).toBeInTheDocument()
-  })
-
-  it('leaves the head on the aggregate, which still names one period', async () => {
+  it('states each account’s own period beside its own figures and returns', async () => {
     renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
 
-    // A row may legitimately disagree with the head — here one account is
-    // ahead and the other behind — and it must never be read as the head
-    // having changed.
-    expect(within(await head()).getByText('+4 212,80 €')).toBeInTheDocument()
-    const row = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
-    expect(within(row).getByText('-700,00 €')).toBeInTheDocument()
+    const row = (await screen.findByText('PEA')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Du 4 mars 2021 au 6 nov. 2026')).toBeInTheDocument()
+    expect(within(row).getByText('41 618,79 €').closest('td')).toHaveClass('fig')
+    expect(within(row).getByText('+14,7 %')).toHaveClass('text-xs')
+    expect(within(row).getByText('42 131,19 €')).toBeInTheDocument()
+    expect(within(row).getByText('+16,1 %')).toBeInTheDocument()
+    expect(within(row).getByText('-512,40 €')).toBeInTheDocument()
+  })
+
+  it('names the five columns, the fund’s after « Dans le »', async () => {
+    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+
+    const table = (await screen.findByText('PEA')).closest('table') as HTMLElement
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual(['Compte', 'Période', 'Vos titres', 'Dans le MSCI World', 'Écart'])
+  })
+
+  it('prints the head at the foot of the gaps it is the sum of', async () => {
+    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+
+    const total = (await screen.findByText('Ensemble')).closest('tr') as HTMLElement
+    expect(within(total).getByText('46 975,40 €')).toBeInTheDocument()
+    expect(within(total).getByText('47 812,60 €')).toBeInTheDocument()
+    expect(within(total).getByText('-837,20 €')).toBeInTheDocument()
+  })
+
+  it('writes each gap in the colour of text, never as a loss', async () => {
+    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+
+    for (const gap of ['-512,40 €', '-324,80 €']) {
+      const figure = await screen.findByText(gap)
+      expect(figure).not.toHaveClass('text-loss')
+      expect(figure).not.toHaveClass('text-gain')
+    }
   })
 
   it('says on the row itself why that account’s own period ended early', async () => {
     renderBenchmark(
       ready({
-        ended: null,
         per_account: [
           { ...TWO_ACCOUNTS[0], ended: 'exhausted', covered_to: '2021-03-14' },
           TWO_ACCOUNTS[1],
@@ -630,29 +692,39 @@ describe('each account over its own period', () => {
 
     // The head ran on — the other account's money funded the withdrawal this
     // one's reference could not — so the reason belongs on the row alone.
-    const row = (await screen.findByText('PEA.LCL')).closest('tr') as HTMLElement
+    const row = (await screen.findByText('PEA')).closest('tr') as HTMLElement
     expect(within(row).getByText(/Arrêté là/)).toBeInTheDocument()
-    const other = (await screen.findByText('CTO.BD')).closest('tr') as HTMLElement
+    const other = (await screen.findByText('Compte-titres')).closest('tr') as HTMLElement
     expect(within(other).queryByText(/Arrêté là/)).toBeNull()
   })
 
-  it('writes each account’s gap in the colour of text, and draws its bar in the weight colour', async () => {
-    renderBenchmark(ready({ per_account: TWO_ACCOUNTS }))
+  it('has no total to print where there is no head', async () => {
+    renderBenchmark({
+      state: 'nothing_to_compare',
+      reason: 'no_rate_on_seed',
+      reference: 'CW8.PA',
+      index: 'MSCI World',
+      followed: ['CW8.PA'],
+      ready: ['CW8.PA'],
+      per_account: TWO_ACCOUNTS,
+    })
 
-    for (const [name, gap] of [
-      ['PEA.LCL', '+4 212,00 €'],
-      ['CTO.BD', '-700,00 €'],
-    ]) {
-      const row = (await screen.findByText(name)).closest('tr') as HTMLElement
-      const figure = within(row).getByText(gap)
-      expect(figure).toHaveClass('text-foreground')
-      expect(figure).not.toHaveClass('text-loss')
-      expect(row.querySelector('[data-share-bar] > span')?.getAttribute('style')).toContain(
-        'var(--muted-foreground)',
-      )
-    }
+    const row = (await screen.findByText('PEA')).closest('tr') as HTMLElement
+    expect(within(row).getByText('-512,40 €')).toBeInTheDocument()
+    expect(screen.queryByText('Ensemble')).not.toBeInTheDocument()
+    expect(screen.getByText('Total non comparable')).toBeInTheDocument()
   })
 
+  it('renders nothing on a single account, where the row repeats the head', async () => {
+    renderBenchmark(ready({ per_account: [TWO_ACCOUNTS[0]] }))
+
+    await head()
+    expect(screen.queryByText('PEA')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Compte par compte' })).not.toBeInTheDocument()
+  })
+})
+
+describe('nothing to compare', () => {
   it('still sends an empty ledger to the ledger', async () => {
     renderBenchmark({
       state: 'nothing_to_compare',
@@ -663,7 +735,6 @@ describe('each account over its own period', () => {
       ready: ['CW8.PA'],
     })
 
-    // Nothing replayed at all is a different emptiness, and it keeps its way out.
     expect(await screen.findByText(/Enregistrez vos premiers événements/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toBeInTheDocument()
   })
@@ -710,109 +781,6 @@ describe('each account over its own period', () => {
     )
     expect(screen.queryByText(/vient de commencer|retenté/)).not.toBeInTheDocument()
   })
-
-  it('renders nothing on a single account, where the row repeats the head', async () => {
-    renderBenchmark(ready({ per_account: [TWO_ACCOUNTS[0]] }))
-
-    await head()
-    // One window means no divergence between windows, and the table exists
-    // only to show one.
-    expect(screen.queryByText('PEA.LCL')).not.toBeInTheDocument()
-  })
-})
-
-describe('the rows as the breakdown of the head', () => {
-  /** The ticket's own case: a PEA since 2019 beside a CTO opened in 2024. */
-  const OWN = [
-    {
-      account: 'PEA',
-      covered_from: '2019-11-21',
-      covered_to: '2026-10-13',
-      ended: null,
-      portfolio_value: 7_131.12,
-      reference_value: 10_822.77,
-      gap_gross: -3_691.65,
-      portfolio_return: 0.049,
-      reference_return: 0.607,
-    },
-    {
-      account: 'CTO.TR',
-      covered_from: '2024-02-26',
-      covered_to: '2026-10-13',
-      ended: null,
-      portfolio_value: 7_918.17,
-      reference_value: 8_756.42,
-      gap_gross: -838.25,
-      portfolio_return: 0.155,
-      reference_return: 0.277,
-    },
-  ]
-
-  const whole = () =>
-    ready({
-      covered_from: '2019-11-21',
-      covered_to: '2026-10-13',
-      gap_gross: -4_529.9,
-      portfolio_return: 0.098,
-      reference_return: 0.395,
-      per_account: OWN,
-    })
-
-  it('prints the head figure at the foot of the gaps it is the sum of', async () => {
-    renderBenchmark(whole())
-
-    // −3 691,65 − 838,25 = −4 529,90, which is the head: the reader can check
-    // the addition without leaving the table.
-    const total = (await screen.findByText('Ensemble des comptes')).closest('tr') as HTMLElement
-    expect(within(total).getByText('-4 529,90 €')).toBeInTheDocument()
-    expect(within(await head()).getByText('-4 529,90 €')).toBeInTheDocument()
-  })
-
-  it('gives the total its returns, which sit between the accounts’ own', async () => {
-    renderBenchmark(whole())
-
-    const total = (await screen.findByText('Ensemble des comptes')).closest('tr') as HTMLElement
-    expect(within(total).getByText('+9,8 %')).toBeInTheDocument()
-    expect(within(total).getByText('+39,5 %')).toBeInTheDocument()
-  })
-
-  it('dates the returns it prints', async () => {
-    renderBenchmark(whole())
-    expect(
-      await screen.findByText('Gain sur l’argent investi, du 21 nov. 2019 au 13 oct. 2026'),
-    ).toBeInTheDocument()
-  })
-
-  it('falls back to the bare label without dates', async () => {
-    renderBenchmark({ ...whole(), covered_from: undefined, covered_to: undefined })
-    expect(await screen.findByText('Gain sur l’argent investi')).toBeInTheDocument()
-  })
-
-  it('carries one period per row and no second column of gaps', async () => {
-    renderBenchmark(whole())
-
-    const row = (await screen.findByText('PEA')).closest('tr') as HTMLElement
-    expect(within(row).getByText(/2019/)).toBeInTheDocument()
-    expect(within(row).getAllByText(/€/)).toHaveLength(1)
-    expect(screen.queryByText(/période commune/)).not.toBeInTheDocument()
-  })
-
-  it('has no total to print where there is no head', async () => {
-    renderBenchmark({
-      state: 'nothing_to_compare',
-      reason: 'no_rate_on_seed',
-      reference: 'CW8.PA',
-      index: 'MSCI World',
-      followed: ['CW8.PA'],
-      ready: ['CW8.PA'],
-      per_account: OWN,
-    })
-
-    const row = (await screen.findByText('PEA')).closest('tr') as HTMLElement
-    expect(within(row).getByText('-3 691,65 €')).toBeInTheDocument()
-    expect(screen.queryByText('Ensemble des comptes')).not.toBeInTheDocument()
-    expect(screen.getByText('Total non comparable')).toBeInTheDocument()
-  })
 })
 
 describe('the page sits on the ground (#1273)', () => {
@@ -820,10 +788,10 @@ describe('the page sits on the ground (#1273)', () => {
     { t: '2024-01-01', portfolio: 1000, reference: 1000 },
     { t: '2024-01-02', portfolio: 1100, reference: 1050 },
   ]
-  const per_account = ['PEA.LCL', 'CTO.BD'].map((account) => ({
+  const per_account = ['PEA', 'CTO'].map((account) => ({
     account,
-    covered_from: '2019-10-30',
-    covered_to: '2026-09-17',
+    covered_from: '2021-03-04',
+    covered_to: '2026-11-06',
     ended: null,
     portfolio_value: 48_200,
     reference_value: 43_988,
@@ -840,33 +808,13 @@ describe('the page sits on the ground (#1273)', () => {
     failing: false,
   }
 
-  it('draws the chart and the per-account table as sections, under one hero', async () => {
+  it('draws only the account breakdown as a section, under the sentence and the chart', async () => {
     renderBenchmark(ready({ series, per_account }))
 
-    const chart = await screen.findByRole('region', {
-      name: 'Même argent investi, jour après jour',
-    })
-    const accounts = screen.getByRole('region', { name: 'Compte par compte' })
-    expect(chart.closest('[data-slot="section"]')).toBe(chart)
+    const accounts = await screen.findByRole('region', { name: 'Compte par compte' })
     expect(accounts.closest('[data-slot="section"]')).toBe(accounts)
-    expect(document.querySelectorAll('.text-hero')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-slot="section"]')).toHaveLength(1)
     expectNoBox()
-  })
-
-  it('reads the gap, the verdict, then the two returns on one row', async () => {
-    renderBenchmark(ready({ series }))
-
-    const card = await headCard()
-    const returns = card.querySelector('[data-row="returns"]')
-    expect(returns).not.toBeNull()
-    expect(returns?.className).toMatch(/flex-wrap/)
-    expect(within(returns as HTMLElement).getAllByRole('group')).toHaveLength(2)
-    // The gap leads, the period line comes before the two returns.
-    const text = card.textContent ?? ''
-    expect(text.indexOf('+4 212,80')).toBeLessThan(text.indexOf('Gain sur l’argent investi, du'))
-    expect(text.indexOf('Gain sur l’argent investi, du')).toBeLessThan(
-      text.indexOf('Votre portefeuille'),
-    )
   })
 
   it('draws no box while the fund is rebuilt, and states it in a section', async () => {

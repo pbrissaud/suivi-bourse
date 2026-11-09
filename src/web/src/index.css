@@ -384,6 +384,19 @@
   white-space: nowrap;
 }
 
+/**
+ * **The statement** (« Relevé », DESIGN.md › Typography): the one sentence a
+ * screen leads with when the answer is a sentence and not a figure — 28/34,
+ * Geist 600, −0.01em. Its figures are `fig` at the same size. Hero and
+ * statement never share a screen.
+ */
+@utility statement {
+  font-size: var(--text-4xl);
+  line-height: 2.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -92,6 +92,8 @@ export interface BenchmarkAccountRow {
   ended: string | null
   portfolio_value: number | null
   reference_value: number | null
+  /** The money both sides were handed over this account's window. */
+  contributed?: number | null
   gap_gross: number | null
   portfolio_return: number | null
   reference_return: number | null
@@ -151,6 +153,8 @@ export interface BenchmarkResponse {
   accounts?: string[]
   portfolio_value?: number | null
   reference_value?: number
+  /** « Même argent investi »: what both sides were handed, the returns' denominator. */
+  contributed?: number | null
   /** The head figure, in euros. `null` when the portfolio is unvalued. */
   gap_gross?: number | null
   portfolio_return?: number | null

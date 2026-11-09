@@ -577,6 +577,10 @@ def _aggregate(replayed: Dict[str, Any], merged,
         'accounts': sorted(accounts),
         'portfolio_value': portfolio,
         'reference_value': reference,
+        # The money both sides were handed, net of what came back out of the
+        # securities: the denominator of the two returns and the « same money
+        # invested » the page states, so it is published rather than re-derived.
+        'contributed': contributed,
         'gap_gross': None if portfolio is None else portfolio - reference,
         'portfolio_return': _return(portfolio, contributed),
         'reference_return': _return(reference, contributed),
@@ -613,6 +617,7 @@ def _rows(replayed: Dict[str, Any]) -> List[Dict[str, Any]]:
             'ended': result.ended,
             'portfolio_value': portfolio,
             'reference_value': reference,
+            'contributed': contributed,
             'gap_gross': (None if portfolio is None or reference is None
                           else portfolio - reference),
             'portfolio_return': _return(portfolio, contributed),

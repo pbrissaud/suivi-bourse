@@ -1002,6 +1002,22 @@ def test_a_row_carries_the_gap_and_the_two_returns_of_its_own_account(named):
     assert row['reference_return'] == pytest.approx(0.0)
 
 
+def test_the_money_invested_is_published_on_the_head_and_on_each_row(named):
+    """« Même argent investi »: the denominator both returns are read on."""
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
+                 value=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    row, = payload['per_account']
+    assert payload['contributed'] == pytest.approx(1000.0)
+    assert row['contributed'] == pytest.approx(1000.0)
+    assert payload['portfolio_return'] == pytest.approx(
+        (payload['portfolio_value'] - payload['contributed'])
+        / payload['contributed'])
+
+
 # --------------------------------------------------------------------------- #
 # The head is the sum of the rows
 # --------------------------------------------------------------------------- #

@@ -19,6 +19,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   XAxis,
   YAxis,
@@ -29,6 +30,7 @@ import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Section } from '@/components/ui/section'
 import type { BenchmarkPoint } from '@/features/benchmark/lib/api'
+import { figured } from '@/features/benchmark/lib/comparison'
 import { AXIS_TICKS, tickDigits, timeTicks, valueAxis } from '@/features/dashboard/lib/dashboard'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useFormatters } from '@/lib/format'
@@ -39,9 +41,29 @@ interface BenchmarkChartProps {
   /** The index both curves are named by — never the ticker. */
   index: string
   currency: string | null
+  /**
+   * What the plot reads: the two curves in euros (`amounts`, the dashboard card's
+   * and the default) or the gap between them (`gap`, the comparison page's first
+   * tab, drawn against its zero line).
+   */
+  view?: 'amounts' | 'gap'
+  /**
+   * The comparison page owns its title row (the tabs and the period), so it
+   * asks for the plot without the section that frames it.
+   */
+  bare?: boolean
+  /** The tab panel this plot is, when the page's tabs control it. */
+  panelId?: string
 }
 
-export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps) {
+export function BenchmarkChart({
+  points,
+  index,
+  currency,
+  view = 'amounts',
+  bare = false,
+  panelId,
+}: BenchmarkChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const phone = useIsMobile()
@@ -59,13 +81,16 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
   // the reference won by default.
   const rows = points.map((point) =>
     point.portfolio === null
-      ? { ...point, floor: null, gap: null }
+      ? { ...point, floor: null, gap: null, delta: null }
       : {
           ...point,
           floor: Math.min(point.portfolio, point.reference),
           gap: Math.abs(point.portfolio - point.reference),
+          // Signed, for the `gap` reading: your side minus the fund's.
+          delta: point.portfolio - point.reference,
         },
   )
+  const gapView = view === 'gap'
 
   const x = timeTicks(
     rows.map((row) => row.t),
@@ -75,14 +100,16 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
   // rule (inside `valueAxis`): neither a portfolio value nor a replayed holding
   // goes below zero, so the plot keeps its baseline and the two curves keep
   // their proportion to each other.
-  const y = valueAxis(rows.flatMap((row) => [row.portfolio, row.reference]))
+  // The gap is drawn against its zero line, which therefore stays in the domain.
+  const y = valueAxis(
+    gapView
+      ? [...rows.map((row) => row.delta), 0]
+      : rows.flatMap((row) => [row.portfolio, row.reference]),
+  )
   const digits = tickDigits(y.ticks, (value, d) => f.compact(value, currency, d))
 
-  return (
-    <Section
-      title={t('benchmark.chart.title')}
-      aside={empty ? undefined : <Legend index={index} />}
-    >
+  const body = (
+    <>
       {/* **The plot is reachable, and it is named** (#1003). It used to carry
             `aria-hidden`, on the argument that the head says the whole answer in
             prose and in figures, so a non-visual reader lost the shape and
@@ -141,45 +168,78 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
                         already state, so they take function keys and drop out of
                         the tooltip (`ChartTooltip`) — which is also why neither
                         carries a name: nothing renders it. */}
-                  <Area
-                    dataKey={(row: { floor: number | null }) => row.floor}
-                    stackId="gap"
-                    stroke="none"
-                    fill="none"
-                    isAnimationActive={false}
-                    connectNulls={false}
-                  />
-                  <Area
-                    dataKey={(row: { gap: number | null }) => row.gap}
-                    stackId="gap"
-                    stroke="none"
-                    fill="var(--muted-foreground)"
-                    fillOpacity={0.14}
-                    isAnimationActive={false}
-                    connectNulls={false}
-                  />
+                  {gapView ? (
+                    <Area
+                      dataKey={(row: { delta: number | null }) => row.delta}
+                      baseValue={0}
+                      stroke="none"
+                      fill="var(--chart-1)"
+                      fillOpacity={0.16}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  ) : null}
+                  {gapView ? <ReferenceLine y={0} stroke="var(--muted-foreground)" /> : null}
+                  {gapView ? (
+                    <Line
+                      type="monotone"
+                      dataKey="delta"
+                      name={t('benchmark.chart.gap')}
+                      stroke="var(--chart-1)"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  ) : null}
 
-                  <Line
-                    type="monotone"
-                    dataKey="portfolio"
-                    name={t('benchmark.chart.yours')}
-                    stroke="var(--color-price)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="reference"
-                    name={t('benchmark.chart.theirs', { index })}
-                    stroke="var(--muted-foreground)"
-                    strokeWidth={1.25}
-                    strokeDasharray="4 4"
-                    dot={false}
-                    isAnimationActive={false}
-                    connectNulls={false}
-                  />
+                  {gapView ? null : (
+                    <Area
+                      dataKey={(row: { floor: number | null }) => row.floor}
+                      stackId="gap"
+                      stroke="none"
+                      fill="none"
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  )}
+                  {gapView ? null : (
+                    <Area
+                      dataKey={(row: { gap: number | null }) => row.gap}
+                      stackId="gap"
+                      stroke="none"
+                      fill="var(--muted-foreground)"
+                      fillOpacity={0.14}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  )}
+
+                  {gapView ? null : (
+                    <Line
+                      type="monotone"
+                      dataKey="portfolio"
+                      name={t('benchmark.chart.yours')}
+                      stroke="var(--color-price)"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  )}
+                  {gapView ? null : (
+                    <Line
+                      type="monotone"
+                      dataKey="reference"
+                      name={t('benchmark.chart.theirs', { index })}
+                      stroke="var(--muted-foreground)"
+                      strokeWidth={1.25}
+                      strokeDasharray="4 4"
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -189,24 +249,70 @@ export function BenchmarkChart({ points, index, currency }: BenchmarkChartProps)
                   drawing alone. */}
             <ChartReading
               rows={rows}
-              curves={[
-                { name: t('benchmark.chart.yours'), key: 'portfolio' },
-                // **The index, and not the legend's own string.** The legend
-                // reads `MSCI World, même argent investi` because it has a
-                // swatch beside it and one line to make its claim; inside a
-                // spoken sentence that clause comes back three times and
-                // buries the figures. *Same money invested* is already said
-                // once, by the section's title above. With its article, so the
-                // sentence reads « croise l’indice CAC 40 » (#1434).
-                { name: t('benchmark.chart.reading.theirs', { index }), key: 'reference' },
-              ]}
+              reference={gapView ? 0 : undefined}
+              curves={
+                gapView
+                  ? [{ name: t('benchmark.chart.gap'), key: 'delta' }]
+                  : [
+                      { name: t('benchmark.chart.yours'), key: 'portfolio' },
+                      // **The index, and not the legend's own string.** The legend
+                      // reads `MSCI World, même argent investi` because it has a
+                      // swatch beside it and one line to make its claim; inside a
+                      // spoken sentence that clause comes back three times and
+                      // buries the figures. *Same money invested* is already said
+                      // once, by the section's title above. With its article, so the
+                      // sentence reads « croise l’indice CAC 40 » (#1434).
+                      { name: t('benchmark.chart.reading.theirs', { index }), key: 'reference' },
+                    ]
+              }
               format={currency === null ? null : (value) => f.currency(value, currency)}
             />
           </figure>
         )}
       </div>
+    </>
+  )
+
+  if (bare) {
+    return (
+      <div id={panelId} role={panelId ? 'tabpanel' : undefined} className="flex flex-col gap-4">
+        {body}
+        {empty ? null : bareLegend()}
+      </div>
+    )
+  }
+
+  return (
+    <Section
+      title={t('benchmark.chart.title')}
+      aside={empty ? undefined : <Legend index={index} />}
+    >
+      {body}
     </Section>
   )
+
+  /** Under the plot, in line with the plot and not with its axis (the 64 px of ticks). */
+  function bareLegend() {
+    const last = [...rows].reverse().find((row) => row.delta !== null)?.delta ?? null
+    if (!gapView) {
+      return (
+        <div className="sm:pl-16">
+          <Legend index={index} />
+        </div>
+      )
+    }
+    const today = f.currency(last, currency)
+    return (
+      <p className="flex flex-wrap items-center gap-x-4 text-sm text-muted-foreground sm:pl-16">
+        <span
+          aria-hidden
+          className="inline-block h-0.5 w-3.5"
+          style={{ backgroundColor: 'var(--chart-1)' }}
+        />
+        {figured(t('benchmark.chart.gapLegend', { gap: today }), [today])}
+      </p>
+    )
+  }
 }
 
 /**
