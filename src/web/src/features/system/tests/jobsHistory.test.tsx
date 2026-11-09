@@ -70,7 +70,16 @@ describe('the job history (#1236)', () => {
       http.get(ROUTES.jobs, () =>
         HttpResponse.json(
           someJobs([
-            { id: 'fake', label_key: 'settings.jobs.fake', kind: 'job', in_health: false },
+            {
+              id: 'fake',
+              label_key: 'settings.jobs.fake',
+              kind: 'job',
+              in_health: false,
+              state: 'Jamais lancé',
+              last_run_at: null,
+              next_run_at: null,
+              cadence: null,
+            },
           ]),
         ),
       ),

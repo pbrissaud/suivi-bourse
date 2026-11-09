@@ -98,6 +98,8 @@ class SymbolRuntime:
     lateral: Optional[BackfillProgress]
     accounts: Sequence[str]
     error: Optional[str]
+    stale_since: Optional[datetime] = None
+    stale_passes: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -120,6 +122,8 @@ class SymbolRuntime:
             'lateral': self.lateral.to_dict() if self.lateral else None,
             'accounts': list(self.accounts),
             'error': self.error,
+            'stale_since': instants.iso(self.stale_since),
+            'stale_passes': self.stale_passes,
         }
 
 
@@ -265,8 +269,21 @@ def build_symbols(
                 runtime_state.LATERAL, now),
             accounts=sorted(by_symbol[symbol]),
             error=record.error if record else None,
+            stale_since=record.stale_since if record else None,
+            stale_passes=record.stale_passes if record else 0,
         ))
     return rows
+
+
+def build_followed(symbols: Sequence[SymbolRuntime]) -> List[Dict[str, Any]]:
+    """The System page's securities: each held symbol, ``ok`` or ``stale``."""
+    return [{
+        'symbol': symbol.symbol,
+        'name': symbol.name,
+        'state': 'stale' if symbol.frozen else 'ok',
+        'stale_since': instants.iso(symbol.stale_since),
+        'stale_passes': symbol.stale_passes,
+    } for symbol in symbols if symbol.held]
 
 
 def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
@@ -383,6 +400,8 @@ def build_runtime(
     store_path: Optional[str] = None,
     build: build_info.Build = build_info.UNSTAMPED,
     documentation_url: str = boot_env.DEFAULT_DOCUMENTATION_URL,
+    database_bytes: Optional[int] = None,
+    quote_response: Optional[float] = None,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload."""
     symbols = build_symbols(
@@ -394,7 +413,10 @@ def build_runtime(
         'reconstruction': (
             None if reconstruction is None
             else {'complete': reconstruction[0], 'total': reconstruction[1]}),
-        'store': {'path': store_path},
+        'store': {'path': store_path, 'size_bytes': database_bytes},
+        # The only source there is; ``response_seconds`` is its last scrape pass.
+        'quote_source': {'name': 'yfinance', 'response_seconds': quote_response},
+        'followed': build_followed(symbols),
         'build': build.to_dict(),
         'documentation_url': documentation_url,
         'symbols': [symbol.to_dict() for symbol in symbols],

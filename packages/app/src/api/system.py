@@ -1,12 +1,14 @@
 """The installation under ``/api``: runtime, store, facts, advisories, config."""
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from application import advisories
 from application import build_info
 from application import installation_facts
 from application import instants
+from application import job_history
+from application import journal
 from application import ledger
 from application import runtime_view
 from application import settings as settings_module
@@ -38,6 +40,7 @@ def get_runtime():
     snapshot = runtime.config_manager.current()
 
     scrape, backfill = recorder.records_for(snapshot.shares)
+    last = recorder.history.last_pass(job_history.SCRAPE)
 
     return jsonify(runtime_view.build_runtime(
         shares=snapshot.shares,
@@ -53,6 +56,9 @@ def get_runtime():
         documentation_url=runtime.documentation_url,
         store_path=(str(runtime.store_path)
                     if runtime.store_path is not None else None),
+        database_bytes=(store_module.file_size(runtime.store_path)
+                        if runtime.store_path is not None else None),
+        quote_response=(last.duration if last is not None else None),
     ))
 
 
@@ -180,3 +186,37 @@ def put_log_level():
     except ValueError as exc:
         return bad_request(str(exc))
     return jsonify({'log_level': level})
+
+
+def _log_directory():
+    path = current_runtime().store_path
+    return path.parent / 'logs' if path is not None else None
+
+
+@bp.get('/logs')
+def get_logs():
+    """The journal, newest first; poll with ``cursor`` for what came after."""
+    args = request.args
+    try:
+        cursor = int(args.get('cursor') or 0)
+        since = (datetime.fromisoformat(args['since'])
+                 if args.get('since') else None)
+    except ValueError:
+        return bad_request("'cursor' is an integer and 'since' an ISO 8601 instant.")
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    rows, last = journal.RING.select(
+        level=args.get('level'), job=args.get('job'), since=since,
+        q=args.get('q'), cursor=cursor)
+    return jsonify({'rows': rows, 'cursor': last})
+
+
+@bp.get('/logs/download')
+def download_logs():
+    """The file log, the last seven days of it, as one text."""
+    directory = _log_directory()
+    if directory is None or not journal.files(directory):
+        return not_found("No log file is kept for this installation.")
+    return Response(journal.stream(directory), mimetype='text/plain',
+                    headers={'Content-Disposition':
+                             'attachment; filename="suivi-bourse.log"'})

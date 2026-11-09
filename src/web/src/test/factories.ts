@@ -1095,7 +1095,9 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     // The ordinary installation is the mounted one (#741), so the factory's
     // default is the state that says nothing on screen; the other two are what
     // a test asks for by name.
-    store: { path: '/data/suivi-bourse.duckdb' },
+    store: { path: '/data/suivi-bourse.duckdb', size_bytes: 48_234_496 },
+    followed: [],
+    quote_source: { name: 'yfinance', response_seconds: 1.4 },
     // The ordinary installation is a published image (#741's taste applied to
     // the stamp): the default is what an owner who pulled a tag runs, and the
     // three other states are what a test asks for by name.
@@ -1556,10 +1558,46 @@ export function aJobTrack(overrides: Partial<JobTrack> = {}): JobTrack {
 /** `GET /api/jobs` as the server lists its four jobs, in its order (#1253). */
 export function someJobs(extra: JobInfo[] = []): JobInfo[] {
   return [
-    { id: 'scrape', label_key: 'settings.jobs.scrape', kind: 'family', in_health: true },
-    { id: 'backfill', label_key: 'settings.jobs.backfill', kind: 'job', in_health: true },
-    { id: 'ingestion', label_key: 'settings.jobs.ingestion', kind: 'job', in_health: false },
-    { id: 'performance', label_key: 'settings.jobs.performance', kind: 'job', in_health: true },
+    {
+      id: 'scrape',
+      label_key: 'settings.jobs.scrape',
+      kind: 'family',
+      in_health: true,
+      state: 'À jour',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
+    {
+      id: 'backfill',
+      label_key: 'settings.jobs.backfill',
+      kind: 'job',
+      in_health: true,
+      state: 'À jour',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
+    {
+      id: 'ingestion',
+      label_key: 'settings.jobs.ingestion',
+      kind: 'job',
+      in_health: false,
+      state: 'À jour',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
+    {
+      id: 'performance',
+      label_key: 'settings.jobs.performance',
+      kind: 'job',
+      in_health: true,
+      state: 'À jour',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
     ...extra,
   ]
 }

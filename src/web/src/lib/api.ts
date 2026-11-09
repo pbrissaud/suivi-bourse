@@ -212,6 +212,12 @@ export const ROUTES = {
   jobsHistory: '/api/jobs/history',
   /** The jobs the process runs, in the server's order, with their labels (#1253). */
   jobs: '/api/jobs',
+  /** « Lancer »: one pass now. A **pattern**; answers 202, the history records it. */
+  jobRun: '/api/jobs/:job/run',
+  /** The journal, newest first; poll with `cursor` for what came after. */
+  logs: '/api/logs',
+  /** The file log, the last seven days, as one text. */
+  logsDownload: '/api/logs/download',
   /** The orphans as a collection: the only thing done to it is removing it. */
   storeOrphans: '/api/store/orphans',
   /** One account's perf series. A **pattern**, like {@link ROUTES.prices}. */
@@ -568,6 +574,41 @@ export interface RuntimeAccount {
 export interface RuntimeStore {
   /** Where the file is; `null` when the process named no store (tests). */
   path: string | null
+  /** What the store occupies on disk, write-ahead log included. */
+  size_bytes: number | null
+}
+
+/** A followed security on the System page: `stale` when its price is frozen. */
+export interface RuntimeFollowed {
+  symbol: string
+  name: string | null
+  state: 'ok' | 'stale'
+  stale_since: string | null
+  stale_passes: number
+}
+
+export interface RuntimeQuoteSource {
+  name: string
+  /** How long the last scrape pass took, in seconds. */
+  response_seconds: number | null
+}
+
+export type JournalLevel = 'debug' | 'info' | 'warning' | 'error'
+export type JournalJob = 'scrape' | 'backfill' | 'performance' | 'ingestion' | 'system'
+
+/** One line of `GET /api/logs`; `detail` is the traceback, if any. */
+export interface JournalRow {
+  time: string
+  level: JournalLevel
+  job: JournalJob
+  message: string
+  detail: string | null
+}
+
+/** `cursor` is the last row seen: send it back to get only what came after. */
+export interface JournalPage {
+  rows: JournalRow[]
+  cursor: number
 }
 
 /**
@@ -658,6 +699,8 @@ export interface RuntimeState {
   perf: RuntimePerf | null
   symbols: RuntimeSymbol[]
   accounts: RuntimeAccount[]
+  followed: RuntimeFollowed[]
+  quote_source: RuntimeQuoteSource
 }
 
 // ------------------------------------------------------------------------- //

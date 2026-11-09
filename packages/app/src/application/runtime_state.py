@@ -62,6 +62,10 @@ class ScrapeRecord:
     wrote: bool = False
     stale: bool = False
     error: Optional[str] = None
+    #: Since when, and for how many consecutive passes, the price has been
+    #: frozen; folded by :meth:`RuntimeRecorder.record_scrape`.
+    stale_since: Optional[datetime] = None
+    stale_passes: int = 0
 
 
 @dataclass(frozen=True)
@@ -125,6 +129,13 @@ class RuntimeRecorder:
     def record_scrape(self, record: ScrapeRecord) -> ScrapeRecord:
         """Publish one symbol's pass. N scrape threads reach this concurrently."""
         with self._lock:
+            previous = self._scrape.get(record.symbol)
+            if record.stale:
+                again = previous is not None and previous.stale
+                record = replace(
+                    record,
+                    stale_since=previous.stale_since if again else record.at,
+                    stale_passes=previous.stale_passes + 1 if again else 1)
             self._scrape[record.symbol] = record
         return record
 

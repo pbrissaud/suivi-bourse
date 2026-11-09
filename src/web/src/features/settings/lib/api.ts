@@ -143,6 +143,12 @@ export interface JobInfo {
   label_key: string
   kind: 'job' | 'family'
   in_health: boolean
+  /** Short French reading of the last pass (« À jour »), or « Jamais lancé ». */
+  state: string
+  last_run_at: string | null
+  next_run_at: string | null
+  /** « à chaque écriture », or « toutes les 5 min »; `null` when it has none. */
+  cadence: string | null
 }
 
 /** `GET /api/jobs/history` — process memory, lost at every restart (#1236). */
