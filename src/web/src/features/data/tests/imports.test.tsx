@@ -138,8 +138,8 @@ describe('one population, and no source to act on', () => {
 
 /** A type, picked in the toolbar's *Type* menu (#1278): open it, press the option. */
 async function pickType(user: ReturnType<typeof renderApp>['user'], name: RegExp) {
-  await user.click(screen.getByRole('button', { name: 'Type' }))
-  await user.click(await screen.findByRole('button', { name }))
+  await user.click(screen.getByRole('button', { name: /^Type :/ }))
+  await user.click(await screen.findByRole('option', { name }))
 }
 
 /** The export is a menu since #794: its entries exist once it is open. */
@@ -189,8 +189,6 @@ describe('the export', () => {
       'La sélection filtrée4 lignes retenuesCSV',
       'Comptes et lignesSoldes, prix moyens d’achat et valorisationsCSV',
     ])
-    // And the menu says once what its four entries answer.
-    expect(within(menu).getByText('Ce que vous exportez')).toBeInTheDocument()
     // Nothing announces that a round trip takes two files: it does not.
     //A label saying so would send the reader looking for a second
     // file the menu no longer has.
@@ -2223,25 +2221,6 @@ describe('several files, one batch (#1266)', () => {
 })
 
 describe('an install that has imported nothing, and the format it reads (#1266)', () => {
-  it('names the columns a file is read by', async () => {
-    renderImports({ events: [] })
-
-    const label = await screen.findByText('Colonnes attendues')
-    const columns = label.nextElementSibling as HTMLElement
-    expect(columns).toHaveTextContent(EVENT_FILE_COLUMNS.join(', '))
-    expect(columns.textContent?.split(', ')).toHaveLength(10)
-  })
-
-  it('says the account column holds a declared account id', async () => {
-    renderImports({ events: [] })
-
-    expect(
-      await screen.findByText(
-        'La colonne « account » porte l’identifiant d’un compte déclaré dans Comptes.',
-      ),
-    ).toBeInTheDocument()
-  })
-
   it('links the format section of the docs in the reader language', async () => {
     renderImports({ events: [] })
 

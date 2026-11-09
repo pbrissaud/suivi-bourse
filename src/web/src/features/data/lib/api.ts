@@ -122,6 +122,25 @@ export interface EventDraft {
   amount: number | null
 }
 
+/**
+ * What `POST /api/events/preview` answers for a candidate event: the effect
+ * line's figures, all computed by the server and never by the sheet.
+ * `amount` is the cash the write moves, signed (credit positive, debit
+ * negative, fees in), `fees` the fee alone, `cash_after` the account's cash once
+ * the write is made. `account_label` is how the account is named in the line.
+ */
+export interface EventPreview {
+  cash_after: number
+  amount: number
+  fees: number
+  account_label?: string | null
+}
+
+/** The preview's request: the draft, plus the row it replaces when editing. */
+export interface EventPreviewBody extends EventDraft {
+  event_id?: string
+}
+
 /** One line of Yahoo's answer (#1268). */
 export interface FoundSecurity {
   symbol: string
@@ -399,6 +418,7 @@ export const dataApi = {
   searchSecurities: (q: string) =>
     get<SecuritiesResponse>(`${ROUTES.securities}?q=${encodeURIComponent(q)}`),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
+  previewEvent: (body: EventPreviewBody) => send<EventPreview>(ROUTES.eventsPreview, 'POST', body),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
   /**
    * **One row, removed** (#834).

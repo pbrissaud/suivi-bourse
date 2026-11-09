@@ -7,9 +7,9 @@
  * no card and no scroll box of its own, and draws what a phone reader scans for:
  *
  *     ☐  AAPL                    −1 627,35 €
- *        12/03/2026 · Achat             [compte]
+ *        12 mars 2026 · Achat           compte
  *     ☐  Virement                 +1 000,00 €
- *        12/03/2026 · Dépôt             [compte]
+ *        12 mars 2026 · Dépôt           compte
  *
  * The figure is the event's amount, the cash it moved, and `× quantity` for a
  * grant, which moves none (`EventFigure`, #1355, #1425).
@@ -28,11 +28,11 @@ import type { OnChangeFn, RowSelectionState } from '@tanstack/react-table'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { LedgerEvent } from '@/features/data/lib/api'
 import {
-  AccountChip,
+  AccountId,
   EventFigure,
   Ticker,
   TYPE_LABEL,
-  TypePill,
+  TypeWord,
 } from '@/features/data/components/LedgerTable'
 import { identityOf, isEditable, nameOf, rowKey, selectionState } from '@/features/data/lib/ledger'
 import { ABSENT, useFormatters } from '@/lib/format'
@@ -116,7 +116,7 @@ export function LedgerList({
               key={key}
               data-state={rowSelection[key] ? 'selected' : undefined}
               data-fresh={fresh?.has(String(event.id)) ? '' : undefined}
-              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 last:border-b-0 has-[button:active]:bg-muted/50 data-[state=selected]:bg-muted/50 data-fresh:bg-primary/10"
+              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 data-[state=selected]:bg-muted/50 data-fresh:bg-primary/10"
             >
               <Checkbox
                 aria-label={t('data.select.row', {
@@ -173,9 +173,11 @@ export function LedgerList({
                     <span aria-hidden className="label">
                       ·
                     </span>
-                    <TypePill type={event.event_type} />
+                    <TypeWord type={event.event_type} />
                   </div>
-                  <AccountChip event={event} />
+                  <span className="text-xs text-muted-foreground">
+                    <AccountId event={event} />
+                  </span>
                 </div>
               </div>
             </li>

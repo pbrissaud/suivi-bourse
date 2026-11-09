@@ -197,6 +197,12 @@ export function defaultHandlers() {
     // mistake it for the table's.
     http.delete(ROUTES.events, () => HttpResponse.json({ events_removed: 7 })),
 
+    // The dry run behind the event sheet's effect line: the same figures for
+    // every body, so a test that cares overrides it with its own.
+    http.post(ROUTES.eventsPreview, () =>
+      HttpResponse.json({ cash_after: 1040, amount: -542.55, fees: 1.35 }),
+    ),
+
     // The way in (#811): one file, one receipt. The receipt is the fixture's
     // and is not computed from what was sent — what a file holds is the
     // server's business, and a handler parsing a CSV would be a second

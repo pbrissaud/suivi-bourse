@@ -88,6 +88,8 @@ export const ROUTES = {
   events: '/api/events',
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
   event: '/api/events/:id',
+  /** The dry run of a write: what an event would do to its account's cash (W3). */
+  eventsPreview: '/api/events/preview',
   /**
    * A file handed over, read once, and written as ordinary events (#811).
    *

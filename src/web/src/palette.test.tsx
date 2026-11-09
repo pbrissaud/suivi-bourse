@@ -264,14 +264,21 @@ describe('where an entry leads', () => {
 
     // Not the data page with the form shut, which would be a page entry wearing
     // an action's name.
-    expect(
-      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('tablist', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
   })
 })
 
+/** The three controls an event result sets, let go of one by one. */
+async function liftTheReduction(user: ReturnType<typeof render>['user']) {
+  await user.clear(screen.getByRole('searchbox'))
+  await user.click(screen.getByRole('button', { name: /^Type :/ }))
+  await user.click(await screen.findByRole('option', { name: 'Tous les types' }))
+  await user.click(screen.getByRole('button', { name: /^Compte :/ }))
+  await user.click(await screen.findByRole('option', { name: 'Tous les comptes' }))
+}
+
 describe('the ledger an event result lands on', () => {
-  it('is reduced, says what it retains, and offers the way out', async () => {
+  it('is reduced, shows it in its controls, and offers the way out', async () => {
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))))
     const { user } = render()
     await open(user)
@@ -282,19 +289,15 @@ describe('the ledger an event result lands on', () => {
     const table = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(2))
 
-    // **It names itself**, in the terms of what it retains — a type, a word and
-    // an account — and never in terms of the one row it was asked about: a
-    // ledger row has no address.
-    expect(
-      screen.getByText(
-        /Réduit aux événements de type Versement portant « Virement entrant depuis le compte courant », sur le compte alpha\./,
-      ),
-    ).toBeInTheDocument()
+    // **It names itself in its controls**: the type, the account and the word
+    // typed are each a control showing its own value, never a row's address.
+    expect(screen.getByRole('button', { name: 'Type : Versement' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Compte : alpha' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveValue('Virement entrant depuis le compte courant')
 
-    // And it offers the way out, which restores the ledger entire.
-    await user.click(screen.getByRole('button', { name: 'Afficher tout le grand livre' }))
+    // And each one offers the way out, which restores the ledger entire.
+    await liftTheReduction(user)
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(5))
-    expect(screen.queryByText(/Réduit aux événements/)).toBeNull()
   })
 
   it('says nothing matched only once every read has landed', async () => {
@@ -315,17 +318,17 @@ describe('a gesture the palette armed is spent once', () => {
     await open(user)
     await user.type(field(), 'saisir')
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
-    await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' })
+    await screen.findByRole('tablist', { name: 'Ce qui s’est passé' })
 
     await user.keyboard('{Escape}')
     await waitFor(() =>
-      expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull(),
+      expect(screen.queryByRole('tablist', { name: 'Ce qui s’est passé' })).toBeNull(),
     )
 
     await user.click(await screen.findByRole('link', { name: 'Réglages' }))
     await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     await screen.findByRole('table', { name: 'Vos événements' })
-    expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull()
+    expect(screen.queryByRole('tablist', { name: 'Ce qui s’est passé' })).toBeNull()
   })
 
   it('does not bring back a reduction the reader has lifted', async () => {
@@ -337,16 +340,17 @@ describe('a gesture the palette armed is spent once', () => {
 
     const table = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(2))
-    await user.click(screen.getByRole('button', { name: 'Afficher tout le grand livre' }))
+    await liftTheReduction(user)
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(5))
 
-    // The address went with it, so a remount cannot restore it: a sentence
-    // naming a reduction over a table nobody reduced is two truths.
+    // The address went with it, so a remount cannot restore it: controls naming
+    // a reduction over a table nobody reduced are two truths.
     await user.click(await screen.findByRole('link', { name: 'Réglages' }))
     await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     const back = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(back).getAllByRole('row')).toHaveLength(5))
-    expect(screen.queryByText(/Réduit aux événements/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Type : Tous les types' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveValue('')
   })
 })
 

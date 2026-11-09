@@ -348,7 +348,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     )
 
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
-    await user.click(await screen.findByRole('radio', { name: 'Versement' }))
+    await user.click(await screen.findByRole('tab', { name: 'Versement' }))
 
     const options = within(screen.getByRole('dialog'))
       .getByLabelText('Compte')
@@ -403,7 +403,7 @@ describe('the create form on an install that has declared nothing', () => {
     )
 
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
-    await user.click(await screen.findByRole('radio', { name: 'Versement' }))
+    await user.click(await screen.findByRole('tab', { name: 'Versement' }))
     fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
     await user.type(screen.getByLabelText('Montant'), '250')
     await user.type(screen.getByLabelText('Libellé'), 'Virement de février')
@@ -442,7 +442,7 @@ describe('the create form on an install that has declared nothing', () => {
       ),
     )
 
-    await user.click(within(panel).getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer' }))
     expect(await screen.findByText('Virement de février')).toBeInTheDocument()
     // The blank travels as a blank: the server resolves it at the write, where
     // the file road resolves its own empty cell (#698).
@@ -476,7 +476,7 @@ describe('the create form on an install that has declared nothing', () => {
 
     await user.click(screen.getByRole('button', { name: 'Saisir un événement' }))
     const panel = await screen.findByRole('dialog')
-    await user.click(within(panel).getByRole('radio', { name: 'Achat' }))
+    await user.click(within(panel).getByRole('tab', { name: 'Achat' }))
     expect(within(panel).getByText(/Vos comptes n’ont pas pu être lus/)).toBeInTheDocument()
   })
 })

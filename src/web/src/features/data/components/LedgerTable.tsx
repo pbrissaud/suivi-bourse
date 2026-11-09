@@ -1,64 +1,36 @@
 /**
- * The ledger — **eight columns, and a ninth that ticks** (#723, #834, #1264).
+ * The ledger — **a table on the ground** (« Relevé », mockup
+ * `GrandLivre-Refonte.dc.html`): a ticking column, then
  *
- *     Date · Type · De quoi il s'agit · Quantité · Prix unitaire · Frais ·
- *     Montant · Compte
+ *     Date · Type · Événement · Quantité · Prix unitaire · Montant · Compte
  *
- * The row itself opens the editor, and the editor holds the row's removal: a
- * button repeating on all 285 rows is what the padlock was refused for, and
- * deleting several rows is the selection's job.
+ * with a rule under every row, 48 px rows (the name has a sub-line) and the
+ * figures right-aligned in `.fig`. The *Date* header says `aria-sort` — the
+ * ledger is served newest first — and that alone makes it `foreground`; no glyph.
  *
- * Two decisions were taken here **against** the interview, both in front of a
- * board mounted on the 285 real events:
+ * The row opens the editor, and the editor holds the row's removal: a button
+ * repeating on all 285 rows is what the padlock was refused for, and deleting
+ * several rows is the selection's job. The name underlines on hover and is the
+ * keyboard's way in; the row takes no background.
  *
- *  - **The identity column is not `Titre`.** The interview had concluded the
- *    free-text label should leave the table, *"empty almost everywhere"*.
- *    Measured, it is the opposite: **278 rows out of 285** carry one, median 36
- *    characters, 101 distinct values — and a `DEPOSIT` or a `WITHDRAWAL` has no
- *    symbol at all (`Apple Pay Top up`, `Incoming transfer from BRISSAUD`), so
- *    there the label **is** the identity. One column does the work for both
- *    families, in place of a `Symbole` empty 105 times out of 285 doubled by a
- *    `Notes` truncated one row in two.
- *  - **`Nom` is not a column.** The security's name is an attribute of the
- *    security, not of each of its 285 events; repeating it is declaration
- *    duplicated, and the ticker already identifies the line.
+ * **The event column leads with the security's name**, « CW8 · libellé du
+ * courtier » under it (DESIGN.md › Return figures); a transfer has no security,
+ * so its label is the name and the sub-line is absent. Fees are not a column:
+ * they live in the event sheet, and a buy's or a sale's sit in its amount.
  *
- * Since #816 there is nothing left for it to have discriminated on — **every**
- * row is editable — so the lock, and the `Provenance` column that carried the
- * same fact more usefully, are both gone.
- *
- * Since #795 the table is also **bounded and revealed**: the header is sticky,
- * the body scrolls inside its own container, and how many rows are in it is the
- * caller's business — this component draws what it is handed and says nothing
- * about what it was not. The type is a coloured badge and the four money
- * columns are set in fig numerals, both for the same reason: forty rows are
- * read by scanning down a column, not across a row.
- *
- * **The ninth column left with its subject** (#816). It said *"row 14 of
- * 2024.csv"* and linked to the file's revocation, and both halves rested on the
- * same thing: a mounted file was re-read, so its rows had to be named and
- * revoked whole rather than corrected. A file is handed over once now. There is
- * no source to name, no revocation to lead to, and a row that came out of a
- * file is a row — so what the column would carry on all 285 lines is the same
- * nothing the padlock carried.
- *
- * **Zero explanation icons.** The page's two live on the create form, where the
- * sentence can still change a behaviour (#684 D7).
- *
- * **One column gives, the others keep their width** (#1264). The label column
+ * **One column gives, the others keep their width** (#1264). The event column
  * absorbs what the rest leave and truncates; the figure columns are as wide as
  * their widest figure. What does not fit goes by the **table's own width** — a
- * container query on the card, not the viewport's, since the sidebar can be
+ * container query on the wrapper, not the viewport's, since the sidebar can be
  * open or folded at any width. `LEDGER_COLUMNS` is the budget the classes and
  * the tests both read.
  *
- * **A first column of checkboxes** (#1113), and the table is drawn by TanStack
- * Table for it: the data is every row the reduction retains, and the reveal is
- * a slice of the row model, so the header box ticks the rows not drawn yet too.
- * The selection itself is the caller's state — it outlives a reduction, and a
- * row hidden by a chip comes back ticked when the chip is let go of.
+ * The table is drawn by TanStack Table for the first column of checkboxes
+ * (#1113): the data is every row the reduction retains, and the reveal is a
+ * slice of the row model, so the header box ticks the rows not drawn yet too.
+ * The selection itself is the caller's state — it outlives a reduction.
  */
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import {
   flexRender,
   rowSelectionFeature,
@@ -117,8 +89,6 @@ interface LedgerTableProps {
   onEdit: (event: LedgerEvent) => void
   /** The rows a merge has just written (#1119): marked, then let go of. */
   fresh?: ReadonlySet<string>
-  /** The last drawn row came into view: draw the next ones. */
-  onNearEnd?: () => void
 }
 
 type LedgerColumnId =
@@ -128,12 +98,11 @@ type LedgerColumnId =
   | 'what'
   | 'quantity'
   | 'unitPrice'
-  | 'fee'
   | 'amount'
   | 'account'
 
 interface LedgerColumn {
-  /** Worst-case width in px, at the `xl` cell padding (16 px each side). */
+  /** Worst-case width in px, at the 12 px cell padding. */
   min: number
   /** The container width in px the column appears from; absent = always shown. */
   from?: number
@@ -142,22 +111,22 @@ interface LedgerColumn {
 }
 
 /**
- * **The ledger's column budget** (#1264). A figure is estimated at 7.8 px per digit
- * at 13 px (Geist, fig numerals); each threshold is the first `rem` step at or above the worst-case
- * sum of the columns shown there. What hides first as the table narrows: fee,
- * then unit price, then quantity, then account. `ledgerColumns.test.ts` checks
- * the arithmetic and that `from` and `show` say the same width.
+ * **The ledger's column budget** (#1264). A figure is estimated at 7.8 px per
+ * character at 13 px (Geist Mono); each threshold is the first `rem` step at or
+ * above the worst-case sum of the columns shown there. What hides first as the
+ * table narrows: unit price, then quantity, then account.
+ * `ledgerColumns.test.ts` checks the arithmetic and that `from` and `show` say
+ * the same width.
  */
 export const LEDGER_COLUMNS: Record<LedgerColumnId, LedgerColumn> = {
   select: { min: 36 },
-  date: { min: 126 },
+  date: { min: 120 },
   type: { min: 104 },
   what: { min: 240 },
-  amount: { min: 149 },
+  amount: { min: 144 },
   account: { min: 128, from: 800, show: 'hidden @min-[50rem]/ledger:table-cell' },
   quantity: { min: 110, from: 896, show: 'hidden @min-[56rem]/ledger:table-cell' },
   unitPrice: { min: 126, from: 1024, show: 'hidden @min-[64rem]/ledger:table-cell' },
-  fee: { min: 110, from: 1136, show: 'hidden @min-[71rem]/ledger:table-cell' },
 }
 
 /** The classes a column's heading and cells share, by column id. */
@@ -166,11 +135,9 @@ const ALIGN: Partial<Record<LedgerColumnId, string>> = {
   // The only flexible column: with `table-layout: auto` it takes what the others
   // leave, and `max-w-0` is what lets its content truncate instead of widening it.
   what: 'w-full max-w-0',
-  quantity: 'text-right',
-  unitPrice: 'text-right',
-  fee: 'text-right',
-  amount: 'text-right',
 }
+
+const NUMERIC: ReadonlySet<string> = new Set(['quantity', 'unitPrice', 'amount'])
 
 const columnClass = (id: string) =>
   cn(ALIGN[id as LedgerColumnId], LEDGER_COLUMNS[id as LedgerColumnId]?.show)
@@ -183,22 +150,22 @@ export function LedgerTable({
   onRowSelectionChange,
   onEdit,
   fresh,
-  onNearEnd,
 }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
   const columns = useMemo<ColumnDef<typeof features, LedgerEvent>[]>(() => {
-    // The four money columns are Geist with fig numerals (#1281): read down
-    // a column of forty rows, that is what lets a comma line up with a comma.
-    const money = (
+    // A figure the event does not have is a dash, quiet: read down a column,
+    // the gaps are as much the reading as the figures.
+    const figure = (
       id: string,
       heading: MessageKey,
-      value: (event: LedgerEvent) => string,
+      value: (event: LedgerEvent) => string | null,
     ): ColumnDef<typeof features, LedgerEvent> => ({
       id,
       header: () => t(heading),
-      cell: ({ row }) => <span className="fig">{value(row.original)}</span>,
+      cell: ({ row }) =>
+        value(row.original) ?? <span className="text-muted-foreground">{ABSENT}</span>,
     })
     return [
       {
@@ -240,42 +207,24 @@ export function LedgerTable({
       {
         id: 'date',
         header: () => t('data.column.date'),
-        cell: ({ row }) => (
-          <span className="fig whitespace-nowrap">{f.date(row.original.date)}</span>
-        ),
+        cell: ({ row }) => <span className="fig">{f.date(row.original.date)}</span>,
       },
       {
         id: 'type',
         header: () => t('data.column.type'),
-        cell: ({ row }) => <TypePill type={row.original.event_type} />,
+        cell: ({ row }) => <TypeWord type={row.original.event_type} />,
       },
       {
         id: 'what',
         header: () => t('data.column.what'),
-        // The ticker in first rank, the label in second — and the label alone
-        // where there is no security to name.
-        cell: ({ row }) => {
-          const identity = identityOf(row.original)
-          return (
-            <>
-              <Identity event={row.original} onEdit={onEdit} />
-              {identity.ticker !== null && identity.label !== null ? (
-                <span
-                  title={identity.label}
-                  className="block truncate text-xs text-muted-foreground"
-                >
-                  {identity.label}
-                </span>
-              ) : null}
-            </>
-          )
-        },
+        cell: ({ row }) => <Identity event={row.original} onEdit={onEdit} />,
       },
-      money('quantity', 'data.column.quantity', (event) => f.quantity(event.quantity)),
-      money('unitPrice', 'data.column.unitPrice', (event) =>
-        f.currency(event.unit_price, currency),
+      figure('quantity', 'data.column.quantity', (event) =>
+        event.quantity === null ? null : f.quantity(event.quantity),
       ),
-      money('fee', 'data.column.fee', (event) => f.currency(event.fee, currency)),
+      figure('unitPrice', 'data.column.unitPrice', (event) =>
+        event.unit_price === null ? null : f.currency(event.unit_price, currency),
+      ),
       {
         id: 'amount',
         header: () => t('data.column.amount'),
@@ -285,14 +234,14 @@ export function LedgerTable({
         // (#1355).
         cell: ({ row }) => {
           const event = row.original
-          const figure = <EventFigure event={event} currency={currency} />
+          const amount = <EventFigure event={event} currency={currency} />
           return (
-            <span className="fig">
+            <span className="font-medium">
               {cashFlow(event) !== null ? (
-                figure
+                amount
               ) : (
                 <>
-                  <span className="@min-[56rem]/ledger:hidden">{figure}</span>
+                  <span className="@min-[56rem]/ledger:hidden">{amount}</span>
                   <span className="hidden @min-[56rem]/ledger:inline">{ABSENT}</span>
                 </>
               )}
@@ -303,7 +252,7 @@ export function LedgerTable({
       {
         id: 'account',
         header: () => t('data.column.account'),
-        cell: ({ row }) => <AccountChip event={row.original} />,
+        cell: ({ row }) => <AccountId event={row.original} />,
       },
     ]
   }, [t, f, currency, onEdit])
@@ -319,70 +268,20 @@ export function LedgerTable({
     onRowSelectionChange,
   })
 
-  // The header stays put while the body scrolls under it: on a table revealed
-  // forty rows at a time, a heading that leaves the viewport takes the meaning
-  // of ten columns with it. The ground is opaque because the rows pass beneath.
-  // The rule under it is a `box-shadow` and not the row's `border-b`: preflight
-  // sets `border-collapse: collapse`, and under collapsed borders the border
-  // belongs to the table box rather than to the cell — so a stuck header keeps
-  // its ground and lets its own separator scroll away with the rows.
-  const head = 'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)]'
-
-  // **The box runs down to the bottom of the window**: its ceiling is measured,
-  // not guessed, so the tail under it lands on the page's last line wherever the
-  // toolbar wrapped. What sits below the box (the tail) is read off the layout
-  // too.
-  const tableRef = useRef<HTMLTableElement>(null)
-  const [ceiling, setCeiling] = useState<number>()
-  useLayoutEffect(() => {
-    const box = tableRef.current?.parentElement
-    const wrapper = box?.parentElement
-    if (!box || !wrapper) return
-    const fit = () => {
-      const boxRect = box.getBoundingClientRect()
-      // The wrapper eats the page's bottom padding (`Ledger`'s negative
-      // margin), so the tail sits on the window's last line.
-      const below = wrapper.getBoundingClientRect().bottom - boxRect.bottom
-      // The box's top in **document** coordinates, on purpose: the ceiling is
-      // what fits the window with the page at its top, so it does not depend on
-      // where the page happened to be scrolled when the window was resized.
-      setCeiling(window.innerHeight - (boxRect.top + window.scrollY) - below)
-    }
-    fit()
-    window.addEventListener('resize', fit)
-    return () => window.removeEventListener('resize', fit)
-  }, [])
-
-  // **The next forty arrive as the last row comes into view** — in the box, not
-  // the page. The rows are in memory, so this is a render and nothing else. A
-  // keyboard reader gets there too: tabbing onto a row scrolls the box.
-  useLayoutEffect(() => {
-    const table = tableRef.current
-    const last = table?.tBodies[0]?.lastElementChild
-    if (!onNearEnd || !last || budget >= events.length) return
-    if (typeof IntersectionObserver === 'undefined') return
-    const watch = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onNearEnd()
-      },
-      { root: table.parentElement, rootMargin: '0px 0px 300px 0px' },
-    )
-    watch.observe(last)
-    return () => watch.disconnect()
-  }, [onNearEnd, budget, events])
-
   return (
-    <Table
-      ref={tableRef}
-      containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto"
-      containerStyle={ceiling === undefined ? undefined : { maxHeight: ceiling }}
-    >
+    <Table>
       <caption className="sr-only">{t('data.ledger.label')}</caption>
-      <TableHeader>
+      <TableHeader className="[&_th]:pt-4">
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id}>
             {group.headers.map((header) => (
-              <TableHead key={header.id} className={cn(head, columnClass(header.column.id))}>
+              <TableHead
+                key={header.id}
+                numeric={NUMERIC.has(header.column.id)}
+                // The ledger is served newest first: the one sorted column.
+                aria-sort={header.column.id === 'date' ? 'descending' : undefined}
+                className={columnClass(header.column.id)}
+              >
                 {flexRender(header.column.columnDef.header, header.getContext())}
               </TableHead>
             ))}
@@ -396,15 +295,16 @@ export function LedgerTable({
           .getRowModel()
           .rows.slice(0, Math.max(budget, 0))
           .map((row) => (
-            // **The whole row opens the editor** (#834), which is the shares
-            // table's own gesture one page over: the button on the name stays,
-            // and it is the keyboard's way in rather than a duplicate. A row
-            // with no key is addressable by nothing, so it opens nothing.
+            // **The whole row opens the editor** (#834); the button on the name
+            // stays, and it is the keyboard's way in rather than a duplicate. A
+            // row with no key is addressable by nothing, so it opens nothing.
             <TableRow
               key={row.id}
+              tall
               data-state={row.getIsSelected() ? 'selected' : undefined}
               data-fresh={fresh?.has(String(row.original.id)) ? '' : undefined}
               className={cn(
+                'group',
                 isEditable(row.original) && 'cursor-pointer',
                 // The rows a merge just wrote: a plain tint, never a movement.
                 'data-fresh:bg-primary/10 motion-reduce:transition-none',
@@ -414,7 +314,11 @@ export function LedgerTable({
               {row.getAllCells().map((cell) => (
                 <TableCell
                   key={cell.id}
-                  className={columnClass(cell.column.id)}
+                  numeric={NUMERIC.has(cell.column.id)}
+                  className={cn(
+                    columnClass(cell.column.id),
+                    cell.column.id === 'account' && 'text-muted-foreground',
+                  )}
                   // A click that misses the box by a few pixels is still a
                   // tick, never the editor.
                   onClick={
@@ -432,7 +336,7 @@ export function LedgerTable({
 }
 
 /** A ledger type: a word in `muted-foreground` — no pill — the table's and the phone list's alike. */
-export function TypePill({ type }: { type: LedgerEventType }) {
+export function TypeWord({ type }: { type: LedgerEventType }) {
   const { t } = useI18n()
   return <span className="text-muted-foreground">{t(TYPE_LABEL[type])}</span>
 }
@@ -450,22 +354,19 @@ export function EventFigure({ event, currency }: { event: LedgerEvent; currency:
   const cash = cashFlow(event)
   if (cash !== null) return <>{f.signedCurrency(cash, currency)}</>
   if (event.quantity === null) return <>{ABSENT}</>
-  return (
-    <span className="text-muted-foreground">{`\u00d7\u00a0${f.quantity(event.quantity)}`}</span>
-  )
+  return <span className="text-muted-foreground">{`× ${f.quantity(event.quantity)}`}</span>
 }
 
 /**
- * An account id is typed, not written: the mono face is what says so, and it is
- * the one the accounts page already sets an id in (`AccountDetail`,
- * `AccountsBar`). Capped at 12 characters plus the chip's own padding: account
- * ids have no length bound on the server.
+ * An account's identifiant, as the ledger and the imports show it: Geist in
+ * `muted-foreground`, capped at 12 characters — identifiants have no length bound
+ * on the server.
  */
-export function AccountChip({ event }: { event: LedgerEvent }) {
+export function AccountId({ event }: { event: LedgerEvent }) {
   return (
     <span
       title={accountOf(event)}
-      className="fig inline-block max-w-[calc(12ch+1rem)] truncate align-middle text-xs text-muted-foreground"
+      className="inline-block max-w-[calc(12ch+1rem)] truncate align-middle"
     >
       {accountOf(event)}
     </span>
@@ -473,46 +374,48 @@ export function AccountChip({ event }: { event: LedgerEvent }) {
 }
 
 /**
- * The row's own name — and the **only** editing affordance on the page. It is a
- * button exactly where a row may be edited, which since #816 is every row that
- * has a key. A column for it would fail the same test the padlock failed: one
- * heading repeating on 285 rows what 285 rows already share.
+ * The event column: the security's name in 500 with « CW8 · libellé » under it,
+ * or the label alone on a transfer (`nameOf`). The name is a button exactly where
+ * a row may be edited — every row that has a key (#816) — and underlines when the
+ * row is hovered.
  */
 function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: LedgerEvent) => void }) {
   const identity = identityOf(event)
   const name = nameOf(event)
 
   if (name === null) return <span className="text-muted-foreground">{ABSENT}</span>
-  // A security takes one line; with none, the label is the identity and may
-  // take two — never more, so the row is no taller than a security's row. The
-  // whole text stays in the DOM and in the `title`.
-  const shape =
-    identity.ticker !== null
-      ? 'block min-w-0 max-w-full truncate text-left font-medium'
-      : 'line-clamp-2 whitespace-normal break-words text-left font-medium'
+  // The ticker leads the sub-line only when the name took the first line; the
+  // label follows it, or stands alone under a ticker that took the first line.
+  const sub = [
+    identity.name === null ? null : identity.ticker,
+    identity.ticker === null ? null : identity.label,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ')
+  const shape = 'block min-w-0 max-w-full truncate text-left font-medium'
   const title = identity.ticker !== null && identity.name === null ? undefined : name
-  const own = !isEditable(event) ? (
-    <span title={title} className={shape}>
-      {name}
-    </span>
-  ) : (
-    <button
-      type="button"
-      title={title}
-      className={cn(shape, 'underline-offset-4 hover:underline')}
-      onClick={() => onEdit(event)}
-    >
-      {name}
-    </button>
-  )
-  if (identity.name === null) return own
-  // The ticker beside the name, as on Titres (#1433): outside the button, so
-  // the button's name is the name alone, and never truncated.
   return (
-    <span className="flex min-w-0 items-baseline gap-2">
-      {own}
-      <Ticker symbol={identity.ticker as string} />
-    </span>
+    <>
+      {isEditable(event) ? (
+        <button
+          type="button"
+          title={title}
+          className={cn(shape, 'underline-offset-4 group-hover:underline')}
+          onClick={() => onEdit(event)}
+        >
+          {name}
+        </button>
+      ) : (
+        <span title={title} className={shape}>
+          {name}
+        </span>
+      )}
+      {sub === '' ? null : (
+        <span title={sub} className="block truncate text-xs text-muted-foreground">
+          {sub}
+        </span>
+      )}
+    </>
   )
 }
 
