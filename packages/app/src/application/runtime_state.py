@@ -179,6 +179,11 @@ class RuntimeRecorder:
     def scrape_of(self, symbol: str) -> Optional[ScrapeRecord]:
         return self._scrape.get(symbol)
 
+    def scrapes(self) -> Dict[str, ScrapeRecord]:
+        """Every symbol's last scrape pass, as a copy."""
+        with self._lock:
+            return dict(self._scrape)
+
     def backfill_of(self, symbol: str,
                     direction: str) -> Optional[BackfillRecord]:
         return self._backfill.get((symbol, direction))

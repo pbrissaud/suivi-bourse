@@ -19,6 +19,7 @@ TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
 TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
 TYPE_REFUSED = '/problems/refused'
 TYPE_PROVIDER_REFUSED = '/problems/provider-refused'
+TYPE_CHANNEL_REFUSED = '/problems/channel-refused'
 TYPE_CURRENCY_UNCONVERTIBLE = '/problems/currency-unconvertible'
 TYPE_PROPOSAL_STALE = '/problems/proposal-stale'
 
@@ -161,6 +162,11 @@ def provider_refused(detail: str, provider: str, reason: str):
     """
     return problem(502, 'Provider refused', detail, TYPE_PROVIDER_REFUSED,
                    provider=provider, reason=reason)
+
+
+def channel_refused(detail: str, kind: str):
+    """502 — an outbound notification channel did not take the test notice (§ 3.6)."""
+    return problem(502, 'Channel refused', detail, TYPE_CHANNEL_REFUSED, kind=kind)
 
 
 def foreign_origin(detail: str):

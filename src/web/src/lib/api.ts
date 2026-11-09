@@ -223,6 +223,13 @@ export const ROUTES = {
    * the payload's business and not the route's.
    */
   advisoryAcknowledgement: '/api/advisories/:key/acknowledgement',
+  /**
+   * The outbound notification channels (§ 3.6): ntfy, e-mail, webhook, Apprise.
+   * `:id` is a pattern, like {@link ROUTES.prices}; `/test` sends a test notice.
+   */
+  notificationChannels: '/api/notification-channels',
+  notificationChannel: '/api/notification-channels/:id',
+  notificationChannelTest: '/api/notification-channels/:id/test',
   /** The store's own figures — size, last ledger write, orphans (#724). */
   store: '/api/store',
   /**
@@ -297,6 +304,11 @@ function installationFactAcknowledgementPath(key: string): string {
 
 function tokenPath(id: string, suffix = ''): string {
   return ROUTES.token.replace(':id', encodeURIComponent(id)) + suffix
+}
+
+function notificationChannelPath(id: string, test = false): string {
+  const route = test ? ROUTES.notificationChannelTest : ROUTES.notificationChannel
+  return route.replace(':id', encodeURIComponent(id))
 }
 
 function advisoryAcknowledgementPath(key: string): string {
@@ -854,12 +866,56 @@ export interface Advisory {
   key: string
   kind: string
   subject: string
+  /**
+   * Who it is for (§ 3.6): `user` is the bell (a late price, an update),
+   * `system` the System page's. `GET /api/advisories?register=user` is the bell.
+   */
+  register: 'user' | 'system'
   message: string
+  /**
+   * The phrase, built by the server with the security's **name**, in both
+   * languages; `null` where the front still holds the phrase by `kind`.
+   */
+  texts: Record<'fr' | 'en', { title: string; sub: string }> | null
   detail: Record<string, unknown>
   observed_at: string
 }
 
 type AdvisoriesResponse = Advisory[]
+
+export type ChannelKind = 'ntfy' | 'email' | 'webhook' | 'apprise'
+/** What a channel may be sent: the `user` advisory kinds, and a failing job. */
+export type ChannelScope = 'late_price' | 'update_available' | 'job_failed'
+
+/**
+ * One outbound notification channel (§ 3.6). The secret (SMTP password, webhook
+ * or ntfy token) never comes back: only whether there is one and its `last4`.
+ * `options` is the SMTP server for e-mail (`host`, `port`, `username`,
+ * `sender`, `starttls`), and `lang` (`fr` | `en`) for any kind.
+ */
+export interface NotificationChannel {
+  id: string
+  kind: ChannelKind
+  target: string
+  options: Record<string, string | number | boolean>
+  scopes: ChannelScope[]
+  enabled: boolean
+  has_secret: boolean
+  secret_last4: string | null
+  /** `false` for `apprise` on an installation that does not ship the library. */
+  available: boolean
+  created_at: string
+}
+
+/** What `POST` takes; `PATCH` takes any of `target`, `secret`, `options`, `scopes`, `enabled`. */
+export interface NotificationChannelDraft {
+  kind: ChannelKind
+  target: string
+  secret?: string | null
+  options?: NotificationChannel['options']
+  scopes: ChannelScope[]
+  enabled?: boolean
+}
 
 /** What `GET /api/system/release` answers: `null` when up to date or unknown. */
 export interface ReleaseState {
@@ -938,6 +994,19 @@ export const api = {
   standingAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
   acknowledgeAdvisory: (key: string) =>
     send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
+  /** The bell's inventory: the `user` register only (§ 3.6). */
+  userAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?register=user`),
+  notificationChannels: () => get<NotificationChannel[]>(ROUTES.notificationChannels),
+  addNotificationChannel: (draft: NotificationChannelDraft) =>
+    send<NotificationChannel>(ROUTES.notificationChannels, 'POST', draft),
+  changeNotificationChannel: (
+    id: string,
+    change: Partial<Omit<NotificationChannelDraft, 'kind'>>,
+  ) => send<NotificationChannel>(notificationChannelPath(id), 'PATCH', change),
+  deleteNotificationChannel: (id: string) => forget(notificationChannelPath(id)),
+  /** A `502` `problem+json` of type `/problems/channel-refused` says why not. */
+  testNotificationChannel: (id: string) =>
+    send<{ ok: true }>(notificationChannelPath(id, true), 'POST', {}),
 
   /** The agent's providers, the default first. */
   agentProviders: () => get<AgentProvider[]>(ROUTES.agentProviders),

@@ -17,12 +17,14 @@ held symbol): each member is its own scheduled entry, arms itself again after
 its pass, and the family keeps the set of entries in step with the members.
 """
 import logging
+import threading
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, ClassVar, Dict, Mapping, Optional, Set, Tuple
 
 from application import job_history
+from application import notifications
 from application import runtime_view
 
 job_logger = logging.getLogger("suivi_bourse")
@@ -75,6 +77,18 @@ class Rearmed:
     jobs: Tuple[str, ...] = ()
 
 
+def _announce(ctx, job: str, member: Optional[str], run) -> None:
+    """Let the outbound channels know of this pass, **off the job's thread**.
+
+    A failed pass, and (after a scrape) any ``user`` advisory that just started
+    standing, may be pushed to a channel; a sender can take seconds, so it never
+    holds the job. The thread swallows its own errors (``notifications``).
+    """
+    threading.Thread(target=notifications.after_pass,
+                     args=(ctx, job, member, run), daemon=True,
+                     name='notifications').start()
+
+
 class Job:
     """A singleton job: one pass at a time, recorded under ``id``."""
 
@@ -102,10 +116,14 @@ class Job:
 
     def __call__(self, *args, **kwargs) -> None:
         started = datetime.now(timezone.utc)
-        with job_history.timed(self.ctx.recorder.history, self.id) as run:
-            with self.guard():
-                self.run(*args, **kwargs)
-                run.settle(*self.outcome(started))
+        run = None
+        try:
+            with job_history.timed(self.ctx.recorder.history, self.id) as run:
+                with self.guard():
+                    self.run(*args, **kwargs)
+                    run.settle(*self.outcome(started))
+        finally:
+            _announce(self.ctx, self.id, None, run)
 
     @classmethod
     def health(cls, view) -> Optional[Dict[str, Any]]:
@@ -151,9 +169,13 @@ class JobFamily(Job):
 
     def __call__(self, member: str, **kwargs) -> None:
         history = self.ctx.recorder.history
-        with job_history.timed(history, self.id, member) as run:
-            self.run(member, **kwargs)
-            run.settle(*self.outcome(member))
+        run = None
+        try:
+            with job_history.timed(history, self.id, member) as run:
+                self.run(member, **kwargs)
+                run.settle(*self.outcome(member))
+        finally:
+            _announce(self.ctx, self.id, member, run)
         # A pass still running when its member left records after the
         # reconciliation forgot it; forget it again.
         try:

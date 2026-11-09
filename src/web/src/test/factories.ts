@@ -1466,6 +1466,8 @@ export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
     key: 'cash_share:alpha',
     kind: 'cash_share',
     subject: 'accounts',
+    register: 'system',
+    texts: null,
     message: 'Alpha holds 24.8% of its value in uninvested cash.',
     detail: {
       account: 'alpha',

@@ -18,6 +18,12 @@ SUBJECT_INSTALLATION = 'installation'
 SUBJECT_PORTFOLIO = 'portfolio'
 SUBJECT_ACCOUNTS = 'accounts'
 
+#: **Who an advisory is for** (§ 3.6). ``user`` is the bell: what the owner can
+#: act on or should know (a late price, an update). ``system`` is the System
+#: page's: what the installation says about itself. Every advisory has one.
+REGISTER_USER = 'user'
+REGISTER_SYSTEM = 'system'
+
 CASH_SHARE = 'cash_share'
 #: A declared opening date **later** than the account's first declared payment.
 OPENED_AFTER_FIRST_PAYMENT = 'opened_after_first_payment'
@@ -29,6 +35,12 @@ NO_TAXATION_MODEL = 'no_taxation_model'
 
 #: A reference ticker that was asked for and answered nothing (#982).
 BENCHMARK_NEVER_PRICED = 'benchmark_never_priced'
+
+#: A held symbol whose market is open and whose last stored quote is older than
+#: the ``staleness_horizon`` dial. ``user`` register.
+LATE_PRICE = 'late_price'
+#: A stable release above the running one, as the update check last saw it.
+UPDATE_AVAILABLE = 'update_available'
 
 CASH_SHARE_THRESHOLD = 0.10
 
@@ -47,14 +59,21 @@ class Advisory:
     detail: Dict[str, Any]
     message: str
     observed_at: datetime
+    register: str = REGISTER_SYSTEM
+    #: ``{'fr': {'title', 'sub'}, 'en': {...}}`` for an advisory whose phrase the
+    #: server builds (the ``user`` ones, with the security's **name**); ``None``
+    #: where the front still holds the phrase by ``kind``.
+    texts: Optional[Dict[str, Dict[str, str]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             'key': self.key,
             'kind': self.kind,
             'subject': self.subject,
+            'register': self.register,
             'detail': self.detail,
             'message': self.message,
+            'texts': self.texts,
             'observed_at': instants.iso(self.observed_at),
         }
 
@@ -307,6 +326,100 @@ def _never_priced(opened, symbol: str, now: datetime) -> List[Advisory]:
     )]
 
 
+def _names(opened, symbols: List[str]) -> Dict[str, str]:
+    """What each symbol is called: the ledger's name, else Yahoo's, else itself."""
+    if not symbols:
+        return {}
+    marks = ', '.join('?' * len(symbols))
+    named = {symbol: name for symbol, name in opened.query(
+        f'SELECT symbol, min(name) FROM position WHERE name IS NOT NULL '
+        f'AND symbol IN ({marks}) GROUP BY symbol', symbols)}
+    named.update({symbol: name for symbol, name in opened.query(
+        f'SELECT symbol, long_name FROM symbol_quote WHERE long_name IS NOT NULL '
+        f'AND symbol IN ({marks})', symbols) if symbol not in named})
+    return {symbol: named.get(symbol, symbol) for symbol in symbols}
+
+
+def _de(name: str) -> str:
+    """``de X`` with the elision French asks for before a vowel."""
+    return f"d’{name}" if name[:1].lower() in 'aeiouéèêàâîïôû' else f"de {name}"
+
+
+def _observe_late_price(opened, now: datetime, recorder) -> List[Advisory]:
+    """A held symbol whose market is open and whose price stopped (§ 3.6).
+
+    The claim is about the **stored** quote: the last ``price_point`` is older
+    than ``staleness_horizon`` while the last scrape pass saw the market open.
+    ``recorder`` is process memory, so a worker that has not scraped yet (or a
+    test without one) says nothing. A horizon of 0 disables it, like the sonde.
+    """
+    horizon = opened.setting('staleness_horizon')
+    if recorder is None or not horizon or horizon <= 0:
+        return []
+    open_symbols = sorted(symbol for symbol, record in recorder.scrapes().items()
+                          if not record.closed)
+    if not open_symbols:
+        return []
+    marks = ', '.join('?' * len(open_symbols))
+    last = dict(opened.query(
+        f'SELECT symbol, max(ts) FROM price_point '
+        f'WHERE symbol IN ({marks}) GROUP BY symbol', open_symbols))
+    late = {symbol: instants.utc(ts) for symbol, ts in last.items()
+            if ts is not None and (now - instants.utc(ts)).total_seconds() > horizon}
+    names = _names(opened, sorted(late))
+
+    standing: List[Advisory] = []
+    for symbol, since in sorted(late.items()):
+        name = names[symbol]
+        at = since.astimezone().strftime('%H:%M')
+        detail = {'symbol': symbol, 'name': name, 'since': instants.iso(since)}
+        standing.append(Advisory(
+            key=f'{LATE_PRICE}:{symbol}',
+            kind=LATE_PRICE,
+            subject=SUBJECT_HEALTH,
+            detail=detail,
+            message=f"The price of {name} has not moved since {at}.",
+            observed_at=now,
+            register=REGISTER_USER,
+            texts={
+                'fr': {
+                    'title': f"Le cours {_de(name)} n’a pas bougé depuis {at}",
+                    'sub': 'La valeur affichée peut être légèrement en retard '
+                           '· se corrige au prochain passage',
+                },
+                'en': {
+                    'title': f"The price of {name} has not moved since {at}",
+                    'sub': 'The displayed value may be slightly behind '
+                           '· fixed on the next pass',
+                },
+            },
+        ))
+    return standing
+
+
+def _observe_update_available(release: Optional[Dict[str, str]],
+                              now: datetime) -> List[Advisory]:
+    """A newer stable release than the running one, as the check last saw it."""
+    if not release:
+        return []
+    version = release['version']
+    return [Advisory(
+        key=f'{UPDATE_AVAILABLE}:{version}',
+        kind=UPDATE_AVAILABLE,
+        subject=SUBJECT_INSTALLATION,
+        detail={'version': version, 'url': release['url']},
+        message=f"Version {version} is available.",
+        observed_at=now,
+        register=REGISTER_USER,
+        texts={
+            'fr': {'title': f"Mise à jour {version} disponible",
+                   'sub': 'Notes de version'},
+            'en': {'title': f"Update {version} available",
+                   'sub': 'Release notes'},
+        },
+    )]
+
+
 OBSERVATIONS = (
     _observe_cash_share,
     _observe_opened_after_first_payment,
@@ -329,34 +442,51 @@ def acknowledgements(opened, now: Optional[datetime] = None
 
 
 def standing(opened, now: Optional[datetime] = None, *,
-             rebuilding: bool = False) -> List[Advisory]:
-    """Every advisory this portfolio raises right now, asleep ones included."""
+             rebuilding: bool = False, register: Optional[str] = None,
+             recorder=None, release: Optional[Dict[str, str]] = None
+             ) -> List[Advisory]:
+    """Every advisory this portfolio raises right now, asleep ones included.
+
+    ``recorder`` (the scrape records) and ``release`` (the update check's last
+    answer) are what the two ``user`` observations read beyond the store; left
+    out, they say nothing. ``register`` keeps one register's advisories.
+    """
     now = now or datetime.now(timezone.utc)
     raised: List[Advisory] = []
-    for observe in OBSERVATIONS:
-        raised.extend(observe(opened, now))
+    if register != REGISTER_USER:
+        for observe in OBSERVATIONS:
+            raised.extend(observe(opened, now))
+    if register != REGISTER_SYSTEM:
+        raised.extend(_observe_late_price(opened, now, recorder))
+        raised.extend(_observe_update_available(release, now))
     if rebuilding:
         return [one for one in raised if one.subject != SUBJECT_ACCOUNTS]
     return raised
 
 
 def listing(opened, now: Optional[datetime] = None, *,
-            rebuilding: bool = False) -> List[Advisory]:
+            rebuilding: bool = False, register: Optional[str] = None,
+            recorder=None, release: Optional[Dict[str, str]] = None
+            ) -> List[Advisory]:
     """What the API answers: the advisories that stand and are not asleep."""
     now = now or datetime.now(timezone.utc)
     asleep = acknowledgements(opened, now)
-    return [one for one in standing(opened, now, rebuilding=rebuilding)
+    return [one for one in standing(opened, now, rebuilding=rebuilding,
+                                    register=register, recorder=recorder,
+                                    release=release)
             if one.key not in asleep]
 
 
 def acknowledge(opened, key: str,
                 now: Optional[datetime] = None, *,
-                rebuilding: bool = False
+                rebuilding: bool = False, recorder=None,
+                release: Optional[Dict[str, str]] = None
                 ) -> Tuple[Advisory, Acknowledgement]:
     """Put one advisory to sleep for :data:`ACK_WINDOW`."""
     now = now or datetime.now(timezone.utc)
     raised = {one.key: one
-              for one in standing(opened, now, rebuilding=rebuilding)}
+              for one in standing(opened, now, rebuilding=rebuilding,
+                                  recorder=recorder, release=release)}
     advisory = raised.get(key)
     if advisory is None:
         raise UnknownAdvisory(key)
@@ -382,7 +512,8 @@ __all__ = [
     'Advisory', 'Acknowledgement', 'UnknownAdvisory',
     'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD',
     'OPENED_AFTER_FIRST_PAYMENT', 'OPENED_IN_THE_FUTURE',
-    'NO_TAXATION_MODEL',
+    'NO_TAXATION_MODEL', 'LATE_PRICE', 'UPDATE_AVAILABLE',
+    'REGISTER_USER', 'REGISTER_SYSTEM',
     'SUBJECT_HEALTH', 'SUBJECT_INSTALLATION', 'SUBJECT_PORTFOLIO',
     'SUBJECT_ACCOUNTS',
     'OBSERVATIONS', 'acknowledgements', 'standing', 'listing', 'acknowledge',

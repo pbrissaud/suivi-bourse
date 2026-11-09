@@ -1,7 +1,9 @@
 """The installation under ``/api``: runtime, store, facts, advisories, config."""
+import threading
 from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, jsonify, request
+from logfmt_logger import getLogger
 
 from application import advisories
 from application import build_info
@@ -10,12 +12,14 @@ from application import instants
 from application import job_history
 from application import journal
 from application import ledger
+from application import notifications
 from application import runtime_view
 from application import settings as settings_module
 from application import store as store_module
 from api.problem import (
     bad_request,
     not_found,
+    unprocessable_request,
 )
 from api.common import (
     _snapshot,
@@ -28,6 +32,7 @@ from api.common import (
 )
 
 bp = Blueprint('system', __name__)
+logger = getLogger("api.system")
 
 
 @bp.get('/runtime')
@@ -78,7 +83,25 @@ def get_release():
     if not settings_module.read_all(_store())['update_check']:
         return jsonify({'latest': None})
     checker = current_app.config['RELEASE_CHECKER']
-    return jsonify({'latest': checker.latest(build.version, datetime.now(timezone.utc))})
+    latest = checker.latest(build.version, datetime.now(timezone.utc))
+    if latest is not None:
+        _push_release(latest)
+    return jsonify({'latest': latest})
+
+
+def _push_release(latest) -> None:
+    """Hand a newly learnt release to the outbound channels, off the request."""
+    runtime = current_runtime()
+    threading.Thread(
+        target=_sweep_quietly, args=(runtime, latest), daemon=True,
+        name='notifications').start()
+
+
+def _sweep_quietly(runtime, latest) -> None:
+    try:
+        notifications.sweep(runtime.config_manager, runtime.recorder, release=latest)
+    except Exception as exc:
+        logger.debug(f"release notification skipped: {type(exc).__name__}: {exc}")
 
 
 @bp.get('/store')
@@ -134,12 +157,33 @@ def acknowledge_installation_fact(key: str):
 
 @bp.get('/advisories')
 def list_advisories():
-    """What this portfolio says about itself — the inventory, or the reading."""
+    """What this portfolio says about itself — the inventory, or the reading.
+
+    ``?register=user`` is the bell's (a late price, an update); ``system`` is
+    the System page's; without it, both.
+    """
+    register = request.args.get('register')
+    if register not in (None, advisories.REGISTER_USER, advisories.REGISTER_SYSTEM):
+        return unprocessable_request(
+            "The register is 'user' or 'system'", key='register')
     read = (advisories.standing
             if request.args.get('asleep') == 'include'
             else advisories.listing)
     return jsonify([one.to_dict()
-                    for one in read(_store(), rebuilding=_rebuilding())])
+                    for one in read(_store(), rebuilding=_rebuilding(),
+                                    register=register,
+                                    recorder=current_runtime().recorder,
+                                    release=_known_release())])
+
+
+def _known_release():
+    """The newer release the check has **already** learnt, or ``None``; asks no one."""
+    build = current_runtime().build
+    if build.source != build_info.RELEASE:
+        return None
+    if not settings_module.read_all(_store())['update_check']:
+        return None
+    return current_app.config['RELEASE_CHECKER'].known(build.version)
 
 
 @bp.post('/advisories/<key>/acknowledgement')
@@ -149,7 +193,8 @@ def acknowledge_advisory(key: str):
     try:
         with runtime.config_manager.writing() as opened:
             advisory, acknowledged = advisories.acknowledge(
-                opened, key, rebuilding=_rebuilding())
+                opened, key, rebuilding=_rebuilding(),
+                recorder=runtime.recorder, release=_known_release())
     except advisories.UnknownAdvisory:
         return not_found(f"No advisory is standing under {key!r}")
 

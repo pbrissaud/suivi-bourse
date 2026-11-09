@@ -11,6 +11,7 @@ from application import auth_gate
 from application import benchmarks
 from application import entries
 from application import store_steps
+from application.store_ddl import NOTIFICATIONS_DDL
 
 # The store's logger, so the line reads as it did when the step lived there.
 logger = getLogger("store")
@@ -177,6 +178,15 @@ def _backfill_agent_usage(connection) -> None:
     # such step to run has no use for.
     from application import agent_usage
     agent_usage.backfill(connection)
+def _add_notification_channels(connection) -> None:
+    """Give a store the tables the outbound channels live in (§ 3.6).
+
+    The DDL creates them on every open, which is what a store from before this
+    release gets; the step is the record that the generation exists, and it is
+    the same ``IF NOT EXISTS`` statement, so a store that already has them
+    changes nothing.
+    """
+    connection.execute(NOTIFICATIONS_DDL)
 
 
 #: Every step, oldest first, under the names stores in the wild already carry.
@@ -198,6 +208,7 @@ STEPS = store_steps.STEPS + (
     ('backfill_agent_usage', _backfill_agent_usage),
     ('make_account_label_optional', store_steps._make_account_label_optional),
     ('forget_dashboard_layout', _forget_dashboard_layout),
+    ('add_notification_channels', _add_notification_channels),
 )
 
 __all__ = ['STEPS']

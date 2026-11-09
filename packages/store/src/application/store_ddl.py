@@ -294,6 +294,30 @@ CREATE TABLE IF NOT EXISTS job_schedule (
     PRIMARY KEY (job, member));
 """
 
+# Where the app speaks when the owner is not looking (§ 3.6). ``secret`` is the
+# SMTP password or the webhook / ntfy token, **in clear like the agent's key**
+# (``agent_config.api_key``): no route serves the table, and the secret leaves
+# the server as its last four characters only. ``scopes`` is a JSON list of
+# advisory kinds (plus ``job_failed``); ``options`` a JSON object of the
+# non-secret settings a kind needs (the SMTP host, port, user and sender).
+# ``advisory_dispatch`` remembers which ``user`` advisories were already sent,
+# so an advisory derived on every read is pushed once per time it stands.
+_DDL_NOTIFICATIONS = """
+CREATE TABLE IF NOT EXISTS notification_channel (
+    id          VARCHAR PRIMARY KEY,     -- uuid4 hex
+    kind        VARCHAR NOT NULL,        -- 'ntfy' | 'email' | 'webhook' | 'apprise'
+    target      VARCHAR NOT NULL,        -- topic URL | recipient | URL | apprise URL
+    secret      VARCHAR,
+    options     VARCHAR NOT NULL DEFAULT '{}',
+    scopes      VARCHAR NOT NULL DEFAULT '[]',
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL);
+
+CREATE TABLE IF NOT EXISTS advisory_dispatch (
+    key      VARCHAR PRIMARY KEY,
+    sent_at  TIMESTAMPTZ NOT NULL);
+"""
+
 DDL = ''.join((
     _DDL_DECLARED,
     _DDL_DERIVED_FROM_EVENTS,
@@ -302,6 +326,7 @@ DDL = ''.join((
     _DDL_DERIVED_FROM_COMPUTATION,
     _DDL_SETTINGS_AND_FACTS,
     _DDL_JOB_STATE,
+    _DDL_NOTIFICATIONS,
 ))
 
 TABLES = (
@@ -312,6 +337,7 @@ TABLES = (
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
     'agent_config', 'agent_provider', 'agent_usage', 'auth_secret', 'access_tokens',
     'profile_fact', 'proposal', 'job_slot', 'job_pass', 'job_schedule', 'symbol_isin',
+    'notification_channel', 'advisory_dispatch',
 )
 
 #: The tables whose surrogate key this store hands out — see
@@ -319,7 +345,9 @@ TABLES = (
 #: so: every other table is keyed by something the domain already names.
 KEYED_TABLES = ('event',)
 
+NOTIFICATIONS_DDL = _DDL_NOTIFICATIONS
+
 DEFAULT_ACCOUNT_ROW = ('default', 'Default account')
 
 
-__all__ = ['DDL', 'TABLES', 'KEYED_TABLES', 'DEFAULT_ACCOUNT_ROW']
+__all__ = ['DDL', 'NOTIFICATIONS_DDL', 'TABLES', 'KEYED_TABLES', 'DEFAULT_ACCOUNT_ROW']
