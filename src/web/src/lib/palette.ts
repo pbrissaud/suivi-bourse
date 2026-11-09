@@ -50,23 +50,55 @@ export const EVENTS_SHOWN = 5
  * reaches what is held, and a closed line answers no question a reader types a
  * ticker to ask.
  */
-export function heldTitles(positions: readonly Position[]): Title[] {
-  const titles = new Map<string, Title>()
+export interface HeldTitle extends Title {
+  /** The accounts holding it, in the order the lines came. */
+  accounts: string[]
+  /** What it is worth in the base currency, or `null` when a held line has no price. */
+  value: number | null
+}
+
+export function heldTitles(positions: readonly Position[]): HeldTitle[] {
+  const titles = new Map<string, HeldTitle>()
   for (const position of positions) {
     if (position.quantity <= 0) continue
+    const worth = position.converted === null ? null : position.converted.value * position.quantity
     const known = titles.get(position.symbol)
     if (known === undefined) {
-      titles.set(position.symbol, { symbol: position.symbol, name: position.name })
+      titles.set(position.symbol, {
+        symbol: position.symbol,
+        name: position.name,
+        accounts: [position.account],
+        value: worth,
+      })
       continue
     }
     // The name is an attribute of the security and not of the line, so the
     // first non-empty one wins rather than the last account read.
     if (known.name === null && position.name !== null) known.name = position.name
+    if (!known.accounts.includes(position.account)) known.accounts.push(position.account)
+    known.value = known.value === null || worth === null ? null : known.value + worth
   }
   return [...titles.values()]
 }
 
-export function titlesMatching(titles: readonly Title[], query: string): Title[] {
+/** What an account holds: how many titles, and what they are worth (`null` when one has no price). */
+export function heldByAccount(
+  positions: readonly Position[],
+): Map<string, { titles: number; value: number | null }> {
+  const held = new Map<string, { titles: number; value: number | null }>()
+  for (const position of positions) {
+    if (position.quantity <= 0) continue
+    const worth = position.converted === null ? null : position.converted.value * position.quantity
+    const known = held.get(position.account) ?? { titles: 0, value: 0 }
+    held.set(position.account, {
+      titles: known.titles + 1,
+      value: known.value === null || worth === null ? null : known.value + worth,
+    })
+  }
+  return held
+}
+
+export function titlesMatching<T extends Title>(titles: readonly T[], query: string): T[] {
   return titles
     .filter((title) => matchesQuery(query, [title.symbol, title.name]))
     .slice(0, SHARES_SHOWN)

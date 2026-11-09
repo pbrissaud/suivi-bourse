@@ -66,12 +66,12 @@ describe('ICU is the format, and it is needed', () => {
     //
     // Zero is the value that separates the two languages: French counts it as
     // `one`, English does not.
-    expect(formatMessage('fr', 'notification.count', { count: 0 })).toBe('0 entrée ouverte')
-    expect(formatMessage('en', 'notification.count', { count: 0 })).toBe('0 open entries')
-    expect(formatMessage('fr', 'notification.count', { count: 1 })).toBe('1 entrée ouverte')
-    expect(formatMessage('en', 'notification.count', { count: 1 })).toBe('1 open entry')
-    expect(formatMessage('fr', 'notification.count', { count: 2 })).toBe('2 entrées ouvertes')
-    expect(formatMessage('en', 'notification.count', { count: 2 })).toBe('2 open entries')
+    expect(formatMessage('fr', 'notification.count', { count: 0 })).toBe('0 notification non lue')
+    expect(formatMessage('en', 'notification.count', { count: 0 })).toBe('0 unread notifications')
+    expect(formatMessage('fr', 'notification.count', { count: 1 })).toBe('1 notification non lue')
+    expect(formatMessage('en', 'notification.count', { count: 1 })).toBe('1 unread notification')
+    expect(formatMessage('fr', 'notification.count', { count: 2 })).toBe('2 notifications non lues')
+    expect(formatMessage('en', 'notification.count', { count: 2 })).toBe('2 unread notifications')
 
     // The second counted noun: the absence rendering that reports its count
     // rather than a verdict.

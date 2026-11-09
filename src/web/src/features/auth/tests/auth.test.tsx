@@ -38,22 +38,22 @@ function refused(status: number, members: Record<string, unknown> = {}) {
   )
 }
 
-const code = () => screen.getByRole('textbox', { name: 'Entrez votre code' })
+const code = () => screen.getByRole('textbox', { name: 'Code d’accès' })
 
 describe('the boot', () => {
   it('draws the PIN screen and nothing of the app, then the app once the code is right', async () => {
     const tries = locked()
     const { user } = renderApp({ url: '/settings' })
 
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' }),
-    ).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })).toBeVisible()
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(document.title).toBe('Code · SuiviBourse')
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
     await waitFor(() => expect(code()).toHaveFocus())
 
-    // Sent at the sixth digit, without a press on the button.
+    // No plane, no button: the code is sent at the sixth digit.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByText('SB_RESET_AUTH=1')).not.toBeInTheDocument()
     await user.type(code(), '123456')
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible()
@@ -64,30 +64,31 @@ describe('the boot', () => {
     let left = 2
     locked(() => refused(401, { remaining: --left }))
     const { user } = renderApp()
-    await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' })
+    await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })
 
     await user.type(code(), '000000')
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Code incorrect. Dernier essai avant une attente de 30 s.',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('Code incorrect · dernier essai')
     expect(code()).toHaveValue('')
 
     await user.type(code(), '000000')
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/^Code incorrect\.$/))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/^Code incorrect$/))
   })
 
   it('counts down a throttled wait with the slots disabled', async () => {
     locked(() => refused(429, { retry_after: 28 }))
     const { user } = renderApp()
-    await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' })
+    await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })
 
     await user.type(code(), '000000')
 
-    // Drawn, and announced once in the status region beside it.
-    expect(await screen.findAllByText('Trop d’essais. Réessayez dans 0:28.')).toHaveLength(2)
+    // Announced once in the status region, drawn with the clock in mono, and the
+    // reset the server owes a forgotten code is named.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Trop d’essais · réessayez dans 0:28'),
+    )
     expect(code()).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Déverrouiller' })).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('Trop d’essais. Réessayez dans 0:28.')
+    expect(screen.getByText('0:28')).toHaveClass('fig')
+    expect(screen.getByText('SB_RESET_AUTH=1')).toBeInTheDocument()
   })
 
   it('says an unreadable status and offers to ask again', async () => {
@@ -125,11 +126,11 @@ describe('a session that ends under the page', () => {
     )
     const { user } = renderApp({ url: '/settings' })
 
-    const dialog = await screen.findByRole('dialog', { name: 'Entrez votre code' })
+    const dialog = await screen.findByRole('dialog', { name: 'Code d’accès' })
     expect(within(dialog).getByText(/Votre session a pris fin/)).toBeInTheDocument()
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     await user.keyboard('{Escape}')
-    expect(screen.getByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
 
     await user.type(within(dialog).getByRole('textbox'), '123456')
 
@@ -155,10 +156,10 @@ describe('a session that ends under the page', () => {
     await user.type(within(sheet).getByLabelText('Clé d’API'), 'test-key-0123456789abcd')
     await user.click(within(sheet).getByRole('button', { name: 'Tester la connexion' }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Entrez votre code' })
+    const dialog = await screen.findByRole('dialog', { name: 'Code d’accès' })
     await user.type(within(dialog).getByRole('textbox'), '123456')
     await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Entrez votre code' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('dialog', { name: 'Code d’accès' })).not.toBeInTheDocument(),
     )
 
     // The sheet is still open, and holds what was typed.
@@ -181,7 +182,7 @@ describe('a session that ends under the page', () => {
     await user.type(input, 'Combien vaut mon PEA ?')
     await user.click(screen.getByRole('button', { name: 'Envoyer' }))
 
-    expect(await screen.findByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
     // Behind the modal, so out of the accessibility tree: found by its label.
     await waitFor(() =>
       expect(screen.getByLabelText('Votre question')).toHaveValue('Combien vaut mon PEA ?'),
@@ -328,7 +329,7 @@ describe('the Sécurité section', () => {
     await user.click(lock)
     await user.click(screen.getByRole('option', { name: '1 heure' }))
 
-    expect(await screen.findByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
     expect(
       within(block).getByText(
         'Non enregistré : la session a pris fin, entrez le code puis choisissez à nouveau.',
@@ -411,9 +412,7 @@ describe('the Sécurité section', () => {
 
     await user.click(await within(block).findByRole('button', { name: 'Se déconnecter' }))
 
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' }),
-    ).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })).toBeVisible()
     expect(out).toBe(true)
   })
 })

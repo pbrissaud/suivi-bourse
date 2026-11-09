@@ -118,14 +118,12 @@ function PinScreen({ onUnlocked }: { onUnlocked: () => void }) {
   }, [t])
 
   return (
-    <main className="flex min-h-dvh justify-center bg-background p-3.5 pt-[15dvh] md:items-center md:p-5">
-      <div className="w-full max-w-[360px] space-y-5 md:rounded-section md:bg-muted md:px-6 md:py-5">
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">{t('app.name')}</p>
-          <h1 id={heading} className="text-2xl font-semibold">
-            {t('auth.screen.title')}
-          </h1>
-        </div>
+    <main className="flex min-h-dvh items-center justify-center bg-background px-6 py-12">
+      <div className="flex w-full max-w-90 flex-col items-center gap-7 text-center">
+        <span className="font-semibold">{t('app.name')}</span>
+        <h1 id={heading} className="sr-only">
+          {t('auth.screen.title')}
+        </h1>
         <PinForm labelledBy={heading} onUnlocked={onUnlocked} />
       </div>
     </main>

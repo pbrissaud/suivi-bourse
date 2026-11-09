@@ -1,55 +1,67 @@
 /**
- * The notifications panel (#829), at the one seam: the whole app in jsdom, HTTP
- * the only faked edge.
+ * The bell and its popover (#829, « Relevé »), at the one seam: the whole app in
+ * jsdom, HTTP the only faked edge.
  *
- * It replaces `notices.test.tsx` rather than extending it, because the surface
- * it covered no longer exists: the notices tab is gone, the banner is gone, the
- * status dot is gone, and what carries all three is one control in the content
- * header.
- *
- * The three registers are exercised together on purpose. They are one panel,
- * their difference is what each card **offers**, and the register itself is
- * never a word on screen — so the only way to assert it is on the gestures.
+ * The bell holds the `user` register of the advisories and nothing else: the
+ * sentences are the server's, the technical state of the app is Système's. The
+ * outage toast, which echoes the bell's colour, is covered at the end.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import type { QueryClient } from '@tanstack/react-query'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
-import { type Advisory, type InstallationFact, ROUTES } from '@/lib/api'
-import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
+import type { UserNotification } from '@/components/Notifications'
+import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import {
-  aConfig,
-  aFrozenScrape,
-  anAdvisory,
-  anEnvironmentFact,
-  anInstallationFact,
-} from '@/test/factories'
+import { aFrozenScrape, NOW } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-/** The one predicate of the first run: the reporting currency unanswered. */
-function noCurrency() {
-  const config = aConfig()
+/** A late price, unread, observed just now: the notification the mockup opens on. */
+function aNotification(overrides: Partial<UserNotification> = {}): UserNotification {
   return {
-    ...config,
-    settings: config.settings.map((setting) =>
-      setting.key === 'base_currency' ? { ...setting, value: null, stored: false } : setting,
-    ),
+    key: 'late_price:AMUNDI',
+    kind: 'late_price',
+    register: 'user',
+    title: 'Le cours d’Amundi PEA Nasdaq-100 n’a pas bougé depuis 16:25',
+    body: 'La valeur affichée peut être légèrement en retard',
+    message: 'The price of Amundi PEA Nasdaq-100 has not moved since 16:25',
+    observed_at: NOW,
+    acknowledged_until: null,
+    ...overrides,
   }
 }
 
-interface Given {
-  facts?: InstallationFact[]
-  advisories?: Advisory[]
-  url?: string
+/** Noon the day before the app's clock: a day the panel says « hier » whatever the zone. */
+function yesterday() {
+  const now = new Date(NOW)
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12).toISOString()
 }
 
-/** Open the panel on a stated installation. */
-async function openPanel({ facts, advisories, url = '/' }: Given = {}) {
-  if (facts) server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json(facts)))
-  if (advisories) server.use(http.get(ROUTES.advisories, () => HttpResponse.json(advisories)))
+const IMPORT = {
+  key: 'import_finished:1',
+  kind: 'import_finished',
+  title: 'Import terminé',
+  body: '41 événements ajoutés au PEA',
+  message: 'Import finished',
+  acknowledged_until: '2026-12-01T12:00:00.000Z',
+} satisfies Partial<UserNotification>
+
+/** Which `register` each read of the advisories asked for. */
+const asked: URL[] = []
+
+function given(notifications: UserNotification[]) {
+  asked.length = 0
+  server.use(
+    http.get(ROUTES.advisories, ({ request }) => {
+      asked.push(new URL(request.url))
+      return HttpResponse.json(notifications)
+    }),
+  )
+}
+
+async function openPanel(url = '/') {
   const rendered = renderApp({ url })
   await rendered.user.click(await screen.findByRole('button', { name: /^Notifications/ }))
   await screen.findByRole('dialog', { name: 'Notifications' })
@@ -60,264 +72,138 @@ function panel() {
   return screen.getByRole('dialog', { name: 'Notifications' })
 }
 
-/** The card a title sits on, which is the unit a gesture belongs to. */
-function card(title: string | RegExp) {
-  return within(panel()).getByText(title).parentElement as HTMLElement
-}
+describe('the panel holds what concerns the figures, in the server’s words', () => {
+  it('asks for the user register and draws each notification as a row', async () => {
+    given([aNotification(), aNotification({ ...IMPORT, observed_at: yesterday() })])
+    await openPanel()
 
-describe('the panel holds three registers under four subjects', () => {
-  it('marks each card with its subject, and names no register anywhere', async () => {
+    expect(asked.at(-1)?.searchParams.get('register')).toBe('user')
+    const rows = within(panel()).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText(/n’a pas bougé depuis 16:25/)).toBeInTheDocument()
+    expect(
+      within(rows[0]).getByText('La valeur affichée peut être légèrement en retard'),
+    ).toBeInTheDocument()
+    // Today is a time, yesterday a word.
+    expect(within(rows[0]).getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument()
+    expect(within(rows[1]).getByText('hier')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Import terminé')).toBeInTheDocument()
+  })
+
+  it('marks the one to look at, and sets a read one in muted-foreground', async () => {
+    given([aNotification(), aNotification({ ...IMPORT })])
+    await openPanel()
+
+    const [late, imported] = within(panel()).getAllByRole('listitem')
+    expect(late.querySelector('svg')).not.toBeNull()
+    expect(imported.querySelector('svg')).toBeNull()
+    expect(within(imported).getByText('Import terminé')).toHaveClass('text-muted-foreground')
+    expect(within(late).getByText(/n’a pas bougé/)).not.toHaveClass('text-muted-foreground')
+  })
+
+  it('counts only the unread ones in the bell’s name', async () => {
+    given([aNotification(), aNotification({ ...IMPORT })])
+    renderApp()
+
+    expect(
+      await screen.findByRole('button', { name: /^Notifications.*1 notification non lue/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('holds no card for the technical state of the app', async () => {
+    // A frozen scrape turns the bell's colour, which is its one channel; the
+    // sentence about it is Système's, and the panel stays empty.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    await openPanel({ facts: [anEnvironmentFact()], advisories: [anAdvisory()] })
+    given([])
+    await openPanel()
 
-    // The reader sees **subjects** and infers the rest from what each card lets
-    // them do. Since #838 the subject is a mark *on the card* rather
-    // than a heading over a group of one: the drawer is one list, and three
-    // headings of one line each are a table of contents for three lines. The
-    // order the subjects come in is unchanged — it is `lib/notifications.ts`'s.
-    const subjects = within(panel())
-      .getAllByRole('listitem')
-      .map((entry) => entry.firstElementChild?.firstElementChild?.textContent)
-    expect(subjects).toEqual(['Santé', 'Installation', 'Comptes'])
-    expect(panel().textContent).not.toMatch(/avis|registre|installation fact/i)
-  })
-
-  it('offers a link and no acknowledgement on health, which is repaired', async () => {
-    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    await openPanel({ facts: [] })
-
-    const health = card('Le relevé des cours s’est arrêté')
-    expect(within(health).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
-    expect(within(health).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
-  })
-
-  it('says on the card that an advisory is put to sleep, never ended', async () => {
-    await openPanel({ facts: [], advisories: [anAdvisory()] })
-
-    const advisory = card(/de liquidités non investies/)
-    expect(within(advisory).getByRole('button', { name: 'Acquitter 30 jours' })).toBeInTheDocument()
-    expect(panel().textContent).toContain('Réapparaîtra si la situation dure.')
-  })
-
-  it('acknowledges an installation fact for good, on its own resource', async () => {
-    const asked: string[] = []
-    server.use(
-      http.post(ROUTES.installationFactAcknowledgement, ({ params }) => {
-        asked.push(`fact:${params.key}`)
-        return HttpResponse.json(anInstallationFact({ acknowledged: true }))
-      }),
+    expect(within(panel()).getByText('Rien à signaler')).toBeInTheDocument()
+    expect(within(panel()).queryAllByRole('listitem')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /^Notifications/ })).toHaveAccessibleName(
+      /demande votre attention/,
     )
-    const { user } = await openPanel({ facts: [anEnvironmentFact()] })
-
-    await user.click(within(panel()).getByRole('button', { name: 'Acquitter' }))
-
-    await waitFor(() => expect(asked).toEqual(['fact:unread_environment']))
   })
 
-  it('acknowledges an advisory on the other one, which is the whole difference', async () => {
-    const asked: string[] = []
-    server.use(
-      http.post(ROUTES.advisoryAcknowledgement, ({ params }) => {
-        asked.push(`advisory:${params.key}`)
-        return HttpResponse.json({
-          ...anAdvisory(),
-          acknowledged_until: '2026-04-01T12:00:00.000Z',
-        })
-      }),
-    )
-    const { user } = await openPanel({ facts: [], advisories: [anAdvisory()] })
+  it('points to Système and Réglages in its footer', async () => {
+    given([])
+    const { user } = await openPanel()
 
-    await user.click(within(panel()).getByRole('button', { name: 'Acquitter 30 jours' }))
-
-    await waitFor(() => expect(asked).toEqual(['advisory:cash_share:alpha']))
+    expect(panel()).toHaveTextContent('L’état des tâches est dans Système')
+    await user.click(within(panel()).getByRole('link', { name: 'Système' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Système' })).toBeVisible()
   })
 })
 
-describe('the control that clears says what it clears', () => {
-  it('names its scope rather than promising a clean slate', async () => {
-    // The badge cannot reach zero — three of the four sources never decrement
-    // on their own — so *Acknowledge all* would be a promise the panel cannot
-    // keep.
-    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    await openPanel({
-      facts: [anEnvironmentFact(), anInstallationFact()],
-      advisories: [anAdvisory()],
-    })
-
-    expect(within(panel()).getByRole('button', { name: 'Tout acquitter (3)' })).toBeEnabled()
-  })
-
-  it('is disabled **with its reason in prose** when there is nothing in it', async () => {
-    // Two entries that end by themselves and nothing else: a stopped job, and
-    // a question nobody has answered. The walk has been through in this
-    // browser, or its modal would sit over the control being asked about.
-    window.localStorage.setItem(FIRST_RUN_STORAGE_KEY, 'dismissed')
+describe('Tout marquer lu', () => {
+  it('acknowledges every unread one, on the advisories’ own resource, and re-reads', async () => {
+    const done: string[] = []
+    given([aNotification(), aNotification({ key: 'update:5.3.0', kind: 'update_installed' })])
     server.use(
-      http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())),
-      http.get(ROUTES.config, () => HttpResponse.json(noCurrency())),
-    )
-    await openPanel({ facts: [], advisories: [] })
-
-    expect(within(panel()).getByRole('button', { name: /acquitter/i })).toBeDisabled()
-    // Greyed out with nothing to explain itself is the form the account
-    // refusals already refuse: the reason is said, in words.
-    expect(panel().textContent).toContain('Ces 2 constats se terminent d’eux-mêmes.')
-  })
-
-  it('clears every acknowledgeable one in a single gesture', async () => {
-    const asked: string[] = []
-    server.use(
-      http.post(ROUTES.installationFactAcknowledgement, ({ params }) => {
-        asked.push(String(params.key))
-        return HttpResponse.json(anInstallationFact({ acknowledged: true }))
-      }),
       http.post(ROUTES.advisoryAcknowledgement, ({ params }) => {
-        asked.push(String(params.key))
+        done.push(String(params.key))
         return HttpResponse.json({
-          ...anAdvisory(),
-          acknowledged_until: '2026-04-01T12:00:00.000Z',
+          ...aNotification({ key: String(params.key) }),
+          acknowledged_until: '2026-12-01T12:00:00.000Z',
         })
       }),
     )
-    const { user } = await openPanel({
-      facts: [anEnvironmentFact()],
-      advisories: [anAdvisory()],
-    })
+    const { user } = await openPanel()
+    const reads = asked.length
 
-    await user.click(within(panel()).getByRole('button', { name: /Tout acquitter \(2\)/ }))
+    await user.click(within(panel()).getByRole('button', { name: 'Tout marquer lu' }))
 
-    await waitFor(() => expect(asked).toEqual(['unread_environment', 'cash_share:alpha']))
+    await waitFor(() => expect(done).toEqual(['late_price:AMUNDI', 'update:5.3.0']))
+    await waitFor(() => expect(asked.length).toBeGreaterThan(reads))
+  })
+
+  it('is not offered when everything is read', async () => {
+    given([aNotification({ ...IMPORT })])
+    await openPanel()
+
+    expect(within(panel()).getByText('Import terminé')).toBeInTheDocument()
+    expect(within(panel()).queryByRole('button', { name: 'Tout marquer lu' })).toBeNull()
   })
 })
 
 describe('nothing to report is said of the panel, or it is not said', () => {
   it('says it when the panel is truly empty', async () => {
-    await openPanel({ facts: [], advisories: [] })
+    given([])
+    await openPanel()
 
-    expect(await within(panel()).findByText('Rien à signaler')).toBeInTheDocument()
-    // And the badge is not drawn at all: a badge at zero is an ornament that
-    // promises something to find.
-    expect(screen.getByRole('button', { name: /^Notifications/ })).toHaveAccessibleName(
-      /0 entrée ouverte/,
-    )
-  })
-
-  it('never says it under a pinned card', async () => {
-    // A pinned red health card and this sentence cannot be on screen together:
-    //the sentence is true of the panel or it is not said.
-    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    await openPanel({ facts: [], advisories: [] })
-
-    await within(panel()).findByText('Le relevé des cours s’est arrêté')
-    expect(within(panel()).queryByText('Rien à signaler')).not.toBeInTheDocument()
+    expect(within(panel()).getByText('Rien à signaler')).toBeInTheDocument()
   })
 
   it('never says it while a read is in flight', async () => {
     server.use(http.get(ROUTES.advisories, () => new Promise<never>(() => {})))
-    await openPanel({ facts: [] })
+    await openPanel()
 
-    await waitFor(() => expect(panel()).toBeInTheDocument())
     expect(within(panel()).queryByText('Rien à signaler')).not.toBeInTheDocument()
-    expect(within(panel()).queryByRole('heading', { level: 3 })).not.toBeInTheDocument()
+    expect(within(panel()).queryByRole('button', { name: 'Tout marquer lu' })).toBeNull()
   })
 
   it('names a read that failed instead of reporting nothing', async () => {
     server.use(
       problemHandler(ROUTES.advisories, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'Storage unavailable',
+        status: 500,
+        type: PROBLEM_TYPES.internal,
+        title: 'Internal error',
       }),
     )
-    await openPanel({ facts: [] })
+    await openPanel()
 
-    expect(
-      await within(panel()).findByText(/Vos données sont illisibles pour l’instant/),
-    ).toBeInTheDocument()
+    expect(await within(panel()).findByText('Lecture impossible')).toBeInTheDocument()
     expect(within(panel()).queryByText('Rien à signaler')).not.toBeInTheDocument()
   })
 })
 
-describe('a card’s link lands on the figure, not on the page', () => {
-  it('opens the accounts page with that account selected', async () => {
-    const view = await openPanel({ facts: [], advisories: [anAdvisory()] })
-    const { user } = view
+describe('a row leads to where its figure is read', () => {
+  it('takes an import to the ledger', async () => {
+    given([aNotification({ ...IMPORT, acknowledged_until: null })])
+    const { user } = await openPanel()
 
-    await user.click(within(panel()).getByRole('link', { name: 'Voir le compte' }))
-
-    // Not merely `/accounts`: the account the card names, **selected** — which
-    // the rail says with `aria-current` and the address says with `?account=`.
-    await screen.findByRole('heading', { level: 1, name: 'Comptes' })
-    await waitFor(() => expect(view.router.state.location.search).toEqual({ account: 'alpha' }))
-    const rail = await screen.findByRole('group', { name: 'Vos comptes' })
-    // `aria-current` is what says *this one is open* to a screen reader, and
-    // the router writes `page` on the entry whose address is the one in force.
-    await waitFor(() =>
-      expect(within(rail).getByRole('link', { name: /Alpha/ })).toHaveAttribute('aria-current'),
-    )
-    expect(within(rail).getByRole('link', { name: /Beta/ })).not.toHaveAttribute('aria-current')
-  })
-})
-
-describe('the advisory is read twice, and acknowledged in one place', () => {
-  it('draws a chip beside the account and offers no gesture on it', async () => {
-    // The chip is the **reading**, the panel is the **inventory**:
-    // one fact cannot propose two different gestures depending on where it is
-    // met, so the acknowledgement belongs to the panel and to the panel alone.
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])))
-    renderApp({ url: '/accounts' })
-
-    const chip = await screen.findByText('25 % de liquidités')
-    // It sits on the name row of the open account's detail (#1277).
-    const nameRow = chip.parentElement as HTMLElement
-    expect(nameRow).toHaveTextContent('Alpha')
-    expect(within(nameRow).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
-  })
-
-  it('draws none while the read has not landed', async () => {
-    server.use(http.get(ROUTES.advisories, () => new Promise<never>(() => {})))
-    renderApp({ url: '/accounts' })
-
-    await screen.findByRole('heading', { level: 1, name: 'Comptes' })
-    expect(screen.queryByText(/% de liquidités/)).not.toBeInTheDocument()
-  })
-
-  it('keeps the chip when the panel’s card is acknowledged, the condition standing', async () => {
-    // **The two surfaces ask two questions of the same instant.** *Acknowledge
-    // for thirty days* is *not now*, said to the inventory; the cash is still
-    // sitting in that account while the card sleeps, so the reading beside the
-    // figure goes on saying so.
-    //
-    // The server tells the two apart with `?asleep=include`, so the net does
-    // too: `listing` on the panel's read, `standing` on the detail's.
-    let asleep = false
-    server.use(
-      http.get(ROUTES.advisories, ({ request }) => {
-        const standing = new URL(request.url).searchParams.get('asleep') === 'include'
-        return HttpResponse.json(standing || !asleep ? [anAdvisory()] : [])
-      }),
-      http.post(ROUTES.advisoryAcknowledgement, ({ params }) => {
-        asleep = true
-        return HttpResponse.json({
-          ...anAdvisory({ key: String(params.key) }),
-          acknowledged_until: '2026-04-01T12:00:00.000Z',
-        })
-      }),
-    )
-    const { user } = renderApp({ url: '/accounts' })
-
-    expect(await screen.findByText('25 % de liquidités')).toBeInTheDocument()
-
-    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('button', { name: 'Acquitter 30 jours' }))
-
-    // The card goes — that is the whole of what the gesture was for…
-    await waitFor(() =>
-      expect(within(panel).queryByText(/de liquidités non investies/)).not.toBeInTheDocument(),
-    )
-    // …and the reading stays, because the condition does.
-    expect(screen.getByText('25 % de liquidités')).toBeInTheDocument()
+    await user.click(within(panel()).getByRole('link', { name: /Import terminé/ }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Grand livre' })).toBeVisible()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull())
   })
 })
 

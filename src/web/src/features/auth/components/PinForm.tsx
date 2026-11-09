@@ -1,24 +1,27 @@
 /**
- * The six slots and *Déverrouiller* (#1203), on the PIN screen and in the
- * dialog a session that ended opens.
+ * The six slots and one line under them (#1203, « Relevé »), on the PIN screen
+ * and in the dialog a session that ended opens. No plane, no button.
  *
- * The code is sent at the sixth digit, typed or pasted; the button stays for
- * Enter and password managers. A wrong code clears the slots; too many attempts
- * disable them until an **absolute** deadline, so a tab that slept resumes on
- * the right second. The countdown is announced at its start and its end only.
+ * The code is sent at the sixth digit, typed or pasted; Enter and password
+ * managers submit the form all the same. A wrong code clears the slots and
+ * draws their borders in `destructive`; too many attempts disable them until an
+ * **absolute** deadline, so a tab that slept resumes on the right second, and
+ * name the reset command. The countdown is announced at its start and its end
+ * only.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { REGEXP_ONLY_DIGITS } from 'input-otp'
 
-import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, refusedWith, remainingAttempts, retryAfter } from '@/features/auth/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
+import { cn } from '@/lib/utils'
 
 const LENGTH = 6
+/** Stands for the countdown while the sentence around it is cut in two. */
+const CLOCK_MARK = '\u0000'
 
 function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
@@ -92,9 +95,16 @@ export function PinForm({
   const describedBy = [wrong || failed ? errorId : null, waiting ? waitId : null]
     .filter(Boolean)
     .join(' ')
+  const refused = wrong !== null || waiting
+
+  // The clock inside the sentence is a figure, so it is set in mono.
+  const [before, after] = t('auth.pin.throttled', { wait: CLOCK_MARK }).split(CLOCK_MARK)
 
   return (
-    <form className="space-y-4" onSubmit={(event) => submit(pin, event)}>
+    <form
+      className="flex w-full flex-col items-center gap-7"
+      onSubmit={(event) => submit(pin, event)}
+    >
       <InputOTP
         ref={input}
         maxLength={LENGTH}
@@ -113,48 +123,50 @@ export function PinForm({
         aria-invalid={wrong !== null || undefined}
         containerClassName="justify-center"
       >
-        <InputOTPGroup className="gap-1 min-[340px]:gap-2">
+        <InputOTPGroup className="gap-2.5">
           {Array.from({ length: LENGTH }, (_, index) => (
             <InputOTPSlot
               key={index}
               index={index}
               masked
-              className="size-11 rounded-md border border-border bg-card text-base first:rounded-md last:rounded-md"
+              className={cn(
+                'h-13 w-11 rounded-lg border bg-background text-lg first:rounded-lg last:rounded-lg',
+                refused && 'border-destructive',
+              )}
             />
           ))}
         </InputOTPGroup>
       </InputOTP>
 
       {wrong !== null ? (
-        <p id={errorId} role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert">
           {t(wrong === 'last' ? 'auth.pin.wrong.last' : 'auth.pin.wrong')}
         </p>
       ) : failed ? (
-        <p id={errorId} role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert">
           {t(problemMessageKey(signIn.error))}
         </p>
-      ) : null}
-      {waiting ? (
-        <p id={waitId} aria-hidden="true" className="text-sm text-destructive fig">
-          {t('auth.pin.throttled', { wait: clock(left) })}
+      ) : waiting ? (
+        <p id={waitId} aria-hidden="true">
+          {before}
+          <span className="fig">{clock(left)}</span>
+          {after}
         </p>
-      ) : null}
+      ) : (
+        <p className="text-muted-foreground">{t('auth.pin.line')}</p>
+      )}
       <p role="status" className="sr-only">
         {said}
       </p>
 
-      <Button variant="primary" type="submit" className="h-11 w-full" disabled={busy || waiting}>
-        {t(busy ? 'auth.pin.checking' : 'auth.pin.unlock')}
-      </Button>
-
-      <Collapsible>
-        <CollapsibleTrigger className="text-xs text-primary underline underline-offset-4">
-          {t('auth.pin.forgotten')}
-        </CollapsibleTrigger>
-        <CollapsibleContent className="pt-2 text-xs leading-relaxed text-muted-foreground">
-          {t('auth.pin.forgotten.how')}
-        </CollapsibleContent>
-      </Collapsible>
+      {waiting ? (
+        <div className="flex w-full flex-col gap-2 border-t pt-2 text-left text-sm text-muted-foreground">
+          <span>{t('auth.pin.reset')}</span>
+          <code className="fig block rounded-md bg-muted px-3 py-2.5 text-xs text-foreground">
+            SB_RESET_AUTH=1
+          </code>
+        </div>
+      ) : null}
     </form>
   )
 }
