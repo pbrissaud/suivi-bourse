@@ -223,7 +223,7 @@ describe('results you can tell apart', () => {
     await open(user)
     await user.type(field(), 'Comp')
     const pages = within(section('Pages') as HTMLElement)
-    expect(pages.getByRole('button', { name: /^Comparaison/ })).toHaveTextContent('G puis B')
+    expect(pages.getByRole('button', { name: /^Comparaison/ })).toBeInTheDocument()
     await user.clear(field())
     await user.type(field(), 'Agent')
     expect(
@@ -398,16 +398,6 @@ describe('the keyboard', () => {
 
     // Whatever the second row is, Enter ran it: the palette is gone.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  })
-
-  it('goes to a page on G then its letter, from anywhere but a field', async () => {
-    const view = render()
-    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
-
-    await view.user.keyboard('gl')
-
-    expect(await screen.findByRole('heading', { level: 1, name: 'Grand livre' })).toBeVisible()
-    expect(view.router.state.location.pathname).toBe('/ledger')
   })
 })
 

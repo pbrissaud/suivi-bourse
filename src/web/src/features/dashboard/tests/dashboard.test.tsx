@@ -674,9 +674,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
     expect(await screen.findByText(/Compte le plus en retard : Alpha/)).toBeInTheDocument()
     // (2026-03-02 → 2026-01-01) over (2026-03-02 → 2025-12-24), the oldest day
     // the ledger names: 60 days of 68.
-    expect(await screen.findByRole('progressbar')).toHaveAccessibleName(
-      /88\D?% de la période couverte/,
-    )
+    expect(await screen.findByRole('status')).toHaveTextContent(/88\D?% de la période couverte/)
   })
 
   it('does not exist when nothing is being rebuilt', async () => {

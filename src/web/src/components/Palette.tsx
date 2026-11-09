@@ -3,9 +3,9 @@
  *
  * Typed, it groups what matches — Titres, Comptes, Événements, Fils de l'agent,
  * then the Actions and the Pages that match. Untouched, it offers Récents (the
- * last titles and accounts reached from here), Actions and Pages. A row names
- * the match in 600, says what it is in a sub-line and puts its amount, its date
- * or its shortcut in mono on the right.
+ * last titles and accounts reached from here), Actions and Pages. A row opens with
+ * the icon of what it is, names the match in 600, says what it is in a sub-line
+ * and puts its amount or its date in mono on the right.
  *
  * It is mounted in the content header bar, which is where the visible button
  * that opens it lives: a keyboard shortcut is not an interface on a phone, and
@@ -22,15 +22,23 @@
  * surface: the optional `?? []` below are the acceptable ones. What is not said
  * on a silence is the sentence about nothing matching: that one is a claim about
  * the reader's own portfolio, so it waits like any other claim.
- *
- * `G` then a letter goes to a page from anywhere (the shortcut a page row
- * shows), and is armed here because this component is always mounted.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
-import { Search } from 'lucide-react'
+import {
+  CircleDollarSign,
+  Lock,
+  MessageSquarePlus,
+  Plus,
+  Search,
+  Sparkles,
+  Upload,
+  Wallet,
+  Database,
+  type LucideIcon,
+} from 'lucide-react'
 
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
 import { agentApi } from '@/features/agent/lib/api'
@@ -67,20 +75,6 @@ import {
 // The sidebar's own two lists: a page added there is found here.
 const PAGES = [...PORTFOLIO, ...ADMINISTRATION]
 
-/** `G` then a letter, per page: the shortcut a page row shows. */
-const GO_TO: Record<string, string> = {
-  '/': 'D',
-  '/shares': 'T',
-  '/accounts': 'C',
-  '/ledger': 'L',
-  '/benchmark': 'B',
-  '/agent': 'A',
-  '/system': 'S',
-  '/settings': 'R',
-}
-/** How long `G` waits for its letter. */
-const GO_TO_WINDOW_MS = 1500
-
 const RECENTS_KEY = 'suivibourse.palette.recents'
 const RECENTS_SHOWN = 4
 
@@ -113,9 +107,9 @@ interface Entry {
   label: string
   /** What it is, under the label. */
   sub: string | null
-  /** A figure in mono, or a shortcut. */
+  /** A figure in mono. */
   right: string | null
-  shortcut?: boolean
+  icon: LucideIcon
   run: () => void
 }
 
@@ -142,13 +136,6 @@ function Highlighted({ text, query }: { text: string; query: string }) {
   )
 }
 
-function isEditable(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-  )
-}
-
 /** The events whose amount leaves the account. */
 const OUT = ['BUY', 'WITHDRAWAL']
 
@@ -164,16 +151,7 @@ export function Palette() {
   const [active, setActive] = useState(0)
   const [moved, setMoved] = useState(false)
   const [recents, setRecents] = useState<Recent[]>(readRecents)
-  const goPending = useRef(0)
   const list = useRef<HTMLDivElement>(null)
-
-  // The keydown handler lives for the whole mount; what it navigates with is
-  // read through a ref so it never goes stale.
-  const goTo = useRef((_letter: string) => {})
-  goTo.current = (letter) => {
-    const page = PAGES.find((entry) => GO_TO[entry.to] === letter)
-    if (page) void navigate(pageLink(page, chat, pathname))
-  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -183,16 +161,6 @@ export function Palette() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         setOpen((current) => !current)
-        return
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey || isEditable(event.target)) return
-      if (document.querySelector('[role="dialog"]')) return
-      const key = event.key.toUpperCase()
-      if (key === 'G') {
-        goPending.current = Date.now()
-      } else if (Date.now() - goPending.current < GO_TO_WINDOW_MS) {
-        goPending.current = 0
-        goTo.current(key)
       }
     }
     document.addEventListener('keydown', onKey)
@@ -278,6 +246,7 @@ export function Palette() {
             .filter((part) => part !== null)
             .join(' · '),
     right: money(title.value),
+    icon: CircleDollarSign,
     run: () =>
       leave(() => {
         remember({ kind: 'title', id: title.symbol })
@@ -301,6 +270,7 @@ export function Palette() {
               .filter((part) => part !== null)
               .join(' · '),
       right: money(holds?.value ?? null),
+      icon: Wallet,
       run: () =>
         leave(() => {
           remember({ kind: 'account', id: account.id })
@@ -321,6 +291,7 @@ export function Palette() {
       const type = t(TYPE_LABEL[event.event_type])
       return {
         key: `event:${event.date}-${index}`,
+        icon: Database,
         label: [identity.name ?? identity.ticker ?? identity.label, type]
           .filter((part) => part !== null)
           .join(' · '),
@@ -352,6 +323,7 @@ export function Palette() {
     .map((thread) => ({
       key: `thread:${thread.id}`,
       label: thread.title ?? '',
+      icon: Sparkles,
       sub: thread.updated_at === null ? null : f.date(thread.updated_at),
       right: null,
       run: () =>
@@ -363,8 +335,8 @@ export function Palette() {
       key: page.to,
       label: t(page.label),
       sub: null,
-      right: t('palette.shortcut.goto', { key: GO_TO[page.to] }),
-      shortcut: true,
+      right: null,
+      icon: page.icon,
       run: () => leave(() => void navigate(pageLink(page, chat, pathname))),
     }),
   )
@@ -376,6 +348,7 @@ export function Palette() {
     label: t(action.label),
     sub: null,
     right: null,
+    icon: action.icon,
     run: () => leave(() => void navigate(action.go)),
   }))
   if (matchesQuery(query, [t('palette.action.thread'), t('palette.action.thread.keywords')])) {
@@ -384,6 +357,7 @@ export function Palette() {
       label: t('palette.action.thread'),
       sub: null,
       right: null,
+      icon: MessageSquarePlus,
       run: () =>
         leave(() => {
           startThread()
@@ -391,7 +365,7 @@ export function Palette() {
         }),
     })
   }
-  // Signing out exists only while a code does (#1203).
+  // Locking exists only while a code does (#1203).
   if (
     auth.status.enabled &&
     matchesQuery(query, [t('palette.action.logout'), t('palette.action.logout.keywords')])
@@ -401,6 +375,7 @@ export function Palette() {
       label: t('palette.action.logout'),
       sub: null,
       right: null,
+      icon: Lock,
       run: () =>
         leave(
           () =>
@@ -578,21 +553,19 @@ const ACTIONS = [
     label: 'palette.action.event',
     keywords: 'palette.action.event.keywords',
     go: { to: '/ledger', search: { open: 'event' } },
+    icon: Plus,
   },
   {
     label: 'palette.action.import',
     keywords: 'palette.action.import.keywords',
     go: { to: '/ledger/import' },
+    icon: Upload,
   },
   {
     label: 'palette.action.account',
     keywords: 'palette.action.account.keywords',
     go: { to: '/accounts', search: { open: 'account' } },
-  },
-  {
-    label: 'palette.action.firstRun',
-    keywords: 'palette.action.firstRun.keywords',
-    go: { to: '/', search: { open: 'first-run' } },
+    icon: Wallet,
   },
 ] as const
 
@@ -624,8 +597,9 @@ function Section({
               type="button"
               onClick={entry.run}
               data-on={entry === on ? '' : undefined}
-              className="grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md px-2.5 text-left text-md hover:bg-muted focus-visible:bg-muted focus-visible:outline-none data-on:bg-muted"
+              className="grid min-h-10 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2.5 text-left text-md hover:bg-muted focus-visible:bg-muted focus-visible:outline-none data-on:bg-muted"
             >
+              <entry.icon aria-hidden className="size-4 text-muted-foreground" />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate">
                   <Highlighted text={entry.label} query={query} />
@@ -634,11 +608,7 @@ function Section({
                   <span className="truncate text-xs text-muted-foreground">{entry.sub}</span>
                 )}
               </span>
-              {entry.right === null ? null : entry.shortcut ? (
-                <kbd className="rounded-sm border px-1.25 py-px font-sans text-xs whitespace-nowrap text-muted-foreground">
-                  {entry.right}
-                </kbd>
-              ) : (
+              {entry.right === null ? null : (
                 <span className="fig text-xs text-muted-foreground">{entry.right}</span>
               )}
             </button>

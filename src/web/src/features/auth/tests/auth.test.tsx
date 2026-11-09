@@ -357,7 +357,7 @@ describe('the palette', () => {
     await screen.findByRole('heading', { level: 1 })
     await user.keyboard('{Control>}k{/Control}')
     const palette = await screen.findByRole('dialog')
-    expect(within(palette).queryByText('Se déconnecter')).not.toBeInTheDocument()
+    expect(within(palette).queryByText('Verrouiller')).not.toBeInTheDocument()
     unmount()
 
     server.use(
@@ -366,8 +366,6 @@ describe('the palette', () => {
     const again = renderApp()
     await screen.findByRole('heading', { level: 1 })
     await again.user.keyboard('{Control>}k{/Control}')
-    expect(
-      await within(await screen.findByRole('dialog')).findByText('Se déconnecter'),
-    ).toBeVisible()
+    expect(await within(await screen.findByRole('dialog')).findByText('Verrouiller')).toBeVisible()
   })
 })

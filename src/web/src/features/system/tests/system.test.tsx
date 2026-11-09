@@ -46,13 +46,13 @@ describe('the page', () => {
     )
   })
 
-  it('names the rebuild section while the history is being rebuilt', async () => {
+  it('names the rebuild band while the history is being rebuilt', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     openSystem()
 
-    expect(
-      await screen.findByRole('region', { name: 'Reconstruction en cours' }),
-    ).toBeInTheDocument()
+    const band = await screen.findByRole('status')
+    expect(band).toHaveTextContent('Reconstruction en cours')
+    expect(within(band).queryByRole('link')).toBeNull()
   })
 
   it('is where the bell’s footer lands', async () => {
