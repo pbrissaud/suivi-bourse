@@ -21,6 +21,7 @@
  * which would read every streamed token; it is silenced, and one polite
  * region says *Réponse en cours* at the start and the whole answer at the end.
  */
+import { modelName } from '@/features/agent/lib/modelNames'
 import { useChat } from '@ai-sdk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
@@ -310,7 +311,8 @@ function AgentConversation() {
     </div>
   )
   const waiting = pendingAnswer(status, messages.at(-1))
-  const model = runner?.model ?? provider?.default_model ?? null
+  const modelId = runner?.model ?? provider?.default_model ?? null
+  const model = modelId === null ? null : modelName(modelId)
 
   return (
     <>

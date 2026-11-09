@@ -18,6 +18,7 @@ import { agentApi } from '@/features/agent/lib/api'
 import { RAIL_ROW } from '@/features/agent/lib/styles'
 import { groupThreads, monthName, type ThreadGroup } from '@/features/agent/lib/threads'
 import { type MessageKey, useI18n } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 /** The rail's body: reused as is by the popover under 1 024 px. */
 export function RailBody({ onOpened }: { onOpened?: () => void }) {
@@ -44,7 +45,7 @@ export function RailBody({ onOpened }: { onOpened?: () => void }) {
         to="/agent"
         // Exact: `/agent/x` starts with `/agent` and is not a new thread.
         activeOptions={{ exact: true }}
-        className={`${RAIL_ROW} font-medium`}
+        className={cn(RAIL_ROW, 'font-medium aria-[current=page]:bg-accent')}
         onClick={onOpened}
       >
         <span className="inline-flex items-center gap-2">

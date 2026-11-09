@@ -11,6 +11,7 @@
  * four characters and nothing else (#1114); left empty on an edit, the stored
  * one is kept.
  */
+import { rememberModels } from '@/features/agent/lib/modelNames'
 import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -107,6 +108,7 @@ export function ProviderSheet({
   const test = useMutation({
     mutationFn: () => api.testAgentProvider(provider?.id ?? 'new', candidate()),
     onSuccess: (answer) => {
+      rememberModels(answer.models)
       setTested(answer)
       setModel(answer.preselected ?? answer.models[0]?.id ?? '')
       void client.invalidateQueries({ queryKey: ['agent-providers'] })

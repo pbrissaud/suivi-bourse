@@ -265,9 +265,18 @@ describe('the providers', () => {
     await waitFor(() => expect(removed).toEqual(['p1']))
   })
 
+  it('disables the agent switch until a provider exists, and says why', async () => {
+    server.use(http.get(ROUTES.agentProviders, () => HttpResponse.json([])))
+    renderApp({ url: '/settings' })
+
+    expect(await screen.findByRole('switch', { name: 'Agent activé' })).toBeDisabled()
+    expect(screen.getByText('Ajoutez d’abord un fournisseur')).toBeInTheDocument()
+  })
+
   it('saves the agent switch on change and the reasoning level', async () => {
     const writes: unknown[] = []
     server.use(
+      http.get(ROUTES.agentProviders, () => HttpResponse.json([provider()])),
       http.get(ROUTES.agentConfig, () =>
         HttpResponse.json({ enabled: false, reasoning: 'medium' }),
       ),

@@ -20,6 +20,7 @@ import {
   get,
   ROUTES,
 } from '@/lib/api'
+import { rememberModels } from '@/features/agent/lib/modelNames'
 import type { MessageKey } from '@/lib/i18n'
 
 /** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
@@ -135,7 +136,11 @@ export const agentApi = {
   /** The configured providers, the default first. */
   providers: () => api.agentProviders(),
   /** The models a provider lists now; it is the connection test, read for its list. */
-  models: (id: string) => api.testAgentProvider(id),
+  models: (id: string) =>
+    api.testAgentProvider(id).then((answer) => {
+      rememberModels(answer.models)
+      return answer
+    }),
   stats: (range: AgentStatsRange) => api.agentStats(range),
   agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
   agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),

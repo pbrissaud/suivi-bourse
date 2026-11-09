@@ -14,6 +14,7 @@ import { useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { type ConfiguredProvider, agentApi, PROVIDER_NAME } from '@/features/agent/lib/api'
+import { modelName } from '@/features/agent/lib/modelNames'
 import { ACT } from '@/features/agent/lib/styles'
 import { type MessageKey, useI18n } from '@/lib/i18n'
 
@@ -57,7 +58,8 @@ export function ModelPicker({
     })),
   })
   if (current === undefined) return null
-  const shown = value.model ?? current.default_model ?? providerName(current, t)
+  const model = value.model ?? current.default_model
+  const shown = model ? modelName(model) : providerName(current, t)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

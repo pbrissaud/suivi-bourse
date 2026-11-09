@@ -12,7 +12,7 @@
  * not replace the Thème page's. The wrapper is `inert` and takes no pointer:
  * this is a drawing, not a place to click.
  */
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -44,7 +44,7 @@ const PATH: Record<PreviewPage, string> = {
   ledger: '/ledger',
 }
 
-/** The width the pages are drawn at; the column scales it down. */
+/** The width the pages are drawn at; the frame scales it to its own width. */
 const DRAWN_AT = 1440
 
 /** The theme on one ground as the inline variables of a wrapper. */
@@ -83,6 +83,21 @@ export function ThemePreview({ theme, ground }: { theme: ThemeVars; ground: Grou
   const [shown, setShown] = useState<PreviewPage>('dashboard')
   const router = useMemo(() => createPreviewRouter(PATH[shown]), [shown])
   const style = useMemo(() => scopedVariables(theme, ground), [theme, ground])
+  // The pages are drawn at 1 440 px and scaled to the frame's own width.
+  const frame = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(0.52)
+  useLayoutEffect(() => {
+    const element = frame.current
+    if (element === null) return
+    const fit = () => {
+      if (element.clientWidth > 0) setScale(element.clientWidth / DRAWN_AT)
+    }
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(fit)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
@@ -98,6 +113,7 @@ export function ThemePreview({ theme, ground }: { theme: ThemeVars; ground: Grou
         ]}
       />
       <div
+        ref={frame}
         data-testid="theme-preview"
         className="relative min-h-140 flex-1 overflow-hidden rounded-xl border bg-background"
       >
@@ -107,7 +123,7 @@ export function ThemePreview({ theme, ground }: { theme: ThemeVars; ground: Grou
           style={{
             ...style,
             width: DRAWN_AT,
-            transform: 'scale(0.52)',
+            transform: `scale(${scale})`,
             transformOrigin: 'top left',
             pointerEvents: 'none',
             fontFamily: 'var(--font-sans)',

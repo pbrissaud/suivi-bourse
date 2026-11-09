@@ -152,9 +152,7 @@ export function PinForm({
           <span className="fig">{clock(left)}</span>
           {after}
         </p>
-      ) : (
-        <p className="text-muted-foreground">{t('auth.pin.line')}</p>
-      )}
+      ) : null}
       <p role="status" className="sr-only">
         {said}
       </p>

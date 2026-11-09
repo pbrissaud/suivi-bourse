@@ -291,7 +291,7 @@ describe('the states (4A)', () => {
     expect(screen.getByRole('option', { name: 'qwen3:8b' })).toBeInTheDocument()
     await user.click(await screen.findByRole('option', { name: 'Qwen 14b' }))
     expect(
-      within(main).getByRole('button', { name: 'Modèle de ce fil : qwen3:14b' }),
+      within(main).getByRole('button', { name: 'Modèle de ce fil : Qwen 14b' }),
     ).toBeInTheDocument()
     await ask(user, main, QUESTION)
 

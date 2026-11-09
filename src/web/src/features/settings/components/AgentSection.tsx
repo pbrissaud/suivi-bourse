@@ -75,11 +75,18 @@ function AgentRows({
 
   return (
     <>
-      <SettingRow id="agent-enabled" label={t('settings.agent.enabled')} state={toggle.state}>
+      <SettingRow
+        id="agent-enabled"
+        label={t('settings.agent.enabled')}
+        description={providers.length === 0 ? t('settings.agent.enabled.needsProvider') : undefined}
+        state={toggle.state}
+      >
         <Switch
           id="agent-enabled"
           checked={toggle.chosen?.value ?? settings.enabled}
           onCheckedChange={(on) => toggle.save(on)}
+          disabled={providers.length === 0}
+          aria-describedby={providers.length === 0 ? 'agent-enabled-description' : undefined}
         />
       </SettingRow>
 

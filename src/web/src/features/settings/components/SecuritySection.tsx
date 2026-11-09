@@ -25,7 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { REGEXP_ONLY_DIGITS } from 'input-otp'
+
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { useAuth } from '@/features/auth/components/AuthBoot'
 import { authApi, refusedWith } from '@/features/auth/lib/api'
 import {
@@ -351,16 +353,26 @@ function CodeField({
       <label htmlFor={id} className="block text-sm">
         {label}
       </label>
-      <Input
+      <InputOTP
         id={id}
-        type="password"
-        inputMode="numeric"
-        autoComplete={current ? 'current-password' : 'new-password'}
         maxLength={6}
+        pattern={REGEXP_ONLY_DIGITS}
+        inputMode="numeric"
+        autoComplete={current ? 'current-password' : 'off'}
         value={value}
-        onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ''))}
-        className="fig"
-      />
+        onChange={onChange}
+      >
+        <InputOTPGroup className="gap-2">
+          {Array.from({ length: 6 }, (_, index) => (
+            <InputOTPSlot
+              key={index}
+              index={index}
+              masked
+              className="h-10 w-9 rounded-md border first:rounded-md first:border-l last:rounded-md"
+            />
+          ))}
+        </InputOTPGroup>
+      </InputOTP>
     </div>
   )
 }

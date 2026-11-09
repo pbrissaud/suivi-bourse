@@ -10,6 +10,7 @@
  * would have to be invented. The period is the chart's, and it drives every
  * figure of the page.
  */
+import { modelName } from '@/features/agent/lib/modelNames'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -248,7 +249,7 @@ function ByModel({ data }: { data: AgentStats }) {
             <TableRow key={`${m.provider}-${m.model}`} tall>
               <TableCell className="max-w-0 min-w-40">
                 <span className="flex flex-col">
-                  <span className="truncate font-medium">{m.model}</span>
+                  <span className="truncate font-medium">{modelName(m.model)}</span>
                   <span className="truncate text-xs text-muted-foreground">{m.provider ?? ''}</span>
                 </span>
               </TableCell>

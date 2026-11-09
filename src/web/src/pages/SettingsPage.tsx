@@ -91,7 +91,7 @@ export default function SettingsPage() {
   }, [anchor, hash, landed])
 
   return (
-    <div className="max-w-settings">
+    <div>
       <SecuritySection read={settingsRead} />
       <PortfolioSection read={settingsRead} />
       <AgentSection read={agentRead} settings={agent.data} providers={providers.data} />
