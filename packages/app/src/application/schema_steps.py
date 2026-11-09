@@ -178,6 +178,8 @@ def _backfill_agent_usage(connection) -> None:
     # such step to run has no use for.
     from application import agent_usage
     agent_usage.backfill(connection)
+
+
 def _add_notification_channels(connection) -> None:
     """Give a store the tables the outbound channels live in (§ 3.6).
 
