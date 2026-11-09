@@ -142,9 +142,9 @@ Add to the payload, all computed server-side in `portfolio_facts.py` / `portfoli
   price (±0,01), or for deposits/withdrawals same date and amount. An ISIN already known
   to the store is never `unknown_security`.
 - Keep the fee column of the file when the format has one.
-- Formats: a `format` registry (Bourse Direct, Boursorama, Fortuneo, Trade Republic, generic
-  CSV, Excel via openpyxl) detected from the header line; the preview returns the detected
-  format name.
+- Format: only the app's own layout (`.csv`, or `.xlsx` via openpyxl), with its `account`
+  column: a row naming an account keeps it, the picked account fills the others. The broker
+  profiles first written here were dropped on 9 Nov 2026 (no real statement to check them on).
 
 ### 3.5 Event write effect (`POST /api/events/preview`)
 A dry-run endpoint returning the effect sentence's data for a candidate event: the
