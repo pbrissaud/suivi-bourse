@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Code d’accès</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.cell{display:flex;width:44px;height:52px;align-items:center;justify-content:center;border:1px solid var(--input);border-radius:10px;background:var(--background);font-family:var(--font-mono);font-size:22px}
+.cell[data-f]{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent)}
+.cell[data-e]{border-color:var(--destructive)}
+.cell i{display:block;width:10px;height:10px;border-radius:50%;background:var(--foreground)}
+.act{padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; align-items: center; justify-content: center; min-height: 900px; box-sizing: border-box; padding: 48px 24px; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px">
+<section style="display: flex; flex-direction: column; align-items: center; gap: 28px; width: 360px; text-align: center">
+<span style="font-weight: 600">SuiviBourse</span>
+<div role="group" aria-label="Code d’accès" style="display: flex; gap: 10px">
+<sc-for list="{{cells}}" as="c" hint-placeholder-count="6">
+<span class="cell" data-f="{{c.f}}" data-e="{{c.e}}"><i style="display: {{c.dot}}"></i></span>
+</sc-for>
+</div>
+<p style="margin: 0; color: {{lineColor}}">{{line}}</p>
+<sc-if value="{{locked}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 8px; width: 100%; padding-top: 8px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted-foreground); text-align: left">
+<span>Code oublié · depuis le serveur :</span>
+<code class="fig" style="display: block; padding: 10px 12px; border-radius: 8px; background: var(--muted); color: var(--foreground); font-size: 12.5px">docker compose exec app suivibourse pin --reset</code>
+</div>
+</sc-if>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["saisie","erreur","attente"],"default":"saisie"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'saisie';
+    const filled = mode === 'saisie' ? 3 : mode === 'erreur' ? 6 : 0;
+    const cells = Array.from({ length: 6 }, (_, i) => ({
+      dot: i < filled ? 'block' : 'none',
+      f: mode === 'saisie' && i === filled ? 'true' : '',
+      e: mode === 'erreur' ? 'true' : '',
+    }));
+    return {
+      cells,
+      locked: mode === 'attente',
+      line: { saisie: 'Code d’accès', erreur: 'Code incorrect · dernier essai', attente: 'Trop d’essais · réessayez dans 4:52' }[mode],
+      lineColor: mode === 'saisie' ? 'var(--muted-foreground)' : 'var(--foreground)',
+    };
+  }
+}
+</script>
+</body>
+</html>

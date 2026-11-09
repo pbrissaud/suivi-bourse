@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Notifications — ouvertes depuis la cloche</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.act{padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.n{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:0 10px;align-items:start;padding:12px 0;border-bottom:1px solid var(--border);font-size:13px;line-height:18px}
+.n[data-read] .t{color:var(--muted-foreground);font-weight:400}
+.n .t{font-weight:500}
+.n .s{color:var(--muted-foreground)}
+.n .w{color:var(--muted-foreground);white-space:nowrap}
+</style>
+</helmet>
+<div data-theme="light" style="position: relative; width: 1440px; height: 1180px; overflow: hidden; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Dashboard-Releve-C" hint-size="1440px,1180px"></dc-import>
+<a href="Dashboard-Releve-C.dc.html" aria-label="Fermer" style="position: absolute; inset: 0"></a>
+<section role="dialog" aria-label="Notifications" style="position: absolute; top: 52px; right: 24px; width: 400px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--background); font-size: 14px; line-height: 20px">
+<header style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 16px 20px 4px">
+<h2 style="margin: 0; font-size: 15px; line-height: 22px; font-weight: 600">Notifications</h2>
+<button type="button" class="act">Tout marquer lu</button>
+</header>
+<div style="padding: 0 20px 8px">
+<sc-for list="{{items}}" as="n" hint-placeholder-count="5">
+<a href="{{n.href}}" class="n" data-read="{{n.read}}" style="text-decoration: none; color: inherit">
+<span style="display: inline-flex; padding-top: 2px; line-height: 0; color: {{n.iconColor}}; visibility: {{n.iconVis}}"><x-import component-from-global-scope="SuiviBourse.Icons.TriangleAlert" class-name="size-3.5" aria-hidden="true"></x-import></span>
+<span style="display: flex; flex-direction: column; min-width: 0"><span class="t" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{n.title}}</span><span class="s">{{n.sub}}</span></span>
+<span class="fig w">{{n.when}}</span>
+</a>
+</sc-for>
+</div>
+<footer style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px 14px; font-size: 13px; color: var(--muted-foreground)">
+<span>L’état des tâches est dans <a href="Systeme-Refonte.dc.html" style="color: inherit">Système</a></span>
+<a href="Reglages-Refonte.dc.html" class="act" style="text-decoration: none">Réglages</a>
+</footer>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const N = (title, sub, when, href, o = {}) => ({ title, sub, when, href, read: o.read ? 'true' : '', iconVis: o.warn ? 'visible' : 'hidden', iconColor: 'var(--foreground)' });
+    return {
+      items: [
+        N('Le cours d’Amundi PEA Nasdaq-100 n’a pas bougé depuis 16:25', 'La valeur affichée peut être légèrement en retard · se corrige au prochain passage', '17:35', 'Systeme-Attention-Refonte.dc.html', { warn: true }),
+        N('Import terminé', '41 événements ajoutés au PEA', 'hier', 'GrandLivre-Refonte.dc.html', { read: true }),
+        N('Mise à jour 5.3.0 installée', 'Notes de version', '2 nov.', 'Systeme-Refonte.dc.html', { read: true }),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

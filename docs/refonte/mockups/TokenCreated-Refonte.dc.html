@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Panneau · Jeton créé</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.btn{display:inline-flex;height:36px;align-items:center;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer;white-space:nowrap}
+.code{margin:0;padding:12px 14px;border-radius:8px;background:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-all;color:var(--foreground)}
+.grp{margin:0;font-size:12px;line-height:16px;color:var(--muted-foreground)}
+</style>
+</helmet>
+<section role="dialog" aria-modal="true" aria-labelledby="tk-title" style="width: 460px; height: 100%; min-height: 1260px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px; border-left: 1px solid var(--border)">
+
+<header style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 0">
+<h2 id="tk-title" style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Votre jeton d’accès</h2>
+<a href="Reglages-Refonte.dc.html" aria-label="Fermer" style="display: inline-flex; padding: 6px; margin: -6px -6px 0 0; border-radius: 6px; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.X" class-name="size-4" aria-hidden="true"></x-import></a>
+</header>
+
+<div style="flex: 1; display: flex; flex-direction: column; gap: 24px; padding: 20px 24px 24px; overflow-y: auto; overflow-x: hidden">
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p class="grp">Claude Desktop · API et MCP · expire le <span class="fig">8 nov. 2027</span></p>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center">
+<p class="code" style="padding: 9px 12px">&lt;votre-jeton&gt;</p>
+<button type="button" class="btn">Copier</button>
+</div>
+<p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--muted-foreground)">Il ne sera plus affiché. Perdu, il se régénère depuis Réglages.</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<p class="grp">Pour Claude Desktop, dans <span class="fig">claude_desktop_config.json</span></p>
+<pre class="code">&#123;
+  "mcpServers": &#123;
+    "suivi-bourse": &#123;
+      "command": "npx",
+      "args": ["mcp-remote", "https://suivi-bourse.pbrissaud.net/mcp",
+               "--header", "Authorization: Bearer &lt;votre-jeton&gt;"]
+    &#125;
+  &#125;
+&#125;</pre>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<p class="grp">Pour un script, sur <span class="fig">/api</span></p>
+<pre class="code">curl -H "Authorization: Bearer &lt;votre-jeton&gt;" \
+  https://suivi-bourse.pbrissaud.net/api/lignes</pre>
+</div>
+
+</div>
+
+<footer style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border)">
+<a href="Reglages-Refonte.dc.html" class="btn" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">J’ai copié le jeton</a>
+</footer>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":460,"height":1260}}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

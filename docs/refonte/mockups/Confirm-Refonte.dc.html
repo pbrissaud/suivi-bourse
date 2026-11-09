@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Composant · Confirmation destructive</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.btn{display:inline-flex;height:36px;align-items:center;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer;white-space:nowrap}
+.row{display:flex;justify-content:space-between;gap:16px;min-height:36px;align-items:center;border-bottom:1px solid var(--border);font-size:13px}
+</style>
+</helmet>
+<section role="alertdialog" aria-modal="true" aria-labelledby="cf-title" style="width: 440px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px">
+<div style="display: flex; flex-direction: column; gap: 12px; padding: 24px 24px 20px">
+<h2 id="cf-title" style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">{{title}}</h2>
+<div role="list" style="display: {{listDisp}}; flex-direction: column">
+<sc-for list="{{items}}" as="i" hint-placeholder-count="2">
+<div role="listitem" class="row"><span>{{i.k}}</span><span class="fig" style="color: var(--muted-foreground)">{{i.v}}</span></div>
+</sc-for>
+</div>
+<p style="margin: 0; color: var(--muted-foreground)">{{line}}</p>
+</div>
+<footer style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border)">
+<a href="#" class="btn">Annuler</a>
+<a href="#" class="btn" style="background: var(--destructive); border-color: var(--destructive); color: var(--primary-foreground)">{{cta}}</a>
+</footer>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["purge","fil","evenement","jeton","compte"],"default":"purge"},"$preview":{"width":440,"height":320}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'purge';
+    const M = {
+      purge: { title: 'Purger 2 historiques ?', items: [{ k: 'CSPX.AS', v: '4 120 cours' }, { k: 'BNP.PA', v: '812 cours' }], line: 'Irréversible. Un historique purgé se reconstruit depuis la source si le titre revient.', cta: 'Purger' },
+      fil: { title: 'Supprimer ce fil ?', items: [{ k: 'Et si je doublais CW8 ?', v: '12 messages · 6 nov.' }], line: 'Irréversible. Les écritures déjà confirmées restent dans le grand livre.', cta: 'Supprimer' },
+      evenement: { title: 'Supprimer cet événement ?', items: [{ k: '14 oct. 2026 · Achat CW8', v: '2 × 512,30 € · PEA' }], line: 'Irréversible. La performance du compte sera recalculée.', cta: 'Supprimer' },
+      jeton: { title: 'Révoquer ce jeton ?', items: [{ k: 'Claude Desktop · MCP', v: 'créé le 3 nov.' }], line: 'Immédiat. Tout client qui l’utilise perdra l’accès.', cta: 'Révoquer' },
+      compte: { title: 'Supprimer le compte PEA ?', items: [{ k: '57 événements', v: '2021 à 2026' }, { k: '4 titres', v: '42 658,79 €' }], line: 'Irréversible. Les événements du compte sont supprimés avec lui.', cta: 'Supprimer le compte' },
+    }[mode];
+    return { ...M, listDisp: M.items.length ? 'flex' : 'none' };
+  }
+}
+</script>
+</body>
+</html>

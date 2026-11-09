@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Panneau · Fournisseur de l’agent</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.tab{padding:0 0 8px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;font:inherit;font-size:14px;line-height:20px;color:var(--muted-foreground);cursor:pointer}
+.tab[aria-checked="true"]{color:var(--foreground);font-weight:500;border-bottom-color:var(--foreground)}
+.fld{display:flex;height:36px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;min-width:0;overflow:hidden;border:1px solid var(--input);border-radius:8px;background:var(--background);color:var(--foreground);font-size:14px}
+.lbl{font-size:12px;line-height:16px;font-weight:500;color:var(--muted-foreground)}
+.btn{display:inline-flex;height:36px;align-items:center;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer}
+.lnk{padding:0;border:0;background:none;font:inherit;font-size:14px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.grp{margin:0;font-size:12px;line-height:16px;color:var(--muted-foreground)}
+</style>
+</helmet>
+<section role="dialog" aria-modal="true" aria-labelledby="pv-title" style="width: 460px; height: 100%; min-height: 1260px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px; border-left: 1px solid var(--border)">
+
+<header style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 0">
+<h2 id="pv-title" style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">{{title}}</h2>
+<a href="Reglages-Refonte.dc.html" aria-label="Fermer" style="display: inline-flex; padding: 6px; margin: -6px -6px 0 0; border-radius: 6px; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.X" class-name="size-4" aria-hidden="true"></x-import></a>
+</header>
+
+<div style="flex: 1; display: flex; flex-direction: column; gap: 24px; padding: 20px 24px 24px; overflow-y: auto; overflow-x: hidden">
+
+<label style="display: flex; flex-direction: column; gap: 6px">
+<span class="lbl">Libellé <span style="font-weight: 400">· facultatif</span></span>
+<span class="fld"><span style="color: {{labelColor}}">{{label}}</span></span>
+</label>
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div role="radiogroup" aria-label="Type de fournisseur" style="display: flex; flex-wrap: wrap; gap: 0 18px; border-bottom: 1px solid var(--border)">
+<sc-for list="{{types}}" as="t" hint-placeholder-count="4">
+<button type="button" role="radio" class="tab" aria-checked="{{t.on}}">{{t.label}}</button>
+</sc-for>
+</div>
+<sc-for list="{{fields}}" as="f" hint-placeholder-count="2">
+<label style="display: flex; flex-direction: column; gap: 6px">
+<span class="lbl">{{f.label}}</span>
+<span class="fld"><span class="{{f.cls}}" style="color: {{f.color}}; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{f.value}}</span><span style="font-size: 12px; color: var(--muted-foreground); white-space: nowrap">{{f.suffix}}</span></span>
+</label>
+</sc-for>
+<p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--muted-foreground)">{{privacy}}</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px; padding-top: 20px; border-top: 1px solid var(--border)">
+<p class="grp">Tester <span style="font-weight: 400">· facultatif</span></p>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end">
+<label style="display: flex; flex-direction: column; gap: 6px">
+<span class="lbl">Modèle</span>
+<span class="fld"><span class="fig" style="font-size: 13px">{{model}}</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-4" aria-hidden="true"></x-import></span>
+</label>
+<button type="button" class="btn">Tester</button>
+</div>
+<p style="margin: 0; font-size: 13px; line-height: 18px; color: {{testColor}}">{{testResult}}</p>
+</div>
+
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; border-top: 1px solid var(--border)">
+<span>Fournisseur par défaut</span>
+<span role="switch" aria-checked="{{isDefault}}" style="position: relative; display: inline-block; width: 36px; height: 20px; border-radius: 10px; background: {{swBg}}"><span style="position: absolute; top: 2px; left: {{swLeft}}; width: 16px; height: 16px; border-radius: 50%; background: var(--background)"></span></span>
+</div>
+
+</div>
+
+<footer style="display: flex; align-items: center; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border)">
+<sc-if value="{{isEdit}}" hint-placeholder-val="{{true}}"><button type="button" class="lnk" style="color: var(--destructive); margin-right: auto">Supprimer ce fournisseur</button></sc-if>
+<sc-if value="{{isNew}}" hint-placeholder-val="{{false}}"><span style="margin-right: auto"></span></sc-if>
+<a href="Reglages-Refonte.dc.html" class="btn">Annuler</a>
+<a href="Reglages-Refonte.dc.html" class="btn" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">Enregistrer</a>
+</footer>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["edit","new"],"default":"edit"},"$preview":{"width":460,"height":1260}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'edit';
+    const isEdit = mode === 'edit';
+    const kind = isEdit ? 'anthropic' : 'compatible';
+    const types = [['anthropic', 'Anthropic'], ['openai', 'OpenAI'], ['compatible', 'Compatible OpenAI'], ['ollama', 'Ollama']].map(([v, label]) => ({ label, on: v === kind ? 'true' : 'false' }));
+    const F = (label, value, o = {}) => ({ label, value, suffix: o.suffix ?? '', cls: o.mono ? 'fig' : '', color: o.placeholder ? 'var(--muted-foreground)' : 'var(--foreground)' });
+    const fields = kind === 'anthropic'
+      ? [F('Clé API', '••••••••••••••••••••••••', { mono: true, suffix: 'sk-ant-…9f2a' })]
+      : [F('Adresse du service', 'https://', { mono: true, placeholder: true }), F('Clé API', 'Si le service en demande une', { placeholder: true })];
+    return {
+      isEdit, isNew: !isEdit,
+      title: isEdit ? 'Anthropic' : 'Ajouter un fournisseur',
+      label: isEdit ? 'Anthropic' : 'Ex. « Mon proxy maison »',
+      labelColor: isEdit ? 'var(--foreground)' : 'var(--muted-foreground)',
+      types, fields,
+      privacy: kind === 'ollama' ? 'Tout reste sur ce serveur.' : 'La clé reste sur ce serveur. Vos positions, vos comptes et votre grand livre sont envoyés au fournisseur quand l’agent répond.',
+      model: isEdit ? 'claude-sonnet-4-5' : 'Choisir après le test',
+      testResult: isEdit ? 'Répond en 1,2 s · 14 modèles disponibles' : 'Lancez le test pour lister les modèles.',
+      testColor: isEdit ? 'var(--foreground)' : 'var(--muted-foreground)',
+      isDefault: isEdit ? 'true' : 'false',
+      swBg: isEdit ? 'var(--primary)' : 'var(--border)',
+      swLeft: isEdit ? '18px' : '2px',
+    };
+  }
+}
+</script>
+</body>
+</html>

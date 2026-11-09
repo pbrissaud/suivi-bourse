@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Premier lancement</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.tab{padding:0 0 8px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;font:inherit;font-size:14px;line-height:20px;color:var(--muted-foreground);cursor:pointer}
+.tab[aria-checked="true"]{color:var(--foreground);font-weight:500;border-bottom-color:var(--foreground)}
+.fld{display:flex;height:36px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;border:1px solid var(--input);border-radius:8px;background:var(--background)}
+.lbl{font-size:12px;line-height:16px;font-weight:500;color:var(--muted-foreground)}
+.btn{display:inline-flex;height:36px;align-items:center;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:52px;padding:0 2px;border-bottom:1px solid var(--border);color:inherit;text-decoration:none}
+.opt:hover .nm{text-decoration:underline;text-underline-offset:4px}
+.opt .nm{font-weight:500}
+.opt .sb{font-size:13px;color:var(--muted-foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; align-items: center; justify-content: center; min-height: 900px; box-sizing: border-box; padding: 48px 24px; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px">
+<section style="width: 520px; display: flex; flex-direction: column; gap: 28px">
+
+<header style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+<span style="font-weight: 600">SuiviBourse</span>
+<span class="fig" style="font-size: 13px; color: var(--muted-foreground)">{{step}} sur 4</span>
+</header>
+
+<h1 style="margin: 0; font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.01em">{{title}}</h1>
+
+<!-- 1 · devise -->
+<sc-if value="{{s1}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Devise</span><span class="fld" style="width: 260px"><span><span class="fig">EUR</span> · euro</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></span></label>
+<p style="margin: 0; font-size: 13px; color: var(--muted-foreground)">Ne se change plus ensuite.</p>
+</div>
+</sc-if>
+
+<!-- 2 · modèles d’imposition -->
+<sc-if value="{{s2}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Pays</span><span class="fld" style="width: 260px"><span>France</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></span></label>
+<div style="display: flex; flex-direction: column; border-top: 1px solid var(--border)">
+<sc-for list="{{models}}" as="m" hint-placeholder-count="5">
+<label class="opt" style="cursor: pointer"><span style="display: flex; align-items: center; gap: 12px; min-width: 0"><input type="checkbox" checked="{{m.on}}" style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"><span style="display: flex; flex-direction: column; min-width: 0"><span class="nm" style="font-weight: 400">{{m.name}}</span><span class="sb">{{m.rule}}</span></span></span></label>
+</sc-for>
+</div>
+<p style="margin: 0; font-size: 13px"><a href="#" class="act" style="color: var(--muted-foreground); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border)">Écrire mon propre modèle</a></p>
+</div>
+</sc-if>
+
+<!-- 3 · premier compte -->
+<sc-if value="{{s3}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 20px">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Identifiant</span><span class="fld"><span>PEA</span></span></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Libellé · facultatif</span><span class="fld"><span style="color: var(--muted-foreground)">PEA Bourse Direct</span></span></label>
+<label style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px"><span class="lbl">Modèle d’imposition</span><span class="fld"><span>Plan d’épargne en actions (PEA)</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></span></label>
+</div>
+</div>
+</sc-if>
+
+<!-- 4 · premiers événements -->
+<sc-if value="{{s4}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column">
+<a href="GrandLivre-Import-Refonte.dc.html" class="opt" style="border-top: 1px solid var(--border)"><span style="display: flex; flex-direction: column"><span class="nm">Importer un relevé</span><span class="sb">Fichier CSV ou Excel</span></span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></a>
+<a href="GrandLivre-Saisie.dc.html" class="opt"><span style="display: flex; flex-direction: column"><span class="nm">Saisir à la main</span><span class="sb">Un versement, un achat</span></span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></a>
+<a href="Dashboard-Releve-C.dc.html" class="opt"><span style="display: flex; flex-direction: column"><span class="nm" style="font-weight: 400; color: var(--muted-foreground)">Plus tard</span><span class="sb">Depuis le grand livre, quand vous voulez</span></span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></a>
+</div>
+</sc-if>
+
+<footer style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px">
+<a href="#" class="btn" style="visibility: {{backVis}}; border-color: transparent; padding-left: 0">← Retour</a>
+<a href="#" class="btn" style="visibility: {{nextVis}}; background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">{{cta}}</a>
+</footer>
+
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"step":{"editor":"enum","options":["1","2","3","4"],"default":"1"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const step = this.props.step ?? '1';
+    const M = (name, rule, on = true) => ({ name, rule, on: on ? 'true' : '' });
+    return {
+      step,
+      s1: step === '1', s2: step === '2', s3: step === '3', s4: step === '4',
+      title: { '1': 'Dans quelle devise tenez-vous vos comptes ?', '2': 'Comment vos gains sont-ils imposés ?', '3': 'Votre premier compte.', '4': 'D’où viennent vos premiers événements ?' }[step],
+      models: [
+        M('Plan d’épargne en actions (PEA)', '12,8 % puis 0 % après 5 ans · PS 18,6 %'),
+        M('PEA-PME', '12,8 % puis 0 % après 5 ans · PS 18,6 %', false),
+        M('Compte-titres ordinaire (CTO)', 'Forfaitaire 31,4 % (12,8 % + PS 18,6 %)'),
+        M('Assurance-vie', '12,8 % puis 7,5 % après 8 ans · PS 17,2 %', false),
+        M('Plan d’épargne retraite (PER)', 'Au barème à la sortie', false),
+      ],
+      cta: 'Continuer',
+      backVis: step === '1' ? 'hidden' : 'visible',
+      nextVis: step === '4' ? 'hidden' : 'visible',
+    };
+  }
+}
+</script>
+</body>
+</html>

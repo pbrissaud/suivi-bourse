@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Titres — T5, la table seule</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}a:hover{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+a[data-row]:hover span[data-name]{text-decoration:underline;text-underline-offset:4px}
+a[data-row]:hover span[data-chev]{color:var(--foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="shares" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Titres" subtitle="Cours au 6 nov. 2026, 17:35" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; padding-bottom: 16px">
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500">46 975,40 €</span><span style="color: var(--muted-foreground)">sur 6 lignes, pour <span class="fig" style="color: var(--foreground)">41 063,00 €</span> investis</span></p>
+<p style="margin: 0; color: var(--muted-foreground)">Plus-value des titres <span class="fig" style="color: var(--gain)">+5 912,40 €</span> <span class="fig" style="font-size: 13px; color: var(--gain)">(+14,4 %)</span> <span style="font-size: 13px">· hors dividendes et liquidités</span></p>
+</div>
+
+<div role="table" aria-label="Lignes détenues" style="font-size: 13px; line-height: 18px">
+<div role="row" style="display: grid; grid-template-columns: {{cols}}; align-items: end; padding: 0 0 8px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span role="columnheader" style="padding-right: 12px"><button type="button" style="padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer">Titre</button></span>
+<span role="columnheader" style="padding: 0 12px; text-align: right"><button type="button" style="padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer">Détenu · prix moyen</button></span>
+<span role="columnheader" style="padding: 0 12px; text-align: right"><button type="button" style="padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer">Cours · jour</button></span>
+<span role="columnheader" style="padding: 0 12px; text-align: right"><button type="button" style="padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer">Investi</button></span>
+<span role="columnheader" aria-sort="descending" style="padding: 0 12px; text-align: right; color: var(--foreground); font-weight: 500"><button type="button" style="padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer">Valorisation · poids</button></span>
+<span role="columnheader" style="padding: 0 24px 0 12px; text-align: right"><button type="button" style="padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer">Gain</button></span>
+</div>
+
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+<a href="Shares-Fiche.dc.html" data-row role="row" style="position: relative; display: grid; grid-template-columns: {{cols}}; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none">
+<span role="cell" style="display: flex; flex-direction: column; min-width: 0; padding: 8px 12px 8px 0">
+<span data-name style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 500">{{r.name}}</span>
+<span style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)"><span class="fig">{{r.ticker}}</span> · {{r.account}}</span>
+</span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 8px 12px; white-space: nowrap">
+<span class="fig">{{r.qty}}</span>
+<span class="fig" style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.pru}}</span>
+</span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 8px 12px; white-space: nowrap">
+<span class="fig">{{r.price}}</span>
+<span class="fig" style="font-size: 12px; line-height: 16px; color: {{r.dayColor}}">{{r.day}}</span>
+</span>
+<span role="cell" class="fig" style="padding: 8px 12px; text-align: right; white-space: nowrap">{{r.invested}}</span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 8px 12px; white-space: nowrap">
+<span class="fig">{{r.value}}</span>
+<span class="fig" style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.weight}}</span>
+</span>
+<span role="cell" style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 0 8px 12px; white-space: nowrap">
+<span style="display: flex; flex-direction: column; align-items: flex-end">
+<span class="fig" style="color: {{r.gainColor}}">{{r.gain}}</span>
+<span class="fig" style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.gainPct}}</span>
+</span>
+<span data-chev aria-hidden="true" style="display: inline-flex; width: 16px; color: var(--border)"><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-4" aria-hidden="true"></x-import></span>
+</span>
+</a>
+</sc-for>
+
+<div role="row" style="display: grid; grid-template-columns: {{cols}}; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border); font-weight: 500">
+<span role="rowheader" style="padding: 8px 12px 8px 0">Total <span style="font-weight: 400; color: var(--muted-foreground)">6 lignes</span></span>
+<span role="cell"></span>
+<span role="cell"></span>
+<span role="cell" class="fig" style="padding: 8px 12px; text-align: right">41 063,00 €</span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 8px 12px"><span class="fig">46 975,40 €</span><span class="fig" style="font-size: 12px; line-height: 16px; font-weight: 400; color: var(--muted-foreground)">100 %</span></span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 8px 28px 8px 12px"><span class="fig" style="color: var(--gain)">+6 672,30 €</span><span class="fig" style="font-size: 12px; line-height: 16px; font-weight: 400; color: var(--muted-foreground)">+16,25 %</span></span>
+</div>
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const G = 'var(--gain)', L = 'var(--loss)', M = 'var(--muted-foreground)';
+    return {
+      cols: 'minmax(220px, 2fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(140px, 1.2fr) minmax(160px, 1.2fr)',
+      rows: [
+        { name: 'Amundi MSCI World', ticker: 'CW8', account: 'PEA', qty: '45', pru: '478,92 €', price: '546,04 €', day: '+0,21 %', dayColor: G, invested: '21 551,40 €', value: '24 571,80 €', weight: '52,3 %', gain: '+3 020,40 €', gainPct: '+14,01 %', gainColor: G },
+        { name: 'Amundi PEA Nasdaq-100', ticker: 'PUST', account: 'PEA', qty: '108', pru: '66,50 €', price: '82,09 €', day: '−0,17 %', dayColor: L, invested: '7 182,00 €', value: '8 865,72 €', weight: '18,9 %', gain: '+1 683,72 €', gainPct: '+23,44 %', gainColor: G },
+        { name: 'TotalEnergies', ticker: 'TTE', account: 'Compte-titres', qty: '78', pru: '55,10 €', price: '58,42 €', day: '−1,84 %', dayColor: L, invested: '4 297,80 €', value: '4 556,76 €', weight: '9,7 %', gain: '+571,36 €', gainPct: '+13,29 %', gainColor: G },
+        { name: 'Amundi Euro Stoxx 50', ticker: 'C50', account: 'PEA', qty: '31', pru: '131,20 €', price: '136,44 €', day: '0,00 %', dayColor: M, invested: '4 067,20 €', value: '4 229,64 €', weight: '9,0 %', gain: '+162,44 €', gainPct: '+3,99 %', gainColor: G },
+        { name: 'Air Liquide', ticker: 'AI', account: 'PEA', qty: '23', pru: '148,30 €', price: '171,81 €', day: '−0,94 %', dayColor: L, invested: '3 410,90 €', value: '3 951,63 €', weight: '8,4 %', gain: '+925,23 €', gainPct: '+27,13 %', gainColor: G },
+        { name: 'Schneider Electric', ticker: 'SU', account: 'Compte-titres', qty: '5', pru: '110,74 €', price: '159,97 €', day: '+0,12 %', dayColor: G, invested: '553,70 €', value: '799,85 €', weight: '1,7 %', gain: '+309,15 €', gainPct: '+55,83 %', gainColor: G },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Panneau · Jeton d’accès</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.fld{display:flex;height:36px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;border:1px solid var(--input);border-radius:8px;background:var(--background);color:var(--foreground);font-size:14px;min-width:0;overflow:hidden}
+.lbl{font-size:12px;line-height:16px;font-weight:500;color:var(--muted-foreground)}
+.btn{display:inline-flex;height:36px;align-items:center;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer;white-space:nowrap}
+.code{margin:0;padding:12px 14px;border-radius:8px;background:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-all;color:var(--foreground)}
+.grp{margin:0;font-size:12px;line-height:16px;color:var(--muted-foreground)}
+.tab{padding:0 0 8px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;font:inherit;font-size:14px;line-height:20px;color:var(--muted-foreground);cursor:pointer}
+.tab[aria-checked="true"]{color:var(--foreground);font-weight:500;border-bottom-color:var(--foreground)}
+</style>
+</helmet>
+<section role="dialog" aria-modal="true" aria-labelledby="tk-title" style="width: 460px; height: 100%; min-height: 1260px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px; border-left: 1px solid var(--border)">
+
+<header style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 0">
+<h2 id="tk-title" style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">{{title}}</h2>
+<a href="Reglages-Refonte.dc.html" aria-label="Fermer" style="display: inline-flex; padding: 6px; margin: -6px -6px 0 0; border-radius: 6px; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.X" class-name="size-4" aria-hidden="true"></x-import></a>
+</header>
+
+<div style="flex: 1; display: flex; flex-direction: column; gap: 24px; padding: 20px 24px 24px; overflow-y: auto; overflow-x: hidden">
+
+<sc-if value="{{showForm}}" hint-placeholder-val="{{true}}">
+<label style="display: flex; flex-direction: column; gap: 6px">
+<span class="lbl">Libellé</span>
+<span class="fld"><span style="color: var(--muted-foreground)">Ex. « Claude Desktop », « Script de sauvegarde »</span></span>
+</label>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<p class="grp">Portée</p>
+<div role="group" aria-label="Portée" style="display: flex; flex-direction: column">
+<label style="display: flex; align-items: center; justify-content: space-between; min-height: 40px; border-bottom: 1px solid var(--border)"><span>API <span style="color: var(--muted-foreground)">· /api, pour un script</span></span><input type="checkbox" checked style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"></label>
+<label style="display: flex; align-items: center; justify-content: space-between; min-height: 40px; border-bottom: 1px solid var(--border)"><span>MCP <span style="color: var(--muted-foreground)">· /mcp, pour Claude Desktop</span></span><input type="checkbox" checked style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"></label>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<p class="grp">Expiration</p>
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Expiration" mode="radio" size="compact" bordered="{{yes}}" options="{{expOpts}}" value="1y"></x-import>
+</div>
+</sc-if>
+
+
+</div>
+
+<footer style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border)">
+<sc-if value="{{showForm}}" hint-placeholder-val="{{true}}">
+<a href="Reglages-Refonte.dc.html" class="btn">Annuler</a>
+<a href="Reglages-Jeton-Cree-Refonte.dc.html" class="btn" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">Créer le jeton</a>
+</sc-if>
+</footer>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["form"],"default":"form"},"$preview":{"width":460,"height":1260}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'form';
+    return {
+      showForm: mode === "form", showToken: mode === "created",
+      title: mode === 'form' ? 'Créer un jeton d’accès' : 'Votre jeton d’accès',
+      yes: true,
+      jsonSnippet: ['{', '  "mcpServers": {', '    "suivi-bourse": {', '      "command": "npx",', '      "args": ["mcp-remote", "https://suivi-bourse.pbrissaud.net/mcp",', '               "--header", "Authorization:$' + '{AUTH_HEADER}"],', '      "env": { "AUTH_HEADER": "Bearer <votre-jeton>" }', '    }', '  }', '}'].join('\n'),
+      curlSnippet: 'curl -H "Authorization: Bearer <votre-jeton>" \\\n  https://suivi-bourse.pbrissaud.net/api/positions',
+      expOpts: [{ value: '90d', label: '90 jours' }, { value: '1y', label: '1 an' }, { value: 'never', label: 'Jamais' }],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Panneau · Déclarer ou modifier un compte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.tab{padding:0 0 8px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;font:inherit;font-size:14px;line-height:20px;color:var(--muted-foreground);cursor:pointer}
+.tab[aria-checked="true"]{color:var(--foreground);font-weight:500;border-bottom-color:var(--foreground)}
+.fld{display:flex;height:36px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;border:1px solid var(--input);border-radius:8px;background:var(--background);color:var(--foreground)}
+.lbl{font-size:12px;line-height:16px;font-weight:500;color:var(--muted-foreground)}
+.btn{display:inline-flex;height:36px;align-items:center;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer}
+.lnk{padding:0;border:0;background:none;font:inherit;font-size:14px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.row{display:flex;justify-content:space-between;gap:16px;min-height:36px;align-items:center;border-bottom:1px solid var(--border);font-size:13px}
+</style>
+</helmet>
+<section role="dialog" aria-modal="true" aria-labelledby="acc-title" style="width: 460px; height: 100%; min-height: 960px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 20px; border-left: 1px solid var(--border)">
+
+<header style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 0">
+<h2 id="acc-title" style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">{{title}}</h2>
+<a href="Comptes-Refonte.dc.html" aria-label="Fermer" style="display: inline-flex; padding: 6px; margin: -6px -6px 0 0; border-radius: 6px; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.X" class-name="size-4" aria-hidden="true"></x-import></a>
+</header>
+
+<div style="flex: 1; display: flex; flex-direction: column; gap: 20px; padding: 20px 24px 24px; overflow: auto">
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Identifiant</span><span class="fld"><span style="color: {{nameColor}}">{{name}}</span></span></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Libellé · facultatif</span><span class="fld"><span style="color: {{brokerColor}}">{{broker}}</span></span></label>
+<label style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px"><span class="lbl">Ouvert le</span><span class="fld"><span class="fig" style="color: {{openedColor}}">{{opened}}</span><x-import component-from-global-scope="SuiviBourse.Icons.CalendarDays" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></span></label>
+<label style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px"><span class="lbl">Modèle d’imposition</span><span class="fld"><span>{{tax}}</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import></span></label>
+</div>
+
+<sc-if value="{{isEdit}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 8px; padding-top: 4px">
+<span class="lbl">Ce que porte ce compte</span>
+<div class="row"><span>Événements</span><span class="fig">57 · depuis 2021</span></div>
+<div class="row"><span>Titres</span><span class="fig">4</span></div>
+<div class="row"><span>Valeur</span><span class="fig">42 658,79 €</span></div>
+</div>
+</sc-if>
+
+</div>
+
+<footer style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border)">
+<sc-if value="{{isEdit}}" hint-placeholder-val="{{false}}"><button type="button" class="lnk" style="color: var(--destructive); margin-right: auto">Supprimer ce compte</button></sc-if>
+<a href="Comptes-Refonte.dc.html" class="btn">Annuler</a>
+<a href="Comptes-Refonte.dc.html" class="btn" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">{{cta}}</a>
+</footer>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["creation","edition"],"default":"creation"},"$preview":{"width":460,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const isEdit = (this.props.mode ?? 'creation') === 'edition';
+        const ph = 'var(--muted-foreground)', fg = 'var(--foreground)';
+    return {
+      title: isEdit ? 'Modifier le compte' : 'Ajouter un compte',
+      isEdit,
+      name: isEdit ? 'PEA' : 'PEA', nameColor: isEdit ? fg : ph,
+      opened: isEdit ? '4 mars 2021' : 'JJ/MM/AAAA', openedColor: isEdit ? fg : ph,
+      broker: isEdit ? 'PEA Bourse Direct' : 'PEA Bourse Direct', brokerColor: isEdit ? fg : ph,
+      tax: 'Plan d’épargne en actions (PEA)',
+      taxLine: isEdit ? 'Plus de 5 ans : prélèvements sociaux seuls' : 'Appliqué à l’estimation « si je sors aujourd’hui »',
+      cta: isEdit ? 'Enregistrer' : 'Ajouter',
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Système — refonte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.sec{display:flex;flex-direction:column;gap:12px;box-sizing:border-box;border-radius:18px;background:var(--muted);padding:20px 24px 24px}
+.sec h2{margin:0;font-size:20px;line-height:28px;font-weight:600}
+.act{padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.act:hover{color:var(--foreground)}
+.ico{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;padding:0;border:0;border-radius:6px;background:none;color:var(--muted-foreground);cursor:pointer}
+.ico:hover{background:var(--background);color:var(--foreground)}
+.btn{display:inline-flex;height:32px;align-items:center;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--foreground);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.ticks{display:flex;align-items:flex-end;gap:3px;height:18px}
+.ticks span{display:block;width:6px;height:10px;border-radius:1px;background:var(--muted-foreground)}
+.ticks span[data-t="none"]{height:3px;background:var(--border)}
+.ticks span[data-t="idle"]{height:6px;background:var(--border)}
+.ticks span[data-t="warn"]{height:18px;background:var(--foreground)}
+.ticks span[data-t="now"]{outline:1px solid var(--foreground);outline-offset:1px}
+.sw[aria-checked="false"]{background:var(--border)}.sw[aria-checked="false"]::after{left:2px}
+.sw{position:relative;display:inline-block;width:36px;height:20px;border-radius:10px;background:var(--primary)}
+.sw::after{content:"";position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:var(--background)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="system" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Système" subtitle="" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<!-- Tâches -->
+<section class="sec" aria-label="Tâches">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2>Tâches</h2>
+<span style="font-size: 13px; color: var(--muted-foreground)">Dernières <span class="fig">24 h</span></span>
+</div>
+<div role="table" style="font-size: 13px; line-height: 18px">
+<sc-for list="{{jobs}}" as="j" hint-placeholder-count="4">
+<div role="row" style="display: grid; grid-template-columns: minmax(200px, 1.2fr) minmax(220px, 1fr) 210px 72px; gap: 0 20px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border)">
+<span role="cell" style="display: flex; flex-direction: column"><span style="font-size: 14px; line-height: 20px; font-weight: 500">{{j.name}}</span><span style="color: var(--muted-foreground)">{{j.state}}</span></span>
+<span role="cell" class="ticks" aria-label="{{j.ticksLabel}}"><sc-for list="{{j.ticks}}" as="t" hint-placeholder-count="24"><span data-t="{{t}}"></span></sc-for></span>
+<span role="cell" class="fig" style="text-align: right; color: var(--muted-foreground); white-space: nowrap">{{j.when}}</span>
+<span role="cell" style="text-align: right"><button type="button" class="btn">Lancer</button></span>
+</div>
+</sc-for>
+</div>
+<!-- Titres du relevé -->
+<details style="font-size: 13px; line-height: 18px" open="{{titlesOpen}}">
+<summary style="display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-3.5" aria-hidden="true"></x-import>{{titlesSummary}}</summary>
+<div role="table" style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px">
+<sc-for list="{{titles}}" as="s" hint-placeholder-count="6">
+<div role="row" style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 16px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border)">
+<span role="cell" style="display: flex; flex-direction: column; min-width: 0"><span class="fig" style="font-weight: 500">{{s.sym}}</span><span style="color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{s.name}}</span></span>
+<span role="cell" style="display: inline-flex; align-items: center; gap: 6px; color: {{s.color}}"><span style="display: {{s.iconDisp}}; line-height: 0"><x-import component-from-global-scope="SuiviBourse.Icons.TriangleAlert" class-name="size-3.5" aria-hidden="true"></x-import></span>{{s.state}}</span>
+</div>
+</sc-for>
+</div>
+</details>
+</section>
+
+<!-- Données & Installation -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px">
+
+<section class="sec" aria-label="Données">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2>Données</h2>
+</div>
+<div role="table" style="font-size: 13px; line-height: 18px">
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>Cours conservés</span><span class="fig">41 206</span></div>
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>Événements</span><span class="fig">57</span></div>
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>Base de données</span><span class="fig">38 Mo</span></div>
+</div>
+<div style="display: flex; flex-direction: column; padding-top: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 36px"><span style="font-size: 13px; color: var(--muted-foreground)">Historiques orphelins · <span class="fig">2</span></span><button type="button" class="btn">Purger</button></div>
+<div style="display: flex; justify-content: space-between; gap: 16px; min-height: 36px; align-items: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 13px"><span class="fig">CSPX.AS</span><span class="fig" style="color: var(--muted-foreground)">4 120 cours</span></div>
+<div style="display: flex; justify-content: space-between; gap: 16px; min-height: 36px; align-items: center; border-bottom: 1px solid var(--border); font-size: 13px"><span class="fig">BNP.PA</span><span class="fig" style="color: var(--muted-foreground)">812 cours</span></div>
+</div>
+</section>
+
+<section class="sec" aria-label="Installation">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2>Installation</h2>
+</div>
+<div role="table" style="font-size: 13px; line-height: 18px">
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>Version</span><span><span class="fig">5.3.0</span> · à jour, vérifié il y a <span class="fig">2 h</span></span></div>
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>Signaler les nouvelles versions</span><span class="sw" role="switch" aria-checked="true" aria-label="Signaler les nouvelles versions"></span></div>
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>En marche depuis</span><span class="fig">2 nov. 2026, 09:14</span></div>
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--border)"><span>Source des cours</span><span><span class="fig">yfinance</span> · répond en <span class="fig">1,4 s</span></span></div>
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; min-height: 40px; align-items: center"><span>Journal</span><a href="#" class="act" style="font-size: 13px">Dernières 200 lignes</a></div>
+</div>
+</section>
+
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["ok","attention"],"default":"ok"},"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'ok';
+    const att = mode === 'attention';
+    const hours = Array.from({ length: 24 }, (_, i) => (18 + i) % 24);
+    const ticks = (kind) => hours.map((h, i) => {
+      const last = i === 23, market = h >= 9 && h <= 17;
+      let t = 'ok';
+      if (kind === 'scrape') t = market ? 'ok' : 'idle';
+      if (kind === 'backfill') t = h === 3 ? 'ok' : 'none';
+      if (kind === 'perf') t = 'ok';
+      if (kind === 'ingest') t = h === 9 ? 'ok' : 'none';
+      if (att && kind === 'scrape' && h >= 16 && h <= 17) t = 'warn';
+      return last ? 'now' : t;
+    });
+    const J = (name, state, kind, when, a1, a2) => ({ name, state, ticks: ticks(kind), ticksLabel: name + ', dernières 24 h', when, a1, a2, pauseVis: a2 ? 'visible' : 'hidden' });
+    const T = (sym, name, price, state, warn = false) => ({ sym, name, price, state, iconDisp: warn ? 'inline-flex' : 'none', color: warn ? 'var(--foreground)' : 'var(--muted-foreground)' });
+    return {
+      jobs: [
+        J('Mise à jour des cours', att ? '6 titres, 1 à vérifier' : '6 titres, marchés fermés', 'scrape', '17:35 · prochain 17:40', 'Relever maintenant', 'Mettre en pause'),
+        J('Reconstruction de l’historique', 'Complète, 7 séries', 'backfill', '03:00 · prochain 03:00', 'Lancer maintenant', 'Mettre en pause'),
+        J('Calcul de la performance', 'À jour', 'perf', '17:36 · après le relevé', 'Lancer maintenant', ''),
+        J('Relecture du grand livre', 'À jour', 'ingest', '09:12 · à chaque écriture', 'Relire maintenant', ''),
+      ],
+      titlesOpen: att,
+      titlesSummary: att ? '6 titres suivis · PUST.PA à vérifier' : '6 titres suivis, tous à jour',
+      titles: [
+        T('CW8.PA', 'Amundi MSCI World', '512,30 €', 'à jour'),
+        att ? T('PUST.PA', 'Amundi PEA Nasdaq-100', '82,09 €', 'figé depuis 16:25, 6 passages', true) : T('PUST.PA', 'Amundi PEA Nasdaq-100', '82,09 €', 'à jour'),
+        T('AI.PA', 'Air Liquide', '171,40 €', 'à jour'),
+        T('TTE.PA', 'TotalEnergies', '58,12 €', 'à jour'),
+        T('SU.PA', 'Schneider Electric', '228,70 €', 'à jour'),
+        T('C50.PA', 'Amundi Euro Stoxx 50', '', 'à jour'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

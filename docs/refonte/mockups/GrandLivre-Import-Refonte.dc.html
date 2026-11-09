@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Grand livre — aperçu d’un import</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.tb{display:inline-flex;height:32px;align-items:center;gap:6px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.tabs{display:flex;gap:24px;font-size:15px;line-height:22px;font-weight:500;color:var(--muted-foreground)}
+.tabs span{padding:0 0 12px;margin-bottom:-13px;border-bottom:2px solid transparent;cursor:pointer}
+.tabs span[data-on]{color:var(--foreground);border-bottom-color:var(--foreground)}
+.flt{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted-foreground);white-space:nowrap}
+.act{padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.row[data-s="dup"]{color:var(--muted-foreground)}
+.row[data-s="dup"] .fig,.row[data-s="dup"] .nm{color:var(--muted-foreground);font-weight:400}
+.row[data-s="bad"] .nm{color:var(--foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="ledger" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Importer" subtitle="" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<!-- Ligne 1 : le fichier, les actions -->
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: baseline; gap: 10px; min-width: 0">
+<a href="GrandLivre-Refonte.dc.html" class="act" style="text-decoration: none">← Grand livre</a>
+<span style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">releve-boursedirect-2026-11.csv</span>
+<span class="fig" style="font-size: 13px; color: var(--muted-foreground)">44 lignes · 6 ko</span>
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<button type="button" class="tb">Autre fichier</button>
+<a href="GrandLivre-Refonte.dc.html" class="tb" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">Importer 41 événements</a>
+</div>
+</div>
+
+<!-- Ligne 2 : le tri de l’aperçu -->
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); align-items: flex-end">
+<div class="tabs" role="tablist"><span role="tab" data-on>Tout <span class="fig">44</span></span><span role="tab">Nouveaux <span class="fig">41</span></span><span role="tab">Déjà présents <span class="fig">2</span></span><span role="tab">Illisibles <span class="fig">1</span></span></div>
+<div style="display: flex; align-items: center; gap: 20px">
+<span class="flt">Importer dans&nbsp;<span style="color: var(--foreground)">PEA</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></span>
+<span class="flt"><span style="color: var(--foreground)">Bourse Direct</span><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></span>
+</div>
+</div>
+
+<!-- Table : mêmes colonnes que le grand livre, plus l’issue -->
+<div role="table" aria-label="Aperçu de l’import" style="font-size: 13px; line-height: 18px">
+<div role="row" style="display: grid; grid-template-columns: {{cols}}; align-items: end; padding: 16px 0 8px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span role="columnheader" style="padding-right: 12px">Ligne</span>
+<span role="columnheader" style="padding-right: 12px">Date</span>
+<span role="columnheader" style="padding: 0 12px">Type</span>
+<span role="columnheader" style="padding: 0 12px">Événement</span>
+<span role="columnheader" style="padding: 0 12px; text-align: right">Quantité</span>
+<span role="columnheader" style="padding: 0 12px; text-align: right">Prix unitaire</span>
+<span role="columnheader" style="padding: 0 12px; text-align: right">Montant</span>
+<span role="columnheader" style="padding-left: 12px">Issue</span>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+<div role="row" class="row" data-s="{{r.s}}" style="display: grid; grid-template-columns: {{cols}}; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border)">
+<span role="cell" class="fig" style="padding-right: 12px; color: var(--muted-foreground)">{{r.n}}</span>
+<span role="cell" class="fig" style="padding: 6px 12px 6px 0; white-space: nowrap">{{r.date}}</span>
+<span role="cell" style="padding: 6px 12px; color: var(--muted-foreground)">{{r.type}}</span>
+<span role="cell" style="display: flex; flex-direction: column; min-width: 0; padding: 6px 12px">
+<span class="nm" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500">{{r.name}}</span>
+<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.note}}</span>
+</span>
+<span role="cell" class="fig" style="padding: 6px 12px; text-align: right">{{r.qty}}</span>
+<span role="cell" class="fig" style="padding: 6px 12px; text-align: right">{{r.price}}</span>
+<span role="cell" class="fig" style="padding: 6px 12px; text-align: right; font-weight: 500">{{r.amount}}</span>
+<span role="cell" style="padding-left: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: {{r.issueColor}}"><span style="display: inline-flex; align-items: center; gap: 6px"><span style="display: {{r.warnDisp}}; line-height: 0"><x-import component-from-global-scope="SuiviBourse.Icons.TriangleAlert" class-name="size-3.5" aria-hidden="true"></x-import></span>{{r.issue}}</span><button type="button" class="tb" style="height: 28px; display: {{r.assocDisp}}">Associer</button></span>
+</div>
+</sc-for>
+</div>
+<p style="margin: 0; padding: 16px 0 0; font-size: 13px; color: var(--muted-foreground)">32 lignes de plus · <a href="#" class="act">tout afficher</a></p>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const cols = '48px 104px 92px minmax(200px, 2fr) 84px 110px 120px 230px';
+    const R = (n, date, type, name, note, qty, price, amount, s = 'new', issue = 'Nouveau') => ({
+      n, date, type, name, note, qty: qty || '—', price: price || '—', amount, s, issue,
+      issueColor: s === 'new' ? 'var(--muted-foreground)' : 'var(--foreground)',
+      warnDisp: s === 'bad' ? 'inline-flex' : 'none',
+      assocDisp: s === 'bad' ? 'inline-flex' : 'none',
+    });
+    return {
+      cols,
+      rows: [
+        R('1', '6 nov. 2026', 'Achat', 'Amundi MSCI World', 'CW8 · ACHAT COMPTANT', '2', '512,30 €', '−1 024,60 €'),
+        R('2', '6 nov. 2026', 'Versement', 'Versement', 'VIREMENT RECU', '', '', '+1 000,00 €'),
+        R('3', '3 nov. 2026', 'Dividende', 'Air Liquide', 'AI · COUPON', '', '', '+18,40 €'),
+        R('4', '29 oct. 2026', 'Achat', 'Amundi PEA Nasdaq-100', 'PUST · ACHAT COMPTANT', '12', '82,09 €', '−985,08 €'),
+        R('5', '27 oct. 2026', 'Achat', '???', 'IE00B5BMR087 · ACHAT COMPTANT', '3', '41,20 €', '−123,60 €', 'bad', 'Titre inconnu'),
+        R('6', '1ᵉʳ oct. 2026', 'Achat', 'Amundi MSCI World', 'CW8 · ACHAT COMPTANT', '1', '541,20 €', '−541,20 €', 'dup', 'Déjà présent · même ISIN, date, quantité, prix'),
+        R('7', '1ᵉʳ oct. 2026', 'Versement', 'Versement', 'VIREMENT RECU', '', '', '+450,00 €', 'dup', 'Déjà présent · même date et montant'),
+        R('8', '30 sept. 2026', 'Achat', 'Amundi Euro Stoxx 50', 'C50 · ACHAT COMPTANT', '8', '62,15 €', '−497,20 €'),
+        R('9', '30 sept. 2026', 'Vente', 'TotalEnergies', 'TTE · VENTE COMPTANT', '5', '58,12 €', '+290,60 €'),
+        R('10', '16 sept. 2026', 'Achat', 'Amundi MSCI World', 'CW8 · ACHAT COMPTANT', '2', '489,40 €', '−978,80 €'),
+        R('11', '16 sept. 2026', 'Versement', 'Versement', 'VIREMENT RECU', '', '', '+1 000,00 €'),
+        R('12', '2 sept. 2026', 'Dividende', 'TotalEnergies', 'TTE · COUPON', '', '', '+14,15 €'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

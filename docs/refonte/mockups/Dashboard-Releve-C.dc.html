@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Tableau de bord — nominal</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}a:hover{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="dashboard" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Tableau de bord" subtitle="Cours au 6 nov. 2026, 17:35" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 24px 48px">
+<div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--muted-foreground)">Valeur du portefeuille</p>
+<p class="fig" style="margin: 0; font-size: clamp(36px, 1rem + 3.4vw, 56px); line-height: 1.05; font-weight: 500; letter-spacing: -0.02em">48 215,40 €</p>
+<p style="margin: 2px 0 0; display: flex; align-items: baseline; gap: 8px"><span class="fig" style="font-size: 15px; color: var(--gain)">{{deltaAmount}}</span><span class="fig" style="font-size: 13px; color: var(--gain)">({{deltaPct}})</span><span style="color: var(--muted-foreground)">{{deltaSince}}</span></p>
+</div>
+<dl aria-label="Trajectoire" style="margin: 0; display: grid; grid-template-columns: auto auto; column-gap: 24px; row-gap: 6px; align-items: baseline; padding-bottom: 6px">
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Premier versement</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">4 mars 2021</dd>
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Liquidités</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">1 240,00 €</dd>
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Net si tout vendu</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">47 129,39 €</dd>
+</dl>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px">
+<div role="img" aria-label="Versé net 85,8 %, gain 14,2 % de la valeur" style="display: flex; gap: 2px; height: 10px; border-radius: 3px; overflow: hidden">
+<span style="display: block; flex: 858; background: var(--alloc-5)"></span>
+<span style="display: block; flex: 142; background: var(--alloc-1)"></span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px">
+<p style="margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px">
+<span style="display: inline-flex; align-items: baseline; gap: 8px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: var(--alloc-5); align-self: center"></span><span style="color: var(--muted-foreground)">Versé net</span><span class="fig" style="font-size: 15px">41 373,25 €</span></span>
+<span style="display: inline-flex; align-items: baseline; gap: 8px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: var(--alloc-1); align-self: center"></span><span style="color: var(--muted-foreground)">Gain total</span><span class="fig" style="font-size: 15px; color: var(--gain)">+6 842,15 €</span><span class="fig" style="font-size: 13px; color: var(--gain)">(+16,5 %)</span></span>
+</p>
+<p style="margin: 0; color: var(--muted-foreground)">TRI <span class="fig" style="color: var(--foreground)">7,84 %</span> par an</p>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 16px; margin-top: 36px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; border-bottom: 1px solid var(--border)">
+<div role="tablist" aria-label="Lecture" style="display: flex; gap: 24px; align-self: flex-end">
+<button type="button" role="tab" aria-selected="{{amounts}}" style="padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid {{tabAmountsLine}}; background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: {{tabAmountsColor}}; cursor: pointer">Montants</button>
+<button type="button" role="tab" aria-selected="{{perf}}" style="padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid {{tabPerfLine}}; background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: {{tabPerfColor}}; cursor: pointer">Performance</button>
+</div>
+<div style="padding-bottom: 8px">
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Période" mode="radio" size="compact" bordered="{{yes}}" options="{{ranges}}" value="{{range}}" on-change="{{setRange}}"></x-import>
+</div>
+</div>
+
+<sc-if value="{{amounts}}" hint-placeholder-val="{{true}}">
+<figure aria-label="Valeur totale et versé net sur un an" style="margin: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: 240px 24px">
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span style="position: absolute; right: 10px; top: 26px">48 k€</span>
+<span style="position: absolute; right: 10px; top: 94px">44 k€</span>
+<span style="position: absolute; right: 10px; top: 163px">40 k€</span>
+<span style="position: absolute; right: 10px; top: 231px">36 k€</span>
+</div>
+<svg viewBox="56 8 1104 224" preserveAspectRatio="none" style="width: 100%; height: 240px; display: block" aria-hidden="true">
+<line x1="56" x2="1160" y1="40" y2="40" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<line x1="56" x2="1160" y1="104" y2="104" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<line x1="56" x2="1160" y1="168" y2="168" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<path d="M56.0 143.9 L77.2 137.5 L98.5 135.2 L119.7 133.5 L140.9 130.1 L162.2 129.6 L183.4 132.8 L204.6 133.5 L225.8 131.5 L247.1 131.5 L268.3 131.7 L289.5 127.5 L310.8 122.3 L332.0 121.1 L353.2 120.5 L374.5 117.3 L395.7 116.5 L416.9 119.8 L438.2 120.7 L459.4 117.7 L480.6 116.2 L501.8 115.2 L523.1 108.8 L544.3 100.2 L565.5 95.6 L586.8 92.1 L608.0 85.6 L629.2 81.6 L650.5 83.1 L671.7 83.4 L692.9 79.8 L714.2 78.4 L735.4 78.6 L756.6 73.8 L777.8 66.2 L799.1 63.1 L820.3 61.9 L841.5 57.6 L862.8 55.6 L884.0 60.1 L905.2 64.2 L926.5 64.0 L947.7 65.5 L968.9 69.0 L990.2 66.8 L1011.4 59.9 L1032.6 56.5 L1053.8 54.7 L1075.1 48.6 L1096.3 43.4 L1117.5 45.1 L1138.8 46.8 L1160.0 36.6 L1160 232 L56 232 Z" fill="{{areaFill}}" stroke="none"></path>
+<path d="M56.0 202.9 L162.2 202.9 L162.2 197.7 L247.1 197.7 L247.1 192.5 L332.0 192.5 L332.0 187.4 L438.2 187.4 L438.2 182.2 L523.1 182.2 L523.1 177.0 L608.0 177.0 L608.0 171.9 L714.2 171.9 L714.2 166.7 L799.1 166.7 L799.1 161.5 L884.0 161.5 L884.0 156.4 L990.2 156.4 L990.2 151.2 L1075.1 151.2 L1075.1 146.0 L1160.0 146.0" fill="none" stroke="var(--muted-foreground)" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"></path>
+<path d="M56.0 143.9 L77.2 137.5 L98.5 135.2 L119.7 133.5 L140.9 130.1 L162.2 129.6 L183.4 132.8 L204.6 133.5 L225.8 131.5 L247.1 131.5 L268.3 131.7 L289.5 127.5 L310.8 122.3 L332.0 121.1 L353.2 120.5 L374.5 117.3 L395.7 116.5 L416.9 119.8 L438.2 120.7 L459.4 117.7 L480.6 116.2 L501.8 115.2 L523.1 108.8 L544.3 100.2 L565.5 95.6 L586.8 92.1 L608.0 85.6 L629.2 81.6 L650.5 83.1 L671.7 83.4 L692.9 79.8 L714.2 78.4 L735.4 78.6 L756.6 73.8 L777.8 66.2 L799.1 63.1 L820.3 61.9 L841.5 57.6 L862.8 55.6 L884.0 60.1 L905.2 64.2 L926.5 64.0 L947.7 65.5 L968.9 69.0 L990.2 66.8 L1011.4 59.9 L1032.6 56.5 L1053.8 54.7 L1075.1 48.6 L1096.3 43.4 L1117.5 45.1 L1138.8 46.8 L1160.0 36.6" fill="none" stroke="{{lineColor}}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+<line x1="56" x2="1160" y1="232" y2="232" stroke="var(--border)" vector-effect="non-scaling-stroke"></line>
+</svg>
+<div></div>
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span style="position: absolute; top: 6px; left: 1.4%; transform: translateX(-50%)">nov.</span>
+<span style="position: absolute; top: 6px; left: 18.1%; transform: translateX(-50%)">2026</span>
+<span style="position: absolute; top: 6px; left: 34.2%; transform: translateX(-50%)">mars</span>
+<span style="position: absolute; top: 6px; left: 50.9%; transform: translateX(-50%)">mai</span>
+<span style="position: absolute; top: 6px; left: 67.7%; transform: translateX(-50%)">juil.</span>
+<span style="position: absolute; top: 6px; left: 84.7%; transform: translateX(-50%)">sept.</span>
+</div>
+</figure>
+<div style="display: flex; align-items: center; gap: 16px; padding-left: 52px; font-size: 13px; color: var(--muted-foreground)">
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 14px; height: 2px; background: {{lineColor}}"></span>Valeur totale <span class="fig" style="color: var(--foreground)">48 215,40 €</span></span>
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 14px; border-top: 2px dashed var(--muted-foreground)"></span>Versé net <span class="fig" style="color: var(--foreground)">41 373,25 €</span></span>
+</div>
+</sc-if>
+
+<sc-if value="{{perf}}" hint-placeholder-val="{{false}}">
+<figure aria-label="Performance sur un an, en pourcentage" style="margin: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: 240px 24px">
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span style="position: absolute; right: 10px; top: 26px">+15 %</span>
+<span style="position: absolute; right: 10px; top: 94px">+10 %</span>
+<span style="position: absolute; right: 10px; top: 163px">+5 %</span>
+<span style="position: absolute; right: 10px; top: 231px">0 %</span>
+</div>
+<svg viewBox="56 8 1104 224" preserveAspectRatio="none" style="width: 100%; height: 240px; display: block" aria-hidden="true">
+<line x1="56" x2="1160" y1="40" y2="40" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<line x1="56" x2="1160" y1="104" y2="104" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<line x1="56" x2="1160" y1="168" y2="168" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<path d="M56.0 232 L77.2 226.2 L98.5 222.4 L119.7 219.0 L140.9 213.6 L162.2 211.4 L183.4 213.0 L204.6 211.9 L225.8 207.9 L247.1 205.6 L268.3 203.6 L289.5 197.6 L310.8 190.6 L332.0 187.4 L353.2 185.0 L374.5 180.0 L395.7 177.4 L416.9 179.0 L438.2 178.1 L459.4 173.3 L480.6 170.0 L501.8 167.2 L523.1 159.0 L544.3 148.6 L565.5 142.2 L586.8 136.9 L608.0 128.6 L629.2 122.8 L650.5 122.5 L671.7 120.9 L692.9 115.5 L714.2 112.3 L735.4 110.7 L756.6 104.1 L777.8 94.7 L799.1 89.8 L820.3 86.8 L841.5 80.7 L862.8 76.9 L884.0 79.6 L905.2 81.9 L926.5 80.0 L947.7 79.7 L968.9 81.4 L990.2 77.4 L1011.4 68.7 L1032.6 63.5 L1053.8 59.9 L1075.1 52.0 L1096.3 45.0 L1117.5 44.9 L1138.8 44.8 L1160.0 33.0 L1160 232 L56 232 Z" fill="{{perfFill}}" stroke="none"></path>
+<path d="M56.0 232 L77.2 226.2 L98.5 222.4 L119.7 219.0 L140.9 213.6 L162.2 211.4 L183.4 213.0 L204.6 211.9 L225.8 207.9 L247.1 205.6 L268.3 203.6 L289.5 197.6 L310.8 190.6 L332.0 187.4 L353.2 185.0 L374.5 180.0 L395.7 177.4 L416.9 179.0 L438.2 178.1 L459.4 173.3 L480.6 170.0 L501.8 167.2 L523.1 159.0 L544.3 148.6 L565.5 142.2 L586.8 136.9 L608.0 128.6 L629.2 122.8 L650.5 122.5 L671.7 120.9 L692.9 115.5 L714.2 112.3 L735.4 110.7 L756.6 104.1 L777.8 94.7 L799.1 89.8 L820.3 86.8 L841.5 80.7 L862.8 76.9 L884.0 79.6 L905.2 81.9 L926.5 80.0 L947.7 79.7 L968.9 81.4 L990.2 77.4 L1011.4 68.7 L1032.6 63.5 L1053.8 59.9 L1075.1 52.0 L1096.3 45.0 L1117.5 44.9 L1138.8 44.8 L1160.0 33.0" fill="none" stroke="var(--gain)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+<line x1="56" x2="1160" y1="232" y2="232" stroke="var(--muted-foreground)" vector-effect="non-scaling-stroke"></line>
+</svg>
+<div></div>
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span style="position: absolute; top: 6px; left: 1.4%; transform: translateX(-50%)">nov.</span>
+<span style="position: absolute; top: 6px; left: 18.1%; transform: translateX(-50%)">2026</span>
+<span style="position: absolute; top: 6px; left: 34.2%; transform: translateX(-50%)">mars</span>
+<span style="position: absolute; top: 6px; left: 50.9%; transform: translateX(-50%)">mai</span>
+<span style="position: absolute; top: 6px; left: 67.7%; transform: translateX(-50%)">juil.</span>
+<span style="position: absolute; top: 6px; left: 84.7%; transform: translateX(-50%)">sept.</span>
+</div>
+</figure>
+<div style="display: flex; align-items: center; gap: 16px; padding-left: 52px; font-size: 13px; color: var(--muted-foreground)">
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 14px; height: 2px; background: var(--gain)"></span>Performance des titres</span>
+</div>
+</sc-if>
+</div>
+
+<!--GRID-START-->
+<div style="display: grid; grid-template-columns: {{gridCols}}; gap: 20px; margin-top: 40px">
+
+<section aria-label="Rythme d’investissement" style="display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; border-radius: 18px; background: var(--muted); padding: 20px 24px 24px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Rythme d’investissement</h2>
+<span style="font-size: 13px; line-height: 18px; color: var(--muted-foreground)">12 derniers mois</span>
+</div>
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500">450,00 €</span><span style="color: var(--muted-foreground)">achetés par mois (médiane)</span></p>
+<div aria-label="Achats des 12 derniers mois" role="img" style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; align-items: end; height: 96px; margin-top: auto; border-bottom: 1px solid var(--border)">
+<sc-for list="{{months}}" as="mo" hint-placeholder-count="12">
+<span style="display: block; box-sizing: border-box; height: {{mo.h}}; border-radius: 3px 3px 0 0; background: {{mo.bg}}; border: {{mo.bd}}; border-bottom: 0"></span>
+</sc-for>
+</div>
+<div class="fig" style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; margin-top: -8px; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<sc-for list="{{monthLabels}}" as="ml" hint-placeholder-count="12"><span>{{ml.t}}</span></sc-for>
+</div>
+<p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--muted-foreground)"><span class="fig" style="color: var(--foreground)">5 170,00 €</span> versés sur 12 mois, aucun achat en mars.</p>
+</section>
+
+<section aria-label="Répartition" style="display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; border-radius: 18px; background: var(--muted); padding: 20px 24px 24px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Valeur des titres</h2>
+<span style="font-size: 13px; line-height: 18px; color: var(--muted-foreground)">Par titre</span>
+</div>
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500">46 975,40 €</span><span style="color: var(--muted-foreground)">{{sliceCaption}}</span></p>
+<div role="img" aria-label="Répartition par titre : quatre premières lignes et le reste" style="display: flex; gap: 2px; height: 12px; border-radius: 3px; overflow: hidden">
+<sc-for list="{{slices}}" as="s" hint-placeholder-count="5">
+<span style="display: block; flex: {{s.flex}}; background: {{s.color}}"></span>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{slices}}" as="s" hint-placeholder-count="5">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border)">
+<span style="display: inline-flex; align-items: center; gap: 10px; min-width: 0"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: {{s.color}}; flex-shrink: 0"></span><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{s.name}}</span></span>
+<span class="fig" style="color: var(--muted-foreground)">{{s.pct}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+</div>
+<!--GRID-END-->
+
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"narrow":{"editor":"boolean","default":false},"chartHue":{"editor":"enum","options":["chart-1","foreground","gain"],"default":"chart-1"},"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { reading: 'amounts', range: '1Y', view: 'security', unit: 'eur' };
+  }
+  renderVals() {
+    const narrow = this.props.narrow ?? false;
+    const hue = this.props.chartHue ?? 'chart-1';
+    const { reading, range, view, unit } = this.state;
+    const amounts = [450, 450, 500, 450, 0, 450, 600, 450, 450, 400, 450, 520];
+    const labels = ['nov.', '', '', 'févr.', '', '', 'mai', '', '', 'août', '', ''];
+    const bySecurity = [
+      { name: 'Amundi MSCI World', pct: '52,3 %', flex: 523, color: 'var(--alloc-1)' },
+      { name: 'Amundi PEA Nasdaq-100', pct: '18,9 %', flex: 189, color: 'var(--alloc-2)' },
+      { name: 'TotalEnergies', pct: '9,7 %', flex: 97, color: 'var(--alloc-3)' },
+      { name: 'Air Liquide', pct: '8,4 %', flex: 84, color: 'var(--alloc-4)' },
+      { name: '2 autres lignes', pct: '10,7 %', flex: 107, color: 'var(--alloc-5)' },
+    ];
+    const byAccount = [
+      { name: 'PEA', pct: '88,6 %', flex: 886, color: 'var(--alloc-1)' },
+      { name: 'Compte-titres', pct: '11,4 %', flex: 114, color: 'var(--alloc-2)' },
+    ];
+    const movers = [
+      { name: 'TotalEnergies', pct: '−1,84 %', amount: '−85,40 €', color: 'var(--loss)' },
+      { name: 'Amundi MSCI World', pct: '+0,21 %', amount: '+51,48 €', color: 'var(--gain)' },
+      { name: 'Air Liquide', pct: '−0,94 %', amount: '−37,44 €', color: 'var(--loss)' },
+      { name: 'Amundi PEA Nasdaq-100', pct: '−0,17 %', amount: '−14,76 €', color: 'var(--loss)' },
+      { name: 'Schneider Electric', pct: '+0,12 %', amount: '+0,98 €', color: 'var(--gain)' },
+      { name: 'Amundi Euro Stoxx 50', pct: '0,00 %', amount: '0,00 €', color: 'var(--muted-foreground)' },
+    ];
+    const amountsOn = reading === 'amounts';
+    const eur = unit === 'eur';
+    return {
+      yes: true,
+      amounts: amountsOn,
+      perf: !amountsOn,
+      tabAmountsLine: amountsOn ? 'var(--foreground)' : 'transparent',
+      tabAmountsColor: amountsOn ? 'var(--foreground)' : 'var(--muted-foreground)',
+      tabPerfLine: amountsOn ? 'transparent' : 'var(--foreground)',
+      tabPerfColor: amountsOn ? 'var(--muted-foreground)' : 'var(--foreground)',
+      lineColor: 'var(--' + hue + ')',
+      areaFill: 'color-mix(in oklch, var(--' + hue + ') 16%, transparent)',
+      perfFill: 'color-mix(in oklch, var(--gain) 14%, transparent)',
+      gridCols: narrow ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
+      moverCols: narrow ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
+      ranges: [{ value: '1M', label: '1 mois' }, { value: 'YTD', label: 'Cette année' }, { value: '1Y', label: '1 an' }, { value: 'MAX', label: 'Tout' }],
+      deltaAmount: { '1M': '+612,30 €', 'YTD': '+4 118,55 €', '1Y': '+5 021,10 €', 'MAX': '+6 842,15 €' }[range],
+      deltaPct: { '1M': '+1,3 %', 'YTD': '+9,3 %', '1Y': '+11,6 %', 'MAX': '+16,5 %' }[range],
+      deltaSince: { '1M': 'depuis le 6 oct.', 'YTD': 'depuis le 1ᵉʳ janv.', '1Y': 'depuis un an', 'MAX': 'depuis le premier versement' }[range],
+      range,
+      setRange: (v) => this.setState({ range: v }),
+      views: [{ value: 'security', label: 'Par titre' }, { value: 'account', label: 'Par compte' }],
+      view,
+      setView: (v) => this.setState({ view: v }),
+      slices: bySecurity,
+      sliceCaption: view === 'security' ? 'sur 6 lignes, hors liquidités' : 'sur 2 comptes, hors liquidités',
+      barLabel: view === 'security' ? 'Répartition par titre, 6 lignes' : 'Répartition par compte, 2 comptes',
+      gainSlices: [
+        { name: 'Plus-value latente', amount: '+5 912,40 €', flex: 5912, color: 'var(--alloc-1)' },
+        { name: 'Plus-value réalisée', amount: '+412,75 €', flex: 413, color: 'var(--alloc-2)' },
+        { name: 'Dividendes', amount: '+586,20 €', flex: 586, color: 'var(--alloc-3)' },
+      ],
+      units: [{ value: 'eur', label: '€' }, { value: 'pct', label: '%' }],
+      unit,
+      setUnit: (v) => this.setState({ unit: v }),
+      todayTotal: eur ? '−86,12 €' : '−0,18 %',
+      movers,
+      months: amounts.map((a) => ({ h: a === 0 ? '8px' : Math.round((a / 600) * 96) + 'px', bg: a === 0 ? 'transparent' : 'var(--' + hue + ')', bd: a === 0 ? '1px dashed var(--muted-foreground)' : '0' })),
+      monthLabels: labels.map((t) => ({ t })),
+    };
+  }
+}
+</script>
+</body>
+</html>

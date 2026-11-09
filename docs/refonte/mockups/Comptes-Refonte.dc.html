@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Comptes — PEA</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}a:hover{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+a[data-row]:hover span[data-name]{text-decoration:underline;text-underline-offset:4px}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="accounts" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Comptes" subtitle="Cours au 6 nov. 2026, 17:35" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; border-bottom: 1px solid var(--border)">
+<div role="tablist" aria-label="Comptes" style="display: flex; gap: 24px; align-self: flex-end">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="2">
+<button type="button" role="tab" aria-selected="{{t.on}}" on-click="{{t.pick}}" style="display: flex; align-items: baseline; gap: 10px; padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid {{t.line}}; background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: {{t.color}}; cursor: pointer">{{t.name}}<span class="fig" style="font-size: 13px; font-weight: 400; color: var(--muted-foreground)">{{t.value}}</span></button>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; padding-bottom: 8px">
+<x-import component-from-global-scope="SuiviBourse.Button" variant="ghost" size="sm">Modifier le compte</x-import>
+<x-import component-from-global-scope="SuiviBourse.Button" variant="outline" size="sm">Ajouter un compte</x-import>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 24px 48px; margin-top: 32px">
+<div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--muted-foreground)">Valeur du {{a.name}}</p>
+<p class="fig" style="margin: 0; font-size: clamp(36px, 1rem + 3.4vw, 56px); line-height: 1.05; font-weight: 500; letter-spacing: -0.02em">{{a.total}}</p>
+<p style="margin: 6px 0 0; display: flex; align-items: baseline; gap: 8px 10px; flex-wrap: wrap"><span class="fig" style="font-size: 24px; line-height: 28px; font-weight: 500; color: var(--gain)">{{a.gain}}</span><span class="fig" style="font-size: 15px; color: var(--gain)">{{a.gainPct}}</span><span style="color: var(--muted-foreground)">de gain</span><span aria-hidden="true" style="color: var(--border)">·</span><span style="color: var(--muted-foreground)">TRI <span class="fig" style="color: var(--foreground)">{{a.irr}}</span> par an</span></p>
+</div>
+<dl aria-label="Repères du compte" style="margin: 0; display: grid; grid-template-columns: auto auto; column-gap: 24px; row-gap: 6px; align-items: baseline; padding-bottom: 6px">
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Ouvert le</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">{{a.opened}}</dd>
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Liquidités</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">{{a.cash}}</dd>
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Part du patrimoine</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">{{a.share}}</dd>
+</dl>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px">
+<div role="img" aria-label="{{a.barLabel}}" style="display: flex; gap: 2px; height: 10px; border-radius: 3px; overflow: hidden">
+<span style="display: block; flex: {{a.barInv}}; background: var(--alloc-5)"></span>
+<span style="display: block; flex: {{a.barGain}}; background: var(--alloc-1)"></span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px">
+<p style="margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px">
+<span style="display: inline-flex; align-items: baseline; gap: 8px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: var(--alloc-5); align-self: center"></span><span style="color: var(--muted-foreground)">Versé net</span><span class="fig" style="font-size: 15px">{{a.contributed}}</span></span>
+<span style="display: inline-flex; align-items: baseline; gap: 8px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: var(--alloc-1); align-self: center"></span><span style="color: var(--muted-foreground)">Gain</span><span class="fig" style="font-size: 15px; color: var(--gain)">{{a.gain}}</span></span>
+</p>
+<p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--muted-foreground)">Versé en moyenne <span class="fig" style="color: var(--foreground)">{{a.monthly}}</span> par mois depuis l’ouverture</p>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 16px; margin-top: 36px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; border-bottom: 1px solid var(--border)">
+<div role="tablist" aria-label="Lecture" style="display: flex; gap: 24px; align-self: flex-end">
+<button type="button" role="tab" aria-selected="true" style="padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid var(--foreground); background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: var(--foreground); cursor: pointer">Montants</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: var(--muted-foreground); cursor: pointer">Performance</button>
+</div>
+<div style="padding-bottom: 8px">
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Période" mode="radio" size="compact" bordered="{{yes}}" options="{{ranges}}" value="{{range}}" on-change="{{setRange}}"></x-import>
+</div>
+</div>
+<figure aria-label="Valeur du compte et versé net depuis l’ouverture" style="margin: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: 240px 24px">
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<sc-for list="{{a.yTicks}}" as="t" hint-placeholder-count="3"><span style="position: absolute; right: 10px; top: {{t.top}}">{{t.label}}</span></sc-for>
+</div>
+<svg viewBox="56 8 1104 224" preserveAspectRatio="none" style="width: 100%; height: 240px; display: block" aria-hidden="true">
+<line x1="56" x2="1160" y1="40" y2="40" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<line x1="56" x2="1160" y1="136" y2="136" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line>
+<path d="M56 220 L120 214 L190 205 L260 207 L330 196 L400 188 L470 190 L540 176 L610 168 L680 171 L750 150 L820 141 L890 146 L960 122 L1030 112 L1080 96 L1120 92 L1160 74 L1160 232 L56 232 Z" fill="color-mix(in oklch, var(--chart-1) 16%, transparent)" stroke="none"></path>
+<path d="M56 226 L170 226 L170 219 L300 219 L300 210 L420 210 L420 200 L560 200 L560 189 L680 189 L680 177 L800 177 L800 164 L930 164 L930 150 L1050 150 L1050 136 L1160 136 L1160 102" fill="none" stroke="var(--muted-foreground)" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"></path>
+<path d="M56 220 L120 214 L190 205 L260 207 L330 196 L400 188 L470 190 L540 176 L610 168 L680 171 L750 150 L820 141 L890 146 L960 122 L1030 112 L1080 96 L1120 92 L1160 74" fill="none" stroke="var(--chart-1)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+<line x1="56" x2="1160" y1="232" y2="232" stroke="var(--border)" vector-effect="non-scaling-stroke"></line>
+</svg>
+<div></div>
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span style="position: absolute; top: 6px; left: 1%; transform: translateX(-50%)">2021</span>
+<span style="position: absolute; top: 6px; left: 18%; transform: translateX(-50%)">2022</span>
+<span style="position: absolute; top: 6px; left: 36%; transform: translateX(-50%)">2023</span>
+<span style="position: absolute; top: 6px; left: 54%; transform: translateX(-50%)">2024</span>
+<span style="position: absolute; top: 6px; left: 72%; transform: translateX(-50%)">2025</span>
+<span style="position: absolute; top: 6px; left: 90%; transform: translateX(-50%)">2026</span>
+</div>
+</figure>
+<div style="display: flex; align-items: center; gap: 16px; padding-left: 52px; font-size: 13px; color: var(--muted-foreground)">
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 14px; height: 2px; background: var(--chart-1)"></span>Valeur du compte <span class="fig" style="color: var(--foreground)">{{a.total}}</span></span>
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 14px; border-top: 2px dashed var(--muted-foreground)"></span>Versé net <span class="fig" style="color: var(--foreground)">{{a.contributed}}</span></span>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: {{gridCols}}; gap: 20px; margin-top: 40px">
+
+<section aria-label="D’où vient le gain" style="display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; border-radius: 18px; background: var(--muted); padding: 20px 24px 24px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">D’où vient le gain</h2>
+<span style="font-size: 13px; line-height: 18px; color: var(--muted-foreground)">Depuis l’ouverture</span>
+</div>
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500; color: var(--gain)">{{a.gain}}</span><span style="color: var(--muted-foreground)">frais déduits</span></p>
+<div role="img" aria-label="Composition du gain" style="display: flex; gap: 2px; height: 12px; border-radius: 3px; overflow: hidden">
+<sc-for list="{{a.gainSlices}}" as="g" hint-placeholder-count="3"><span style="display: block; flex: {{g.flex}}; background: {{g.color}}"></span></sc-for>
+</div>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{a.gainSlices}}" as="g" hint-placeholder-count="3">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border)">
+<span style="display: inline-flex; align-items: center; gap: 10px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: {{g.color}}"></span>{{g.name}}</span>
+<span class="fig">{{g.amount}}</span>
+</div>
+</sc-for>
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); color: var(--muted-foreground)">
+<span style="padding-left: 18px">Frais de versement</span>
+<span class="fig">{{a.fees}}</span>
+</div>
+</div>
+</section>
+
+<section aria-label="Si je sors aujourd’hui" style="display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; border-radius: 18px; background: var(--muted); padding: 20px 24px 24px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Si je sors aujourd’hui</h2>
+<span style="font-size: 13px; line-height: 18px; color: var(--muted-foreground)">{{a.taxScope}}</span>
+</div>
+<sc-if value="{{a.hasTax}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500">{{a.net}}</span><span style="color: var(--muted-foreground)">nets après impôt</span></p>
+<div style="display: flex; flex-direction: column">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border)"><span style="color: var(--muted-foreground)">Gain imposable</span><span class="fig">{{a.taxBase}}</span></div>
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border)"><span style="color: var(--muted-foreground)">{{a.taxRateLabel}}</span><span class="fig">{{a.taxRate}}</span></div>
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border)"><span style="color: var(--muted-foreground)">Impôt estimé</span><span class="fig">{{a.tax}}</span></div>
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border)"><span style="color: var(--muted-foreground)">Modèle</span><span><a href="Settings-Main.dc.html" style="color: var(--foreground); text-decoration: underline; text-underline-offset: 4px">{{a.model}}</a></span></div>
+</div>
+</sc-if>
+<sc-if value="{{a.noTax}}" hint-placeholder-val="{{false}}">
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500; color: var(--muted-foreground)">—</span><span style="color: var(--muted-foreground)">aucun modèle d’imposition</span></p>
+<p style="margin: 0; color: var(--muted-foreground)">Aucun modèle d’imposition.</p>
+<div style="margin-top: auto; padding-top: 8px"><x-import component-from-global-scope="SuiviBourse.Button" variant="outline" size="sm">Choisir un modèle</x-import></div>
+</sc-if>
+</section>
+
+<section aria-label="Titres du compte" style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; border-radius: 18px; background: var(--muted); padding: 20px 24px 24px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Titres du compte</h2>
+<span style="font-size: 13px; line-height: 18px; color: var(--muted-foreground)">{{a.linesLabel}}</span>
+</div>
+<p style="margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="fig" style="font-size: 28px; line-height: 32px; font-weight: 500">{{a.holdings}}</span><span style="color: var(--muted-foreground)">investis en titres, le reste en liquidités</span></p>
+<div role="img" aria-label="Répartition des titres du compte" style="display: flex; gap: 2px; height: 12px; border-radius: 3px; overflow: hidden">
+<sc-for list="{{a.lines}}" as="l" hint-placeholder-count="4"><span style="display: block; flex: {{l.flex}}; background: {{l.color}}"></span></sc-for>
+</div>
+<div role="table" aria-label="Titres du compte" style="display: flex; flex-direction: column; font-size: 13px; line-height: 18px">
+<div role="row" style="display: grid; grid-template-columns: minmax(0, 2fr) 90px 150px 150px 150px; gap: 16px; padding: 0 0 6px; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span role="columnheader">Titre</span><span role="columnheader" style="text-align: right">Poids</span><span role="columnheader" style="text-align: right">Investi</span><span role="columnheader" style="text-align: right">Valorisation</span><span role="columnheader" style="text-align: right">Gain</span>
+</div>
+<sc-for list="{{a.lines}}" as="l" hint-placeholder-count="4">
+<a href="Titre-Fiche.dc.html" data-row role="row" style="display: grid; grid-template-columns: minmax(0, 2fr) 90px 150px 150px 150px; gap: 16px; align-items: baseline; min-height: 48px; box-sizing: border-box; padding: 4px 0; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none">
+<span role="cell" style="display: inline-flex; align-items: center; gap: 10px; min-width: 0"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 2px; background: {{l.color}}; flex-shrink: 0"></span><span data-name style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 500">{{l.name}}</span><span class="fig" style="font-size: 12px; color: var(--muted-foreground)">{{l.ticker}}</span></span>
+<span role="cell" class="fig" style="text-align: right; color: var(--muted-foreground)">{{l.pct}}</span>
+<span role="cell" class="fig" style="text-align: right">{{l.invested}}</span>
+<span role="cell" class="fig" style="text-align: right">{{l.value}}</span>
+<span role="cell" class="fig" style="text-align: right; color: var(--gain)">{{l.gain}}</span>
+</a>
+</sc-for>
+</div>
+</section>
+
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"account":{"editor":"enum","options":["pea","cto"],"default":"pea"},"narrow":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":1460}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { account: null, range: 'MAX' };
+  }
+  renderVals() {
+    const narrow = this.props.narrow ?? false;
+    const current = this.state.account ?? (this.props.account ?? 'pea');
+    const A1 = 'var(--alloc-1)', A2 = 'var(--alloc-2)', A3 = 'var(--alloc-3)', A4 = 'var(--alloc-4)';
+    const accounts = {
+      pea: {
+        name: 'PEA', total: '42 658,79 €', cash: '1 040,00 €', contributed: '36 820,00 €', share: '88,5 %',
+        gain: '+5 838,79 €', gainPct: '(+15,9 %)', irr: '8,12 %', opened: '4 mars 2021', monthly: '541,00 €',
+        barInv: 863, barGain: 137, barLabel: 'Versé net 86,3 %, gain 13,7 % de la valeur du PEA',
+        yTicks: [{ top: '26px', label: '50 k€' }, { top: '128px', label: '25 k€' }, { top: '231px', label: '0 €' }],
+        gainSlices: [
+          { name: 'Plus-value latente', amount: '+5 407,29 €', flex: 5407, color: A1 },
+          { name: 'Plus-value réalisée', amount: '+352,10 €', flex: 352, color: A2 },
+          { name: 'Dividendes', amount: '+128,00 €', flex: 128, color: A3 },
+        ],
+        fees: '−48,60 €',
+        hasTax: true, noTax: false, taxScope: 'PEA de plus de 5 ans',
+        net: '41 572,78 €', taxBase: '5 838,79 €', taxRateLabel: 'Prélèvements sociaux', taxRate: '18,6 %', tax: '−1 086,01 €', model: 'PEA, 5 ans révolus',
+        taxNote: 'Ouvert depuis plus de 5 ans : le gain n’est soumis qu’aux prélèvements sociaux. Les liquidités sortent sans impôt.',
+        holdings: '41 618,79 €', linesLabel: '4 lignes',
+        lines: [
+          { name: 'Amundi MSCI World', ticker: 'CW8', pct: '59,0 %', flex: 590, color: A1, invested: '21 551,40 €', value: '24 571,80 €', gain: '+3 020,40 €' },
+          { name: 'Amundi PEA Nasdaq-100', ticker: 'PUST', pct: '21,3 %', flex: 213, color: A2, invested: '7 182,00 €', value: '8 865,72 €', gain: '+1 683,72 €' },
+          { name: 'Amundi Euro Stoxx 50', ticker: 'C50', pct: '10,2 %', flex: 102, color: A3, invested: '4 067,20 €', value: '4 229,64 €', gain: '+162,44 €' },
+          { name: 'Air Liquide', ticker: 'AI', pct: '9,5 %', flex: 95, color: A4, invested: '3 410,90 €', value: '3 951,63 €', gain: '+925,23 €' },
+        ],
+      },
+      cto: {
+        name: 'Compte-titres', total: '5 556,61 €', cash: '200,00 €', contributed: '4 553,25 €', share: '11,5 %',
+        gain: '+1 003,36 €', gainPct: '(+22,0 %)', irr: '6,40 %', opened: '12 sept. 2023', monthly: '121,00 €',
+        barInv: 819, barGain: 181, barLabel: 'Versé net 81,9 %, gain 18,1 % de la valeur du compte-titres',
+        yTicks: [{ top: '26px', label: '6 k€' }, { top: '128px', label: '3 k€' }, { top: '231px', label: '0 €' }],
+        gainSlices: [
+          { name: 'Plus-value latente', amount: '+505,11 €', flex: 505, color: A1 },
+          { name: 'Plus-value réalisée', amount: '+60,65 €', flex: 61, color: A2 },
+          { name: 'Dividendes', amount: '+458,20 €', flex: 458, color: A3 },
+        ],
+        fees: '−20,60 €',
+        hasTax: false, noTax: true, taxScope: 'Compte-titres ordinaire',
+        net: '', taxBase: '', taxRateLabel: '', taxRate: '', tax: '', model: '', taxNote: '',
+        holdings: '5 356,61 €', linesLabel: '2 lignes',
+        lines: [
+          { name: 'TotalEnergies', ticker: 'TTE', pct: '85,1 %', flex: 851, color: A1, invested: '4 297,80 €', value: '4 556,76 €', gain: '+571,36 €' },
+          { name: 'Schneider Electric', ticker: 'SU', pct: '14,9 %', flex: 149, color: A2, invested: '553,70 €', value: '799,85 €', gain: '+309,15 €' },
+        ],
+      },
+    };
+    const a = accounts[current];
+    const tabs = ['pea', 'cto'].map((k) => ({
+      name: accounts[k].name, value: accounts[k].total,
+      on: k === current ? 'true' : 'false',
+      line: k === current ? 'var(--foreground)' : 'transparent',
+      color: k === current ? 'var(--foreground)' : 'var(--muted-foreground)',
+      pick: () => this.setState({ account: k }),
+    }));
+    return {
+      yes: true, a, tabs,
+      gridCols: narrow ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
+      ranges: [{ value: '1M', label: '1 mois' }, { value: 'YTD', label: 'Cette année' }, { value: '1Y', label: '1 an' }, { value: 'MAX', label: 'Tout' }],
+      range: this.state.range,
+      setRange: (v) => this.setState({ range: v }),
+    };
+  }
+}
+</script>
+</body>
+</html>

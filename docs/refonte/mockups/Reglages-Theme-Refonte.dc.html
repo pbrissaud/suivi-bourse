@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Réglages — thème</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.grp{font-size:12px;line-height:16px;color:var(--muted-foreground);margin:20px 0 6px}
+.tok{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:0 10px;align-items:center;min-height:36px;border-bottom:1px solid var(--border);font-size:13px;line-height:18px}
+.tok:last-child{border-bottom:0}
+.tok .sw{width:20px;height:20px;border-radius:5px;border:1px solid var(--border);box-sizing:border-box}
+.tok .val{font-family:var(--font-mono);font-size:12px;color:var(--muted-foreground)}
+.tok .dot{display:none;width:6px;height:6px;border-radius:50%;background:var(--primary)}
+.tok[data-mod="true"] .dot{display:inline-block}
+.tok[data-mod="true"] .val{color:var(--foreground)}
+.tok .reset{display:none;font-size:12px}
+.tok[data-mod="true"]:hover .reset{display:inline}
+.tab{padding:0 0 8px;margin-bottom:-1px;border:0;border-bottom:2px solid transparent;background:none;font:inherit;font-size:14px;line-height:20px;font-weight:500;color:var(--muted-foreground);cursor:pointer}
+.tab[aria-selected="true"]{color:var(--foreground);border-bottom-color:var(--foreground)}
+.btn{display:inline-flex;height:32px;align-items:center;gap:6px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.lnk{padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.lnk:hover{color:var(--foreground)}
+.range{display:grid;grid-template-columns:minmax(0,1fr) 120px 64px;gap:12px;align-items:center;min-height:36px;border-bottom:1px solid var(--border);font-size:13px}
+.range:last-child{border-bottom:0}
+.track{position:relative;height:2px;background:var(--border);border-radius:1px}
+.track::before{content:"";position:absolute;left:0;top:0;height:2px;width:var(--p);background:var(--foreground)}
+.track::after{content:"";position:absolute;top:-6px;left:calc(var(--p) - 7px);width:14px;height:14px;border-radius:50%;background:var(--background);border:1.5px solid var(--foreground);box-sizing:border-box}
+.sel{display:inline-flex;height:32px;align-items:center;justify-content:space-between;gap:8px;width:160px;box-sizing:border-box;padding:0 10px;border:1px solid var(--input);border-radius:8px;font-size:13px}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="settings" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Thème" subtitle="Atelier, modifié" hint-size="100%,56px"></dc-import>
+
+<div style="flex: 1; display: flex; flex-direction: column; font-size: 14px; line-height: 20px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 32px 0">
+<a href="Reglages-Refonte.dc.html" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted-foreground); text-decoration: none">← Réglages</a>
+<div style="display: flex; gap: 8px">
+<button type="button" class="btn"><x-import component-from-global-scope="SuiviBourse.Icons.Upload" class-name="size-4" aria-hidden="true"></x-import>Importer depuis tweakcn</button>
+<button type="button" class="btn">Modifier le JSON</button>
+<button type="button" class="btn"><x-import component-from-global-scope="SuiviBourse.Icons.Download" class-name="size-4" aria-hidden="true"></x-import>Exporter</button>
+</div>
+</div>
+
+<div style="flex: 1; display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 32px; padding: 20px 32px 24px">
+
+<!-- Colonne de réglage -->
+<div style="min-width: 0">
+<div role="tablist" style="display: flex; gap: 20px; border-bottom: 1px solid var(--border)">
+<button type="button" role="tab" class="tab" aria-selected="true">Clair</button>
+<button type="button" role="tab" class="tab" aria-selected="false">Sombre</button>
+</div>
+
+<p class="grp">Fonds et texte</p>
+<div>
+<sc-for list="{{surfaces}}" as="t" hint-placeholder-count="7">
+<div class="tok" data-mod="{{t.mod}}"><span class="sw" style="background: {{t.css}}"></span><span style="display: inline-flex; align-items: center; gap: 8px">{{t.name}}<span class="dot" aria-label="Modifié"></span></span><span style="display: inline-flex; align-items: baseline; gap: 10px"><button type="button" class="lnk reset">Rétablir</button><span class="val">{{t.hex}}</span></span></div>
+</sc-for>
+</div>
+
+<p class="grp">Encre et signes</p>
+<div>
+<sc-for list="{{accents}}" as="t" hint-placeholder-count="4">
+<div class="tok" data-mod="{{t.mod}}"><span class="sw" style="background: {{t.css}}"></span><span style="display: inline-flex; align-items: center; gap: 8px">{{t.name}}<span class="dot" aria-label="Modifié"></span></span><span style="display: inline-flex; align-items: baseline; gap: 10px"><button type="button" class="lnk reset">Rétablir</button><span class="val">{{t.hex}}</span></span></div>
+</sc-for>
+</div>
+
+<p class="grp">Graphiques</p>
+<div>
+<sc-for list="{{charts}}" as="t" hint-placeholder-count="4">
+<div class="tok" data-mod="{{t.mod}}"><span class="sw" style="background: {{t.css}}"></span><span style="display: inline-flex; align-items: center; gap: 8px">{{t.name}}<span class="dot" aria-label="Modifié"></span></span><span style="display: inline-flex; align-items: baseline; gap: 10px"><button type="button" class="lnk reset">Rétablir</button><span class="val">{{t.hex}}</span></span></div>
+</sc-for>
+</div>
+
+<p class="grp">Forme</p>
+<div>
+<div class="range"><span>Rayon des angles</span><span class="track" style="--p: 62%"></span><span class="fig" style="text-align: right; font-size: 12px; color: var(--muted-foreground)">10 px</span></div>
+<div class="range"><span>Ombres</span><span class="track" style="--p: 0%"></span><span class="fig" style="text-align: right; font-size: 12px; color: var(--muted-foreground)">aucune</span></div>
+<div class="range"><span>Interlettrage</span><span class="track" style="--p: 50%"></span><span class="fig" style="text-align: right; font-size: 12px; color: var(--muted-foreground)">0 em</span></div>
+</div>
+
+<p class="grp">Polices</p>
+<div>
+<div class="range" style="grid-template-columns: minmax(0,1fr) auto"><span>Texte</span><span class="sel">Geist<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></span></div>
+<div class="range" style="grid-template-columns: minmax(0,1fr) auto"><span>Chiffres et identifiants</span><span class="sel">Geist Mono<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></span></div>
+</div>
+</div>
+
+<!-- Aperçu réel -->
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border)">
+<div role="tablist" aria-label="Page en aperçu" style="display: flex; gap: 20px">
+<button type="button" role="tab" class="tab" aria-selected="true">Tableau de bord</button>
+<button type="button" role="tab" class="tab" aria-selected="false">Titres</button>
+<button type="button" role="tab" class="tab" aria-selected="false">Comptes</button>
+<button type="button" role="tab" class="tab" aria-selected="false">Grand livre</button>
+</div>
+</div>
+<div style="position: relative; flex: 1; min-height: 560px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--background)">
+<div style="position: absolute; top: 0; left: 0; width: 1440px; transform: scale(0.52); transform-origin: top left; pointer-events: none">
+<dc-import name="Dashboard-Releve-C" hint-size="1440px,1180px"></dc-import>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Barre d'action -->
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 32px; border-top: 1px solid var(--border)">
+<span></span>
+<div style="display: flex; gap: 8px">
+<button type="button" class="btn">Rétablir Atelier</button>
+<a href="Reglages-Refonte.dc.html" class="btn">Annuler</a>
+<button type="button" class="btn" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">Appliquer</button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const T = (name, css, hex, mod = false) => ({ name, css, hex, mod: mod ? 'true' : 'false' });
+    return {
+      surfaces: [
+        T('Fond de page', 'var(--background)', '#F7F5F2', true),
+        T('Plan de section', 'var(--muted)', '#F1EEEA'),
+        T('Carte', 'var(--card)', '#FFFEFD'),
+        T('Texte', 'var(--foreground)', '#2A2622'),
+        T('Texte secondaire', 'var(--muted-foreground)', '#7A736C'),
+        T('Filet', 'var(--border)', '#E4DFD9'),
+        T('Bord de champ', 'var(--input)', '#CFC8C0'),
+      ],
+      accents: [
+        T('Encre', 'var(--primary)', '#3B2F27', true),
+        T('Texte sur encre', 'var(--primary-foreground)', '#FFFEFD'),
+        T('Gain', 'var(--gain)', '#2E7D5B'),
+        T('Perte', 'var(--loss)', '#B3362C'),
+      ],
+      charts: [
+        T('Répartition 1', 'var(--alloc-1)', '#3F6FD8'),
+        T('Répartition 2', 'var(--alloc-2)', '#6E4FC2'),
+        T('Répartition 3', 'var(--alloc-3)', '#3F8FA6'),
+        T('Répartition 4', 'var(--alloc-4)', '#7A4B3A'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
