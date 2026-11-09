@@ -64,6 +64,11 @@ const WRITE_ONLY_ROUTES = [
   // rendered on the strength of an upload in flight — the receipt is what the
   // gesture answers, and it is the reader's own act rather than a read.
   'eventsImport',
+  // The import's two steps and the event write's dry run: each answers the
+  // reader's own press, and nothing is drawn from them while in flight.
+  'eventsImportPreview',
+  'eventsImportCommit',
+  'eventsPreview',
   'account',
   'accountReassignment',
   // One taxation model, written and removed and never read on its own: the

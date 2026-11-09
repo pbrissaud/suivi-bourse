@@ -7,6 +7,13 @@ CREATE TABLE IF NOT EXISTS account (
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 
+-- The ISINs an import tied to a ticker (§ 3.4), so that a later file naming
+-- only the ISIN finds its security. No key on `symbol`: it is a hint, and a
+-- ticker the ledger forgot must not hold a delete back.
+CREATE TABLE IF NOT EXISTS symbol_isin (
+    isin    VARCHAR PRIMARY KEY,
+    symbol  VARCHAR NOT NULL);
+
 -- The owner's own taxation models (#752). Reusable across accounts,
 -- so they have an identity of their own rather than living on the account.
 -- `parameters` is **one JSON value in one column** and not a column per field,
@@ -265,7 +272,7 @@ TABLES = (
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
     'agent_config', 'auth_secret', 'access_tokens', 'profile_fact', 'proposal',
-    'job_slot', 'job_pass', 'job_schedule',
+    'job_slot', 'job_pass', 'job_schedule', 'symbol_isin',
 )
 
 #: The tables whose surrogate key this store hands out — see

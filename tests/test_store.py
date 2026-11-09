@@ -39,13 +39,14 @@ from application import store as store_module
 
 def test_a_new_file_carries_the_sixteen_tables(store):
     assert sorted([row[0] for row in store.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")]) == sorted(store_module.TABLES)
-    # **Eighteen since #1203** — ``auth_secret``, the PIN and its two
+    # **Twenty-four since the import preview** — ``symbol_isin``, the ISINs an
+    # import tied to a ticker. **Eighteen since #1203** — ``auth_secret``, the PIN and its two
     # secrets. **Seventeen since #1114** — ``agent_config``, the agent's provider
     # and its key. **Sixteen since #760** — ``symbol_split``, the ratios #988's correction
     # consumes and nothing kept, which anything counting units across a split
     # needs. The fifteenth was #926's ``schema_step``, the one table that is
     # about the store rather than about the portfolio.
-    assert len(store_module.TABLES) == 24
+    assert len(store_module.TABLES) == 25
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):

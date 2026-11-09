@@ -9,6 +9,8 @@ from application import accounts as accounts_module
 from application import entries
 from application.event_body import InvalidBody, event_from_body
 from application import import_currency
+from application import import_formats
+from application import import_preview
 from application import ledger
 from application import main
 from application import settings_registry
@@ -429,6 +431,153 @@ def _receipt_to_dict(receipt: uploads.Receipt, *,
                            'rows': line.rows} for line in foreign],
         'unverified': list(unverified),
     }
+
+
+_ROW_FIELDS = ('date', 'event_type', 'symbol', 'name', 'quantity', 'unit_price',
+               'fee', 'amount', 'notes')
+
+
+def _preview_row_to_dict(row: import_preview.Row) -> dict:
+    """One judged line of an import preview, on the wire."""
+    fields = (_event_to_dict(row.event) if row.event is not None
+              else dict.fromkeys(_ROW_FIELDS))
+    return {
+        'row': row.n,
+        'status': row.status,
+        **{name: fields[name] for name in _ROW_FIELDS},
+        'isin': row.isin,
+        'reason': row.reason,
+        'matched_event_id': (None if row.matched_event_id is None
+                             else str(row.matched_event_id)),
+        'matched_on': row.matched_on,
+    }
+
+
+@bp.post('/events/import/preview')
+def preview_import():
+    """A file read against one account's ledger, and nothing written (§ 3.4).
+
+    Multipart: ``file``, ``account_id`` and optionally ``format``. The answer
+    carries a ``token`` the commit takes back.
+    """
+    if uploads.oversize(request.content_length):
+        return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
+    sent = request.files.get('file')
+    if sent is None:
+        return bad_request(
+            "a file is required, as the 'file' part of a multipart/form-data "
+            "body")
+    account_id = (request.form.get('account_id') or '').strip()
+    opened = _store()
+    if account_id not in accounts_module.account_ids(opened):
+        return unprocessable_request(
+            "account_id is the id of a declared account", key='account_id')
+
+    try:
+        reading = import_formats.read(
+            sent.filename or '', sent.stream, request.form.get('format'))
+    except uploads.UploadTooLarge as exc:
+        return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
+    except uploads.UploadRefused as exc:
+        return unprocessable_file(str(exc), file=exc.file)
+
+    rows = import_preview.judge(opened, account_id, reading.lines)
+    return jsonify({
+        'token': import_preview.keep(account_id, reading),
+        'filename': reading.filename,
+        'account_id': account_id,
+        'format': reading.format_name,
+        'format_key': reading.profile.key,
+        'counts': {status: sum(1 for row in rows if row.status == status)
+                   for status in (import_preview.NEW, import_preview.DUPLICATE,
+                                  import_preview.UNKNOWN_SECURITY,
+                                  import_preview.UNREADABLE)},
+        'rows': [_preview_row_to_dict(row) for row in rows],
+    })
+
+
+@bp.post('/events/import/commit')
+def commit_import():
+    """The previewed rows written: the ``new`` ones, and the ones just associated.
+
+    ``{"token": …, "associate": [{"row": 5, "security": "CW8.PA"}]}``. The rows
+    are judged again under the writers' lock, so a row that became a duplicate
+    since the preview is skipped.
+    """
+    body = _json_object()
+    token = body.get('token') if body is not None else None
+    if not isinstance(token, str):
+        return unprocessable_request("a preview token is required", key='token')
+    held = import_preview.recall(token)
+    if held is None:
+        return not_found("this preview has expired; send the file again")
+
+    asked = body.get('associate') or []
+    associate = {}
+    if not isinstance(asked, list):
+        return unprocessable_request("associate is a list", key='associate')
+    for item in asked:
+        row = item.get('row') if isinstance(item, dict) else None
+        security = item.get('security') if isinstance(item, dict) else None
+        if type(row) is not int or not isinstance(security, str):
+            return unprocessable_request(
+                "each resolution is {row: number, security: symbol}",
+                key='associate')
+        associate[row] = security
+
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            rows = import_preview.judge(
+                opened, held.account_id, held.reading.lines, associate)
+            fresh = [row for row in rows if row.status == import_preview.NEW]
+            entries.create_many(opened, [row.event for row in fresh])
+            import_preview.remember_isins(opened, fresh)
+    except import_preview.InvalidResolution as exc:
+        return unprocessable_request(str(exc), key='associate')
+    except (entries.InvalidEntry, AggregationError) as exc:
+        return import_refusal(exc)
+
+    import_preview.release(token)
+    if fresh:
+        main.replay_after_write(runtime)
+    skipped = {status: sum(1 for row in rows if row.status == status)
+               for status in (import_preview.DUPLICATE,
+                              import_preview.UNKNOWN_SECURITY,
+                              import_preview.UNREADABLE)}
+    return jsonify({'imported': len(fresh), **skipped}), 201 if fresh else 200
+
+
+@bp.post('/events/preview')
+def preview_event():
+    """What writing this event would do to its account's cash; nothing persisted (§ 3.5).
+
+    The body is the one ``POST /api/events`` takes; add ``id`` to preview an
+    edit of that event instead of a new one.
+    """
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+    try:
+        draft = event_from_body(body)
+    except InvalidBody as exc:
+        return unprocessable_request(str(exc), key=exc.field)
+    replacing = None
+    if body.get('id') is not None:
+        replacing = _ticked_key(body['id'])
+        if replacing is None:
+            return unprocessable_request("id must be an event id", key='id')
+
+    try:
+        effect = entries.effect(_store(), draft, replacing)
+    except entries.UnknownEntry as exc:
+        return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
+    except entries.InvalidEntry as exc:
+        return unprocessable_request(str(exc), key=exc.field)
+    except AggregationError as exc:
+        return _unreplayable(exc, GESTURE_WRITE)
+    return jsonify({key: store_module.finite(value)
+                    for key, value in vars(effect).items()})
 
 
 @bp.patch('/events/<event_id>')

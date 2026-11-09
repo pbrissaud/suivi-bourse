@@ -34,6 +34,21 @@ class AggregationError(Exception):
 class EventAggregator:
     """Aggregates portfolio events into share states."""
 
+    @classmethod
+    def cash_effect(cls, event: Event) -> float:
+        """The signed cash one event moves in its account, fee included.
+
+        The arithmetic of :meth:`replay` itself, run on a blank ledger, so a
+        dry run's sentence and the replay cannot part.
+        """
+        cash = CashState()
+        aggregator = cls()
+        if event.event_type in CASH_EVENT_TYPES:
+            aggregator._process_cash_event(cash, event, DEFAULT_ACCOUNT, Timeline())
+        else:
+            aggregator._apply_share_cash(cash, event)
+        return cash.cash_balance
+
     def _event_account(self, event: Event) -> str:
         """Resolve the account bucket for an event."""
         return event.account or DEFAULT_ACCOUNT

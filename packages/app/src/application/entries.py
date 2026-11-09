@@ -94,6 +94,47 @@ def create(store, draft: Event) -> Event:
     return replace(event, id=next_id, account=account)
 
 
+@dataclass(frozen=True)
+class Effect:
+    """What a candidate event would do to its account's cash (nothing written)."""
+
+    account: str
+    cash_before: float
+    cash_after: float
+    amount: float
+    fee: float
+    direction: str
+
+
+def effect(store, draft: Event, replacing: Optional[int] = None) -> Effect:
+    """The dry run of :func:`create` (or, with ``replacing``, of :func:`update`).
+
+    Judged exactly as the write is: the same settling, the same validator, the
+    same replay of the ledger the write would leave. ``cash_after`` is the
+    account's balance at the end of that replay; ``cash_before`` is what it
+    would be without the candidate (for an edit, without the row it replaces).
+    """
+    event = _settled(store, draft)
+    _refuse(store, event)
+    account = event.account or DEFAULT_ACCOUNT
+    if replacing is not None:
+        _require_known(store, replacing)
+
+    held = [row for row in ledger.read_events(store) if row.id != replacing]
+    candidate = replace(event, account=account, id=replacing)
+    # The write gives a new row the highest id, and an edited one keeps its own:
+    # the replay order is (day, id), so a new row sorts after its day's rows.
+    would_be = sorted(held + [candidate], key=lambda row: (
+        row.date, float('inf') if row.id is None else row.id))
+    timeline = EventAggregator().replay(would_be)
+    snapshots = timeline.cash_snapshots.get(account)
+    after = snapshots[-1][1].cash_balance if snapshots else 0.0
+    moved = EventAggregator.cash_effect(candidate)
+    return Effect(account=account, cash_before=after - moved, cash_after=after,
+                  amount=abs(moved), fee=event.fee or 0.0,
+                  direction='credit' if moved > 0 else 'debit' if moved < 0 else 'none')
+
+
 def create_many(store, drafts: Sequence[Event], *,
                 base_currency: Optional[str] = None,
                 declare_accounts: Sequence[str] = (),
@@ -449,6 +490,6 @@ def _replays(store) -> None:
 __all__ = [
     'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
     'UnknownEntry', 'InvalidEntry', 'Duplicate',
-    'create', 'create_many', 'record_many', 'update', 'remove', 'remove_keys',
+    'Effect', 'effect', 'create', 'create_many', 'record_many', 'update', 'remove', 'remove_keys',
     'content_key', 'split_duplicates', 'judge', 'cap_dividend_fees',
 ]

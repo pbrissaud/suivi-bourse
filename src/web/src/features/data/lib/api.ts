@@ -325,6 +325,75 @@ export interface ImportOptions {
   foreign?: readonly string[]
 }
 
+// ------------------------------------------------------------------------- //
+// The import in two steps (IMPLEMENTATION.md § 3.4), and the dry run of a write
+// (§ 3.5). The preview persists nothing; the commit takes its token back.
+// ------------------------------------------------------------------------- //
+
+export const IMPORT_ROW_STATUSES = ['new', 'duplicate', 'unknown_security', 'unreadable'] as const
+
+export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number]
+
+/** What made a line a duplicate: `isin` or `symbol`, `date`, then `quantity`+`price` or `amount`. */
+export type ImportMatchCriterion = 'isin' | 'symbol' | 'date' | 'quantity' | 'price' | 'amount'
+
+export interface ImportPreviewRow {
+  /** 1-based position among the file's lines: the number a resolution names. */
+  row: number
+  status: ImportRowStatus
+  /** Why an `unreadable` line is, in the server's words. */
+  reason: string | null
+  date: string | null
+  event_type: LedgerEventType | null
+  symbol: string | null
+  /** The ISIN the file gave, if any. */
+  isin: string | null
+  name: string | null
+  quantity: number | null
+  unit_price: number | null
+  fee: number | null
+  amount: number | null
+  notes: string | null
+  /** Set on a `duplicate`: the held event it repeats, and what matched. */
+  matched_event_id: string | null
+  matched_on: ImportMatchCriterion[] | null
+}
+
+export interface ImportPreview {
+  token: string
+  filename: string
+  account_id: string
+  /** The format detected from the header line (or the one asked for). */
+  format: string
+  format_key: string
+  counts: Record<ImportRowStatus, number>
+  rows: ImportPreviewRow[]
+}
+
+export interface ImportResolution {
+  row: number
+  /** The ticker the owner says the line's security is. */
+  security: string
+}
+
+export interface ImportCommitReceipt {
+  imported: number
+  duplicate: number
+  unknown_security: number
+  unreadable: number
+}
+
+/** The effect line's data: what writing a candidate event does to its account's cash. */
+export interface EventEffect {
+  account: string
+  cash_before: number
+  cash_after: number
+  /** The magnitude of the cash movement, fee included. */
+  amount: number
+  fee: number
+  direction: 'debit' | 'credit' | 'none'
+}
+
 export const dataApi = {
   events: () => get<EventsResponse>(ROUTES.events),
   searchSecurities: (q: string) =>
@@ -373,6 +442,17 @@ export const dataApi = {
       ],
       { write_repeat: (options.writeRepeats ?? []).map(String) },
     ),
+  /** Read `file` against `accountId`'s ledger; `format` overrides the detection. */
+  previewImport: (file: File, accountId: string, format?: string) =>
+    upload<ImportPreview>(ROUTES.eventsImportPreview, [file], [], {
+      account_id: [accountId],
+      ...(format ? { format: [format] } : {}),
+    }),
+  commitImport: (token: string, associate: readonly ImportResolution[] = []) =>
+    send<ImportCommitReceipt>(ROUTES.eventsImportCommit, 'POST', { token, associate }),
+  /** `id` previews an edit of that event rather than a new one. */
+  previewEvent: (draft: EventDraft, id?: string) =>
+    send<EventEffect>(ROUTES.eventsPreview, 'POST', id ? { ...draft, id } : draft),
   // The way back out (#710, #796). It answers bytes and a name rather than a
   // payload, and it is the one call whose result no cache holds: a file is
   // handed to the reader, not rendered.

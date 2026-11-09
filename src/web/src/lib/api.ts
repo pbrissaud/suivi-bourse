@@ -97,6 +97,12 @@ export const ROUTES = {
    * the gesture produced — and never an id to come back to.
    */
   eventsImport: '/api/events/import',
+  /** The same file read against one account's ledger, nothing written: rows with a status and a token. */
+  eventsImportPreview: '/api/events/import/preview',
+  /** The previewed rows written, by token, with the owner's resolutions. */
+  eventsImportCommit: '/api/events/import/commit',
+  /** A dry run of one event write: the cash it would leave in its account. */
+  eventsPreview: '/api/events/preview',
   /**
    * The ledger back out, in the format it came in by (#710) — **the events, and
    * only them**. There was a second file, the declaration, because a
