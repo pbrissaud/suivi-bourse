@@ -59,10 +59,10 @@ export interface AccountDraft {
    * *say nothing* has to be sayable. The form sends it on every submission all
    * the same, because the select always has an answer.
    */
-  taxation_model?: string | null
+  taxation_model_id?: string | null
   /**
    * The opening date, `null` to take it away — and **absent to leave it alone**
-   * (#918), on `taxation_model`'s own three-way rule.
+   * (#918), on `taxation_model_id`'s own three-way rule.
    *
    * Sent only where the field was **shown**: it is not asked for when the
    * account's taxation model counts its threshold from anything but the

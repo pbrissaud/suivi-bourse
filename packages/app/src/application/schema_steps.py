@@ -187,6 +187,7 @@ STEPS = store_steps.STEPS + (
     ('move_token_to_access_tokens', auth_gate.move_token_to_access_tokens),
     ('move_agent_provider', _move_agent_provider),
     ('backfill_agent_usage', _backfill_agent_usage),
+    ('make_account_label_optional', store_steps._make_account_label_optional),
 )
 
 __all__ = ['STEPS']

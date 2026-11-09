@@ -79,7 +79,7 @@ export function TaxationModelField({
   const others =
     editing?.mode === 'edit' && selected !== null
       ? (accounts.data?.accounts ?? []).filter(
-          (account) => account.taxation_model === selected.id && account.id !== accountId,
+          (account) => account.taxation_model_id === selected.id && account.id !== accountId,
         )
       : []
 

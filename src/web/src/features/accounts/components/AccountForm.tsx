@@ -225,7 +225,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
     // attributing one account's failure to another.
     write.reset()
     remove.reset()
-    setTaxationModel(account?.taxation_model ?? null)
+    setTaxationModel(account?.taxation_model_id ?? null)
     setEditing(null)
     setModelError(null)
     setDraft(
@@ -310,7 +310,7 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
           ? {
               id,
               label: label || id,
-              ...(modelId === null ? {} : { taxation_model: modelId }),
+              ...(modelId === null ? {} : { taxation_model_id: modelId }),
               ...opening,
               // Sent only where the box was shown **and** left ticked: `reassign`
               // is a request, and a client that never asks must never perform one.
@@ -322,7 +322,9 @@ export function AccountForm({ open, account, offer, removal, onClose }: AccountF
             // rename: the server reads an absent member as *leave it alone*.
             {
               label,
-              ...(modelId === (account.taxation_model ?? null) ? {} : { taxation_model: modelId }),
+              ...(modelId === (account.taxation_model_id ?? null)
+                ? {}
+                : { taxation_model_id: modelId }),
               ...opening,
             },
     })

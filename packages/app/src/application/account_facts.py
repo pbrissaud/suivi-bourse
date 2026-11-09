@@ -67,7 +67,7 @@ class Account(TypedDict):
     transfer_fees: Optional[float]
     # `account_facts.declared_only` drops each of these where there is none.
     # The taxation model this account carries (#752) — absent where none.
-    taxation_model: NotRequired[str]
+    taxation_model_id: NotRequired[str]
     # The day the wrapper was opened, **as its owner declared it** (#918). It
     # cannot be derived: a transferred PEA's ledger starts years late.
     opened_on: NotRequired[str]
@@ -83,6 +83,10 @@ class Account(TypedDict):
     # gain, an aged wrapper with no date, an assiette one unvalued line makes
     # unknown. A projected zero and a zero nobody could compute differ.
     projected_tax: NotRequired[float]
+    # `projected_tax` as its two parts, absent wherever it is: the income tax
+    # (IR) and the social levies (PS), whose sum is `projected_tax`.
+    projected_income_tax: NotRequired[float]
+    projected_social_levy: NotRequired[float]
     # The latent gain `projected_tax` was computed on — not the head's `Gain`,
     # which adds realised, dividends and fees.
     projected_base: NotRequired[float]
@@ -231,7 +235,7 @@ def _usable(models: dict, carried: dict, roster) -> Dict[str, Any]:
 
     A refused row is logged here, once, and then simply is not in this map: the
     payload cannot tell *refused* from *never declared*, and does not need to —
-    both publish no projection, and `taxation_model` rides on the declaration
+    both publish no projection, and `taxation_model_id` rides on the declaration
     either way.
     """
     usable: Dict[str, Any] = {}
@@ -279,7 +283,7 @@ def _with_account_facts(row: dict, carried: dict, opened_on: dict,
     was declared with, the day its index counts from, and the projection where
     there is a model to project it through."""
     return {**row, **declared_only({
-        'taxation_model': carried.get(row['id']),
+        'taxation_model_id': carried.get(row['id']),
         'opened_on': instants.iso(opened_on.get(row['id'])),
         'first_payment': instants.iso(payments.get(row['id'])),
         # **The index says what day it is based at** (#887). `twr_index` is
@@ -330,9 +334,13 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
     tax = taxation_projection.projected_tax(
         latent_gain=latent.get(row['id']), **facts)
     changes_on = taxation_projection.rate_changes_on(**facts)
+    split = taxation_projection.projected_split(
+        latent_gain=latent.get(row['id']), **facts)
     return {
         'taxation_kind': model.kind,
         'projected_tax': tax,
+        'projected_income_tax': None if split is None else split[0],
+        'projected_social_levy': None if split is None else split[1],
         # **The base rides with the figure**, and only where there is a figure.
         # The panel states a `Gain` of its own four paces up — latent *plus*
         # realised, dividends and fees — and the projection reads the latent

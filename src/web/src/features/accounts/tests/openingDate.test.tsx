@@ -104,7 +104,7 @@ describe('the date is asked for only where it matters', () => {
     // A flat rate on the gain has no threshold to count years to, so there is
     // no figure this date could change — and asking for it is asking the
     // reader to work for nothing.
-    const { user } = renderAccounts({ taxation_model: 'model-one', first_payment: '2019-03-04' })
+    const { user } = renderAccounts({ taxation_model_id: 'model-one', first_payment: '2019-03-04' })
     const panel = await openPanel(user)
 
     expect(within(panel).queryByLabelText(/Ouvert le/)).not.toBeInTheDocument()
@@ -115,7 +115,7 @@ describe('the date is asked for only where it matters', () => {
     // opening date changes no figure — and the hint under the field would be
     // telling this reader the opposite.
     const { user } = renderAccounts({
-      taxation_model: 'aged-payment',
+      taxation_model_id: 'aged-payment',
       first_payment: '2019-03-04',
     })
     const panel = await openPanel(user)
@@ -145,7 +145,7 @@ describe('the date is asked for only where it matters', () => {
 
 describe('the pre-fill is the interface’s offer', () => {
   it('offers the account’s earliest declared payment where it has declared none', async () => {
-    const { user } = renderAccounts({ taxation_model: 'aged', first_payment: '2019-03-04' })
+    const { user } = renderAccounts({ taxation_model_id: 'aged', first_payment: '2019-03-04' })
     const panel = await openPanel(user)
 
     expect(within(panel).getByLabelText(/Ouvert le/)).toHaveValue('2019-03-04')
@@ -155,7 +155,7 @@ describe('the pre-fill is the interface’s offer', () => {
     // Accepted, the offer became a declaration and stopped moving: the stored
     // value is what the owner submitted, and nothing re-derives it.
     const { user } = renderAccounts({
-      taxation_model: 'aged',
+      taxation_model_id: 'aged',
       opened_on: '2015-06-01',
       first_payment: '2019-03-04',
     })
@@ -165,7 +165,7 @@ describe('the pre-fill is the interface’s offer', () => {
   })
 
   it('is empty where the account has no payment on record', async () => {
-    const { user } = renderAccounts({ taxation_model: 'aged' })
+    const { user } = renderAccounts({ taxation_model_id: 'aged' })
     const panel = await openPanel(user)
 
     expect(within(panel).getByLabelText(/Ouvert le/)).toHaveValue('')
@@ -193,7 +193,7 @@ describe('what the panel sends', () => {
     // Submitting **is** accepting: the offer is what the owner will take nine
     // times out of ten, and it becomes their declaration the moment they do.
     const sent = await sentBy(
-      { taxation_model: 'aged', first_payment: '2019-03-04' },
+      { taxation_model_id: 'aged', first_payment: '2019-03-04' },
       async () => {},
     )
 
@@ -202,7 +202,7 @@ describe('what the panel sends', () => {
 
   it('says nothing about a declared day the reader did not touch', async () => {
     const sent = await sentBy(
-      { taxation_model: 'aged', opened_on: '2015-06-01', first_payment: '2019-03-04' },
+      { taxation_model_id: 'aged', opened_on: '2015-06-01', first_payment: '2019-03-04' },
       async () => {},
     )
 
@@ -211,7 +211,7 @@ describe('what the panel sends', () => {
 
   it('sends a null when the reader empties it, which takes the declaration away', async () => {
     const { user } = renderAccounts({
-      taxation_model: 'aged',
+      taxation_model_id: 'aged',
       opened_on: '2015-06-01',
       first_payment: '2019-03-04',
     })
@@ -235,7 +235,7 @@ describe('what the panel sends', () => {
     // about it — a payment date must not reach the store because a reader
     // renamed an account.
     const sent = await sentBy(
-      { taxation_model: 'model-one', first_payment: '2019-03-04' },
+      { taxation_model_id: 'model-one', first_payment: '2019-03-04' },
       async (panel) => {
         await within(panel).findByLabelText('Libellé')
       },

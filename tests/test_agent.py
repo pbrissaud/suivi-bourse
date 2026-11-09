@@ -72,7 +72,7 @@ def test_the_prompt_holds_the_two_rules():
 
 
 def test_the_prompt_names_an_account_by_its_label_and_quotes_no_field():
-    assert 'by its `label`, never by its `id`' in agent.SYSTEM_PROMPT
+    assert 'by its `label`, or by its `id` when it has none' in agent.SYSTEM_PROMPT
     assert "never quote a tool's field names" in agent.SYSTEM_PROMPT
 
 

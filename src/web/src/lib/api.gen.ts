@@ -23,11 +23,13 @@ export interface Account {
   net_contributed: number | null;
   opened_on?: string;
   projected_base?: number;
+  projected_income_tax?: number;
   projected_rate_changes_on?: string;
   projected_rates?: number[];
+  projected_social_levy?: number;
   projected_tax?: number;
   taxation_kind?: string;
-  taxation_model?: string;
+  taxation_model_id?: string;
   total_value: number | null;
   transfer_fees: number | null;
   twr_index: number | null;

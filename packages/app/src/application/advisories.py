@@ -88,7 +88,7 @@ def _newest_account_metrics(opened):
     account per day costs.
     """
     return opened.query(
-        'SELECT m.account, a.label, m.cash_balance, m.total_value '
+        'SELECT m.account, COALESCE(a.label, a.id), m.cash_balance, m.total_value '
         'FROM account_metrics m '
         'JOIN account a ON a.id = m.account '
         'JOIN (SELECT account, max(day) AS day FROM account_metrics '
@@ -145,7 +145,8 @@ def _observe_opened_after_first_payment(opened, now: datetime) -> List[Advisory]
     # Both halves are read through the module that owns them rather than
     # re-spelled here: a second `SELECT … FROM account_fact` would be a second
     # place to change the day the row's own rules move.
-    labels = {row.id: row.label for row in accounts.read_accounts(opened)}
+    labels = {row.id: row.label or row.id
+              for row in accounts.read_accounts(opened)}
 
     standing: List[Advisory] = []
     for account, opened_on in sorted(
@@ -186,7 +187,8 @@ def _observe_opened_in_the_future(opened, now: datetime) -> List[Advisory]:
     ``rate_before`` for ever, on the one card that says what its owner would owe
     if they emptied the account today.
     """
-    labels = {row.id: row.label for row in accounts.read_accounts(opened)}
+    labels = {row.id: row.label or row.id
+              for row in accounts.read_accounts(opened)}
 
     standing: List[Advisory] = []
     for account, opened_on in sorted(

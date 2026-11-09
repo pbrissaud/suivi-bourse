@@ -6,6 +6,7 @@ nothing here stores anything, and a rate in that file is never a rate in this co
 Pure: the fetcher is injected, ``http_fetch`` is the one the app passes.
 """
 import json
+from datetime import date
 from typing import Callable, List, Optional
 
 from application import taxation
@@ -41,6 +42,10 @@ def _item(entry: object) -> Optional[dict]:
     if not isinstance(entry, dict):
         return None
     fields = {key: entry.get(key) for key in ('id', 'country', 'name', 'kind', 'parameters')}
+    # The catalogue is versioned by day and each entry names its source; an
+    # older file without them still lists, the two members read ``None``.
+    fields['effective_from'] = entry.get('effective_from')
+    fields['source'] = entry.get('source')
     if not all(isinstance(fields[key], str) and fields[key].strip()
                for key in ('id', 'country', 'name', 'kind')):
         return None
@@ -52,8 +57,23 @@ def _item(entry: object) -> Optional[dict]:
     return fields
 
 
-def fetch(fetcher: Callable[[str], bytes], root: str) -> List[dict]:
-    """Every wrapper of the registry, the ones this app refuses flagged and kept."""
+def _in_force(item: dict, today: Optional[date]) -> bool:
+    """Has this version of the entry started? One with no valid day always has."""
+    try:
+        return today is None or item['effective_from'] is None \
+            or date.fromisoformat(item['effective_from']) <= today
+    except (TypeError, ValueError):
+        return True
+
+
+def fetch(fetcher: Callable[[str], bytes], root: str,
+          today: Optional[date] = None, country: Optional[str] = None) -> List[dict]:
+    """Every wrapper of the registry, the ones this app refuses flagged and kept.
+
+    An id may appear once per ``effective_from``: the newest version already in
+    force on ``today`` is the one listed (the first listed wins on a tie), and a
+    version still to come is not. ``country`` narrows the list to one.
+    """
     url = registry_url(root)
     try:
         data = json.loads(fetcher(url))
@@ -65,10 +85,15 @@ def fetch(fetcher: Callable[[str], bytes], root: str) -> List[dict]:
         raise FetchFailed('invalid registry JSON')
     items = {}
     for item in map(_item, data):
-        # An id is the line's identity in the list: the first one wins.
-        if item is not None:
-            items.setdefault(item['id'], item)
-    return list(items.values())
+        # An id is the line's identity in the list: the newest version in force
+        # wins, and the first of equals.
+        if item is None or not _in_force(item, today):
+            continue
+        held = items.get(item['id'])
+        if held is None or (item['effective_from'] or '') > (held['effective_from'] or ''):
+            items[item['id']] = item
+    return [item for item in items.values()
+            if country is None or item['country'].upper() == country.upper()]
 
 
 __all__ = ['MAX_BYTES', 'FetchFailed', 'registry_url', 'http_fetch', 'fetch']

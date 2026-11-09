@@ -5,6 +5,9 @@
 The country files (#1289) stay the one place a rate is written. The app reads
 this flat list from the documentation site when its owner asks to import a model;
 a wrapper whose ``model`` is ``null`` has no shape and is not importable.
+Each item carries ``effective_from`` (the day its tax year starts, so a later
+year of the same id can be added beside it) and ``source`` (its first
+official url).
 """
 import json
 from pathlib import Path
@@ -22,7 +25,10 @@ def render() -> str:
         for wrapper in country['wrappers']:
             if wrapper['model'] is not None:
                 items.append({'id': wrapper['id'], 'country': country['country'],
-                              'name': wrapper['name'], **wrapper['model']})
+                              'name': wrapper['name'],
+                              'effective_from': f"{wrapper['tax_year']}-01-01",
+                              'source': wrapper['sources'][0]['url'],
+                              **wrapper['model']})
     return json.dumps(items, indent=2, ensure_ascii=False) + '\n'
 
 

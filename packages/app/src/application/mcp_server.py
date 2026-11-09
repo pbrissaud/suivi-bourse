@@ -179,7 +179,7 @@ LIST_ACCOUNTS_DESCRIPTION = f"""\
 The declared accounts, each with its newest figures — the allocation primitive.
 
 Use this to answer how the portfolio is split, and to compare accounts.
-`accounts` holds one row per account: `id` and `label` name it, `as_of` is the
+`accounts` holds one row per account: `id` names it and `label` (null when none) calls it, `as_of` is the
 day its figures are from, and it carries its own `total_value`,
 `holdings_value`, `cash_balance`, `net_contributed`, returns (`xirr`,
 `twr_index`), `gain_absolu` and `transfer_fees`. As on the portfolio totals,
@@ -212,7 +212,7 @@ one another. Do not read one family's absence as another's.
   taxation model: `opened_on` where the owner declared an opening day,
   `first_payment` where the ledger holds a payment into the account. An account
   with no model can carry both; an account with a model can carry neither.
-- `taxation_model` is the owner's declaration of which model the account
+- `taxation_model_id` is the owner's declaration of which model the account
   carries, served as written wherever there is one. It is an internal
   identifier, not a name: no tool here resolves it, so do not read it aloud —
   say *which account* needs its model looked at, in the app.
@@ -220,7 +220,7 @@ one another. Do not read one family's absence as another's.
   `projected_base`, `projected_rates` and `projected_rate_changes_on` — are the
   projection, and they are served only where that declared model still passes
   this version's own check on it. A model an older version accepted and this
-  one refuses publishes NOTHING beyond its name. So `taxation_model` present
+  one refuses publishes NOTHING beyond its name. So `taxation_model_id` present
   with `taxation_kind` absent means the declaration needs repairing in the app
   — not that the tax is zero, and not that the read failed.
 
@@ -238,6 +238,10 @@ than reading any tax code. It expresses no allowance, no loss carry-forward, no
 household situation and no year of any actual return. Say it is a projection
 under a model the owner declared, every time you quote it, and never use it to
 advise what is owed, what is due, or when to sell.
+
+`projected_income_tax` and `projected_social_levy` are `projected_tax` in its two
+parts, income tax (IR) and social levies (PS), and add up to it. Quote the parts
+when the owner asks which is which; never compute a part yourself.
 
 `projected_base` is the LATENT gain — not `gain_absolu`, which also holds the
 realised gain, the dividends and the fees. Applying `projected_rates` to
@@ -480,7 +484,7 @@ app has no figure.
 `per_account` is the same measure account by account, each over its own period:
 `per_account.covered_from` to `per_account.covered_to`, and `per_account.ended`
 when it stopped early. Each `per_account.account` is a `list_accounts.id`: name
-it by its `list_accounts.label`. Its figures are `per_account.portfolio_value`,
+it by its `list_accounts.label`, or its `list_accounts.id` when it has no label. Its figures are `per_account.portfolio_value`,
 `per_account.reference_value`, `per_account.gap_gross`,
 `per_account.portfolio_return` and `per_account.reference_return`. The rows add
 up to the head only when every one of them runs to `covered_to`.

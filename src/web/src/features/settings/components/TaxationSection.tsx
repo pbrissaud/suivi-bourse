@@ -80,7 +80,7 @@ function TaxationRows({ catalogue }: { catalogue: TaxationModelsResponse }) {
       />
 
       {models.map((model) => {
-        const carriers = declared.filter((account) => account.taxation_model === model.id)
+        const carriers = declared.filter((account) => account.taxation_model_id === model.id)
         return (
           <SettingRow
             key={model.id}

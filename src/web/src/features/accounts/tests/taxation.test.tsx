@@ -95,7 +95,9 @@ describe('the model an account carries', () => {
 
   it('renders the model the account already carries', async () => {
     const { user } = renderAccounts(
-      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
+      anAccountsPayload([
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
+      ]),
     )
     const panel = await openPanel(user)
 
@@ -106,7 +108,9 @@ describe('the model an account carries', () => {
     // A rename is a rename: the member is absent, which the server reads as
     // *leave it alone*, and an account keeps what it carries.
     const { user } = renderAccounts(
-      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
+      anAccountsPayload([
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
+      ]),
     )
     const panel = await openPanel(user)
     await modelField(panel)
@@ -128,7 +132,9 @@ describe('the model an account carries', () => {
 
   it('detaches the model it carries, and says so with a null', async () => {
     const { user } = renderAccounts(
-      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
+      anAccountsPayload([
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
+      ]),
     )
     const panel = await openPanel(user)
 
@@ -143,7 +149,7 @@ describe('the model an account carries', () => {
     await user.selectOptions(await modelField(panel), '')
     await user.click(within(panel).getByRole('button', { name: 'Enregistrer ce compte' }))
 
-    await waitFor(() => expect(sent).toEqual({ label: 'Alpha', taxation_model: null }))
+    await waitFor(() => expect(sent).toEqual({ label: 'Alpha', taxation_model_id: null }))
   })
 })
 
@@ -293,7 +299,9 @@ describe('removing a model', () => {
 
   it('removes one nothing carries, and the account stops pointing at it', async () => {
     const { user } = renderAccounts(
-      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
+      anAccountsPayload([
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
+      ]),
     )
     const panel = await openPanel(user)
 
@@ -339,7 +347,7 @@ describe('the single submit', () => {
     await user.type(within(panel).getByLabelText(/^Taux/), '30{Enter}')
 
     await waitFor(() => expect(order).toEqual(['model', 'account']))
-    expect(declared).toEqual({ label: 'Alpha', taxation_model: 'written' })
+    expect(declared).toEqual({ label: 'Alpha', taxation_model_id: 'written' })
   })
 
   it('writes nothing when the reader backs out of the model, or cancels the account', async () => {
@@ -375,7 +383,9 @@ describe('the single submit', () => {
 
   it('does not rewrite a model it opened for correction and left as it was', async () => {
     const { user } = renderAccounts(
-      anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' })]),
+      anAccountsPayload([
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
+      ]),
     )
     const panel = await openPanel(user)
     await modelField(panel)
@@ -503,8 +513,8 @@ describe('the single submit', () => {
   it('names the other accounts that carry the model being corrected', async () => {
     const { user } = renderAccounts(
       anAccountsPayload([
-        anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' }),
-        anAccount({ id: 'beta', label: 'Beta', taxation_model: 'model-one' }),
+        anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
+        anAccount({ id: 'beta', label: 'Beta', taxation_model_id: 'model-one' }),
       ]),
     )
     const panel = await openPanel(user)

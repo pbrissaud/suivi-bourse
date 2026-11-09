@@ -157,7 +157,7 @@ export function TaxationImport({ catalogue, accounts, onImported }: TaxationImpo
   const carriers =
     replacing === null
       ? []
-      : accounts.filter((account) => account.taxation_model === replacing.model.id)
+      : accounts.filter((account) => account.taxation_model_id === replacing.model.id)
 
   const closeReplace = () => setReplacing(null)
 

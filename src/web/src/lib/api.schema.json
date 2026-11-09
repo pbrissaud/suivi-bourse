@@ -74,6 +74,9 @@
         "projected_base": {
           "type": "number"
         },
+        "projected_income_tax": {
+          "type": "number"
+        },
         "projected_rate_changes_on": {
           "type": "string"
         },
@@ -83,13 +86,16 @@
           },
           "type": "array"
         },
+        "projected_social_levy": {
+          "type": "number"
+        },
         "projected_tax": {
           "type": "number"
         },
         "taxation_kind": {
           "type": "string"
         },
-        "taxation_model": {
+        "taxation_model_id": {
           "type": "string"
         },
         "total_value": {

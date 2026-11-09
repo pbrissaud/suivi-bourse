@@ -970,14 +970,14 @@ def test_a_tiny_loss_is_not_written_as_negative_zero():
     assert held['market_value'] == '0.0'
 
 
-def test_with_nothing_declared_the_default_row_has_no_label(tmp_path):
-    """The seeded English label is not a name anybody gave it."""
+def test_with_nothing_declared_the_default_row_is_named_by_its_id(tmp_path):
+    """The seeded English label is not a name anybody gave it: ``label ?? id``."""
     opened = empty_store(tmp_path / 'a')
     rows = rows_of(portfolio_of(opened))
     opened.close()
 
     assert [(row['account'], row['account_label']) for row in rows] == [
-        ('default', '')]
+        ('default', 'default')]
 
 
 def test_the_valuation_is_the_quantity_at_the_observed_price(tmp_path):

@@ -448,7 +448,7 @@ def test_the_agent_and_the_browser_are_served_the_same_account(tmp_path):
         assert set(row) == set(by_id[row['id']]), row['id']
 
     carrying = by_id[accounts_module.DEFAULT_ACCOUNT]
-    assert carrying['taxation_model'] == model.id
+    assert carrying['taxation_model_id'] == model.id
     assert carrying['taxation_kind'] == 'flat_realised'
 
 

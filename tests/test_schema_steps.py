@@ -31,6 +31,7 @@ RELEASED = (
     'move_token_to_access_tokens',
     'move_agent_provider',
     'backfill_agent_usage',
+    'make_account_label_optional',
 )
 
 
@@ -266,5 +267,25 @@ def test_the_session_lifetime_step_keeps_the_pin_and_reads_the_default(tmp_path)
         assert state.pin_hash == 'scrypt$00$00'
         assert state.session_seconds is None
         assert state.lifetime == 30 * 86400
+    finally:
+        opened.close()
+
+
+def test_a_store_with_a_mandatory_label_gets_an_optional_one(tmp_path):
+    """A label that only repeats its id is cleared; one that says something stays."""
+    path = tmp_path / 'old.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    with store_steps.rebuilding(connection, 'account'):
+        connection.execute('ALTER TABLE account ALTER COLUMN label SET NOT NULL')
+    connection.execute("INSERT INTO account VALUES ('pea', 'pea'), ('cto', 'Mon CTO')")
+    connection.execute("DELETE FROM schema_step WHERE step = 'make_account_label_optional'")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query("SELECT id, label FROM account WHERE id <> 'default' ORDER BY id") \
+            == [('cto', 'Mon CTO'), ('pea', None)]
+        opened.execute("INSERT INTO account VALUES ('x', NULL)")
     finally:
         opened.close()

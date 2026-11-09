@@ -963,7 +963,7 @@ describe('taxation', () => {
       http.get(ROUTES.accounts, () =>
         HttpResponse.json(
           anAccountsPayload([
-            anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'model-one' }),
+            anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
           ]),
         ),
       ),
@@ -1090,7 +1090,9 @@ describe('importing a taxation model', () => {
       ),
       http.get(ROUTES.accounts, () =>
         HttpResponse.json(
-          anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha', taxation_model: 'mine' })]),
+          anAccountsPayload([
+            anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'mine' }),
+          ]),
         ),
       ),
     )

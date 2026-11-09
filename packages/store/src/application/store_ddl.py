@@ -3,7 +3,7 @@
 _DDL_DECLARED = """
 CREATE TABLE IF NOT EXISTS account (
     id         VARCHAR PRIMARY KEY,
-    label      VARCHAR NOT NULL);
+    label      VARCHAR);                            -- optional: readers fold `label ?? id`
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 

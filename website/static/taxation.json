@@ -3,6 +3,8 @@
     "id": "be/compte-titres",
     "country": "BE",
     "name": "Effectenrekening / compte-titres",
+    "effective_from": "2026-01-01",
+    "source": "https://www.ejustice.just.fgov.be/cgi/article.pl?language=nl&sum_date=2026-06-19&pd_search=2026-04-21&numac_search=2026002780&page=3&lg_txt=N&caller=list&2026002780=74&pdd=2026-04-21&pdf=2026-04-21&choix1=en&choix2=en&fr=f&nl=n&du=d&trier=afkondiging",
     "kind": "flat_realised",
     "parameters": {
       "rate": 0.1
@@ -12,6 +14,8 @@
     "id": "de/depot",
     "country": "DE",
     "name": "Wertpapierdepot",
+    "effective_from": "2026-01-01",
+    "source": "https://www.bzst.de/DE/Privatpersonen/Kapitalertraege/kapitalertraege_node.html",
     "kind": "flat_realised",
     "parameters": {
       "rate": 0.25,
@@ -22,6 +26,8 @@
     "id": "es/cuenta-valores",
     "country": "ES",
     "name": "Cuenta de valores",
+    "effective_from": "2025-01-01",
+    "source": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2025/8-cumplimentacion-irpf/8_4-cuota-integra/8_4_4-gravamen-base-liquidable-ahorro.html",
     "kind": "bracketed_realised",
     "parameters": {
       "brackets": [
@@ -52,6 +58,8 @@
     "id": "fr/pea",
     "country": "FR",
     "name": "Plan d’épargne en actions (PEA)",
+    "effective_from": "2026-01-01",
+    "source": "https://www.impots.gouv.fr/particulier/questions/jai-un-plan-depargne-en-actions-pea-les-retraits-sont-ils-imposables",
     "kind": "aged_flat_realised",
     "parameters": {
       "rate_before": 0.128,
@@ -65,6 +73,8 @@
     "id": "fr/pea-pme",
     "country": "FR",
     "name": "PEA-PME",
+    "effective_from": "2026-01-01",
+    "source": "https://bofip.impots.gouv.fr/bofip/9878-PGP.html/identifiant=BOI-RPPM-RCM-40-55-20240730",
     "kind": "aged_flat_realised",
     "parameters": {
       "rate_before": 0.128,
@@ -78,6 +88,8 @@
     "id": "fr/compte-titres",
     "country": "FR",
     "name": "Compte-titres ordinaire (CTO)",
+    "effective_from": "2026-01-01",
+    "source": "https://www.impots.gouv.fr/particulier/questions/jai-des-valeurs-mobilieres-comment-sont-elles-imposees",
     "kind": "flat_realised",
     "parameters": {
       "rate": 0.128,
@@ -88,6 +100,8 @@
     "id": "fr/assurance-vie",
     "country": "FR",
     "name": "Assurance-vie",
+    "effective_from": "2026-01-01",
+    "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F22414?lang=en",
     "kind": "aged_flat_realised",
     "parameters": {
       "rate_before": 0.128,
@@ -101,9 +115,32 @@
     "id": "fr/per",
     "country": "FR",
     "name": "Plan d’épargne retraite (PER)",
-    "kind": "flat_realised",
+    "effective_from": "2026-01-01",
+    "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F36526/0",
+    "kind": "bracketed_realised",
     "parameters": {
-      "rate": 0.128,
+      "brackets": [
+        {
+          "upper_bound": 11600,
+          "rate": 0
+        },
+        {
+          "upper_bound": 29579,
+          "rate": 0.11
+        },
+        {
+          "upper_bound": 84577,
+          "rate": 0.3
+        },
+        {
+          "upper_bound": 181917,
+          "rate": 0.41
+        },
+        {
+          "upper_bound": null,
+          "rate": 0.45
+        }
+      ],
       "social_rate": 0.186
     }
   },
@@ -111,6 +148,8 @@
     "id": "it/regime-amministrato",
     "country": "IT",
     "name": "Regime amministrato (risparmio amministrato)",
+    "effective_from": "2026-01-01",
+    "source": "https://www.agenziaentrate.gov.it/portale/documents/20143/8987735/Risposta+n.+135_2025/b1264cfc-ff7d-b6a6-6ad8-cacdcd9b037f",
     "kind": "flat_realised",
     "parameters": {
       "rate": 0.26

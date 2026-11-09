@@ -320,7 +320,7 @@ export interface AccountRow {
    * The id of the model this account carries (#752) — **absent where it carries
    * none**, which is what the projection card's whole presence turns on.
    */
-  taxation_model?: string
+  taxation_model_id?: string
   /**
    * The `kind` of the model this account carries — what decides the sentence
    * under the figure and whether there is a figure at all (#919).
@@ -382,7 +382,9 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     twr_index: account.twr_index ?? null,
     // Spread, never `?? null` (#919): the five optional members carry the
     // distinction between *absent* and *null*, and the idiom above erases it.
-    ...(account.taxation_model === undefined ? {} : { taxation_model: account.taxation_model }),
+    ...(account.taxation_model_id === undefined
+      ? {}
+      : { taxation_model_id: account.taxation_model_id }),
     ...(account.taxation_kind === undefined ? {} : { taxation_kind: account.taxation_kind }),
     ...(account.projected_base === undefined ? {} : { projected_base: account.projected_base }),
     ...(account.projected_rates === undefined ? {} : { projected_rates: account.projected_rates }),

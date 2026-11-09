@@ -51,16 +51,16 @@ import {
 } from '@/test/factories'
 
 /**
- * A draft as the row it becomes. `taxation_model: null` is *detach it* and
+ * A draft as the row it becomes. `taxation_model_id: null` is *detach it* and
  * `opened_on: null` is *take the date away*, and what comes back from either is
  * the member **absent** — the wire never carries a null there (#752, #918), so
  * the harness must not either.
  */
 function echoed(draft: AccountDraft): Partial<Account> {
-  const { reassign: _reassign, taxation_model: model, opened_on: day, ...rest } = draft
+  const { reassign: _reassign, taxation_model_id: model, opened_on: day, ...rest } = draft
   return {
     ...rest,
-    ...(model === null || model === undefined ? {} : { taxation_model: model }),
+    ...(model === null || model === undefined ? {} : { taxation_model_id: model }),
     ...(day === null || day === undefined ? {} : { opened_on: day }),
   }
 }

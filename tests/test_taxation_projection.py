@@ -415,3 +415,24 @@ def test_the_check_normalises_on_the_way_through():
     a hand edit left as a string is a rate, not a refusal and not a
     ``str * float``."""
     assert flat({'rate': '0.3'}, 10_000.0) == pytest.approx(3_000.0)
+
+
+def test_the_projection_is_split_into_income_tax_and_social_levy_that_add_up():
+    day = date(2026, 11, 9)
+    facts = dict(latent_gain=1_000.0, now=day)
+    flat = dict(kind='flat_realised', parameters={'rate': 0.128, 'social_rate': 0.186})
+    assert projection.projected_split(**flat, **facts) == pytest.approx((128.0, 186.0))
+    assert projection.projected_tax(**flat, **facts) == pytest.approx(314.0)
+    mature = dict(kind='aged_flat_realised', opened_on=date(2015, 1, 1), parameters={
+        'rate_before': 0.128, 'rate_after': 0.0, 'threshold_years': 5,
+        'age_basis': 'opening', 'social_rate': 0.186})
+    assert projection.projected_split(**mature, **facts) == pytest.approx((0.0, 186.0))
+    ladder = dict(kind='bracketed_realised', parameters={
+        'brackets': [{'upper_bound': 500, 'rate': 0.0}, {'upper_bound': None, 'rate': 0.1}],
+        'social_rate': 0.186})
+    assert projection.projected_split(**ladder, **facts) == pytest.approx((50.0, 186.0))
+    assert projection.projected_tax(**ladder, **facts) == pytest.approx(236.0)
+    assert projection.applied_rates(**ladder, now=day) == pytest.approx([0.186, 0.286])
+    assert projection.projected_split(**flat, latent_gain=None, now=day) is None
+    assert projection.projected_split(**flat, latent_gain=-5.0, now=day) == (0.0, 0.0)
+    assert projection.projected_split(kind='none', parameters={}, **facts) is None
