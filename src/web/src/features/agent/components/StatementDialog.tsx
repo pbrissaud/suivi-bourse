@@ -122,7 +122,7 @@ export function StatementDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('agent.statement.title')}</DialogTitle>
-          <DialogDescription>{t('agent.statement.description')}</DialogDescription>
+          <DialogDescription className="sr-only">{t('agent.statement.title')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1.5">

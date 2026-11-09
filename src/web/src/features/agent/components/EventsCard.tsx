@@ -44,7 +44,14 @@ import { type MessageKey, useI18n } from '@/lib/i18n'
 
 type Line = EventsProposal['events'][number]
 
-export function EventsCard({ proposal }: { proposal: EventsProposal }) {
+export function EventsCard({
+  proposal,
+  primary = false,
+}: {
+  proposal: EventsProposal
+  /** Only the thread's last card is the screen's one filled button; the others are outlines. */
+  primary?: boolean
+}) {
   const { t } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
@@ -201,7 +208,7 @@ export function EventsCard({ proposal }: { proposal: EventsProposal }) {
           <div className="flex flex-wrap items-center gap-4">
             {/* One filled button: what settles the proposal in this state. */}
             <Button
-              variant="primary"
+              variant={primary ? 'primary' : 'outline'}
               asChild={review}
               disabled={busy || (direct && toAdd === 0)}
               onClick={

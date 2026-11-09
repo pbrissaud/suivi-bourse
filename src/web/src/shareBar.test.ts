@@ -44,6 +44,8 @@ const ROOT = path.resolve(import.meta.dirname, '..')
 const MOUNTS = [
   'src/features/shares/components/Allocation.tsx',
   'src/features/accounts/components/AccountDetail.tsx',
+  'src/features/dashboard/components/Head.tsx',
+  'src/features/dashboard/components/SecuritiesValue.tsx',
 ]
 
 describe('one component draws a share', () => {

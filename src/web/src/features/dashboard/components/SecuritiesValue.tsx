@@ -16,6 +16,7 @@ import type { PositionsResponse } from '@/features/shares/lib/api'
 import { allocation, type ShareRow } from '@/features/shares/lib/shares'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { ShareBar } from '@/components/ShareBar'
 import type { ReadFailure } from '@/lib/status'
 
 interface SecuritiesValueProps {
@@ -62,19 +63,16 @@ export function SecuritiesValue({ positions, rows, failure = null }: SecuritiesV
               {t('dashboard.securities.caption', { count: lines })}
             </span>
           </p>
-          <div
-            role="img"
-            aria-label={t('dashboard.securities.bar')}
-            className="flex h-3 gap-0.5 overflow-hidden rounded-xs"
-          >
-            {split.slices.map((slice, rank) => (
-              <span
-                key={sliceKey(slice)}
-                className="block"
-                style={{ flex: slice.share, background: `var(--alloc-${rank + 1})` }}
-              />
-            ))}
-          </div>
+          <ShareBar
+            share={null}
+            fill=""
+            size="stack"
+            label={t('dashboard.securities.bar')}
+            segments={split.slices.map((slice, rank) => ({
+              weight: slice.share,
+              fill: `var(--alloc-${rank + 1})`,
+            }))}
+          />
           <ul aria-label={t('dashboard.securities.title')} className="flex flex-col">
             {split.slices.map((slice, rank) => (
               <li

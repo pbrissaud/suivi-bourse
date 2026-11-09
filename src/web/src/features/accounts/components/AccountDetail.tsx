@@ -70,6 +70,7 @@ import {
   weightShare,
 } from '@/features/shares/lib/shares'
 import { MONEY_DECIMALS, RATIO_DECIMALS, signClass } from '@/lib/sign'
+import { ShareBar } from '@/components/ShareBar'
 import type { ReadFailure } from '@/lib/status'
 
 const REASON_LABELS: Record<DegradedReason, MessageKey> = {
@@ -331,16 +332,16 @@ export function AccountDetail({
 
           {!valued || row.net_contributed === null || invested + earned <= 0 ? null : (
             <div className="space-y-2.5">
-              <div
-                role="img"
-                aria-label={t('accounts.bar.label')}
-                className="flex h-2.5 gap-0.5 overflow-hidden rounded-xs"
-              >
-                <span className="block" style={{ flex: invested, background: 'var(--alloc-5)' }} />
-                {earned > 0 ? (
-                  <span className="block" style={{ flex: earned, background: 'var(--alloc-1)' }} />
-                ) : null}
-              </div>
+              <ShareBar
+                share={null}
+                fill=""
+                size="split"
+                label={t('accounts.bar.label')}
+                segments={[
+                  { weight: invested, fill: 'var(--alloc-5)' },
+                  ...(earned > 0 ? [{ weight: earned, fill: 'var(--alloc-1)' }] : []),
+                ]}
+              />
               <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
                 <p className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
                   <span role="group" aria-label={t('accounts.figure.netContributed')}>
@@ -509,22 +510,16 @@ export function AccountDetail({
                     <span className="text-muted-foreground">{t('accounts.lines.invested')}</span>
                   </p>
                 ) : null}
-                <div
-                  role="img"
-                  aria-label={t('accounts.lines.bar')}
-                  className="flex h-3 gap-0.5 overflow-hidden rounded-xs"
-                >
-                  {lines.map((line, index) => (
-                    <span
-                      key={line.symbol}
-                      className="block"
-                      style={{
-                        flex: Math.max(marketValue(line) ?? 0, 0),
-                        background: `var(--alloc-${(index % 4) + 1})`,
-                      }}
-                    />
-                  ))}
-                </div>
+                <ShareBar
+                  share={null}
+                  fill=""
+                  size="stack"
+                  label={t('accounts.lines.bar')}
+                  segments={lines.map((line, index) => ({
+                    weight: Math.max(marketValue(line) ?? 0, 0),
+                    fill: `var(--alloc-${(index % 4) + 1})`,
+                  }))}
+                />
                 <Table aria-label={t('accounts.detail.lines')}>
                   <TableHeader>
                     <TableRow>

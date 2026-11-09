@@ -320,7 +320,7 @@ def _never_priced(opened, symbol: str, now: datetime) -> List[Advisory]:
         subject=SUBJECT_HEALTH,
         detail=detail,
         message=(
-            f"{detail['symbol']} is named as the comparison reference, but the "
+            f"{detail['symbol']} is named as the comparison fund, but the "
             f"market returned no price for it. Check the ticker."),
         observed_at=now,
     )]

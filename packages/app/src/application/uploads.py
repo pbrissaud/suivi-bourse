@@ -173,7 +173,7 @@ def _read(name: str, stream, root: str) -> Upload:
         raise UploadRefused(
             f"{name} is a v4 configuration file and this version does not read "
             f"one: a portfolio is a dated event ledger and nothing else. "
-            f"Describe those positions as dated events — {migration_page(root)}")
+            f"Describe those lines as dated events — {migration_page(root)}")
 
     suffix = Path(name).suffix.lower()
     if suffix not in IMPORT_SUFFIXES:

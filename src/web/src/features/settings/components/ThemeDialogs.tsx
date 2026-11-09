@@ -149,8 +149,8 @@ export function JsonDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('settings.theme.json')}</DialogTitle>
-          <DialogDescription id="theme-json-help">
-            {t('settings.theme.json.help')}
+          <DialogDescription id="theme-json-help" className="sr-only">
+            {t('settings.theme.json')}
           </DialogDescription>
         </DialogHeader>
         <Textarea

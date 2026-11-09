@@ -90,7 +90,7 @@ export function ChartTooltip({ format }: ChartTooltipProps) {
             aria-live="polite"
             className="min-w-42.5 rounded-lg border bg-sidebar px-3 py-2.5 text-sm shadow-lg"
           >
-            <p className="mb-1.5 text-xs text-muted-foreground">{f.date(label)}</p>
+            <p className="fig mb-1.5 text-xs text-muted-foreground">{f.date(label)}</p>
             {lines.map((line) => (
               <p key={line.key} className="flex items-baseline gap-3.5">
                 <span style={{ color: line.colour }}>{line.name}</span>

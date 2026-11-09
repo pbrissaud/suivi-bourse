@@ -120,7 +120,7 @@ export function ReferencesSheet({
       <SheetContent className="w-full overflow-y-auto sm:max-w-md" aria-busy={write.isPending}>
         <SheetHeader>
           <SheetTitle className="text-lg">{t('settings.refs.title')}</SheetTitle>
-          <SheetDescription>{t('settings.refs.description')}</SheetDescription>
+          <SheetDescription className="sr-only">{t('settings.refs.title')}</SheetDescription>
         </SheetHeader>
 
         <div className="px-4 pb-6">

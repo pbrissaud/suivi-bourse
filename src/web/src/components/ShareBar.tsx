@@ -46,10 +46,12 @@ import { cn } from '@/lib/utils'
  * rather than a second copy of this component: the whole reason the primitive
  * exists is that the product had three.
  */
-const HEIGHTS: Record<'line' | 'weight' | 'block', string> = {
+const HEIGHTS: Record<'line' | 'weight' | 'block' | 'split' | 'stack', string> = {
   line: 'h-[3px]',
   weight: 'h-1.5',
   block: 'h-2',
+  split: 'h-2.5',
+  stack: 'h-3',
 }
 
 interface ShareBarProps {
@@ -63,7 +65,16 @@ interface ShareBarProps {
    * ramp, the rail's identity wheel — and never here.
    */
   fill: string
-  size?: 'line' | 'weight' | 'block'
+  size?: 'line' | 'weight' | 'block' | 'split' | 'stack'
+  /**
+   * A whole cut into adjacent segments (a contribution/gain split, a
+   * composition) instead of one share on a track: `{ weight, fill }`, drawn in
+   * declaration order with a hairline between them, `weight` read against the
+   * sum. `label` is then the bar's own text alternative — it is the only place
+   * the drawing is announced, there being no figure beside it for the whole.
+   */
+  segments?: { weight: number; fill: string }[]
+  label?: string
   /**
    * The share the bar is drawn **full** at — the largest one on the surface,
    * where a list is compared down its own column (#838). `1` is the default and
@@ -81,7 +92,33 @@ interface ShareBarProps {
   className?: string
 }
 
-export function ShareBar({ share, fill, size = 'line', scale = 1, className }: ShareBarProps) {
+export function ShareBar({
+  share,
+  fill,
+  size = 'line',
+  scale = 1,
+  segments,
+  label,
+  className,
+}: ShareBarProps) {
+  if (segments) {
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        data-share-stack
+        className={cn('flex w-full gap-0.5 overflow-hidden rounded-xs', HEIGHTS[size], className)}
+      >
+        {segments.map((segment, index) => (
+          <span
+            key={index}
+            className="block"
+            style={{ flex: segment.weight, backgroundColor: segment.fill }}
+          />
+        ))}
+      </span>
+    )
+  }
   if (share === null) return null
   // Floored and capped **here**, so that no call site has to know why: a
   // browser drops `width: -12.5%` without a word, and the bars beside it then

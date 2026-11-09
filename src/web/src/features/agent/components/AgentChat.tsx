@@ -350,6 +350,7 @@ function AgentConversation() {
                     <Turn
                       message={message}
                       live={busy && message === messages.at(-1)}
+                      latest={message === messages.at(-1)}
                       proposals={proposals}
                       model={model}
                     />
@@ -613,11 +614,14 @@ const AnswerMarkdown = memo(function AnswerMarkdown({ children }: { children: st
 function Turn({
   message,
   live,
+  latest,
   proposals,
   model,
 }: {
   message: UIMessage
   live: boolean
+  /** The thread's last turn: its last events card owns the screen's one filled button. */
+  latest: boolean
   proposals: Map<string, ThreadProposal> | undefined
   /** The model the thread runs on, named on the answer; `null` while unread. */
   model: string | null
@@ -656,9 +660,13 @@ function Turn({
             </div>
           )
         })}
-        {cards.map((proposal) =>
+        {cards.map((proposal, index) =>
           'kind' in proposal ? (
-            <EventsCard key={proposal.id} proposal={proposal} />
+            <EventsCard
+              key={proposal.id}
+              proposal={proposal}
+              primary={latest && index === cards.length - 1}
+            />
           ) : (
             <FactCard key={proposal.id} proposal={proposal} />
           ),

@@ -255,8 +255,8 @@ describe('the comparison', () => {
   it('sends the owner to the references when nothing is followed', async () => {
     renderBenchmark()
 
-    expect(await screen.findByText('Aucune référence suivie')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Choisir les références' })).toHaveAttribute(
+    expect(await screen.findByText('Aucun fonds de comparaison suivi')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Choisir les fonds' })).toHaveAttribute(
       'href',
       '/settings#portfolio-references',
     )
@@ -290,7 +290,7 @@ describe('the comparison', () => {
       within(section).getByText('Remonté jusqu’à mars 2014, sur juin 2009 · 55 %'),
     ).toBeInTheDocument()
     expect(within(section).getByRole('progressbar')).toHaveAttribute('value', '55')
-    expect(within(section).getByRole('link', { name: 'Gérer les références' })).toHaveAttribute(
+    expect(within(section).getByRole('link', { name: 'Gérer les fonds' })).toHaveAttribute(
       'href',
       '/settings#portfolio-references',
     )
@@ -559,7 +559,7 @@ describe('what the period costs', () => {
     const region = (await head()) as HTMLElement
     expect(
       await within(region).findByText(
-        /une sortie de titres à cette date, la référence n’aurait pas pu la financer/,
+        /une sortie de titres à cette date, le fonds n’aurait pas pu la financer/,
       ),
     ).toBeInTheDocument()
   })

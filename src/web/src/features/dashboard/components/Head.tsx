@@ -39,6 +39,7 @@ import type { PositionsResponse } from '@/features/shares/lib/api'
 import type { RuntimeState } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { ShareBar } from '@/components/ShareBar'
 import { signClass } from '@/lib/sign'
 
 interface DashboardHeadProps {
@@ -230,17 +231,19 @@ export function DashboardHead({
         {valued && (contributed !== null || gain?.amount != null || xirr !== null) ? (
           <div className="mt-5 flex flex-col gap-2.5">
             {gainShare === null ? null : (
-              <div
-                role="img"
-                aria-label={t('dashboard.bar', {
+              <ShareBar
+                share={null}
+                fill=""
+                size="split"
+                label={t('dashboard.bar', {
                   contributed: f.percentPoints((1 - gainShare) * 100, 1),
                   gain: f.percentPoints(gainShare * 100, 1),
                 })}
-                className="flex h-2.5 gap-0.5 overflow-hidden rounded-xs"
-              >
-                <span className="block bg-alloc-5" style={{ flex: 1 - gainShare }} />
-                <span className="block bg-alloc-1" style={{ flex: gainShare }} />
-              </div>
+                segments={[
+                  { weight: 1 - gainShare, fill: 'var(--alloc-5)' },
+                  { weight: gainShare, fill: 'var(--alloc-1)' },
+                ]}
+              />
             )}
             <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
               <p className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">

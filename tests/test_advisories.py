@@ -598,7 +598,7 @@ def test_a_reference_the_market_returned_nothing_for_says_so(store):
     assert one.subject == advisories.SUBJECT_HEALTH
     assert one.detail == {'symbol': BENCHMARK}
     assert one.message == (
-        f'{BENCHMARK} is named as the comparison reference, but the market '
+        f'{BENCHMARK} is named as the comparison fund, but the market '
         'returned no price for it. Check the ticker.')
     assert one.observed_at == NOW
 
