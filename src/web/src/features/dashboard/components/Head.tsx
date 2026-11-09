@@ -1,87 +1,45 @@
 /**
- * The head of the dashboard.
+ * The head of the dashboard (« Relevé », DESIGN.md › The hero).
  *
- * **One head, no discriminated union.** `MODE_MULTI_CURRENCY` is dead and a
- * `default` account is always seeded, so there is nothing to branch the whole
- * block on. Absence is rendered **per field**, and a field that does not exist
- * for this installation is left out rather than dashed: it is not a missing
- * value. A sentence under the head names what a ledger would add.
+ * « Valeur du portefeuille », the value in the hero rung, and under it the
+ * variation over the chart's period in mono, coloured by sign (`totals.variation`
+ * of the range the page holds: the line and the chart share it). On the right a
+ * three-row statement, *Premier versement*, *Liquidités* and *Net si tout vendu*.
+ * Under them a 10 px two-colour bar, then one line: *Versé net* and *Gain total*
+ * on the left, *TRI x % par an* alone on the right.
+ *
+ * **Every figure is the server's** (`GET /api/portfolio-totals`): the gain total
+ * is the app's one official gain (latent + realised + dividends − fees, over the
+ * net contribution), the net if sold is the value less the projected tax of the
+ * accounts that carry a model. Nothing is summed here.
+ *
+ * **Absence is per field.** A figure that does not exist for this installation
+ * is left out, not dashed: an install with no cash ledger has no cash, no net
+ * contribution and no IRR, and its value is the securities' alone, said under its
+ * own name (#708). A past-day row during the rebuild asserts no value at all
+ * (#1260).
  *
  * **A read that fails is named by whoever is empty because of it, not here**
- * (#799, then #829). The head keeps its figures in every one of those cases,
- * which is the property both tickets bought.
- *
- * **The block reads nothing of its own** since the same ticket. The four reads
- * it renders are the page's, handed down as props, and the two shapes that can
- * be *not answered yet* cross the boundary as `readonly X[] | null` — never as
- * `[]`.
- *
- * **The gain is computed, never read.** `portfolio_totals.gain_absolu` rides in
- * the payload and is ignored: it is the same number written down elsewhere, and
- * two producers for one figure is what the shares page spent a session
- * dismantling. The arithmetic lives in `lib/gain.ts`. `Valeur totale` and
- * `Titres` follow it rather than the pass (#1049), so the head reads one instant.
- *
- * **The value is the hero, and the gain is its subtitle** (dashboard redesign,
- * direction 1a). The page answers *how much is my portfolio worth* first: the
- * value is the one figure at hero size, the gain total is the line under it,
- * on the Section title rung, and the year's, the day's and the IRR's follow as
- * one plain row (#1149, #1174, #1280), and the four terms the gain is the
- * sum of left the head for a card of their own (`GainBreakdown.tsx`). That
- * reverses variant A, which kept the gain alone at the top — and it is the same
- * argument read the other way round: the terms were subordinated by size, and
- * they are subordinated by distance now, which a reader cannot sum by accident
- * either.
- *
- * **The chart is under the hero, across its full width** (`HeroChart.tsx`,
- * dashboard grid 17A / D25, 11/10/2026), handed in by the page as `chart`: the
- * block still reads nothing of its own. It was a 64 px sparkline on the
- * right with the real chart in a dialog (#1099, direction 1a); the real chart
- * is now on the page, and the dialog is gone.
- *
- * **The IRR is the last figure of the row** (#1149, DESIGN.md › The hero): the one
- * performance figure (#1112) sits beside the value, not a screen below it on a
- * phone.
- *
- * **The year-to-date is two figures that do not touch**: the euro is the
- * first of the row (#1174), the percentage inside the IRR's bubble, with the TWR it
- * belongs to — two groups apart.
- * Measured on the real portfolio, `+40,69 €` and `−1,25 %` over the same
- * period, of opposite signs and both correct — the portfolio grew by 6 673 € of
- * deposits while its holdings lost 1,25 %. Side by side they read as a
- * contradiction; they are not one.
- *
- * **There is no range control.** The delta is fixed to year-to-date, on the
- * gain and on the time-weighted return, and **never on the money-weighted
- * one**, which is annualised from the origin and has no window to narrow.
- *
- * That *the same figure* is load-bearing rather than decorative: the day's move
- * is the movement of `gain_absolu` over one day (`features/dashboard/lib/dashboard.ts`), which is
- * `_ytd`'s own definition over another window — so the day's figure and the
- * year's answer one question twice and never two questions once.
- *
- * The series it reduces is the chart's, read once by the page under the chart's
- * own condition and therefore costing no request of its own: one read, two
- * consumers.
+ * (#799, #829): the block reads nothing of its own, the page hands it the reads.
  */
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 
 import { EmptyState } from '@/components/EmptyState'
-import { Explain } from '@/components/Explain'
-import { SignedFigure } from '@/components/FigurePill'
 import { RecomposingFigure } from '@/components/RecomposingFigure'
-import { Stat } from '@/components/Stat'
-import type { PerfPoint } from '@/features/accounts/lib/api'
+import {
+  Tooltip as Hint,
+  TooltipContent as HintContent,
+  TooltipProvider as HintProvider,
+  TooltipTrigger as HintTrigger,
+} from '@/components/ui/tooltip'
 import type { PortfolioTotalsResponse } from '@/features/dashboard/lib/api'
+import { heroReading, unpricedLines, type DashboardRange } from '@/features/dashboard/lib/dashboard'
 import type { PositionsResponse } from '@/features/shares/lib/api'
 import type { RuntimeState } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
-import { renderFigure } from '@/lib/absence'
-import { gainTotal, portfolioTerms, sumRendering } from '@/lib/gain'
-import { dayMove, heroReading, unpricedLines } from '@/features/dashboard/lib/dashboard'
 import { useI18n } from '@/lib/i18n'
-import { RATIO_DECIMALS } from '@/lib/sign'
+import { signClass } from '@/lib/sign'
 
 interface DashboardHeadProps {
   /**
@@ -91,22 +49,11 @@ interface DashboardHeadProps {
    */
   positions: PositionsResponse | null
   totals: PortfolioTotalsResponse | null
-  /**
-   * This process's own state. `null` — nothing says yet. It decides whether the
-   * newest row is today's, and whether the reconstruction is running (#1260).
-   */
+  /** This process's own state: it decides whether the newest row is today's. */
   runtime: RuntimeState | null
-  /**
-   * The portfolio's series — the chart's own read, shared rather than asked for
-   * twice. `null` and never `[]`: a series that has not answered is not a day
-   * on which nothing moved, and the figure it feeds is then simply not drawn.
-   */
-  history: readonly PerfPoint[] | null
-  /**
-   * The portfolio's chart and its range control, under the value and its
-   * figures — composed by the page, which owns the range. `null` draws the value
-   * alone.
-   */
+  /** The period the page holds, which the variation line shares with the chart. */
+  range: DashboardRange
+  /** The chart and its controls, composed by the page, which owns the range. */
   chart?: ReactNode
 }
 
@@ -114,37 +61,28 @@ export function DashboardHead({
   positions,
   totals,
   runtime,
-  history,
+  range,
   chart = null,
 }: DashboardHeadProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
-  // **A read that has not landed is not a fact**, and the two the block *needs*
-  // are waited for together. Absence of data with no error is the first load,
-  // and it is not a state to write a sentence about — but the sentences below
-  // are written about `totals` as much as about `positions`, so letting one land
-  // first turns *not arrived yet* into a statement: `totals.data?.totals ?? null`
-  // put *« un grand livre d'événements datés ajouterait… »* under a portfolio
-  // that has one, for as long as the second request took, and then swapped the
-  // headline for a different number. The two optional reads below are not in
-  // this rule: their absence removes a line rather than falsifying one.
+  // A read that has not landed is not a fact, and the two the block needs are
+  // waited for together: `totals` alone would print « no ledger » under a
+  // portfolio that has one for as long as `positions` took.
   if (!positions || !totals) return null
 
   const rows = positions.positions
   const totalsRow = totals.totals
   const currency = positions.base_currency ?? totals.base_currency ?? null
 
-  // The two empties are not the same (spec #712 §6). *No events at all* is a
-  // sentence and a way to the Data page — this page reads, it is not where one
-  // enters. *Events, nothing held* is a **normal** page: a gain, dividends, a
-  // latent gain in a dash.
+  // The two empties are not the same: *no events at all* is a sentence and a
+  // way to the ledger; *events, nothing held* is an ordinary page.
   if (rows.length === 0 && totalsRow === null) {
     return (
       <EmptyState
         title={t('dashboard.empty.title')}
         description={t('dashboard.empty.body')}
-        // One action (#1435): the ledger, where an event is recorded.
         action={
           <Link to="/ledger" className="font-medium underline underline-offset-4">
             {t('empty.toLedger')}
@@ -154,286 +92,209 @@ export function DashboardHead({
     )
   }
 
-  // **A row from a past day is not the value** (#1260). During the rebuild a
-  // held line with no close caps the series the day before its acquisition, so
-  // the newest row is a day of cash alone, and nothing here can move it to now.
+  // A row from a past day is not the value (#1260).
   const reading = totalsRow === null ? 'valued' : heroReading(totalsRow, runtime, new Date())
   const valued = reading === 'valued'
-  const rebuilding = runtime?.rebuilding ?? null
+  const unpriced = reading === 'partial' ? unpricedLines(rows) : []
 
-  const terms = portfolioTerms(rows, totalsRow?.transfer_fees ?? null)
-  const total = gainTotal(terms)
-
-  // **The head is on one instant** (#1049). The gain is priced by the scrape,
-  // the totals row by the last perf pass, and between two passes the identity
-  // a reader checks by hand — *value − contributed = gain* — failed by whatever
-  // the market moved since. The row defines `gain_absolu` as exactly that
-  // difference (`performance.py`), so the live gain less it is the market's
-  // move since the pass — and a market move moves the securities, never the
-  // cash or the contribution, which change only with an event and an event
-  // reruns the pass. The move is added to the row's own value, so nothing
-  // is read from one snapshot and subtracted from another. A gain the head
-  // cannot compute moves nothing: the row's figures then agree with nothing on
-  // screen they could contradict.
-  const drift =
-    total.known && totalsRow?.total_value != null && totalsRow.net_contributed != null
-      ? totalsRow.net_contributed + total.value - totalsRow.total_value
-      : 0
-  const totalValue = totalsRow?.total_value == null ? null : totalsRow.total_value + drift
-  // The securities are read only where there is no value, and so no drift.
+  // On an install with no cash ledger `total_value` is NULL (#708) and the
+  // value is the securities' alone, said under its own name.
+  const totalValue = totalsRow?.total_value ?? null
   const holdingsValue = totalsRow?.holdings_value ?? null
-  // **The hero is the value, and on an install with no cash ledger the value
-  // is the securities' alone** (#708: `total_value` is `NULL` there, and
-  // `holdings_value` is written always). It is then said under its own name —
-  // *Titres* — rather than as the portfolio's value, which it is not, and the
-  // cash line under it has nothing to name.
   const heroIsHoldings = totalValue === null && holdingsValue !== null
   const heroValue = totalValue ?? holdingsValue
 
-  const ytdGain = totalsRow?.ytd?.gain ?? null
-  const ytdTwr = totalsRow?.ytd?.twr ?? null
-  // `ytd` **absent** and a `ytd` **member** absent are two pieces of news, and
-  // the server says so in two shapes on purpose (`build_portfolio_totals`: *an
-  // unwritable member stays a null member inside a present object*). Read
-  // through `?.` alone the two collapse, and the sentences below — which are
-  // about a history not rebuilt that far back — get printed for a figure that
-  // simply is not computable on this install. Since #708 that is not a corner
-  // case: an install with no cash event has a `twr_index` of `NULL` for ever,
-  // so the collapse would make the sentence permanent.
-  const ytdAbsent = (totalsRow?.ytd ?? null) === null
-  // `ytd: null` has **two** causes and they are not the same sentence (#763):
-  // the reconstruction has not reached January, **or** the portfolio is younger
-  // than the year — a first event in March, and no day on or before
-  // 31 December exists for the delta to count from. Written as one sentence,
-  // the app announced a reconstruction to somebody who has nothing to
-  // reconstruct. It is the exact defect `totals: null` had one resource up, and
-  // the discriminant is already read: `runtime.rebuilding`. No fourth kind of
-  // absence is invented for it and no field is added to any payload.
-  //
-  // The second sentence needs a **positive** observation, which is #709's rule
-  // about the third answer applied here: a runtime read that has not landed —
-  // or one that failed — says nothing about this process, and *your ledger does
-  // not go back that far* is a claim about the reader's own data, not one to
-  // make on silence. So absence keeps the rebuild's sentence, which names
-  // something the app is doing and is repaired by waiting.
-  const ytdPending = t(
-    rebuilding === false ? 'dashboard.ytd.noPreviousYear' : 'dashboard.ytd.pending',
-  )
-  // Base 100 leaves this page and the mock-up's `TWR 202,89 (+102,9 %)` with it.
-  // An index on base 100 is an instrument for putting two series side by side,
-  // and this page has one; `+102,89 %` carries the same information in the unit
-  // the reader thinks in. Where the index earns its place is the accounts page
-  // (#721), which compares — and there it comes with the rebasing rule, since
-  // two indices counted from different origins share a unit without being a
-  // comparison. The index stays the store's own.
-  const twrMove =
-    totalsRow?.twr_index == null || totalsRow.twr_since == null
-      ? null
-      : (totalsRow.twr_index - 100) / 100
+  const variation = totalsRow?.variation?.[range] ?? null
+  const firstDeposit = totalsRow?.variation?.MAX?.start_date ?? null
+  const cash = heroIsHoldings ? null : (totalsRow?.cash ?? null)
+  const netIfSold = heroIsHoldings ? null : (totalsRow?.net_if_sold_today ?? null)
+  const contributed = totalsRow?.net_contributed ?? null
+  const gain = totalsRow?.gain_total ?? null
+  const xirr = totalsRow?.xirr ?? null
 
-  // A read that has not landed, or one that failed, means the perimeter is
-  // *unknown*, and an unknown perimeter is not written down at all: the figures
-  // above it are exact either way.
+  // The two-colour bar: what was put in, and the gain on top of it.
+  const gainShare =
+    valued && totalValue !== null && totalValue > 0 && gain?.amount != null
+      ? Math.min(Math.max(gain.amount / totalValue, 0), 1)
+      : null
 
-  // The series reaches here as `readonly PerfPoint[] | null` and the `null` is
-  // load-bearing: a series that has not answered is not a day on which nothing
-  // moved.
-  const today = dayMove(history, new Date())
-  const unpriced = reading === 'partial' ? unpricedLines(rows) : []
-
-  // **Three figures in a row, no ground** (#1280). Each is omitted when it
-  // has none; the year's keeps its reason, a sentence, when the server says
-  // the figure is not computable yet. A `ytd` present with a null `gain` draws
-  // nothing.
-  const facts: ReactNode[] = []
-  if (totalsRow !== null && ytdGain !== null) {
-    facts.push(
-      <Fact key="ytd" label={t('dashboard.ytd.label')}>
-        <SignedFigure
-          amount={ytdGain}
-          text={f.signedCurrency(ytdGain, currency)}
-          className="font-medium"
-        />
-      </Fact>,
-    )
-  } else if (totalsRow !== null && ytdAbsent) {
-    facts.push(
-      <p key="ytd" className="text-muted-foreground">
-        {t('dashboard.ytd.pillAbsent', { reason: ytdPending })}
-      </p>,
-    )
+  const statement: [string, ReactNode][] = []
+  if (valued && firstDeposit !== null) {
+    statement.push([t('dashboard.firstDeposit'), f.date(firstDeposit)])
   }
-  if (totalsRow !== null && today !== null) {
-    facts.push(
-      <Fact key="day" label={t('dashboard.day.label')}>
-        <SignedFigure
-          amount={today}
-          text={f.signedCurrency(today, currency)}
-          className="font-medium"
-        />
-      </Fact>,
-    )
+  if (valued && cash !== null) {
+    statement.push([t('dashboard.cash'), f.currency(cash, currency)])
   }
-  if (totalsRow?.xirr != null) {
-    facts.push(
-      <span
-        key="xirr"
-        role="group"
-        aria-label={t('dashboard.xirr')}
-        className="inline-flex items-center gap-1.5 whitespace-nowrap"
-      >
-        <span className="text-muted-foreground">{t('dashboard.xirr')}</span>
-        <SignedFigure
-          amount={totalsRow.xirr}
-          text={f.percent(totalsRow.xirr)}
-          decimals={RATIO_DECIMALS}
-          className="font-medium"
-        />
-        <span className="text-xs font-normal text-muted-foreground">
-          {t('dashboard.xirr.unit')}
-        </span>
-        {/* The TWR lives here since #1112: one rate per screen, and the
-        bubble is where the second one says why it differs. */}
-        {twrMove === null ? (
-          <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
-        ) : (
-          <Explain
-            figure={t('dashboard.xirr')}
-            body="dashboard.xirr.explainTwr"
-            values={{
-              explain: t('dashboard.xirr.explain'),
-              twr: f.percent(twrMove),
-              since: f.date(totalsRow.twr_since),
-              ytd:
-                ytdTwr === null
-                  ? ''
-                  : t('dashboard.xirr.explainTwr.ytd', { percent: f.percent(ytdTwr) }),
-            }}
-            anchor="xirr"
-          />
-        )}
-      </span>,
-    )
+  if (valued && netIfSold !== null) {
+    const estimated = totalsRow?.estimated_accounts ?? []
+    statement.push([
+      t('dashboard.netIfSold'),
+      <Hint key="net">
+        <HintTrigger asChild>
+          <span
+            tabIndex={0}
+            className="rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            {f.currency(netIfSold, currency)}
+          </span>
+        </HintTrigger>
+        <HintContent>
+          {estimated.length === 0
+            ? t('dashboard.netIfSold.gross')
+            : t('dashboard.netIfSold.estimated', {
+                count: estimated.length,
+                accounts: f.list(estimated),
+              })}
+        </HintContent>
+      </Hint>,
+    ])
   }
 
   return (
-    // **The hero sits on the ground, not in a card** (DESIGN.md): the value,
-    // its figures and the curve are the page's first object without a box to
-    // say so, and the gradient that used to say *start here* went with the
-    // card. `mb-5` doubles the page's 20 px rhythm, so the hero stands 40 px
-    // off the first section, the one large gap the layout allows there.
-    <div className="mb-5">
-      <div>
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <Stat
-            size="head"
-            label={t(heroIsHoldings && valued ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
-            // A value is not a direction: it is set in the colour of text, and
-            // the sign lives on the figures under it. It recomposes when a poll
-            // moves it (#1180); the figures under it change instantly. Keyed by
-            // what it measures: the value and the securities are two figures,
-            // and one never recomposes into the other.
-            value={
-              valued ? (
+    <HintProvider>
+      <div className="flex flex-col">
+        <div className="flex flex-wrap items-end justify-between gap-x-12 gap-y-6">
+          <div
+            role="group"
+            aria-label={t(
+              heroIsHoldings && valued ? 'dashboard.holdings' : 'dashboard.portfolioValue',
+            )}
+            className="flex min-w-0 flex-col gap-2.5"
+          >
+            <p className="text-md text-muted-foreground">
+              {t(heroIsHoldings && valued ? 'dashboard.holdings' : 'dashboard.portfolioValue')}
+            </p>
+            <p className="fig text-hero font-medium tracking-hero">
+              {valued ? (
+                // Keyed by what it measures: the value and the securities are
+                // two figures, and one never recomposes into the other.
                 <RecomposingFigure
                   key={heroIsHoldings ? 'holdings' : 'portfolio'}
                   value={heroValue}
                   currency={currency}
                 />
               ) : (
-                // An empty plane of the figure's height (#795): no skeleton,
-                // no spinner. Another key, so the figure that replaces it
-                // mounts and shows at once instead of recomposing from nothing.
-                <span key="unvalued" aria-hidden className="invisible">
+                // An empty plane of the figure's height (#795): no skeleton.
+                <span aria-hidden className="invisible">
                   &nbsp;
                 </span>
-              )
-            }
-          >
+              )}
+            </p>
+            {valued && variation?.amount != null ? (
+              <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+                <span className={`fig text-prose ${signClass(variation.amount)}`}>
+                  {f.signedCurrency(variation.amount, currency)}
+                </span>
+                {variation.pct == null ? null : (
+                  <span className={`fig text-sm ${signClass(variation.pct)}`}>
+                    ({f.percent(variation.pct, 1, 1)})
+                  </span>
+                )}
+                <span className="text-muted-foreground">
+                  {t('dashboard.variation.since', {
+                    range,
+                    date: f.date(variation.start_date),
+                  })}
+                </span>
+              </p>
+            ) : null}
             {reading === 'partial' ? (
-              <div className="max-w-prose space-y-1 text-sm text-muted-foreground">
+              <div className="max-w-prose space-y-1 text-md text-muted-foreground">
                 <p>
                   {runtime?.reconstruction
                     ? t('dashboard.rebuilding.progress', runtime.reconstruction)
                     : t('dashboard.rebuilding.progressUnobserved')}
                 </p>
                 {unpriced.length === 0 ? null : (
-                  <p>
-                    {t('dashboard.rebuilding.unpriced', {
-                      lines: f.list(unpriced),
-                    })}
-                  </p>
+                  <p>{t('dashboard.rebuilding.unpriced', { lines: f.list(unpriced) })}</p>
                 )}
               </div>
             ) : null}
-            {!valued ? null : (
-              <>
-                {/* What of the value is cash (#1174), right under it. It takes no
-                drift (#1151), and it is a balance, not a direction: no sign
-                colour, even below zero; `0` is a figure, not an absence. */}
-                {totalsRow?.cash_balance == null || heroIsHoldings ? null : (
-                  <p className="text-sm text-muted-foreground">
-                    {t('dashboard.cashLine', {
-                      amount: f.currency(totalsRow.cash_balance, currency),
-                    })}
-                  </p>
-                )}
-                {/* **The total gain has a line of its own**, on the Section title
-                rung: it is the figure the reader came for, and today's move is
-                not its equal. It keeps its named absences (#775): a rate on its
-                way is said, a fourth term nothing can bound is the em dash. */}
-                {total.known ? (
-                  <p className="fig flex flex-wrap items-baseline gap-x-2 pt-1 text-2xl font-semibold">
-                    <SignedFigure
-                      amount={total.value}
-                      text={f.signedCurrency(total.value, currency)}
-                      className="font-semibold"
-                      arrowClassName="size-5"
-                    />
-                    <span className="text-sm font-medium text-muted-foreground">
-                      {t('dashboard.gain.words')}
-                    </span>
-                  </p>
-                ) : (
-                  <p className="pt-1 text-sm text-muted-foreground">
-                    {t('dashboard.gain.pillAbsent', {
-                      reason: renderFigure(sumRendering(total), () => '', t),
-                    })}
-                  </p>
-                )}
-                {facts.length === 0 ? null : (
-                  <div className="fig flex flex-wrap gap-x-5 gap-y-1 pt-1 text-sm">{facts}</div>
-                )}
-              </>
-            )}
-          </Stat>
+          </div>
+
+          {statement.length === 0 ? null : (
+            <dl
+              aria-label={t('dashboard.trajectory')}
+              className="grid grid-cols-[auto_auto] items-baseline gap-x-6 gap-y-1.5 pb-1.5"
+            >
+              {statement.map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="text-right text-sm text-muted-foreground">{label}</dt>
+                  <dd className="fig text-right text-md">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
 
-        {chart === null ? null : <div className="mt-6">{chart}</div>}
+        {valued && (contributed !== null || gain?.amount != null || xirr !== null) ? (
+          <div className="mt-5 flex flex-col gap-2.5">
+            {gainShare === null ? null : (
+              <div
+                role="img"
+                aria-label={t('dashboard.bar', {
+                  contributed: f.percentPoints((1 - gainShare) * 100, 1),
+                  gain: f.percentPoints(gainShare * 100, 1),
+                })}
+                className="flex h-2.5 gap-0.5 overflow-hidden rounded-xs"
+              >
+                <span className="block bg-alloc-5" style={{ flex: 1 - gainShare }} />
+                <span className="block bg-alloc-1" style={{ flex: gainShare }} />
+              </div>
+            )}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
+              <p className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+                {contributed === null ? null : (
+                  <span className="inline-flex items-baseline gap-2">
+                    <span aria-hidden className="size-2 self-center rounded-xs bg-alloc-5" />
+                    <span className="text-muted-foreground">
+                      {t('dashboard.chart.contributed')}
+                    </span>
+                    <span className="fig text-prose">{f.currency(contributed, currency)}</span>
+                  </span>
+                )}
+                <span
+                  role="group"
+                  aria-label={t('dashboard.gainTotal')}
+                  className="inline-flex items-baseline gap-2"
+                >
+                  <span aria-hidden className="size-2 self-center rounded-xs bg-alloc-1" />
+                  <span className="text-muted-foreground">{t('dashboard.gainTotal')}</span>
+                  {gain?.amount == null ? (
+                    <span className="fig text-prose">—</span>
+                  ) : (
+                    <>
+                      <span className={`fig text-prose ${signClass(gain.amount)}`}>
+                        {f.signedCurrency(gain.amount, currency)}
+                      </span>
+                      {gain.pct == null ? null : (
+                        <span className={`fig text-sm ${signClass(gain.pct)}`}>
+                          ({f.percent(gain.pct, 1, 1)})
+                        </span>
+                      )}
+                    </>
+                  )}
+                </span>
+              </p>
+              {xirr === null ? null : (
+                <p className="text-muted-foreground">
+                  {t('dashboard.xirr.line', { value: f.percentPoints(xirr * 100, 2) })}
+                </p>
+              )}
+            </div>
+          </div>
+        ) : null}
 
-        {/* `totals: null` has **two** causes and they are not the same sentence
-        (#745): no ledger at all, or a reporting currency nobody has answered.
-        The second is the ordinary one here — reaching this line at all means
-        positions exist, so a ledger exists — and it is the actionable one: the
-        perf job writes nothing until the dial is answered (#702), every figure
-        it computes being money. Written as one sentence, the app told a reader
-        with a full portfolio that they had no ledger. */}
+        {chart === null ? null : <div className="mt-9">{chart}</div>}
+
+        {/* `totals: null` has two causes and they are not one sentence (#745):
+        no ledger at all, or a reporting currency nobody has answered. */}
         {totalsRow === null ? (
-          <p className="max-w-prose text-sm text-muted-foreground">
+          <p className="max-w-prose text-md text-muted-foreground">
             {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
           </p>
         ) : null}
       </div>
-    </div>
-  )
-}
-
-/** A label and its figure on the facts row, which never breaks between them. */
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className="text-muted-foreground">{label}</span>
-      {children}
-    </span>
+    </HintProvider>
   )
 }

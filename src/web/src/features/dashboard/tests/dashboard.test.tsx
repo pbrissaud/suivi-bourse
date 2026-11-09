@@ -1,18 +1,16 @@
 /**
- * The head of the dashboard, and the three primitives it is the first surface
- * to need (#718).
+ * The dashboard (« Relevé »): the hero and its period, the chart, then the
+ * investment rhythm and the securities' value, each with its states.
  *
- * Every case below names the wrong figure it prevents. The four terms sum to a
- * gain the reader can check by hand — `+300,00 + 50,00 + 25,00 − 5,00 = 370,00`
- * — and the year-to-date pair is the measured one, `+40,69 €` against
- * `−1,25 %`, of opposite signs over the same period and both correct.
+ * The gain total, the cash, the variation and the net if sold are the server's
+ * (`GET /api/portfolio-totals`): the page states them and sums nothing.
  *
  * Assertions are on the accessible rendering: a role, a name, a text. Amounts
  * are matched with regular expressions rather than literals because `fr-FR`
  * groups with a narrow no-break space, and a test that hard-coded a plain one
  * would be asserting the wrong thing about the right number.
  */
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, delay, http } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -20,19 +18,13 @@ import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aClosedPosition,
-  anAccount,
-  anAccountsPayload,
-  theSeededAccount,
   aPosition,
-  aPerfPoint,
-  aPortfolioHistory,
   aPositionsPayload,
   aRebuilding,
   aRhythm,
   aRuntime,
   aTotals,
   aTotalsPayload,
-  defaultPositions,
   NOW,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
@@ -43,10 +35,7 @@ function figure(name: string) {
   return screen.getByRole('group', { name })
 }
 
-/**
- * The hero: the portfolio's value, the gain total under it, and a row of three
- * figures — the year, today, and the IRR (#1149, #1280).
- */
+/** The hero: the portfolio's value and its variation over the period. */
 function hero() {
   return screen.findByRole('group', { name: 'Valeur du portefeuille' })
 }
@@ -56,572 +45,6 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
     HttpResponse.json(aTotalsPayload(aTotals(overrides))),
   )
 }
-
-/**
- * The chart's own card, taken by the one control that is only ever on it — the
- * chart's range radios. A legend assertion has to say **which card** it is
- * about.
- */
-async function chartCard(): Promise<HTMLElement> {
-  // The chart is under the hero since the dashboard grid (17A / D25): the
-  // frame is the hero's chart slot, found from the **reading** selector — the
-  // group where there are two readings, the heading where there is only one.
-  // The chart has no card of its own.
-  const anchor = await waitFor(() => {
-    const found =
-      screen.queryByRole('group', { name: 'Lecture' }) ??
-      screen.queryByRole('heading', { name: 'Montants' })
-    if (found === null) throw new Error('the chart slot has not landed')
-    return found
-  })
-  return anchor.closest('[data-hero-chart]') as HTMLElement
-}
-
-describe('the value is the hero (direction 1a)', () => {
-  it('answers *how much is it worth* first, in the colour of text', async () => {
-    renderApp()
-    const head = await hero()
-
-    // The value at hero size, the gain as its subtitle — and no sign colour on
-    // the value: a value is not a direction.
-    expect(head).toHaveTextContent(/2\D?800,00/)
-    expect(head).toHaveTextContent(/\+370,00\D?€\s*de gain total/)
-    const value = head.querySelector('.text-hero')
-    expect(value).toHaveTextContent(/2\D?800,00/)
-    expect(value?.className).not.toMatch(/text-(gain|loss)/)
-    // `Valeur totale` left the row of statistics: it is the hero now.
-    expect(screen.queryByRole('group', { name: 'Valeur totale' })).not.toBeInTheDocument()
-    // The cash is named under the value, as a line rather than a statistic
-    // (#1174), and no sign colour: a balance is not a direction.
-    const cash = within(head).getByText(/^dont 500,00\D?€ de liquidités$/)
-    expect(cash.className).not.toMatch(/text-(gain|loss)/)
-    // No statistics row under the chart (#1174): `Versé net` is the chart's
-    // dashed curve, `Titres` the value less the cash.
-    for (const name of ['Versé net', 'Titres', 'Liquidités', 'Gain depuis le 1ᵉʳ janvier']) {
-      expect(screen.queryByRole('group', { name })).not.toBeInTheDocument()
-    }
-    expect(within(await chartCard()).getByText('Versé net')).toBeInTheDocument()
-    // One performance figure per screen (#1112): the TWR is not a statistic.
-    expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
-  })
-
-  it('says no cash where there is no cash ledger, and a zero where it is empty', async () => {
-    server.use(totalsOf({ cash_balance: null }))
-    const { unmount } = renderApp()
-    const head = await hero()
-    expect(head).not.toHaveTextContent(/liquidités/)
-    unmount()
-
-    server.use(totalsOf({ cash_balance: 0 }))
-    renderApp()
-    expect(await hero()).toHaveTextContent(/dont 0,00\D?€ de liquidités/)
-  })
-
-  it('names no cash under a hero that is the securities alone', async () => {
-    server.use(totalsOf({ total_value: null, cash_balance: 500 }))
-    renderApp()
-
-    const head = await screen.findByRole('group', { name: 'Titres' })
-    expect(head).not.toHaveTextContent(/liquidités/)
-  })
-
-  it('draws nothing for the year where only its gain member is missing', async () => {
-    // A present `ytd` with a null `gain` is not computable on this install:
-    // neither a pill nor a sentence about a rebuild.
-    server.use(totalsOf({ ytd: { gain: null, twr: 0.01 } }))
-    renderApp()
-
-    const head = await hero()
-    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
-    expect(head).not.toHaveTextContent(/1ᵉʳ janvier/)
-  })
-
-  it('says nothing of tax, whatever the accounts declare, and reads them once, for the allocation (#1426)', async () => {
-    // The tax model is one reading among others, and its figures are not
-    // certain enough to sit under the hero (#1174): the accounts page owns it.
-    const requested: string[] = []
-    server.events.on('request:start', ({ request }) => {
-      requested.push(new URL(request.url).pathname)
-    })
-    server.use(
-      http.get(ROUTES.accounts, () =>
-        HttpResponse.json(
-          anAccountsPayload([
-            anAccount({ id: 'cto', taxation_kind: 'flat_realised', projected_tax: 1200 }),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-    await hero()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    expect(screen.queryByText(/net d.impôt/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Il vous resterait/)).not.toBeInTheDocument()
-    // The accounts page's own cache entry: one request (#1426).
-    expect(requested.filter((path) => path === ROUTES.accounts)).toHaveLength(1)
-    server.events.removeAllListeners()
-  })
-
-  // Replaces « draws a sparkline and keeps the full chart one click away »
-  // (#1099, direction 1a): the dashboard grid's 17A / D25 put the real chart
-  // back on the page, under the value, and the dialog went with the sparkline.
-  it('draws the real chart under the value, with its readings and one range control', async () => {
-    renderApp()
-    await hero()
-
-    expect(await screen.findByRole('group', { name: 'Lecture' })).toBeInTheDocument()
-    expect(screen.getAllByRole('radiogroup', { name: 'Plage' })).toHaveLength(1)
-    expect(screen.queryByRole('button', { name: 'Voir la courbe' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('no longer compares the accounts here, and reads none of their series', async () => {
-    const requested: string[] = []
-    server.events.on('request:start', ({ request }) => {
-      requested.push(new URL(request.url).pathname)
-    })
-    renderApp()
-    await hero()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
-    expect(requested.some((path) => /\/api\/accounts\/[^/]+\/history/.test(path))).toBe(false)
-    server.events.removeAllListeners()
-  })
-
-  it('names the securities as the hero where there is no cash ledger', async () => {
-    // #708: no cash event, so `total_value` is `NULL` and `holdings_value` is
-    // the one money figure there is. It is said under its own name, once.
-    server.use(
-      totalsOf({
-        total_value: null,
-        cash_balance: null,
-        net_contributed: null,
-        twr_index: null,
-        ytd: null,
-      }),
-    )
-    renderApp()
-
-    const head = await screen.findByRole('group', { name: 'Titres' })
-    expect(head).toHaveTextContent(/2\D?300,00/)
-    expect(screen.getAllByRole('group', { name: 'Titres' })).toHaveLength(1)
-    expect(screen.queryByRole('group', { name: 'Valeur du portefeuille' })).not.toBeInTheDocument()
-  })
-})
-
-describe('the gain is computed, never read', () => {
-  it('adds its four terms up and ignores a divergent `gain_absolu`', async () => {
-    // Two producers for one figure is what the shares page spent a session
-    // dismantling. The payload is handed a total that is off by an order of
-    // magnitude; the head does not blink.
-    server.use(totalsOf({ gain_absolu: 99999 }))
-    renderApp()
-
-    const head = await hero()
-    expect(head).toHaveTextContent(/370,00/)
-    expect(head).not.toHaveTextContent(/99\D?999/)
-    expect(screen.queryByText(/99\D?999/)).not.toBeInTheDocument()
-  })
-
-  it('puts the value on the gain’s instant when prices moved since the pass (#1049)', async () => {
-    // The pass wrote `2 800 − 2 430 = 370`; the scrape has since lifted the line
-    // from 130 to 140, so the gain is 470 — and the value read beside it has to
-    // be the one that makes `value − contributed` that gain, not the pass's.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            aPosition({ price: 140, dividends: 25 }),
-            ...defaultPositions().slice(1),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-
-    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/470,00/)
-    expect(figure('Valeur du portefeuille')).toHaveTextContent(/2\D?900,00/)
-    // The cash takes no drift: it is the pass's balance, to the cent.
-    expect(figure('Valeur du portefeuille')).toHaveTextContent(/dont 500,00\D?€ de liquidités/)
-  })
-
-  it('says a negative cash balance with its minus sign, in the colour of text', async () => {
-    server.use(totalsOf({ cash_balance: -120 }))
-    renderApp()
-
-    const cash = await within(await hero()).findByText(/de liquidités/)
-    expect(cash).toHaveTextContent(/dont [-−]120,00/)
-    expect(cash.outerHTML).not.toMatch(/text-(gain|loss)/)
-  })
-
-  it('never mentions the fourth term to an install whose transfers are free', async () => {
-    server.use(totalsOf({ transfer_fees: 0, gain_absolu: 375 }))
-    renderApp()
-
-    // Three terms, and the gain is their sum — not `370,00 − 0,00` written out.
-    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/375,00/)
-    expect(screen.queryByRole('group', { name: 'Frais de virement' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Frais de virement')).not.toBeInTheDocument()
-  })
-})
-
-describe('the year-to-date is two figures that do not touch', () => {
-  it('puts the euro in the row and the percentage inside the IRR’s bubble', async () => {
-    const { user } = renderApp()
-
-    const head = await hero()
-
-    // `+40,69 €` and `−1,25 %` are of opposite signs over the same period and
-    // both correct: the portfolio grew by deposits while its holdings lost.
-    // Side by side they read as a contradiction.
-    const ytd = within(head).getByText('Depuis le 1ᵉʳ janvier').parentElement as HTMLElement
-    expect(ytd).toHaveTextContent(/^Depuis le 1ᵉʳ janvier\+40,69\D?€$/)
-    expect(within(ytd).getByText(/^\+40,69/)).toHaveClass('text-gain')
-    expect(head).not.toHaveTextContent(/1,25/)
-
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
-    const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/1,25\D?% depuis le 1ᵉʳ janvier/)
-    expect(bubble).not.toHaveTextContent(/40,69/)
-  })
-
-  it('leaves the head **no** range control, and gives each figure one', async () => {
-    renderApp()
-    const head = await hero()
-
-    // The delta is fixed to year-to-date. The `1S / 1M / 1A / —` selector was a
-    // *second* range control **on the head**, and two sibling controls read as
-    // two settings of the same thing — so the head carries none (#718, #727).
-    expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
-    expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
-
-    // **One on the page**, and it is the chart's own (#838, then #1155 closed).
-    await waitFor(() =>
-      expect(
-        screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
-      ).toEqual(['Plage']),
-    )
-  })
-
-  it('never puts a delta on the money-weighted return, which is annualised', async () => {
-    renderApp()
-    const xirr = await screen.findByRole('group', { name: 'TRI' })
-    expect(xirr).toHaveTextContent(/\+3,22\D?%/)
-    expect(xirr).not.toHaveTextContent(/janvier/)
-  })
-})
-
-describe('the total gain, then the year, today and the IRR (#1149, #1174, #1280)', () => {
-  it('puts the gain first, then the row, the IRR last with its unit', async () => {
-    renderApp()
-    const head = await hero()
-
-    const xirr = within(head).getByRole('group', { name: 'TRI' })
-    expect(xirr).toHaveTextContent(/\+3,22\D?%/)
-    expect(xirr).toHaveTextContent('/ an')
-    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
-    const text = head.textContent ?? ''
-    const gain = text.indexOf('de gain total')
-    const ytd = text.indexOf('Depuis le 1ᵉʳ janvier')
-    const today = text.indexOf('Aujourd’hui')
-    expect(gain).toBeGreaterThan(-1)
-    expect(ytd).toBeGreaterThan(gain)
-    expect(today).toBeGreaterThan(ytd)
-    expect(text.indexOf('TRI')).toBeGreaterThan(today)
-  })
-
-  it('draws the figures on the ground, with the sign on the figure', async () => {
-    server.use(totalsOf({ xirr: -0.05 }))
-    renderApp()
-    const head = await hero()
-
-    await waitFor(() =>
-      expect(within(head).getByRole('group', { name: 'TRI' })).toBeInTheDocument(),
-    )
-    expect(head.querySelector('[class*="bg-"], [class*="rounded-lg"]')).toBeNull()
-    expect(within(head).getByText(/^\+370,00/)).toHaveClass('text-gain')
-    expect(within(within(head).getByRole('group', { name: 'TRI' })).getByText(/5,00/)).toHaveClass(
-      'text-loss',
-    )
-  })
-
-  // An IRR of +0,00003 % reads `0,00 %`: the colour and the arrow follow the
-  // figure shown, not the raw value (#1286).
-  it.each([0.0000003, -0.0000003])(
-    'gives an IRR of %s, which reads as zero, no sign',
-    async (xirr) => {
-      server.use(totalsOf({ xirr }))
-      renderApp()
-      const head = await hero()
-
-      const pill = await within(head).findByRole('group', { name: 'TRI' })
-      const figure = within(pill).getByText(/^0,00\s%$/)
-      expect(figure).toHaveClass('text-foreground')
-      expect(figure.querySelector('svg')).toBeNull()
-    },
-  )
-
-  it('sets the total gain on its own line, on the Section title rung', async () => {
-    renderApp()
-    const head = await hero()
-
-    const gain = (await within(head).findByText(/^\+370,00/)).closest('p') as HTMLElement
-    expect(gain).toHaveClass('text-2xl')
-    expect(gain).toHaveTextContent(/de gain total$/)
-    // Its words are not the Section title's: the line is a paragraph, not a heading.
-    expect(within(head).queryByRole('heading', { name: /gain total/ })).not.toBeInTheDocument()
-    for (const label of ['Depuis le 1ᵉʳ janvier', 'Aujourd’hui', 'TRI']) {
-      await waitFor(() => expect(within(head).getByText(label)).toBeInTheDocument())
-    }
-  })
-
-  it('draws no row at all when no figure of it exists', async () => {
-    server.use(
-      totalsOf({ xirr: null, ytd: { gain: null, twr: null } }),
-      http.get(ROUTES.portfolioTotalsHistory, () => HttpResponse.json(aPortfolioHistory([]))),
-    )
-    renderApp()
-    const head = await hero()
-
-    await within(head).findByText(/^\+370,00/)
-    expect(head.querySelector('.flex-wrap.gap-x-5')).toBeNull()
-  })
-
-  it('says an unknown total in a sentence, without the 20 px line', async () => {
-    server.use(totalsOf({ transfer_fees: null }))
-    renderApp()
-    const head = await hero()
-
-    expect(await within(head).findByText(/^Gain total :/)).toHaveClass('text-sm')
-    expect(head.querySelector('.text-2xl')).toBeNull()
-  })
-
-  it('draws no IRR figure when there is no IRR', async () => {
-    server.use(totalsOf({ xirr: null }))
-    renderApp()
-    const head = await hero()
-    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui/))
-
-    expect(screen.queryByRole('group', { name: 'TRI' })).not.toBeInTheDocument()
-  })
-})
-
-describe('the two periods of the total', () => {
-  /** One day of the global series, at a stated value and contribution. */
-  const perfDay = (t: string, totalValue: number, contributed: number) => ({
-    ...aPerfPoint(t, 100),
-    total_value: totalValue,
-    net_contributed: contributed,
-  })
-
-  it('counts the movement of the gain, which a deposit made today does not move', async () => {
-    // 500,00 paid in today lifts the value and the contributions by the same
-    // amount; what is left is the +30,00 the holdings did. It is `_ytd`'s own
-    // definition over a one-day window, which is what makes the two pills two
-    // periods of **one** figure rather than two figures.
-    server.use(
-      http.get(ROUTES.portfolioTotalsHistory, () =>
-        HttpResponse.json(
-          aPortfolioHistory([perfDay('2026-03-01', 1800, 1380), perfDay('2026-03-02', 2330, 1880)]),
-        ),
-      ),
-    )
-    renderApp()
-
-    const head = await hero()
-    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui\+30,00\D?€/))
-  })
-
-  it('says nothing about today while the series has not reached today', async () => {
-    // A series stopping short is a reconstruction in progress, and *today* is
-    // then a claim nothing on the wire supports. The head above is untouched:
-    // the day's move is a window on the total, never a term of it.
-    server.use(
-      http.get(ROUTES.portfolioTotalsHistory, () =>
-        HttpResponse.json(
-          aPortfolioHistory([perfDay('2026-02-28', 1800, 1380), perfDay('2026-03-01', 1830, 1380)]),
-        ),
-      ),
-    )
-    renderApp()
-
-    const head = await hero()
-    expect(head).toHaveTextContent(/370,00/)
-    await waitFor(() => expect(head).not.toHaveTextContent(/Aujourd’hui/))
-    expect(head).toHaveTextContent(/Depuis le 1ᵉʳ janvier\+40,69\D?€/)
-  })
-})
-
-describe('one performance figure, and the TWR behind it (#1112)', () => {
-  it('files the TWR inside the IRR’s bubble, with why the two differ', async () => {
-    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
-    const { user } = renderApp()
-    await hero()
-
-    expect(screen.queryByRole('group', { name: 'TWR' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/\+102,89/)).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
-    const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
-    // Dated with the payload's own `twr_since`: the day moves while a backfill
-    // runs, and an undated figure would change sign with nothing else changed.
-    expect(aTotals().twr_since).toBe('2019-10-30')
-    expect(bubble).toHaveTextContent(
-      /La performance de vos placements, \+102,89\D?% depuis le 30 oct\. 2019/,
-    )
-    expect(bubble).toHaveTextContent(/peuvent même être de signes opposés/)
-    expect(bubble).not.toHaveTextContent(/TWR/)
-  })
-
-  it('keeps the plain IRR text where the series has no start day', async () => {
-    server.use(totalsOf({ twr_since: null }))
-    const { user } = renderApp()
-    await hero()
-
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
-    const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
-    expect(bubble).not.toHaveTextContent(/performance de vos placements/)
-  })
-
-  it('names one measure once in English: the bubble never says IRR', async () => {
-    const { user } = renderApp({ browserLanguages: ['en-GB'] })
-    await screen.findByRole('group', { name: 'Total P&L' })
-
-    await user.click(screen.getByRole('button', { name: 'What Money-weighted return means' }))
-    const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/The performance of your holdings, \+102\.89\D?% since/)
-    expect(bubble).not.toHaveTextContent(/IRR/)
-  })
-
-  it('keeps the plain IRR text where there is no TWR', async () => {
-    server.use(totalsOf({ twr_index: null, ytd: { gain: 40.69, twr: null } }))
-    const { user } = renderApp()
-    await hero()
-
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
-    const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/Ce que vos versements ont réellement rapporté/)
-    expect(bubble).not.toHaveTextContent(/TWR/)
-  })
-})
-
-describe('during the reconstruction', () => {
-  it('keeps the head normal and degrades the year-to-date alone', async () => {
-    server.use(totalsOf({ ytd: null }))
-    renderApp()
-
-    // Exact from the first cycle: the gain, the money-weighted return and the
-    // four terms. Twenty-five minutes of "nothing works" is what this prevents.
-    const head = await hero()
-    expect(head).toHaveTextContent(/370,00/)
-    expect(figure('TRI')).toHaveTextContent(/\+3,22/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /300,00/,
-    )
-
-    // Everything else is untouched — the degradation is the year-to-date and
-    // nothing but it.
-    expect(figure('Valeur du portefeuille')).toHaveTextContent(/2\D?800,00/)
-  })
-
-  it('degrades the euro half of the year-to-date with the sentence', async () => {
-    // The percentage half lives in the IRR's bubble since #1112 and is simply
-    // left out of it there; the euro half is on screen and owes its reason.
-    server.use(
-      totalsOf({ ytd: null }),
-      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
-    )
-    renderApp()
-
-    const head = await hero()
-    await waitFor(() =>
-      expect(head).toHaveTextContent(
-        /Depuis le 1ᵉʳ janvier : historique pas encore reconstruit jusque-là/,
-      ),
-    )
-
-    expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(1)
-  })
-
-  it('does not announce a rebuild to a portfolio younger than the year', async () => {
-    // `ytd: null` has two causes and the head wrote one sentence for both: the
-    // reconstruction has not reached January, **or** the first event is in
-    // March and no day on or before 31 December exists to count from. The
-    // second install is told to wait for something that will never happen, and
-    // waiting is precisely what it must not do. The discriminant is already on
-    // screen — `runtime.rebuilding`, which the TWR statistic reads for its base
-    // date — so nothing is added to any payload.
-    server.use(
-      totalsOf({ ytd: null }),
-      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
-    )
-    renderApp()
-
-    const head = await hero()
-    await waitFor(() =>
-      expect(head).toHaveTextContent(
-        /Depuis le 1ᵉʳ janvier : rien d’enregistré avant le 1ᵉʳ janvier/,
-      ),
-    )
-    expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
-  })
-
-  it('does not announce a rebuild for a member that is merely not computable', async () => {
-    // The ordinary v4 arrival: no `DEPOSIT` anywhere, so since #708 the
-    // cash-derived four are `NULL` and `twr_index` with them. The euro figure
-    // survives — it is the movement of `gain_absolu`, written always — while
-    // the percentage genuinely is not computable. Read through `?.` alone, an
-    // absent **member** was indistinguishable from an absent `ytd`, and the
-    // head announced a rebuild that had already finished, permanently, to
-    // exactly the population #708's per-field rule exists to serve. An absent
-    // member takes the bare em dash: *there is nothing to compute*.
-    server.use(
-      totalsOf({ ytd: { gain: 40.69, twr: null } }),
-      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
-    )
-    renderApp()
-
-    await hero()
-    await waitFor(() =>
-      expect(screen.getByText('Depuis le 1ᵉʳ janvier').parentElement).toHaveTextContent(
-        /\+40,69\D?€/,
-      ),
-    )
-    // Neither sentence, on either figure — both would be false here.
-    expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
-  })
-
-  it('says nothing about the ledger while the runtime has not answered', async () => {
-    // The same rule the installation facts follow (#709): asserting *your ledger does
-    // not go back that far* takes a **positive** observation of this process,
-    // and a runtime that failed is not one. Absence therefore keeps the
-    // rebuild's sentence — it names something the app is doing, and waiting
-    // repairs it — rather than making a claim about the reader's own data on
-    // the strength of a request that never landed.
-    server.use(
-      totalsOf({ ytd: null }),
-      problemHandler(ROUTES.runtime, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
-    renderApp()
-
-    const head = await hero()
-    await waitFor(() =>
-      expect(head).toHaveTextContent(
-        /Depuis le 1ᵉʳ janvier : historique pas encore reconstruit jusque-là/,
-      ),
-    )
-    expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
-  })
-})
 
 describe('the hero while the history is rebuilding (#1260)', () => {
   // The newest row is a day of cash alone, the day before a line's acquisition.
@@ -711,13 +134,13 @@ describe('the hero while the history is rebuilding (#1260)', () => {
     expect(screen.queryByText(/Historique en reconstruction/)).not.toBeInTheDocument()
   })
 
-  it('keeps the value and its pills when the rebuild runs but the row is today’s', async () => {
+  it('keeps the value and its figures when the rebuild runs but the row is today’s', async () => {
     server.use(rebuilding({ complete: 9, total: 19 }))
     renderApp()
 
     const head = await hero()
     expect(head).toHaveTextContent(/2\D?800,00/)
-    expect(figure('TRI')).toHaveTextContent(/\+3,22/)
+    expect(screen.getByText(/TRI/)).toHaveTextContent(/3,22/)
     expect(screen.queryByText(/Historique en reconstruction/)).not.toBeInTheDocument()
   })
 })
@@ -863,6 +286,7 @@ describe('a read that fails is named, where its content would have been', () => 
  * it cannot see this, it is not modified to, and the distinction between the two
  * states — which is the whole of the repair — is asserted here, on the rendering.
  */
+
 describe('a secondary read that fails is named, and the head keeps its figures', () => {
   const STORAGE_DOWN = {
     status: 503,
@@ -880,14 +304,10 @@ describe('a secondary read that fails is named, and the head keeps its figures',
    * is *made of* would have replaced every figure below with one sentence.
    */
   async function theHeadStandsWhole() {
-    const head = await screen.findByRole('group', { name: 'Gain total' })
-    expect(head).toHaveTextContent(/370,00/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /300,00/,
-    )
-    expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
-    expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
-    expect(figure('Frais de virement')).toHaveTextContent(/5,00/)
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
+    expect(
+      await screen.findByRole('group', { name: /Valeur du portefeuille|Titres/ }),
+    ).toHaveTextContent(/\d,\d\d/)
   }
 
   it('names a failed portfolio series, and the chart alone goes', async () => {
@@ -961,227 +381,6 @@ describe('a secondary read that fails is named, and the head keeps its figures',
   })
 })
 
-describe('the statistics shrink instead of filling with dashes', () => {
-  it('drops what does not exist for this installation, and names what a ledger would add', async () => {
-    server.use(http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null))))
-    renderApp()
-
-    // The three position terms keep their subject — they are read off the
-    // positions, which are not under the constraint that empties
-    // `portfolio_totals` — but **their sum is not the gain** (#775): with no
-    // row at all there is nothing to bound the fourth term by, and a four-term
-    // total rendered from three is not that total. It wears the em
-    // dash, and the sentence at the foot of the block says why.
-    const head = await hero()
-    expect(head).toHaveTextContent('—')
-    expect(head).not.toHaveTextContent(/375,00/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /300,00/,
-    )
-
-    for (const absent of ['Valeur totale', 'Versé net', 'TRI', 'TWR']) {
-      expect(screen.queryByRole('group', { name: absent })).not.toBeInTheDocument()
-    }
-    expect(screen.getByText(/pour voir votre valeur totale/)).toBeInTheDocument()
-  })
-
-  it('says the currency is unanswered rather than denying the ledger', async () => {
-    // `totals: null` has two causes (#745) and they were one sentence. The
-    // second is the ordinary one: the perf job writes nothing at all until the
-    // base currency is answered (#702), every figure it computes being money.
-    // So the app told a reader holding a full portfolio that they had no ledger
-    // — and said nothing about the one question they can answer.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(aPositionsPayload(defaultPositions(), null)),
-      ),
-      http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null, null))),
-    )
-    renderApp()
-
-    await screen.findByRole('group', { name: 'Gain total' })
-    expect(screen.getByText(/attendent une devise de base/)).toBeInTheDocument()
-    expect(screen.queryByText(/pour voir votre valeur totale/)).not.toBeInTheDocument()
-  })
-
-  it('says nothing at all when there is no ledger and nothing held', async () => {
-    server.use(
-      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([], null))),
-      http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null, null))),
-    )
-    renderApp()
-
-    expect(await screen.findByText('Aucun événement')).toBeInTheDocument()
-    // One action (#1435): the ledger, and no second link beside it.
-    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toHaveAttribute(
-      'href',
-      '/ledger',
-    )
-    expect(screen.queryByRole('link', { name: 'Revoir la mise en route' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
-  })
-})
-
-describe('the convention bubble', () => {
-  it('opens on click and never on hover, and holds sense, rule and link', async () => {
-    const { user } = renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    const trigger = screen.getByRole('button', { name: 'Ce que veut dire Gain total' })
-
-    // Hover does not exist on touch, and a convention readable on half the
-    // devices is a convention not stated.
-    await user.hover(trigger)
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-
-    await user.click(trigger)
-    const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/Les quatre font ce total/)
-    // One text, not two levels — and a link the reader can walk to, which is
-    // the other half of why it opens on click.
-    const link = within(bubble).getByRole('link', { name: 'Lire la règle complète' })
-    expect(link).toHaveAttribute(
-      'href',
-      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#total-gain',
-    )
-  })
-
-  it('closes on scroll, because it must not outlive its figure', async () => {
-    const { user } = renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
-    await screen.findByRole('dialog')
-
-    // Mounted `position: fixed`, the board's bubble stayed pinned above
-    // unrelated content — worse than no bubble at all.
-    fireEvent.scroll(document)
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  })
-
-  it('carries the reader’s locale to the documentation', async () => {
-    const { user } = renderApp({ browserLanguages: ['en-GB'] })
-    await screen.findByRole('group', { name: 'Total P&L' })
-
-    await user.click(screen.getByRole('button', { name: 'What Money-weighted return means' }))
-    expect(within(await screen.findByRole('dialog')).getByRole('link')).toHaveAttribute(
-      'href',
-      'https://pbrissaud.github.io/suivi-bourse/docs/v5/read-your-figures#xirr',
-    )
-  })
-
-  it('puts two icons on the head, not nine', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // A total and its subordinate terms are one figure, not five: the
-    // `Gain total` bubble carries the identity **and** its four terms, and the
-    // terms carry none of their own. It sits on the breakdown card since the
-    // value took the hero, so it comes after the head's in reading order — the
-    // IRR's first, on its pill beside the value (#1149).
-    const bubbles = screen.getAllByRole('button', { name: /^Ce que veut dire/ })
-    expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Ce que veut dire TRI',
-      'Ce que veut dire Gain total',
-    ])
-  })
-})
-
-describe('what is merely missing is named, never dashed', () => {
-  it('says the rate is awaited, on the headline and on its term', async () => {
-    // `lib/absence.ts` is the ticket's own primitive and it had **no consumer
-    // in production at all** — its key `absence.awaitingRate` sat in both
-    // catalogues, rendered nowhere. The head held `number | null`, so the case
-    // died at the return and every site could write nothing but an em dash:
-    // *there is nothing to compute* about a rate the app fetches by itself.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([aPosition({ price: 125, currency: 'USD', rate: null })]),
-        ),
-      ),
-    )
-    renderApp()
-
-    const head = await hero()
-    expect(head).toHaveTextContent(/en attente du taux/)
-    expect(head).not.toHaveTextContent(/^Gain total\s*—/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /en attente du taux/,
-    )
-  })
-
-  it('names the rebuild on a fresh install, and never the exchange rate', async () => {
-    // The install of the first hour: no symbol is terminal, so no line has a
-    // valuation and the total has no figure. The reason is the one the reader
-    // can act on — here, none: the app is reading, and the rate has nothing to
-    // do with it. Written in as `awaitingRate`, this headline sent every new
-    // owner to a currency dial they had already answered (#845).
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload(
-            defaultPositions().map((position) => ({
-              ...position,
-              terminal: false,
-              price: null,
-              converted: null,
-            })),
-          ),
-        ),
-      ),
-    )
-    renderApp()
-
-    const head = await hero()
-    expect(head).toHaveTextContent(/historique en cours de reconstitution/)
-    expect(head).not.toHaveTextContent(/en attente du taux/)
-    // Named and not dashed: the em dash says *there is nothing to compute*,
-    //and a total refused in silence is a figure gone out with no
-    // explanation under it.
-    expect(head).not.toHaveTextContent(/^Gain total\s*—/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /historique en cours de reconstitution/,
-    )
-  })
-
-  it('does not let a **sold** line with no rate blank the whole headline', async () => {
-    // A position the owner closed years ago keeps a `symbol_quote` row, so it
-    // still carries a last price; while the base currency is unanswered that
-    // price has no rate. `absenceCase` tests `quantity === 0` first and
-    // unconditionally for exactly this reason — and the head's own arithmetic
-    // held a copy of the classification without that first test, so one closed
-    // line turned the gain of the entire portfolio into an absence.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            ...defaultPositions(),
-            aPosition({
-              symbol: 'ZZD',
-              quantity: 0,
-              cost_basis: 0,
-              realised: 120,
-              price: 125,
-              currency: 'USD',
-              rate: null,
-            }),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-
-    // +300,00 latent · 50,00 + 120,00 realised · 25,00 dividends − 5,00 = 490,00
-    const head = await hero()
-    expect(head).toHaveTextContent(/490,00/)
-    expect(head).not.toHaveTextContent(/en attente du taux/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /300,00/,
-    )
-  })
-})
-
 describe('a read that has not landed is not a fact', () => {
   it('waits for the totals rather than announcing there is no ledger', async () => {
     // The two reads the block *needs* land at their own pace, and the sentences
@@ -1209,494 +408,16 @@ describe('a read that has not landed is not a fact', () => {
   })
 })
 
-describe('one chart slot, two readings', () => {
-  it('offers a reading selector and one range control, and `3M` is dead', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // A **reading** selector, drawn as buttons since #831 — the maquette draws
-    // it segmented exactly like the range beside it, and nothing here is a
-    // place to go. Radios are still refused for the older reason: two sibling
-    // radio groups read as two settings of the same thing, which is the
-    // duplication this page has just closed.
-    await chartCard()
-    const readings = await screen.findByRole('group', { name: 'Lecture' })
-    expect(
-      within(readings)
-        .getAllByRole('button')
-        .map((one) => one.textContent),
-    ).toEqual(['Montants', 'Performance'])
-    expect(within(readings).getByRole('button', { name: 'Montants' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(within(readings).queryByRole('radio')).not.toBeInTheDocument()
-
-    // **And there is not a tab left on the page** (#831). #830 emptied the
-    // ledger and the settings of theirs and this card kept two, which is what
-    // reopened this ticket.
-    expect(screen.queryAllByRole('tab')).toHaveLength(0)
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
-
-    const range = screen.getByRole('radiogroup', { name: 'Plage' })
-    expect(
-      within(range)
-        .getAllByRole('radio')
-        .map((radio) => radio.textContent),
-    ).toEqual(['1M', '1ᵉʳ janv.', '1A', 'MAX'])
-    expect(screen.queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: '1ᵉʳ janv.' })).toBeInTheDocument()
-  })
-
-  it('sets the reading, the legend and the range on one bar above the plot (#1280)', async () => {
-    const { user } = renderApp()
-    const card = await chartCard()
-    const range = within(card).getByRole('radiogroup', { name: 'Plage' })
-    const bar = range.parentElement as HTMLElement
-    const plot = card.querySelector('figure') as HTMLElement
-
-    const legend = within(bar).getByText('Versé net')
-    expect(within(bar).getByRole('group', { name: 'Lecture' })).toBeInTheDocument()
-    expect(bar.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(legend.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(range).toHaveClass('ml-auto')
-
-    // Under *Performance* the curves are not named, so the bar holds no legend.
-    await user.click(within(bar).getByRole('button', { name: 'Performance' }))
-    expect(within(bar).queryByText('Versé net')).not.toBeInTheDocument()
-  })
-
-  // One control bar (#1150): the reading on the left, the range on the right,
-  // one track look — and the range wraps under the reading on a narrow screen.
-  it('puts the reading and the range on one bar, reading first', async () => {
-    renderApp()
-    const readings = await screen.findByRole('group', { name: 'Lecture' })
-    const range = screen.getByRole('radiogroup', { name: 'Plage' })
-
-    expect(readings.parentElement).toBe(range.parentElement)
-    expect(readings.parentElement?.closest('[data-hero-chart]')).not.toBeNull()
-    expect(readings.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('puts the `Montants` heading and the range on one bar where there is no ledger', async () => {
-    server.use(
-      totalsOf({
-        total_value: null,
-        cash_balance: null,
-        net_contributed: null,
-        twr_index: null,
-        ytd: null,
-      }),
-    )
-    renderApp()
-    const heading = await screen.findByRole('heading', { name: 'Montants' })
-    const range = screen.getByRole('radiogroup', { name: 'Plage' })
-
-    expect(heading.parentElement).toBe(range.parentElement)
-    expect(heading.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('keeps the bar above an empty window, so the reader can widen the range', async () => {
-    // A series that stops well before the last month: `1M` draws nothing.
-    server.use(
-      http.get(ROUTES.portfolioTotalsHistory, () =>
-        HttpResponse.json(
-          aPortfolioHistory([aPerfPoint('2020-01-01', 100), aPerfPoint('2020-01-02', 101)]),
-        ),
-      ),
-    )
-    const { user } = renderApp()
-    await user.click(await screen.findByRole('radio', { name: '1M' }))
-
-    expect(
-      await screen.findByText('Rien à tracer sur cette plage pour l’instant.'),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Lecture' })).toBeInTheDocument()
-  })
-
-  it('draws both controls bordered and compact', async () => {
-    renderApp()
-    const readings = await screen.findByRole('group', { name: 'Lecture' })
-    const range = screen.getByRole('radiogroup', { name: 'Plage' })
-
-    for (const control of [readings, range]) {
-      expect(control).toHaveClass('border')
-      for (const option of [
-        ...within(control).queryAllByRole('button'),
-        ...within(control).queryAllByRole('radio'),
-      ]) {
-        expect(option).toHaveClass('px-2.5', 'py-1', 'text-xs')
-      }
-    }
-  })
-
-  it('says the shape of the window to a reader who cannot see the plot', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-    const chart = await chartCard()
-
-    // **The plot is reachable, and the sentence sits beside it** (#1003).
-    // Recharts makes the `<svg>` focusable and its arrows walk the series, so
-    // hiding the drawing would leave a stop in the tab order that says nothing.
-    // The `<svg>` itself does not render under jsdom — `chartReadingContract`
-    // holds its name on the source — but the `<figure>` this component writes
-    // does, and it must not be hidden.
-    const figure = chart.querySelector('figure')
-    expect(figure).not.toBeNull()
-    expect(figure?.closest('[aria-hidden]')).toBeNull()
-
-    // The four clauses, asserted by shape rather than by the fixture's figures:
-    // the extent, the opening of each curve, the dated extremes of the first,
-    // and which side of the other it stayed on.
-    const said = () => (chart.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
-    expect(said()).toMatch(/^Valeur totale et Versé net, du .+ au .+\./)
-    expect(said()).toMatch(/Valeur totale part de .+, Versé net de .+\./)
-    expect(said()).toMatch(/Valeur totale : plus haut .+ le .+, plus bas .+ le .+\./)
-    expect(said()).toMatch(/Valeur totale (reste (au-dessus|en dessous) de Versé net|croise)/)
-
-    // **The live region wraps the swap** (#1003), so a range press that empties
-    // the window is announced by the empty state rather than by nothing.
-    expect(chart.querySelector('[aria-live="polite"]')?.contains(figure!)).toBe(true)
-
-    // Pressing the other reading re-reads the slot, and the sentence follows the
-    // curve that is drawn: one curve, read against the zero line it draws.
-    const readings = within(await screen.findByRole('group', { name: 'Lecture' }))
-    fireEvent.click(readings.getByRole('button', { name: 'Performance' }))
-    await waitFor(() => expect(said()).toMatch(/^Performance, du .+ au .+\./))
-    expect(said()).toMatch(/Performance (reste (au-dessus|en dessous) de zéro|croise zéro)/)
-  })
-
-  it('names each curve and explains no rule under them', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // The legend names the two curves — that is what pairs a colour to a
-    // figure — and it says nothing else. The sentence it used to close on,
-    // *l'écart entre les deux courbes est votre gain total*, is a convention of
-    // the product, and a convention lives on the bubble the head carries three
-    // cards up, never in a paragraph on the page.
-    //
-    // Scoped to the chart's own card: `Valeur totale` is also one of the head's
-    // statistics, and the two saying the same thing about one portfolio is the
-    // point rather than a collision.
-    const chart = within(await chartCard())
-    expect(chart.getByText('Valeur totale')).toBeInTheDocument()
-    expect(chart.getByText('Versé net')).toBeInTheDocument()
-    expect(screen.queryByText(/L’écart entre les deux courbes/)).not.toBeInTheDocument()
-  })
-
-  it('falls back to valuation against cost, and it is then the only reading', async () => {
-    // #708's per-field rule: with no cash event `total_value`,
-    // `net_contributed` and `twr_index` are all `NULL`, so *value against net
-    // contributed* is two empty curves. Which pair is drawn is said by the two
-    // **names** in the legend — a valuation against a cost, not a value against
-    // what was put in — and *Performance* is not offered rather than offered
-    // empty.
-    server.use(
-      totalsOf({
-        total_value: null,
-        cash_balance: null,
-        net_contributed: null,
-        twr_index: null,
-        ytd: null,
-      }),
-    )
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-    await chartCard()
-
-    expect(await screen.findByText('Valorisation')).toBeInTheDocument()
-    expect(screen.getByText('Prix de revient')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Performance' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
-    // The range control survives the fallback: it sets the chart's window, not
-    // a property of the series it happens to be drawing, and it sits beside
-    // the `Montants` heading (#1150).
-    expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
-  })
-
-  it('states neither a base date nor a base rule on the performance reading', async () => {
-    // The date was already refused: the curve is rebased on the first day of
-    // the visible window, so it does not move as the reconstruction reaches
-    // further back — only the head's scalar does, and that one carries the date
-    // while it is still moving. The **rule** goes with it (#831): *base 0 % au
-    // premier jour de la plage affichée* is a convention written on the page,
-    // and the two marks that say it without a sentence stay — the zero line the
-    // curve crosses and the range control that names the window.
-    const { user } = renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-    await chartCard()
-
-    await user.click(await screen.findByRole('button', { name: 'Performance' }))
-    // The legend goes with the reading, which is how one knows the card has
-    // actually swapped what it draws.
-    await waitFor(async () =>
-      expect(within(await chartCard()).queryByText('Valeur totale')).not.toBeInTheDocument(),
-    )
-    expect(screen.queryByText(/Base 0 %/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/premier jour de la plage/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/L’écart entre les deux courbes/)).not.toBeInTheDocument()
-  })
-})
-
-describe('the page shows figures and never explains itself (#831)', () => {
-  // The bubbles themselves are asserted above — four of them, on the head's
-  // four figures. What is asserted here is the other half of the same decision:
-  // the page states **no rule of the product** in prose. The three sentences
-  // that did lived under the chart, one per reading, and a convention written
-  // on the page is what the icon on the figure exists to replace.
-  const RULES = [
-    /L’écart entre les deux courbes/,
-    /Base 0 %/,
-    /l’application ne peut pas distinguer/,
-  ]
-
-  it('states no rule in prose, in either reading of the chart', async () => {
-    const { user } = renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-    await chartCard()
-
-    for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
-
-    await user.click(await screen.findByRole('button', { name: 'Performance' }))
-    await waitFor(async () =>
-      expect(within(await chartCard()).queryByText('Valeur totale')).not.toBeInTheDocument(),
-    )
-    for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
-  })
-
-  it('states none of them either where the reading falls back to cost', async () => {
-    // The install with no cash ledger is where the last of the three lived, and
-    // it was the one carrying a rule about what the app **cannot** tell from
-    // what. Which pair of curves is drawn is said by their two **names**, and
-    // that is a label rather than a rule.
-    server.use(
-      totalsOf({
-        total_value: null,
-        cash_balance: null,
-        net_contributed: null,
-        twr_index: null,
-        ytd: null,
-      }),
-    )
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    const chart = within(await chartCard())
-    expect(chart.getByText('Valorisation')).toBeInTheDocument()
-    expect(chart.getByText('Prix de revient')).toBeInTheDocument()
-    for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
-  })
-})
-
-describe('the allocation is not on this page', () => {
-  it('draws no ring and no legend in the chart slot since #831', async () => {
-    // It sat on the wide track from #727 to #830, and the maquette draws it in
-    // the `Titres` branch and nowhere in this one. The figure moved rather than
-    // being duplicated: `shares.test.tsx` is where its three cases are now, on
-    // the page whose table it divides.
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // The card is on the grid (#1206), and the chart's slot holds none of it.
-    const chart = await chartCard()
-    expect(within(chart).queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
-    expect(within(chart).queryByText('Répartition')).not.toBeInTheDocument()
-  })
-})
-
-describe('the allocation card (#1206)', () => {
-  const useAccounts = (...accounts: Parameters<typeof anAccountsPayload>[0][]) =>
-    server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(...accounts))))
-
-  it('links the account view to the accounts page, and the security view to nothing (#1280)', async () => {
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    expect(within(card).queryByRole('link', { name: 'Voir les comptes →' })).not.toBeInTheDocument()
-    fireEvent.click(within(card).getByRole('button', { name: 'Compte' }))
-    expect(within(card).getByRole('link', { name: 'Voir les comptes →' })).toHaveAttribute(
-      'href',
-      '/accounts',
-    )
-  })
-
-  it('at half width, sets the total on the title row and draws a legend with no ring', async () => {
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
-    expect(titleRow).toHaveTextContent(/2\D?300,00/)
-    expect(within(card).queryByRole('group', { name: 'Titres' })).not.toBeInTheDocument()
-    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
-    // Nothing folded: the list counts itself (#1412).
-    expect(card).not.toHaveTextContent(/en portefeuille/)
-
-    // The selector swaps the slot: pressed, not a radio, and the total holds.
-    const bySecurity = within(card).getByRole('button', { name: 'Titre' })
-    const byAccount = within(card).getByRole('button', { name: 'Compte' })
-    expect(bySecurity).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(byAccount)
-    expect(byAccount).toHaveAttribute('aria-pressed', 'true')
-    const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getByText('Alpha')).toBeInTheDocument()
-    expect(card).not.toHaveTextContent(/en portefeuille/)
-    // The whole changes with the view, and is named (#1426): the accounts' value.
-    expect(titleRow).toHaveTextContent(/Valeur des comptes/)
-    expect(titleRow).toHaveTextContent(/3\D?300,00/)
-    fireEvent.click(bySecurity)
-    expect(titleRow).toHaveTextContent(/Titres/)
-    expect(titleRow).toHaveTextContent(/2\D?300,00/)
-  })
-
-  it('switches the view from the keyboard', async () => {
-    const { user } = renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    const byAccount = within(card).getByRole('button', { name: 'Compte' })
-    byAccount.focus()
-    await user.keyboard('{Enter}')
-    expect(byAccount).toHaveAttribute('aria-pressed', 'true')
-    await user.keyboard(' ')
-    expect(byAccount).toHaveAttribute('aria-pressed', 'true')
-    expect(within(card).getByRole('button', { name: 'Titre' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
-  })
-
-  it('folds past five lines into « Autres · N lignes » and says so', async () => {
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload(
-            Array.from({ length: 9 }, (_, index) =>
-              aPosition({ symbol: `Z${index}`, name: `Zeta ${index}`, price: 90 - index }),
-            ),
-          ),
-        ),
-      ),
-    )
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(5)
-    expect(within(legend).getByText('Autres · 5 lignes')).toBeInTheDocument()
-    expect(card).toHaveTextContent('9 lignes · top 4 détaillé, 5 regroupées')
-  })
-
-  it('names an account by its declared label, and the seeded one from the catalogue (#1426)', async () => {
-    useAccounts([theSeededAccount(), anAccount({ id: 'alpha', label: 'Mon PEA' })])
-    const { user } = renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-    await user.click(within(card).getByRole('button', { name: 'Compte' }))
-
-    const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getByText('Non affecté')).toBeInTheDocument()
-    expect(within(legend).getByText('Mon PEA')).toBeInTheDocument()
-    expect(within(legend).queryByText('default')).not.toBeInTheDocument()
-  })
-
-  it('folds past five accounts into « Autres · N comptes » and counts accounts', async () => {
-    useAccounts(
-      Array.from({ length: 9 }, (_, index) =>
-        anAccount({ id: `acct${index}`, label: null, total_value: 900 - index }),
-      ),
-    )
-    const { user } = renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-    await user.click(within(card).getByRole('button', { name: 'Compte' }))
-
-    const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(5)
-    expect(within(legend).getByText('Autres · 5 comptes')).toBeInTheDocument()
-    expect(card).toHaveTextContent('9 comptes · top 4 détaillé, 5 regroupés')
-  })
-
-  it('names the lines it could not place, even when it could place none', async () => {
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            aPosition({ symbol: 'ZZB', price: 125, currency: 'USD', rate: null }),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    expect(card).toHaveTextContent(/1 ligne n’est pas dans cette répartition.*ZZB/)
-    // No total on the title row and the empty state's reason, with nothing placed.
-    const titleRow = within(card).getByRole('heading', { name: 'Répartition' }).parentElement!
-    expect(titleRow).not.toHaveTextContent(/€/)
-    expect(card).toHaveTextContent('Aucune ligne détenue')
-  })
-
-  it('offers no selector while fewer than two accounts hold a placed line', async () => {
-    // Owing and unwritten accounts have no weight, so they are no slice (#1426).
-    useAccounts([
-      anAccount({ id: 'alpha' }),
-      anAccount({ id: 'beta', total_value: -50, holdings_value: 0 }),
-      anAccount({ id: 'gamma', total_value: null, holdings_value: null }),
-    ])
-    renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-
-    expect(within(card).queryByRole('group', { name: 'Répartir par' })).not.toBeInTheDocument()
-  })
-
-  it("divides by the accounts' worth, as the accounts bar does (#1426)", async () => {
-    useAccounts([
-      anAccount({ id: 'pea', label: 'PEA', total_value: 42670, holdings_value: 40000 }),
-      anAccount({ id: 'cto', label: 'CTO', total_value: 5545.4, holdings_value: 5000 }),
-      anAccount({ id: 'debt', label: 'Dette', total_value: -100, holdings_value: 0 }),
-    ])
-    const { user } = renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-    await user.click(within(card).getByRole('button', { name: 'Compte' }))
-
-    const legend = within(card).getByRole('list', { name: 'Répartition' })
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(2)
-    expect(within(legend).getByText('PEA').closest('li')).toHaveTextContent(/88,5\s?%/)
-    expect(within(legend).getByText('CTO').closest('li')).toHaveTextContent(/11,5\s?%/)
-    expect(card).not.toHaveTextContent(/Dette/)
-    expect(card).not.toHaveTextContent(/sans taux/)
-  })
-
-  it('waits for the rebuild instead of stating shares of a partial whole (#1285, #1426)', async () => {
-    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
-    // One row stale, and it is the one left out of the split: it still counts.
-    useAccounts([
-      anAccount({ id: 'alpha' }),
-      anAccount({ id: 'beta' }),
-      anAccount({ id: 'old', total_value: -1, holdings_value: 0, as_of: '2026-03-01' }),
-    ])
-    const { user } = renderApp()
-    const card = await screen.findByRole('region', { name: 'Répartition' })
-    await user.click(within(card).getByRole('button', { name: 'Compte' }))
-
-    expect(card).toHaveTextContent('Parts par compte en attente du recalcul')
-    expect(card).not.toHaveTextContent('%')
-    expect(card).not.toHaveTextContent('Valeur des comptes')
-    expect(within(card).queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
-  })
-})
-
 describe('the investment rhythm', () => {
   it('never says the amount without the coverage', async () => {
     renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
 
-    // **One group, two figures** (#751). The coverage is inside the
-    // amount's own group rather than beside it, which is what makes *500 €*
-    // impossible to read on its own — and *500 € a month* is what a reader
-    // turns into *6 000 € a year* when half of that never went in.
-    const amount = await screen.findByRole('group', { name: 'Acheté par mois (médiane)' })
-    expect(amount).toHaveTextContent(/500,00/)
-    expect(amount).toHaveTextContent('Sur 6 des 12 derniers mois')
+    // The amount is read with its coverage in the same plane: *500 € a month*
+    // is what a reader turns into *6 000 € a year* when half of that never went
+    // in, so the sentence under the months says what really did.
+    const rhythm = await screen.findByRole('region', { name: 'Rythme d’investissement' })
+    expect(rhythm).toHaveTextContent(/500,00\D?€\s*achetés par mois/)
+    expect(rhythm).toHaveTextContent(/versés sur 12 mois/)
   })
 
   it('lets its strip fill the height the row gives it, between 56 and 160 px (#1280)', async () => {
@@ -1813,12 +534,11 @@ describe('the investment rhythm', () => {
       ),
     )
     renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
 
-    const amount = await screen.findByRole('group', { name: 'Acheté par mois (médiane)' })
-    // And the coverage says *the one month observed* rather than counting one
-    // out of one, which is a sentence with the same number twice in it.
-    expect(amount).toHaveTextContent('Sur le seul mois observé')
+    const rhythm = await screen.findByRole('region', { name: 'Rythme d’investissement' })
+    // The window says *the last month* rather than counting one out of one.
+    expect(rhythm).toHaveTextContent('Dernier mois')
+    expect(rhythm).toHaveTextContent(/500,00\D?€ versés sur 1 mois\./)
     // The strip holds that one month and nothing invented around it.
     const strip = screen.getByRole('list', { name: 'Acheté, mois par mois' })
     expect(within(strip).getAllByRole('listitem')).toHaveLength(1)
@@ -1836,21 +556,6 @@ describe('the investment rhythm', () => {
     await screen.findByRole('group', { name: 'Gain total' })
 
     expect(screen.queryByText('Rythme d’investissement')).not.toBeInTheDocument()
-  })
-})
-
-describe('the time announcers', () => {
-  it('keeps two permanent ones and no more', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // The page's own mention of when its prices were read.
-    expect(await screen.findByText(/Cours au 2 mars 2026/)).toBeInTheDocument()
-    // The two transitory ones are absent here: the reconstruction is over, so
-    // the base date is not news and the notifications panel raises no card for
-    // it (#829).
-    expect(screen.queryByText(/30 oct\. 2019/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
 
@@ -1909,12 +614,12 @@ describe('the four states of the page', () => {
     )
     renderApp()
 
-    //   realised +120,00 − 45,00 · dividends +10,00 · fees −5,00 = +80,00
-    const head = await hero()
-    expect(head).toHaveTextContent(/80,00/)
-    expect(await screen.findByRole('group', { name: 'Plus-value latente' })).toHaveTextContent('—')
-    expect(figure('Plus-value réalisée')).toHaveTextContent(/75,00/)
-    expect(head).toHaveTextContent(/dont 500,00\D?€ de liquidités/)
+    // The gain total is the server's: the page states it as it comes.
+    expect(await hero()).toHaveTextContent(/2\D?800,00/)
+    expect(await screen.findByLabelText('Trajectoire')).toHaveTextContent(/500,00/)
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
+    expect(screen.getByText('Valeur des titres')).toBeInTheDocument()
+    expect(screen.getByText('Aucune ligne détenue')).toBeInTheDocument()
   })
 })
 
@@ -1985,18 +690,296 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
   })
 })
 
-describe('the head in English', () => {
-  it('renders whole, and says `Total P&L` rather than `Total gain`', async () => {
+describe('the hero (« Relevé »)', () => {
+  it('states the value, then its variation over the period, in words', async () => {
+    renderApp()
+
+    const head = await hero()
+    expect(head).toHaveTextContent(/2\D?800,00/)
+    // The default period is a year: `variation['1Y']` of the payload.
+    expect(head).toHaveTextContent(/\+310,00\D?€/)
+    expect(head).toHaveTextContent(/\+14,0\D?%/)
+    expect(head).toHaveTextContent('depuis un an')
+  })
+
+  it('moves the variation line and the chart together with the period', async () => {
+    const { user } = renderApp()
+    await hero()
+
+    await user.click(await screen.findByRole('radio', { name: '1 mois' }))
+
+    const head = await hero()
+    expect(head).toHaveTextContent(/\+120,00\D?€/)
+    expect(head).toHaveTextContent(/\+4,5\D?%/)
+    expect(head).toHaveTextContent(/depuis le 2 févr\. 2026/)
+    expect(screen.getByRole('radio', { name: '1 mois' })).toBeChecked()
+
+    await user.click(screen.getByRole('radio', { name: 'Tout' }))
+    expect(await hero()).toHaveTextContent('depuis le premier versement')
+    await user.click(screen.getByRole('radio', { name: 'Cette année' }))
+    expect(await hero()).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
+  })
+
+  it('draws no variation where the series does not reach back that far', async () => {
+    server.use(
+      totalsOf({
+        variation: {
+          '1M': null,
+          YTD: null,
+          '1Y': null,
+          MAX: { amount: 370, pct: 0.152, start_date: '2019-10-30' },
+        },
+      }),
+    )
+    renderApp()
+
+    const head = await hero()
+    expect(head).toHaveTextContent(/2\D?800,00/)
+    expect(head).not.toHaveTextContent('depuis un an')
+  })
+
+  it('states the first deposit, the cash and the net if all sold on the right', async () => {
+    renderApp()
+    await hero()
+
+    const trajectory = await screen.findByLabelText('Trajectoire')
+    expect(trajectory).toHaveTextContent('Premier versement')
+    expect(trajectory).toHaveTextContent(/30 oct\. 2019/)
+    expect(trajectory).toHaveTextContent('Liquidités')
+    expect(trajectory).toHaveTextContent(/500,00/)
+    expect(trajectory).toHaveTextContent('Net si tout vendu')
+    expect(trajectory).toHaveTextContent(/2\D?800,00/)
+  })
+
+  it('names the accounts whose tax was estimated in the net’s tooltip', async () => {
+    server.use(totalsOf({ net_if_sold_today: 2650, estimated_accounts: ['pea'] }))
+    const { user } = renderApp()
+
+    const trajectory = await screen.findByLabelText('Trajectoire')
+    expect(trajectory).toHaveTextContent(/2\D?650,00/)
+    await user.hover(within(trajectory).getByText(/2\D?650,00/))
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Impôt estimé sur le compte pea seul',
+    )
+  })
+
+  it('says the net is gross where no account carries a tax model', async () => {
+    const { user } = renderApp()
+
+    const trajectory = await screen.findByLabelText('Trajectoire')
+    await user.hover(within(trajectory).getAllByText(/2\D?800,00/)[0])
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/Montant brut/)
+  })
+
+  it('draws the net contribution and the gain as one bar, then the line under it', async () => {
+    renderApp()
+    await hero()
+
+    // 370 / 2 800 = 13,2 % of the value is gain.
+    expect(await screen.findByRole('img', { name: /Versé net .*86,8.*gain .*13,2/ })).toBeVisible()
+    const gain = screen.getByRole('group', { name: 'Gain total' })
+    expect(gain).toHaveTextContent(/\+370,00\D?€/)
+    expect(gain).toHaveTextContent(/\+15,2\D?%/)
+    // The IRR stands alone on the right, with its unit, and carries no sign.
+    expect(screen.getByText(/^TRI /)).toHaveTextContent(/TRI 3,22\D?% par an/)
+  })
+
+  it('draws no arrow, no pill and no help bubble', async () => {
+    renderApp()
+    const head = await hero()
+
+    expect(head.querySelector('svg')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Ce que veut dire/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Depuis le 1ᵉʳ janvier/)).not.toBeInTheDocument()
+  })
+
+  it('names the securities as the hero, and leaves the cash out, where there is no cash ledger', async () => {
+    server.use(
+      totalsOf({
+        total_value: null,
+        cash_balance: null,
+        net_contributed: null,
+        twr_index: null,
+        xirr: null,
+        cash: null,
+        net_if_sold_today: null,
+        ytd: null,
+      }),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Titres' })
+    expect(head).toHaveTextContent(/2\D?300,00/)
+    expect(screen.queryByText('Liquidités')).not.toBeInTheDocument()
+    expect(screen.queryByText('Net si tout vendu')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^TRI /)).not.toBeInTheDocument()
+    // The only reading of the chart is the valuation: one heading, no tabs.
+    expect(await screen.findByRole('heading', { name: 'Montants' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
+  it('says a zero cash balance, which is a figure and not an absence', async () => {
+    server.use(totalsOf({ cash: 0 }))
+    renderApp()
+
+    expect(await screen.findByLabelText('Trajectoire')).toHaveTextContent(/Liquidités\s*0,00/)
+  })
+
+  it('writes an unknown gain as a dash', async () => {
+    server.use(totalsOf({ gain_total: { amount: null, pct: null } }))
+    renderApp()
+
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent('—')
+  })
+
+  it('renders whole in English', async () => {
     renderApp({ browserLanguages: ['en-GB'] })
 
-    // `Total gain` and `Total return` start with the same word and cohabit on
-    // this very block.
+    const head = await screen.findByRole('group', { name: 'Portfolio value' })
+    expect(head).toHaveTextContent(/2,800\.00/)
+    expect(head).toHaveTextContent('over the past year')
     expect(await screen.findByRole('group', { name: 'Total P&L' })).toHaveTextContent(/370\.00/)
-    expect(screen.queryByText('Total gain')).not.toBeInTheDocument()
-    expect(figure('Unrealised P&L')).toHaveTextContent(/300\.00/)
-    // Numbers follow the language, not the currency: the same euros, grouped
-    // and pointed the English way.
-    expect(figure('Portfolio value')).toHaveTextContent(/2,800\.00/)
-    expect(figure('Portfolio value')).toHaveTextContent(/\+€370\.00\s*total P&L/)
+    expect(await screen.findByText('Securities value')).toBeInTheDocument()
+  })
+})
+
+describe('the chart', () => {
+  it('chooses its reading with text tabs and its period with a segmented control', async () => {
+    const { user } = renderApp()
+
+    const tabs = await screen.findByRole('tablist', { name: 'Lecture' })
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Montants', 'Performance'])
+    expect(within(tabs).getByRole('tab', { name: 'Montants' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+
+    const range = screen.getByRole('radiogroup', { name: 'Plage' })
+    expect(
+      within(range)
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
+    ).toEqual(['1 mois', 'Cette année', '1 an', 'Tout'])
+    // One bar: the tabs and the period share a parent line.
+    expect(tabs.parentElement?.contains(range)).toBe(true)
+
+    await user.click(within(tabs).getByRole('tab', { name: 'Performance' }))
+    expect(within(tabs).getByRole('tab', { name: 'Performance' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(await screen.findByText('Performance des titres')).toBeInTheDocument()
+  })
+
+  it('names its curves with the figures the drawing ends on', async () => {
+    renderApp()
+
+    await screen.findByRole('tablist', { name: 'Lecture' })
+    const legend = (await screen.findAllByText('Valeur totale'))[0].parentElement
+    expect(legend).toHaveTextContent(/1\D?800,00/)
+  })
+
+  it('holds its place as an empty plane while the series is in flight', async () => {
+    server.use(http.get(ROUTES.portfolioTotalsHistory, () => new Promise<never>(() => {})))
+    renderApp()
+
+    await hero()
+    expect(screen.queryByRole('tablist', { name: 'Lecture' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-empty]')).toBeNull()
+  })
+})
+
+describe('the two sections under the chart', () => {
+  it('sets the rhythm and the securities’ value side by side', async () => {
+    renderApp()
+
+    const rhythm = await screen.findByRole('region', { name: 'Rythme d’investissement' })
+    const securities = await screen.findByRole('region', { name: 'Valeur des titres' })
+    expect(rhythm.parentElement).toBe(securities.parentElement)
+    expect(rhythm.parentElement).toHaveClass('md:grid-cols-2')
+  })
+
+  it('says how much went in over the months, and which months nothing did', async () => {
+    renderApp()
+
+    const rhythm = await screen.findByRole('region', { name: 'Rythme d’investissement' })
+    expect(rhythm).toHaveTextContent('12 derniers mois')
+    expect(rhythm).toHaveTextContent(/500,00\D?€\s*achetés par mois \(médiane\)/)
+    // 400 + 500 + 500 + 620 + 500 + 480
+    expect(rhythm).toHaveTextContent(/3\D?000,00\D?€ versés sur 12 mois, aucun achat en avr\./)
+  })
+
+  it('divides the securities by line, the top four and the rest, without the cash', async () => {
+    renderApp()
+
+    const securities = await screen.findByRole('region', { name: 'Valeur des titres' })
+    // Three held lines: 1 300 + 400 + 600.
+    expect(securities).toHaveTextContent(/2\D?300,00\D?€\s*sur 3 lignes, hors liquidités/)
+    const rows = within(within(securities).getByRole('list')).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('Zeta Alpha')
+    expect(rows[0]).toHaveTextContent(/56,5\D?%/)
+    expect(securities).not.toHaveTextContent('Répartition')
+    expect(within(securities).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('folds the lines past the fourth into one row', async () => {
+    const lines = ['ZZA', 'ZZB', 'ZZC', 'ZZD', 'ZZE', 'ZZF'].map((symbol, index) =>
+      aPosition({ symbol, name: `Line ${symbol}`, price: 100 - index * 10 }),
+    )
+    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(lines))))
+    renderApp()
+
+    const securities = await screen.findByRole('region', { name: 'Valeur des titres' })
+    expect(securities).toHaveTextContent('2 autres lignes')
+    expect(within(within(securities).getByRole('list')).getAllByRole('listitem')).toHaveLength(5)
+  })
+
+  it('holds the place of each while its read is in flight, and says nothing', async () => {
+    server.use(http.get(ROUTES.investmentRhythm, () => new Promise<never>(() => {})))
+    renderApp()
+
+    await screen.findByRole('region', { name: 'Valeur des titres' })
+    expect(
+      screen.queryByRole('region', { name: 'Rythme d’investissement' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-empty]')).toBeNull()
+  })
+
+  it('says why the rhythm is empty, in its own plane', async () => {
+    server.use(
+      http.get(ROUTES.investmentRhythm, () =>
+        HttpResponse.json(aRhythm({ monthly_amount: null, months_covered: 0 })),
+      ),
+    )
+    renderApp()
+
+    const rhythm = await screen.findByRole('region', { name: 'Rythme d’investissement' })
+    expect(rhythm).toHaveTextContent(/Aucun achat sur les 12 derniers mois/)
+  })
+})
+
+describe('no customisation is left', () => {
+  it('offers no edit mode, no hidden card, no movers and no layout request', async () => {
+    const requested: string[] = []
+    server.events.on('request:start', ({ request }) =>
+      requested.push(new URL(request.url).pathname),
+    )
+    renderApp()
+    await hero()
+
+    expect(
+      screen.queryByRole('button', { name: /Modifier le tableau de bord/ }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Mouvements')).not.toBeInTheDocument()
+    expect(requested.filter((path) => /layout/.test(path))).toEqual([])
+    expect(requested.filter((path) => path.startsWith('/api/accounts'))).toEqual([])
   })
 })

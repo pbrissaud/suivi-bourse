@@ -44,35 +44,30 @@
  *    my portfolio worth* before anything else: the head's hero is the value,
  *    the cash named under it, the gain, the year, the day and the IRR as
  *    pills, and the real chart across the head's full width below them. The accounts comparison
- *    left this page for the accounts page, where it is the subject.
+ *    left this page for the accounts page, where it is the subject. (The pills
+ *    are gone since « Relevé »: the head is a statement, DESIGN.md › The hero.)
  *  - **Under the head, a fixed composition** (decision of 7 Nov. 2026): the
  *    investment rhythm and the securities' value side by side. There is
- *    nothing to arrange, hide or reset; chantier W5 recomposes the page.
- *  - **One range control, and it is the chart's** (#838, then #1155 closed).
- *    It sits on the chart's control bar, beside the readings; only its state
- *    lives here.
+ *    nothing to arrange, hide or reset.
+ *  - **One period, held here, drives two things** (« Relevé »): the chart's
+ *    window and the head's variation line (« +5 021,10 € (+11,6 %) depuis un
+ *    an »). Its control sits on the chart's bar; only its state lives here.
+ *  - **Every block ships its states**: in flight it holds its place as an empty
+ *    plane, empty it says why, failed it says « Lecture impossible » where its
+ *    content would have been.
  */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { StaleFigures } from '@/components/StaleFigures'
 import { Unreadable } from '@/components/Unreadable'
-import { AllocationCard, allocationRenderState } from '@/features/dashboard/components/Allocation'
-import {
-  GainBreakdown,
-  gainBreakdownRenderState,
-} from '@/features/dashboard/components/GainBreakdown'
 import { DashboardHead } from '@/features/dashboard/components/Head'
 import { HeroChart } from '@/features/dashboard/components/HeroChart'
-import {
-  InvestmentRhythm,
-  investmentRhythmRenderState,
-} from '@/features/dashboard/components/InvestmentRhythm'
+import { InvestmentRhythm } from '@/features/dashboard/components/InvestmentRhythm'
+import { SecuritiesValue } from '@/features/dashboard/components/SecuritiesValue'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { settingsApi } from '@/features/settings/lib/api'
-import { accountsApi } from '@/features/accounts/lib/api'
-import { buildAccountRows } from '@/features/accounts/lib/accounts'
 import { sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import {
@@ -97,8 +92,6 @@ export default function DashboardPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: dashboardApi.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  // The accounts page's own key: one cache entry, one request (#1426).
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
   // The same read the bell and the first-run modal compose their own
   // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
@@ -116,8 +109,7 @@ export default function DashboardPage() {
   // Exactly one of the two series is read, and the discriminant is the same one
   // that decides the chart's reading: an install with no cash event has no perf
   // series at all, and one with a cash ledger has no use for the valuation
-  // curve. The head reduces the first for its *today* pill, so there is one
-  // read here and two consumers below.
+  // curve.
   const ledger = hasCashLedger(totals.data?.totals ?? null)
   const perf = useQuery({
     queryKey: ['portfolio-totals-history'],
@@ -182,15 +174,7 @@ export default function DashboardPage() {
       : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
-  // `?? null` and never `?? []`: these reads are armed only once the page
-  // reaches `portfolio`, so there is a real window in which an empty array
-  // would state *nothing here* about data nobody has answered for.
-  const breakdown = { positions: positions.data ?? null, totals: totals.data ?? null }
   const rhythmRead = { rhythm: rhythm.data ?? null, failure: rhythmFailure }
-  const allocationRead = { positions: positions.data ?? null }
-  const accountRows = accounts.data ? buildAccountRows(accounts.data.accounts) : null
-  const rhythmRenders = investmentRhythmRenderState(rhythmRead) !== 'nothing'
-  const allocationRenders = allocationRenderState(allocationRead) !== 'nothing'
 
   // **The band's sentence, one floor down** (#829). With no reporting currency
   // nothing is converted and the perf job writes nothing at all, so this page
@@ -210,7 +194,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-10">
       {/* **Every figure on this page comes out of the perf cache**, so the
           sentence stands over the page rather than in one block: the head,
           the breakdown and the curve are all written by the same pass, and
@@ -221,7 +205,7 @@ export default function DashboardPage() {
         positions={positions.data ?? null}
         totals={totals.data ?? null}
         runtime={runtime.data ?? null}
-        history={perf.data?.points ?? null}
+        range={range}
         chart={
           state !== 'portfolio' ? null : (
             <HeroChart
@@ -237,23 +221,10 @@ export default function DashboardPage() {
         }
       />
 
-      {/* Kept until W5 recomposes the page: it carries the `Gain total`. */}
-      {state !== 'portfolio' || gainBreakdownRenderState(breakdown) === 'nothing' ? null : (
-        <GainBreakdown {...breakdown} />
-      )}
-
       {state !== 'portfolio' ? null : (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          {rhythmRenders ? <InvestmentRhythm {...rhythmRead} /> : null}
-          {allocationRenders ? (
-            <AllocationCard
-              {...allocationRead}
-              rows={rows}
-              accounts={accountRows}
-              runtime={runtime.data ?? null}
-              width="half"
-            />
-          ) : null}
+          <InvestmentRhythm {...rhythmRead} />
+          <SecuritiesValue positions={positions.data ?? null} rows={rows} />
         </div>
       )}
     </div>

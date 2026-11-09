@@ -366,25 +366,6 @@ export function timeTicks(
   return { ...result, ticks: result.ticks.slice(0, max) }
 }
 
-export function dayMove(points: readonly PerfPoint[] | null, now: Date): number | null {
-  // A read in flight is not an absence, and it reaches here as `null` rather
-  // than as an empty array. One point is not a difference.
-  if (points === null || points.length < 2) return null
-
-  const last = points[points.length - 1]
-  if (last.t !== now.toISOString().slice(0, 10)) return null
-
-  const gain = (point: PerfPoint) =>
-    point.total_value === null || point.net_contributed === null
-      ? null
-      : point.total_value - point.net_contributed
-
-  const today = gain(last)
-  const yesterday = gain(points[points.length - 2])
-  if (today === null || yesterday === null) return null
-  return today - yesterday
-}
-
 // ------------------------------------------------------------------------- //
 // The hero over a row from a past day (#1260)
 // ------------------------------------------------------------------------- //

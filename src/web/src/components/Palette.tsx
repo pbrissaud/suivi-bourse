@@ -290,12 +290,16 @@ export function Palette() {
     return {
       key: `account:${account.id}`,
       label: account.name,
-      sub: [
-        t('palette.account.kind'),
-        holds === undefined ? null : t('palette.account.titles', { count: holds.titles }),
-      ]
-        .filter((part) => part !== null)
-        .join(' · '),
+      // One sentence, waiting whole for the positions' read, like a title's.
+      sub:
+        positions.data === undefined
+          ? ''
+          : [
+              t('palette.account.kind'),
+              holds === undefined ? null : t('palette.account.titles', { count: holds.titles }),
+            ]
+              .filter((part) => part !== null)
+              .join(' · '),
       right: money(holds?.value ?? null),
       run: () =>
         leave(() => {
