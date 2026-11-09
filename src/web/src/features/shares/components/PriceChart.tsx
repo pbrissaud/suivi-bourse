@@ -27,15 +27,7 @@
  * marker (#1273): it names its dates.
  */
 import { useQuery } from '@tanstack/react-query'
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
 import { ChartReading } from '@/components/ChartReading'
 import { Unreadable } from '@/components/Unreadable'
@@ -46,7 +38,7 @@ import { CHART_WINDOWS, type ChartWindow, sharesApi } from '@/features/shares/li
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
-import { eventMarkers } from '@/features/shares/lib/shares'
+import { averageCostSeries, eventMarkers } from '@/features/shares/lib/shares'
 
 /** The `YAxis` width plus the `LineChart` left margin: where the plot starts. */
 const PLOT_INSET_LEFT = 77
@@ -85,7 +77,10 @@ export function PriceChart({
   // unit. `null` while the dial is unanswered, which `formatCurrency` renders as
   // the plain number rather than guessing.
   const currency = series.data?.base_currency ?? null
-  const markers = eventMarkers(events, symbol, series.data?.points ?? [])
+  const points = series.data?.points ?? []
+  const markers = eventMarkers(events, symbol, points)
+  const steps = averageCost === null ? null : averageCostSeries(events, symbol, points, averageCost)
+  const plotted = points.map((point, index) => ({ ...point, average: steps?.[index] ?? null }))
 
   return (
     <section className="space-y-3">
@@ -133,7 +128,7 @@ export function PriceChart({
                 {/* **Named, and not hidden** (#1003): the `<svg>` Recharts
                     renders is focusable and its arrows walk the series, so the
                     name is what tells a reader where they have landed. */}
-                <LineChart data={series.data.points} aria-label={t('shares.chart.plot')}>
+                <LineChart data={plotted} aria-label={t('shares.chart.plot')}>
                   {/* **The chrome comes from the tokens** (#841).
                       Left to itself Recharts paints a `#ccc` grid and `#666`
                       gradations, and it paints the *same two greys on both
@@ -181,10 +176,16 @@ export function PriceChart({
                     tick={{ fill: 'var(--muted-foreground)' }}
                   />
                   {averageCost === null ? null : (
-                    <ReferenceLine
-                      y={averageCost}
+                    // A series of its own rather than a reference line: the axis
+                    // domain then spans it, so it is drawn on any window.
+                    <Line
+                      type="stepAfter"
+                      dataKey="average"
                       stroke="var(--muted-foreground)"
                       strokeDasharray="5 4"
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
                     />
                   )}
                   <Line

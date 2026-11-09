@@ -278,7 +278,7 @@
   "shares.chart.legend.avgCost": "Average purchase price",
   "shares.events.recent": "Last {shown} of {total}",
   "shares.events.label": "Latest events of this share",
-  "shares.events.all": "{count, plural, one {See the event in the ledger} other {All # events in the ledger}}",
+  "shares.events.all": "See every event of this title",
   "shares.events.col.date": "Date",
   "shares.events.col.kind": "Operation",
   "shares.events.col.quantity": "Quantity",

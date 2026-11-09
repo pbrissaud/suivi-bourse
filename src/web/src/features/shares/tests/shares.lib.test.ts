@@ -13,6 +13,7 @@ import { positionRenderings } from '@/lib/absence'
 import {
   accountBreakdown,
   allocation,
+  averageCostSeries,
   buildShareRows,
   closedRows,
   eventMarkers,
@@ -681,5 +682,31 @@ describe('the total row (#1281)', () => {
     expect(valuation).toEqual({ known: true, value: 0 })
     expect(terms.holdsPosition).toBe(false)
     expect(terms.realised).toBe(120)
+  })
+})
+
+describe('averageCostSeries', () => {
+  const points = [
+    { t: '2026-01-01', price: 1 },
+    { t: '2026-02-01', price: 1 },
+    { t: '2026-03-01', price: 1 },
+    { t: '2026-04-01', price: 1 },
+  ]
+  const buy = (date: string, quantity: number, unit_price: number) =>
+    anEvent({ date, quantity, unit_price, fee: 0 })
+
+  it('steps with the buys and ignores a sale', () => {
+    const events = [
+      buy('2026-02-01', 10, 100),
+      buy('2026-03-01', 10, 200),
+      anEvent({ date: '2026-04-01', event_type: 'SELL', quantity: 5, unit_price: 300, fee: 0 }),
+    ]
+    expect(averageCostSeries(events, 'ZZA', points, 150)).toEqual([null, 100, 150, 150])
+  })
+
+  it('draws the flat line where the steps do not end on the PRU', () => {
+    expect(averageCostSeries([buy('2026-02-01', 10, 100)], 'ZZA', points, 50)).toEqual([
+      50, 50, 50, 50,
+    ])
   })
 })

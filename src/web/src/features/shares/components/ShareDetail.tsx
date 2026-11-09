@@ -26,6 +26,7 @@ import {
 import { Unreadable } from '@/components/Unreadable'
 import { PriceChart } from '@/features/shares/components/PriceChart'
 import type { LedgerEvent, LedgerEventType } from '@/features/data/lib/api'
+import { cashFlow } from '@/features/data/lib/ledger'
 import type { ChartWindow } from '@/features/shares/lib/api'
 import { positionRenderings, renderFigure } from '@/lib/absence'
 import { ABSENT, useFormatters } from '@/lib/format'
@@ -318,14 +319,18 @@ function Events({
                     {event.quantity === null ? ABSENT : f.quantity(event.quantity)}
                   </TableCell>
                   <TableCell numeric>{f.currency(event.unit_price, currency)}</TableCell>
-                  <TableCell numeric>{f.currency(event.amount, currency)}</TableCell>
+                  <TableCell numeric>{f.signedCurrency(cashFlow(event), currency)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
           <p className="mt-1 text-sm">
-            <Link to="/ledger" className="underline underline-offset-4">
-              {t('shares.events.all', { count: all.length })}
+            <Link
+              to="/ledger"
+              search={{ symbol: [symbol] }}
+              className="underline underline-offset-4"
+            >
+              {t('shares.events.all')}
             </Link>
           </p>
         </>

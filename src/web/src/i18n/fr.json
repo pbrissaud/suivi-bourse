@@ -278,7 +278,7 @@
   "shares.chart.legend.avgCost": "Prix moyen d’achat",
   "shares.events.recent": "{shown} derniers sur {total}",
   "shares.events.label": "Derniers événements de ce titre",
-  "shares.events.all": "{count, plural, one {Voir l’événement dans le grand livre} other {Les # événements dans le grand livre}}",
+  "shares.events.all": "Voir tous les événements de ce titre",
   "shares.events.col.date": "Date",
   "shares.events.col.kind": "Opération",
   "shares.events.col.quantity": "Quantité",

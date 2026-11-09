@@ -880,3 +880,55 @@ export function purchaseStats(
   const months = Math.max(1, (now.getFullYear() - year) * 12 + now.getMonth() + 1 - month)
   return { first: days[0], count: days.length, months }
 }
+
+/**
+ * The average purchase price after each day that moved it, oldest first.
+ *
+ * A buy adds `quantity × price + fee` to the cost, a grant adds shares at no
+ * cost, a sale takes its shares out at the running average, which is why it
+ * leaves the average where it stood.
+ */
+function averageCostSteps(
+  events: readonly LedgerEvent[],
+  symbol: string,
+): { day: string; average: number }[] {
+  const steps: { day: string; average: number }[] = []
+  let quantity = 0
+  let cost = 0
+  for (const event of shareEvents(events, symbol).reverse()) {
+    const moved = event.quantity ?? 0
+    if (event.event_type === 'BUY') {
+      cost += moved * (event.unit_price ?? 0) + (event.fee ?? 0)
+      quantity += moved
+    } else if (event.event_type === 'GRANT') {
+      quantity += moved
+    } else if (event.event_type === 'SELL') {
+      cost -= moved * (quantity > 0 ? cost / quantity : 0)
+      quantity -= moved
+    } else continue
+    if (quantity > 0 && event.date) steps.push({ day: event.date, average: cost / quantity })
+  }
+  return steps
+}
+
+/**
+ * The average purchase price at each plotted point: a step that follows the
+ * buys, or the flat `current` PRU when the steps do not end on it (within half
+ * a percent). Split factors live on the server, so a split title, or one
+ * bought in another currency than the reporting one, would otherwise draw a
+ * fake jump.
+ */
+export function averageCostSeries(
+  events: readonly LedgerEvent[],
+  symbol: string,
+  points: readonly SeriesPoint[],
+  current: number,
+): (number | null)[] {
+  const steps = averageCostSteps(events, symbol)
+  const last = steps.at(-1)
+  if (!last || Math.abs(last.average - current) > current * 0.005) return points.map(() => current)
+  return points.map((point) => {
+    const day = point.t.slice(0, 10)
+    return steps.filter((step) => step.day <= day).at(-1)?.average ?? null
+  })
+}

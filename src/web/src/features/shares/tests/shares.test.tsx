@@ -220,10 +220,9 @@ describe('the title page', () => {
     const section = (await screen.findByRole('region', { name: 'Événements' })) as HTMLElement
     expect(await within(section).findByRole('table')).toBeInTheDocument()
     expect(within(section).getAllByText('Achat').length).toBeGreaterThan(0)
-    expect(within(section).getByRole('link', { name: /dans le grand livre/ })).toHaveAttribute(
-      'href',
-      '/ledger',
-    )
+    expect(
+      within(section).getByRole('link', { name: 'Voir tous les événements de ce titre' }),
+    ).toHaveAttribute('href', '/ledger?symbol=%5B%22ZZA%22%5D')
   })
 
   it('says what the title is, its accounts linked', async () => {
