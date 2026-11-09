@@ -131,6 +131,10 @@ const WRITE_ONLY_ROUTES = [
   // opening the form would be red by construction (#775 against #729), so its
   // in-flight silence is proven in `data.test.tsx` instead.
   'securities',
+  // « Lancer » answers the reader's own press (202), and the journal's file is
+  // an `href` the browser follows: neither is a read a surface is drawn from.
+  'jobRun',
+  'logsDownload',
 ] as const satisfies readonly RouteName[]
 
 /**
@@ -149,9 +153,6 @@ const AWAITING_THEIR_PAGE = [
   'notificationChannels',
   'notificationChannel',
   'notificationChannelTest',
-  'jobRun',
-  'logs',
-  'logsDownload',
   'tokens',
   'token',
   'tokenRegenerate',
@@ -360,6 +361,7 @@ const SURFACES: readonly Surface[] = [
   },
   { name: 'les réglages', url: '/settings', heading: 'Réglages' },
   { name: 'le système', url: '/system', heading: 'Système' },
+  { name: 'le journal', url: '/journal', heading: 'Journal' },
   {
     // The agent (#1117, #1196), switched on, its recent threads in the column:
     // *Aucune conversation gardée* is a claim about the threads' directory,

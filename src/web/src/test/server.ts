@@ -30,6 +30,7 @@ import {
   aHealth,
   aJobsHistory,
   someJobs,
+  someJournalRows,
   aTypedEvent,
   aLedgerPayload,
   aPortfolioHistory,
@@ -243,6 +244,11 @@ export function defaultHandlers() {
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
     http.get(ROUTES.jobsHistory, () => HttpResponse.json(aJobsHistory())),
     http.get(ROUTES.jobs, () => HttpResponse.json(someJobs())),
+    http.post(ROUTES.jobRun, ({ params }) =>
+      HttpResponse.json({ id: String(params.job), started: true }, { status: 202 }),
+    ),
+    // The journal, newest first; `cursor` is the last row the caller has seen.
+    http.get(ROUTES.logs, () => HttpResponse.json({ rows: someJournalRows(), cursor: 2 })),
     // The write answers with the new list and **quantifies its effect**: a
     // portfolio-wide cadence that reaches part of the portfolio has to say so.
     http.put(ROUTES.settings, async ({ request }) => {

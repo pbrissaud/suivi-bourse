@@ -120,7 +120,14 @@ import type {
   PriceSeriesResponse,
   Resolution,
 } from '@/features/shares/lib/api'
-import type { Advisory, HealthJobs, HealthState, InstallationFact, RuntimeState } from '@/lib/api'
+import type {
+  Advisory,
+  HealthJobs,
+  HealthState,
+  InstallationFact,
+  JournalRow,
+  RuntimeState,
+} from '@/lib/api'
 
 /** The instant every fixture is written against. Tests freeze the clock to it. */
 export const NOW = '2026-03-02T12:00:00.000Z'
@@ -1571,6 +1578,27 @@ export function someJobs(extra: JobInfo[] = []): JobInfo[] {
       cadence: null,
     },
     ...extra,
+  ]
+}
+
+/** `GET /api/logs`, newest first: a warning with its traceback, then an info line. */
+export function someJournalRows(extra: JournalRow[] = []): JournalRow[] {
+  return [
+    ...extra,
+    {
+      time: '2026-03-02T11:50:00.000Z',
+      level: 'warning',
+      job: 'scrape',
+      message: 'yfinance: HTTP 429 Too Many Requests for AI.PA, retried after 8 s',
+      detail: 'Traceback (most recent call last):\n  YFRateLimitError',
+    },
+    {
+      time: '2026-03-02T11:45:00.000Z',
+      level: 'info',
+      job: 'performance',
+      message: 'recomputed 2 accounts in 0.41 s',
+      detail: null,
+    },
   ]
 }
 

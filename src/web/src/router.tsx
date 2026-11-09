@@ -10,6 +10,7 @@ import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
 import ImportPage from '@/pages/ImportPage'
+import JournalPage from '@/pages/JournalPage'
 import SettingsPage from '@/pages/SettingsPage'
 import SystemPage from '@/pages/SystemPage'
 import SharesPage from '@/pages/SharesPage'
@@ -223,6 +224,13 @@ const agentThreadRoute = createRoute({
   component: AgentPage,
 })
 
+/** What the process logged: a page of its own, reached from Système › Installation. */
+const journalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/journal',
+  component: JournalPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
@@ -235,6 +243,7 @@ const routeTree = rootRoute.addChildren([
   systemRoute,
   agentRoute,
   agentThreadRoute,
+  journalRoute,
 ])
 
 /**

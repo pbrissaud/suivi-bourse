@@ -822,7 +822,8 @@ describe('a newer release (#1237)', () => {
     answering(() => HttpResponse.json({ latest: null }))
     await queryClient.invalidateQueries({ queryKey: ['runtime'] })
 
-    await screen.findByText('5.1.0')
+    // The version is on the navigation's foot and on Système › Installation.
+    await screen.findAllByText('5.1.0')
     await waitFor(() => expect(screen.queryByRole('link', notes('5.1.0'))).not.toBeInTheDocument())
   })
 })

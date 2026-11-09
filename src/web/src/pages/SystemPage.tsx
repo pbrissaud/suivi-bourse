@@ -1,20 +1,24 @@
 import { useQuery } from '@tanstack/react-query'
 
+import { Unreadable } from '@/components/Unreadable'
+import { Section } from '@/components/ui/section'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dataApi } from '@/features/data/lib/api'
-import { JobsBlock } from '@/features/system/components/JobsBlock'
-import { OrphansBlock } from '@/features/system/components/OrphansBlock'
-import { RebuildBlock } from '@/features/system/components/RebuildBlock'
 import { settingsApi } from '@/features/settings/lib/api'
+import { DataBlock } from '@/features/system/components/DataBlock'
+import { FollowedTitles } from '@/features/system/components/FollowedTitles'
+import { InstallationBlock } from '@/features/system/components/InstallationBlock'
+import { JobsBlock } from '@/features/system/components/JobsBlock'
+import { RebuildBlock } from '@/features/system/components/RebuildBlock'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
-import { oneFailure, readConditions, readHealth } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 
-/** A `200` from `/health` whose body is not a health payload (#819). */
-const UNREADABLE_HEALTH = new Error('/health answered with something that is not a health payload')
-
-/** What the installation is doing: read, never set. */
+/**
+ * The installation as it is: the jobs and the titles they follow, the store,
+ * the build. A fixed title and no subtitle (« l'état, pas l'explication »).
+ */
 export default function SystemPage() {
   const { t } = useI18n()
   usePageHeading(t('page.system'))
@@ -22,10 +26,7 @@ export default function SystemPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const store = useQuery({ queryKey: ['store'], queryFn: settingsApi.store })
   const history = useQuery({ queryKey: ['jobs-history'], queryFn: settingsApi.jobsHistory })
-  // What the server runs never changes while it runs: read once (#1253).
-  const jobs = useQuery({ queryKey: ['jobs'], queryFn: settingsApi.jobs, staleTime: Infinity })
-  // Same key as the bell, so the two never disagree.
-  const health = useQuery({ queryKey: ['health'], queryFn: api.health })
+  const jobs = useQuery({ queryKey: ['jobs'], queryFn: settingsApi.jobs })
   const events = useQuery({ queryKey: ['events'], queryFn: dataApi.events })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
   const firstEvent = (events.data ?? []).reduce<string | null>(
@@ -33,24 +34,7 @@ export default function SystemPage() {
       event.date !== null && (oldest === null || event.date < oldest) ? event.date : oldest,
     null,
   )
-
-  // The error alone, never the cached answer (#1180): the red bell's link must
-  // not land on a green list from the last answer.
-  const healthFailure = oneFailure(
-    readConditions({
-      queries: [
-        { error: health.error },
-        {
-          error:
-            health.data !== undefined && readHealth(health.data) === null
-              ? UNREADABLE_HEALTH
-              : null,
-        },
-      ],
-    }),
-  )
-  const readableHealth =
-    health.data === undefined || healthFailure !== null ? null : readHealth(health.data)
+  const dataFailure = oneFailure(readConditions({ queries: [store, events] }))
 
   return (
     <div className="space-y-5">
@@ -60,14 +44,30 @@ export default function SystemPage() {
         accounts={accounts.data ?? null}
       />
       <JobsBlock
-        health={readableHealth}
-        failure={healthFailure}
-        history={history.data ?? null}
-        historyFailure={oneFailure(readConditions({ queries: [history] }))}
         jobs={jobs.data ?? null}
         jobsFailure={oneFailure(readConditions({ queries: [jobs] }))}
-      />
-      <OrphansBlock orphans={store.data?.orphans ?? null} />
+        history={history.data ?? null}
+        historyFailure={oneFailure(readConditions({ queries: [history] }))}
+      >
+        {runtime.data ? <FollowedTitles followed={runtime.data.followed} /> : null}
+      </JobsBlock>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {dataFailure === null ? (
+          <DataBlock
+            events={events.data?.length ?? null}
+            sizeBytes={store.data ? store.data.size_bytes : undefined}
+            orphans={store.data?.orphans ?? null}
+          />
+        ) : (
+          <Section title={t('system.data')}>
+            <Unreadable failure={dataFailure} />
+          </Section>
+        )}
+        <InstallationBlock
+          runtime={runtime.data ?? null}
+          startedAt={history.data?.started ?? null}
+        />
+      </div>
     </div>
   )
 }
