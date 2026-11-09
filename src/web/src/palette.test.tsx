@@ -233,16 +233,17 @@ describe('results you can tell apart', () => {
 })
 
 describe('where an entry leads', () => {
-  it('reaches a held title on its own sheet', async () => {
+  it('reaches a held title on its own page', async () => {
     const { user } = render()
     await open(user)
     await user.type(field(), 'zeta alpha')
     const titles = within(await screen.findByRole('list', { name: 'Titres' }))
     await user.click(titles.getAllByRole('button')[0])
 
-    // The sheet is a URL since this ticket, which is what lets anything outside
-    // the shares page lead to it.
-    expect(await screen.findByRole('dialog', { name: /Zeta Alpha/ })).toBeInTheDocument()
+    // The sheet became the page `/shares/<symbol>` (« Relevé »); the palette's
+    // `?symbol=` address is handed over to it.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Zeta Alpha' })).toBeInTheDocument()
+    expect(await screen.findByText('Valorisation de la ligne')).toBeInTheDocument()
   })
 
   it('reaches an account on its own detail', async () => {

@@ -1,58 +1,15 @@
 /**
- * The live table — **nine columns** (#684 D3, #791, #831).
+ * The shares table (« Relevé »): the table alone, on the ground, six columns.
  *
- *     Titre · Cours · Détenu · PRU · Valorisation · Latente · Réalisée ·
- *     Dividendes · Compte
- *
- * with the percentage **after the latent gain, on its line** (#1281) rather than in
- * a column of its own. Three columns are absent on purpose and each for its own
- * reason:
- *
- *  - **`Écart unitaire` is dead.** It is `Cours − PRU`, two columns already on
- *    the same line, and a position carried at its cost makes it **nil by
- *    construction** — a column whose remarkable value is a zero that means
- *    nothing.
- *  - **`Investi` does not come in**: it is `Valorisation − latente`, and it
- *    stays on the sheet.
- *  - **There is no fourth `Gain total` column.** The footer row *is* their
- *    sum (#1281), under the columns it sums: five numeric columns of equal
- *    weight say nothing about the last four being *inside* the first.
- *
- * **And `Poids` is not a column either, on the maquette's own evidence**
- * (#831). It was one at #791, was taken out on sight, and came back as a bar at
- * #832 — read off the *source* of the drawing rather than off the drawing.
- * Rendered, the maquette's table has these nine headers and no tenth: the word
- * `Poids` appears three times in it and never once on this page, twice in the
- * account's own surface (#833's *Poids des comptes* and its sortable column)
- * and nowhere else. What the maquette answers the weight with **here** is the
- * `Répartition` above the table — a ring and a legend of bars, a figure of the
- * whole rather than a tenth cell on every line — and that block is mounted on
- * this page now.
- *
- * `placedValue`, `weightShare` and `weightRendering` stay in `features/shares/lib/shares.ts`:
- * they outlived this column once already, and `AccountDetail`'s held lines read
- * them, where a weight is a glance down a dozen rows rather than a column.
- *
- * **Every column sorts, and an absence never rises** (`features/shares/lib/shares.ts`). The
- * order lives on the `<th>` as `aria-sort`, where a reader who cannot see the
- * arrow is told what is in force, and the control inside it is a button —
- * pressing the column already in force turns it round.
- *
- * **Grouping by account is a partition and not a filter**: each group's
- * subtotal is in the **group header**, and the table's own total row (#1281)
- * sums every group.
- *
- * **The market-state pill is not a column.** Eleven rows rendered ten identical
- * *Marché ouvert* and one *Cours figé*: a per-row marker that does not
- * discriminate is noise however correct it is.
- *
- * **And there is no date column.** One mention at the level of the page says
- * *Cours au …*; the rows that depart from it already say so by the absence
- * rule, the em dash in `Cours` being the signal itself.
+ * `Titre` is the name with its symbol and account under it; `Détenu · prix moyen`
+ * the quantity over the average purchase price; `Cours · jour` the price over
+ * the day's move; `Investi`; `Valorisation · poids`; `Gain` the latent gain over
+ * its ratio. A row leads to the title's page, by its name (a link) or anywhere
+ * on the row. The totals are the last row, under the columns they sum.
  */
-import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { TriangleAlert } from 'lucide-react'
 
-import { Explain } from '@/components/Explain'
 import {
   Table,
   TableBody,
@@ -63,420 +20,224 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { positionRenderings, renderFigure } from '@/lib/absence'
-import type { DocsAnchor } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
 import {
   sumRendering,
   termAmount,
   termRendering,
   termTone,
-  type GainTermName,
   type GainTerms,
   type Sum,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
-  isAnomalous,
   marketValue,
-  unitCost,
   unrealised,
   unrealisedRatio,
-  valuationTotal,
-  type ShareGroup,
+  weightShare,
+  isAnomalous,
   type ShareRow,
   type ShareSort,
   type SortColumn,
 } from '@/features/shares/lib/shares'
-import { signClass, toneOf } from '@/lib/sign'
+import { signClass, signOf, toneOf, RATIO_DECIMALS } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
-/**
- * The four column headers that rest on a convention — and only four. `Cours`
- * and `Valorisation` carry none here because the carrying rule is stated once,
- * on the page header's `Valorisation`, and `Détenu`, `Titre` and `Compte` are
- * facts rather than figures: the test is *would this be verifiable without
- * knowing a rule?*
- *
- */
-const COLUMN_EXPLAIN: Partial<Record<MessageKey, { body: MessageKey; anchor: DocsAnchor }>> = {
-  'shares.column.avgCost': { body: 'shares.avgCost.explain', anchor: 'avg-cost' },
-  'shares.column.unrealised': { body: 'shares.unrealised.explain', anchor: 'latent-gain' },
-  'shares.column.realised': { body: 'shares.realised.explain', anchor: 'realized-gain' },
-  'shares.column.dividends': { body: 'shares.dividends.explain', anchor: 'dividends' },
+/** A zero move is `muted-foreground` here, not `foreground`: nothing happened. */
+export function dayTone(change: number | null | undefined): string {
+  return signOf(change, RATIO_DECIMALS) === 'zero'
+    ? 'text-muted-foreground'
+    : signClass(change, RATIO_DECIMALS)
 }
 
-interface ColumnHeadProps {
-  label: MessageKey
-  column: SortColumn
-  sort: ShareSort
-  onSort: (column: SortColumn) => void
-  numeric?: boolean
-  /** Where the column sits, and nothing else: a width. */
-  className?: string
-}
-
-function ColumnHead({ label, column, sort, onSort, numeric, className }: ColumnHeadProps) {
-  const { t } = useI18n()
-  const explain = COLUMN_EXPLAIN[label]
-  const inForce = sort.column === column
-  const Arrow = sort.direction === 'asc' ? ArrowUp : ArrowDown
-  return (
-    // `aria-sort` is the state, and it is on the cell rather than on the button
-    // because that is where a reader jumping by column is told what is in
-    // force — the arrow beside it being for the other reader.
-    <TableHead
-      aria-sort={inForce ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className={cn(numeric && 'text-right', className)}
-    >
-      {/* On touch the ⓘ's hit area reaches 14 px past its icon: the gap keeps
-          it off the sort button's label. */}
-      <span
-        className={`inline-flex items-center gap-1.5 pointer-coarse:gap-3.5 ${numeric ? 'justify-end' : ''}`}
-      >
-        {/* The control is the label itself: a table whose every column sorts has
-            nine of these, and nine *Trier par …* would be nine sentences saying
-            what the cell they sit in already says. */}
-        <button
-          type="button"
-          onClick={() => onSort(column)}
-          // 44 px on touch (DESIGN.md › Buttons), and DESIGN.md's 2 px ring.
-          className="inline-flex items-center gap-1 rounded underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:min-h-11"
-        >
-          {t(label)}
-          {inForce ? <Arrow className="size-3" aria-hidden /> : null}
-        </button>
-        {explain ? <Explain figure={t(label)} body={explain.body} anchor={explain.anchor} /> : null}
-      </span>
-    </TableHead>
-  )
-}
+const COLUMNS: { label: MessageKey; column: SortColumn; numeric: boolean }[] = [
+  { label: 'shares.column.symbol', column: 'symbol', numeric: false },
+  { label: 'shares.column.held', column: 'quantity', numeric: true },
+  { label: 'shares.column.priceDay', column: 'price', numeric: true },
+  { label: 'shares.column.invested', column: 'invested', numeric: true },
+  { label: 'shares.column.valueWeight', column: 'value', numeric: true },
+  { label: 'shares.column.gain', column: 'unrealised', numeric: true },
+]
 
 interface SharesTableProps {
-  /**
-   * The blocks the table is made of — **one** when nothing is grouped, and one
-   * per account when it is. A group with no header is the ungrouped table, so
-   * there is one rendering of nine columns rather than two.
-   */
-  groups: readonly ShareGroup[]
+  rows: readonly ShareRow[]
   currency: string | null
   sort: ShareSort
   onSort: (column: SortColumn) => void
-  onSelect: (symbol: string) => void
-  /** What the footer sums (`sharesTotals`) — every group, and the closed lines. */
-  totals: { valuation: Sum; terms: GainTerms }
-  /** How many closed lines the totals include, folded or not. */
-  closedCount: number
+  /** The day's move of each symbol, as a ratio. */
+  moves: ReadonlyMap<string, number | null>
+  /** What the weights are shares of. */
+  whole: number
+  totals: { valuation: Sum; terms: GainTerms; invested: number }
+  /** The payload's own ratio of the gain on the securities' cost, when it states one. */
+  gainRatio: number | null
 }
 
 export function SharesTable({
-  groups,
+  rows,
   currency,
   sort,
   onSort,
-  onSelect,
+  moves,
+  whole,
   totals,
-  closedCount,
+  gainRatio,
 }: SharesTableProps) {
   const { t } = useI18n()
+  const f = useFormatters()
+  const navigate = useNavigate()
+  const { valuation, terms, invested } = totals
 
   return (
     <Table>
       <caption className="sr-only">{t('shares.table.label')}</caption>
       <TableHeader>
         <TableRow>
-          <ColumnHead label="shares.column.symbol" column="symbol" sort={sort} onSort={onSort} />
-          <ColumnHead
-            label="shares.column.price"
-            column="price"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead
-            label="shares.column.quantity"
-            column="quantity"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead
-            label="shares.column.avgCost"
-            column="avgCost"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead
-            label="shares.column.value"
-            column="value"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead
-            label="shares.column.unrealised"
-            column="unrealised"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead
-            label="shares.column.realised"
-            column="realised"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead
-            label="shares.column.dividends"
-            column="dividends"
-            sort={sort}
-            onSort={onSort}
-            numeric
-          />
-          <ColumnHead label="shares.column.account" column="account" sort={sort} onSort={onSort} />
+          {COLUMNS.map(({ label, column, numeric }) => (
+            <TableHead
+              key={column}
+              numeric={numeric}
+              aria-sort={
+                sort.column === column
+                  ? sort.direction === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : undefined
+              }
+            >
+              <button
+                type="button"
+                onClick={() => onSort(column)}
+                className="rounded underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:min-h-11"
+              >
+                {t(label)}
+              </button>
+            </TableHead>
+          ))}
         </TableRow>
       </TableHeader>
-      {groups.map((group) => (
-        // One `<tbody>` per group, which is what makes the header row belong to
-        // its rows rather than float above them: `scope="rowgroup"` has a
-        // rowgroup to name.
-        <TableBody key={group.account ?? 'all'}>
-          {group.account === null ? null : <GroupHead group={group} currency={currency} />}
-          {group.rows.map((row) => (
-            <ShareLine
-              key={`${group.account ?? ''}·${row.symbol}`}
-              row={row}
-              currency={currency}
-              onSelect={onSelect}
-            />
-          ))}
-        </TableBody>
-      ))}
-      <TotalRow totals={totals} closedCount={closedCount} currency={currency} />
+      <TableBody>
+        {rows.map((row) => {
+          const renderings = positionRenderings(row)
+          const gain = unrealised(row)
+          const ratio = unrealisedRatio(row)
+          const share = weightShare(row, whole)
+          const move = moves.get(row.symbol) ?? null
+          const unit = row.quantity === 0 ? null : row.cost_basis / row.quantity
+          return (
+            <TableRow
+              key={row.symbol}
+              tall
+              className="group cursor-pointer"
+              onClick={() =>
+                void navigate({ to: '/shares/$symbol', params: { symbol: row.symbol } })
+              }
+            >
+              <TableCell className="max-w-72">
+                <Link
+                  to="/shares/$symbol"
+                  params={{ symbol: row.symbol }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="flex min-w-0 items-center gap-2 text-md font-medium underline-offset-4 group-hover:underline"
+                >
+                  <span className="truncate">{row.name ?? row.symbol}</span>
+                  {isAnomalous(row) ? (
+                    <span className="inline-flex shrink-0 items-center text-attention">
+                      <TriangleAlert className="size-3.5" aria-hidden />
+                      <span className="sr-only">{t('shares.anomaly.repair')}</span>
+                    </span>
+                  ) : null}
+                </Link>
+                <span className="block text-xs text-muted-foreground">
+                  <span className="fig">{row.symbol}</span>
+                  {' · '}
+                  {row.accounts.join(', ')}
+                </span>
+              </TableCell>
+
+              <TableCell numeric>
+                {f.quantity(row.quantity)}
+                <span className="block text-xs text-muted-foreground">
+                  {f.currency(unit, currency)}
+                </span>
+              </TableCell>
+
+              {/* The native quote: the price the reader's broker shows them. */}
+              <TableCell numeric>
+                {renderFigure(
+                  renderings.price,
+                  () => f.currency(row.price?.value ?? null, row.price?.currency ?? currency),
+                  t,
+                )}
+                <span className={cn('block text-xs', dayTone(move))}>
+                  {move === null ? ABSENT : f.percent(move)}
+                </span>
+              </TableCell>
+
+              <TableCell numeric>{f.currency(row.cost_basis, currency)}</TableCell>
+
+              <TableCell numeric>
+                {renderFigure(
+                  renderings.valuation,
+                  () => f.currency(marketValue(row), currency),
+                  t,
+                )}
+                <span className="block text-xs text-muted-foreground">
+                  {share === null ? ABSENT : f.percentPoints(share * 100, 1)}
+                </span>
+              </TableCell>
+
+              <TableCell numeric>
+                <span className={toneOf(renderings.unrealised, gain)}>
+                  {renderFigure(renderings.unrealised, () => f.signedCurrency(gain, currency), t)}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {renderings.unrealised.kind === 'figure' && ratio !== null
+                    ? f.percent(ratio)
+                    : ABSENT}
+                </span>
+              </TableCell>
+            </TableRow>
+          )
+        })}
+      </TableBody>
+      <TableFooter>
+        <TableRow tall>
+          <th scope="row" className="px-0 py-2 text-left whitespace-nowrap">
+            {t('shares.total')}{' '}
+            <span className="font-normal text-muted-foreground">
+              {t('shares.total.lines', { count: rows.length })}
+            </span>
+          </th>
+          <TableCell />
+          <TableCell />
+          <TableCell numeric>{f.currency(invested, currency)}</TableCell>
+          <TableCell numeric>
+            {renderFigure(
+              sumRendering(valuation),
+              () => f.currency(valuation.known ? valuation.value : null, currency),
+              t,
+            )}
+            <span className="block text-xs font-normal text-muted-foreground">
+              {f.percentPoints(100, 0)}
+            </span>
+          </TableCell>
+          <TableCell numeric>
+            <span className={termTone(terms, 'unrealised')}>
+              {renderFigure(
+                termRendering(terms, 'unrealised'),
+                () => f.signedCurrency(termAmount(terms, 'unrealised'), currency),
+                t,
+              )}
+            </span>
+            {gainRatio === null ? null : (
+              <span className="block text-xs font-normal text-muted-foreground">
+                {f.percent(gainRatio)}
+              </span>
+            )}
+          </TableCell>
+        </TableRow>
+      </TableFooter>
     </Table>
-  )
-}
-
-/**
- * **The totals are the table's last row, under the columns they sum** (#1281).
- * It sums what is on screen — the live lines shown and every closed one, folded
- * or not — so the fold never moves it. Cours, Détenu, PRU and Compte are never
- * summed; a group's subtotal stays in its head, and this row sums every group.
- */
-function TotalRow({
-  totals,
-  closedCount,
-  currency,
-}: {
-  totals: SharesTableProps['totals']
-  closedCount: number
-  currency: string | null
-}) {
-  const { t } = useI18n()
-  const f = useFormatters()
-  const { valuation, terms } = totals
-  const term = (name: Exclude<GainTermName, 'transferFees'>) => (
-    <TableCell className={`text-right fig ${termTone(terms, name)}`}>
-      {renderFigure(
-        termRendering(terms, name),
-        () => f.currency(termAmount(terms, name), currency),
-        t,
-      )}
-    </TableCell>
-  )
-  return (
-    <TableFooter>
-      <TableRow>
-        <th
-          scope="row"
-          className="px-1.5 py-3 text-left whitespace-nowrap xl:px-4 [[data-density=compact]_&]:py-1.5"
-        >
-          {t('shares.total')}
-          {closedCount > 0 ? (
-            <span className="label">
-              {' · '}
-              {t('shares.total.closed', { count: closedCount })}
-            </span>
-          ) : null}
-        </th>
-        <TableCell />
-        <TableCell />
-        <TableCell />
-        <TableCell className="text-right fig">
-          {renderFigure(
-            sumRendering(valuation),
-            () => f.currency(valuation.known ? valuation.value : null, currency),
-            t,
-          )}
-        </TableCell>
-        {term('unrealised')}
-        {term('realised')}
-        {term('dividends')}
-        <TableCell />
-      </TableRow>
-    </TableFooter>
-  )
-}
-
-/**
- * A group's own header — **the subtotal**, above the lines it sums.
- *
- * It is the account's **valuation** and nothing else (#838): the four totals of
- * the whole are read in the table's total row, computed by the same functions,
- * so a group cannot drift from the page it decomposes.
- */
-function GroupHead({ group, currency }: { group: ShareGroup; currency: string | null }) {
-  const { t } = useI18n()
-  const f = useFormatters()
-  const valuation = valuationTotal(group.rows)
-  return (
-    <TableRow className="bg-background hover:bg-background">
-      {/* It is the account's **valuation** and nothing else since #838 — the
-      drawing puts one figure here, and the strip above the table is where the
-      four totals of the whole are read. */}
-      <th scope="rowgroup" colSpan={9} className="px-1.5 py-2 text-left label text-primary xl:px-4">
-        {group.account}
-        {' · '}
-        <span className="fig">
-          {renderFigure(
-            sumRendering(valuation),
-            () => f.currency(valuation.known ? valuation.value : null, currency),
-            t,
-          )}
-        </span>
-      </th>
-    </TableRow>
-  )
-}
-
-interface ShareLineProps {
-  row: ShareRow
-  currency: string | null
-  onSelect: (symbol: string) => void
-}
-
-function ShareLine({ row, currency, onSelect }: ShareLineProps) {
-  const { t } = useI18n()
-  const f = useFormatters()
-  const renderings = positionRenderings(row)
-  const value = marketValue(row)
-  const gain = unrealised(row)
-  const ratio = unrealisedRatio(row)
-
-  return (
-    // **The whole row opens the sheet** (#791). The button on the name stays,
-    // and it is not a duplicate: it is the keyboard's way in and the one thing
-    // a reader tabbing through the table can reach. The two gestures land on
-    // the same call, which sets an address — pressing it twice is pressing it
-    // once, so the click bubbling up from the button costs nothing.
-    <TableRow className="cursor-pointer" onClick={() => onSelect(row.symbol)}>
-      <TableCell>
-        <span className="flex items-center gap-2">
-          {/* **The one column of nine whose width the reader's data decides**,
-              so it is the one that is bounded (#832). Every other cell is a
-              figure of known length; a name is whatever the ledger says, and
-              `whitespace-nowrap` on the cell turns a long one into width the
-              eight columns beside it then have to be found somewhere else. The
-              ticker beside it is never truncated — it is what the reader
-              recognises the line by, and it is short by construction. */}
-          <button
-            type="button"
-            className="max-w-[10rem] truncate text-md font-medium underline-offset-4 hover:underline"
-            onClick={() => onSelect(row.symbol)}
-          >
-            {row.name ?? row.symbol}
-          </button>
-          {/* The ticker follows the name on the same line (#1281): outside the
-              button, so the button's name is the name alone, and never
-              truncated — it is what the reader recognises the line by. */}
-          {/* Nobody named it (#1386): the button already reads the ticker. */}
-          {row.name === null ? null : (
-            <span className="shrink-0 fig text-xs text-muted-foreground">{row.symbol}</span>
-          )}
-          {isAnomalous(row) ? (
-            <span className="inline-flex items-center text-attention">
-              <TriangleAlert className="size-4" aria-hidden />
-              {/* The count is already written in the price cell, where *no price*
-              is what is true (#845); a second copy of it would be the marker
-              saying nothing new, where what the reader is missing is that the
-              line is theirs to mend. */}
-              <span className="sr-only">{t('shares.anomaly.repair')}</span>
-            </span>
-          ) : null}
-        </span>
-      </TableCell>
-
-      {/* The native quote, deliberately: it is the price the reader's
-          broker shows them, and the converted one is what the value
-          column is built from. */}
-      <TableCell className="text-right fig">
-        {renderFigure(
-          renderings.price,
-          () => f.currency(row.price?.value ?? null, row.price?.currency ?? currency),
-          t,
-        )}
-      </TableCell>
-
-      <TableCell className="text-right fig">{f.quantity(row.quantity)}</TableCell>
-
-      {/* Undefined on a closed position, which is the truth: it has a
-          realised gain instead. */}
-      <TableCell className="text-right fig">{f.currency(unitCost(row), currency)}</TableCell>
-
-      {/* **The valuation takes no sign colour** (#907, ADR-0018): it is a market
-          value, positive on every line that holds anything, so `signClass` on it
-          painted every held row green — permanently, and the reader's eye lost
-          the two columns beside it that do carry a sign. A zero handed to the
-          one predicate keeps the other two answers intact: the colour of text
-          on a figure, the grey of absence on a rendering that is not one. It is
-          `gain.ts`'s own idiom for a term that carries no sign. */}
-      <TableCell className={`text-right fig ${toneOf(renderings.valuation, 0)}`}>
-        {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
-      </TableCell>
-
-      <TableCell className={`text-right fig ${toneOf(renderings.unrealised, gain)}`}>
-        {renderFigure(renderings.unrealised, () => f.currency(gain, currency), t)}
-        {/* The percentage follows the amount, never a tenth column. */}
-        {renderings.unrealised.kind === 'figure' && ratio !== null ? (
-          <span className="label ml-1.5">{f.percent(ratio)}</span>
-        ) : null}
-      </TableCell>
-
-      {/* Realised and dividends are figures on **every** row, closed or
-          not — a zero is a figure and wears the colour of text, never
-          the grey of absence. */}
-      <TableCell className={`text-right fig ${signClass(row.realised)}`}>
-        {f.currency(row.realised, currency)}
-      </TableCell>
-      <TableCell className={`text-right fig ${signClass(0)}`}>
-        {f.currency(row.dividends, currency)}
-      </TableCell>
-
-      <TableCell>{renderAccounts(row.accounts)}</TableCell>
-    </TableRow>
-  )
-}
-
-/**
- * The account a line sits in, **as a chip** (#838). The drawing sets an account
- * id in a filled mark rather than as running text: it is an identifier and not
- * a word, it is the same id the ledger's own rows carry, and one folded line
- * may name two of them — where a comma-separated sentence in a cell of nine
- * would be the only prose in the table.
- */
-const ACCOUNT_CHIP = 'inline-block rounded-md bg-accent px-2 py-0.5 fig text-xs text-foreground/85'
-
-export function renderAccounts(accounts: readonly string[]) {
-  if (accounts.length === 0) return ABSENT
-  if (accounts.length === 1) return <span className={ACCOUNT_CHIP}>{accounts[0]}</span>
-  return (
-    <ul className="flex flex-wrap gap-1">
-      {accounts.map((account) => (
-        <li key={account} className={ACCOUNT_CHIP}>
-          {account}
-        </li>
-      ))}
-    </ul>
   )
 }

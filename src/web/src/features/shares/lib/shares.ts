@@ -281,6 +281,7 @@ export type SortColumn =
   | 'price'
   | 'quantity'
   | 'avgCost'
+  | 'invested'
   | 'value'
   | 'unrealised'
   | 'realised'
@@ -332,6 +333,8 @@ function sortKey(row: ShareRow, column: SortColumn): string | number | null {
       return row.quantity
     case 'avgCost':
       return unitCost(row)
+    case 'invested':
+      return row.cost_basis
     case 'value':
       return marketValue(row)
     case 'unrealised':
@@ -857,4 +860,24 @@ export function eventMarkers(
     count: held.reduce((sum, one) => sum + one.count, 0),
     offset: held[0].rank / steps,
   }))
+}
+
+/**
+ * What the title page says about the owner's buying: the first purchase, how
+ * many there were, and over how many months (`14 en 68 mois`). Counted from
+ * the ledger's BUY events of the symbol; `null` when it has none.
+ */
+export function purchaseStats(
+  events: readonly LedgerEvent[],
+  symbol: string,
+  now: Date = new Date(),
+): { first: string; count: number; months: number } | null {
+  const days = events
+    .filter((event) => event.symbol === symbol && event.event_type === 'BUY' && event.date)
+    .map((event) => event.date as string)
+    .sort()
+  if (days.length === 0) return null
+  const [year, month] = days[0].split('-').map(Number)
+  const months = Math.max(1, (now.getFullYear() - year) * 12 + now.getMonth() + 1 - month)
+  return { first: days[0], count: days.length, months }
 }

@@ -261,14 +261,10 @@ const SURFACES: readonly Surface[] = [
       ),
   },
   {
-    name: 'les titres, une fiche ouverte',
-    url: '/shares',
-    heading: 'Titres',
-    open: async ({ user }) => {
-      const title = await screen.findByRole('button', { name: 'Zeta Alpha' })
-      await user.click(title)
-      return screen.findByRole('dialog')
-    },
+    // The title's own page (`/shares/<symbol>`), which the sheet became.
+    name: 'la fiche d’un titre',
+    url: '/shares/ZZA',
+    heading: 'Zeta Alpha',
   },
   {
     // Under 768 px the table is a list (#1338), and the net reads the list as

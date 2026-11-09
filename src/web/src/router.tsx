@@ -12,6 +12,7 @@ import DataPage from '@/pages/DataPage'
 import SettingsPage from '@/pages/SettingsPage'
 import SystemPage from '@/pages/SystemPage'
 import SharesPage from '@/pages/SharesPage'
+import ShareDetailPage from '@/pages/ShareDetailPage'
 
 /**
  * The route tree, written by hand — **code-based**, not file-based.
@@ -83,6 +84,16 @@ const sharesRoute = createRoute({
       ...(symbol === '' ? {} : { symbol }),
     }
   },
+})
+
+/**
+ * One title's page, which the shares table's sheet became (« Relevé »). The
+ * symbol is the path segment; the router decodes it.
+ */
+const shareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/shares/$symbol',
+  component: ShareDetailPage,
 })
 
 /**
@@ -202,6 +213,7 @@ const agentThreadRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
+  shareRoute,
   accountsRoute,
   benchmarkRoute,
   dataRoute,
