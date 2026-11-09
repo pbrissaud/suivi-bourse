@@ -267,12 +267,22 @@ export const ROUTES = {
   benchmarkReferences: '/api/benchmark/references',
   /** Keep or release an unfollowed ETF's series. */
   benchmarkReference: '/api/benchmark/references/:symbol',
+  /** The access tokens (#1313): list, make. The gate keeps a bearer out of these. */
+  tokens: '/api/tokens',
+  /** One token: delete it. A **pattern**, like {@link ROUTES.prices}. */
+  token: '/api/tokens/:id',
+  /** A new secret for one token. */
+  tokenRegenerate: '/api/tokens/:id/regenerate',
 } as const
 
 export type RouteName = keyof typeof ROUTES
 
 function installationFactAcknowledgementPath(key: string): string {
   return ROUTES.installationFactAcknowledgement.replace(':key', encodeURIComponent(key))
+}
+
+function tokenPath(id: string, suffix = ''): string {
+  return ROUTES.token.replace(':id', encodeURIComponent(id)) + suffix
 }
 
 function advisoryAcknowledgementPath(key: string): string {
@@ -810,7 +820,43 @@ interface AcknowledgedAdvisory extends Advisory {
   acknowledged_until: string
 }
 
+/** What a token opens: `/api` for a script, `/mcp` for Claude Desktop. */
+export type TokenScope = 'api' | 'mcp'
+
+/** How long a new token lives; `never` does not expire. */
+export type TokenExpiry = '90d' | '1y' | 'never'
+
+/** A row of `GET /api/tokens`. The secret is never in it, only its public `prefix`. */
+export interface AccessToken {
+  id: string
+  label: string
+  scopes: TokenScope[]
+  prefix: string
+  /** The choice made at creation, which a regeneration repeats. */
+  lifetime: TokenExpiry
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+}
+
+/** What making or regenerating a token answers: the secret is in it once. */
+export interface IssuedAccessToken {
+  token: AccessToken
+  secret: string
+}
+
+export interface NewAccessToken {
+  label: string
+  scopes: TokenScope[]
+  expires: TokenExpiry
+}
+
 export const api = {
+  tokens: () => get<{ tokens: AccessToken[] }>(ROUTES.tokens),
+  createToken: (form: NewAccessToken) => send<IssuedAccessToken>(ROUTES.tokens, 'POST', form),
+  regenerateToken: (id: string) =>
+    send<IssuedAccessToken>(tokenPath(id, '/regenerate'), 'POST', {}),
+  deleteToken: (id: string) => forget(tokenPath(id)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
   release: () => get<ReleaseState>(ROUTES.release),
   // Typed for the caller, and **narrowed all the same** where it is read

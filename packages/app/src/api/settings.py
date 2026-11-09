@@ -6,6 +6,8 @@ import duckdb
 from flask import Blueprint, Response, current_app, jsonify
 from logfmt_logger import getLogger
 
+from application import access_tokens
+from application import auth_rules
 from application import benchmark_view
 from application import dashboard_layout
 from application import settings as settings_module
@@ -13,6 +15,7 @@ from application import settings_registry
 from application import tweakcn
 from api.problem import (
     bad_request,
+    not_found,
     provider_refused,
     unprocessable,
     unprocessable_request,
@@ -188,3 +191,73 @@ def get_theme_css():
     response = Response(css, mimetype='text/css')
     response.headers['Cache-Control'] = 'no-cache'
     return response
+
+
+# --------------------------------------------------------------------------- #
+# The access tokens (#1313). The gate keeps a bearer away from these routes.
+# --------------------------------------------------------------------------- #
+
+MAX_LABEL = 60
+
+
+def _token_form(body: dict):
+    """``(label, scopes, lifetime)`` of a token form, or the 422 that refuses it."""
+    label = body.get('label')
+    label = label.strip() if isinstance(label, str) else ''
+    scopes = body.get('scopes')
+    lifetime = body.get('expires')
+    if not label or len(label) > MAX_LABEL:
+        return unprocessable_request(
+            f'a token has a label of 1 to {MAX_LABEL} characters', key='label')
+    known = isinstance(scopes, list) and all(
+        scope in auth_rules.TOKEN_SCOPES for scope in scopes)
+    if not known or not scopes:
+        return unprocessable_request(
+            'a token opens api, mcp or both', key='scopes')
+    if lifetime not in auth_rules.TOKEN_LIFETIMES:
+        return unprocessable_request(
+            'a token expires in 90d, 1y or never', key='expires')
+    return label, scopes, lifetime
+
+
+@bp.get('/tokens')
+def get_tokens():
+    """The tokens, oldest first: never their secret."""
+    return jsonify({'tokens': access_tokens.list_all(_store())})
+
+
+@bp.post('/tokens')
+def post_token():
+    """Make a token. Its secret is in this answer and nowhere else, ever."""
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+    form = _token_form(body)
+    if not isinstance(form, tuple):
+        return form
+    label, scopes, lifetime = form
+    with current_runtime().config_manager.writing() as opened:
+        token, secret = access_tokens.create(
+            opened, label, scopes, lifetime, datetime.now(timezone.utc))
+    response = jsonify({'token': token, 'secret': secret})
+    response.status_code = 201
+    return response
+
+
+@bp.post('/tokens/<token_id>/regenerate')
+def regenerate_token(token_id: str):
+    """A new secret for the token, its clock started again; the old one is dead."""
+    with current_runtime().config_manager.writing() as opened:
+        made = access_tokens.regenerate(opened, token_id, datetime.now(timezone.utc))
+    if made is None:
+        return not_found(f'No such token: {token_id}')
+    return jsonify({'token': made[0], 'secret': made[1]})
+
+
+@bp.delete('/tokens/<token_id>')
+def delete_token(token_id: str):
+    with current_runtime().config_manager.writing() as opened:
+        found = access_tokens.delete(opened, token_id)
+    if not found:
+        return not_found(f'No such token: {token_id}')
+    return Response(status=204)

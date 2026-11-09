@@ -147,6 +147,7 @@ STEPS = store_steps.STEPS + (
     ('forget_ticker_names', _forget_ticker_names),
     ('add_auth_session_seconds', auth_gate.add_session_seconds),
     ('add_backward_failed_at', _add_backward_failed_at),
+    ('move_token_to_access_tokens', auth_gate.move_token_to_access_tokens),
 )
 
 __all__ = ['STEPS']

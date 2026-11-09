@@ -1,5 +1,8 @@
 """The PIN's rules, on an injected clock (#1203)."""
+import re
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from application import auth_rules
 from application.auth_rules import Throttle
@@ -29,14 +32,33 @@ def test_the_hash_verifies_its_own_pin_only():
     assert auth_rules.hash_pin('123456') != stored, 'a fresh salt each time'
 
 
-def test_the_token_is_stored_as_its_hash():
-    token = auth_rules.new_token()
+def test_the_token_carries_a_public_prefix_and_is_stored_as_its_hash():
+    prefix, token = auth_rules.new_token()
+    assert re.fullmatch(r'[0-9a-f]{8}', prefix)
+    assert token.startswith(f'sb_{prefix}_')
     stored = auth_rules.hash_token(token)
-    assert token not in stored
-    assert auth_rules.token_matches(token, stored)
-    assert not auth_rules.token_matches(token + 'x', stored)
-    assert not auth_rules.token_matches(None, stored)
-    assert not auth_rules.token_matches(token, None)
+    assert token not in stored and prefix not in stored
+    assert auth_rules.new_token()[1] != token
+
+
+def test_a_token_opens_its_scopes_until_it_expires():
+    now = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    soon = auth_rules.token_expiry('90d', now)
+    assert soon == now + timedelta(days=90)
+    assert auth_rules.token_expiry('1y', now) == now + timedelta(days=365)
+    assert auth_rules.token_expiry('never', now) is None
+    assert auth_rules.token_opens(['api'], soon, 'api', now)
+    assert not auth_rules.token_opens(['api'], soon, 'mcp', now)
+    assert auth_rules.token_opens(['mcp'], None, 'mcp', now + timedelta(days=9999))
+    assert not auth_rules.token_opens(['api'], soon, 'api', soon)
+
+
+@pytest.mark.parametrize('stored, read', [
+    (None, 30 * 86400), (900, 900), (3600, 3600), (86400, 86400), (604800, 604800),
+    (1800, 900), (7200, 3600), (172800, 86400), (259200, 86400), (1209600, 604800),
+    (10 ** 9, 30 * 86400), (-5, 30 * 86400)])
+def test_a_stored_lifetime_that_is_no_preset_snaps_to_the_nearest(stored, read):
+    assert auth_rules.session_seconds(stored) == read
 
 
 def test_five_free_attempts_then_a_wait_that_doubles_up_to_fifteen_minutes():

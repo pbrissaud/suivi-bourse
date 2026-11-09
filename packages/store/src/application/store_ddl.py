@@ -166,11 +166,27 @@ CREATE TABLE IF NOT EXISTS auth_secret (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     pin_hash          VARCHAR NOT NULL,
     session_secret    VARCHAR NOT NULL,
-    token_hash        VARCHAR,
-    token_created_at  TIMESTAMPTZ,
+    token_hash        VARCHAR,       -- legacy: moved to access_tokens, no longer read
+    token_created_at  TIMESTAMPTZ,   -- legacy
     revoked           VARCHAR NOT NULL DEFAULT '{}',
     session_seconds   INTEGER,
     updated_at        TIMESTAMPTZ NOT NULL);
+
+-- **The access tokens** (#1313): the bearers that open ``/api`` and ``/mcp``
+-- without the PIN. ``scopes`` is a comma-joined subset of ``api``, ``mcp``;
+-- ``lifetime`` is ``90d``, ``1y`` or ``never``, kept so a regeneration restarts
+-- the same clock. Only the SHA-256 of the secret is stored; ``prefix`` is the
+-- public id the list shows. Written and read by ``access_tokens`` alone.
+CREATE TABLE IF NOT EXISTS access_tokens (
+    id            VARCHAR PRIMARY KEY,     -- uuid4 hex
+    label         VARCHAR NOT NULL,
+    scopes        VARCHAR NOT NULL,
+    lifetime      VARCHAR NOT NULL,
+    prefix        VARCHAR NOT NULL,
+    token_hash    VARCHAR NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL,
+    expires_at    TIMESTAMPTZ,
+    last_used_at  TIMESTAMPTZ);
 
 -- What the owner declares **about themself** (#1116), confirmed in the UI and
 -- never written by the agent. An absent row is an absence. ``value`` is JSON,
@@ -248,7 +264,7 @@ TABLES = (
     'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
-    'agent_config', 'auth_secret', 'profile_fact', 'proposal',
+    'agent_config', 'auth_secret', 'access_tokens', 'profile_fact', 'proposal',
     'job_slot', 'job_pass', 'job_schedule',
 )
 

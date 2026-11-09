@@ -19,7 +19,7 @@ from itsdangerous import TimestampSigner
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from api import create_app
-from application import agent_routes, auth_gate, auth_rules, boot, boot_env
+from application import access_tokens, agent_routes, auth_gate, auth_rules, boot, boot_env
 from application import installation_facts, mcp_server, store as store_module
 from application.auth_gate import COOKIE, Gate
 from test_mcp_server import rich_runtime
@@ -66,7 +66,9 @@ async def enable(gate, pin=PIN):
     async with client(gate) as c:
         answer = await c.post('/auth/enable', json={'pin': pin})
     assert answer.status_code == 200, answer.text
-    return answer.json()['token'], cookie_of(answer)
+    _, secret = access_tokens.create(
+        gate.store, 'test', ['api', 'mcp'], 'never', datetime.now(timezone.utc))
+    return secret, cookie_of(answer)
 
 
 async def sign_in(gate, pin=PIN, ip='192.168.1.20'):
@@ -95,7 +97,7 @@ def test_a_store_from_before_the_pin_boots_unlocked(opened):
 
     assert [a.text for a in answers] == ['inner'] * 4
     assert status.json() == {'enabled': False, 'authenticated': False,
-                             'token_created_at': None, 'session_seconds': None}
+                             'session_seconds': None}
 
 
 # --------------------------------------------------------------------------- #
@@ -159,15 +161,14 @@ def test_the_cookie_opens_the_app_and_the_token_opens_mcp_and_api_not_auth(opene
                              headers={'authorization': 'Bearer nope'})).status_code,
             ], [
                 (await c.post(path, json=body, headers=bearer)).status_code
-                for path, body in (('/auth/token', {'current': PIN}),
-                                   ('/auth/change', {'current': PIN, 'pin': '222222'}),
+                for path, body in (('/auth/change', {'current': PIN, 'pin': '222222'}),
                                    ('/auth/disable', {'current': PIN}),
                                    ('/auth/lifetime', {'seconds': 900}))
             ], (await c.get('/auth/status', headers=bearer)).json()
 
     gates, auth, status = run(work)
     assert gates == [200, 200, 401, 200, 200, 200, 200, 200, 401, 401]
-    assert auth == [401, 401, 401, 401]
+    assert auth == [401, 401, 401]
     assert status['authenticated'] is False
     assert gate.state.enabled and gate.state.session_seconds is None
 
@@ -203,7 +204,6 @@ def test_a_right_pin_gives_a_cookie_and_a_wrong_one_says_what_is_left(opened):
     assert 'HttpOnly' in header and 'SameSite=Strict' in header
     assert 'Secure' not in header
     assert status.json()['authenticated'] is True
-    assert status.json()['token_created_at'] is not None
 
 
 def test_the_cookie_is_secure_when_the_trusted_scheme_is_https(opened):
@@ -328,12 +328,10 @@ def test_changing_or_disabling_without_the_current_pin_is_refused(opened):
                               headers=with_cookie(cookie))).status_code,
                 (await c.post('/auth/disable', json={'current': '999999'},
                               headers=with_cookie(cookie))).status_code,
-                (await c.post('/auth/token', json={'current': '999999'},
-                              headers=with_cookie(cookie))).status_code,
                 (await c.post('/auth/change', json={'current': PIN, 'pin': '222222'})).status_code,
             ]
 
-    assert run(work) == [403, 403, 403, 401]
+    assert run(work) == [403, 403, 401]
     assert auth_rules.verify_pin(PIN, gate.state.pin_hash)
 
 
@@ -357,24 +355,21 @@ def test_a_change_signs_the_others_out_keeps_this_device_and_the_token(opened):
     assert auth_rules.verify_pin('222222', auth_gate.read_state(opened).pin_hash)
 
 
-def test_disabling_deletes_the_token_and_regenerating_refuses_the_old_one(opened):
+def test_disabling_deletes_the_tokens_with_the_pin(opened):
     gate = Gate(Inner(), opened, INDEX)
 
     async def work():
-        first, cookie = await enable(gate)
+        token, cookie = await enable(gate)
         async with client(gate) as c:
-            regenerated = await c.post('/auth/token', json={'current': PIN},
-                                       headers=with_cookie(cookie))
-            second = regenerated.json()['token']
-            old = (await c.post('/mcp', headers={'authorization': f'Bearer {first}'})).status_code
-            new = (await c.post('/mcp', headers={'authorization': f'Bearer {second}'})).status_code
+            before = (await c.post('/mcp', headers={'authorization': f'Bearer {token}'})).status_code
             off = await c.post('/auth/disable', json={'current': PIN},
                                headers=with_cookie(cookie))
-            return old, new, off.status_code
+            return before, off.status_code
 
-    assert run(work) == (401, 200, 200)
+    assert run(work) == (200, 200)
     assert auth_gate.read_state(opened) == auth_gate.OFF
     assert opened.query('SELECT count(*) FROM auth_secret') == [(0,)]
+    assert opened.query('SELECT count(*) FROM access_tokens') == [(0,)]
 
 
 def test_a_store_that_refuses_the_write_keeps_the_previous_state(opened, monkeypatch):
@@ -587,13 +582,19 @@ def test_pin_on_no_route_is_reached_without_a_credential(tmp_path, monkeypatch):
     reached.clear()
     bearer = {'authorization': f'Bearer {token}'}
     api = [r for r in routes if r[1] == '/api' or r[1].startswith('/api/')]
+    tokens = [r for r in api if r[1].startswith('/api/tokens')]
+    assert tokens, 'the sweep found no token route'
+    api = [r for r in api if r not in tokens]
     guarded = [('POST', p) for p in (
-        '/auth/change', '/auth/disable', '/auth/token', '/auth/lifetime')]
+        '/auth/change', '/auth/disable', '/auth/lifetime')]
 
     async def with_token():
         async with client(serving) as c:
             for method, path in api:
                 await c.request(method, path, headers=bearer)
+            for method, path in tokens:
+                assert (await c.request(method, path, headers=bearer)
+                        ).status_code == 401, (method, path)
             return [(await c.post(path, json={'current': PIN, 'pin': '222222',
                                               'seconds': 900},
                                   headers=bearer)).status_code
@@ -602,6 +603,7 @@ def test_pin_on_no_route_is_reached_without_a_credential(tmp_path, monkeypatch):
 
     assert api, 'the sweep found no /api route'
     assert sorted(set(reached)) == sorted(set(api))
+    assert not any(r[1].startswith('/api/tokens') for r in reached)
     assert refused == [401] * len(guarded)
 
 
@@ -666,7 +668,9 @@ def test_no_route_hands_out_an_auth_secret(tmp_path):
     token, bodies = run(work)
 
     state = auth_gate.read_state(runtime.store)
-    for secret in (token, state.pin_hash, state.session_secret, state.token_hash):
+    hashes = [row[0] for row in runtime.store.query('SELECT token_hash FROM access_tokens')]
+    assert hashes
+    for secret in (token, state.pin_hash, state.session_secret, *hashes):
         assert not any(secret in body for body in bodies)
 
 
