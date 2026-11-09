@@ -63,65 +63,67 @@ function serve(references: BenchmarkReference[], followed: string[] = []) {
 
 const row = (name: RegExp | string) => screen.findByRole('switch', { name })
 
-describe('the row in Portfolio', () => {
-  it('says nothing is followed', async () => {
+describe('the list in Portfolio', () => {
+  const list = () => screen.findByRole('list', { name: 'Fonds de comparaison' })
+
+  it('offers only « Ajouter un fonds » when nothing is followed', async () => {
     serve(aBenchmarkReferences())
     renderApp({ url: '/settings' })
 
-    expect(await screen.findByText('Aucune référence suivie.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Gérer' })).toBeInTheDocument()
+    const funds = await list()
+    expect(within(funds).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(funds).getByRole('button', { name: 'Ajouter un fonds' })).toBeInTheDocument()
   })
 
-  it('names what the Benchmark page offers and what is still downloading', async () => {
+  it('names each followed fund with its symbol and how far its history has come', async () => {
     serve(
       aBenchmarkReferences({
         'CW8.PA': { followed: true, ready: true },
-        'CSPX.AS': { followed: true, ready: true },
         'C40.PA': { followed: true, reached: '2013-03-01', target: '2008-01-02', ratio: 0.629 },
+        'CSPX.AS': { followed: true },
       }),
-      ['CW8.PA', 'CSPX.AS', 'C40.PA'],
+      ['CW8.PA', 'C40.PA', 'CSPX.AS'],
     )
     renderApp({ url: '/settings' })
 
-    expect(
-      await screen.findByText(
-        'MSCI World et S&P 500 sont proposés sur la page Comparaison. CAC 40 en téléchargement, 62 %.',
-      ),
-    ).toBeInTheDocument()
+    const funds = await list()
+    await within(funds).findByText('historique complet')
+    const rows = within(funds).getAllByRole('listitem')
+    const text = rows.map((one) => one.textContent)
+    const joined = text.join('|')
+    expect(text[0]).toMatch(/MSCI World\s*CW8\.PA.*historique complet.*Ne plus suivre/)
+    expect(joined).toMatch(/CAC 40.*téléchargement 62\s%/)
+    expect(joined).toMatch(/S&P 500.*téléchargement/)
   })
 
-  it('names the ETF being downloaded even before it has a percentage', async () => {
-    serve(aBenchmarkReferences({ 'C40.PA': { followed: true } }), ['C40.PA'])
-    renderApp({ url: '/settings' })
-
-    expect(await screen.findByText('CAC 40 en téléchargement.')).toBeInTheDocument()
-  })
-
-  it('says a download that is failing fails, not that it is downloading (#1460)', async () => {
-    serve(aBenchmarkReferences({ 'C40.PA': { followed: true, failing: true } }), ['C40.PA'])
-    renderApp({ url: '/settings' })
-
-    expect(
-      await screen.findByText('CAC 40 : le téléchargement échoue pour l’instant.'),
-    ).toBeInTheDocument()
-    expect(screen.queryByText('CAC 40 en téléchargement.')).toBeNull()
-  })
-
-  it('says a reference the market answered empty has no price, and names the next one downloading (#1510)', async () => {
+  it('says a failing download fails, and a reference the market answered empty has no quote', async () => {
     serve(
       aBenchmarkReferences({
         'C40.PA': { followed: true, requested: true, never_priced: true },
-        'CSPX.AS': { followed: true },
+        'CSPX.AS': { followed: true, failing: true },
       }),
       ['C40.PA', 'CSPX.AS'],
     )
     renderApp({ url: '/settings' })
 
-    expect(
-      await screen.findByText(/CAC 40 : le marché n’a renvoyé aucun cours\./),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(/CAC 40 en téléchargement/)).toBeNull()
-    expect(screen.getByText(/S&P 500 en téléchargement\./)).toBeInTheDocument()
+    const funds = await list()
+    expect(await within(funds).findByText('aucun cours')).toBeInTheDocument()
+    expect(within(funds).getByText('téléchargement en échec')).toBeInTheDocument()
+  })
+
+  it('stops following a fund by sending the list without it', async () => {
+    const puts = serve(
+      aBenchmarkReferences({
+        'CW8.PA': { followed: true, ready: true },
+        'C40.PA': { followed: true, ready: true },
+      }),
+      ['CW8.PA', 'C40.PA'],
+    )
+    const { user } = renderApp({ url: '/settings' })
+
+    await user.click(await screen.findByRole('button', { name: 'Ne plus suivre MSCI World' }))
+
+    await waitFor(() => expect(puts).toEqual([{ benchmark_symbols: ['C40.PA'] }]))
   })
 
   it('opens the sheet from #portfolio-references, with the first switch focused', async () => {
@@ -143,11 +145,11 @@ describe('the row in Portfolio', () => {
     expect(router.state.location.hash).toBe('')
   })
 
-  it('opens the sheet from « Gérer »', async () => {
+  it('opens the sheet from « Ajouter un fonds »', async () => {
     serve(aBenchmarkReferences())
     const { user } = renderApp({ url: '/settings' })
 
-    await user.click(await screen.findByRole('button', { name: 'Gérer' }))
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un fonds' }))
 
     expect(await screen.findByRole('dialog', { name: SHEET })).toBeInTheDocument()
   })
@@ -296,7 +298,7 @@ describe('the sheet', () => {
 
     await user.click(screen.getByRole('button', { name: 'Fermer' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'Gérer' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un fonds' }))
 
     await screen.findByRole('dialog', { name: SHEET })
     expect(document.querySelector('[data-slot="alert"]')).toBeNull()

@@ -44,12 +44,31 @@ export type DialState =
   | { kind: 'saved' }
   | { kind: 'failed'; reason: string }
 
-export function useDial(key: string) {
+/** A number as the field shows it: at most two decimals, no trailing zero (« 1,5 » minutes). */
+const shown = (n: number) => String(Math.round(n * 100) / 100)
+
+/**
+ * `scale` is how many of the registry's units one of the field's is worth: a
+ * dial stored in seconds and shown in minutes is `60`. The field, the draft and
+ * the refusals speak the field's unit; the wire speaks the registry's.
+ */
+export function useDial(key: string, scale = 1) {
   const { t } = useI18n()
   const client = useQueryClient()
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   const setting = config.data?.settings.find((one) => one.key === key)
-  const stored = setting ? (draftFrom([setting])[key] ?? '') : ''
+  const storedWire = setting ? (draftFrom([setting])[key] ?? '') : ''
+  const stored =
+    scale !== 1 && storedWire !== '' && Number.isFinite(Number(storedWire))
+      ? shown(Number(storedWire) / scale)
+      : storedWire
+  /** The field's text in the registry's unit; what is not a number goes as typed. */
+  const wire = (value: string) => {
+    const n = Number(value.trim().replace(',', '.'))
+    return scale === 1 || value.trim() === '' || !Number.isFinite(n)
+      ? value
+      : String(Math.round(n * scale))
+  }
 
   // `null` follows the stored value; a string is a draft the row owns.
   const [typed, setTyped] = useState<string | null>(null)
@@ -63,24 +82,24 @@ export function useDial(key: string) {
 
   /** `kept` is what the server holds right now: the registry row the last answer left. */
   function refusal(error: unknown, value: string, kept: SettingDescription): string {
-    const number = Number(value)
+    const number = Number(wire(value))
     if (
       error instanceof ApiProblem &&
       error.type === PROBLEM_TYPES.invalidSetting &&
       kept.type === 'integer' &&
       Number.isFinite(number)
     ) {
-      const stays = Number(kept.value)
+      const stays = Number(kept.value) / scale
       if (kept.maximum !== null && number > kept.maximum) {
-        return t('settings.row.atMost', { max: kept.maximum, stored: stays })
+        return t('settings.row.atMost', { max: kept.maximum / scale, stored: stays })
       }
       if (kept.minimum !== null && number < kept.minimum) {
-        return t('settings.row.atLeast', { min: kept.minimum, stored: stays })
+        return t('settings.row.atLeast', { min: kept.minimum / scale, stored: stays })
       }
     }
     if (problemMessageKey(error) === 'problem.unreachable') {
       return kept.type === 'integer' && kept.value !== null
-        ? t('settings.row.unreachable.stored', { stored: Number(kept.value) })
+        ? t('settings.row.unreachable.stored', { stored: Number(kept.value) / scale })
         : t('settings.row.unreachable')
     }
     return t('settings.row.notSaved', { reason: t(problemMessageKey(error)) })
@@ -94,12 +113,12 @@ export function useDial(key: string) {
     sending.current = value
     for (;;) {
       ok = true
-      if (Object.keys(changedValues([from], { [key]: value })).length > 0) {
+      if (Object.keys(changedValues([from], { [key]: wire(value) })).length > 0) {
         setState({ kind: 'saving' })
         let answer: SettingsWriteResponse | null = null
         try {
           answer = await settingsApi.saveSettings(
-            from.type === 'boolean' ? { [key]: value === 'true' } : { [key]: value.trim() },
+            from.type === 'boolean' ? { [key]: value === 'true' } : { [key]: wire(value).trim() },
           )
         } catch (error) {
           ok = false

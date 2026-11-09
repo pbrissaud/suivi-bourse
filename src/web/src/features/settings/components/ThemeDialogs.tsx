@@ -1,21 +1,11 @@
 /**
- * *Thème* — the theme over the bundled Atelier, kept in the store (#1248).
- *
- * At rest the section shows the two palettes and what can be done with them:
- * **Modifier** opens the form with its live preview (`ThemeForm`, #1314),
- * the tweakcn import and the JSON are Dialogs. An imported theme carries keys
- * the form does not show, so the JSON stays as the expert's way in. Both are
- * hidden while editing, so the theme being edited cannot be replaced
- * underneath.
- *
- * Two ways in from tweakcn: **import by id or address** (the server's one call
- * to tweakcn.com, on click) or **paste** the JSON of `tweakcn.com/r/themes/<id>`
- * for an instance with no way out. Every write points
- * `<link href="/api/theme.css">` at a fresh URL, so the page repaints without
- * a reload.
+ * The two ways into a theme that are not the form: **import by id or address**
+ * (the server's one call to tweakcn.com, on click) and **paste** the JSON of
+ * `tweakcn.com/r/themes/<id>` for an instance with no way out (#1248). Both are
+ * Dialogs, hidden while the form has unapplied edits.
  */
 import { useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -26,14 +16,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Section } from '@/components/ui/section'
 import { Textarea } from '@/components/ui/textarea'
-import { ThemeForm } from '@/features/settings/components/ThemeForm'
 import { settingsApi, type ThemeVars } from '@/features/settings/lib/api'
-import { read } from '@/features/settings/lib/themeForm'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey, providerRefusal, refusedKey } from '@/lib/problem'
-import { repaint } from '@/lib/themePreview'
 import atelier from '@/theme/atelier.json'
 
 /** The editor shows Atelier's own JSON when nothing is stored (#1295). */
@@ -43,10 +29,7 @@ const pretty = (theme: ThemeVars | null) => JSON.stringify(theme ?? atelier, nul
 const themeId = (value: string) =>
   value.trim().split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop() ?? ''
 
-/** What the strips show of a palette. */
-const SWATCHES = ['background', 'card', 'foreground', 'primary', 'chart-1', 'destructive']
-
-function ImportDialog({
+export function ImportDialog({
   onKept,
   onClose,
 }: {
@@ -101,11 +84,12 @@ function ImportDialog({
           ) : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" size="sheet" onClick={onClose}>
             {t('settings.theme.cancel')}
           </Button>
           <Button
             variant="primary"
+            size="sheet"
             type="button"
             disabled={themeId(id) === '' || importing.isPending}
             onClick={() => importing.mutate()}
@@ -118,17 +102,18 @@ function ImportDialog({
   )
 }
 
-function JsonDialog({
-  stored,
+export function JsonDialog({
+  current,
   onKept,
   onClose,
 }: {
-  stored: ThemeVars | null
+  /** The theme in force, or `null` for Atelier's own. */
+  current: ThemeVars | null
   onKept: (kept: ThemeVars) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const [json, setJson] = useState(() => pretty(stored))
+  const [json, setJson] = useState(() => pretty(current))
   const [unparsable, setUnparsable] = useState<string | null>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const applying = useMutation({
@@ -188,11 +173,12 @@ function JsonDialog({
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" size="sheet" onClick={onClose}>
             {t('settings.theme.cancel')}
           </Button>
           <Button
             variant="primary"
+            size="sheet"
             type="button"
             disabled={json.trim() === '' || applying.isPending}
             onClick={apply}
@@ -202,108 +188,5 @@ function JsonDialog({
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-export function ThemeBlock({ stored }: { stored: ThemeVars | null }) {
-  const { t } = useI18n()
-  const client = useQueryClient()
-  const [dialog, setDialog] = useState<'import' | 'json' | null>(null)
-  /** The theme the form opened on, pinned: a refetch of the stored one does not move it. */
-  const [editing, setEditing] = useState<ThemeVars | null>(null)
-  const [done, setDone] = useState<'applied' | 'restored' | null>(null)
-
-  /** The store kept `answer`; resolves once the page has repainted with it. */
-  const kept = (answer: ThemeVars | null) => {
-    client.setQueryData(['theme'], answer)
-    setDone(answer ? 'applied' : 'restored')
-    return repaint()
-  }
-  // A dialog's write: the repaint failing leaves the page as it was, and says nothing.
-  const dialogKept = (answer: ThemeVars) => {
-    kept(answer).catch(() => {})
-    setDialog(null)
-  }
-  const resetting = useMutation({
-    mutationFn: settingsApi.resetTheme,
-    onSuccess: () => {
-      kept(null).catch(() => {})
-    },
-  })
-
-  const state =
-    done === 'applied'
-      ? 'settings.theme.applied'
-      : done === 'restored'
-        ? 'settings.theme.restored'
-        : stored
-          ? 'settings.theme.custom'
-          : 'settings.theme.bundled'
-  const saved = stored ?? (atelier as ThemeVars)
-
-  return (
-    <Section title={t('settings.theme.title')}>
-      <div className="space-y-5">
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(state)}
-        </p>
-
-        {editing ? (
-          <ThemeForm baseline={editing} onApplied={kept} onClose={() => setEditing(null)} />
-        ) : (
-          <>
-            <div className="space-y-2">
-              {(['light', 'dark'] as const).map((ground) => (
-                <div key={ground} className="flex items-center gap-3">
-                  <span className="label w-14">{t(`settings.theme.ground.${ground}`)}</span>
-                  <div aria-hidden className="flex gap-1.5">
-                    {SWATCHES.map((key) => (
-                      <span
-                        key={key}
-                        className="size-6 rounded-full border"
-                        style={{ background: read(saved, ground, key) }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" onClick={() => setEditing(saved)}>
-                {t('settings.theme.edit')}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setDialog('import')}>
-                {t('settings.theme.import.open')}
-              </Button>
-              {stored ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={resetting.isPending}
-                  onClick={() => resetting.mutate()}
-                >
-                  {t('settings.theme.reset')}
-                </Button>
-              ) : null}
-              <Button type="button" variant="link" onClick={() => setDialog('json')}>
-                {t('settings.theme.json')}
-              </Button>
-            </div>
-            {resetting.isError ? (
-              <p role="alert" className="text-sm text-destructive">
-                {t(problemMessageKey(resetting.error))}
-              </p>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {dialog === 'import' ? (
-        <ImportDialog onKept={dialogKept} onClose={() => setDialog(null)} />
-      ) : null}
-      {dialog === 'json' ? (
-        <JsonDialog stored={stored} onKept={dialogKept} onClose={() => setDialog(null)} />
-      ) : null}
-    </Section>
   )
 }

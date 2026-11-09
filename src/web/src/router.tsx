@@ -14,6 +14,7 @@ import ImportPage from '@/pages/ImportPage'
 import JournalPage from '@/pages/JournalPage'
 import SettingsPage from '@/pages/SettingsPage'
 import SystemPage from '@/pages/SystemPage'
+import ThemePage from '@/pages/ThemePage'
 import SharesPage from '@/pages/SharesPage'
 import ShareDetailPage from '@/pages/ShareDetailPage'
 
@@ -180,6 +181,13 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+/** The theme, reached from Settings › Affichage: a page of its own with « ← Réglages ». */
+const themeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/theme',
+  component: ThemePage,
+})
+
 /** What the installation is doing and what it is: the bell's health link lands here. */
 const systemRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -248,6 +256,7 @@ const routeTree = rootRoute.addChildren([
   dataRoute,
   importRoute,
   settingsRoute,
+  themeRoute,
   systemRoute,
   agentRoute,
   agentThreadRoute,

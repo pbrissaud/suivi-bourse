@@ -204,3 +204,21 @@ export function candidate(baseline: ThemeVars, edits: Edits): ThemeVars {
   }
   return next
 }
+
+/**
+ * The semantic tokens `index.css` points at the standard ones (`--gain` is
+ * `chart-2`). A custom property declared on `:root` inherits as its *computed*
+ * value, so a wrapper that repaints the standard tokens (the Thème page's
+ * preview) must declare these again to have them follow.
+ */
+export const SEMANTIC_ALIASES: Record<string, string> = {
+  gain: 'var(--chart-2)',
+  loss: 'var(--destructive)',
+  price: 'var(--primary)',
+  attention: 'var(--foreground)',
+  'alloc-1': 'var(--chart-1)',
+  'alloc-2': 'var(--chart-3)',
+  'alloc-3': 'var(--chart-4)',
+  'alloc-4': 'var(--chart-5)',
+  'alloc-5': 'var(--muted-foreground)',
+}

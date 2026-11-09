@@ -135,13 +135,6 @@ export const ROUTES = {
    * agent could not run on.
    */
   agentConfig: '/api/agent/config',
-  /** The provider's key: forgotten here (`DELETE`), never written (it is stored by a passed test) and never read back. */
-  agentKey: '/api/agent/key',
-  /**
-   * *Tester la connexion* (#1115, #1269): the candidate's models, listed with
-   * its key; the candidate is stored only when the provider accepts it.
-   */
-  agentTest: '/api/agent/test',
   /**
    * The agent's providers (« Relevé » redesign): `GET` lists them (the default
    * first), `POST` adds one. The `:id` ones are patterns: `PATCH`/`DELETE` the
@@ -195,7 +188,6 @@ export const ROUTES = {
   authEnable: '/auth/enable',
   authChange: '/auth/change',
   authDisable: '/auth/disable',
-  authToken: '/auth/token',
   authLifetime: '/auth/lifetime',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',

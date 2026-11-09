@@ -89,11 +89,7 @@ export function AuthBoot({ children }: { children: ReactNode }) {
     // A read still in flight may 401 after the logout: the screen asks once.
     sessionResumed()
     client.removeQueries({ predicate: (query) => query.queryKey[0] !== AUTH_STATUS_KEY[0] })
-    client.setQueryData(AUTH_STATUS_KEY, {
-      enabled: true,
-      authenticated: false,
-      token_created_at: null,
-    })
+    client.setQueryData(AUTH_STATUS_KEY, { enabled: true, authenticated: false })
     setShown(false)
   }
 

@@ -76,12 +76,18 @@ const WRITE_ONLY_ROUTES = [
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
+  // The settings page's gestures on providers, channels and tokens: each answers
+  // the reader's own press (a test, a default, a regeneration, a removal), and the
+  // lists they change are the reads above.
+  'agentProvider',
+  'agentProviderTest',
+  'agentProviderDefault',
+  'notificationChannel',
+  'notificationChannelTest',
+  'token',
+  'tokenRegenerate',
   // Keep or release an unfollowed ETF's series: a gesture on one ETF (#1312).
   'benchmarkReference',
-  // The agent's key is written and forgotten, never read; the connection
-  // test answers the reader's own press, and its answer is a receipt (#1115).
-  'agentKey',
-  'agentTest',
   // A tweakcn import answers the reader's own press; the stored theme is read
   // through `theme` (#1248).
   'themeImport',
@@ -126,7 +132,6 @@ const WRITE_ONLY_ROUTES = [
   'authEnable',
   'authChange',
   'authDisable',
-  'authToken',
   'authLifetime',
   // The ticker field's own keystrokes inside EventForm (#1268): any surface
   // opening the form would be red by construction (#775 against #729), so its
@@ -144,18 +149,7 @@ const WRITE_ONLY_ROUTES = [
  * reads them today, so the net has nothing to visit. Each page chantier removes
  * its routes from here when it wires them, and the net then covers them.
  */
-const AWAITING_THEIR_PAGE = [
-  'agentProvider',
-  'agentProviderTest',
-  'agentProviderDefault',
-  'installationFacts',
-  'notificationChannels',
-  'notificationChannel',
-  'notificationChannelTest',
-  'tokens',
-  'token',
-  'tokenRegenerate',
-] as const satisfies readonly RouteName[]
+const AWAITING_THEIR_PAGE = ['installationFacts'] as const satisfies readonly RouteName[]
 
 /** Every route a page reads — the net, computed and never written down twice. */
 const READ_ROUTES: readonly string[] = (Object.keys(ROUTES) as RouteName[])
@@ -359,6 +353,19 @@ const SURFACES: readonly Surface[] = [
     },
   },
   { name: 'les réglages', url: '/settings', heading: 'Réglages' },
+  {
+    // The access tokens are read only while a code is set.
+    name: 'les réglages, un code d’accès posé',
+    url: '/settings',
+    heading: 'Réglages',
+    handlers: () =>
+      server.use(
+        http.get(ROUTES.authStatus, () =>
+          HttpResponse.json({ enabled: true, authenticated: true, session_seconds: 2592000 }),
+        ),
+      ),
+  },
+  { name: 'le thème', url: '/settings/theme', heading: 'Thème' },
   { name: 'le système', url: '/system', heading: 'Système' },
   { name: 'le journal', url: '/journal', heading: 'Journal' },
   {

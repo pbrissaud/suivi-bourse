@@ -67,9 +67,7 @@ function echoed(draft: AccountDraft): Partial<Account> {
 export function defaultHandlers() {
   return [
     // The PIN is off by default (#1203): every page test boots straight into the app.
-    http.get(ROUTES.authStatus, () =>
-      HttpResponse.json({ enabled: false, authenticated: false, token_created_at: null }),
-    ),
+    http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: false, authenticated: false })),
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     // The declaration's three gestures (#698, read by a client since #729). They
     // echo the row back the way the two event writes do — three members and no
@@ -228,6 +226,11 @@ export function defaultHandlers() {
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
     // The agent is off by default (#1115), and nothing is configured.
     http.get(ROUTES.agentConfig, () => HttpResponse.json(anAgentConfig())),
+    // The settings page's three lists, all empty (« Relevé »): a test about a
+    // provider, a channel or a token asks for one by name.
+    http.get(ROUTES.agentProviders, () => HttpResponse.json([])),
+    http.get(ROUTES.notificationChannels, () => HttpResponse.json([])),
+    http.get(ROUTES.tokens, () => HttpResponse.json({ tokens: [] })),
     // Nothing declared about the owner (#1116).
     http.get(ROUTES.profile, () => HttpResponse.json({ facts: {}, projects: [] })),
     // **No reference chosen** (#760), which is what a fresh installation reads

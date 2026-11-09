@@ -19,7 +19,6 @@ import {
   authFetch,
   get,
   ROUTES,
-  send,
 } from '@/lib/api'
 import type { MessageKey } from '@/lib/i18n'
 
@@ -62,25 +61,6 @@ export interface AgentConfig {
   key: { set: boolean; last4: string | null; set_at: string | null }
   /** Present, and `true`, on the one write that switched the agent off. */
   disabled?: boolean
-}
-
-/** What `PUT /api/agent/config` takes: any subset of the fields. */
-export interface AgentConfigDraft {
-  enabled?: boolean
-  provider?: AgentProvider
-  model?: string
-  /** Sent with its `model`: a model without a name clears the name. */
-  model_name?: string | null
-  base_url?: string | null
-  thinking?: AgentThinking
-}
-
-/** What `POST /api/agent/test` takes: a candidate, kept only if the provider accepts it. */
-export interface AgentCandidate {
-  provider?: AgentProvider
-  base_url?: string | null
-  /** Left out, the stored key is used, for the provider and address it was stored for. */
-  key?: string
 }
 
 /** One line of `GET /api/agent/threads`. */
@@ -139,15 +119,6 @@ async function agentError(response: Response): Promise<string> {
   return `HTTP ${response.status}`
 }
 
-/** `POST /api/agent/test`: the provider's own list, newest first, and what is now stored. */
-export interface AgentTestResult {
-  provider: AgentProvider
-  models: { id: string; name: string }[]
-  /** The stored model while the provider still serves it, else its newest. */
-  preselected: string | null
-  config: AgentConfig
-}
-
 async function agentSend<T>(path: string, body: unknown): Promise<T> {
   const response = await authFetch(path, {
     method: 'POST',
@@ -167,9 +138,6 @@ export const agentApi = {
   models: (id: string) => api.testAgentProvider(id),
   stats: (range: AgentStatsRange) => api.agentStats(range),
   agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
-  saveAgentConfig: (draft: AgentConfigDraft) => send<AgentConfig>(ROUTES.agentConfig, 'PUT', draft),
-  testAgent: (candidate: AgentCandidate) =>
-    send<AgentTestResult>(ROUTES.agentTest, 'POST', candidate),
   agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),
   agentThread: (id: string) => agentRead<AgentThread>(agentThreadPath(id)),
   forgetAgentThread: (id: string) => agentForget(agentThreadPath(id)),

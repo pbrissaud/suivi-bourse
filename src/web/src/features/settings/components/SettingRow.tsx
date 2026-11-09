@@ -4,9 +4,10 @@ import type { DialState } from '@/features/settings/lib/useDial'
 import { useI18n } from '@/lib/i18n'
 
 /**
- * **The one row of the Settings page** (#1279): the label and what it means on
- * the left, the control on the right, a `rule` between rows. Every control of
- * the page sits in one; none sits in a section's gutter or title row.
+ * **The one row of the Settings page**: the name (and, where the row has one, a
+ * one-clause description) on the left, the control on the right, a `border`
+ * rule between rows. Every control of the page sits in one; none sits in a
+ * section's gutter.
  *
  * The receipt slot sits under the control, and says what happened to *this*
  * value — saving, saved, or why not — so a save is never answered somewhere
@@ -27,25 +28,25 @@ export function SettingRow({
   state?: DialState
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-t py-4 first:border-t-0 first:pt-0 last:pb-0">
-      <div className="min-w-0 flex-1 basis-60 space-y-0.5">
+    <div className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 border-b py-2 last:border-b-0">
+      <div className="min-w-0">
         {id ? (
-          <label htmlFor={id} className="block text-base font-medium">
+          <label htmlFor={id} className="block text-md">
             {label}
           </label>
         ) : (
-          <p className="text-base font-medium">{label}</p>
+          <p className="text-md">{label}</p>
         )}
         {description ? (
           <div
             id={id ? `${id}-description` : undefined}
-            className="label max-w-prose text-muted-foreground"
+            className="mt-0.5 text-sm text-muted-foreground"
           >
             {description}
           </div>
         ) : null}
       </div>
-      <div className="flex min-h-11 flex-col items-end gap-1">
+      <div className="flex flex-col items-end gap-1">
         {children}
         {/* Mounted before it has anything to say: a live region inserted already
             filled is not announced by every screen reader. */}

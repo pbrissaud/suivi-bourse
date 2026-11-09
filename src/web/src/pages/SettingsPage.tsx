@@ -1,35 +1,30 @@
 import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation } from '@tanstack/react-router'
+import { useQuery, type UseQueryResult } from '@tanstack/react-query'
+import { useLocation } from '@tanstack/react-router'
 
-import { Unreadable } from '@/components/Unreadable'
-import { accountsApi } from '@/features/accounts/lib/api'
-import { agentApi } from '@/features/agent/lib/api'
 import { AdvancedSection } from '@/features/settings/components/AdvancedSection'
 import { AgentSection } from '@/features/settings/components/AgentSection'
 import { DeviceSection } from '@/features/settings/components/DeviceSection'
+import { REFERENCES_HASH } from '@/features/settings/components/FundsList'
+import { NotificationsSection } from '@/features/settings/components/NotificationsSection'
 import { PortfolioSection } from '@/features/settings/components/PortfolioSection'
-import { REFERENCES_HASH } from '@/features/settings/components/ReferencesRow'
 import { SecuritySection } from '@/features/settings/components/SecuritySection'
 import type { SectionRead } from '@/features/settings/components/SettingsSection'
-import { TaxationSection } from '@/features/settings/components/TaxationSection'
-import { ThemeBlock } from '@/features/settings/components/ThemeBlock'
 import { settingsApi } from '@/features/settings/lib/api'
 import { api } from '@/lib/api'
-import { useI18n, type MessageKey } from '@/lib/i18n'
+import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import { oneFailure, readConditions } from '@/lib/status'
 
 /** The sections, top to bottom: an anchor waits for every one above it. */
-const SECTIONS = [
-  { id: 'device', title: 'settings.device.title' },
-  { id: 'portfolio', title: 'settings.portfolio.title' },
-  { id: 'agent', title: 'settings.agent.title' },
-  { id: 'security', title: 'settings.security.title' },
-  { id: 'taxation', title: 'settings.taxation.title' },
-  { id: 'theme', title: 'settings.theme.title' },
-  { id: 'advanced', title: 'settings.advanced.title' },
-] as const satisfies readonly { id: string; title: MessageKey }[]
+const SECTIONS = ['security', 'portfolio', 'agent', 'notifications', 'display', 'advanced'] as const
+
+/** Anchors that name a row inside a section rather than the section itself. */
+const WITHIN: Record<string, (typeof SECTIONS)[number]> = {
+  [REFERENCES_HASH]: 'portfolio',
+  funds: 'portfolio',
+  taxation: 'portfolio',
+}
 
 /** Scroll to a section and focus it, so a keyboard lands where the eye does. */
 function land(id: string) {
@@ -38,112 +33,73 @@ function land(id: string) {
   element?.focus({ preventScroll: true })
 }
 
+/** What a section stands on: nothing yet, a sentence and a retry, or its data. */
+function readOf(query: UseQueryResult): SectionRead {
+  const failure = oneFailure(readConditions({ queries: [query] }))
+  return failure !== null
+    ? { kind: 'failed', failure, retry: () => void query.refetch() }
+    : query.data !== undefined
+      ? { kind: 'ready' }
+      : { kind: 'pending' }
+}
+
 /** What the owner sets. What the installation reports is on `/system`. */
 export default function SettingsPage() {
   const { t } = useI18n()
   usePageHeading(t('page.settings'))
 
-  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
-  const agent = useQuery({ queryKey: ['agent-config'], queryFn: agentApi.agentConfig })
-  const theme = useQuery({ queryKey: ['theme'], queryFn: settingsApi.theme })
-  // The taxation section reads the same key for its rows.
-  const taxation = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
+  const agent = useQuery({ queryKey: ['agent-settings'], queryFn: settingsApi.agentSettings })
+  const providers = useQuery({ queryKey: ['agent-providers'], queryFn: api.agentProviders })
+  const channels = useQuery({
+    queryKey: ['notification-channels'],
+    queryFn: api.notificationChannels,
+  })
 
-  const settingsFailure = oneFailure(readConditions({ queries: [config] }))
-  const agentFailure = oneFailure(readConditions({ queries: [agent] }))
-  const themeFailure = oneFailure(readConditions({ queries: [theme] }))
-  const taxationFailure = oneFailure(readConditions({ queries: [taxation] }))
-
-  const settingsRead: SectionRead =
-    settingsFailure !== null
-      ? { kind: 'failed', failure: settingsFailure, retry: () => void config.refetch() }
-      : config.data
-        ? { kind: 'ready' }
-        : { kind: 'pending' }
+  const settingsRead = readOf(config)
+  // The agent's rows stand on both of its reads; the first failure is the one said.
   const agentRead: SectionRead =
-    agentFailure !== null
-      ? { kind: 'failed', failure: agentFailure, retry: () => void agent.refetch() }
-      : agent.data
-        ? { kind: 'ready' }
-        : { kind: 'pending' }
-  const taxationRead: SectionRead =
-    taxationFailure !== null
-      ? { kind: 'failed', failure: taxationFailure, retry: () => void taxation.refetch() }
-      : taxation.data
-        ? { kind: 'ready' }
-        : { kind: 'pending' }
+    readOf(agent).kind === 'failed'
+      ? readOf(agent)
+      : readOf(providers).kind === 'failed'
+        ? readOf(providers)
+        : agent.data && providers.data
+          ? { kind: 'ready' }
+          : { kind: 'pending' }
+  const channelsRead = readOf(channels)
 
   // `/settings#agent`, `#portfolio`…: a section is drawn only once its read
   // lands, so the router's own hash scroll finds nothing, and a section above
   // that lands later would push the target away from where the page scrolled.
   // Wait for the target and every section above it to settle (data or failure),
   // then scroll and focus, so a keyboard lands where the eye does.
-  const settled: Record<(typeof SECTIONS)[number]['id'], boolean> = {
-    device: true,
-    portfolio: settingsRead.kind !== 'pending',
-    agent: agent.data !== undefined || agentFailure !== null,
+  const settled: Record<(typeof SECTIONS)[number], boolean> = {
     security: true,
-    taxation: taxation.data !== undefined || taxationFailure !== null,
-    theme: theme.isSuccess || themeFailure !== null,
+    portfolio: settingsRead.kind !== 'pending',
+    agent: agentRead.kind !== 'pending',
+    notifications: channelsRead.kind !== 'pending',
+    display: true,
     advanced: settingsRead.kind !== 'pending',
   }
   const hash = useLocation({ select: (location) => location.hash })
-  // The references sheet is opened by its own address, under Portfolio (#1312).
-  const anchor = hash === REFERENCES_HASH ? 'portfolio' : hash
-  const target = SECTIONS.findIndex((section) => section.id === anchor)
-  const landed = target >= 0 && SECTIONS.slice(0, target + 1).every(({ id }) => settled[id])
+  const anchor = WITHIN[hash] ?? hash
+  const target = SECTIONS.findIndex((id) => id === anchor)
+  const landed = target >= 0 && SECTIONS.slice(0, target + 1).every((id) => settled[id])
   useEffect(() => {
-    if (landed) land(anchor)
-  }, [anchor, landed])
+    // A row inside a section (the tax list) is where the eye is meant to land.
+    if (landed) land(hash in WITHIN && hash !== REFERENCES_HASH ? hash : anchor)
+  }, [anchor, hash, landed])
 
   return (
     <div className="max-w-settings">
-      {/* Under 1 024 px the gutter titles stack with their rows, so the page
-          opens on a one-line index instead. */}
-      <nav
-        aria-label={t('settings.index')}
-        className="-mx-3.5 mb-4 flex gap-5 overflow-x-auto px-3.5 md:-mx-5 md:px-5 lg:hidden"
-      >
-        {SECTIONS.map(({ id, title }) => (
-          <Link
-            key={id}
-            to="/settings"
-            hash={id}
-            // Only the section in the address is the current one (#1410).
-            activeOptions={{ includeHash: true }}
-            // Its hash is already there, so nothing changes for the effect to
-            // see: land on it from here (#1358).
-            onClick={() => {
-              if (id === hash) land(id)
-            }}
-            className="inline-flex min-h-11 items-center text-base whitespace-nowrap text-muted-foreground hover:text-foreground aria-[current=page]:text-foreground"
-          >
-            {t(title)}
-          </Link>
-        ))}
-      </nav>
-
-      {/* Their own box, so that the first section is the first child. */}
-      <div>
-        {/* The browser's own preferences: outside every read, so the section
+      <SecuritySection read={settingsRead} />
+      <PortfolioSection read={settingsRead} />
+      <AgentSection read={agentRead} settings={agent.data} providers={providers.data} />
+      <NotificationsSection read={channelsRead} />
+      {/* The browser's own preferences: outside every read, so the section
           renders when all of them fail. */}
-        <DeviceSection />
-        <PortfolioSection read={settingsRead} />
-        <AgentSection read={agentRead} config={agent.data} />
-        <SecuritySection read={settingsRead} />
-        <TaxationSection read={taxationRead} />
-        {/* The theme has its own anatomy (#1314); this wrapper wears a section's
-          box: same id, focus and scroll offset, same rule above. */}
-        <div id="theme" tabIndex={-1} className="scroll-mt-20 border-t py-8 outline-none">
-          {themeFailure !== null ? (
-            <Unreadable failure={themeFailure} />
-          ) : theme.isSuccess ? (
-            <ThemeBlock stored={theme.data} />
-          ) : null}
-        </div>
-        <AdvancedSection runtime={runtime.data} read={settingsRead} />
-      </div>
+      <DeviceSection />
+      <AdvancedSection read={settingsRead} />
     </div>
   )
 }

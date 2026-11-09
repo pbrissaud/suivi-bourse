@@ -10,16 +10,8 @@ import { ApiProblem, authFetch, get, ROUTES, send } from '@/lib/api'
 export interface AuthStatus {
   enabled: boolean
   authenticated: boolean
-  /** When the access token was made; only to a signed-in reader. Never the token. */
-  token_created_at: string | null
   /** How long a session lives without activity, in seconds; only to a signed-in reader (#1313). */
   session_seconds?: number | null
-}
-
-/** What enabling and regenerating answer: the token, shown once. */
-export interface IssuedToken {
-  token: string
-  token_created_at: string
 }
 
 export const authApi = {
@@ -29,11 +21,10 @@ export const authApi = {
     const response = await authFetch(ROUTES.authLogout, { method: 'POST' })
     if (!response.ok) throw new ApiProblem({ status: response.status })
   },
-  enable: (pin: string) => send<IssuedToken>(ROUTES.authEnable, 'POST', { pin }),
+  enable: (pin: string) => send<{ enabled: true }>(ROUTES.authEnable, 'POST', { pin }),
   change: (current: string, pin: string) =>
     send<{ enabled: true }>(ROUTES.authChange, 'POST', { current, pin }),
   disable: (current: string) => send<{ enabled: false }>(ROUTES.authDisable, 'POST', { current }),
-  regenerate: (current: string) => send<IssuedToken>(ROUTES.authToken, 'POST', { current }),
   /** One of the server's presets; the answer re-signs this device's cookie (#1313). */
   lifetime: (seconds: number) =>
     send<{ session_seconds: number }>(ROUTES.authLifetime, 'POST', { seconds }),
@@ -68,8 +59,7 @@ export function claudeDesktopConfig(origin: string, token: string): string {
       mcpServers: {
         'suivi-bourse': {
           command: 'npx',
-          args: ['mcp-remote', `${origin}/mcp`, '--header', 'Authorization:${AUTH_HEADER}'],
-          env: { AUTH_HEADER: `Bearer ${token}` },
+          args: ['mcp-remote', `${origin}/mcp`, '--header', `Authorization: Bearer ${token}`],
         },
       },
     },

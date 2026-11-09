@@ -2,17 +2,16 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
-import { taxationModelPath, type TaxationModelDraft } from '@/features/accounts/lib/api'
 import type { StoreState } from '@/features/settings/lib/api'
 import { type HealthState, type InstallationFact, ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aConfig,
   aRegistryItem,
+  aRuntime,
+  aSetting,
   anAccount,
   anAccountsPayload,
-  anEnvironmentFact,
-  aRuntime,
   aTaxationCatalogue,
   aTaxationModel,
 } from '@/test/factories'
@@ -59,17 +58,16 @@ describe('the page', () => {
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
   })
 
-  it('is one sequence of titled sections, the expert dials last', async () => {
+  it('is six titled planes, the expert dials last', async () => {
     await openSettings()
 
     await waitFor(() =>
       expect(screen.getAllByRole('heading', { level: 2 }).map((one) => one.textContent)).toEqual([
-        'Sur cet appareil',
-        'Portefeuille',
-        'L’agent',
         'Sécurité',
-        'Fiscalité',
-        'Thème',
+        'Portefeuille',
+        'Agent',
+        'Notifications',
+        'Affichage',
         'Avancé',
       ]),
     )
@@ -80,7 +78,7 @@ describe('the page', () => {
     await openSettings()
     await screen.findByRole('heading', { name: 'Avancé' })
 
-    for (const name of ['Sur cet appareil', 'Portefeuille', 'L’agent', 'Sécurité', 'Avancé']) {
+    for (const name of ['Sécurité', 'Portefeuille', 'Agent', 'Affichage', 'Avancé']) {
       const gutter = block(name).querySelector('header')
       expect(gutter, name).not.toBeNull()
       expect(within(gutter as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
@@ -89,11 +87,13 @@ describe('the page', () => {
     }
   })
 
-  it('leaves the notices to the bell', async () => {
-    await openSettings([anEnvironmentFact()])
+  it('says no sentence under a section’s title', async () => {
+    await openSettings()
     await screen.findByRole('heading', { name: 'Avancé' })
 
-    expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
+    for (const name of ['Sécurité', 'Portefeuille', 'Agent', 'Notifications', 'Affichage']) {
+      expect(block(name).querySelector('header p'), name).toBeNull()
+    }
   })
 
   it('lands on the section its address names, with focus', async () => {
@@ -101,40 +101,14 @@ describe('the page', () => {
 
     await waitFor(() => expect(block('Avancé')).toHaveFocus())
   })
-
-  it('marks only the section in the address as current in the index (#1410)', async () => {
-    await openSettings(undefined, undefined, undefined, '/settings#advanced')
-    const index = await screen.findByRole('navigation', { name: 'Sections des réglages' })
-
-    await waitFor(() =>
-      expect(
-        within(index)
-          .getAllByRole('link')
-          .filter((link) => link.getAttribute('aria-current') === 'page')
-          .map((link) => link.textContent),
-      ).toEqual(['Avancé']),
-    )
-  })
-
-  it('lands again on the section already in the address (#1358)', async () => {
-    const { user } = await openSettings(undefined, undefined, undefined, '/settings#advanced')
-    await waitFor(() => expect(block('Avancé')).toHaveFocus())
-    const index = screen.getByRole('navigation', { name: 'Sections des réglages' })
-    const link = within(index).getByRole('link', { name: 'Avancé' })
-    link.focus()
-
-    await user.click(link)
-
-    await waitFor(() => expect(block('Avancé')).toHaveFocus())
-  })
 })
 
-describe('the device section', () => {
-  it('sets the language from a select', async () => {
+describe('the display section', () => {
+  it('sets the language from its values', async () => {
     const { user } = await openSettings()
 
-    await user.click(await screen.findByRole('combobox', { name: 'Langue' }))
-    await user.click(screen.getByRole('option', { name: 'English' }))
+    const group = await screen.findByRole('radiogroup', { name: 'Langue' })
+    await user.click(within(group).getByRole('radio', { name: 'English' }))
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
   })
@@ -149,39 +123,74 @@ describe('the device section', () => {
         .map((one) => one.textContent),
     ).toEqual(['Automatique', 'Clair', 'Sombre'])
   })
+
+  it('names the theme and leads to its page', async () => {
+    await openSettings()
+
+    const section = await screen.findByRole('region', { name: 'Affichage' })
+    expect(await within(section).findByText('Atelier')).toBeInTheDocument()
+    expect(within(section).getByRole('link', { name: 'Personnaliser' })).toHaveAttribute(
+      'href',
+      '/settings/theme',
+    )
+  })
 })
 
 describe('the portfolio section', () => {
-  it('shows the base currency as an answer, with its chip, once it is fixed', async () => {
+  it('states the currency once it is fixed, and offers no field', async () => {
     await openSettings()
     await screen.findByRole('heading', { name: 'Portefeuille' })
 
     const section = block('Portefeuille')
-    expect(await within(section).findByText('Figée')).toBeInTheDocument()
+    expect(await within(section).findByText(/fixée au premier lancement/)).toBeInTheDocument()
     expect(within(section).queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
 
 describe('the advanced section', () => {
-  it('is drawn from the registry, unknown dials included', async () => {
+  it('draws the five dials, a clause and its default under each, and no release switch', async () => {
+    await openSettings()
+    await screen.findByRole('heading', { name: 'Avancé' })
+
+    const advanced = block('Avancé')
+    await within(advanced).findByText('Fréquence des cours')
+    for (const dial of [
+      'Fréquence des cours',
+      'Fréquence de recalcul',
+      'Pause entre deux requêtes',
+      'Profondeur d’historique',
+      'Seuil de cours figé',
+    ]) {
+      expect(within(advanced).getByText(dial)).toBeInTheDocument()
+    }
+    // The cadences are stored in seconds and read in minutes.
+    expect(screen.getByLabelText('Fréquence des cours')).toHaveValue(2)
+    expect(screen.getByLabelText('Seuil de cours figé')).toHaveValue(15)
+    expect(screen.getByLabelText('Pause entre deux requêtes')).toHaveValue(10)
+    expect(
+      within(advanced).getByText('Rafraîchissement des cours, marchés ouverts.', { exact: false }),
+    ).toHaveTextContent('Par défaut 2 min')
+    expect(within(advanced).queryByRole('switch')).not.toBeInTheDocument()
+    expect(within(advanced).queryByText('Devise de référence')).not.toBeInTheDocument()
+    expect(within(advanced).queryByText('Fonds de comparaison')).not.toBeInTheDocument()
+  })
+
+  it('draws a dial from the registry that the page does not know by name', async () => {
     server.use(
       http.get(ROUTES.config, () =>
         HttpResponse.json(
           aConfig({
             settings: [
               ...aConfig().settings,
-              {
+              aSetting({
                 key: 'a_dial_from_the_future',
                 value: 7,
                 default: 7,
-                type: 'integer',
                 minimum: 1,
                 maximum: 9,
                 effect: 'next_cycle',
                 doc: 'Something a later version added.',
-                required: false,
-                stored: false,
-              },
+              }),
             ],
           }),
         ),
@@ -193,39 +202,32 @@ describe('the advanced section', () => {
     const field = await screen.findByLabelText('a_dial_from_the_future')
     expect(field).toHaveAttribute('min', '1')
     expect(field).toHaveAttribute('max', '9')
-    expect(screen.getByText('Something a later version added.')).toBeInTheDocument()
+    expect(screen.getByText(/Something a later version added\./)).toBeInTheDocument()
   })
 
-  it('carries the five dials and the release switch, not the currency or the benchmark', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Avancé' })
-
-    const advanced = block('Avancé')
-    await within(advanced).findByText('Cadence de relevé')
-    for (const dial of [
-      'Cadence de relevé',
-      'Cadence de reconstruction',
-      'Délai entre deux requêtes',
-      'Historique par requête',
-      'Horizon de cours figé',
-      'Signaler les nouvelles versions',
-    ]) {
-      expect(within(advanced).getByText(dial)).toBeInTheDocument()
-    }
-    expect(within(advanced).queryByText('Devise de base')).not.toBeInTheDocument()
-    expect(within(advanced).queryByText('Fonds de comparaison')).not.toBeInTheDocument()
-  })
-
-  it('says what a cadence change reaches, and that it is retroactive', async () => {
-    await openSettings()
-    await screen.findByRole('heading', { name: 'Avancé' })
-
-    expect(
-      await screen.findByText(
-        /S’applique maintenant à 2 titres, et à 1 autre à l’ouverture de son marché/,
+  it('puts a modified dial back to its default', async () => {
+    const writes: unknown[] = []
+    server.use(
+      http.get(ROUTES.config, () =>
+        HttpResponse.json(
+          aConfig({
+            settings: aConfig().settings.map((setting) =>
+              setting.key === 'staleness_horizon' ? { ...setting, value: 1800 } : setting,
+            ),
+          }),
+        ),
       ),
-    ).toBeInTheDocument()
-    expect(screen.getByText(/y compris ceux déjà en échec/)).toBeInTheDocument()
+      http.put(ROUTES.settings, async ({ request }) => {
+        writes.push(await request.json())
+        return HttpResponse.json({ settings: aConfig().settings, changed: ['staleness_horizon'] })
+      }),
+    )
+    const { user } = await openSettings()
+    expect(await screen.findByLabelText('Seuil de cours figé')).toHaveValue(30)
+
+    await user.click(await within(block('Avancé')).findByRole('button', { name: 'Rétablir' }))
+
+    await waitFor(() => expect(writes).toEqual([{ staleness_horizon: '900' }]))
   })
 })
 
@@ -252,14 +254,15 @@ describe('a number saves itself', () => {
     return { opened, open }
   }
 
-  it('on Enter, only what moved, and says so on its own row', async () => {
+  it('on Enter, in the registry’s unit, only what moved, and says so on its own row', async () => {
     const writes = recordWrites()
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
-    await user.type(field, '300{Enter}')
+    await user.type(field, '5{Enter}')
 
+    // Five minutes are 300 seconds on the wire.
     await waitFor(() => expect(writes).toEqual([{ regular_interval: '300' }]))
     expect(await within(block('Avancé')).findByRole('status')).toHaveTextContent('✓ Enregistré')
 
@@ -271,7 +274,7 @@ describe('a number saves itself', () => {
   it('on blur, and a blur right after Enter sends nothing more', async () => {
     const writes = recordWrites()
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Horizon de cours figé')
+    const field = await screen.findByLabelText('Seuil de cours figé')
     expect(field).toHaveAttribute('min', '0')
 
     await user.clear(field)
@@ -286,7 +289,7 @@ describe('a number saves itself', () => {
   it('sends nothing when the value did not move', async () => {
     const writes = recordWrites()
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.click(field)
     await user.tab()
@@ -304,10 +307,10 @@ describe('a number saves itself', () => {
       }),
     )
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
-    await user.type(field, '300{Enter}')
+    await user.type(field, '5{Enter}')
 
     expect(await within(block('Avancé')).findByRole('status')).toHaveTextContent('Enregistrement…')
     held.open()
@@ -316,7 +319,7 @@ describe('a number saves itself', () => {
     )
   })
 
-  it('keeps what was typed when it is refused, says why, and gives the stored value back on Escape', async () => {
+  it('keeps what was typed when it is refused, says why in the field’s unit, and gives the stored value back on Escape', async () => {
     server.use(
       http.put(ROUTES.settings, () =>
         HttpResponse.json(
@@ -326,21 +329,42 @@ describe('a number saves itself', () => {
       ),
     )
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Historique par requête')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
     await user.type(field, '99999{Enter}')
 
+    // 86 400 seconds are 1 440 minutes, and the stored value 120 s is 2.
     expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
-      '3 650 au plus. Valeur en place : 365.',
+      '1 440 au plus. Valeur en place : 2.',
     )
     expect(field).toHaveValue(99999)
     expect(field).toHaveAttribute('aria-invalid', 'true')
 
     await user.keyboard('{Escape}')
-    expect(field).toHaveValue(365)
+    expect(field).toHaveValue(2)
     expect(field).not.toHaveAttribute('aria-invalid')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says the lower bound as well', async () => {
+    server.use(
+      http.put(ROUTES.settings, () =>
+        HttpResponse.json(
+          { status: 422, type: PROBLEM_TYPES.invalidSetting, title: 'refused' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await openSettings()
+    const field = await screen.findByLabelText('Profondeur d’historique')
+
+    await user.clear(field)
+    await user.type(field, '0{Enter}')
+
+    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
+      '1 au moins. Valeur en place : 365.',
+    )
   })
 
   it('says any other failure on its row, keeps the value, and retries on the next blur', async () => {
@@ -354,15 +378,15 @@ describe('a number saves itself', () => {
       }),
     )
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
-    await user.type(field, '300{Enter}')
+    await user.type(field, '5{Enter}')
 
     expect((await within(block('Avancé')).findByRole('alert')).textContent).toBe(
-      'Non enregistré : l’application ne répond pas. Valeur en place : 120.',
+      'Non enregistré : l’application ne répond pas. Valeur en place : 2.',
     )
-    expect(field).toHaveValue(300)
+    expect(field).toHaveValue(5)
 
     refuse = false
     await user.tab()
@@ -371,26 +395,6 @@ describe('a number saves itself', () => {
       expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
     )
     expect(writes).toEqual([{ regular_interval: '300' }, { regular_interval: '300' }])
-  })
-
-  it('leaves another row alone while one saves', async () => {
-    const held = gate()
-    server.use(
-      http.put(ROUTES.settings, async () => {
-        await held.opened
-        return HttpResponse.json(okAnswer(['update_check']))
-      }),
-    )
-    const { user } = await openSettings()
-
-    await user.click(await screen.findByRole('switch', { name: 'Signaler les nouvelles versions' }))
-    const field = screen.getByLabelText('Cadence de relevé')
-    await user.clear(field)
-    await user.type(field, '300')
-    held.open()
-
-    await waitFor(() => expect(within(block('Avancé')).getByRole('status')).toBeInTheDocument())
-    expect(field).toHaveValue(300)
   })
 
   it('writes only its own row into the cache, so another row’s newer value survives', async () => {
@@ -411,78 +415,26 @@ describe('a number saves itself', () => {
       ),
     )
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
-    await user.type(field, '300{Enter}')
+    await user.type(field, '5{Enter}')
 
     await waitFor(() => expect(within(block('Avancé')).getByRole('status')).toBeInTheDocument())
-    expect(field).toHaveValue(300)
-    expect(screen.getByLabelText('Délai entre deux requêtes')).toHaveValue(10)
+    expect(field).toHaveValue(5)
+    expect(screen.getByLabelText('Pause entre deux requêtes')).toHaveValue(10)
   })
 
   it('sends nothing for a blank field and shows the stored value again', async () => {
     const writes = recordWrites()
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
     await user.tab()
 
-    await waitFor(() => expect(field).toHaveValue(120))
+    await waitFor(() => expect(field).toHaveValue(2))
     expect(writes).toEqual([])
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-
-  it('says the lower bound as well', async () => {
-    server.use(
-      http.put(ROUTES.settings, () =>
-        HttpResponse.json(
-          { status: 422, type: PROBLEM_TYPES.invalidSetting, title: 'refused' },
-          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-    const { user } = await openSettings()
-    const field = await screen.findByLabelText('Historique par requête')
-
-    await user.clear(field)
-    await user.type(field, '0{Enter}')
-
-    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
-      '1 au moins. Valeur en place : 365.',
-    )
-  })
-
-  it('sends a value typed during a failed save, and clears the alert when it lands', async () => {
-    const held = gate()
-    const writes: unknown[] = []
-    server.use(
-      http.put(ROUTES.settings, async ({ request }) => {
-        writes.push(await request.json())
-        if (writes.length === 1) {
-          await held.opened
-          return HttpResponse.error()
-        }
-        return HttpResponse.json(okAnswer(['regular_interval']))
-      }),
-    )
-    const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
-
-    await user.clear(field)
-    await user.type(field, '300{Enter}')
-    await waitFor(() => expect(writes).toHaveLength(1))
-    await user.clear(field)
-    await user.type(field, '400{Enter}')
-    held.open()
-
-    await waitFor(() =>
-      expect(writes).toEqual([{ regular_interval: '300' }, { regular_interval: '400' }]),
-    )
-    await waitFor(() =>
-      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
-    )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -497,10 +449,10 @@ describe('a number saves itself', () => {
       }),
     )
     const { user } = await openSettings()
-    const field = await screen.findByLabelText('Cadence de relevé')
+    const field = await screen.findByLabelText('Fréquence des cours')
 
     await user.clear(field)
-    await user.type(field, '300{Enter}{Escape}')
+    await user.type(field, '5{Enter}{Escape}')
     await user.tab()
     held.open()
 
@@ -510,109 +462,17 @@ describe('a number saves itself', () => {
   })
 })
 
-describe('the release switch (#1237)', () => {
-  const toggle = () => screen.findByRole('switch', { name: 'Signaler les nouvelles versions' })
-
-  /** A server that remembers: the config it serves follows the last write. */
-  function statefulServer(hold?: () => Promise<void>) {
-    let on = true
-    const writes: unknown[] = []
-    server.use(
-      http.get(ROUTES.config, () => {
-        const config = aConfig()
-        return HttpResponse.json({
-          ...config,
-          settings: config.settings.map((setting) =>
-            setting.key === 'update_check' ? { ...setting, value: on } : setting,
-          ),
-        })
-      }),
-      http.put(ROUTES.settings, async ({ request }) => {
-        const body = (await request.json()) as { update_check: boolean }
-        writes.push(body)
-        await hold?.()
-        on = body.update_check
-        const config = aConfig()
-        return HttpResponse.json({
-          settings: config.settings.map((setting) =>
-            setting.key === 'update_check' ? { ...setting, value: on } : setting,
-          ),
-          changed: ['update_check'],
-        })
-      }),
-    )
-    return writes
-  }
-
-  it('saves at once, and says so on its row', async () => {
-    const writes = statefulServer()
-    const { user } = await openSettings()
-
-    const control = await toggle()
-    expect(control).toBeChecked()
-    await user.click(control)
-
-    await waitFor(() => expect(writes).toEqual([{ update_check: false }]))
-    await waitFor(() =>
-      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
-    )
-    expect(control).not.toBeChecked()
-  })
-
-  it('ends on « on » after on, off, on, whichever answer comes back first', async () => {
-    const gates: (() => void)[] = []
-    const writes = statefulServer(
-      () =>
-        new Promise<void>((resolve) => {
-          gates.push(resolve)
-        }),
-    )
-    const { user } = await openSettings()
-
-    const control = await toggle()
-    await user.click(control) // off, in flight
-    await user.click(control) // on, waits its turn
-    expect(writes).toEqual([{ update_check: false }])
-
-    gates[0]()
-    await waitFor(() => expect(writes).toEqual([{ update_check: false }, { update_check: true }]))
-    gates[1]()
-
-    await waitFor(() => expect(control).toBeChecked())
-    await waitFor(() =>
-      expect(within(block('Avancé')).getByRole('status')).toHaveTextContent('✓ Enregistré'),
-    )
-  })
-
-  it('says so when the write is refused', async () => {
-    server.use(
-      http.put(ROUTES.settings, () =>
-        HttpResponse.json(
-          { status: 422, title: 'refused' },
-          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-    const { user } = await openSettings()
-
-    await user.click(await toggle())
-
-    expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent('Non enregistré :')
-  })
-})
-
 describe('an unreadable store', () => {
   it('is said in the sections it feeds, with a way to read again, and the rest still works', async () => {
     server.use(problemHandler(ROUTES.config, UNAVAILABLE))
     renderApp({ url: '/settings' })
 
     expect(await screen.findAllByRole('button', { name: 'Réessayer' })).toHaveLength(3)
-    expect(within(block('Portefeuille')).queryByLabelText('Devise de base')).toBeNull()
+    expect(within(block('Portefeuille')).queryByLabelText('Devise de référence')).toBeNull()
     // Whether a code is set cannot be told either (#1418).
-    expect(screen.queryByRole('switch', { name: 'Demander un code' })).toBeNull()
     expect(within(block('Sécurité')).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
-    expect(block('Sur cet appareil')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Cadence de relevé')).not.toBeInTheDocument()
+    expect(block('Affichage')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Fréquence des cours')).not.toBeInTheDocument()
   })
 
   it('reads again on request, and the rows come back', async () => {
@@ -633,7 +493,7 @@ describe('an unreadable store', () => {
     refuse = false
     await user.click(retry[0])
 
-    expect(await screen.findByLabelText('Cadence de relevé')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Fréquence des cours')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Réessayer' })).not.toBeInTheDocument()
   })
 })
@@ -643,7 +503,7 @@ describe('in English', () => {
     const { unmount } = renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
     expect(await screen.findByRole('heading', { name: 'Advanced' })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Portfolio' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Taxation' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Display' })).toBeInTheDocument()
     unmount()
   })
 })
@@ -769,39 +629,77 @@ describe('a newer release (#1237)', () => {
   })
 })
 
-describe('taxation', () => {
-  it('lists each model with its rates and the accounts that carry it', async () => {
+describe('tax models', () => {
+  const PEA = aTaxationModel({
+    id: 'pea',
+    name: 'PEA',
+    kind: 'aged_flat_realised',
+    parameters: {
+      rate_before: 0.128,
+      rate_after: 0,
+      threshold_years: 5,
+      age_basis: 'first_payment',
+      social_rate: 0.186,
+    },
+  })
+
+  function withModels(models = [PEA], accounts = [anAccount({ id: 'pea', label: 'PEA' })]) {
     server.use(
-      http.get(ROUTES.taxationModels, () =>
+      http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue({ models }))),
+      http.get(ROUTES.accounts, () =>
         HttpResponse.json(
-          aTaxationCatalogue({
-            models: [
-              aTaxationModel({
-                id: 'pea',
-                name: 'PEA',
-                kind: 'aged_flat_realised',
-                parameters: {
-                  rate_before: 0.128,
-                  rate_after: 0,
-                  threshold_years: 5,
-                  age_basis: 'first_payment',
-                  social_rate: 0.172,
-                },
-              }),
-            ],
-          }),
+          anAccountsPayload(accounts.map((account) => ({ ...account, taxation_model_id: 'pea' }))),
         ),
       ),
     )
-    await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+  }
 
-    await within(taxation).findByText('PEA')
-    expect(taxation).toHaveTextContent(/12,8\s%, puis 0\s% après 5 ans/)
-    expect(taxation).toHaveTextContent(/prélèvements sociaux 17,2\s%/)
+  async function openList() {
+    const view = await openSettings()
+    const section = await screen.findByRole('region', { name: 'Portefeuille' })
+    const list = await within(section).findByRole('list', { name: 'Modèles d’imposition' })
+    return { ...view, list }
+  }
+
+  it('lists each model with its rates and the accounts that carry it, one « Modifier » each', async () => {
+    withModels()
+    const { list } = await openList()
+
+    const row = await within(list).findByText('PEA', { selector: 'div' })
+    const item = row.closest('li') as HTMLElement
+    expect(item).toHaveTextContent(/12,8\s%, puis 0\s% après 5 ans/)
+    expect(item).toHaveTextContent(/prélèvements sociaux 18,6\s%/)
+    expect(item).toHaveTextContent('PEA', { normalizeWhitespace: true })
+    expect(within(item).getAllByRole('button')).toHaveLength(1)
+    expect(within(list).getByRole('button', { name: 'Ajouter un modèle' })).toBeInTheDocument()
   })
 
-  it('writes a new model from the settings page', async () => {
+  it('corrects a model in a side panel, and names the accounts that carry it', async () => {
+    withModels()
+    let sent: unknown = null
+    server.use(
+      http.patch(ROUTES.taxationModel, async ({ request }) => {
+        sent = await request.json()
+        return HttpResponse.json(PEA)
+      }),
+    )
+    const { user, list } = await openList()
+
+    await user.click(await within(list).findByRole('button', { name: 'Modifier PEA' }))
+    const sheet = await screen.findByRole('dialog', { name: 'PEA' })
+    expect(within(sheet).getByText('Comptes qui le portent')).toBeInTheDocument()
+    const name = sheet.querySelector('#taxation-name') as HTMLInputElement
+    await user.clear(name)
+    await user.type(name, 'PEA 2026')
+    await user.click(within(sheet).getByRole('button', { name: 'Enregistrer' }))
+
+    await waitFor(() =>
+      expect(sent).toMatchObject({ name: 'PEA 2026', kind: 'aged_flat_realised' }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('writes a model of its own from the second tab', async () => {
     let sent: unknown = null
     server.use(
       http.post(ROUTES.taxationModels, async ({ request }) => {
@@ -809,412 +707,124 @@ describe('taxation', () => {
         return HttpResponse.json(aTaxationModel({ id: 'written' }), { status: 201 })
       }),
     )
-    const { user } = await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
+    const { user, list } = await openList()
 
-    await user.click(await within(taxation).findByRole('button', { name: 'Nouveau modèle' }))
-    const sheet = await screen.findByRole('dialog', { name: 'Nouveau modèle' })
-    await user.type(within(sheet).getByLabelText('Le nom de ce modèle'), 'CTO')
+    await user.click(await within(list).findByRole('button', { name: 'Ajouter un modèle' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Ajouter un modèle d’imposition' })
+    await user.click(within(sheet).getByRole('tab', { name: 'Écrire le mien' }))
+    await user.type(sheet.querySelector('#taxation-name') as HTMLInputElement, 'CTO')
     await user.selectOptions(within(sheet).getByLabelText('Forme'), 'flat_realised')
     await user.type(within(sheet).getByLabelText('Taux'), '30')
-    await user.click(within(sheet).getByRole('button', { name: 'Enregistrer ce modèle' }))
+    await user.click(within(sheet).getByRole('button', { name: 'Enregistrer' }))
 
     await waitFor(() =>
       expect(sent).toEqual({ name: 'CTO', kind: 'flat_realised', parameters: { rate: 0.3 } }),
     )
   })
 
-  it('names the accounts that block a removal', async () => {
-    server.use(
-      http.delete(taxationModelPath('model-one'), () =>
-        HttpResponse.json(
-          {
-            type: PROBLEM_TYPES.taxationModelInUse,
-            title: 'Taxation model in use',
-            status: 409,
-            accounts: ['alpha'],
-          },
-          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-    const { user } = await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-
-    await user.click(
-      await within(taxation).findByRole('button', { name: 'Supprimer A flat model' }),
-    )
-    const confirm = await screen.findByRole('alertdialog', { name: 'Supprimer « A flat model » ?' })
-    await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
-
-    expect(await within(confirm).findByText(/alpha/)).toBeInTheDocument()
-  })
-
-  it('makes « Nouveau modèle » the way forward when no model is stored', async () => {
-    server.use(
-      http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue({ models: [] }))),
-    )
-    await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-
-    const add = await within(taxation).findByRole('button', { name: 'Nouveau modèle' })
-    expect(taxation).toHaveTextContent('Aucun modèle d’imposition.')
-    expect(within(taxation).queryByRole('button', { name: /^Corriger/ })).toBeNull()
-    // Primary here; beside stored models it is outline.
-    expect(add).toHaveClass('bg-primary')
-  })
-
-  it('keeps no control in its title row', async () => {
-    await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-    await within(taxation).findByRole('button', { name: 'Nouveau modèle' })
-
-    const header = within(taxation).getByRole('heading', { name: 'Fiscalité' }).closest('header')
-    expect(header).not.toBeNull()
-    expect(within(header as HTMLElement).queryAllByRole('button')).toEqual([])
-  })
-
-  it('says its read failed, offers to read again, and leaves the rest of the page', async () => {
-    let reads = 0
-    server.use(
-      http.get(ROUTES.taxationModels, () => {
-        reads += 1
-        return reads === 1
-          ? HttpResponse.json({ title: 'boom' }, { status: 500 })
-          : HttpResponse.json(aTaxationCatalogue())
-      }),
-    )
-    const { user } = await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-
-    const retry = await within(taxation).findByRole('button', { name: 'Réessayer' })
-    expect(screen.getByRole('region', { name: 'Avancé' })).toBeInTheDocument()
-
-    await user.click(retry)
-    expect(await within(taxation).findByText('A flat model')).toBeInTheDocument()
-  })
-
-  it('lands on /settings#taxation, the link the account form gives, with focus', async () => {
-    await openSettings(undefined, undefined, undefined, '/settings#taxation')
-
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Fiscalité' })).toHaveFocus())
-  })
-
-  it('does not offer to remove a model an account carries', async () => {
-    server.use(
-      http.get(ROUTES.accounts, () =>
-        HttpResponse.json(
-          anAccountsPayload([
-            anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'model-one' }),
-          ]),
-        ),
-      ),
-    )
-    await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-
-    await waitFor(() => expect(taxation).toHaveTextContent('Utilisé par 1 compte'))
-    expect(within(taxation).getByRole('button', { name: 'Supprimer A flat model' })).toBeDisabled()
-  })
-})
-
-describe('importing a taxation model', () => {
-  const REFUSED = {
-    type: PROBLEM_TYPES.providerRefused,
-    title: 'Provider refused',
-    status: 502,
-    detail: 'taxation-registry: GitHub answered 403',
-    provider: 'taxation-registry',
-    reason: 'refused',
-  }
-
-  function registryRefusing(problem: typeof REFUSED) {
-    return http.post(ROUTES.taxationRegistry, () =>
-      HttpResponse.json(problem, {
-        status: problem.status,
-        headers: { 'Content-Type': 'application/problem+json' },
-      }),
-    )
-  }
-
-  async function openImport() {
-    const view = await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-    await view.user.click(await within(taxation).findByLabelText('Importer pour mon pays'))
-    return { ...view, taxation }
-  }
-
-  it('reads nothing until the owner reaches for the control', async () => {
-    let reads = 0
-    server.use(
-      http.post(ROUTES.taxationRegistry, () => {
-        reads += 1
-        return HttpResponse.json({ items: [] })
-      }),
-    )
-    const { user } = await openSettings()
-    const taxation = await screen.findByRole('region', { name: 'Fiscalité' })
-    // Once the rows are drawn, so that « nothing » is not just « not yet ».
-    const field = await within(taxation).findByLabelText('Importer pour mon pays')
-    expect(reads).toBe(0)
-
-    await user.click(field)
-    await waitFor(() => expect(reads).toBe(1))
-  })
-
-  it('opens the list on the field itself, before anything is typed', async () => {
-    await openImport()
-
-    expect(
-      await screen.findByRole('listbox', { name: 'Enveloppes de la documentation' }),
-    ).toBeInTheDocument()
-  })
-
-  it('lists the wrappers grouped by country, searchable', async () => {
-    const { user, taxation } = await openImport()
-    await user.keyboard('pea')
-
-    const list = await screen.findByRole('listbox', { name: 'Enveloppes de la documentation' })
-    expect(
-      within(list)
-        .getAllByRole('group')
-        .map((group) => group.textContent),
-    ).toEqual([expect.stringContaining('France')])
-    expect(within(list).getByRole('option', { name: /PEA/ })).toBeInTheDocument()
-    expect(within(list).queryByRole('option', { name: /Wertpapierdepot/ })).toBeNull()
-    expect(taxation).toHaveTextContent('Les enveloppes gardent leur nom d’origine.')
-  })
-
-  it('stores a wrapper no model carries the name of, then opens it with its source', async () => {
-    let sent: TaxationModelDraft | null = null
-    server.use(
-      http.post(ROUTES.taxationModels, async ({ request }) => {
-        sent = (await request.json()) as TaxationModelDraft
-        return HttpResponse.json(aTaxationModel({ ...sent, id: 'written' }), { status: 201 })
-      }),
-    )
-    const { user } = await openImport()
-    await user.keyboard('cto')
-    await user.click(await screen.findByRole('option', { name: /CTO/ }))
-
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    expect(sent).toEqual({
-      name: 'Compte-titres ordinaire (CTO)',
-      kind: 'flat_realised',
-      parameters: { rate: 0.3 },
-    })
-    const sheet = screen.getByRole('dialog')
-    expect(within(sheet).getByLabelText('Le nom de ce modèle')).toHaveFocus()
-    expect(
-      within(sheet).getByRole('link', { name: /Vérifiez les taux à la source/ }),
-    ).toHaveAttribute(
-      'href',
-      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/taxation-models-in-europe#fr-cto',
-    )
-    // The sheet's own close button, and the editor's, which says Fermer until a field moves.
-    expect(within(sheet).getAllByRole('button', { name: 'Fermer' })).toHaveLength(2)
-  })
-
-  it('asks before replacing the rates of a name already stored, and names the carriers', async () => {
+  it('imports a wrapper of the registry for the reader’s country, and says it is imported', async () => {
+    let sent: unknown = null
+    let stored = false
     server.use(
       http.get(ROUTES.taxationModels, () =>
         HttpResponse.json(
           aTaxationCatalogue({
-            models: [
-              aTaxationModel({
-                id: 'mine',
-                name: 'Compte-titres ordinaire (CTO)',
-                parameters: { rate: 0.25 },
-              }),
-            ],
+            models: stored
+              ? [aTaxationModel({ id: 'cto', name: 'Compte-titres ordinaire (CTO)' })]
+              : [],
           }),
         ),
       ),
-      http.get(ROUTES.accounts, () =>
-        HttpResponse.json(
-          anAccountsPayload([
-            anAccount({ id: 'alpha', label: 'Alpha', taxation_model_id: 'mine' }),
-          ]),
-        ),
-      ),
-    )
-    let created = 0
-    const patched: unknown[] = []
-    server.use(
-      http.post(ROUTES.taxationModels, () => {
-        created += 1
-        return HttpResponse.json(aTaxationModel(), { status: 201 })
-      }),
-      http.patch(taxationModelPath('mine'), async ({ request }) => {
-        patched.push(await request.json())
-        return HttpResponse.json(aTaxationModel({ id: 'mine' }))
+      http.post(ROUTES.taxationRegistry, async ({ request }) => {
+        const body = (await request.json()) as { ids?: string[] }
+        if (body.ids === undefined) {
+          return HttpResponse.json({
+            items: [
+              aRegistryItem(),
+              aRegistryItem({ id: 'de/depot', country: 'DE', name: 'Wertpapierdepot' }),
+            ],
+          })
+        }
+        sent = body
+        stored = true
+        return HttpResponse.json({ models: [], skipped: [] }, { status: 201 })
       }),
     )
-    const { user, taxation } = await openImport()
-    await user.keyboard('cto')
-    await user.click(await screen.findByRole('option', { name: /CTO/ }))
+    const { user, list } = await openList()
 
-    // A Dialog now, never a card inside the section (#1279).
-    const confirm = await screen.findByRole('alertdialog', {
-      name: /Remplacer les taux de « Compte-titres ordinaire \(CTO\) »/,
-    })
-    expect(confirm).toHaveAccessibleDescription(/Immédiat\./)
-    expect(within(confirm).getByText('Alpha')).toBeInTheDocument()
-    expect(within(confirm).getByRole('button', { name: 'Annuler' })).toHaveFocus()
-    expect(patched).toEqual([])
+    await user.click(await within(list).findByRole('button', { name: 'Ajouter un modèle' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Ajouter un modèle d’imposition' })
+    // The search starts on the reader’s own country.
+    expect(within(sheet).getByRole('searchbox')).toHaveValue('France')
+    expect(await within(sheet).findByText('Compte-titres ordinaire (CTO)')).toBeInTheDocument()
+    expect(within(sheet).queryByText('Wertpapierdepot')).not.toBeInTheDocument()
 
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
-    expect(within(taxation).getByLabelText('Importer pour mon pays')).toHaveFocus()
-
-    await user.keyboard('cto')
-    await user.click(await screen.findByRole('option', { name: /CTO/ }))
-    const again = await screen.findByRole('alertdialog', { name: /Remplacer/ })
-    await user.click(within(again).getByRole('button', { name: 'Remplacer' }))
-
-    await waitFor(() =>
-      expect(patched).toEqual([
-        { name: 'Compte-titres ordinaire (CTO)', kind: 'flat_realised', parameters: { rate: 0.3 } },
-      ]),
+    await user.click(
+      within(sheet).getByRole('button', { name: 'Importer Compte-titres ordinaire (CTO)' }),
     )
-    expect(created).toBe(0)
-    // The closing Dialog does not take focus back from the model it opened.
-    const sheet = await screen.findByRole('dialog', { name: 'A flat model' })
-    await waitFor(() => expect(within(sheet).getByLabelText('Le nom de ce modèle')).toHaveFocus())
+
+    await waitFor(() => expect(sent).toEqual({ ids: ['fr/cto'] }))
+    expect(await within(sheet).findByText('déjà importé')).toBeInTheDocument()
   })
 
   it('says why the registry could not be read, and reads it again on request', async () => {
-    let answer = 0
+    let fail = true
     server.use(
-      http.post(ROUTES.taxationRegistry, () => {
-        answer += 1
-        return answer === 1
+      http.post(ROUTES.taxationRegistry, () =>
+        fail
           ? HttpResponse.json(
               {
                 type: PROBLEM_TYPES.providerRefused,
                 title: 'Provider refused',
                 status: 502,
-                detail: 'taxation-registry: OSError: HTTP 503',
+                detail: 'taxation-registry: GitHub answered 403',
                 provider: 'taxation-registry',
-                reason: 'unreachable',
+                reason: 'refused',
               },
               { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
             )
-          : HttpResponse.json({ items: [aRegistryItem()] })
-      }),
-    )
-    const { user, taxation } = await openImport()
-
-    expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Le catalogue a refusé : OSError: HTTP 503',
-    )
-    expect(taxation).toHaveTextContent('Vous pouvez aussi écrire un modèle.')
-    expect(within(taxation).getByRole('button', { name: 'Nouveau modèle' })).toBeEnabled()
-
-    await user.click(within(taxation).getByRole('button', { name: 'Réessayer' }))
-    await waitFor(() => expect(within(taxation).queryByRole('alert')).toBeNull())
-    expect(answer).toBe(2)
-    // The button went away while reading: focus comes back to the field, on the open list.
-    const field = within(taxation).getByLabelText('Importer pour mon pays')
-    await waitFor(() => expect(field).toHaveFocus())
-    expect(field).toHaveAttribute('aria-expanded', 'true')
-  })
-
-  it('keeps focus on the field when the registry refuses again', async () => {
-    server.use(registryRefusing(REFUSED))
-    const { user, taxation } = await openImport()
-
-    await user.click(await within(taxation).findByRole('button', { name: 'Réessayer' }))
-
-    const field = within(taxation).getByLabelText('Importer pour mon pays')
-    await waitFor(() => expect(field).toHaveFocus())
-    expect(await within(taxation).findByRole('alert')).toBeInTheDocument()
-  })
-
-  it('says the registry refused, in a sentence that stands alone without a reason', async () => {
-    server.use(registryRefusing({ ...REFUSED, detail: '' }))
-    const { taxation } = await openImport()
-
-    expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Le catalogue a refusé la demande.',
-    )
-  })
-
-  it('says the documentation site publishes no registry yet on a 404, and keeps Retry', async () => {
-    server.use(
-      registryRefusing({
-        ...REFUSED,
-        detail:
-          'taxation-registry: HTTPError: HTTP Error 404 (https://docs.example.net/taxation.json)',
-        reason: 'unpublished',
-      }),
-    )
-    const { taxation } = await openImport()
-
-    expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'Le site de documentation ne publie pas encore de catalogue fiscal pour cette version.',
-    )
-    expect(within(taxation).getByRole('button', { name: 'Réessayer' })).toBeEnabled()
-  })
-
-  it('blames the app, not the registry, when the app does not answer', async () => {
-    let answer = 0
-    server.use(
-      http.post(ROUTES.taxationRegistry, () => {
-        answer += 1
-        return answer === 1 ? HttpResponse.error() : HttpResponse.json({ items: [aRegistryItem()] })
-      }),
-    )
-    const { user, taxation } = await openImport()
-
-    expect((await within(taxation).findByRole('alert')).textContent).toBe(
-      'L’application ne répond pas.',
-    )
-
-    await user.click(within(taxation).getByRole('button', { name: 'Réessayer' }))
-    await waitFor(() => expect(within(taxation).queryByRole('alert')).toBeNull())
-    expect(answer).toBe(2)
-  })
-
-  it('shows a wrapper this app refuses, disabled, with its reason', async () => {
-    server.use(
-      http.post(ROUTES.taxationRegistry, () =>
-        HttpResponse.json({
-          items: [
-            aRegistryItem({
-              id: 'xx/new',
-              country: 'FR',
-              name: 'Enveloppe future',
-              kind: 'a_kind_from_later',
-              refused: "'a_kind_from_later' is not a taxation model kind",
-            }),
-          ],
-        }),
+          : HttpResponse.json({ items: [aRegistryItem()] }),
       ),
     )
-    const { user } = await openImport()
-    await user.keyboard('future')
+    const { user, list } = await openList()
 
-    const line = await screen.findByRole('option', { name: /Enveloppe future/ })
-    expect(line).toHaveAttribute('aria-disabled', 'true')
-    expect(line).toHaveTextContent('nécessite une version plus récente de l’app')
-    await user.click(line)
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await user.click(await within(list).findByRole('button', { name: 'Ajouter un modèle' }))
+    const sheet = await screen.findByRole('dialog')
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent('Le catalogue a refusé')
+
+    fail = false
+    await user.click(within(sheet).getByRole('button', { name: 'Réessayer' }))
+    expect(await within(sheet).findByText('Compte-titres ordinaire (CTO)')).toBeInTheDocument()
   })
 
-  it('keeps the registry for the page: a second opening reads nothing', async () => {
-    let reads = 0
+  it('deletes a model through the confirmation, and not while an account carries it', async () => {
+    withModels([PEA], [])
+    const removed: string[] = []
     server.use(
-      http.post(ROUTES.taxationRegistry, () => {
-        reads += 1
-        return HttpResponse.json({ items: [aRegistryItem()] })
+      http.delete(ROUTES.taxationModel, ({ params }) => {
+        removed.push(String(params.id))
+        return HttpResponse.json({ id: String(params.id), removed: true })
       }),
     )
-    const { user, taxation } = await openImport()
-    await waitFor(() => expect(reads).toBe(1))
-    await user.click(await within(taxation).findByRole('button', { name: 'Nouveau modèle' }))
-    await user.keyboard('{Escape}')
-    await user.click(within(taxation).getByLabelText('Importer pour mon pays'))
-    expect(reads).toBe(1)
+    const { user, list } = await openList()
+
+    await user.click(await within(list).findByRole('button', { name: 'Modifier PEA' }))
+    const sheet = await screen.findByRole('dialog', { name: 'PEA' })
+    await user.click(within(sheet).getByRole('button', { name: 'Supprimer ce modèle' }))
+    const confirm = await screen.findByRole('alertdialog')
+    expect(confirm).toHaveTextContent('Irréversible.')
+    await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }))
+
+    await waitFor(() => expect(removed).toEqual(['pea']))
+  })
+
+  it('does not offer to delete a model an account carries', async () => {
+    withModels()
+    const { user, list } = await openList()
+
+    await user.click(await within(list).findByRole('button', { name: 'Modifier PEA' }))
+    const sheet = await screen.findByRole('dialog', { name: 'PEA' })
+
+    expect(within(sheet).getByRole('button', { name: 'Supprimer ce modèle' })).toBeDisabled()
   })
 })

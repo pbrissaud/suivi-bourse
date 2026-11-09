@@ -7,7 +7,8 @@
  * no page test.
  */
 
-import { forget, get, ROUTES, remove, send } from '@/lib/api'
+import type { TaxationModel, TaxationRegistryResponse } from '@/features/accounts/lib/api'
+import { type AgentSettings, forget, get, ROUTES, remove, send } from '@/lib/api'
 
 // ------------------------------------------------------------------------- //
 // The installation (#724)
@@ -181,7 +182,21 @@ export interface ThemeVars {
   dark: Record<string, string>
 }
 
+/** What `POST /api/taxation-models/registry` imports: the models made, the registry ids skipped. */
+export interface TaxationImportResult {
+  models: TaxationModel[]
+  skipped: string[]
+}
+
 export const settingsApi = {
+  agentSettings: () => get<AgentSettings>(ROUTES.agentConfig),
+  saveAgentSettings: (change: Partial<AgentSettings>) =>
+    send<AgentSettings>(ROUTES.agentConfig, 'PUT', change),
+  /** The wrappers the docs publish, listed and nothing stored. */
+  taxationRegistry: () => send<TaxationRegistryResponse>(ROUTES.taxationRegistry, 'POST', {}),
+  /** Import wrappers by registry id, all or none (a `422` names the one refused). */
+  importTaxationModels: (ids: string[]) =>
+    send<TaxationImportResult>(ROUTES.taxationRegistry, 'POST', { ids }),
   config: () => get<ConfigResponse>(ROUTES.config),
   saveSettings: (values: Record<string, string | number | boolean | string[]>) =>
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),

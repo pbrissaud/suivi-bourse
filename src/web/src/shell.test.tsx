@@ -151,7 +151,7 @@ describe('the navigation, eight entries in six and two', () => {
     // A route that renders a stub is a promise; this one renders the surface —
     // the dials, and the store the reader came to read.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Sur cet appareil' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Affichage' })).toBeInTheDocument()
   })
 
   it('answers on its own address, so a bookmark on the settings survives', async () => {
@@ -355,7 +355,7 @@ describe('the density, the reader’s third preference', () => {
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
 
     await user.click(within(nav()).getByRole('link', { name: 'Réglages' }))
-    const group = await screen.findByRole('radiogroup', { name: 'Densité des tableaux' })
+    const group = await screen.findByRole('radiogroup', { name: 'Densité des tables' })
     expect(
       within(group)
         .getAllByRole('radio')
@@ -373,7 +373,7 @@ describe('the density, the reader’s third preference', () => {
     )
 
     const { user, unmount } = renderApp({ url: '/settings' })
-    await chooseInSettings(user, 'Densité des tableaux', 'Compact')
+    await chooseInSettings(user, 'Densité des tables', 'Compact')
     await user.click(within(nav()).getByRole('link', { name: 'Titres' }))
     await waitFor(() =>
       expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),
