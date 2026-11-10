@@ -50,6 +50,19 @@ def _refuse_a_foreign_origin():
         f"the same address")
 
 
+@api_bp.after_request
+def _never_cached(response):
+    """Nothing under ``/api`` is kept by a cache between here and the reader.
+
+    A proxy in front (Cloudflare caches ``.csv`` and ``.xlsx`` by extension)
+    otherwise served an export hours old, someone else's ledger after a reset,
+    and with the PIN on, a file without a session. A route that states its own
+    policy keeps it.
+    """
+    response.headers.setdefault('Cache-Control', 'no-store')
+    return response
+
+
 @api_bp.errorhandler(Exception)
 def _on_error(exc: Exception):
     """Turn anything a route raises into problem+json.

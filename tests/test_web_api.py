@@ -6566,3 +6566,16 @@ def test_a_second_account_with_the_same_identifiant_is_a_409_problem(tmp_path):
 
     assert again.status_code == 409
     assert again.get_json()['status'] == 409
+
+
+def test_no_answer_under_api_may_be_cached(tmp_path):
+    """A proxy's cache served a stale export, another session's ledger, and with
+    the PIN on, the file without a session: every ``/api`` answer says no-store."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+
+    for path in ('/api/export/events.csv', '/api/export/events.xlsx',
+                 '/api/export/portfolio.csv', '/api/events', '/api/accounts'):
+        response = client.get(path)
+        assert response.headers.get('Cache-Control') == 'no-store', path
+    opened.close()
