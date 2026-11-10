@@ -21,6 +21,7 @@ export function aProvider(overrides: Partial<AgentProvider> = {}): AgentProvider
     key: { set: true, last4: 'wxyz', set_at: null },
     privacy: {
       local: false,
+      host: 'api.anthropic.com',
       fr: 'Vos chiffres sont envoyés à Anthropic.',
       en: 'Your figures are sent to Anthropic.',
     },

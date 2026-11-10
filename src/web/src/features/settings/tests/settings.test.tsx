@@ -336,7 +336,7 @@ describe('a number saves itself', () => {
 
     // 86 400 seconds are 1 440 minutes, and the stored value 120 s is 2.
     expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
-      '1 440 au plus. Valeur en place : 2.',
+      '1 440 min au plus. Valeur en place : 2 min.',
     )
     expect(field).toHaveValue(99999)
     expect(field).toHaveAttribute('aria-invalid', 'true')
@@ -363,7 +363,7 @@ describe('a number saves itself', () => {
     await user.type(field, '0{Enter}')
 
     expect(await within(block('Avancé')).findByRole('alert')).toHaveTextContent(
-      '1 au moins. Valeur en place : 365.',
+      '1 j au moins. Valeur en place : 365 j.',
     )
   })
 
@@ -601,7 +601,7 @@ describe('a newer release (#1237)', () => {
     )
     await openSystem()
 
-    await screen.findByText(/^Version :/)
+    await screen.findByText(/^Build :/)
     expect(asked.count).toBe(0)
     expect(screen.queryByRole('link', notes('5.1.0'))).not.toBeInTheDocument()
   })

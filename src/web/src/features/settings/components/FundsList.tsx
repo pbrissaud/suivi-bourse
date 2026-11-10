@@ -6,9 +6,11 @@
  * hash is `#portfolio-references`, so the Comparaison page's link scrolls here
  * *and* opens it, and closing it removes the hash.
  */
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { flooredPercent } from '@/features/benchmark/components/ReferenceProgress'
 import type { BenchmarkReference } from '@/features/benchmark/lib/api'
 import {
@@ -55,6 +57,7 @@ export function FundsList() {
   const references = useReferences(open ? SHEET_POLL_MS : QUIET_POLL_MS)
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
   const followed = (references.data ?? []).filter((row) => row.followed)
+  const [asked, setAsked] = useState<BenchmarkReference | null>(null)
 
   const unfollow = useMutation({
     mutationFn: (symbol: string) => {
@@ -63,6 +66,7 @@ export function FundsList() {
       return settingsApi.saveSettings({ [FOLLOWED]: now.filter((one) => one !== symbol) })
     },
     onSuccess: (answer) => {
+      setAsked(null)
       client.setQueryData<ConfigResponse>(['config'], (previous) =>
         previous ? { ...previous, settings: answer.settings } : previous,
       )
@@ -89,7 +93,7 @@ export function FundsList() {
             <TextAction
               disabled={unfollow.isPending}
               aria-label={`${t('settings.refs.unfollow')} ${row.index}`}
-              onClick={() => unfollow.mutate(row.symbol)}
+              onClick={() => setAsked(row)}
             >
               {t('settings.refs.unfollow')}
             </TextAction>
@@ -99,6 +103,18 @@ export function FundsList() {
       <AddRow onClick={() => void navigate({ to: '/settings', hash: REFERENCES_HASH })}>
         {t('settings.refs.add')}
       </AddRow>
+      <ConfirmDestructive
+        open={asked !== null}
+        onOpenChange={(next) => (next ? undefined : setAsked(null))}
+        title={t('settings.refs.unfollow.title', { name: asked?.index ?? '' })}
+        items={asked ? [{ key: asked.index, value: asked.symbol }] : undefined}
+        line={t('settings.refs.unfollow.line')}
+        confirmLabel={t('settings.refs.unfollow')}
+        pending={unfollow.isPending}
+        onConfirm={() => {
+          if (asked) unfollow.mutate(asked.symbol)
+        }}
+      />
       <ReferencesSheet
         open={open}
         onClose={() => void navigate({ to: '/settings', replace: true })}

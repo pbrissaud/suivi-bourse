@@ -180,8 +180,10 @@ def test_testing_a_channel_sends_a_notice_or_says_why_not(tmp_path, monkeypatch)
         raise senders.SendError('HTTP 403')
     monkeypatch.setitem(senders.SENDERS, 'ntfy', refuse)
     refused = client.post(url)
-    assert refused.status_code == 502
-    assert refused.get_json()['type'] == '/problems/channel-refused'
+    assert refused.status_code == 424
+    body = refused.get_json()
+    assert body['type'] == '/problems/channel-refused'
+    assert (body['host'], body['reason']) == ('ntfy.sh', 'refused')
     assert 'tk-secret' not in refused.get_data(as_text=True)
     assert client.post('/api/notification-channels/nope/test').status_code == 404
 

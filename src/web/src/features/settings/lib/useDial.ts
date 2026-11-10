@@ -52,7 +52,7 @@ const shown = (n: number) => String(Math.round(n * 100) / 100)
  * dial stored in seconds and shown in minutes is `60`. The field, the draft and
  * the refusals speak the field's unit; the wire speaks the registry's.
  */
-export function useDial(key: string, scale = 1) {
+export function useDial(key: string, scale = 1, unit = '') {
   const { t } = useI18n()
   const client = useQueryClient()
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
@@ -90,11 +90,29 @@ export function useDial(key: string, scale = 1) {
       Number.isFinite(number)
     ) {
       const stays = Number(kept.value) / scale
+      // A bound that is not a whole number of the field's unit (10 s in a field
+      // of minutes) is said in the registry's own unit rather than as 0,167.
+      const bound = (wireValue: number) =>
+        scale !== 1 && wireValue % scale !== 0
+          ? { value: wireValue, unit: t('settings.unit.seconds') }
+          : { value: wireValue / scale, unit }
       if (kept.maximum !== null && number > kept.maximum) {
-        return t('settings.row.atMost', { max: kept.maximum / scale, stored: stays })
+        const max = bound(kept.maximum)
+        return t('settings.row.atMost', {
+          max: max.value,
+          maxUnit: max.unit,
+          stored: stays,
+          unit,
+        })
       }
       if (kept.minimum !== null && number < kept.minimum) {
-        return t('settings.row.atLeast', { min: kept.minimum / scale, stored: stays })
+        const min = bound(kept.minimum)
+        return t('settings.row.atLeast', {
+          min: min.value,
+          minUnit: min.unit,
+          stored: stays,
+          unit,
+        })
       }
     }
     if (problemMessageKey(error) === 'problem.unreachable') {

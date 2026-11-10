@@ -111,6 +111,21 @@ describe('the list in Portfolio', () => {
     expect(within(funds).getByText('téléchargement en échec')).toBeInTheDocument()
   })
 
+  it('asks before it stops following a fund, and sends nothing on « Annuler »', async () => {
+    const puts = serve(aBenchmarkReferences({ 'CW8.PA': { followed: true, ready: true } }), [
+      'CW8.PA',
+    ])
+    const { user } = renderApp({ url: '/settings' })
+
+    await user.click(await screen.findByRole('button', { name: 'Ne plus suivre MSCI World' }))
+    const confirm = await screen.findByRole('alertdialog', { name: 'Ne plus suivre MSCI World ?' })
+    expect(puts).toEqual([])
+    await user.click(within(confirm).getByRole('button', { name: 'Annuler' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(puts).toEqual([])
+  })
+
   it('stops following a fund by sending the list without it', async () => {
     const puts = serve(
       aBenchmarkReferences({
@@ -122,6 +137,8 @@ describe('the list in Portfolio', () => {
     const { user } = renderApp({ url: '/settings' })
 
     await user.click(await screen.findByRole('button', { name: 'Ne plus suivre MSCI World' }))
+    const confirm = await screen.findByRole('alertdialog')
+    await user.click(within(confirm).getByRole('button', { name: 'Ne plus suivre' }))
 
     await waitFor(() => expect(puts).toEqual([{ benchmark_symbols: ['C40.PA'] }]))
   })

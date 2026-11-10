@@ -32,7 +32,7 @@ const provider = (overrides: Partial<AgentProvider> = {}): AgentProvider => ({
   is_default: true,
   last_test_at: null,
   key: { set: true, last4: '9f2a', set_at: '2026-11-01T08:00:00+00:00' },
-  privacy: { local: false, fr: '', en: '' },
+  privacy: { local: false, host: 'api.anthropic.com', fr: '', en: '' },
   ...overrides,
 })
 
@@ -109,6 +109,17 @@ describe('the access tokens', () => {
     const create = within(sheet).getByRole('button', { name: 'Créer le jeton' })
     expect(create).toBeDisabled()
     await user.type(within(sheet).getByLabelText('Libellé'), 'Script')
+    // No scope is ticked to begin with, so nothing can be made yet.
+    expect(within(sheet).getByRole('checkbox', { name: /^API/ })).not.toBeChecked()
+    expect(within(sheet).getByRole('checkbox', { name: /^MCP/ })).not.toBeChecked()
+    expect(create).toBeDisabled()
+    // A click on the words toggles the box once; a second click undoes it.
+    await user.click(within(sheet).getByText('API', { exact: false, selector: 'label' }))
+    expect(within(sheet).getByRole('checkbox', { name: /^API/ })).toBeChecked()
+    await user.click(within(sheet).getByText('MCP', { exact: false, selector: 'label' }))
+    await user.click(within(sheet).getByText('MCP', { exact: false, selector: 'label' }))
+    expect(within(sheet).getByRole('checkbox', { name: /^MCP/ })).not.toBeChecked()
+    await user.click(within(sheet).getByText('MCP', { exact: false, selector: 'label' }))
     await user.click(within(sheet).getByRole('radio', { name: 'Jamais' }))
     await user.click(create)
 
@@ -239,9 +250,29 @@ describe('the providers', () => {
     const sheet = await screen.findByRole('dialog', { name: 'Ajouter un fournisseur' })
     await user.click(within(sheet).getByRole('tab', { name: 'Ollama' }))
 
-    expect(within(sheet).getByText('Tout reste sur ce serveur.')).toBeInTheDocument()
+    expect(within(sheet).getByText('Tout reste sur votre réseau.')).toBeInTheDocument()
     expect(within(sheet).queryByLabelText('Clé API')).not.toBeInTheDocument()
     expect(within(sheet).getByLabelText('Adresse du service')).toHaveValue('http://localhost:11434')
+  })
+
+  it('names the host of a remote Ollama instead of claiming it stays on the server', async () => {
+    const { user } = renderApp({ url: '/settings' })
+
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un fournisseur' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Ajouter un fournisseur' })
+    await user.click(within(sheet).getByRole('tab', { name: 'Ollama' }))
+    const address = within(sheet).getByLabelText('Adresse du service')
+    await user.clear(address)
+    await user.type(address, 'https://ollama.exemple-distant.com:11434')
+
+    expect(within(sheet).queryByText('Tout reste sur votre réseau.')).not.toBeInTheDocument()
+    expect(
+      within(sheet).getByText(/envoyés à ollama\.exemple-distant\.com quand/),
+    ).toBeInTheDocument()
+
+    await user.clear(address)
+    await user.type(address, 'http://192.168.1.20:11434')
+    expect(within(sheet).getByText('Tout reste sur votre réseau.')).toBeInTheDocument()
   })
 
   it('deletes a provider through the confirmation', async () => {
@@ -317,8 +348,14 @@ describe('the notification channels', () => {
       http.post(ROUTES.notificationChannelTest, () =>
         (calls += 1) && refuse
           ? HttpResponse.json(
-              { type: '/problems/channel-refused', title: 'Refused', status: 502 },
-              { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
+              {
+                type: '/problems/channel-refused',
+                title: 'Refused',
+                status: 424,
+                host: 'ntfy.sh',
+                reason: 'unreachable',
+              },
+              { status: 424, headers: { 'Content-Type': 'application/problem+json' } },
             )
           : HttpResponse.json({ ok: true }),
       ),
@@ -331,6 +368,28 @@ describe('the notification channels', () => {
     refuse = true
     await user.click(screen.getByRole('button', { name: 'Tester ntfy' }))
     await waitFor(() => expect(calls).toBe(2))
+    expect(await screen.findByText('ntfy.sh n’a pas répondu.')).toBeInTheDocument()
+  })
+
+  it('names the address field and the form it expects when a webhook is refused', async () => {
+    server.use(
+      http.post(ROUTES.notificationChannels, () =>
+        HttpResponse.json(
+          { type: '/problems/bad-request', title: 'Invalid', status: 422, key: 'target' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderApp({ url: '/settings' })
+
+    await user.click(await screen.findByRole('button', { name: /Ajouter un canal/ }))
+    await user.click(screen.getByRole('tab', { name: 'Webhook' }))
+    await user.type(screen.getByLabelText('Adresse du webhook'), 'pas une url')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
+
+    expect(
+      await screen.findByText(/Adresse du webhook invalide : elle commence par https/),
+    ).toBeInTheDocument()
   })
 
   it('adds an e-mail channel with its server, and sends the secret only when typed', async () => {

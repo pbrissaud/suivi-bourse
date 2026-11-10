@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS auth_secret (
     token_created_at  TIMESTAMPTZ,   -- legacy
     revoked           VARCHAR NOT NULL DEFAULT '{}',
     session_seconds   INTEGER,
+    enabled_at        TIMESTAMPTZ,   -- when the code was first set; NULL reads as updated_at
     updated_at        TIMESTAMPTZ NOT NULL);
 
 -- **The access tokens** (#1313): the bearers that open ``/api`` and ``/mcp``

@@ -187,6 +187,15 @@ function Line({ row, time }: { row: JournalRow; time: string }) {
     'font-mono text-xs break-words whitespace-pre-wrap',
     quiet ? 'text-muted-foreground' : 'text-foreground',
   )
+  // What the reader sees on a line that went wrong is a sentence in their
+  // language; the log's own English, table names and exceptions are behind
+  // « détail ». A quiet line has nothing to hide and is shown as logged.
+  const summary = quiet
+    ? null
+    : t(`journal.summary.${row.level === 'error' ? 'error' : 'warning'}`, {
+        job: t(`system.job.${row.job}`),
+      })
+  const raw = [row.message, row.detail].filter(Boolean).join('\n\n')
 
   return (
     <li className="grid min-h-10 grid-cols-[3.5rem_5rem_minmax(0,1fr)] items-start gap-x-4 border-b py-2 text-sm md:grid-cols-[3.5rem_5rem_13rem_minmax(0,1fr)]">
@@ -203,20 +212,20 @@ function Line({ row, time }: { row: JournalRow; time: string }) {
       <span className="hidden truncate text-muted-foreground md:block">
         {t(`system.job.${row.job}`)}
       </span>
-      {row.detail === null ? (
+      {summary === null && row.detail === null ? (
         <span className={message}>{row.message}</span>
       ) : (
         <details>
-          <summary
-            className={cn(message, 'cursor-pointer list-none [&::-webkit-details-marker]:hidden')}
-          >
-            {row.message}{' '}
+          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <span className={summary === null ? message : 'text-foreground'}>
+              {summary ?? row.message}
+            </span>{' '}
             <span className="font-sans text-sm text-muted-foreground underline decoration-border underline-offset-3">
               {t('journal.detail')}
             </span>
           </summary>
           <pre className="mt-2 rounded-md bg-muted p-3 font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground">
-            {row.detail}
+            {summary === null ? row.detail : raw}
           </pre>
         </details>
       )}

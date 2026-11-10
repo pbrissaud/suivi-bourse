@@ -98,6 +98,14 @@ export const PROBLEM_TYPES = {
    */
   providerRefused: '/problems/provider-refused',
   /**
+   * A notification channel did not take the test notice: the **destination**
+   * refused it or did not answer. It carries `kind`, `host` (where it went) and
+   * `reason` (`refused` or `unreachable`); read it through `problemMessage`.
+   * A `424`, deliberately not a `5xx`: a proxy may replace a `502`'s body, and
+   * the app would be blamed for what the destination did.
+   */
+  channelRefused: '/problems/channel-refused',
+  /**
    * An import asked for its amounts to be converted, and no rate is known for
    * one of the days (#1261). It carries `symbol`, `currency`, `base` and `date`,
    * the first day without a rate; read it through `problemMessage` below.
@@ -131,6 +139,7 @@ const MESSAGES: Record<string, MessageKey> = {
   // `problemMessage` below.
   [PROBLEM_TYPES.taxationModelInUse]: 'problem.taxationModelInUse',
   [PROBLEM_TYPES.providerRefused]: 'problem.providerRefused',
+  [PROBLEM_TYPES.channelRefused]: 'problem.channelRefused',
   // Reached without its four members, what is left to say is that the request
   // was refused; the sentence that names the pair and the day is
   // `problemMessage`'s.
@@ -266,6 +275,18 @@ export function problemMessage(error: unknown): {
       return {
         message: 'problem.taxationModelInUse.accounts',
         values: { count: accounts.length, accounts: accounts.join(', ') },
+      }
+    }
+  }
+  if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.channelRefused) {
+    const host = text(error, 'host')
+    if (host !== null) {
+      return {
+        message:
+          text(error, 'reason') === 'unreachable'
+            ? 'problem.channelRefused.unreachable'
+            : 'problem.channelRefused.refused',
+        values: { host },
       }
     }
   }

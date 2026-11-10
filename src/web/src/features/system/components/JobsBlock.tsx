@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { Refusal } from '@/components/Refusal'
 import { Unreadable } from '@/components/Unreadable'
@@ -40,6 +40,13 @@ function trackOf(job: JobInfo, history: JobsHistory): JobTrack | null {
   return history.jobs[job.id] ?? null
 }
 
+/** An hour with a pass in it: a strip with none is an install that has not run yet. */
+const hasPasses = (track: JobTrack | null) =>
+  track !== null && track.slots.some((slot) => slot.passes > 0)
+
+/** How long « Lancer » waits for the job to report before it lets go. */
+const RUN_PATIENCE_MS = 60_000
+
 /** *Tâches*: one ruled row per job — state, 24 hourly ticks, last and next pass, « Lancer ». */
 export function JobsBlock({
   jobs,
@@ -72,6 +79,9 @@ export function JobsBlock({
         ))}
       </div>
       {historyFailure === null ? null : <Unreadable failure={historyFailure} />}
+      {history !== null && jobs.some((job) => hasPasses(trackOf(job, history))) ? (
+        <p className="mt-2 text-sm text-muted-foreground">{t('system.jobs.ticks.legend')}</p>
+      ) : null}
       {children}
     </Section>
   )
@@ -97,19 +107,45 @@ function JobRow({
   const name = jobName(t, job)
   const now = new Date()
 
+  // The route answers « started » at once and the pass runs off the request:
+  // the button stays busy until the job reports a newer last pass.
+  const [waiting, setWaiting] = useState<{ since: string | null; until: number } | null>(null)
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: ['jobs'] }),
+      client.invalidateQueries({ queryKey: ['jobs-history'] }),
+    ])
   const write = useMutation({
     mutationFn: () => systemApi.runJob(job.id),
-    onSuccess: () =>
-      Promise.all([
-        client.invalidateQueries({ queryKey: ['jobs'] }),
-        client.invalidateQueries({ queryKey: ['jobs-history'] }),
-      ]),
+    onMutate: () => setWaiting({ since: job.last_run_at, until: Date.now() + RUN_PATIENCE_MS }),
+    onError: () => setWaiting(null),
+    onSuccess: refresh,
   })
+  const running = waiting !== null && job.last_run_at === waiting.since
+  useEffect(() => {
+    if (waiting === null) return
+    if (!running) {
+      setWaiting(null)
+      return
+    }
+    const poll = window.setInterval(() => {
+      if (Date.now() > waiting.until) setWaiting(null)
+      else void refresh()
+    }, 1500)
+    return () => window.clearInterval(poll)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting, running])
 
   const last = job.last_run_at === null ? null : clock.when(job.last_run_at, now)
+  const cadence =
+    job.cadence === null
+      ? null
+      : 'on_write' in job.cadence
+        ? t('system.jobs.cadence.onWrite')
+        : cadenceEvery(t, job.cadence.every)
   const next =
     job.next_run_at === null
-      ? job.cadence
+      ? cadence
       : t('system.jobs.next', { at: clock.when(job.next_run_at, now) })
 
   return (
@@ -121,10 +157,12 @@ function JobRow({
       >
         <div className="flex flex-col">
           <span className="text-md font-medium">{name}</span>
-          <span className="text-muted-foreground">{job.state}</span>
+          <span className="text-muted-foreground">
+            {t(`system.job.state.${job.state}` as MessageKey)}
+          </span>
         </div>
         <div>
-          {track !== null && started !== null ? (
+          {hasPasses(track) && track !== null && started !== null ? (
             <JobTicks label={name} track={track} started={started} />
           ) : null}
         </div>
@@ -143,14 +181,26 @@ function JobRow({
             type="button"
             size="sm"
             aria-label={t('system.jobs.run.label', { job: name })}
-            disabled={write.isPending}
+            disabled={write.isPending || running}
             onClick={() => write.mutate()}
           >
-            {t('system.jobs.run')}
+            {t(write.isPending || running ? 'system.jobs.running' : 'system.jobs.run')}
           </Button>
         </div>
       </div>
       {write.error ? <Refusal className="mb-2">{t(problemMessageKey(write.error))}</Refusal> : null}
     </div>
   )
+}
+
+/** `toutes les 5 min`: the cadence in the unit it reads best in. */
+function cadenceEvery(
+  t: (key: MessageKey, values?: Record<string, string | number>) => string,
+  seconds: number,
+) {
+  if (seconds % 3600 === 0)
+    return t('system.jobs.cadence.every', { value: seconds / 3600, unit: 'h' })
+  if (seconds % 60 === 0)
+    return t('system.jobs.cadence.every', { value: seconds / 60, unit: 'min' })
+  return t('system.jobs.cadence.every', { value: seconds, unit: 's' })
 }

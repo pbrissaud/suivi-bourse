@@ -56,7 +56,10 @@ describe('the journal', () => {
     expect(rows).toHaveLength(3)
     expect(rows[0]).toHaveTextContent(/^\d{2}:\d{2}erreur/)
     expect(rows[0]).toHaveTextContent('Reconstruction de l’historique')
-    expect(rows[0]).toHaveTextContent('backfill failed for ZZX')
+    // A failing line is a sentence in French; the log's own words wait behind « détail ».
+    expect(rows[0]).toHaveTextContent('Reconstruction de l’historique : une étape a échoué.')
+    expect(rows[0].querySelector('summary')).not.toHaveTextContent('backfill failed for ZZX')
+    expect(rows[0].querySelector('pre')).toHaveTextContent('backfill failed for ZZX')
     expect(rows[1]).toHaveTextContent('avert.')
     expect(rows[1]).toHaveTextContent('Mise à jour des cours')
     expect(rows[2]).toHaveTextContent('info')
@@ -68,7 +71,10 @@ describe('the journal', () => {
     const { user } = renderApp({ url: '/journal' })
 
     const day = await screen.findByRole('region', { name: /^Aujourd’hui · / })
-    const disclosure = within(day).getByText('détail').closest('details') as HTMLElement
+    const disclosure = within(day)
+      .getAllByText('détail')
+      .map((one) => one.closest('details') as HTMLElement)
+      .find((one) => one.textContent?.includes('YFRateLimitError')) as HTMLElement
     expect(disclosure).not.toHaveAttribute('open')
     await user.click(within(disclosure).getByText('détail'))
 

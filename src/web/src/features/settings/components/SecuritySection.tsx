@@ -5,12 +5,12 @@
  * *Code d'accès* states whether a code is set and offers what can be done with
  * it: off, « Activer le code »; on, « Changer le code » and « Désactiver ».
  * Each procedure opens a Dialog, never a card under its row, and focus returns
- * to the control that opened it. With the code on, two rows follow:
- * *Verrouillage automatique* — a value saved on change (#1313) — and the
- * *Jetons d'accès* list, whose secrets are shown once in a side panel. Revoking
- * and regenerating are `ConfirmDestructive`.
+ * to the control that opened it. With the code on, *Verrouillage automatique*
+ * follows — a value saved on change (#1313). The *Jetons d'accès* list is there
+ * either way, saying so when the code is off: its secrets are shown once in a
+ * side panel, and revoking and regenerating are `ConfirmDestructive`.
  */
-import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
@@ -68,6 +68,7 @@ const DEFAULT_LIFETIME = 2592000
  */
 export function SecuritySection({ read }: { read: SectionRead }) {
   const { t } = useI18n()
+  const f = useFormatters()
   const { status, update } = useAuth()
   const [open, setOpen] = useState<Procedure | null>(null)
   const enabled = status.enabled
@@ -88,7 +89,13 @@ export function SecuritySection({ read }: { read: SectionRead }) {
     <SettingsSection id="security" title={t('settings.security.title')} read={read}>
       <SettingRow
         label={t('settings.access.code')}
-        description={t(enabled ? 'settings.security.code.on' : 'settings.security.code.off')}
+        description={
+          enabled
+            ? status.enabled_since
+              ? t('settings.security.code.since', { date: f.date(status.enabled_since) })
+              : t('settings.security.code.on')
+            : t('settings.security.code.off')
+        }
       >
         <div className="flex gap-2">
           {enabled ? (
@@ -104,12 +111,9 @@ export function SecuritySection({ read }: { read: SectionRead }) {
         </div>
       </SettingRow>
 
-      {enabled ? (
-        <>
-          <LifetimeRow />
-          <TokensList />
-        </>
-      ) : null}
+      {enabled ? <LifetimeRow /> : null}
+      {/* Listed with the code off too: they are made for a code, and say so. */}
+      <TokensList enabled={enabled} />
 
       <EnableDialog
         refocus={refocus}
@@ -197,7 +201,7 @@ function lifetimeRefusal(error: unknown): MessageKey {
 }
 
 /** *Jetons d'accès · API et MCP*: the list, its two text actions, its add row. */
-function TokensList() {
+function TokensList({ enabled }: { enabled: boolean }) {
   const { t } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
@@ -230,7 +234,10 @@ function TokensList() {
   }
 
   return (
-    <ListSetting label={t('settings.token.list')} hint={t('settings.token.list.hint')}>
+    <ListSetting
+      label={t('settings.token.list')}
+      hint={t(enabled ? 'settings.token.list.hint' : 'settings.token.list.needsCode')}
+    >
       {tokens.data?.tokens.map((token) => (
         <ListRow
           key={token.id}
@@ -341,11 +348,13 @@ function CodeField({
   value,
   onChange,
   current = false,
+  inputRef,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   current?: boolean
+  inputRef?: Ref<HTMLInputElement>
 }) {
   const id = useId()
   return (
@@ -355,6 +364,7 @@ function CodeField({
       </label>
       <InputOTP
         id={id}
+        ref={inputRef}
         maxLength={6}
         pattern={REGEXP_ONLY_DIGITS}
         inputMode="numeric"
@@ -424,6 +434,20 @@ function invalidNewCode(pin: string, again: string): MessageKey | null {
   return null
 }
 
+/**
+ * After « Les deux codes diffèrent »: the confirmation starts over, in its
+ * first cell. Left half-typed it invited a patch on top of a wrong entry.
+ */
+function restartConfirmation(
+  wrong: MessageKey | null,
+  setAgain: (value: string) => void,
+  field: { current: HTMLInputElement | null },
+) {
+  if (wrong !== 'settings.access.mismatch') return
+  setAgain('')
+  field.current?.focus()
+}
+
 function EnableDialog({
   open,
   refocus,
@@ -439,6 +463,7 @@ function EnableDialog({
   const [pin, setPin] = useState('')
   const [again, setAgain] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
+  const confirmation = useRef<HTMLInputElement>(null)
   // The dialog stays mounted when closed: what was typed goes with each closing.
   const clear = () => {
     setPin('')
@@ -468,11 +493,17 @@ function EnableDialog({
         event.preventDefault()
         const wrong = invalidNewCode(pin, again)
         setInvalid(wrong)
+        restartConfirmation(wrong, setAgain, confirmation)
         if (wrong === null) enable.mutate(pin)
       }}
     >
       <CodeField label={t('settings.access.new')} value={pin} onChange={setPin} />
-      <CodeField label={t('settings.access.confirm')} value={again} onChange={setAgain} />
+      <CodeField
+        label={t('settings.access.confirm')}
+        value={again}
+        onChange={setAgain}
+        inputRef={confirmation}
+      />
       <Refused error={invalid ?? enable.error} />
       <Actions label="settings.access.enable" pending={enable.isPending} onClose={give} />
     </CodeDialog>
@@ -495,6 +526,7 @@ function ChangeDialog({
   const [pin, setPin] = useState('')
   const [again, setAgain] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
+  const confirmation = useRef<HTMLInputElement>(null)
   const clear = () => {
     setCurrent('')
     setPin('')
@@ -524,6 +556,7 @@ function ChangeDialog({
         event.preventDefault()
         const wrong = PIN.test(current) ? invalidNewCode(pin, again) : 'settings.access.sixDigits'
         setInvalid(wrong)
+        restartConfirmation(wrong, setAgain, confirmation)
         if (wrong === null) change.mutate()
       }}
     >
@@ -534,7 +567,12 @@ function ChangeDialog({
         current
       />
       <CodeField label={t('settings.access.new')} value={pin} onChange={setPin} />
-      <CodeField label={t('settings.access.confirm')} value={again} onChange={setAgain} />
+      <CodeField
+        label={t('settings.access.confirm')}
+        value={again}
+        onChange={setAgain}
+        inputRef={confirmation}
+      />
       <Refused error={invalid ?? change.error} />
       <Actions label="settings.access.change" pending={change.isPending} onClose={give} />
     </CodeDialog>

@@ -31,7 +31,7 @@ import type { ChartWindow } from '@/features/shares/lib/api'
 import { positionRenderings, renderFigure } from '@/lib/absence'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { securityTerms, termAmount, termRendering, termTone } from '@/lib/gain'
-import { useI18n, type MessageKey } from '@/lib/i18n'
+import { isMessageKey, useI18n, type MessageKey } from '@/lib/i18n'
 import { dayTone } from '@/features/shares/components/SharesTable'
 import {
   marketValue,
@@ -339,14 +339,34 @@ function Events({
   )
 }
 
+/**
+ * A code of the quote source (`EQUITY`, `PAR`) in the reader's words; a code
+ * the glossary does not know is shown as it came rather than dropped.
+ */
+function named(
+  t: (key: MessageKey) => string,
+  prefix: string,
+  code: string | null | undefined,
+): string | null {
+  if (!code) return null
+  const key = `${prefix}.${code}`
+  return isMessageKey(key) ? t(key) : code
+}
+
 /** What the title is: its nature, its place, its currency, its accounts, its weight. */
 function Facts({ row, share }: { row: ShareRow; share: number | null }) {
   const { t } = useI18n()
   const f = useFormatters()
   const attributes = row.fundamentals
   const lines: { label: MessageKey; value: ReactNode }[] = [
-    { label: 'shares.fundamentals.quoteType', value: attributes?.quote_type ?? null },
-    { label: 'shares.fundamentals.exchange', value: attributes?.exchange ?? null },
+    {
+      label: 'shares.fundamentals.quoteType',
+      value: named(t, 'shares.quoteType', attributes?.quote_type),
+    },
+    {
+      label: 'shares.fundamentals.exchange',
+      value: named(t, 'shares.exchange', attributes?.exchange),
+    },
     { label: 'shares.fundamentals.currency', value: attributes?.currency ?? null },
     {
       label: 'shares.fiche.account',

@@ -233,6 +233,11 @@ describe('the title page', () => {
       '/accounts?account=alpha',
     )
     expect(section).toHaveTextContent(/Part du portefeuille.*56,5\s?%/)
+    // The source's codes are worded: EQUITY is « Action »; a place the glossary
+    // does not know is shown as it came.
+    expect(section).toHaveTextContent(/NatureAction/)
+    expect(section).not.toHaveTextContent('EQUITY')
+    expect(section).toHaveTextContent(/PlaceZZE/)
   })
 
   it('says a title is unknown only over an answered read, and offers the way back', async () => {

@@ -90,7 +90,7 @@ describe('the jobs', () => {
       job.id === 'scrape'
         ? { ...job, last_run_at: '2026-03-02T11:55:00.000Z', next_run_at: NOW }
         : job.id === 'performance'
-          ? { ...job, last_run_at: '2026-03-02T11:56:00.000Z', cadence: 'après le relevé' }
+          ? { ...job, last_run_at: '2026-03-02T11:56:00.000Z', cadence: { on_write: true } }
           : job,
     )
     server.use(http.get(ROUTES.jobs, () => HttpResponse.json(withTimes)))
@@ -100,7 +100,28 @@ describe('the jobs', () => {
     const scrape = await within(jobs).findByRole('group', { name: 'Mise à jour des cours' })
     expect(scrape).toHaveTextContent(/\d{2}:\d{2} · prochain \d{2}:\d{2}/)
     const performance = within(jobs).getByRole('group', { name: 'Calcul de la performance' })
-    expect(performance).toHaveTextContent(/\d{2}:\d{2} · après le relevé/)
+    expect(performance).toHaveTextContent(/\d{2}:\d{2} · à chaque écriture/)
+  })
+
+  it('draw no strip, and no legend, on a fresh install that has run nothing', async () => {
+    const blank = () => aJobTrack({ slots: someSlots(), passes: [], last: null })
+    server.use(
+      http.get(ROUTES.jobsHistory, () =>
+        HttpResponse.json(
+          aJobsHistory({
+            jobs: { backfill: blank(), performance: blank(), ingestion: blank() },
+            scrape: { AAPL: blank() },
+            scrape_recent: [],
+          }),
+        ),
+      ),
+    )
+    openSystem()
+    const jobs = await jobsRegion()
+    await within(jobs).findByRole('group', { name: 'Mise à jour des cours' })
+
+    expect(jobs.querySelectorAll('[data-tone]')).toHaveLength(0)
+    expect(within(jobs).queryByText(/Une barre par heure/)).not.toBeInTheDocument()
   })
 
   it('draw one tick an hour, named by their counts', async () => {
@@ -148,6 +169,39 @@ describe('the jobs', () => {
     )
 
     await waitFor(() => expect(started).toBe('ingestion'))
+  })
+
+  it('keep « Lancer » busy until the job reports, then show the new pass', async () => {
+    let reported = false
+    server.use(
+      http.get(ROUTES.jobs, () =>
+        HttpResponse.json(
+          someJobs().map((job) =>
+            job.id === 'ingestion' && reported
+              ? { ...job, last_run_at: '2026-03-02T11:59:00.000Z' }
+              : job,
+          ),
+        ),
+      ),
+      http.post(ROUTES.jobRun, () =>
+        HttpResponse.json({ id: 'ingestion', started: true }, { status: 202 }),
+      ),
+    )
+    const { user } = openSystem()
+    const jobs = await jobsRegion()
+    const run = await within(jobs).findByRole('button', {
+      name: 'Lancer : Relecture du grand livre',
+    })
+
+    await user.click(run)
+    await waitFor(() => expect(run).toBeDisabled())
+    expect(run).toHaveTextContent('En cours…')
+
+    reported = true
+    await waitFor(() => expect(run).toBeEnabled(), { timeout: 5000 })
+    expect(run).toHaveTextContent('Lancer')
+    const row = within(jobs).getByRole('group', { name: 'Relecture du grand livre' })
+    expect(row).toHaveTextContent(/\d{2}:\d{2}/)
   })
 
   it('say a refused « Lancer » beside the job', async () => {

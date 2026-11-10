@@ -77,9 +77,9 @@ export function AdvancedSection({ read }: { read: SectionRead }) {
 function DialRow({ setting }: { setting: SettingDescription }) {
   const { t } = useI18n()
   const known = DIALS[setting.key]
-  const dial = useDial(setting.key, known?.scale ?? 1)
-  const id = settingFieldId(setting.key)
   const unit = known ? t(known.unit) : ''
+  const dial = useDial(setting.key, known?.scale ?? 1, unit)
+  const id = settingFieldId(setting.key)
   const fallback = setting.default === null ? null : Number(setting.default) / (known?.scale ?? 1)
   const modified = fallback !== null && Number(setting.value) !== Number(setting.default)
 

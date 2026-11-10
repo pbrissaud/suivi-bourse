@@ -53,6 +53,41 @@ const OLLAMA_ADDRESS = 'http://localhost:11434'
 const keyShown = (kind: AgentProviderKind) => kind !== 'ollama'
 const addressShown = (kind: AgentProviderKind) => kind === 'openai_compatible' || kind === 'ollama'
 
+const HOSTED_HOSTS: Partial<Record<AgentProviderKind, string>> = {
+  anthropic: 'api.anthropic.com',
+  openai: 'api.openai.com',
+}
+
+/**
+ * Where the requests go, read off the address the reader typed — before the
+ * server has seen it. A browser cannot resolve a name, so a name counts as this
+ * network only when it says so (`localhost`, `.local`, `.lan`, `.internal`, no
+ * dot at all) or is a private literal address; anything else is remote.
+ */
+export function destination(
+  kind: AgentProviderKind,
+  address: string,
+): { host: string; local: boolean } {
+  let host = ''
+  try {
+    host = new URL(address).hostname.replace(/^\[|\]$/g, '')
+  } catch {
+    host = ''
+  }
+  if (host === '') return { host: HOSTED_HOSTS[kind] ?? address, local: false }
+  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host)
+  const local = v4
+    ? v4[1] === '127' ||
+      v4[1] === '10' ||
+      (v4[1] === '192' && v4[2] === '168') ||
+      (v4[1] === '169' && v4[2] === '254') ||
+      (v4[1] === '172' && Number(v4[2]) >= 16 && Number(v4[2]) <= 31)
+    : host.includes(':')
+      ? host === '::1' || /^(fc|fd|fe80)/i.test(host)
+      : !host.includes('.') || /\.(localhost|local|lan|internal|home\.arpa)$/i.test(host)
+  return { host, local }
+}
+
 /** What a provider is called in the list: its label, else its kind. */
 export function providerName(t: (key: MessageKey) => string, provider: AgentProvider): string {
   return provider.label?.trim() || t(KIND_LABEL[provider.kind])
@@ -87,11 +122,11 @@ export function ProviderSheet({
   const address = addressShown(kind) ? baseUrl.trim() : ''
   // A key belongs to the kind and the address it was typed for.
   const storedKey = provider?.key.set && provider.kind === kind && kind !== 'ollama'
-  // The server resolves the host; before a write, only the kind can say.
-  const local =
-    provider && provider.kind === kind && (provider.base_url ?? '') === address
-      ? provider.privacy.local
-      : kind === 'ollama'
+  // The server resolves the host; before a write, the typed address is read as it stands.
+  const unchanged = provider && provider.kind === kind && (provider.base_url ?? '') === address
+  const where = unchanged
+    ? { host: provider.privacy.host, local: provider.privacy.local }
+    : destination(kind, address)
 
   const candidate = (): Pick<AgentProviderBody, 'kind' | 'base_url' | 'key'> => ({
     kind,
@@ -248,7 +283,9 @@ export function ProviderSheet({
           </SheetField>
         ) : null}
         <p className="text-sm text-muted-foreground">
-          {t(local ? 'settings.provider.privacy.local' : 'settings.provider.privacy.remote')}
+          {t(where.local ? 'settings.provider.privacy.local' : 'settings.provider.privacy.remote', {
+            host: where.host,
+          })}
         </p>
       </div>
 

@@ -432,15 +432,22 @@ def test_a_hosted_provider_sends_the_figures_to_it(client):
         'kind': 'anthropic', 'key': KEY}).get_json()
 
     assert made['privacy'] == {
-        'local': False, 'fr': 'Vos chiffres sont envoyés à Anthropic.',
-        'en': 'Your figures are sent to Anthropic.'}
+        'local': False, 'host': 'api.anthropic.com',
+        'fr': 'Vos chiffres sont envoyés à api.anthropic.com.',
+        'en': 'Your figures are sent to api.anthropic.com.'}
 
 
-def test_a_label_names_the_provider_in_the_sentence(client):
+def test_the_sentence_names_the_real_host_not_the_label(client, monkeypatch):
+    import socket
+    monkeypatch.setattr(socket, 'getaddrinfo', lambda host, port: [
+        (socket.AF_INET, 0, 0, '', ('93.184.216.34', 0))])
     made = client.post('/api/agent/providers', json={
-        'kind': 'anthropic', 'key': KEY, 'label': 'Mon proxy'}).get_json()
+        'kind': 'ollama', 'label': 'Mon Ollama',
+        'base_url': 'https://ollama.exemple-distant.com:11434'}).get_json()
 
-    assert made['privacy']['fr'] == 'Vos chiffres sont envoyés à Mon proxy.'
+    assert made['privacy']['local'] is False
+    assert made['privacy']['fr'] == (
+        'Vos chiffres sont envoyés à ollama.exemple-distant.com.')
 
 
 @pytest.mark.parametrize('url', [
@@ -452,9 +459,9 @@ def test_an_address_on_this_machine_or_a_private_network_stays_here(
     made = client.post('/api/agent/providers', json={
         'kind': 'ollama', 'base_url': url}).get_json()
 
-    assert made['privacy'] == {
-        'local': True, 'fr': 'Vos chiffres restent sur ce serveur.',
-        'en': 'Your figures stay on this server.'}
+    assert made['privacy']['local'] is True
+    assert made['privacy']['fr'] == 'Vos chiffres restent sur votre réseau.'
+    assert made['privacy']['en'] == 'Your figures stay on your network.'
 
 
 def test_a_name_is_resolved_and_every_address_must_be_private(monkeypatch):

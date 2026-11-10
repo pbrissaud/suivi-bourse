@@ -124,13 +124,16 @@ describe('the panel holds what concerns the figures, in the server’s words', (
   })
 
   it('holds no card for the technical state of the app', async () => {
-    // A frozen scrape turns the bell's colour, which is its one channel; the
-    // sentence about it is Système's, and the panel stays empty.
+    // A frozen scrape turns the bell's colour; the sentence about it is
+    // Système's, and the panel says only that, with the way there — never
+    // « Rien à signaler » under an icon that asks for attention.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     given([])
     await openPanel()
 
-    expect(within(panel()).getByText('Rien à signaler')).toBeInTheDocument()
+    expect(within(panel()).queryByText('Rien à signaler')).not.toBeInTheDocument()
+    expect(panel()).toHaveTextContent('Quelque chose demande votre attention')
+    expect(within(panel()).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
     expect(within(panel()).queryAllByRole('listitem')).toHaveLength(0)
     expect(screen.getByRole('button', { name: /^Notifications/ })).toHaveAccessibleName(
       /demande votre attention/,

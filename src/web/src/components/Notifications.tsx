@@ -178,10 +178,11 @@ export function Notifications() {
         aria-label={
           pending
             ? `${t('notification.open')} — ${t('status.dot', { state })}`
-            : `${t('notification.open')} — ${t('status.dot', { state })} — ${t(
-                'notification.count',
-                { count: unread.length },
-              )}`
+            : `${t('notification.open')} — ${t('status.dot', { state })} — ${
+                unread.length === 0
+                  ? t('notification.count.none')
+                  : t('notification.count', { count: unread.length })
+              }`
         }
       >
         <Bell aria-hidden className={cn('size-4', STATE_TONE[state])} />
@@ -220,9 +221,24 @@ export function Notifications() {
           {pending ? null : failure ? <Unreadable failure={failure} /> : null}
 
           {pending || failure !== null ? null : items.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {t('notification.empty.title')}
-            </p>
+            // « Rien à signaler » only when the icon says nothing either: a bell
+            // wearing the attention colour over an empty list contradicts itself.
+            state === 'attention' || state === 'rebuilding' ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {t('status.dot', { state })}{' '}
+                <Link
+                  to="/system"
+                  className="underline underline-offset-4"
+                  onClick={() => setOpen(false)}
+                >
+                  {t('notification.state.link')}
+                </Link>
+              </p>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {t('notification.empty.title')}
+              </p>
+            )
           ) : (
             <ul>
               {items.map((item) => {

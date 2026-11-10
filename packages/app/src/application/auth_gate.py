@@ -70,6 +70,8 @@ class AuthState:
     revoked: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     #: As stored: ``None`` is the default. Read :attr:`lifetime`.
     session_seconds: Optional[int] = None
+    #: When the code was first set: « Actif depuis le … » (kept across changes).
+    enabled_at: Optional[datetime] = None
 
     @property
     def enabled(self) -> bool:
@@ -87,13 +89,16 @@ OFF = AuthState()
 def read_state(store) -> AuthState:
     """The stored row, or :data:`OFF` when there is none."""
     rows = store.query(
-        'SELECT pin_hash, session_secret, revoked, session_seconds '
-        'FROM auth_secret WHERE id = 1')
+        'SELECT pin_hash, session_secret, revoked, session_seconds, '
+        'enabled_at, updated_at FROM auth_secret WHERE id = 1')
     if not rows:
         return OFF
-    pin_hash, secret, revoked, seconds = rows[0]
+    pin_hash, secret, revoked, seconds, enabled_at, updated_at = rows[0]
+    # A code set before the column existed: its last write is the best date known.
+    since = enabled_at or updated_at
     return AuthState(pin_hash, secret,
-                     MappingProxyType(json.loads(revoked or '{}')), seconds)
+                     MappingProxyType(json.loads(revoked or '{}')), seconds,
+                     instants.utc(since) if since else None)
 
 
 def write_state(store, state: AuthState) -> None:
@@ -106,9 +111,9 @@ def write_state(store, state: AuthState) -> None:
             return
         store.execute(
             'INSERT INTO auth_secret (id, pin_hash, session_secret, revoked, '
-            'session_seconds, updated_at) VALUES (1, ?, ?, ?, ?, ?)',
+            'session_seconds, enabled_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)',
             [state.pin_hash, state.session_secret, json.dumps(dict(state.revoked)),
-             state.session_seconds, datetime.now(timezone.utc)])
+             state.session_seconds, state.enabled_at, datetime.now(timezone.utc)])
 
 
 def add_session_seconds(connection) -> None:
@@ -119,6 +124,14 @@ def add_session_seconds(connection) -> None:
     column stays ``NULL``, which reads as the default. A no-op on a new store.
     """
     store_steps.add_column(connection, 'auth_secret', 'session_seconds', 'INTEGER')
+
+
+def add_enabled_at(connection) -> None:
+    """The schema step giving an existing ``auth_secret`` its first-set date.
+
+    ``NULL`` on a code set before it: read as ``updated_at``. A no-op on a new store.
+    """
+    store_steps.add_column(connection, 'auth_secret', 'enabled_at', 'TIMESTAMPTZ')
 
 
 def move_token_to_access_tokens(connection) -> None:
@@ -186,7 +199,7 @@ class Gate:
         # PIN screen has a session: without them it caches the index page as
         # the favicon and keeps it after login.
         public = path.startswith('/assets/') or path in (
-            '/health', '/api/theme.css', '/favicon.svg', '/favicon-32.png',
+            '/health', '/healthz', '/readyz', '/api/theme.css', '/favicon.svg', '/favicon-32.png',
             '/apple-touch-icon.png')
         if reading and public:
             await self.inner(scope, receive, send)
@@ -332,6 +345,8 @@ class Gate:
             'enabled': state.enabled,
             'authenticated': signed_in,
             'session_seconds': state.lifetime if signed_in else None,
+            'enabled_since': (instants.iso(state.enabled_at)
+                              if signed_in and state.enabled_at else None),
         })
 
     async def _sign_in(self, scope, send, state, session, body) -> None:
@@ -386,7 +401,8 @@ class Gate:
             created = True
             return AuthState(
                 pin_hash=await asyncio.to_thread(auth_rules.hash_pin, pin),
-                session_secret=secrets.token_hex(32))
+                session_secret=secrets.token_hex(32),
+                enabled_at=self.now())
         after = await self._commit(enable)
         if not created:
             await _problem(send, 409, 'A code is already set')

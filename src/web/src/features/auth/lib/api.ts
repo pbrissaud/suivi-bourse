@@ -12,6 +12,8 @@ export interface AuthStatus {
   authenticated: boolean
   /** How long a session lives without activity, in seconds; only to a signed-in reader (#1313). */
   session_seconds?: number | null
+  /** When the code was first set; only to a signed-in reader. */
+  enabled_since?: string | null
 }
 
 export const authApi = {

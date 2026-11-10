@@ -167,9 +167,15 @@ def provider_refused(detail: str, provider: str, reason: str):
                    provider=provider, reason=reason)
 
 
-def channel_refused(detail: str, kind: str):
-    """502 — an outbound notification channel did not take the test notice (§ 3.6)."""
-    return problem(502, 'Channel refused', detail, TYPE_CHANNEL_REFUSED, kind=kind)
+def channel_refused(detail: str, kind: str, host: Optional[str] = None,
+                    reason: Optional[str] = None):
+    """424 — an outbound notification channel did not take the test notice (§ 3.6).
+
+    The destination failed, not this app: ``host`` names it and ``reason`` says
+    whether it ``refused`` or did not answer (``unreachable``).
+    """
+    return problem(424, 'Channel refused', detail, TYPE_CHANNEL_REFUSED,
+                   kind=kind, host=host or None, reason=reason)
 
 
 def foreign_origin(detail: str):

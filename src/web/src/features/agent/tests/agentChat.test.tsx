@@ -247,7 +247,12 @@ describe('the states (4A)', () => {
     switchedOn({
       kind: 'ollama',
       default_model: 'qwen3:8b',
-      privacy: { local: true, fr: 'Vos chiffres restent sur ce serveur.', en: 'Stay.' },
+      privacy: {
+        local: true,
+        host: 'localhost',
+        fr: 'Vos chiffres restent sur ce serveur.',
+        en: 'Stay.',
+      },
     })
     const { main } = await openPage()
     expect(
@@ -265,7 +270,12 @@ describe('the states (4A)', () => {
         kind: 'ollama',
         default_model: 'qwen3:8b',
         is_default: false,
-        privacy: { local: true, fr: 'Vos chiffres restent sur ce serveur.', en: 'Stay.' },
+        privacy: {
+          local: true,
+          host: 'localhost',
+          fr: 'Vos chiffres restent sur ce serveur.',
+          en: 'Stay.',
+        },
       }),
     ])
     server.use(

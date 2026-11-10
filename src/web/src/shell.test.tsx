@@ -193,7 +193,7 @@ describe('the navigation, eight entries in six and two', () => {
 
     await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
     const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(drawer).getAllByRole('link')).toHaveLength(8)
+    expect(within(within(drawer).getByRole('navigation')).getAllByRole('link')).toHaveLength(8)
   })
 
   it('closes once a page is chosen, by an entry or by Back (#1375)', async () => {
@@ -292,7 +292,7 @@ describe('the bell is the one global indicator (#829)', () => {
     await waitFor(() => expect(toneOf(bell())).toBe('text-attention'))
     // The health card and the installation facts left the panel (#829): the
     // count is the user register's, and there is none here.
-    await waitFor(() => expect(bell()).toHaveAccessibleName(/0 notification/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/aucune notification non lue/))
   })
 
   it('opens onto a panel that leaves the state to Système, and leads there', async () => {

@@ -211,6 +211,7 @@ STEPS = store_steps.STEPS + (
     ('make_account_label_optional', store_steps._make_account_label_optional),
     ('forget_dashboard_layout', _forget_dashboard_layout),
     ('add_notification_channels', _add_notification_channels),
+    ('add_auth_enabled_at', auth_gate.add_enabled_at),
 )
 
 __all__ = ['STEPS']

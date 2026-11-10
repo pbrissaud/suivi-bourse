@@ -1031,7 +1031,7 @@ export interface AgentProvider {
   is_default: boolean
   last_test_at: string | null
   key: { set: boolean; last4: string | null; set_at: string | null }
-  privacy: { local: boolean; fr: string; en: string }
+  privacy: { local: boolean; host: string; fr: string; en: string }
   /** On a `PATCH` or `PUT …/default` that left the agent nothing to run on. */
   disabled?: true
 }

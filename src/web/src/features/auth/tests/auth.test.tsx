@@ -129,11 +129,14 @@ describe('a session that ends under the page', () => {
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
+    // The page behind is out of sight and of the accessibility tree, not just covered.
+    expect(screen.queryByRole('heading', { level: 1, name: 'Réglages' })).not.toBeInTheDocument()
 
     await user.type(within(dialog).getByRole('textbox'), '123456')
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(await screen.findByRole('region', { name: 'Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible()
     expect(reads).toBe(2)
   })
 
@@ -207,9 +210,10 @@ describe('the Sécurité section', () => {
     const block = await screen.findByRole('region', { name: 'Sécurité' })
     const enable = await within(block).findByRole('button', { name: 'Activer le code' })
     expect(within(block).getByText('Désactivé')).toBeInTheDocument()
-    // Off, the section is that one row: no auto-lock, no tokens.
+    // Off, no auto-lock; the tokens are listed all the same, and say they need the code.
     expect(within(block).queryByRole('radiogroup')).not.toBeInTheDocument()
-    expect(within(block).queryByText('Jetons d’accès')).not.toBeInTheDocument()
+    expect(within(block).getByText('Jetons d’accès', { exact: false })).toBeInTheDocument()
+    expect(within(block).getByText(/ne sert qu’avec le code d’accès activé/)).toBeInTheDocument()
 
     await user.click(enable)
     const dialog = await screen.findByRole('dialog', { name: 'Activer le code' })
@@ -218,8 +222,12 @@ describe('the Sécurité section', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Les deux codes diffèrent.')
 
-    await user.clear(within(dialog).getByLabelText('Confirmez le code'))
-    await user.type(within(dialog).getByLabelText('Confirmez le code'), '246810')
+    // The confirmation starts over and has the focus: what is typed next is
+    // the whole of it, and the first entry is left alone.
+    expect(within(dialog).getByLabelText('Confirmez le code')).toHaveValue('')
+    expect(within(dialog).getByLabelText('Confirmez le code')).toHaveFocus()
+    expect(within(dialog).getByLabelText('Nouveau code')).toHaveValue('246810')
+    await user.keyboard('246810')
     await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
 
     expect(await screen.findByText('Code activé')).toBeInTheDocument()
@@ -318,6 +326,22 @@ describe('the Sécurité section', () => {
     await waitFor(() => expect(off).toHaveFocus())
   })
 
+  it('says since when the code is on', async () => {
+    server.use(
+      http.get(ROUTES.authStatus, () =>
+        HttpResponse.json({
+          enabled: true,
+          authenticated: true,
+          enabled_since: '2026-11-02T09:14:00+00:00',
+        }),
+      ),
+    )
+    renderApp({ url: '/settings' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+
+    expect(await within(block).findByText('Actif depuis le 2 nov. 2026')).toBeInTheDocument()
+  })
+
   it('changes the code in a dialog, and gives the focus back to its row', async () => {
     let sent: unknown = null
     server.use(
@@ -348,6 +372,32 @@ describe('the Sécurité section', () => {
     expect(within(again).getByLabelText('Code actuel')).toHaveValue('')
     expect(within(again).getByLabelText('Nouveau code')).toHaveValue('')
     expect(within(again).getByLabelText('Confirmez le code')).toHaveValue('')
+  })
+})
+
+describe('the sidebar', () => {
+  it('offers « Verrouiller » beside Réglages only while a code is set, and locks', async () => {
+    const off = renderApp()
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('button', { name: 'Verrouiller' })).not.toBeInTheDocument()
+    off.unmount()
+
+    let loggedOut = false
+    server.use(
+      http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: true, authenticated: true })),
+      http.post(ROUTES.authLogout, () => {
+        loggedOut = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const { user } = renderApp()
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(await screen.findByRole('button', { name: 'Verrouiller' }))
+
+    await waitFor(() => expect(loggedOut).toBe(true))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })).toBeVisible()
+    // The lock screen holds none of the page that was behind it.
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).not.toBeInTheDocument()
   })
 })
 

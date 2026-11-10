@@ -331,10 +331,14 @@ def build_app(runtime, mcp) -> Starlette:
         return removed
 
     async def threads(request):
-        """Every conversation, the most recent first."""
+        """Every conversation, the most recent first.
+
+        An agent that is off has no conversation to list: an empty list, not a
+        404 the console logs on every page that asks.
+        """
         settings = await anyio.to_thread.run_sync(config)
         if not settings['enabled']:
-            return _error(404, OFF)
+            return JSONResponse([])
         return JSONResponse(
             await anyio.to_thread.run_sync(agent_threads.listing, root()))
 

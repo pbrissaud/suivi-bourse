@@ -54,7 +54,7 @@ def test_a_job_added_to_the_registry_alone_is_listed_and_has_a_history(
 
     assert listed[-1]['id'] == 'fake'
     assert listed[-1]['label_key'] == 'settings.jobs.fake'
-    assert listed[-1]['state'] == 'Jamais lancé'
+    assert listed[-1]['state'] == 'never'
     assert listed[-1]['last_run_at'] is None
     assert set(history['jobs']) == {'backfill', 'performance', 'ingestion',
                                     'fake'}

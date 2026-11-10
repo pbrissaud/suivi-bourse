@@ -34,6 +34,7 @@ RELEASED = (
     'make_account_label_optional',
     'forget_dashboard_layout',
     'add_notification_channels',
+    'add_auth_enabled_at',
 )
 
 

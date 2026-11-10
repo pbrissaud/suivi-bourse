@@ -95,9 +95,23 @@ export function AuthBoot({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ status: status.data, update, signedOut }}>
-      {children}
+      <Behind>{children}</Behind>
       <SessionDialog />
     </AuthContext.Provider>
+  )
+}
+
+/**
+ * The page under a session that ended: still mounted, so what the reader typed
+ * is kept, but out of sight, out of the tab order and out of the accessibility
+ * tree — a lock that left the figures readable behind it would not be one.
+ */
+function Behind({ children }: { children: ReactNode }) {
+  const ended = useSessionEnded()
+  return (
+    <div className={ended ? 'hidden' : 'contents'} inert={ended}>
+      {children}
+    </div>
   )
 }
 

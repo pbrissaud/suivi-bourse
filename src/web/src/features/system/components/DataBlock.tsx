@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { Section } from '@/components/ui/section'
@@ -39,6 +40,13 @@ export function DataBlock({ events, sizeBytes, orphans }: DataBlockProps) {
           <span className="fig">{sizeBytes === undefined ? null : f.bytes(sizeBytes)}</span>
         </FactRow>
       </dl>
+      {/* What « Exporter » leaves out, said where the owner looks for a backup. */}
+      <p className="mt-3 text-sm text-muted-foreground">
+        {t('system.data.export')}{' '}
+        <Link to="/ledger" className="underline underline-offset-4">
+          {t('system.data.export.link')}
+        </Link>
+      </p>
       <OrphansBlock orphans={orphans} />
     </Section>
   )

@@ -193,20 +193,27 @@ def is_private(base_url: Optional[str]) -> bool:
         a.is_loopback or a.is_private for a in addresses)
 
 
+#: Where a hosted kind sends its requests when no address is configured.
+HOSTED_HOSTS = {'anthropic': 'api.anthropic.com', 'openai': 'api.openai.com'}
+
+
 def privacy(config: dict) -> dict:
     """Where the figures go when the agent answers, in both languages.
 
     ``local`` only when the address resolves to this machine or a private
-    network; a hosted provider (no address) never is.
+    network; a hosted provider (no address) never is. The sentence names the
+    **host** the requests really go to, never the label the owner gave it.
     """
     local = is_private(config['base_url'])
-    name = label_of(config)
+    host = urlsplit(config['base_url'] or '').hostname
+    host = host or HOSTED_HOSTS.get(config['provider']) or label_of(config)
     return {
         'local': local,
-        'fr': ('Vos chiffres restent sur ce serveur.' if local
-               else f'Vos chiffres sont envoyés à {name}.'),
-        'en': ('Your figures stay on this server.' if local
-               else f'Your figures are sent to {name}.'),
+        'host': host,
+        'fr': ('Vos chiffres restent sur votre réseau.' if local
+               else f'Vos chiffres sont envoyés à {host}.'),
+        'en': ('Your figures stay on your network.' if local
+               else f'Your figures are sent to {host}.'),
     }
 
 

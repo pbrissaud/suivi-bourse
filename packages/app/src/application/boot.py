@@ -30,6 +30,26 @@ NO_HOST_ALLOWLIST = TransportSecuritySettings(
     enable_dns_rebinding_protection=False)
 
 
+# Said once, on the outermost send: the gate's own answers, the agent's, the
+# MCP's and the front's all leave through it.
+SECURITY_HEADERS = (
+    (b'x-content-type-options', b'nosniff'),
+    (b'referrer-policy', b'same-origin'),
+    (b'x-frame-options', b'DENY'),
+)
+
+
+def _with_security_headers(send):
+    async def sending(message):
+        if message['type'] == 'http.response.start':
+            have = {name.lower() for name, _ in message.get('headers', ())}
+            message = {**message, 'headers': [
+                *message.get('headers', ()),
+                *(h for h in SECURITY_HEADERS if h[0] not in have)]}
+        await send(message)
+    return sending
+
+
 class Serving:
     """The ASGI application uvicorn is handed: the Flask app, the agent's, and the teardown."""
 
@@ -58,6 +78,8 @@ class Serving:
         if scope['type'] == 'lifespan':
             await self._lifespan(receive, send)
             return
+        if scope['type'] == 'http':
+            send = _with_security_headers(send)
         await self._entry(scope, receive, send)
 
     async def _route(self, scope, receive, send) -> None:

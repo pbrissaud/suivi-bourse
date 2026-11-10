@@ -31,6 +31,29 @@ def health():
     return _jobs(runtime)
 
 
+@health_bp.get('/healthz')
+def liveness():
+    """Liveness for a probe: the process answers, nothing else is asked."""
+    return {'status': 'ok'}
+
+
+@health_bp.get('/readyz')
+def readiness():
+    """Readiness for a probe: the store is open and answers, the scheduler runs."""
+    from api import current_runtime
+
+    runtime = current_runtime()
+    if runtime.store is None:
+        return problem.storage_unavailable('The store is not open')
+    try:
+        runtime.store.reader().ping()
+    except Exception as exc:
+        return problem.storage_unavailable(f"The store did not answer: {exc}")
+    if runtime.scheduler is None:
+        return problem.storage_unavailable('The scheduler is not running')
+    return {'status': 'ready'}
+
+
 def _jobs(runtime) -> dict:
     """The body — what each job last did, out of process memory (issue #818)."""
     now = datetime.now(timezone.utc)

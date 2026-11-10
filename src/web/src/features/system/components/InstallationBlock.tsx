@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { FactRow } from '@/features/system/components/DataBlock'
 import { settingsApi } from '@/features/settings/lib/api'
 import { api, type RuntimeState } from '@/lib/api'
+import { useDocs } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
@@ -26,7 +27,8 @@ interface InstallationBlockProps {
  * answers, and the way to the journal.
  */
 export function InstallationBlock({ runtime, startedAt }: InstallationBlockProps) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
+  const { docsRootHref } = useDocs()
   const f = useFormatters()
   const client = useQueryClient()
 
@@ -59,7 +61,10 @@ export function InstallationBlock({ runtime, startedAt }: InstallationBlockProps
   return (
     <Section title={t('system.installation')}>
       <dl className="text-sm">
-        <FactRow label={t('system.installation.version')}>
+        {/* A release is a version; a build from a commit says it is a build. */}
+        <FactRow
+          label={t(build?.version ? 'system.installation.version' : 'system.installation.build')}
+        >
           {version === null ? (
             <span className="fig">{ABSENT}</span>
           ) : (
@@ -97,6 +102,26 @@ export function InstallationBlock({ runtime, startedAt }: InstallationBlockProps
               </span>
             </>
           )}
+        </FactRow>
+        <FactRow label={t('system.installation.docs')}>
+          <span className="flex gap-3 text-sm text-muted-foreground">
+            <a
+              href={docsRootHref(language)}
+              target="_blank"
+              rel="noreferrer"
+              className="underline decoration-border underline-offset-3 hover:text-foreground"
+            >
+              {t('nav.docs')}
+            </a>
+            <a
+              href="https://github.com/pbrissaud/suivi-bourse/releases"
+              target="_blank"
+              rel="noreferrer"
+              className="underline decoration-border underline-offset-3 hover:text-foreground"
+            >
+              {t('nav.releases')}
+            </a>
+          </span>
         </FactRow>
         <FactRow label={t('system.installation.journal')}>
           <Link

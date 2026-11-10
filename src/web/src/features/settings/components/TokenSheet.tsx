@@ -59,8 +59,10 @@ function TokenForm({
   const { t } = useI18n()
   const client = useQueryClient()
   const labelId = useId()
+  const scopeId = useId()
   const [label, setLabel] = useState('')
-  const [scopes, setScopes] = useState<TokenScope[]>(['api', 'mcp'])
+  // None by default: a token opens only what its maker ticked.
+  const [scopes, setScopes] = useState<TokenScope[]>([])
   const [expires, setExpires] = useState<TokenExpiry>('1y')
 
   const write = useMutation({
@@ -104,16 +106,19 @@ function TokenForm({
       <fieldset className="flex flex-col">
         <legend className="label mb-3">{t('settings.token.scope')}</legend>
         {SCOPES.map((scope) => (
-          <label
+          // The label points at the box by `htmlFor`, never wraps it: wrapping
+          // lets the click reach the control twice, and the box lands back where
+          // it started.
+          <div
             key={scope}
             className="flex min-h-10 items-center justify-between gap-3 border-b text-md"
           >
-            <span>
+            <label htmlFor={`${scopeId}-${scope}`} className="flex-1 cursor-pointer">
               {scope.toUpperCase()}
               <span className="text-muted-foreground"> · {t(`settings.token.scope.${scope}`)}</span>
-            </span>
+            </label>
             <Checkbox
-              aria-label={scope.toUpperCase()}
+              id={`${scopeId}-${scope}`}
               checked={scopes.includes(scope)}
               onCheckedChange={(on) =>
                 setScopes((current) =>
@@ -121,7 +126,7 @@ function TokenForm({
                 )
               }
             />
-          </label>
+          </div>
         ))}
       </fieldset>
 

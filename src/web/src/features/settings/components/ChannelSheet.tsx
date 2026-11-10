@@ -26,7 +26,7 @@ import {
   type NotificationChannelDraft,
 } from '@/lib/api'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { problemSentence } from '@/lib/problem'
+import { problemSentence, refusedKey } from '@/lib/problem'
 
 export const CHANNEL_KINDS: readonly ChannelKind[] = ['ntfy', 'email', 'webhook', 'apprise']
 export const CHANNEL_SCOPES: readonly ChannelScope[] = [
@@ -134,6 +134,15 @@ export function ChannelSheet({
       onClose()
     },
   })
+
+  /** A refused field is named, with the form it expects; anything else is the table's. */
+  const refusal = (error: unknown) => {
+    const key = refusedKey(error)
+    if (key === 'target') return t(`settings.channel.invalid.target.${kind}` as MessageKey)
+    if (key === 'options') return t('settings.channel.invalid.options')
+    if (key === 'scopes') return t('settings.channel.invalid.scopes')
+    return problemSentence(t, error)
+  }
 
   const valid = target.trim() !== '' && scopes.length > 0
   const name = channel ? t(KIND_LABEL[channel.kind]) : ''
@@ -259,13 +268,16 @@ export function ChannelSheet({
       <fieldset className="flex flex-col">
         <legend className="label mb-3">{t('settings.channel.scope')}</legend>
         {CHANNEL_SCOPES.map((scope) => (
-          <label
+          // `htmlFor`, never a wrapping label: a click on the words toggles once.
+          <div
             key={scope}
             className="flex min-h-10 items-center justify-between gap-3 border-b text-md"
           >
-            {t(SCOPE_LABEL[scope])}
+            <label htmlFor={`${ids[0]}-${scope}`} className="flex-1 cursor-pointer">
+              {t(SCOPE_LABEL[scope])}
+            </label>
             <Checkbox
-              aria-label={t(SCOPE_LABEL[scope])}
+              id={`${ids[0]}-${scope}`}
               checked={scopes.includes(scope)}
               onCheckedChange={(on) =>
                 setScopes((current) =>
@@ -273,7 +285,7 @@ export function ChannelSheet({
                 )
               }
             />
-          </label>
+          </div>
         ))}
       </fieldset>
 
@@ -282,7 +294,7 @@ export function ChannelSheet({
         <Switch id={ids[6]} checked={enabled} onCheckedChange={setEnabled} />
       </div>
 
-      {write.isError ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+      {write.isError ? <Refusal>{refusal(write.error)}</Refusal> : null}
 
       <ConfirmDestructive
         open={removing}

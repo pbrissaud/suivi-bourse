@@ -97,7 +97,7 @@ def test_a_store_from_before_the_pin_boots_unlocked(opened):
 
     assert [a.text for a in answers] == ['inner'] * 4
     assert status.json() == {'enabled': False, 'authenticated': False,
-                             'session_seconds': None}
+                             'session_seconds': None, 'enabled_since': None}
 
 
 # --------------------------------------------------------------------------- #
@@ -536,6 +536,8 @@ def _routes(flask_app):
 
 
 OPEN = {('GET', '/health'), ('HEAD', '/health'),
+        ('GET', '/healthz'), ('HEAD', '/healthz'),
+        ('GET', '/readyz'), ('HEAD', '/readyz'),
         ('GET', '/api/theme.css'), ('HEAD', '/api/theme.css')}
 
 
@@ -571,7 +573,9 @@ def test_pin_on_no_route_is_reached_without_a_credential(tmp_path, monkeypatch):
     assert set(reached) <= OPEN
     for key, answer in answers.items():
         if key in OPEN:
-            assert answer.status_code == 200, key
+            # A probe is answered, not refused: 503 is a readiness saying no.
+            assert answer.status_code in ((200, 503) if key[1] == '/readyz'
+                                          else (200,)), key
         elif 200 <= answer.status_code < 300 and key[0] == 'GET':
             assert answer.content == INDEX, key
     assert answers[('GET', '/a-future-route')].content == INDEX
@@ -635,7 +639,7 @@ def test_pin_off_every_route_answers_as_it_did_without_the_gate(tmp_path):
     gated = _serving(runtime, lambda inner: Gate(inner, runtime.store, INDEX))
     routes = [r for r in _routes(plain.wsgi.app)
               if r[0] in ('GET', 'HEAD') and not r[1].startswith('/mcp')
-              and r[1] != '/health']
+              and r[1] not in ('/health', '/healthz', '/readyz')]
 
     async def sweep(app):
         said = []
@@ -901,3 +905,23 @@ def test_a_lifetime_racing_a_pin_change_does_not_outlive_it(opened, monkeypatch)
     assert 'set-cookie' not in answer.headers
     assert after == 401
     assert gate.state.session_seconds is None
+
+
+def test_the_status_says_since_when_the_code_is_on_to_a_signed_in_reader_only(opened):
+    set_at = datetime(2026, 11, 2, 9, 14, tzinfo=timezone.utc)
+    gate = Gate(Inner(), opened, INDEX, now=lambda: set_at)
+
+    async def work():
+        await enable(gate)
+        right = await sign_in(gate)
+        async with client(gate) as c:
+            anonymous = (await c.get('/auth/status')).json()
+            signed = (await c.get('/auth/status',
+                                  headers=with_cookie(cookie_of(right)))).json()
+        return anonymous, signed
+    anonymous, signed = run(work)
+
+    assert anonymous['enabled_since'] is None
+    assert signed['enabled_since'].startswith('2026-11-02T09:14')
+    # It is the stored first date: a restarted gate reads it back.
+    assert Gate(Inner(), opened, INDEX).state.enabled_at == set_at

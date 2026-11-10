@@ -32,6 +32,7 @@
  * level with the header bar.
  */
 import { useEffect } from 'react'
+import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
@@ -39,6 +40,7 @@ import {
   CircleDollarSign,
   Database,
   LayoutDashboard,
+  Lock,
   Scale,
   Settings,
   Sparkles,
@@ -59,8 +61,11 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
+import { useAuth } from '@/features/auth/components/AuthBoot'
+import { authApi } from '@/features/auth/lib/api'
 import { api } from '@/lib/api'
-import { useT, type MessageKey } from '@/lib/i18n'
+import { useDocs } from '@/lib/docs'
+import { useI18n, useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {
   to: '/' | '/shares' | '/accounts' | '/benchmark' | '/agent' | '/ledger' | '/system' | '/settings'
@@ -92,6 +97,7 @@ export const ADMINISTRATION: Entry[] = [
 
 export function AppSidebar() {
   const t = useT()
+  const auth = useAuth()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   // The phone drawer is a modal over the page: once a page is chosen — by an
   // entry or by Back — it has done its job (#1375).
@@ -146,6 +152,24 @@ export function AppSidebar() {
               {ADMINISTRATION.map((entry) => (
                 <NavEntry key={entry.to} entry={entry} pathname={pathname} />
               ))}
+              {/* Locking exists only while a code does (#1203), and it is a
+                  button in plain sight: the palette was the one way to it. */}
+              {auth.status.enabled ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip={t('palette.action.logout')}
+                    onClick={() =>
+                      void authApi
+                        .logout()
+                        .then(auth.signedOut)
+                        .catch(() => toast.error(t('palette.action.logout.failed')))
+                    }
+                  >
+                    <Lock />
+                    <span>{t('palette.action.logout')}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
             </SidebarMenu>
           </nav>
         </SidebarGroup>
@@ -162,6 +186,8 @@ export function AppSidebar() {
  */
 function BuildLine() {
   const t = useT()
+  const { language } = useI18n()
+  const { docsRootHref } = useDocs()
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const build = runtime.data?.build
   // Keyed on the version: an upgraded container never shows two that disagree.
@@ -173,6 +199,8 @@ function BuildLine() {
   const latest = release.data?.latest
   const shown = build?.version ?? build?.revision?.slice(0, 7)
   if (!build || !shown) return null
+  const link =
+    'rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
   return (
     <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
       <p
@@ -180,7 +208,8 @@ function BuildLine() {
           .filter(Boolean)
           .join(' · ')}
       >
-        {t('nav.version')} <span className="fig">{shown}</span>
+        {/* A release reads as a version, a build from a commit as a build. */}
+        {build.version ? t('nav.version') : t('nav.build')} <span className="fig">{shown}</span>
       </p>
       {latest ? (
         <a
@@ -193,9 +222,20 @@ function BuildLine() {
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>
       ) : null}
+      <p className="flex gap-3">
+        <a href={docsRootHref(language)} target="_blank" rel="noreferrer" className={link}>
+          {t('nav.docs')}
+        </a>
+        <a href={RELEASES} target="_blank" rel="noreferrer" className={link}>
+          {t('nav.releases')}
+        </a>
+      </p>
     </div>
   )
 }
+
+/** Where every release's notes are written. */
+const RELEASES = 'https://github.com/pbrissaud/suivi-bourse/releases'
 
 /**
  * Where a page entry leads. The agent's entry leads back to the conversation on

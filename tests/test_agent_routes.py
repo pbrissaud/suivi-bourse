@@ -172,8 +172,8 @@ def test_an_agent_switched_off_answers_404_and_builds_no_client(
         monkeypatch.setattr(built, '__init__', refused)
 
     assert run(runtime, post('k1')).status_code == 404
-    assert run(runtime, get('/api/agent/threads')).json() == {
-        'error': 'The agent is off.'}
+    listing = run(runtime, get('/api/agent/threads'))
+    assert (listing.status_code, listing.json()) == (200, [])
     assert run(runtime, get('/api/agent/threads/k1')).status_code == 404
 
 
