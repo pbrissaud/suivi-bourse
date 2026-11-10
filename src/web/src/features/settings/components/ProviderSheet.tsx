@@ -64,29 +64,15 @@ const HOSTED_HOSTS: Partial<Record<AgentProviderKind, string>> = {
  * network only when it says so (`localhost`, `.local`, `.lan`, `.internal`, no
  * dot at all) or is a private literal address; anything else is remote.
  */
-export function destination(
-  kind: AgentProviderKind,
-  address: string,
-): { host: string; local: boolean } {
-  let host = ''
-  try {
-    host = new URL(address).hostname.replace(/^\[|\]$/g, '')
-  } catch {
-    host = ''
-  }
+function destination(kind: AgentProviderKind, address: string): { host: string; local: boolean } {
+  const host = URL.parse(address)?.hostname.replace(/^\[|\]$/g, '') ?? ''
   if (host === '') return { host: HOSTED_HOSTS[kind] ?? address, local: false }
-  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host)
-  const local = v4
-    ? v4[1] === '127' ||
-      v4[1] === '10' ||
-      (v4[1] === '192' && v4[2] === '168') ||
-      (v4[1] === '169' && v4[2] === '254') ||
-      (v4[1] === '172' && Number(v4[2]) >= 16 && Number(v4[2]) <= 31)
-    : host.includes(':')
-      ? host === '::1' || /^(fc|fd|fe80)/i.test(host)
-      : !host.includes('.') || /\.(localhost|local|lan|internal|home\.arpa)$/i.test(host)
-  return { host, local }
+  return { host, local: LOCAL_HOST.test(host) }
 }
+
+/** A loopback, private or link-local literal, or a name that says it is local. */
+const LOCAL_HOST =
+  /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::1$|f[cd][0-9a-f]{0,2}:|fe80:)|^[^.:]+$|\.(localhost|local|lan|internal|home\.arpa)$/i
 
 /** What a provider is called in the list: its label, else its kind. */
 export function providerName(t: (key: MessageKey) => string, provider: AgentProvider): string {

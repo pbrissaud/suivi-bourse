@@ -49,6 +49,7 @@ import {
   type LedgerEventType,
 } from '@/features/data/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
+import { useAccountNames } from '@/hooks/use-account-names'
 import {
   accountChoice,
   declaredLabel,
@@ -565,12 +566,7 @@ export function EventForm({
     placeholderData: (previous) => (settled === null ? undefined : previous),
   })
   /** An account as the reader knows it: its libellé, the identifier only where it is edited. */
-  const nameOf = (id: string) => {
-    const known = accounts?.accounts.find((account) => account.id === id)
-    return known
-      ? (declaredLabel(known) ?? t(DEFAULT_ACCOUNT_LABEL))
-      : id || t(DEFAULT_ACCOUNT_LABEL)
-  }
+  const nameOf = useAccountNames()
   const effect =
     asking === null || previewed.data === undefined
       ? undefined

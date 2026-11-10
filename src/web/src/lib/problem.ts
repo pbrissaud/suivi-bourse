@@ -13,7 +13,7 @@
  * drift, and the reader is not the one who can act on it.
  */
 import { ApiProblem } from '@/lib/api'
-import type { MessageKey, MessageValues } from '@/lib/i18n'
+import { isMessageKey, type MessageKey, type MessageValues } from '@/lib/i18n'
 
 /** Mirrors `packages/app/src/api/problem.py`. Relative URI references, as RFC 9457 allows. */
 export const PROBLEM_TYPES = {
@@ -148,14 +148,6 @@ const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 
-/** The refusals of a file the server names by `code` (`import_formats`). */
-const FILE_REFUSALS: Record<string, MessageKey> = {
-  not_a_ledger: 'problem.invalidFile.code.not_a_ledger',
-  unreadable: 'problem.invalidFile.code.unreadable',
-  empty: 'problem.invalidFile.code.empty',
-  header: 'problem.invalidFile.code.header',
-}
-
 /**
  * The catalogue key for a failed query. Anything that is not an `ApiProblem`
  * carrying a known `type` — a network error, an HTML page from a proxy, a
@@ -256,8 +248,9 @@ export function problemMessage(error: unknown): {
     // A refusal the server names by `code` is worded here, in French: no
     // English `detail` reaches the reader (import preview).
     const code = text(error, 'code')
-    if (code !== null && code in FILE_REFUSALS) {
-      return { message: FILE_REFUSALS[code], values: { file: file ?? '' } }
+    const refusal = `problem.invalidFile.code.${code}`
+    if (code !== null && isMessageKey(refusal)) {
+      return { message: refusal, values: { file: file ?? '' } }
     }
     const reason = error.detail?.trim() || null
     if (file !== null && reason !== null) {

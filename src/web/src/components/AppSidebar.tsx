@@ -186,8 +186,6 @@ export function AppSidebar() {
  */
 function BuildLine() {
   const t = useT()
-  const { language } = useI18n()
-  const { docsRootHref } = useDocs()
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const build = runtime.data?.build
   // Keyed on the version: an upgraded container never shows two that disagree.
@@ -223,19 +221,33 @@ function BuildLine() {
         </a>
       ) : null}
       <p className="flex gap-3">
-        <a href={docsRootHref(language)} target="_blank" rel="noreferrer" className={link}>
-          {t('nav.docs')}
-        </a>
-        <a href={RELEASES} target="_blank" rel="noreferrer" className={link}>
-          {t('nav.releases')}
-        </a>
+        <HelpLinks className={link} />
       </p>
     </div>
   )
 }
 
-/** Where every release's notes are written. */
-const RELEASES = 'https://github.com/pbrissaud/suivi-bourse/releases'
+/** The documentation and every release's notes: the sidebar's foot and Système › Installation. */
+export function HelpLinks({ className }: { className: string }) {
+  const t = useT()
+  const { language } = useI18n()
+  const { docsRootHref } = useDocs()
+  return (
+    <>
+      <a href={docsRootHref(language)} target="_blank" rel="noreferrer" className={className}>
+        {t('nav.docs')}
+      </a>
+      <a
+        href="https://github.com/pbrissaud/suivi-bourse/releases"
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+      >
+        {t('nav.releases')}
+      </a>
+    </>
+  )
+}
 
 /**
  * Where a page entry leads. The agent's entry leads back to the conversation on

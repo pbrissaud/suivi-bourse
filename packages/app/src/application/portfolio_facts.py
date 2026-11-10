@@ -93,11 +93,6 @@ def _ledger_facts(events, day) -> Dict[str, Any]:
     }
 
 
-def _tax_of(account) -> float:
-    """The tax an account is projected to owe, nothing where it has no model."""
-    return account.get('projected_tax') or 0.0
-
-
 def _net_if_sold_today(total_value: Optional[float],
                        accounts) -> Dict[str, Any]:
     """The value less the projected tax -- the one place that reads it.
@@ -116,7 +111,7 @@ def _net_if_sold_today(total_value: Optional[float],
               if account.get('total_value') is not None]
     summed = sum(account['total_value'] for account in valued)
     if net is not None and valued and abs(summed - total_value) < 0.5:
-        net = sum(round(account['total_value'] - _tax_of(account), 2)
+        net = sum(round(account['total_value'] - (account.get('projected_tax') or 0.0), 2)
                   for account in valued)
     return {
         'net_if_sold_today': net,

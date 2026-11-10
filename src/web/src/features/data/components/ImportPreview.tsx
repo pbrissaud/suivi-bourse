@@ -63,7 +63,7 @@ import {
 } from '@/features/data/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
-import { type MessageKey, useI18n } from '@/lib/i18n'
+import { isMessageKey, type MessageKey, useI18n } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 import { oneFailure, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -78,27 +78,6 @@ type Tab = 'all' | ImportRowStatus
 
 /** How the owner says a foreign security's amounts are written: as the base, or in its quote currency. */
 type AmountsIn = ImportAmountsIn['amounts_in']
-
-/** The sentence of an unreadable line, by the code the server names it with. */
-const REASONS: Record<string, MessageKey> = {
-  no_date: 'import.reason.no_date',
-  bad_date: 'import.reason.bad_date',
-  bad_kind: 'import.reason.bad_kind',
-  bad_number: 'import.reason.bad_number',
-  trade_quantity: 'import.reason.trade_quantity',
-  trade_price: 'import.reason.trade_price',
-  dividend_amount: 'import.reason.dividend_amount',
-  cash_amount: 'import.reason.cash_amount',
-  no_security: 'import.reason.no_security',
-  account_undeclared: 'import.reason.account_undeclared',
-}
-
-const NUMBER_FIELDS: Record<string, MessageKey> = {
-  quantity: 'import.reason.field.quantity',
-  'unit price': 'import.reason.field.unit_price',
-  fee: 'import.reason.field.fee',
-  amount: 'import.reason.field.amount',
-}
 
 const CRITERIA: Record<ImportMatchCriterion, MessageKey> = {
   isin: 'import.criterion.isin',
@@ -542,11 +521,14 @@ function Reason({ row }: { row: ImportPreviewRow }) {
   const { t } = useI18n()
   const code = row.reason_code ?? 'other'
   const values = row.reason_values ?? {}
-  const key = code === 'bad_kind' && !values.value ? 'import.reason.empty_kind' : REASONS[code]
-  const field = values.field === undefined ? undefined : NUMBER_FIELDS[values.field]
+  // `import.reason.<code>`; a code this catalogue does not know reads as *other*.
+  const named = `import.reason.${code === 'bad_kind' && !values.value ? 'empty_kind' : code}`
+  const key = isMessageKey(named) ? named : 'import.reason.other'
+  const fieldKey = `import.reason.field.${(values.field ?? '').replace(' ', '_')}`
+  const field = isMessageKey(fieldKey) ? fieldKey : undefined
   return (
     <span className="block text-xs text-muted-foreground">
-      {t(key ?? 'import.reason.other', {
+      {t(key, {
         value: values.value ?? '',
         field: field === undefined ? (values.field ?? '') : t(field),
       })}

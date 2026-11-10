@@ -55,6 +55,8 @@ import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { SELECT } from '@/features/accounts/components/TaxationModelEditor'
+import { cn } from '@/lib/utils'
 import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function AccountsPage() {
@@ -188,7 +190,7 @@ export default function AccountsPage() {
               // hides behind the buttons beside it.
               <select
                 aria-label={t('accounts.rail.label')}
-                className="mb-2 h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-md shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                className={cn(SELECT, 'mb-2 text-md')}
                 value={opened.id}
                 onChange={(change) =>
                   void navigate({ to: '/accounts', search: { account: change.target.value } })

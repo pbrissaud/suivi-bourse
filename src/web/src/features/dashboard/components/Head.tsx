@@ -26,6 +26,7 @@ import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 
 import { EmptyState } from '@/components/EmptyState'
+import { ProvisionalNote } from '@/components/ProvisionalNote'
 import { RecomposingFigure } from '@/components/RecomposingFigure'
 import type { PortfolioTotalsResponse } from '@/features/dashboard/lib/api'
 import {
@@ -104,7 +105,6 @@ export function DashboardHead({
   // The lines nobody has a quote for, named once with a way to fix them: the
   // total is computed on what has a price and counts these at their cost.
   const priceless = pricelessLines(rows)
-  const provisional = runtime?.rebuilding === true
 
   // On an install with no cash ledger `total_value` is NULL (#708) and the
   // value is the securities' alone, said under its own name.
@@ -210,12 +210,7 @@ export function DashboardHead({
                 )}
               </>
             ) : null}
-            {provisional ? (
-              // One marker for every figure that rests on the rebuilt series.
-              <p className="max-w-prose text-sm text-muted-foreground">
-                {t('figures.provisional')}
-              </p>
-            ) : null}
+            <ProvisionalNote />
             {reading === 'partial' ? (
               <div className="max-w-prose space-y-1 text-md text-muted-foreground">
                 <p>

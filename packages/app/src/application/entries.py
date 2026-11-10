@@ -139,8 +139,8 @@ def _would_be(store, event: Event, account: str, replacing: Optional[int]):
     return candidate, EventAggregator().replay(would_be), would_be
 
 
-def _refuse_overdraft(store, event: Event,
-                      replacing: Optional[int] = None) -> None:
+def _refuse_overdraft(store, event: Event, replacing: Optional[int] = None,
+                      timeline=None) -> None:
     """A withdrawal larger than the account's cash is refused, like a short sale.
 
     Judged on the day of the withdrawal, in the replay the write would leave: a
@@ -149,7 +149,8 @@ def _refuse_overdraft(store, event: Event,
     if event.event_type != EventType.WITHDRAWAL:
         return
     account = event.account or DEFAULT_ACCOUNT
-    _, timeline, _ = _would_be(store, event, account, replacing)
+    if timeline is None:
+        _, timeline, _ = _would_be(store, event, account, replacing)
     held = [balance for day, balance in
             timeline.cash_snapshots.get(account, []) if day <= event.date]
     if held and held[-1].cash_balance < -0.005:
@@ -169,9 +170,9 @@ def effect(store, draft: Event, replacing: Optional[int] = None) -> Effect:
     """
     event = _settled(store, draft)
     _refuse(store, event)
-    _refuse_overdraft(store, event, replacing)
     account = event.account or DEFAULT_ACCOUNT
     candidate, timeline, rows = _would_be(store, event, account, replacing)
+    _refuse_overdraft(store, event, replacing, timeline)
     snapshots = timeline.cash_snapshots.get(account)
     after = snapshots[-1][1].cash_balance if snapshots else 0.0
     moved = EventAggregator.cash_effect(candidate)

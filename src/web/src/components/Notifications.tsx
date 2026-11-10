@@ -223,22 +223,22 @@ export function Notifications() {
           {pending || failure !== null ? null : items.length === 0 ? (
             // « Rien à signaler » only when the icon says nothing either: a bell
             // wearing the attention colour over an empty list contradicts itself.
-            state === 'attention' || state === 'rebuilding' ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {t('status.dot', { state })}{' '}
-                <Link
-                  to="/system"
-                  className="underline underline-offset-4"
-                  onClick={() => setOpen(false)}
-                >
-                  {t('notification.state.link')}
-                </Link>
-              </p>
-            ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {t('notification.empty.title')}
-              </p>
-            )
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {state === 'attention' || state === 'rebuilding' ? (
+                <>
+                  {t('status.dot', { state })}{' '}
+                  <Link
+                    to="/system"
+                    className="underline underline-offset-4"
+                    onClick={() => setOpen(false)}
+                  >
+                    {t('notification.state.link')}
+                  </Link>
+                </>
+              ) : (
+                t('notification.empty.title')
+              )}
+            </p>
           ) : (
             <ul>
               {items.map((item) => {
