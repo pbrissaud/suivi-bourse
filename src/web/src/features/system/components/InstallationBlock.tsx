@@ -125,7 +125,7 @@ export function InstallationBlock({ runtime, startedAt }: InstallationBlockProps
         </FactRow>
         <FactRow label={t('system.installation.journal')}>
           <Link
-            to="/journal"
+            to="/system/logs"
             className="text-sm text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground"
           >
             {t('system.installation.journal.open')}

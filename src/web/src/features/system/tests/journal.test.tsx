@@ -37,7 +37,7 @@ function recording(rows: JournalRow[] = someJournalRows([ERROR])) {
 describe('the journal', () => {
   it('is a page of its own, with the way back to Système', async () => {
     recording()
-    renderApp({ url: '/journal' })
+    renderApp({ url: '/system/logs' })
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Journal' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '← Système' })).toHaveAttribute('href', '/system')
@@ -49,7 +49,7 @@ describe('the journal', () => {
 
   it('lists the rows under their day: time, level, task, message', async () => {
     recording()
-    renderApp({ url: '/journal' })
+    renderApp({ url: '/system/logs' })
 
     const day = await screen.findByRole('region', { name: /^Aujourd’hui · / })
     const rows = within(day).getAllByRole('listitem')
@@ -68,7 +68,7 @@ describe('the journal', () => {
 
   it('opens a traceback under a « détail » disclosure', async () => {
     recording()
-    const { user } = renderApp({ url: '/journal' })
+    const { user } = renderApp({ url: '/system/logs' })
 
     const day = await screen.findByRole('region', { name: /^Aujourd’hui · / })
     const disclosure = within(day)
@@ -84,7 +84,7 @@ describe('the journal', () => {
 
   it('counts the warnings and the errors on its tabs and narrows to them', async () => {
     recording()
-    const { user } = renderApp({ url: '/journal' })
+    const { user } = renderApp({ url: '/system/logs' })
 
     const warnings = await screen.findByRole('tab', { name: 'Avertissements 2' })
     expect(screen.getByRole('tab', { name: 'Erreurs 1' })).toBeInTheDocument()
@@ -98,7 +98,7 @@ describe('the journal', () => {
 
   it('narrows by task and by period on the server', async () => {
     const asked = recording()
-    const { user } = renderApp({ url: '/journal' })
+    const { user } = renderApp({ url: '/system/logs' })
     await screen.findByRole('region', { name: /^Aujourd’hui · / })
 
     expect(asked[0].searchParams.get('job')).toBeNull()
@@ -121,7 +121,7 @@ describe('the journal', () => {
 
   it('searches the messages once the typing stops', async () => {
     const asked = recording()
-    const { user } = renderApp({ url: '/journal' })
+    const { user } = renderApp({ url: '/system/logs' })
     await screen.findByRole('region', { name: /^Aujourd’hui · / })
 
     await user.type(screen.getByRole('searchbox', { name: 'Rechercher dans le journal' }), '429')
@@ -141,7 +141,7 @@ describe('the journal', () => {
           : HttpResponse.json({ rows: someJournalRows(), cursor: 7 })
       }),
     )
-    renderApp({ url: '/journal', fakeTimers: true })
+    renderApp({ url: '/system/logs', fakeTimers: true })
     await screen.findByRole('region', { name: /^Aujourd’hui · / })
     expect(screen.queryByText('just now')).not.toBeInTheDocument()
 
@@ -156,7 +156,7 @@ describe('the journal', () => {
 
   it('stops asking once « En direct » is switched off', async () => {
     const asked = recording()
-    const { user } = renderApp({ url: '/journal', fakeTimers: true })
+    const { user } = renderApp({ url: '/system/logs', fakeTimers: true })
     await screen.findByRole('region', { name: /^Aujourd’hui · / })
 
     const live = screen.getByRole('button', { name: 'En direct' })
@@ -174,7 +174,7 @@ describe('the journal', () => {
 
   it('says why it is empty, never over a read in flight', async () => {
     server.use(http.get(ROUTES.logs, () => new Promise<never>(() => {})))
-    renderApp({ url: '/journal' })
+    renderApp({ url: '/system/logs' })
     await screen.findByRole('heading', { level: 1, name: 'Journal' })
 
     expect(screen.queryByText('Aucune ligne')).not.toBeInTheDocument()
@@ -182,7 +182,7 @@ describe('the journal', () => {
 
   it('says it when there is nothing to show', async () => {
     recording([])
-    renderApp({ url: '/journal' })
+    renderApp({ url: '/system/logs' })
 
     expect(await screen.findByText('Aucune ligne')).toBeInTheDocument()
   })
@@ -195,7 +195,7 @@ describe('the journal', () => {
         title: 'storage unavailable',
       }),
     )
-    renderApp({ url: '/journal' })
+    renderApp({ url: '/system/logs' })
 
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
   })

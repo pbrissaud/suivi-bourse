@@ -233,10 +233,10 @@ const agentThreadRoute = createRoute({
   component: AgentPage,
 })
 
-/** What the process logged: a page of its own, reached from Système › Installation. */
+/** What the process logged: a page of its own, reached from Système › Installation, and under its address. */
 const journalRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/journal',
+  path: '/system/logs',
   component: JournalPage,
 })
 

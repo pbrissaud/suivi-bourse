@@ -367,7 +367,7 @@ const SURFACES: readonly Surface[] = [
   },
   { name: 'le thème', url: '/settings/theme', heading: 'Thème' },
   { name: 'le système', url: '/system', heading: 'Système' },
-  { name: 'le journal', url: '/journal', heading: 'Journal' },
+  { name: 'le journal', url: '/system/logs', heading: 'Journal' },
   {
     // The agent (#1117, #1196), switched on, its recent threads in the column:
     // *Aucune conversation gardée* is a claim about the threads' directory,

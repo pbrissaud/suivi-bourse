@@ -398,7 +398,7 @@ describe('the installation', () => {
 
     expect(await within(installation).findByRole('link', { name: 'Ouvrir' })).toHaveAttribute(
       'href',
-      '/journal',
+      '/system/logs',
     )
   })
 })
