@@ -514,5 +514,6 @@ function lastOf(rows: readonly AmountsRow[], key: 'value' | 'contributed'): numb
 
 /** The chart's place while its series is in flight: an empty plane, nothing in it (#795). */
 export function ChartInFlight() {
-  return <div aria-hidden className="h-75" />
+  // In flight a block holds its place as an empty plane (DESIGN.md › States).
+  return <div aria-hidden className="h-75 rounded-section bg-muted" />
 }

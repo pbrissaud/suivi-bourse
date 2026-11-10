@@ -402,12 +402,10 @@ function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: Ledge
   if (name === null) return <span className="text-muted-foreground">{ABSENT}</span>
   // The ticker leads the sub-line only when the name took the first line; the
   // label follows it, or stands alone under a ticker that took the first line.
-  const sub = [
-    identity.name === null ? null : identity.ticker,
-    identity.ticker === null ? null : identity.label,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(' · ')
+  // The ticker is a figure (mono), the broker's label stays a word.
+  const ticker = identity.name === null ? null : identity.ticker
+  const label = identity.ticker === null ? null : identity.label
+  const sub = [ticker, label].filter((part): part is string => part !== null).join(' · ')
   const shape = 'block min-w-0 max-w-full truncate text-left font-medium'
   const title = identity.ticker !== null && identity.name === null ? undefined : name
   return (
@@ -429,7 +427,9 @@ function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: Ledge
       )}
       {sub === '' ? null : (
         <span title={sub} className="block truncate text-xs text-muted-foreground">
-          {sub}
+          {ticker === null ? null : <span className="fig">{ticker}</span>}
+          {ticker !== null && label !== null ? ' · ' : null}
+          {label}
         </span>
       )}
     </>

@@ -268,7 +268,7 @@ describe('the columns of the ledger', () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const sub = within(ledger()).getByText('ZZA · Ordre au marché, exécution partielle')
+    const sub = within(ledger()).getByTitle('ZZA · Ordre au marché, exécution partielle')
     expect(sub).toHaveClass('truncate', 'text-muted-foreground')
     expect(sub).toHaveAttribute('title', 'ZZA · Ordre au marché, exécution partielle')
   })
@@ -1476,7 +1476,7 @@ describe('the create form, which is the onboarding', () => {
     // the next row opened — and *this event is no longer in the ledger* over a
     // row that is perfectly alive is a precise untruth, which is worse than the
     // vague one it replaced.
-    const alive = within(ledger()).getByText('ZZA · Versement programmé mensuel').closest('tr')
+    const alive = within(ledger()).getByTitle('ZZA · Versement programmé mensuel').closest('tr')
     await user.click(within(alive as HTMLElement).getAllByRole('cell')[1])
     expect(await screen.findByLabelText('Quantité')).toHaveValue('3')
     expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()

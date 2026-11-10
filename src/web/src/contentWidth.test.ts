@@ -132,10 +132,13 @@ describe('the accounts detail has no ragged row', () => {
     ]
       .map((match) => match[2])
       // The constant's own value is the one place the classes are written out.
-      .filter((classes) => classes !== 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr')
+      .filter(
+        (classes) =>
+          classes !== 'grid grid-cols-1 items-start gap-5 lg:grid-flow-col lg:auto-cols-fr',
+      )
     expect(grids).toEqual([])
     expect(DETAIL).toContain(
-      "const FULL_ROW = 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr'",
+      "const FULL_ROW = 'grid grid-cols-1 items-start gap-5 lg:grid-flow-col lg:auto-cols-fr'",
     )
   })
 })

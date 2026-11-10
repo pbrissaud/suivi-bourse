@@ -68,7 +68,7 @@ export function InstallationBlock({ runtime, startedAt }: InstallationBlockProps
             <span className="fig">{ABSENT}</span>
           ) : (
             <>
-              <span className="fig">{version}</span>
+              <span className="font-mono">{version}</span>
               {latest !== null ? (
                 <> · {t('system.installation.available', { version: latest.version })}</>
               ) : build?.source === 'release' && reporting && release.data !== undefined ? (

@@ -158,7 +158,7 @@ function NarrowBar() {
 function AgentOff() {
   const { t } = useI18n()
   return (
-    <div className="mx-auto flex w-full max-w-reading flex-col items-start gap-3 px-4 py-6 md:px-8 lg:pt-12">
+    <div className="mx-auto flex h-full w-full max-w-reading flex-col items-center justify-center gap-3 px-4 py-6 text-center md:px-8">
       <p className="text-prose font-medium">{t('agent.disabled')}</p>
       <p className="max-w-prose text-prose text-muted-foreground">{t('agent.disabled.detail')}</p>
       <Button asChild variant="primary">

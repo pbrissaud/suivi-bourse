@@ -51,7 +51,7 @@ export default function SystemPage() {
       >
         {runtime.data ? <FollowedTitles followed={runtime.data.followed} /> : null}
       </JobsBlock>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         {dataFailure === null ? (
           <DataBlock
             events={events.data?.length ?? null}

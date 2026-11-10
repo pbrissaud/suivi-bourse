@@ -87,9 +87,8 @@ typography:
     fontSize: 13px
     lineHeight: 18px
   mono:
-    fontFamily: Geist Mono
+    fontFamily: Figure words, Geist Mono
     fontVariantNumeric: tabular-nums
-    wordSpacing: -0.32em
 rounded:
   md: 8px
   card: 14px
@@ -261,7 +260,9 @@ keep their contrast.
   surface with its foreground, a hover held down. A link is `foreground`, underlined (offset 4) at rest; a text action is
   `muted-foreground` underlined in `border`. A weight bar is `muted-foreground`.
 - `gain` and `loss` colour the sign and the digits of a figure, never a row background,
-  a pill fill or a whole card.
+  a pill fill or a whole card. The one mark they fill is the gain's share of the
+  two-colour bar under a value (dashboard, account, security): the contributed part is
+  `alloc-5`, the gain `gain`, the same colour as the gain figure under it.
 - Only a figure that can change sign takes `gain` or `loss`. A term whose sign is fixed by
   its nature (dividends received, always positive; transfer fees, always negative) stays
   neutral, `foreground` in its figure: colouring a sign known in advance tells nothing and
@@ -323,9 +324,13 @@ shipped face would cost every screen for no reader benefit.
 
 **Every figure is Geist Mono** (« Relevé », November 2026, reversing #1281 and the figure
 half of #838): amounts, percentages, quantities, dates in a table column, times, versions,
-identifiers. The mono class carries `font-variant-numeric: tabular-nums` and
-`word-spacing: -0.32em`, so the thin spaces of `42 658,79 €` close up; a figure never wraps.
-A figure inside a sentence is mono too, at the sentence's size. Words stay in Geist.
+identifiers. The mono class carries `font-variant-numeric: tabular-nums`, and its face is
+`Figure words` laid over Geist Mono: the spaces, the decimal comma and point and the
+lowercase letters come from Geist, so `67 726,28 €` has no comma as wide as a digit and
+`10 janv. 2022` does not read like a terminal; the digits, the signs, `%`, `€` and the
+capitals stay mono, so a column lines up and a code (`CW8.PA`, `EUR`) reads as one. A
+figure never wraps. A figure inside a sentence is mono too, at the sentence's size
+(`figured()`). Words stay in Geist. A build's hash is a code, in plain `font-mono`.
 
 - **Hero (56 px fluid from 36, Geist Mono 500, −0.02em, line-height 1.05):** the one
   figure a screen leads with. One per screen.
@@ -359,6 +364,8 @@ and in a mockup alike.
 - **A table page has no side panel**: its filters are text buttons on the control line (`muted-foreground`, 13 px, the chosen value in `foreground`, a ChevronDown 14 px), its selection's actions appear only with a selection.
 - **< 768 px:** single column; the Titres table becomes a ruled list; the sheets take the full width.
 - **Rhythm:** 20 px between sections, 12 px between a section title and its content.
+- **Sections side by side** share the row's width equally and keep their own height
+  (`items-start`): a short section is not stretched into an empty plane beside a long one.
 
 ### The section
 
@@ -484,6 +491,8 @@ dialog, the notifications popover, a picker) are `background` with a 1 px `borde
   the list is long (the fund picker).
 - **Search field:** a framed `input` (1 px `input` border, `rounded.md`), 32 px on a page,
   36 px in a sheet, Search icon inside, placeholder « Rechercher ». Never an underline.
+  The header's ⌘K button reads « Rechercher » too; its accessible name says what it
+  reaches (« Rechercher un titre, un compte… »).
 - **Fields (`.fld` / `.lbl`):** label 12/16/500 `muted-foreground`, field 36 px, `input`
   border, `rounded.md`; an optional field says « Libellé · facultatif » with the suffix in
   400; a date field shows `6 nov. 2026` in mono with CalendarDays 16 px; a select shows its
@@ -571,6 +580,7 @@ Every block ships its four states:
 
 - **Nominal.**
 - **In flight:** the block holds its place as an empty plane, with nothing in it (#795).
+  A chart on the ground does too: its slot is a `muted` plane, never a bare gap.
 - **Empty:** an `EmptyState`, a title, why, and **one** action, as text on its plane
   (never outlined).
 - **Failed:** « Lecture impossible » where the content would have been, never a band; the
@@ -663,3 +673,4 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 | 2026-11-08 | Coherence pass over the 27 refonte sources | An independent audit found four page-button styles, four tab grammars, three envelope paddings, seven row heights, two section grammars. Unified: `32px 32px 56px`; page buttons 32 px / sheet 36 px; page tabs 15/22 with a 2 px rule; filters as text + chevron; rows 40 / 48; Réglages on the same planes as the other pages; links in `foreground`; floating surfaces radius 14 without shadow; one TokenCreated source. Full report: `claude/coherence-refonte.md` in the project. |
 | 2026-11-08 | Four personas reviewed the refonte; eight changes applied | Théo (first PEA), Hélène (multi-wrapper, spreadsheet), Mehdi (homelab SRE), Claire (monthly reader). Common findings: several totals and gains that did not reconcile, a « −837,20 € » hero read as a loss, jargon without a net, contradictory tax rates in the mockups, no reassurance before a write, technical alerts in the bell. Applied: *Référence* becomes *Comparaison* with a sentence hero; the dashboard gains the variation over the period, the cash and « Net si tout vendu »; one official gain (the dashboard's) and labelled bases elsewhere; « prix moyen d'achat », periods in words, « Ajouter un compte »; the effect line in the event sheet; the import names its account, its matching criterion and offers « Associer »; the bell speaks French and keeps the technical state in Système; a *Notifications* section in Réglages; mock data aligned (prices of 6 Nov. 2026, PS 18,6 %, CTO 31,4 %). Report: `claude/personas-retours-refonte.md`. |
 | 2026-11-09 | Staging feedback, first pass | The owner's staging walk: Réglages and the Thème preview take the full width (the 1 040 px cap goes); the palette loses the « G puis X » shortcuts and « Revoir la mise en route » and gains an icon per entry; « Se déconnecter » becomes « Verrouiller »; the PIN is set with the same six cells as the lock screen; no password-manager suggestion outside the unlock; the broker import profiles go (written without real statements), only the app's own layout is read, each row keeping its own account. |
+| 2026-11-10 | Unslop pass over the refonte (polish) | The audit found the Relevé direction sound and the craft uneven. Figures: a `Figure words` face lays Geist over the mono's separators and lowercase letters (the decimal comma took a digit cell, months read like a terminal), `word-spacing` goes; the IRR and the monthly average become figures in their sentence. Colour: the gain's share of the bar under a value is `gain`, not `chart-1` blue; the Comparaison's gap curve and band are `muted-foreground` and `muted` at full opacity, as #1282 said. Layout: a chart in flight is a `muted` plane, sections side by side keep their own height, the agent's empty state is centred. Copy: « Rechercher » in the header, no « à minuit UTC », the Comparaison's accounts by their libellé. |

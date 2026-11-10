@@ -152,9 +152,10 @@ describe('every figure is Geist Mono, tabular (« Relevé »)', () => {
 
   it('declares the .fig utility', () => {
     const rule = fig()
-    expect(rule).toMatch(/font-family:\s*var\(--font-mono\)/)
+    // The mono carries the digits; « Figure words » lays Geist over its separators and letters.
+    expect(rule).toMatch(/font-family:\s*"Figure words",\s*var\(--font-mono\)/)
     expect(rule).toMatch(/font-variant-numeric:\s*tabular-nums/)
-    expect(rule).toMatch(/word-spacing:\s*-0\.32em/)
+    expect(rule).not.toMatch(/word-spacing/)
     expect(rule).toMatch(/white-space:\s*nowrap/)
   })
 
@@ -174,7 +175,7 @@ describe('every figure is Geist Mono, tabular (« Relevé »)', () => {
   it('keeps DESIGN.md in step', () => {
     const design = fs.readFileSync(DESIGN_MD, 'utf8')
     expect(design).toMatch(/\*\*Every figure is Geist Mono\*\*/)
-    expect(design).toMatch(/word-spacing: -0\.32em/)
+    expect(design).toMatch(/Figure words/)
   })
 })
 

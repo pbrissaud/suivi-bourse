@@ -28,6 +28,7 @@ import { Link } from '@tanstack/react-router'
 import { EmptyState } from '@/components/EmptyState'
 import { ProvisionalNote } from '@/components/ProvisionalNote'
 import { RecomposingFigure } from '@/components/RecomposingFigure'
+import { figured } from '@/features/benchmark/lib/comparison'
 import type { PortfolioTotalsResponse } from '@/features/dashboard/lib/api'
 import {
   heroReading,
@@ -279,7 +280,7 @@ export function DashboardHead({
                 })}
                 segments={[
                   { weight: 1 - gainShare, fill: 'var(--alloc-5)' },
-                  { weight: gainShare, fill: 'var(--alloc-1)' },
+                  { weight: gainShare, fill: 'var(--gain)' },
                 ]}
               />
             )}
@@ -308,7 +309,11 @@ export function DashboardHead({
                   aria-label={t('dashboard.gainTotal')}
                   className="inline-flex items-baseline gap-2"
                 >
-                  <span aria-hidden className="size-2 self-center rounded-xs bg-alloc-1" />
+                  <span
+                    aria-hidden
+                    className="size-2 self-center rounded-xs"
+                    style={{ backgroundColor: 'var(--gain)' }}
+                  />
                   <span className="text-muted-foreground">{t('dashboard.gainTotal')}</span>
                   {gain?.amount == null ? (
                     <span className="fig text-prose">—</span>
@@ -335,7 +340,9 @@ export function DashboardHead({
               </p>
               {xirr === null ? null : (
                 <p className="text-muted-foreground">
-                  {t('dashboard.xirr.line', { value: f.percentPoints(xirr * 100, 2) })}
+                  {figured(t('dashboard.xirr.line', { value: f.percentPoints(xirr * 100, 2) }), [
+                    f.percentPoints(xirr * 100, 2),
+                  ])}
                   {/* Defined where it is shown: visible, so touch has it too. */}
                   <span className="block text-sm">{t('dashboard.xirr.definition')}</span>
                 </p>

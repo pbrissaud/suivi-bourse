@@ -7,6 +7,7 @@
  * its ratio. A row leads to the title's page, by its name (a link) or anywhere
  * on the row. The totals are the last row, under the columns they sum.
  */
+import { useAccountNames } from '@/hooks/use-account-names'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { TriangleAlert } from 'lucide-react'
 
@@ -83,6 +84,7 @@ export function SharesTable({
   totals,
   gainRatio,
 }: SharesTableProps) {
+  const accountName = useAccountNames()
   const { t } = useI18n()
   const f = useFormatters()
   const navigate = useNavigate()
@@ -151,7 +153,7 @@ export function SharesTable({
                 <span className="block text-xs text-muted-foreground">
                   <span className="fig">{row.symbol}</span>
                   {' · '}
-                  {row.accounts.join(', ')}
+                  {row.accounts.map(accountName).join(', ')}
                 </span>
               </TableCell>
 

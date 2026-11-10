@@ -16,6 +16,7 @@
  * **Nothing at all on a single account**, where the row would repeat the head
  * figure by figure and the period with it.
  */
+import { useAccountNames } from '@/hooks/use-account-names'
 import { Section } from '@/components/ui/section'
 import {
   Table,
@@ -42,6 +43,7 @@ export function AccountsTable({
 }) {
   const { t } = useI18n()
   const f = useFormatters()
+  const accountName = useAccountNames()
 
   const rows = data.per_account ?? []
   if (rows.length < 2) return null
@@ -79,7 +81,7 @@ export function AccountsTable({
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.account} tall>
-              <TableCell className="font-medium">{row.account}</TableCell>
+              <TableCell className="font-medium">{accountName(row.account)}</TableCell>
               <TableCell className="text-muted-foreground">
                 {t('benchmark.accounts.period', {
                   from: f.date(row.covered_from),

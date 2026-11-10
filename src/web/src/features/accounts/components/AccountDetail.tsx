@@ -13,6 +13,7 @@
  * at all, title included; a block whose read refused says so in its own place;
  * a block with nothing in it does not exist.
  */
+import { figured } from '@/features/benchmark/lib/comparison'
 import { useId, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -80,7 +81,7 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
 }
 
 /** The two sections of the middle row share it equally. */
-const FULL_ROW = 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr'
+const FULL_ROW = 'grid grid-cols-1 items-start gap-5 lg:grid-flow-col lg:auto-cols-fr'
 
 const SPANS = ['1M', 'YTD', '1Y', 'MAX'] as const
 type Span = (typeof SPANS)[number]
@@ -349,7 +350,7 @@ export function AccountDetail({
                 label={t('accounts.bar.label')}
                 segments={[
                   { weight: invested, fill: 'var(--alloc-5)' },
-                  ...(earned > 0 ? [{ weight: earned, fill: 'var(--alloc-1)' }] : []),
+                  ...(earned > 0 ? [{ weight: earned, fill: 'var(--gain)' }] : []),
                 ]}
               />
               <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
@@ -375,7 +376,9 @@ export function AccountDetail({
                 </p>
                 {monthly === null || currency === null ? null : (
                   <p className="text-sm text-muted-foreground">
-                    {t('accounts.monthly', { amount: f.currency(monthly, currency) })}
+                    {figured(t('accounts.monthly', { amount: f.currency(monthly, currency) }), [
+                      f.currency(monthly, currency),
+                    ])}
                   </p>
                 )}
               </div>

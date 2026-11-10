@@ -173,8 +173,9 @@ export function BenchmarkChart({
                       dataKey={(row: { delta: number | null }) => row.delta}
                       baseValue={0}
                       stroke="none"
-                      fill="var(--chart-1)"
-                      fillOpacity={0.16}
+                      // A gap is money not made, not money lost (#1282): no hue,
+                      // and a token at full opacity rather than a new colour.
+                      fill="var(--muted)"
                       isAnimationActive={false}
                       connectNulls={false}
                     />
@@ -185,7 +186,7 @@ export function BenchmarkChart({
                       type="monotone"
                       dataKey="delta"
                       name={t('benchmark.chart.gap')}
-                      stroke="var(--chart-1)"
+                      stroke="var(--muted-foreground)"
                       strokeWidth={2}
                       dot={false}
                       isAnimationActive={false}
@@ -307,7 +308,7 @@ export function BenchmarkChart({
         <span
           aria-hidden
           className="inline-block h-0.5 w-3.5"
-          style={{ backgroundColor: 'var(--chart-1)' }}
+          style={{ backgroundColor: 'var(--muted-foreground)' }}
         />
         {figured(t('benchmark.chart.gapLegend', { gap: today }), [today])}
       </p>

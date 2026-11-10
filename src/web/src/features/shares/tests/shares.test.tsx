@@ -226,7 +226,7 @@ describe('the title page', () => {
   it('says what the title is, its accounts linked', async () => {
     renderShares('/shares/ZZA')
     const section = await screen.findByRole('region', { name: 'Le titre' })
-    expect(within(section).getByRole('link', { name: 'alpha' })).toHaveAttribute(
+    expect(within(section).getByRole('link', { name: 'Alpha' })).toHaveAttribute(
       'href',
       '/accounts?account=alpha',
     )

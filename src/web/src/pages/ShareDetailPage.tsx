@@ -6,6 +6,7 @@
  * The header names the title and dates the quote (`CW8 · PEA · Cours au …`).
  * A symbol the portfolio does not know is said, with the way back.
  */
+import { useAccountNames } from '@/hooks/use-account-names'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -43,6 +44,7 @@ export default function ShareDetailPage() {
   )
   const all = useMemo(() => positions.data?.positions ?? [], [positions.data])
   const rows = useMemo(() => buildShareRows(all, failures), [all, failures])
+  const accountName = useAccountNames()
   const row = rows.find((candidate) => candidate.symbol === symbol) ?? null
   const move = all.find((p) => p.symbol === symbol)?.day_change_pct ?? null
   const currency = positions.data?.base_currency ?? null
@@ -50,13 +52,15 @@ export default function ShareDetailPage() {
 
   // The name once the positions answer; the bare symbol over a read in flight
   // would be a phrase the page invented, so the bar says nothing until then.
+  // The accounts by their libellé: until those are read the subtitle waits too.
+  const accountNames = row?.accounts.map(accountName) ?? []
   usePageHeading(
     row ? (row.name ?? row.symbol) : positions.data ? symbol : '',
-    row === null || row.price?.at == null
+    row === null || row.price?.at == null || accountNames.includes('')
       ? null
       : [
           row.symbol,
-          row.accounts.join(', '),
+          accountNames.join(', '),
           t('shares.pricedAt', { date: f.dateTime(row.price.at) }),
         ]
           .filter(Boolean)

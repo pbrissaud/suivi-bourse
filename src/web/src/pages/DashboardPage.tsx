@@ -222,7 +222,7 @@ export default function DashboardPage() {
       />
 
       {state !== 'portfolio' ? null : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2">
           <InvestmentRhythm {...rhythmRead} />
           <SecuritiesValue positions={positions.data ?? null} rows={rows} />
         </div>

@@ -11,6 +11,7 @@
  * Nothing here is computed from a read that did not answer: the ledger's two
  * blocks wait for it, and an unreadable ledger is said where they would be.
  */
+import { useAccountNames } from '@/hooks/use-account-names'
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 
@@ -196,7 +197,7 @@ export function ShareDetail({
             {parts.gain === 0 ? null : (
               <span
                 className="block"
-                style={{ flex: Math.round(parts.gain * 1000), backgroundColor: 'var(--alloc-1)' }}
+                style={{ flex: Math.round(parts.gain * 1000), backgroundColor: 'var(--gain)' }}
               />
             )}
           </div>
@@ -215,7 +216,7 @@ export function ShareDetail({
                 <span
                   aria-hidden
                   className="size-2 self-center rounded-xs"
-                  style={{ backgroundColor: 'var(--alloc-1)' }}
+                  style={{ backgroundColor: 'var(--gain)' }}
                 />
                 <span className="text-muted-foreground">{t('shares.fiche.gainLabel')}</span>
                 <span className={`fig text-prose ${toneOf(renderings.unrealised, gain)}`}>
@@ -253,7 +254,7 @@ export function ShareDetail({
         />
       </div>
 
-      <div className="mt-10 grid grid-cols-1 gap-5 wide:grid-cols-[3fr_2fr]">
+      <div className="mt-10 grid grid-cols-1 items-start gap-5 wide:grid-cols-[3fr_2fr]">
         <Events ledger={ledger} failure={ledgerFailure} symbol={row.symbol} currency={currency} />
         <Facts row={row} share={share} />
       </div>
@@ -357,6 +358,7 @@ function named(
 function Facts({ row, share }: { row: ShareRow; share: number | null }) {
   const { t } = useI18n()
   const f = useFormatters()
+  const accountName = useAccountNames()
   const attributes = row.fundamentals
   const lines: { label: MessageKey; value: ReactNode }[] = [
     {
@@ -378,9 +380,9 @@ function Facts({ row, share }: { row: ShareRow; share: number | null }) {
                 key={account}
                 to="/accounts"
                 search={{ account }}
-                className="fig underline underline-offset-4"
+                className="underline underline-offset-4"
               >
-                {account}
+                {accountName(account)}
               </Link>
             ))}
           </span>

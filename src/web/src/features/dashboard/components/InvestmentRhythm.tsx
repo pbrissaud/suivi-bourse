@@ -128,7 +128,9 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
                 total: f.currency(total, rhythm.base_currency),
                 observed: rhythm.months_observed,
                 months: f.list(skipped),
-              })}
+                // A list ending on an abbreviated month (« nov. ») already
+                // carries the sentence's full stop.
+              }).replace(/\.\.$/, '.')}
         </p>
       </div>
     )

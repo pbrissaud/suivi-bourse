@@ -207,7 +207,8 @@ function BuildLine() {
           .join(' · ')}
       >
         {/* A release reads as a version, a build from a commit as a build. */}
-        {build.version ? t('nav.version') : t('nav.build')} <span className="fig">{shown}</span>
+        {build.version ? t('nav.version') : t('nav.build')}{' '}
+        <span className="font-mono">{shown}</span>
       </p>
       {latest ? (
         <a
@@ -220,7 +221,7 @@ function BuildLine() {
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>
       ) : null}
-      <p className="flex gap-3">
+      <p className="flex flex-wrap gap-x-3 gap-y-1 whitespace-nowrap">
         <HelpLinks className={link} />
       </p>
     </div>
