@@ -210,10 +210,9 @@ describe('the Sécurité section', () => {
     const block = await screen.findByRole('region', { name: 'Sécurité' })
     const enable = await within(block).findByRole('button', { name: 'Activer le code' })
     expect(within(block).getByText('Désactivé')).toBeInTheDocument()
-    // Off, no auto-lock; the tokens are listed all the same, and say they need the code.
+    // Off, no auto-lock and no tokens: both exist only with a code.
     expect(within(block).queryByRole('radiogroup')).not.toBeInTheDocument()
-    expect(within(block).getByText('Jetons d’accès', { exact: false })).toBeInTheDocument()
-    expect(within(block).getByText(/ne sert qu’avec le code d’accès activé/)).toBeInTheDocument()
+    expect(within(block).queryByText('Jetons d’accès', { exact: false })).not.toBeInTheDocument()
 
     await user.click(enable)
     const dialog = await screen.findByRole('dialog', { name: 'Activer le code' })

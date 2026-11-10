@@ -763,17 +763,9 @@ describe('the hero (« Relevé »)', () => {
     // On the page, not behind a hover: a phone has no hover.
     expect(trajectory).toHaveTextContent('Net d’impôt si tout vendu')
     expect(trajectory).toHaveTextContent(/2\D?650,00/)
-    expect(await screen.findByText('Impôt estimé sur le compte pea seul')).toBeVisible()
   })
 
-  it('says the figure is gross where no account carries a tax model', async () => {
-    renderApp()
-
-    await screen.findByLabelText('Trajectoire')
-    expect(await screen.findByText(/Montant brut/)).toBeVisible()
-  })
-
-  it('says what each percentage is a percentage of', async () => {
+  it('says a variation leaves deposits out, and what grants add to the contribution', async () => {
     server.use(
       totalsOf({
         variation: {
@@ -789,10 +781,6 @@ describe('the hero (« Relevé »)', () => {
 
     const head = await hero()
     expect(head).toHaveTextContent(/depuis un an, hors versements/)
-    expect(head).toHaveTextContent(/Pourcentage calculé sur la valeur au 2 mars 2025 : 2\D?214,29/)
-    expect(screen.getByRole('group', { name: 'Gain total' })).toHaveTextContent(
-      /\+15,2\D?%.*sur 2\D?430,00\D?€ versés/,
-    )
     // A grant is counted as contributed, and said so.
     expect(screen.getByText(/dont 180,88\D?€ d’actions gratuites/)).toBeVisible()
   })
@@ -843,13 +831,6 @@ describe('the hero (« Relevé »)', () => {
       'href',
       '/shares/ZZZZ9.PA',
     )
-  })
-
-  it('defines the money-weighted return where it is shown', async () => {
-    renderApp()
-    await hero()
-
-    expect(screen.getByText(/^TRI /)).toHaveTextContent(/dates de vos versements/)
   })
 
   it('draws the net contribution and the gain as one bar, then the line under it', async () => {

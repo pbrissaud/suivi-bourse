@@ -438,16 +438,17 @@ export function Palette() {
   return (
     <>
       {/* **A field, not a word** (#838): the visible way in, from `lg`; below
-          that the icon at the size of the preferences beside it (#797). */}
+          that a flat icon like the bell beside it, since a frame around a lone
+          icon says nothing the icon does not. */}
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="icon"
         aria-label={t('palette.open.label')}
         className="size-8 rounded-lg text-muted-foreground pointer-coarse:min-h-11 pointer-coarse:min-w-11 lg:h-8.5 lg:w-50 lg:justify-start lg:gap-2.5 lg:border lg:border-input lg:bg-card lg:pr-2 lg:pl-2.5 xl:w-70"
         onClick={() => setOpen(true)}
       >
-        <Search className="size-3.75" />
+        <Search className="size-4" />
         <span className="hidden min-w-0 truncate text-sm lg:inline">{t('palette.open')}</span>
         <span
           aria-hidden

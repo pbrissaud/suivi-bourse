@@ -191,11 +191,6 @@ export default function SharesPage() {
                   ({f.percent(gainRatio)})
                 </span>
               )}{' '}
-              {gainRatio === null ? null : (
-                <span className="text-sm">
-                  {t('shares.summary.gainBase', { base: f.currency(invested, currency) })}
-                </span>
-              )}{' '}
               <span className="text-sm">{t('shares.summary.scope')}</span>
             </p>
           </div>

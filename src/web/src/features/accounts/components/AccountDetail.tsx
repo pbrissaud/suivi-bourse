@@ -300,14 +300,6 @@ export function AccountDetail({
                     </span>
                   )}
                   <span className="text-muted-foreground">{t('accounts.gain.pill')}</span>
-                  {gainPct === null || row.net_contributed === null || currency === null ? null : (
-                    // The base under the percentage, in a few words.
-                    <span className="text-sm text-muted-foreground">
-                      {t('dashboard.gainTotal.base', {
-                        base: f.currency(row.net_contributed, currency),
-                      })}
-                    </span>
-                  )}
                   <span aria-hidden className="text-border">
                     ·
                   </span>
@@ -324,8 +316,6 @@ export function AccountDetail({
                   </span>
                 </p>
               )}
-              {/* TRI, defined where it is shown: a clause, readable on touch. */}
-              <p className="text-xs text-muted-foreground">{t('accounts.xirr.definition')}</p>
             </Stat>
 
             <dl aria-label={t('accounts.facts')} className="flex flex-col gap-1.5 pb-1.5">

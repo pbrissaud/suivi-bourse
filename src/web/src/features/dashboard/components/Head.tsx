@@ -195,20 +195,6 @@ export function DashboardHead({
                     {variation.deposits ? `, ${t('dashboard.variation.exclDeposits')}` : ''}
                   </span>
                 </p>
-                {variation.pct == null || variation.base == null ? null : (
-                  // The base under the percentage, in a few words.
-                  <p className="text-sm text-muted-foreground">
-                    {t(
-                      range === 'MAX'
-                        ? 'dashboard.variation.base.max'
-                        : 'dashboard.variation.base.range',
-                      {
-                        base: f.currency(variation.base, currency),
-                        date: f.date(variation.start_date),
-                      },
-                    )}
-                  </p>
-                )}
               </>
             ) : null}
             <ProvisionalNote />
@@ -253,16 +239,6 @@ export function DashboardHead({
                   </div>
                 ))}
               </dl>
-              {valued && netIfSold !== null ? (
-                <p className="max-w-[32ch] self-end text-right text-sm text-muted-foreground">
-                  {estimated.length === 0
-                    ? t('dashboard.netIfSold.gross')
-                    : t('dashboard.netIfSold.estimated', {
-                        count: estimated.length,
-                        accounts: f.list(estimated),
-                      })}
-                </p>
-              ) : null}
             </div>
           )}
         </div>
@@ -327,13 +303,6 @@ export function DashboardHead({
                           ({f.percent(gain.pct, 1, 1)})
                         </span>
                       )}
-                      {gain.pct == null || contributed === null ? null : (
-                        <span className="text-sm text-muted-foreground">
-                          {t('dashboard.gainTotal.base', {
-                            base: f.currency(contributed, currency),
-                          })}
-                        </span>
-                      )}
                     </>
                   )}
                 </span>
@@ -343,8 +312,6 @@ export function DashboardHead({
                   {figured(t('dashboard.xirr.line', { value: f.percentPoints(xirr * 100, 2) }), [
                     f.percentPoints(xirr * 100, 2),
                   ])}
-                  {/* Defined where it is shown: visible, so touch has it too. */}
-                  <span className="block text-sm">{t('dashboard.xirr.definition')}</span>
                 </p>
               )}
             </div>

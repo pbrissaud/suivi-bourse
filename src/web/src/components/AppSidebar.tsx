@@ -36,6 +36,8 @@ import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
+  BookOpen,
+  ScrollText,
   Server,
   CircleDollarSign,
   Database,
@@ -197,19 +199,25 @@ function BuildLine() {
   const latest = release.data?.latest
   const shown = build?.version ?? build?.revision?.slice(0, 7)
   if (!build || !shown) return null
-  const link =
-    'rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
   return (
     <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-      <p
-        title={[t('installation.build.source', { source: build.source }), build.revision]
-          .filter(Boolean)
-          .join(' · ')}
-      >
-        {/* A release reads as a version, a build from a commit as a build. */}
-        {build.version ? t('nav.version') : t('nav.build')}{' '}
-        <span className="font-mono">{shown}</span>
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p
+          title={[t('installation.build.source', { source: build.source }), build.revision]
+            .filter(Boolean)
+            .join(' · ')}
+        >
+          {/* A release reads as a version, a build from a commit as a build. */}
+          {build.version ? t('nav.version') : t('nav.build')}{' '}
+          <span className="font-mono">{shown}</span>
+        </p>
+        <span className="flex items-center gap-1">
+          <HelpLinks
+            icons
+            className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          />
+        </span>
+      </div>
       {latest ? (
         <a
           href={latest.url}
@@ -221,30 +229,36 @@ function BuildLine() {
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>
       ) : null}
-      <p className="flex flex-wrap gap-x-3 gap-y-1 whitespace-nowrap">
-        <HelpLinks className={link} />
-      </p>
     </div>
   )
 }
 
 /** The documentation and every release's notes: the sidebar's foot and Système › Installation. */
-export function HelpLinks({ className }: { className: string }) {
+export function HelpLinks({ className, icons = false }: { className: string; icons?: boolean }) {
   const t = useT()
   const { language } = useI18n()
   const { docsRootHref } = useDocs()
+  // As icons (the sidebar's foot) each keeps its words as its name and tooltip.
+  const named = (label: string) => (icons ? { 'aria-label': label, title: label } : {})
   return (
     <>
-      <a href={docsRootHref(language)} target="_blank" rel="noreferrer" className={className}>
-        {t('nav.docs')}
+      <a
+        href={docsRootHref(language)}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        {...named(t('nav.docs'))}
+      >
+        {icons ? <BookOpen aria-hidden className="size-4" /> : t('nav.docs')}
       </a>
       <a
         href="https://github.com/pbrissaud/suivi-bourse/releases"
         target="_blank"
         rel="noreferrer"
         className={className}
+        {...named(t('nav.releases'))}
       >
-        {t('nav.releases')}
+        {icons ? <ScrollText aria-hidden className="size-4" /> : t('nav.releases')}
       </a>
     </>
   )

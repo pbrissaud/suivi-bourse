@@ -5,10 +5,10 @@
  * *Code d'accès* states whether a code is set and offers what can be done with
  * it: off, « Activer le code »; on, « Changer le code » and « Désactiver ».
  * Each procedure opens a Dialog, never a card under its row, and focus returns
- * to the control that opened it. With the code on, *Verrouillage automatique*
- * follows — a value saved on change (#1313). The *Jetons d'accès* list is there
- * either way, saying so when the code is off: its secrets are shown once in a
- * side panel, and revoking and regenerating are `ConfirmDestructive`.
+ * to the control that opened it. With the code on, two rows follow:
+ * *Verrouillage automatique* — a value saved on change (#1313) — and the
+ * *Jetons d'accès* list, whose secrets are shown once in a side panel. Revoking
+ * and regenerating are `ConfirmDestructive`.
  */
 import { useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -111,9 +111,12 @@ export function SecuritySection({ read }: { read: SectionRead }) {
         </div>
       </SettingRow>
 
-      {enabled ? <LifetimeRow /> : null}
-      {/* Listed with the code off too: they are made for a code, and say so. */}
-      <TokensList enabled={enabled} />
+      {enabled ? (
+        <>
+          <LifetimeRow />
+          <TokensList />
+        </>
+      ) : null}
 
       <EnableDialog
         refocus={refocus}
@@ -201,7 +204,7 @@ function lifetimeRefusal(error: unknown): MessageKey {
 }
 
 /** *Jetons d'accès · API et MCP*: the list, its two text actions, its add row. */
-function TokensList({ enabled }: { enabled: boolean }) {
+function TokensList() {
   const { t } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
@@ -234,10 +237,7 @@ function TokensList({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <ListSetting
-      label={t('settings.token.list')}
-      hint={t(enabled ? 'settings.token.list.hint' : 'settings.token.list.needsCode')}
-    >
+    <ListSetting label={t('settings.token.list')} hint={t('settings.token.list.hint')}>
       {tokens.data?.tokens.map((token) => (
         <ListRow
           key={token.id}

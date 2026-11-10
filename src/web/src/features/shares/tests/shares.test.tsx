@@ -110,12 +110,11 @@ describe('the table alone', () => {
     )
   })
 
-  it('computes the ratio of the gain over the cost of its lines, and says that base', async () => {
+  it('computes the ratio of the gain over the cost of its lines', async () => {
     renderShares()
     await table()
     const gain = screen.getByText(/Plus-value des titres/)
     expect(gain).toHaveTextContent(/\(\+15,00\s?%\)/)
-    expect(gain).toHaveTextContent(/sur\s*2\D?000,00.*investis en titres/)
     expect(footer(await table())).toHaveTextContent(/\+15,00\s?%/)
   })
 
