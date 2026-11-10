@@ -300,8 +300,12 @@ export interface ImportPreviewRow {
   /** 1-based position among the file's lines: the number a resolution names. */
   row: number
   status: ImportRowStatus
-  /** Why an `unreadable` line is, in the server's words. */
+  /** Why an `unreadable` line is, in the server's words (English: the front says it by `reason_code`). */
   reason: string | null
+  /** A stable name for that reason, which the page words in French. */
+  reason_code: string | null
+  /** The values the reason quotes: `value`, and for a number `field`. */
+  reason_values: Record<string, string> | null
   date: string | null
   event_type: LedgerEventType | null
   symbol: string | null
@@ -326,8 +330,30 @@ export interface ImportPreview {
   account_id: string
   /** The file names an account per line (the app's own export does). */
   has_accounts: boolean
+  /** The lines that name no account: the ones the picked account decides. */
+  unnamed_rows: number
+  /** The reporting currency, to say what a foreign line's amounts are read as. */
+  base_currency: string | null
+  /** Securities about to be written that are quoted outside the base, in a file that states no unit. */
+  foreign_lines: ImportForeignLine[]
+  /** Securities whose currency could not be checked in time. */
+  unverified: string[]
   counts: Record<ImportRowStatus, number>
   rows: ImportPreviewRow[]
+}
+
+export interface ImportForeignLine {
+  symbol: string
+  /** The currency the security is quoted in. */
+  currency: string
+  rows: number
+}
+
+/** What the owner says a security's amounts in the file are written in. */
+export interface ImportAmountsIn {
+  symbol: string
+  currency: string
+  amounts_in: 'base' | 'quote'
 }
 
 export interface ImportResolution {
@@ -384,8 +410,16 @@ export const dataApi = {
     upload<ImportPreview>(ROUTES.eventsImportPreview, [file], [], {
       account_id: [accountId],
     }),
-  commitImport: (token: string, associate: readonly ImportResolution[] = []) =>
-    send<ImportCommitReceipt>(ROUTES.eventsImportCommit, 'POST', { token, associate }),
+  commitImport: (
+    token: string,
+    associate: readonly ImportResolution[] = [],
+    foreign: readonly ImportAmountsIn[] = [],
+  ) =>
+    send<ImportCommitReceipt>(ROUTES.eventsImportCommit, 'POST', {
+      token,
+      associate,
+      ...(foreign.length > 0 ? { foreign } : {}),
+    }),
   /** `id` previews an edit of that event rather than a new one. */
   previewEvent: (draft: EventDraft, id?: string) =>
     send<EventEffect>(ROUTES.eventsPreview, 'POST', id ? { ...draft, id } : draft),

@@ -244,3 +244,97 @@ def test_a_full_export_keeps_each_row_in_its_own_account(tmp_path):
     rows = opened.query("SELECT account FROM event WHERE event_type = 'DEPOSIT'")
     assert sorted(r[0] for r in rows) == ['cto', 'cto', 'pea']
     opened.close()
+
+
+def test_a_workbook_is_read_on_every_sheet_in_sheet_order(ledger):
+    """The export writes one sheet per year: the round trip keeps every row."""
+    from datetime import date
+
+    from application.events import export
+    from application.events.schemas import Event, EventType
+
+    events = [Event(date=date(year, 3, 1), event_type=EventType.DEPOSIT,
+                    account='pea', amount=100.0 + n)
+              for n, year in enumerate((2023, 2023, 2024, 2025, 2025, 2025))]
+    book = export.render_events_workbook(events, 'EUR')
+    assert len(openpyxl.load_workbook(io.BytesIO(book)).sheetnames) == 3
+
+    client, _ = ledger
+    body = upload(client, book, 'export.xlsx').get_json()
+
+    assert len(body['rows']) == len(events)
+    assert [row['date'][:4] for row in body['rows']] == [
+        '2023', '2023', '2024', '2025', '2025', '2025']
+
+
+def test_a_ticker_nobody_resolves_is_an_unknown_security(ledger, monkeypatch):
+    from application import import_currency
+    client, _ = ledger
+    csv = (HEADER
+           + "2026-11-02,BUY,ZZZZ,,,1,10,0,,\n"
+           + "2026-11-02,BUY,GOOD,,,1,10,0,,\n"
+           + "2026-11-02,BUY,CW8.PA,,,1,10,0,,\n")
+    asked = []
+
+    def look_up(symbol):
+        asked.append(symbol)
+        return 'EUR' if symbol == 'GOOD' else None
+
+    monkeypatch.setattr(import_currency, '_look_up', look_up)
+    body = upload(client, csv, 'tickers.csv').get_json()
+
+    # CW8.PA is held by the ledger: no lookup. GOOD answers. ZZZZ does not.
+    assert statuses(body) == [(1, 'unknown_security'), (2, 'new'), (3, 'new')]
+    assert sorted(asked) == ['GOOD', 'ZZZZ']
+
+    # Associating the line writes it under the ticker the owner names.
+    done = client.post('/api/events/import/commit', json={
+        'token': body['token'], 'associate': [{'row': 1, 'security': 'GOOD'}]})
+    assert done.get_json()['imported'] == 3
+
+
+def test_an_unreadable_row_carries_a_code_and_the_file_refusal_too(ledger):
+    client, _ = ledger
+    body = upload(client, HEADER + "not-a-day,BUY,CW8.PA,,,1,10,0,,\n", 'x.csv').get_json()
+    row = body['rows'][0]
+    assert (row['status'], row['reason_code'], row['reason_values']) == (
+        'unreadable', 'bad_date', {'value': 'not-a-day'})
+
+    refused = upload(client, "a,b\n1,2\n", 'x.csv')
+    assert refused.get_json()['code'] == 'header'
+    assert upload(client, "a", 'x.txt').get_json()['code'] == 'not_a_ledger'
+
+
+def test_a_file_with_no_stated_unit_asks_about_a_security_quoted_elsewhere(
+        ledger, monkeypatch):
+    from application import import_currency
+    client, opened = ledger
+    opened.execute("INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR') "
+                   "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    monkeypatch.setattr(import_currency, '_look_up',
+                        lambda symbol: 'USD' if symbol == 'AAPL' else 'EUR')
+    csv = HEADER + "2026-11-02,BUY,AAPL,,,1,200,0,,\n"
+
+    body = upload(client, csv, 'us.csv').get_json()
+    assert body['base_currency'] == 'EUR'
+    assert body['foreign_lines'] == [{'symbol': 'AAPL', 'currency': 'USD', 'rows': 1}]
+
+    # The app's own export states its unit: nothing to ask.
+    stated = ("date,event_type,symbol,quantity,unit_price,base_currency\n"
+              "2026-11-02,BUY,AAPL,1,200,EUR\n")
+    assert upload(client, stated, 'us.csv').get_json()['foreign_lines'] == []
+
+    # Said to be in dollars, with no rate known, the commit refuses and writes nothing.
+    refused = client.post('/api/events/import/commit', json={
+        'token': body['token'],
+        'foreign': [{'symbol': 'AAPL', 'currency': 'USD', 'amounts_in': 'quote'}]})
+    assert refused.status_code == 422
+    assert opened.query("SELECT count(*) FROM event WHERE symbol = 'AAPL'") == [(0,)]
+
+    # Said to be in euros, it is written as it is, stamped with that answer.
+    body = upload(client, csv, 'us.csv').get_json()
+    done = client.post('/api/events/import/commit', json={
+        'token': body['token'],
+        'foreign': [{'symbol': 'AAPL', 'currency': 'USD', 'amounts_in': 'base'}]})
+    assert done.status_code == 201
+    assert opened.query("SELECT unit_price FROM event WHERE symbol = 'AAPL'") == [(200.0,)]

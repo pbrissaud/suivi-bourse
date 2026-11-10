@@ -3,7 +3,9 @@
  * first screen, before any file is in hand.
  *
  * The picker is the target and the rectangle is around it: what carries the
- * accessible name is a real `<input type="file">` with a real `<label>`, and
+ * accessible name is a real `<input type="file">` (hidden from the reader's tree and
+ * the tab order, so « Choisir un fichier » is announced once: the button is what
+ * a pointer or a keyboard reaches, and it clicks the input), and
  * the drop handler is the same call reached another way, so a reader without a
  * pointer is never left outside. A drag that carries no file — a selected word,
  * a link — is left alone, so the browser keeps its own behaviour for it.
@@ -11,7 +13,7 @@
  * One file at a time: the preview names its format, its account and every line,
  * and a batch would have to say which file each line came from.
  */
-import { useId, useRef, useState, type DragEvent } from 'react'
+import { useRef, useState, type DragEvent } from 'react'
 import { Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -30,7 +32,6 @@ export function UploadZone({
 }) {
   const { t } = useI18n()
   const input = useRef<HTMLInputElement>(null)
-  const field = useId()
   const [over, setOver] = useState(false)
   const carriesFile = (event: DragEvent) => event.dataTransfer.types.includes('Files')
 
@@ -62,8 +63,10 @@ export function UploadZone({
       <p className="max-w-prose text-muted-foreground">{t('import.drop')}</p>
       <input
         ref={input}
-        id={field}
         type="file"
+        aria-label={t('import.choose')}
+        aria-hidden
+        tabIndex={-1}
         accept={ACCEPTED}
         className="sr-only"
         disabled={disabled}
@@ -76,11 +79,6 @@ export function UploadZone({
       <Button type="button" disabled={disabled} onClick={() => input.current?.click()}>
         {t('import.choose')}
       </Button>
-      {/* The label the input is reached by: visually hidden, not absent — the
-          button above is what a pointer presses. */}
-      <label htmlFor={field} className="sr-only">
-        {t('import.choose')}
-      </label>
     </div>
   )
 }

@@ -13,7 +13,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Dict, List, Mapping, Optional, Sequence
 
-from application import accounts, ledger
+from application import accounts, import_currency, ledger
 from application.events.schemas import DEFAULT_ACCOUNT, Event, EventType, canonical_symbol, is_ascii_symbol
 from application.import_formats import SECURITY_TYPES, Line, Reading
 
@@ -43,6 +43,8 @@ class Row:
     event: Optional[Event] = None
     isin: Optional[str] = None
     reason: Optional[str] = None
+    reason_code: Optional[str] = None
+    reason_values: Optional[Dict[str, str]] = None
     matched_event_id: Optional[int] = None
     matched_on: Optional[List[str]] = None
 
@@ -89,8 +91,30 @@ def release(token: str) -> None:
         _held.pop(token, None)
 
 
+def unresolved(store, lines: Sequence[Line],
+               associate: Optional[Mapping[int, str]] = None) -> frozenset:
+    """The tickers of ``lines`` that neither the store nor the quote source knows.
+
+    One lookup per distinct ticker, bounded in time (:func:`import_currency.lookup`);
+    a lookup that fails counts as *unknown*, never as fine. It may take seconds:
+    call it **outside** the writers' lock and hand the answer to :func:`judge`.
+    """
+    chosen = _chosen(associate or {}, lines)
+    known = {canonical_symbol(row.symbol) for row in ledger.read_events(store)
+             if row.symbol}
+    known.update(canonical_symbol(symbol)
+                 for _, symbol in store.query('SELECT isin, symbol FROM symbol_isin'))
+    events = [line.event for line in lines
+              if line.event is not None and line.n not in chosen]
+    asked = {canonical_symbol(event.symbol) for event in events
+             if event.symbol and event.event_type in SECURITY_TYPES} - known
+    _, unverified = import_currency.lookup(store, sorted(asked))
+    return frozenset(unverified)
+
+
 def judge(store, account_id: str, lines: Sequence[Line],
-          associate: Optional[Mapping[int, str]] = None) -> List[Row]:
+          associate: Optional[Mapping[int, str]] = None,
+          unknown: frozenset = frozenset()) -> List[Row]:
     """Every line against the ledger of its account: its status, and what it repeats.
 
     A line takes the account it names, else ``account_id``; its duplicates are
@@ -112,13 +136,17 @@ def judge(store, account_id: str, lines: Sequence[Line],
     rows = []
     for line in lines:
         if line.event is None:
-            rows.append(Row(line.n, UNREADABLE, reason=line.reason))
+            rows.append(Row(line.n, UNREADABLE, reason=line.reason,
+                            reason_code=line.reason_code,
+                            reason_values=line.reason_values))
             continue
         # A row that names an account keeps it; the picked one fills the rest.
         into = line.account or account_id
         if into not in declared:
             rows.append(Row(line.n, UNREADABLE,
-                            reason=f"the account {into!r} is not declared in the app"))
+                            reason=f"the account {into!r} is not declared in the app",
+                            reason_code='account_undeclared',
+                            reason_values={'value': into}))
             continue
         event = replace(line.event, account=into)
         held_here = held.get(into, {})
@@ -126,6 +154,9 @@ def judge(store, account_id: str, lines: Sequence[Line],
             rows.append(_matched(line, event, held_here, 'date'))
             continue
         symbol = chosen.get(line.n) or event.symbol
+        if line.n not in chosen and symbol and canonical_symbol(symbol) in unknown:
+            rows.append(Row(line.n, UNKNOWN_SECURITY, event, line.isin))
+            continue
         via = 'isin' if line.isin else 'symbol'
         if not symbol and line.isin:
             symbol = isins.get(line.isin)
@@ -201,5 +232,5 @@ def remember_isins(store, rows: Sequence[Row]) -> None:
 
 __all__ = [
     'NEW', 'DUPLICATE', 'UNKNOWN_SECURITY', 'UNREADABLE', 'InvalidResolution',
-    'Row', 'judge', 'keep', 'recall', 'release', 'remember_isins',
+    'Row', 'judge', 'unresolved', 'keep', 'recall', 'release', 'remember_isins',
 ]

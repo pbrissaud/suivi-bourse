@@ -39,6 +39,15 @@ COLUMNS = {
 }
 
 
+class LineError(ValueError):
+    """Why a line is no event: an English sentence, and a code the front words in French."""
+
+    def __init__(self, message: str, code: str, **values: str):
+        super().__init__(message)
+        self.code = code
+        self.values = values
+
+
 @dataclass(frozen=True)
 class Line:
     """One line of the file: an event, or the reason it could not be read."""
@@ -47,6 +56,9 @@ class Line:
     event: Optional[Event] = None
     isin: Optional[str] = None
     reason: Optional[str] = None
+    #: ``reason`` as a stable code, with the values its sentence quotes.
+    reason_code: Optional[str] = None
+    reason_values: Optional[Dict[str, str]] = None
     #: The account the line names, when the file has an account column.
     account: Optional[str] = None
 
@@ -59,6 +71,9 @@ class Reading:
     lines: List[Line]
     #: Does the file name an account per line (the app's own export does)?
     has_accounts: bool = False
+    #: The ``base_currency`` the file states for its amounts (the app's own
+    #: export does), else ``None``: its amounts have no stated unit.
+    declared_currency: Optional[str] = None
 
 
 def fold(value) -> str:
@@ -75,7 +90,8 @@ def read(filename: str, stream) -> Reading:
     if suffix not in uploads.IMPORT_SUFFIXES:
         raise uploads.UploadRefused(
             f"{name or 'the file'} is not a ledger this app reads: an import "
-            f"file is a {' or a '.join(uploads.IMPORT_SUFFIXES)}", file=name or None)
+            f"file is a {' or a '.join(uploads.IMPORT_SUFFIXES)}", file=name or None,
+            code='not_a_ledger')
 
     data = stream.read(uploads.MAX_UPLOAD_BYTES + 1)
     if len(data) > uploads.MAX_UPLOAD_BYTES:
@@ -88,18 +104,32 @@ def read(filename: str, stream) -> Reading:
     except Exception:
         raise uploads.UploadRefused(
             f"{name} could not be read: it is not a ledger this app parses",
-            file=name or None)
+            file=name or None, code='unreadable')
     if not table:
-        raise uploads.UploadRefused(f"{name} is empty", file=name or None)
+        raise uploads.UploadRefused(f"{name} is empty", file=name or None,
+                                    code='empty')
 
     header = [fold(cell) for cell in table[0]]
     if not DETECT <= set(header):
         raise uploads.UploadRefused(
             f"{name} has a header this app does not recognise; an import file "
             f"carries the columns of the export (at least "
-            f"{', '.join(sorted(DETECT))})", file=name or None)
+            f"{', '.join(sorted(DETECT))})", file=name or None,
+            code='header')
     has_accounts = any(c in header for c in COLUMNS['account'])
-    return Reading(name, _lines(header, table[1:]), has_accounts)
+    return Reading(name, _lines(header, table[1:]), has_accounts,
+                   _declared_currency(header, table[1:]))
+
+
+def _declared_currency(header: Sequence[str], rows: Sequence[Sequence]) -> Optional[str]:
+    """The ``base_currency`` the file's rows state, when it has that column."""
+    if 'base currency' not in header:
+        return None
+    at = header.index('base currency')
+    for row in rows:
+        if at < len(row) and _text(row[at]):
+            return _text(row[at]).upper()
+    return None
 
 
 def _csv_rows(data: bytes) -> List[List]:
@@ -115,14 +145,24 @@ def _csv_rows(data: bytes) -> List[List]:
 def _xlsx_rows(data: bytes) -> List[List]:
     import openpyxl
     workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    table: List[List] = []
     try:
+        # Every sheet, in workbook order: the export writes one per year, and
+        # each carries the header again, which is dropped but the first's.
         for sheet in workbook.worksheets:
             rows = [list(row) for row in sheet.iter_rows(values_only=True)]
-            if any(any(cell is not None for cell in row) for row in rows):
-                return rows
+            rows = [row for row in rows if any(cell is not None for cell in row)]
+            if not rows:
+                continue
+            if not table:
+                table = rows
+            elif [fold(c) for c in rows[0]] == [fold(c) for c in table[0]]:
+                table.extend(rows[1:])
+            else:
+                table.extend(rows)
     finally:
         workbook.close()
-    return []
+    return table
 
 
 def _lines(header: Sequence[str], rows: Sequence[Sequence]) -> List[Line]:
@@ -142,8 +182,11 @@ def _lines(header: Sequence[str], rows: Sequence[Sequence]) -> List[Line]:
             return None if value in (None, '') else value
         try:
             lines.append(_line(n, cell))
+        except LineError as exc:
+            lines.append(Line(n, reason=str(exc), reason_code=exc.code,
+                              reason_values=exc.values or None))
         except ValueError as exc:
-            lines.append(Line(n, reason=str(exc)))
+            lines.append(Line(n, reason=str(exc), reason_code='other'))
     return lines
 
 
@@ -166,20 +209,20 @@ def _line(n: int, cell) -> Line:
     if kind in SECURITY_TYPES:
         if kind == EventType.DIVIDEND:
             if not amount:
-                raise ValueError("a dividend needs an amount")
+                raise LineError("a dividend needs an amount", 'dividend_amount')
         else:
             if not quantity:
-                raise ValueError("a purchase or a sale needs a quantity")
+                raise LineError("a purchase or a sale needs a quantity", 'trade_quantity')
             if price is None and amount and kind != EventType.GRANT:
                 # The net amount carries the fee: buy = qty × price + fee.
                 price = (amount - (fee or 0)) / quantity if kind == EventType.BUY \
                     else (amount + (fee or 0)) / quantity
             if price is None and kind != EventType.GRANT:
-                raise ValueError("a purchase or a sale needs a unit price")
+                raise LineError("a purchase or a sale needs a unit price", 'trade_price')
         if not (symbol or isin or _text(cell('label'))):
-            raise ValueError("the line names no security")
+            raise LineError("the line names no security", 'no_security')
     elif not amount:
-        raise ValueError("a deposit or a withdrawal needs an amount")
+        raise LineError("a deposit or a withdrawal needs an amount", 'cash_amount')
 
     security = kind in SECURITY_TYPES
     event = Event(
@@ -202,14 +245,14 @@ def _day(value) -> date:
         return value
     text = _text(value)
     if text is None:
-        raise ValueError("the line has no date")
+        raise LineError("the line has no date", 'no_date')
     text = text.split(' ')[0].split('T')[0]
     for pattern in _DATE_FORMATS:
         try:
             return datetime.strptime(text, pattern).date()
         except ValueError:
             continue
-    raise ValueError(f"{text!r} is not a date")
+    raise LineError(f"{text!r} is not a date", 'bad_date', value=text)
 
 
 def _kind(value) -> EventType:
@@ -217,7 +260,8 @@ def _kind(value) -> EventType:
     for kind in EventType:
         if label == kind.value:
             return kind
-    raise ValueError(f"{_text(value) or 'an empty operation'!r} is not an operation the ledger records")
+    raise LineError(f"{_text(value) or 'an empty operation'!r} is not an operation the ledger records",
+                    'bad_kind', value=_text(value) or '')
 
 
 def _text(value) -> Optional[str]:
@@ -231,7 +275,7 @@ def _number(value, field: str) -> Optional[float]:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise ValueError(f"{field} is not a number")
+        raise LineError(f"{field} is not a number", 'bad_number', field=field, value=str(value))
     if isinstance(value, (int, float)):
         return abs(float(value))
     text = re.sub(r'[\s  €$£]', '', str(value))
@@ -246,10 +290,11 @@ def _number(value, field: str) -> Optional[float]:
     try:
         number = float(text)
     except ValueError:
-        raise ValueError(f"{str(value).strip()!r} is not a number ({field})")
+        raise LineError(f"{str(value).strip()!r} is not a number ({field})",
+                        'bad_number', field=field, value=str(value).strip())
     if number != number or number in (float('inf'), float('-inf')):
-        raise ValueError(f"{field} is not a finite number")
+        raise LineError(f"{field} is not a finite number", 'bad_number', field=field, value=str(value))
     return abs(number)
 
 
-__all__ = ['SECURITY_TYPES', 'ISIN', 'Line', 'Reading', 'fold', 'read']
+__all__ = ['SECURITY_TYPES', 'ISIN', 'Line', 'LineError', 'Reading', 'fold', 'read']

@@ -139,6 +139,14 @@ const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 
+/** The refusals of a file the server names by `code` (`import_formats`). */
+const FILE_REFUSALS: Record<string, MessageKey> = {
+  not_a_ledger: 'problem.invalidFile.code.not_a_ledger',
+  unreadable: 'problem.invalidFile.code.unreadable',
+  empty: 'problem.invalidFile.code.empty',
+  header: 'problem.invalidFile.code.header',
+}
+
 /**
  * The catalogue key for a failed query. Anything that is not an `ApiProblem`
  * carrying a known `type` — a network error, an HTML page from a proxy, a
@@ -235,6 +243,12 @@ export function problemMessage(error: unknown): {
     // second exception to *never by `detail`*, for `providerRefused`'s reason:
     // the reader acts on it in the file, where those words mean something.
     const file = refusedFile(error)
+    // A refusal the server names by `code` is worded here, in French: no
+    // English `detail` reaches the reader (import preview).
+    const code = text(error, 'code')
+    if (code !== null && code in FILE_REFUSALS) {
+      return { message: FILE_REFUSALS[code], values: { file: file ?? '' } }
+    }
     const reason = error.detail?.trim() || null
     if (file !== null && reason !== null) {
       return { message: 'problem.invalidFile.named.reason', values: { file, reason } }

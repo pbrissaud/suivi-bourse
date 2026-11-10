@@ -35,9 +35,12 @@ class UploadRefused(Exception):
     ``file`` names the part of a batch that was refused, when one was (#1266).
     """
 
-    def __init__(self, message: str, file: Optional[str] = None):
+    def __init__(self, message: str, file: Optional[str] = None,
+                 code: Optional[str] = None):
         super().__init__(message)
         self.file = file
+        #: A stable name for the refusal, which the front words in its language.
+        self.code = code
 
 
 class UploadTooLarge(Exception):

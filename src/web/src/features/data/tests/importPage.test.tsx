@@ -15,6 +15,7 @@ import { handOver as handOverFile } from '@/features/data/lib/handoff'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import { renderApp } from '@/test/render'
+import { setViewportWidth } from '@/test/media'
 import { server } from '@/test/server'
 
 function aRow(overrides: Partial<ImportPreviewRow> = {}): ImportPreviewRow {
@@ -22,6 +23,8 @@ function aRow(overrides: Partial<ImportPreviewRow> = {}): ImportPreviewRow {
     row: 1,
     status: 'new',
     reason: null,
+    reason_code: null,
+    reason_values: null,
     date: '2026-11-06',
     event_type: 'BUY',
     symbol: 'CW8.PA',
@@ -46,6 +49,10 @@ function aPreview(rows: ImportPreviewRow[], overrides: Partial<ImportPreview> = 
     filename: 'releve.csv',
     account_id: 'alpha',
     has_accounts: false,
+    unnamed_rows: 0,
+    base_currency: 'EUR',
+    foreign_lines: [],
+    unverified: [],
     counts: {
       new: count('new'),
       duplicate: count('duplicate'),
@@ -87,7 +94,15 @@ const ROWS = [
     name: null,
     isin: 'IE00B5BMR087',
   }),
-  aRow({ row: 5, status: 'unreadable', reason: 'date illisible', date: null, event_type: null }),
+  aRow({
+    row: 5,
+    status: 'unreadable',
+    reason: 'x is not a date',
+    reason_code: 'bad_date',
+    reason_values: { value: 'hier' },
+    date: null,
+    event_type: null,
+  }),
 ]
 
 /** What a multipart body says for one field, or `null` where it has none. */
@@ -163,6 +178,8 @@ describe('the import page', () => {
     expect(within(table).getByText('Déjà présent · même date et montant')).toBeInTheDocument()
     expect(within(table).getByText('Titre inconnu')).toBeInTheDocument()
     expect(within(table).getByText('Illisible')).toBeInTheDocument()
+    // The reason is in the row, in French, with no hover needed.
+    expect(within(table).getByText(/« hier » n’est pas une date/)).toBeVisible()
     expect(screen.getByText('releve.csv')).toBeInTheDocument()
     // Only the new line will be written.
     expect(screen.getByRole('button', { name: 'Importer 1 événement' })).toBeEnabled()
@@ -253,5 +270,112 @@ describe('the import page', () => {
 
     expect(await screen.findByText('Aucune ligne dans ce fichier')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Importer \d/ })).not.toBeInTheDocument()
+  })
+
+  it('words the refusal of a malformed file in French from its code', async () => {
+    previewing(
+      new Response(
+        JSON.stringify({
+          status: 422,
+          type: PROBLEM_TYPES.invalidFile,
+          title: 'Invalid file',
+          detail: 'releve.csv has a header this app does not recognise',
+          file: 'releve.csv',
+          code: 'header',
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    )
+    const { user } = renderApp({ url: '/ledger/import' })
+
+    await handOver(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/L’en-tête de releve\.csv n’est pas reconnu/)
+    expect(alert).not.toHaveTextContent(/header/)
+  })
+
+  it('says « Choisir un fichier » once', async () => {
+    renderApp({ url: '/ledger/import' })
+
+    await screen.findByLabelText('Choisir un fichier')
+    expect(screen.getAllByText('Choisir un fichier')).toHaveLength(1)
+  })
+
+  it('preselects no account for a file that names them, and asks for one only if lines name none', async () => {
+    previewing(aPreview(ROWS, { has_accounts: true, unnamed_rows: 2 }))
+    const { user } = renderApp({ url: '/ledger/import' })
+    await handOver(user)
+
+    await screen.findByRole('table', { name: 'Aperçu de l’import' })
+    expect(
+      screen.getByRole('button', { name: /Importer dans : Choisir un compte/ }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Importer 1 événement/ })).toBeDisabled()
+    expect(screen.getByText(/Certaines lignes ne nomment aucun compte/)).toBeInTheDocument()
+  })
+
+  it('does not hold the commit back when every line names its account', async () => {
+    previewing(aPreview(ROWS, { has_accounts: true, unnamed_rows: 0 }))
+    const { user } = renderApp({ url: '/ledger/import' })
+    await handOver(user)
+
+    await screen.findByRole('table', { name: 'Aperçu de l’import' })
+    expect(
+      screen.getByRole('button', { name: /Importer dans : Choisir un compte/ }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Importer 1 événement/ })).toBeEnabled()
+  })
+
+  it('asks what the amounts of a foreign security are written in, and sends the answer', async () => {
+    previewing(
+      aPreview([aRow({ symbol: 'AAPL', isin: null, name: 'Apple' })], {
+        foreign_lines: [{ symbol: 'AAPL', currency: 'USD', rows: 1 }],
+      }),
+    )
+    let committed: unknown
+    server.use(
+      http.post(ROUTES.eventsImportCommit, async ({ request }) => {
+        committed = await request.json()
+        return HttpResponse.json(
+          { imported: 1, duplicate: 0, unknown_security: 0, unreadable: 0 },
+          { status: 201 },
+        )
+      }),
+    )
+    const { user } = renderApp({ url: '/ledger/import' })
+    await handOver(user)
+
+    expect(await screen.findByText(/AAPL est coté en USD · 1 ligne/)).toBeInTheDocument()
+    // The assumption is said before anything is written: as the base.
+    expect(screen.getByRole('button', { name: /EUR, la devise du portefeuille/ })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /EUR, la devise du portefeuille/ }))
+    await user.click(await screen.findByRole('option', { name: /USD, la devise de cotation/ }))
+    await user.click(screen.getByRole('button', { name: 'Importer 1 événement' }))
+
+    await waitFor(() =>
+      expect(committed).toEqual({
+        token: 'tok-1',
+        associate: [],
+        foreign: [{ symbol: 'AAPL', currency: 'USD', amounts_in: 'quote' }],
+      }),
+    )
+  })
+
+  it('draws ruled rows on a phone, each with its status', async () => {
+    setViewportWidth(390)
+    try {
+      previewing()
+      const { user } = renderApp({ url: '/ledger/import' })
+      await handOver(user)
+
+      const list = await screen.findByRole('list', { name: 'Aperçu de l’import' })
+      expect(within(list).getAllByRole('listitem')).toHaveLength(ROWS.length)
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      expect(within(list).getByText('Nouveau')).toBeVisible()
+      expect(within(list).getByText(/« hier » n’est pas une date/)).toBeVisible()
+    } finally {
+      setViewportWidth(1024)
+    }
   })
 })

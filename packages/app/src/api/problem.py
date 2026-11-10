@@ -124,12 +124,15 @@ def model_in_use(detail: str, accounts: Sequence[str]):
                    accounts=list(accounts))
 
 
-def unprocessable_file(detail: str, file: Optional[str] = None):
+def unprocessable_file(detail: str, file: Optional[str] = None,
+                       code: Optional[str] = None):
     """422 — the file parsed as far as it could, and it is not a ledger.
 
-    ``file`` names the part of a batch that was refused (#1266).
+    ``file`` names the part of a batch that was refused (#1266); ``code`` says
+    why in a form the front words in its own language.
     """
-    return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE, file=file)
+    return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE, file=file,
+                   code=code)
 
 
 def currency_unconvertible(detail: str, symbol: str, currency: str, base: str,

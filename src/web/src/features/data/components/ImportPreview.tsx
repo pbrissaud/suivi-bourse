@@ -17,6 +17,13 @@
  *
  * A read in flight, an empty file and a refused one are three different
  * sentences, and the wait is dressed because it is the reader's own act.
+ *
+ * Three things the first staging pass asked for. A line the app cannot read says
+ * why, in French, in its row (a stable `reason_code`, never the server's English).
+ * A file that states no unit for its amounts is asked what they are written in,
+ * for each security quoted outside the base currency, before anything is written.
+ * And under 768 px the table is a ruled list (DESIGN.md › Responsive), each row
+ * carrying its own Issue: nothing hides behind a sideways scroll.
  */
 import { useEffect, useId, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -30,6 +37,7 @@ import { TextTabs } from '@/components/TextTabs'
 import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
+import { useIsMobile } from '@/hooks/use-mobile'
 import {
   Table,
   TableBody,
@@ -39,12 +47,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { accountsApi } from '@/features/accounts/lib/api'
-import { EventFigure, TypeWord } from '@/features/data/components/LedgerTable'
+import { EventFigure, TYPE_LABEL, TypeWord } from '@/features/data/components/LedgerTable'
 import { FormatDocsButton } from '@/features/data/components/FormatDocsButton'
 import { UploadZone } from '@/features/data/components/UploadZone'
 import { takeHandover } from '@/features/data/lib/handoff'
 import {
   dataApi,
+  type ImportAmountsIn,
   type ImportMatchCriterion,
   type ImportPreview as Preview,
   type ImportPreviewRow,
@@ -57,6 +66,7 @@ import { ABSENT, useFormatters } from '@/lib/format'
 import { type MessageKey, useI18n } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
 import { oneFailure, readConditions } from '@/lib/status'
+import { cn } from '@/lib/utils'
 
 /** The lines drawn before *tout afficher*. */
 const SHOWN = 25
@@ -65,6 +75,30 @@ const SEARCH_MIN = 2
 const SEARCH_MAX = 64
 
 type Tab = 'all' | ImportRowStatus
+
+/** How the owner says a foreign security's amounts are written: as the base, or in its quote currency. */
+type AmountsIn = ImportAmountsIn['amounts_in']
+
+/** The sentence of an unreadable line, by the code the server names it with. */
+const REASONS: Record<string, MessageKey> = {
+  no_date: 'import.reason.no_date',
+  bad_date: 'import.reason.bad_date',
+  bad_kind: 'import.reason.bad_kind',
+  bad_number: 'import.reason.bad_number',
+  trade_quantity: 'import.reason.trade_quantity',
+  trade_price: 'import.reason.trade_price',
+  dividend_amount: 'import.reason.dividend_amount',
+  cash_amount: 'import.reason.cash_amount',
+  no_security: 'import.reason.no_security',
+  account_undeclared: 'import.reason.account_undeclared',
+}
+
+const NUMBER_FIELDS: Record<string, MessageKey> = {
+  quantity: 'import.reason.field.quantity',
+  'unit price': 'import.reason.field.unit_price',
+  fee: 'import.reason.field.fee',
+  amount: 'import.reason.field.amount',
+}
 
 const CRITERIA: Record<ImportMatchCriterion, MessageKey> = {
   isin: 'import.criterion.isin',
@@ -85,6 +119,8 @@ export function ImportPreview({ account: asked }: { account?: string }) {
   const [all, setAll] = useState(false)
   // The ticker the owner gave a line, by its row number: dropped with the reading.
   const [resolved, setResolved] = useState<Readonly<Record<number, string>>>({})
+  // What each foreign security's amounts are written in; none said = as the base.
+  const [amountsIn, setAmountsIn] = useState<Readonly<Record<string, AmountsIn>>>({})
 
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.accounts })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: dashboardApi.portfolioTotals })
@@ -103,6 +139,7 @@ export function ImportPreview({ account: asked }: { account?: string }) {
     const into = change.account ?? target
     if (into === undefined) return
     setResolved({})
+    setAmountsIn({})
     setTab('all')
     setAll(false)
     read.mutate({ file: next, account: into })
@@ -114,7 +151,12 @@ export function ImportPreview({ account: asked }: { account?: string }) {
         row: Number(row),
         security,
       }))
-      return dataApi.commitImport(token, associate)
+      const foreign: ImportAmountsIn[] = (preview?.foreign_lines ?? []).map((line) => ({
+        symbol: line.symbol,
+        currency: line.currency,
+        amounts_in: amountsIn[line.symbol] ?? 'base',
+      }))
+      return dataApi.commitImport(token, associate, foreign)
     },
     onSuccess: (receipt) => {
       // Every figure in the product is downstream of the ledger.
@@ -169,12 +211,18 @@ export function ImportPreview({ account: asked }: { account?: string }) {
     reading(next)
   }
 
+  // A file that names an account on its lines does not need the first account
+  // of the list standing in for the rest: until one is picked (or when only one
+  // exists) the control says so instead of quietly choosing.
+  const blank = preview?.has_accounts === true && account === undefined && declared.length > 1
+  const options = declared.map((entry) => ({ value: entry.id, label: entry.label ?? entry.id }))
   const into = (
     <FilterButton
       label={t('import.into')}
-      options={declared.map((entry) => ({ value: entry.id, label: entry.label ?? entry.id }))}
-      value={target ?? ''}
+      options={blank ? [{ value: '', label: t('import.into.choose') }, ...options] : options}
+      value={blank ? '' : (target ?? '')}
       onChange={(next) => {
+        if (next === '') return
         setAccount(next)
         if (file) reading(file, { account: next })
       }}
@@ -259,6 +307,9 @@ export function ImportPreview({ account: asked }: { account?: string }) {
         })
       }
       currency={currency}
+      needsAccount={blank && preview.unnamed_rows > 0}
+      amountsIn={amountsIn}
+      onAmountsIn={(symbol, next) => setAmountsIn((current) => ({ ...current, [symbol]: next }))}
       pending={read.isPending || commit.isPending}
       error={commit.error}
       anotherFile={anotherFile}
@@ -280,6 +331,10 @@ interface ReadingProps {
   resolved: Readonly<Record<number, string>>
   onResolve: (row: number, symbol: string) => void
   currency: string | null
+  /** Some lines name no account and none was picked to receive them. */
+  needsAccount: boolean
+  amountsIn: Readonly<Record<string, AmountsIn>>
+  onAmountsIn: (symbol: string, next: AmountsIn) => void
   pending: boolean
   error: unknown
   anotherFile: React.ReactNode
@@ -299,6 +354,9 @@ function Reading({
   resolved,
   onResolve,
   currency,
+  needsAccount,
+  amountsIn,
+  onAmountsIn,
   pending,
   error,
   anotherFile,
@@ -306,6 +364,7 @@ function Reading({
 }: ReadingProps) {
   const { t } = useI18n()
   const f = useFormatters()
+  const mobile = useIsMobile()
   const importing = preview.counts.new + Object.keys(resolved).length
   const rows = useMemo(
     () => (tab === 'all' ? preview.rows : preview.rows.filter((row) => row.status === tab)),
@@ -329,58 +388,70 @@ function Reading({
   }
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-baseline gap-2.5">
+    <div className="flex min-w-0 flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
           {back}
-          <span className="truncate font-medium">{file.name}</span>
+          <span className="min-w-0 truncate font-medium">{file.name}</span>
           <span className="fig text-sm whitespace-nowrap text-muted-foreground">
             {t('import.lines', { count: preview.rows.length })} · {f.bytes(file.size)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {anotherFile}
           <Button
             type="button"
             variant="primary"
-            disabled={pending || importing === 0}
+            disabled={pending || importing === 0 || needsAccount}
             onClick={onCommit}
           >
             {t('import.commit', { count: importing })}
           </Button>
         </div>
       </div>
+      {needsAccount ? (
+        <p className="mt-4 text-sm text-muted-foreground">{t('import.unnamed.pick')}</p>
+      ) : null}
+      <CurrencyQuestion
+        preview={preview}
+        amountsIn={amountsIn}
+        onAmountsIn={onAmountsIn}
+        disabled={pending}
+      />
       {error ? (
         <p role="alert" className="mt-4 text-sm text-destructive">
           {problemSentence(t, error)}
         </p>
       ) : null}
 
-      <div className="mt-5 flex items-end justify-between gap-4 border-b">
-        <TextTabs
-          label={t('import.tabs.label')}
-          value={tab}
-          onChange={onTab}
-          className="border-b-0"
-          tabs={[
-            {
-              value: 'all' as const,
-              label: (
-                <>
-                  {t('import.tab.all')} <span className="fig">{preview.rows.length}</span>
-                </>
-              ),
-            },
-            ...statuses.map((status) => ({
-              value: status,
-              label: (
-                <>
-                  {t(`import.tab.${status}`)} <span className="fig">{preview.counts[status]}</span>
-                </>
-              ),
-            })),
-          ]}
-        />
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-x-4 border-b">
+        <div className="max-w-full min-w-0 overflow-x-auto">
+          <TextTabs
+            label={t('import.tabs.label')}
+            value={tab}
+            onChange={onTab}
+            className="border-b-0 whitespace-nowrap"
+            tabs={[
+              {
+                value: 'all' as const,
+                label: (
+                  <>
+                    {t('import.tab.all')} <span className="fig">{preview.rows.length}</span>
+                  </>
+                ),
+              },
+              ...statuses.map((status) => ({
+                value: status,
+                label: (
+                  <>
+                    {t(`import.tab.${status}`)}{' '}
+                    <span className="fig">{preview.counts[status]}</span>
+                  </>
+                ),
+              })),
+            ]}
+          />
+        </div>
         <div className="flex items-center gap-5 pb-3">
           <span className="flex items-center gap-1 text-sm text-muted-foreground">
             {t(preview.has_accounts ? 'import.intoUnnamed' : 'import.into')}&nbsp;{into}
@@ -388,24 +459,10 @@ function Reading({
         </div>
       </div>
 
-      <Table>
-        <caption className="sr-only">{t('import.table')}</caption>
-        <TableHeader className="[&_th]:pt-4">
-          <TableRow>
-            <TableHead>{t('import.column.row')}</TableHead>
-            <TableHead>{t('data.column.date')}</TableHead>
-            <TableHead>{t('data.column.type')}</TableHead>
-            {preview.has_accounts ? <TableHead>{t('import.column.account')}</TableHead> : null}
-            <TableHead>{t('data.column.what')}</TableHead>
-            <TableHead numeric>{t('data.column.quantity')}</TableHead>
-            <TableHead numeric>{t('data.column.unitPrice')}</TableHead>
-            <TableHead numeric>{t('data.column.amount')}</TableHead>
-            <TableHead>{t('import.column.issue')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+      {mobile ? (
+        <ul aria-label={t('import.table')} className="mt-2 flex flex-col">
           {drawn.map((row) => (
-            <Line
+            <RuledLine
               key={row.row}
               row={row}
               currency={currency}
@@ -415,8 +472,38 @@ function Reading({
               disabled={pending}
             />
           ))}
-        </TableBody>
-      </Table>
+        </ul>
+      ) : (
+        <Table>
+          <caption className="sr-only">{t('import.table')}</caption>
+          <TableHeader className="[&_th]:pt-4">
+            <TableRow>
+              <TableHead>{t('import.column.row')}</TableHead>
+              <TableHead>{t('data.column.date')}</TableHead>
+              <TableHead>{t('data.column.type')}</TableHead>
+              {preview.has_accounts ? <TableHead>{t('import.column.account')}</TableHead> : null}
+              <TableHead>{t('data.column.what')}</TableHead>
+              <TableHead numeric>{t('data.column.quantity')}</TableHead>
+              <TableHead numeric>{t('data.column.unitPrice')}</TableHead>
+              <TableHead numeric>{t('data.column.amount')}</TableHead>
+              <TableHead>{t('import.column.issue')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {drawn.map((row) => (
+              <Line
+                key={row.row}
+                row={row}
+                currency={currency}
+                accounts={preview.has_accounts ? accountNames : null}
+                resolved={resolved[row.row]}
+                onResolve={(symbol) => onResolve(row.row, symbol)}
+                disabled={pending}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      )}
       {drawn.length < rows.length ? (
         <p className="pt-4 text-sm text-muted-foreground">
           {t('import.more', { count: rows.length - drawn.length })} ·{' '}
@@ -448,6 +535,131 @@ function asEvent(row: ImportPreviewRow): LedgerEvent | null {
     notes: row.notes,
     account: '',
   }
+}
+
+/** The sentence of an unreadable line, in French, from the code the server gave it. */
+function Reason({ row }: { row: ImportPreviewRow }) {
+  const { t } = useI18n()
+  const code = row.reason_code ?? 'other'
+  const values = row.reason_values ?? {}
+  const key = code === 'bad_kind' && !values.value ? 'import.reason.empty_kind' : REASONS[code]
+  const field = values.field === undefined ? undefined : NUMBER_FIELDS[values.field]
+  return (
+    <span className="block text-xs text-muted-foreground">
+      {t(key ?? 'import.reason.other', {
+        value: values.value ?? '',
+        field: field === undefined ? (values.field ?? '') : t(field),
+      })}
+    </span>
+  )
+}
+
+/**
+ * The line on a phone: what it is on the first row, its figure on the right, its
+ * date, type and numbers under it, and its Issue under that. A ruled row, not a
+ * card (DESIGN.md): the Issue is never a column that can leave the screen.
+ */
+function RuledLine({
+  row,
+  currency,
+  accounts,
+  resolved,
+  onResolve,
+  disabled,
+}: {
+  row: ImportPreviewRow
+  currency: string | null
+  accounts: Readonly<Record<string, string>> | null
+  resolved: string | undefined
+  onResolve: (symbol: string) => void
+  disabled: boolean
+}) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const event = asEvent(row)
+  const settled = resolved !== undefined
+  const skipped = row.status === 'duplicate'
+  const detail = [
+    row.date ? f.date(row.date) : null,
+    row.event_type ? t(TYPE_LABEL[row.event_type]) : null,
+    row.quantity === null || row.unit_price === null
+      ? null
+      : `${f.quantity(row.quantity)} × ${f.currency(row.unit_price, currency)}`,
+    accounts && row.account ? (accounts[row.account] ?? row.account) : null,
+  ].filter(Boolean)
+  return (
+    <li className={cn('border-b py-3', skipped && 'text-muted-foreground')}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 truncate font-medium">
+          {settled ? resolved : (row.name ?? row.symbol ?? ABSENT)}
+        </span>
+        <span className="fig font-medium whitespace-nowrap">
+          {event ? <EventFigure event={event} currency={currency} /> : ABSENT}
+        </span>
+      </div>
+      <div className="fig mt-0.5 text-xs text-muted-foreground">
+        {t('import.column.row')} {row.row}
+        {detail.length > 0 ? ` · ${detail.join(' · ')}` : ''}
+      </div>
+      <div className="mt-1.5 text-sm">
+        <Issue row={row} resolved={resolved} onResolve={onResolve} disabled={disabled} />
+      </div>
+    </li>
+  )
+}
+
+/** What the owner is asked when a file states no unit for its amounts: one line per foreign security. */
+function CurrencyQuestion({
+  preview,
+  amountsIn,
+  onAmountsIn,
+  disabled,
+}: {
+  preview: Preview
+  amountsIn: Readonly<Record<string, AmountsIn>>
+  onAmountsIn: (symbol: string, next: AmountsIn) => void
+  disabled: boolean
+}) {
+  const { t } = useI18n()
+  const base = preview.base_currency
+  if (base === null || (preview.foreign_lines.length === 0 && preview.unverified.length === 0)) {
+    return null
+  }
+  return (
+    <section aria-label={t('import.currency.title')} className="mt-4 flex flex-col gap-2 text-sm">
+      {preview.foreign_lines.map((line) => (
+        <p key={line.symbol} className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span>
+            {t('import.currency.line', {
+              symbol: line.symbol,
+              currency: line.currency,
+              rows: line.rows,
+            })}
+          </span>
+          <span className={cn(disabled && 'pointer-events-none opacity-60')}>
+            <FilterButton<AmountsIn>
+              label={t('import.currency.title')}
+              neutral="base"
+              value={amountsIn[line.symbol] ?? 'base'}
+              onChange={(next) => onAmountsIn(line.symbol, next)}
+              options={[
+                { value: 'base', label: t('import.currency.base', { currency: base }) },
+                { value: 'quote', label: t('import.currency.quote', { currency: line.currency }) },
+              ]}
+            />
+          </span>
+        </p>
+      ))}
+      {preview.unverified.length > 0 ? (
+        <p className="text-muted-foreground">
+          {t('import.currency.unverified', {
+            symbols: preview.unverified.join(', '),
+            currency: base,
+          })}
+        </p>
+      ) : null}
+    </section>
+  )
 }
 
 function Line({
@@ -537,9 +749,12 @@ function Issue({
   }
   if (row.status === 'unreadable') {
     return (
-      <span title={row.reason ?? undefined} className="inline-flex items-center gap-1.5">
-        <TriangleAlert aria-hidden className="size-3.5" />
-        {t('import.issue.unreadable')}
+      <span className="block min-w-0">
+        <span className="inline-flex items-center gap-1.5">
+          <TriangleAlert aria-hidden className="size-3.5" />
+          {t('import.issue.unreadable')}
+        </span>
+        <Reason row={row} />
       </span>
     )
   }

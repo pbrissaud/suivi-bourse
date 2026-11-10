@@ -447,6 +447,8 @@ def _preview_row_to_dict(row: import_preview.Row) -> dict:
         **{name: fields[name] for name in _ROW_FIELDS},
         'isin': row.isin,
         'reason': row.reason,
+        'reason_code': row.reason_code,
+        'reason_values': row.reason_values,
         'account': None if row.event is None else row.event.account,
         'matched_event_id': (None if row.matched_event_id is None
                              else str(row.matched_event_id)),
@@ -480,14 +482,32 @@ def preview_import():
     except uploads.UploadTooLarge as exc:
         return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
     except uploads.UploadRefused as exc:
-        return unprocessable_file(str(exc), file=exc.file)
+        return unprocessable_file(str(exc), file=exc.file, code=exc.code)
 
-    rows = import_preview.judge(opened, account_id, reading.lines)
+    rows = import_preview.judge(
+        opened, account_id, reading.lines,
+        unknown=import_preview.unresolved(opened, reading.lines))
+    base = opened.setting('base_currency') or None
+    foreign, unverified = (), ()
+    if base and reading.declared_currency is None:
+        # A file that states no unit for its amounts: which of its securities
+        # are quoted elsewhere than in the base, so the owner says what the
+        # amounts are in (#1261). Only what would be written is asked about.
+        found = import_currency.survey(
+            opened, [row.event for row in rows
+                     if row.status == import_preview.NEW and row.event], base)
+        foreign, unverified = found.lines, found.unverified
     return jsonify({
         'token': import_preview.keep(account_id, reading),
         'filename': reading.filename,
         'account_id': account_id,
         'has_accounts': reading.has_accounts,
+        'unnamed_rows': sum(1 for line in reading.lines
+                            if line.event is not None and not line.account),
+        'base_currency': base,
+        'foreign_lines': [{'symbol': line.symbol, 'currency': line.currency,
+                           'rows': line.rows} for line in foreign],
+        'unverified': list(unverified),
         'counts': {status: sum(1 for row in rows if row.status == status)
                    for status in (import_preview.NEW, import_preview.DUPLICATE,
                                   import_preview.UNKNOWN_SECURITY,
@@ -527,15 +547,35 @@ def commit_import():
 
     runtime = current_runtime()
     try:
+        read = _store()
+        base = read.setting('base_currency') or None
+        # Slow lookups and rate fetches happen **before** the writers' lock.
+        unknown = import_preview.unresolved(read, held.reading.lines, associate)
+        answered = _answered_amounts(body.get('foreign'), held.reading, base)
+        quoted = {symbol: code for symbol, (code, unit) in answered.items()
+                  if unit == 'quote'}
+        context = getattr(getattr(runtime, 'jobs', None), 'ctx', None)
+        rates = getattr(context, 'rates', None)
+        events_of_file = [line.event for line in held.reading.lines if line.event]
+        if quoted:
+            import_currency.convert(events_of_file, quoted, rates, base)
         with runtime.config_manager.writing() as opened:
             rows = import_preview.judge(
-                opened, held.account_id, held.reading.lines, associate)
+                opened, held.account_id, held.reading.lines, associate, unknown)
             fresh = [row for row in rows if row.status == import_preview.NEW]
-            entries.create_many(opened, [row.event for row in fresh])
+            events = [row.event for row in fresh]
+            if quoted:
+                events = import_currency.convert(events, quoted, rates, base)
+            says = {symbol: (code if unit == 'quote' else base)
+                    for symbol, (code, unit) in answered.items()}
+            entries.create_many(opened, events, stated=says)
             import_preview.remember_isins(opened, fresh)
     except import_preview.InvalidResolution as exc:
         return unprocessable_request(str(exc), key='associate')
-    except (entries.InvalidEntry, AggregationError) as exc:
+    except import_currency.BadPair as exc:
+        return unprocessable_request(str(exc), key='foreign')
+    except (entries.InvalidEntry, AggregationError,
+            import_currency.Unconvertible) as exc:
         return import_refusal(exc)
 
     import_preview.release(token)
@@ -546,6 +586,32 @@ def commit_import():
                               import_preview.UNKNOWN_SECURITY,
                               import_preview.UNREADABLE)}
     return jsonify({'imported': len(fresh), **skipped}), 201 if fresh else 200
+
+
+def _answered_amounts(asked, reading, base) -> dict:
+    """``{symbol: (currency, 'base' | 'quote')}`` of the commit's ``foreign`` answers.
+
+    ``foreign`` is ``[{"symbol": "AAPL", "currency": "USD", "amounts_in": "quote"}]``:
+    what the owner says the file's amounts of that security are written in.
+    """
+    if not base or not isinstance(asked, list):
+        return {}
+    answers = {}
+    for item in asked:
+        well_formed = isinstance(item, dict) and all((
+            isinstance(item.get('symbol'), str),
+            isinstance(item.get('currency'), str),
+            item.get('amounts_in') in ('base', 'quote')))
+        if not well_formed:
+            raise import_currency.BadPair(
+                "each answer is {symbol, currency, amounts_in: 'base' | 'quote'}")
+        answers[item['symbol'].upper()] = (item['currency'], item['amounts_in'])
+    # Checked against the file: a symbol it does not name, a currency code that
+    # is none, or the base itself, are refused.
+    import_currency.pairs(
+        [line.event for line in reading.lines if line.event],
+        [f'{symbol}:{code}' for symbol, (code, _) in answers.items()], base)
+    return answers
 
 
 @bp.post('/events/preview')
