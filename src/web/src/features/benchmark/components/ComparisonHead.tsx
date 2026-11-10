@@ -25,6 +25,7 @@
  */
 import type { ReactNode } from 'react'
 
+import { ProvisionalNote } from '@/components/ProvisionalNote'
 import { ShareBar } from '@/components/ShareBar'
 import type { BenchmarkResponse } from '@/features/benchmark/lib/api'
 import { figured } from '@/features/benchmark/lib/comparison'
@@ -101,6 +102,12 @@ export function ComparisonHead({ data, currency, picker }: ComparisonHeadProps) 
               {figured(t('benchmark.verdict.share', { share, contributed: paid }), [share, paid])}
             </p>
           )}
+          {contributed === null ? null : (
+            // « Même argent investi », retraceable: what it sums, and that both
+            // percentages below are measured against it.
+            <p className="max-w-prose text-sm text-muted-foreground">{t('benchmark.explain')}</p>
+          )}
+          <ProvisionalNote />
           <Caveats data={data} />
         </div>
         <dl

@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
+import { ProvisionalNote } from '@/components/ProvisionalNote'
 import { SharesList } from '@/features/shares/components/SharesList'
 import { SharesTable } from '@/features/shares/components/SharesTable'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -85,9 +86,11 @@ export default function SharesPage() {
     held,
   )
   const invested = held.reduce((sum, row) => sum + row.cost_basis, 0)
-  // The payload's own ratio, and only for the whole portfolio: reduced to an
-  // account, the figure it states would be of another set of lines.
-  const gainRatio = account === null ? (positions.data?.latent_gain_pct ?? null) : null
+  // The latent gain over **the cost of the lines it is the gain of** (the base
+  // is said beside it): the payload carries no portfolio-wide ratio, and one
+  // reduced to an account is of that account's lines.
+  const latentGain = termAmount(totals.terms, 'unrealised')
+  const gainRatio = latentGain !== null && invested > 0 ? latentGain / invested : null
   const currency = positions.data?.base_currency ?? null
   const failure = oneFailure(readConditions({ queries: [positions] }))
 
@@ -131,6 +134,8 @@ export default function SharesPage() {
           </Link>
         </div>
       )}
+
+      <ProvisionalNote />
 
       {!positions.data ? null : held.length === 0 ? (
         account !== null ? (
@@ -184,6 +189,11 @@ export default function SharesPage() {
               {gainRatio === null ? null : (
                 <span className={`fig text-sm ${termTone(terms, 'unrealised')}`}>
                   ({f.percent(gainRatio)})
+                </span>
+              )}{' '}
+              {gainRatio === null ? null : (
+                <span className="text-sm">
+                  {t('shares.summary.gainBase', { base: f.currency(invested, currency) })}
                 </span>
               )}{' '}
               <span className="text-sm">{t('shares.summary.scope')}</span>

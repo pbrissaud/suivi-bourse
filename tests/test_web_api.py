@@ -656,7 +656,7 @@ def test_portfolio_totals_serves_its_members(tmp_path):
         'day', 'total_value', 'holdings_value', 'cash_balance',
         'net_contributed', 'xirr', 'twr_index', 'twr_since', 'transfer_fees',
         'gain_absolu', 'ytd', 'variation', 'cash', 'gain_total',
-        'net_if_sold_today', 'estimated_accounts'}
+        'net_if_sold_today', 'estimated_accounts', 'first_deposit', 'granted'}
     assert payload['totals']['day'] == '2026-08-05'
     assert payload['totals']['total_value'] == 12500.0
     # The index counts from the first day of the series, and there is one here.
@@ -683,14 +683,18 @@ def test_variation_is_the_change_in_gain_over_the_value_at_the_start(tmp_path):
 
     assert set(variation) == {'1M', 'YTD', '1Y', 'MAX'}
     assert variation['1M'] == {'amount': 1000.0, 'pct': pytest.approx(0.02),
+                               'base': 50000.0, 'deposits': True,
                                'start_date': '2026-07-05'}
     assert variation['YTD'] == {'amount': 3000.0, 'pct': pytest.approx(3000 / 44000),
+                                'base': 44000.0, 'deposits': True,
                                 'start_date': '2025-12-31'}
     assert variation['1Y'] == {'amount': 4000.0, 'pct': pytest.approx(0.1),
+                               'base': 40000.0, 'deposits': True,
                                'start_date': '2025-08-05'}
     # The whole series: the whole gain, over what was paid in.
     assert variation['MAX'] == {'amount': 5000.0,
                                 'pct': pytest.approx(5000 / 47000),
+                                'base': 47000.0, 'deposits': False,
                                 'start_date': '2025-08-05'}
 
 
@@ -6579,3 +6583,35 @@ def test_no_answer_under_api_may_be_cached(tmp_path):
         response = client.get(path)
         assert response.headers.get('Cache-Control') == 'no-store', path
     opened.close()
+
+
+def test_the_head_reads_the_first_deposit_and_the_grants_off_the_ledger():
+    """PP-2: « Premier versement » is the ledger's, and a grant is counted as
+    contributed *and said so* (« dont 180,88 € d'actions gratuites »)."""
+    from application import portfolio_facts
+    from application.events.schemas import Event, EventType
+
+    events = [
+        Event(date(2022, 3, 1), EventType.DEPOSIT, amount=1000.0, account='cto'),
+        Event(date(2022, 4, 1), EventType.GRANT, 'AI.PA', 'Air Liquide',
+              quantity=1, unit_price=180.88, account='cto'),
+        Event(date(2030, 1, 1), EventType.GRANT, 'AI.PA', 'Air Liquide',
+              quantity=1, unit_price=999.0, account='cto'),
+    ]
+    facts = portfolio_facts._ledger_facts(events, date(2026, 8, 5))
+
+    assert facts == {'first_deposit': '2022-03-01', 'granted': 180.88}
+
+
+def test_the_net_if_sold_is_the_sum_of_the_accounts_to_the_cent():
+    """PP-2: one rounding per account, then added: no cent of drift on the total."""
+    from application import portfolio_facts
+
+    accounts = [
+        {'id': 'pea', 'total_value': 20000.004, 'projected_tax': 3898.98},
+        {'id': 'cto', 'total_value': 8000.004, 'projected_tax': 1475.21},
+    ]
+    net = portfolio_facts._net_if_sold_today(28000.008, accounts)
+
+    # 16 101,02 + 6 524,79: the accounts' own figures, not 22 625,818 rounded.
+    assert net['net_if_sold_today'] == pytest.approx(22625.81, abs=1e-6)

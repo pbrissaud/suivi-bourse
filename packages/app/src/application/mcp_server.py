@@ -127,6 +127,8 @@ both null while a held line has no value) and `net_if_sold_today` (the total
 value less the tax a sale of everything would owe today, an ESTIMATE). Tax is
 projected only for the accounts named in `estimated_accounts`; every other
 account counts gross, so say which accounts the net figure covers.
+`first_deposit` is the ledger's first deposit and `granted` is how much of
+`net_contributed` is free grants at their declared value, not money paid in.
 `variation` holds, for each of the ranges 1M, YTD, 1Y and MAX, the change in
 the gain over that range, that change over the value at the start of the range
 (a ratio) and the day it counts from; a range the series is too short for is
@@ -627,6 +629,9 @@ class Variation(TypedDict):
     # The change in gain over the range, and over the value at its start.
     amount: Optional[float]
     pct: Optional[float]
+    # What `pct` is over, and whether money went in or out inside the range.
+    base: Optional[float]
+    deposits: bool
     start_date: Optional[str]
 
 
@@ -653,6 +658,9 @@ class Totals(TypedDict):
     gain_total: GainTotal
     net_if_sold_today: Optional[float]
     estimated_accounts: List[str]
+    # The ledger's first deposit, and what grants add to `net_contributed`.
+    first_deposit: Optional[str]
+    granted: float
 
 
 class PortfolioTotals(TypedDict):

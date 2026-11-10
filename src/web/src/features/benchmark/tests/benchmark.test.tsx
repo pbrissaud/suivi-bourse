@@ -80,10 +80,19 @@ describe('the comparison', () => {
   it('says how big the gap is next to the money it is a gap of', async () => {
     renderBenchmark(ready())
 
-    const verdict = await screen.findByText(/versés aux mêmes dates/)
+    const verdict = await screen.findByText(/investis aux mêmes dates/)
     const said = (verdict.textContent ?? '').replace(/[  ]/g, ' ')
-    expect(said).toBe('soit 2,0 % des 41 063,00 € versés aux mêmes dates.')
+    expect(said).toBe('soit 2,0 % des 41 063,00 € investis aux mêmes dates.')
     expect(within(verdict).getByText('41 063,00 €')).toHaveClass('fig')
+  })
+
+  it('explains what « Même argent investi » sums, so a reader can retrace it', async () => {
+    renderBenchmark(ready())
+
+    const explanation = await screen.findByText(/« Même argent investi » additionne/)
+    expect(explanation).toHaveTextContent(/achats, moins vos ventes et les dividendes encaissés/)
+    expect(explanation).toHaveTextContent(/attribution gratuite compte pour sa valeur déclarée/)
+    expect(explanation).toHaveTextContent(/versement resté en liquidités n’en fait pas partie/)
   })
 
   it('reads ahead as « de plus » and a level finish as a plain sentence', async () => {
@@ -99,7 +108,7 @@ describe('the comparison', () => {
         'Vos titres et le MSCI World finissent au même montant, à l’euro près.',
       ),
     ).toBeInTheDocument()
-    expect(screen.queryByText(/versés aux mêmes dates/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/investis aux mêmes dates/)).not.toBeInTheDocument()
   })
 
   it('files the money invested and the two returns apart, each return in its own sign colour', async () => {

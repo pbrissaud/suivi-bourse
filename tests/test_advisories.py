@@ -706,3 +706,54 @@ def test_it_is_acknowledgeable_like_any_other_as_well(store):
     assert _flat_advisories(store) == []
     assert _keys(advisories.standing(store, NOW)) == [
         f'benchmark_never_priced:{BENCHMARK}']
+
+
+# --------------------------------------------------------------------------- #
+# A held line the market has answered nothing for (PP-2)
+# --------------------------------------------------------------------------- #
+
+class _Recorder:
+    """What the backfill job has recorded: one failed backward pass."""
+
+    def __init__(self, failures: int):
+        self.failures = failures
+
+    def scrapes(self):
+        return {}
+
+    def backfill_of(self, symbol, direction):
+        from application import runtime_state
+        return runtime_state.BackfillRecord(
+            symbol=symbol, direction=direction, at=NOW, failed=True,
+            failures=self.failures)
+
+
+def _hold(opened, symbol: str) -> None:
+    _account(opened, 'cto', 'CTO')
+    opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
+                   'ON CONFLICT DO NOTHING', [symbol])
+    opened.execute(
+        'INSERT INTO position VALUES (?, ?, ?, 3, 300, 0, 0)',
+        ['cto', symbol, 'Truc Inconnu'])
+
+
+def _no_price(opened, recorder):
+    return [one for one in advisories.listing(
+        opened, NOW, register=advisories.REGISTER_USER, recorder=recorder)
+        if one.kind == advisories.NO_PRICE]
+
+
+def test_a_held_line_with_no_price_after_a_failed_ask_reaches_the_bell(store):
+    """The bell used to say « Rien à signaler » over an emptied dashboard."""
+    _hold(store, 'ZZZZ9.PA')
+
+    assert _no_price(store, None) == []                 # nobody asked yet
+    one, = _no_price(store, _Recorder(failures=1))
+    assert one.key == 'no_price:ZZZZ9.PA'
+    assert one.register == advisories.REGISTER_USER
+    assert one.texts['fr']['title'] == 'Aucun cours pour Truc Inconnu'
+
+    store.execute(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted, '
+        'fx_rate) VALUES (?, ?, 10.0, 10.0, 1.0)', ['ZZZZ9.PA', NOW])
+    assert _no_price(store, _Recorder(failures=1)) == []   # it ends by itself

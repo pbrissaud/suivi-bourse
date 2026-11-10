@@ -87,7 +87,13 @@ describe('the hero while the history is rebuilding (#1260)', () => {
     pastDayWhileRebuilding()
     renderApp()
 
-    expect(await screen.findByText('Toujours sans cours : Zeta Alpha.')).toBeVisible()
+    const sentence = await screen.findByText(/Toujours sans cours/)
+    expect(sentence).toHaveTextContent('Toujours sans cours : Zeta Alpha.')
+    // …and the missing line is one click from where it is fixed.
+    expect(within(sentence).getByRole('link', { name: 'Zeta Alpha' })).toHaveAttribute(
+      'href',
+      '/shares/ZZA',
+    )
   })
 
   it('says the rebuild without numbers when the runtime carries no count', async () => {
@@ -725,7 +731,7 @@ describe('the hero (« Relevé »)', () => {
           '1M': null,
           YTD: null,
           '1Y': null,
-          MAX: { amount: 370, pct: 0.152, start_date: '2019-10-30' },
+          MAX: { amount: 370, pct: 0.152, base: 2430, deposits: false, start_date: '2019-10-30' },
         },
       }),
     )
@@ -745,30 +751,105 @@ describe('the hero (« Relevé »)', () => {
     expect(trajectory).toHaveTextContent(/30 oct\. 2019/)
     expect(trajectory).toHaveTextContent('Liquidités')
     expect(trajectory).toHaveTextContent(/500,00/)
-    expect(trajectory).toHaveTextContent('Net si tout vendu')
+    expect(trajectory).toHaveTextContent('Si tout vendu, avant impôt')
     expect(trajectory).toHaveTextContent(/2\D?800,00/)
   })
 
-  it('names the accounts whose tax was estimated in the net’s tooltip', async () => {
+  it('says in plain words that the net is after tax, and which accounts were taxed', async () => {
     server.use(totalsOf({ net_if_sold_today: 2650, estimated_accounts: ['pea'] }))
-    const { user } = renderApp()
+    renderApp()
 
     const trajectory = await screen.findByLabelText('Trajectoire')
+    // On the page, not behind a hover: a phone has no hover.
+    expect(trajectory).toHaveTextContent('Net d’impôt si tout vendu')
     expect(trajectory).toHaveTextContent(/2\D?650,00/)
-    await user.hover(within(trajectory).getByText(/2\D?650,00/))
+    expect(await screen.findByText('Impôt estimé sur le compte pea seul')).toBeVisible()
+  })
 
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'Impôt estimé sur le compte pea seul',
+  it('says the figure is gross where no account carries a tax model', async () => {
+    renderApp()
+
+    await screen.findByLabelText('Trajectoire')
+    expect(await screen.findByText(/Montant brut/)).toBeVisible()
+  })
+
+  it('says what each percentage is a percentage of', async () => {
+    server.use(
+      totalsOf({
+        variation: {
+          '1M': null,
+          YTD: null,
+          '1Y': { amount: 310, pct: 0.14, base: 2214.29, deposits: true, start_date: '2025-03-02' },
+          MAX: { amount: 370, pct: 0.152, base: 2430, deposits: false, start_date: '2019-10-30' },
+        },
+        granted: 180.88,
+      }),
+    )
+    renderApp()
+
+    const head = await hero()
+    expect(head).toHaveTextContent(/depuis un an, hors versements/)
+    expect(head).toHaveTextContent(/Pourcentage calculé sur la valeur au 2 mars 2025 : 2\D?214,29/)
+    expect(screen.getByRole('group', { name: 'Gain total' })).toHaveTextContent(
+      /\+15,2\D?%.*sur 2\D?430,00\D?€ versés/,
+    )
+    // A grant is counted as contributed, and said so.
+    expect(screen.getByText(/dont 180,88\D?€ d’actions gratuites/)).toBeVisible()
+  })
+
+  it('reads the first deposit off the ledger and wears the provisional marker while rebuilding', async () => {
+    const runtime = aRuntime({ rebuilding: true, reconstruction: { complete: 1, total: 4 } })
+    server.use(
+      // A row of today: the figures stand, and they are provisional.
+      totalsOf({ first_deposit: '2022-03-01', day: runtime.now.slice(0, 10) }),
+      http.get(ROUTES.runtime, () => HttpResponse.json(runtime)),
+    )
+    renderApp()
+
+    const trajectory = await screen.findByLabelText('Trajectoire')
+    expect(trajectory).toHaveTextContent(/1\D+mars 2022/)
+    expect(await screen.findByText('Calcul en cours — chiffres provisoires.')).toBeVisible()
+  })
+
+  it('never asks to record deposits when events exist and the series is not written yet', async () => {
+    server.use(
+      http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null))),
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([aPosition()]))),
+    )
+    renderApp()
+
+    expect(await screen.findByText(/Calcul en cours : les chiffres arrivent/)).toBeVisible()
+    expect(screen.queryByText(/Enregistrez vos versements/)).not.toBeInTheDocument()
+  })
+
+  it('names a line nobody has a quote for, once, with a link to fix it', async () => {
+    // Given up on by the backfill: terminal, never quoted, carried at cost.
+    const lost = aPosition({
+      symbol: 'ZZZZ9.PA',
+      name: 'Truc Inconnu',
+      price: null,
+      terminal: true,
+    })
+    server.use(
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([aPosition(), lost]))),
+    )
+    renderApp()
+
+    // The total is still there, computed on what has a price.
+    expect(await hero()).toHaveTextContent(/2\D?800,00/)
+    const sentence = await screen.findByText(/^Sans cours/)
+    expect(sentence).toHaveTextContent(/Truc Inconnu\. Cette ligne est comptée à son prix d’achat/)
+    expect(within(sentence).getByRole('link', { name: 'Truc Inconnu' })).toHaveAttribute(
+      'href',
+      '/shares/ZZZZ9.PA',
     )
   })
 
-  it('says the net is gross where no account carries a tax model', async () => {
-    const { user } = renderApp()
+  it('defines the money-weighted return where it is shown', async () => {
+    renderApp()
+    await hero()
 
-    const trajectory = await screen.findByLabelText('Trajectoire')
-    await user.hover(within(trajectory).getAllByText(/2\D?800,00/)[0])
-
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(/Montant brut/)
+    expect(screen.getByText(/^TRI /)).toHaveTextContent(/dates de vos versements/)
   })
 
   it('draws the net contribution and the gain as one bar, then the line under it', async () => {

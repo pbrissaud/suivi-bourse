@@ -299,6 +299,14 @@ export function AccountDetail({
                     </span>
                   )}
                   <span className="text-muted-foreground">{t('accounts.gain.pill')}</span>
+                  {gainPct === null || row.net_contributed === null || currency === null ? null : (
+                    // The base under the percentage, in a few words.
+                    <span className="text-sm text-muted-foreground">
+                      {t('dashboard.gainTotal.base', {
+                        base: f.currency(row.net_contributed, currency),
+                      })}
+                    </span>
+                  )}
                   <span aria-hidden className="text-border">
                     ·
                   </span>

@@ -105,6 +105,12 @@ class _PassState:
     total_reaches_today: bool = False
     total_seed: Optional[performance.DailyPerf] = None
     total_has_cash_ledger: bool = False
+    #: ``quotes.given_up()`` as the pass saw it: a symbol given up on is carried
+    #: at cost from then on, which moves the whole horizon.
+    given_up: frozenset = frozenset()
+    #: The day the newest price held lines rest on belongs to: the day the IRR's
+    #: terminal value is dated at.
+    valued_on: Optional[date] = None
 
 
 def _midnight(day: date) -> datetime:
@@ -248,6 +254,7 @@ class PerformanceJob(base.Job):
                 last.written == store_reads.PortfolioReader(
                     store_handle).series_fingerprint(),
                 last.base_currency == self.ctx.base_currency,
+                last.given_up == quotes.given_up(),
                 last.events == events, last.declared == declared,
                 last.fingerprint[0] == fingerprint[0],
                 last.fingerprint[2:] == fingerprint[2:])):
@@ -271,7 +278,7 @@ class PerformanceJob(base.Job):
             today=today, fingerprint=fingerprint, written=(),
             events=list(events),
             declared=list(declared), base_currency=self.ctx.base_currency,
-            horizons={}, latest={})
+            horizons={}, latest={}, given_up=quotes.given_up())
         acc_points: List[AccountMetricPoint] = []
         total_points: List[PortfolioTotalPoint] = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
@@ -319,6 +326,12 @@ class PerformanceJob(base.Job):
                         for account_id, span in writable.items()
                         if account_id in named}
 
+            valued_on = max(
+                (pairs[-1][0] for symbol, pairs in price_pairs.items()
+                 if symbol in held and pairs and pairs[-1][0] <= today),
+                default=None)
+            state.valued_on = valued_on
+
             def _from(account_id: str) -> date:
                 """Where this account's series begins: its horizon, never before the ledger's own first day."""
                 horizon = writable[account_id].first
@@ -332,7 +345,8 @@ class PerformanceJob(base.Job):
             per_account = {
                 account.id: performance.compute_account(
                     timeline, account, symbols, price_at, _from(account.id),
-                    _to(account.id), carried, first_quoted)
+                    _to(account.id), carried, first_quoted,
+                    valued_on=valued_on)
                 for account in declared
             }
             bounds = [span.first for span in writable.values()
@@ -341,7 +355,8 @@ class PerformanceJob(base.Job):
                     if span.last is not None]
             total = performance.compute_portfolio_total(
                 timeline, declared, symbols, price_at,
-                max([start] + bounds), min([today] + caps), per_account)
+                max([start] + bounds), min([today] + caps), per_account,
+                valued_on=valued_on)
 
             for account in declared:
                 perf = per_account[account.id]
@@ -499,6 +514,9 @@ class PerformanceJob(base.Job):
                 return closes[symbol]
             return last.last_before.get(symbol)
 
+        held_today = any(symbol in closes for symbol in last.symbols)
+        valued_on = today if held_today else last.valued_on
+        last.valued_on = valued_on
         acc_points: List[AccountMetricPoint] = []
         per_account: Dict[str, performance.Performance] = {}
         latest = dict(last.latest)
@@ -508,7 +526,8 @@ class PerformanceJob(base.Job):
                 continue
             perf = performance.compute_account(
                 last.timeline, account, last.symbols, price_at, today, today,
-                last.carried, last.first_quoted, seed=last.seeds[account.id])
+                last.carried, last.first_quoted, seed=last.seeds[account.id],
+                valued_on=valued_on)
             if [dp.date for dp in perf.daily] != [today]:
                 raise _NotContinuable(f"{account.id} has no point today")
             per_account[account.id] = perf
@@ -522,7 +541,8 @@ class PerformanceJob(base.Job):
         if last.total_reaches_today:
             total = performance.compute_portfolio_total(
                 last.timeline, last.declared, last.symbols, price_at,
-                last.total_start, today, per_account, seed=last.total_seed)
+                last.total_start, today, per_account, seed=last.total_seed,
+                valued_on=valued_on)
             if total is None or [dp.date for dp in total.daily] != [today]:
                 raise _NotContinuable("the total has no point today")
             # Over the whole series, not today's slice of it: an account whose

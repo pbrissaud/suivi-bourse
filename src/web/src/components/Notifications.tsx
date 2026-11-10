@@ -74,7 +74,7 @@ export type UserNotification = Advisory & { acknowledged_until?: string | null }
 const USER_NOTIFICATIONS = `${ROUTES.advisories}?register=user&asleep=include`
 
 /** The kinds that call for a look: they carry the TriangleAlert while unread. */
-const TO_LOOK_AT = ['late_price']
+const TO_LOOK_AT = ['late_price', 'no_price']
 
 /** Where a kind leads. Everything the bell can say is read in Système or in the ledger. */
 function destination(kind: string): '/system' | '/ledger' {
@@ -247,7 +247,10 @@ export function Notifications() {
                 return (
                   <li key={item.key} className="border-b last:border-b-0">
                     <Link
-                      to={destination(item.kind)}
+                      // A line with no price is fixed on its own page.
+                      {...(item.kind === 'no_price' && typeof item.detail.symbol === 'string'
+                        ? { to: '/shares/$symbol', params: { symbol: item.detail.symbol } }
+                        : { to: destination(item.kind) })}
                       onClick={() => setOpen(false)}
                       className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2.5 py-3 text-sm"
                     >

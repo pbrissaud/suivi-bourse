@@ -8,6 +8,8 @@ from logfmt_logger import getLogger
 from application import accounts
 from application import instants
 from application import ledger
+from application import quotes
+from application import runtime_state
 
 logger = getLogger("advisories")
 
@@ -39,6 +41,9 @@ BENCHMARK_NEVER_PRICED = 'benchmark_never_priced'
 #: A held symbol whose market is open and whose last stored quote is older than
 #: the ``staleness_horizon`` dial. ``user`` register.
 LATE_PRICE = 'late_price'
+#: A held symbol the market has answered nothing for, though it was asked: the
+#: dashboard counts it at its cost and says so until a quote lands. ``user``.
+NO_PRICE = 'no_price'
 #: A stable release above the running one, as the update check last saw it.
 UPDATE_AVAILABLE = 'update_available'
 
@@ -397,6 +402,58 @@ def _observe_late_price(opened, now: datetime, recorder) -> List[Advisory]:
     return standing
 
 
+def _observe_no_price(opened, now: datetime, recorder) -> List[Advisory]:
+    """A held symbol with **no price at all** after the backfill asked for one.
+
+    « Asked » is what keeps a fresh install quiet: every line is unpriced during
+    the first reconstruction, and none of them has failed yet. The claim ends
+    on its own the day a quote is stored.
+    """
+    held = [row[0] for row in opened.query(
+        'SELECT DISTINCT symbol FROM position WHERE quantity <> 0')]
+    if not held:
+        return []
+    marks = ', '.join('?' * len(held))
+    priced = {row[0] for row in opened.query(
+        f'SELECT DISTINCT symbol FROM price_point '
+        f'WHERE price_native IS NOT NULL AND symbol IN ({marks})', held)}
+    given_up = quotes.given_up()
+
+    def asked(symbol: str) -> bool:
+        record = (None if recorder is None
+                  else recorder.backfill_of(symbol, runtime_state.BACKWARD))
+        return symbol in given_up or (record is not None and record.failures > 0)
+
+    missing = sorted(symbol for symbol in held
+                     if symbol not in priced and asked(symbol))
+    names = _names(opened, missing)
+    standing: List[Advisory] = []
+    for symbol in missing:
+        name = names[symbol]
+        standing.append(Advisory(
+            key=f'{NO_PRICE}:{symbol}',
+            kind=NO_PRICE,
+            subject=SUBJECT_PORTFOLIO,
+            detail={'symbol': symbol, 'name': name},
+            message=f"No price for {name}.",
+            observed_at=now,
+            register=REGISTER_USER,
+            texts={
+                'fr': {
+                    'title': f"Aucun cours pour {name}",
+                    'sub': 'Comptée à son prix d’achat en attendant '
+                           '· vérifiez le symbole',
+                },
+                'en': {
+                    'title': f"No price for {name}",
+                    'sub': 'Counted at its purchase price meanwhile '
+                           '· check the symbol',
+                },
+            },
+        ))
+    return standing
+
+
 def _observe_update_available(release: Optional[Dict[str, str]],
                               now: datetime) -> List[Advisory]:
     """A newer stable release than the running one, as the check last saw it."""
@@ -458,6 +515,7 @@ def standing(opened, now: Optional[datetime] = None, *,
             raised.extend(observe(opened, now))
     if register != REGISTER_SYSTEM:
         raised.extend(_observe_late_price(opened, now, recorder))
+        raised.extend(_observe_no_price(opened, now, recorder))
         raised.extend(_observe_update_available(release, now))
     if rebuilding:
         return [one for one in raised if one.subject != SUBJECT_ACCOUNTS]
@@ -512,7 +570,7 @@ __all__ = [
     'Advisory', 'Acknowledgement', 'UnknownAdvisory',
     'ACK_WINDOW', 'CASH_SHARE', 'CASH_SHARE_THRESHOLD',
     'OPENED_AFTER_FIRST_PAYMENT', 'OPENED_IN_THE_FUTURE',
-    'NO_TAXATION_MODEL', 'LATE_PRICE', 'UPDATE_AVAILABLE',
+    'NO_TAXATION_MODEL', 'LATE_PRICE', 'NO_PRICE', 'UPDATE_AVAILABLE',
     'REGISTER_USER', 'REGISTER_SYSTEM',
     'SUBJECT_HEALTH', 'SUBJECT_INSTALLATION', 'SUBJECT_PORTFOLIO',
     'SUBJECT_ACCOUNTS',

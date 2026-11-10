@@ -553,15 +553,17 @@ export function aTotals(overrides: Partial<PortfolioTotals> = {}): PortfolioTota
     gain_absolu: 370,
     ytd: { gain: 40.69, twr: -0.0125 },
     variation: {
-      '1M': { amount: 120, pct: 0.045, start_date: '2026-02-02' },
-      YTD: { amount: 40.69, pct: 0.0157, start_date: '2025-12-31' },
-      '1Y': { amount: 310, pct: 0.14, start_date: '2025-03-02' },
-      MAX: { amount: 370, pct: 0.152, start_date: '2019-10-30' },
+      '1M': { amount: 120, pct: 0.045, base: 2666.67, deposits: false, start_date: '2026-02-02' },
+      YTD: { amount: 40.69, pct: 0.0157, base: 2591.6, deposits: false, start_date: '2025-12-31' },
+      '1Y': { amount: 310, pct: 0.14, base: 2214.29, deposits: false, start_date: '2025-03-02' },
+      MAX: { amount: 370, pct: 0.152, base: 2430, deposits: false, start_date: '2019-10-30' },
     },
     cash: 500,
     gain_total: { amount: 370, pct: 0.152 },
     net_if_sold_today: 2800,
     estimated_accounts: [],
+    first_deposit: '2019-10-30',
+    granted: 0,
     ...overrides,
   }
 }

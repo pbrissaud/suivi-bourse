@@ -349,6 +349,10 @@ def build_variation(
     start of the range. ``MAX`` is the exception, and a stated one: the
     series starts at its first deposit, a base too small to mean anything, so
     its amount is the whole gain and its base the net contribution.
+
+    ``base`` is that amount, so the screen can say what the percentage is *of*;
+    ``deposits`` says money went in or out inside the range, which is what
+    « hors versements » claims on a window that had some.
     """
     out: Dict[str, Optional[Dict[str, Any]]] = {}
     for name in VARIATION_RANGES:
@@ -358,6 +362,7 @@ def build_variation(
                 continue
             amount, base, start = (latest.get('gain_absolu'),
                                    latest.get('net_contributed'), first)
+            deposits = False
         else:
             start = bases.get(name)
             if start is None:
@@ -366,7 +371,10 @@ def build_variation(
             amount = _difference(latest.get('gain_absolu'),
                                  start.get('gain_absolu'))
             base = start.get('total_value')
+            deposits = _difference(latest.get('net_contributed'),
+                                   start.get('net_contributed')) not in (None, 0)
         out[name] = {'amount': amount, 'pct': _ratio(amount, base),
+                     'base': base, 'deposits': bool(deposits),
                      'start_date': instants.iso(start.get('day'))}
     return out
 

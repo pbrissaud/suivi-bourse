@@ -105,20 +105,18 @@ describe('the table alone', () => {
     expect(screen.getByText(/Plus-value des titres/)).toHaveTextContent(
       /\+300,00.*hors dividendes et liquidités/,
     )
-    expect(screen.getByText(/investis/)).toHaveTextContent(/sur\s*3\s*lignes, pour\s*2\D?000,00/)
+    expect(screen.getByText(/lignes, pour/)).toHaveTextContent(
+      /sur\s*3\s*lignes, pour\s*2\D?000,00/,
+    )
   })
 
-  it('shows the payload ratio of the gain when it states one, and computes none otherwise', async () => {
-    renderShares('/shares', { ...aPositionsPayload(defaultPositions()), latent_gain_pct: 0.15 })
-    await table()
-    expect(screen.getByText(/Plus-value des titres/)).toHaveTextContent(/\(\+15,00\s?%\)/)
-    expect(footer(await table())).toHaveTextContent(/\+15,00\s?%/)
-  })
-
-  it('does not state a ratio the payload did not', async () => {
+  it('computes the ratio of the gain over the cost of its lines, and says that base', async () => {
     renderShares()
     await table()
-    expect(screen.getByText(/Plus-value des titres/)).not.toHaveTextContent(/\(\+/)
+    const gain = screen.getByText(/Plus-value des titres/)
+    expect(gain).toHaveTextContent(/\(\+15,00\s?%\)/)
+    expect(gain).toHaveTextContent(/sur\s*2\D?000,00.*investis en titres/)
+    expect(footer(await table())).toHaveTextContent(/\+15,00\s?%/)
   })
 
   it('re-sorts on a header, naming the column in force', async () => {

@@ -336,11 +336,16 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
     changes_on = taxation_projection.rate_changes_on(**facts)
     split = taxation_projection.projected_split(
         latent_gain=latent.get(row['id']), **facts)
+    # **Rounded once, here, to the cent**, and the two parts are made to add up:
+    # every screen then prints the figure it was handed, and the sum of the two
+    # lines, of the accounts and of the portfolio's own total all agree.
+    tax = None if tax is None else round(tax, 2)
+    income = None if split is None or tax is None else round(split[0], 2)
     return {
         'taxation_kind': model.kind,
         'projected_tax': tax,
-        'projected_income_tax': None if split is None else split[0],
-        'projected_social_levy': None if split is None else split[1],
+        'projected_income_tax': income,
+        'projected_social_levy': None if income is None else round(tax - income, 2),
         # **The base rides with the figure**, and only where there is a figure.
         # The panel states a `Gain` of its own four paces up — latent *plus*
         # realised, dividends and fees — and the projection reads the latent

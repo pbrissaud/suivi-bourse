@@ -95,6 +95,30 @@ def test_a_horizon_no_float_survives_is_an_absence_and_never_a_raise():
     assert xirr([(date(1902, 1, 1), -1000.0), (date(2026, 8, 31), 5000.0)]) is None
 
 
+def test_the_rate_does_not_drift_while_the_prices_have_not_moved():
+    """PP-2: the terminal value is dated at the newest price, not at the clock.
+
+    The same prices read on Friday and on Sunday (or either side of midnight)
+    are the same rate; with ``today`` as the terminal date it fell by a
+    hundredth every time the day turned.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0,
+                                   date(2024, 3, 1): 110.0}})
+
+    def rate(today):
+        return compute_account(tl, PEA, {"AAPL"}, price_at,
+                               start=date(2024, 1, 1), today=today,
+                               valued_on=date(2024, 3, 1)).xirr
+
+    assert rate(date(2024, 3, 1)) == rate(date(2024, 3, 3)) is not None
+
+
 # --------------------------------------------------------------------------- #
 # Daily valuation + TWR
 # --------------------------------------------------------------------------- #

@@ -196,6 +196,14 @@ def forget_consulted_benchmark(store, symbol: str) -> List[str]:
     return kept
 
 
+def ledger_symbols(store) -> set:
+    """The symbols an event names or a position holds: the two reasons to
+    survive a purge that no choice of the owner's can lift."""
+    return {row[0] for row in store.query(
+        'SELECT symbol FROM event WHERE symbol IS NOT NULL '
+        'UNION SELECT symbol FROM position')}
+
+
 def orphan_symbols(store) -> List[OrphanSymbol]:
     """The symbols nothing declares any more, with the size of their series.
 

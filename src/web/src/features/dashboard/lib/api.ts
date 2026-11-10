@@ -162,13 +162,24 @@ export interface PortfolioTotals {
   gain_total: { amount: number | null; pct: number | null }
   /** The value less the projected tax; an account with no model counts gross. */
   net_if_sold_today: number | null
-  /** The accounts whose tax was estimated, for the tooltip's « sur le PEA seul ». */
+  /** The accounts whose tax was estimated, for the line under « Net d'impôt si tout vendu ». */
   estimated_accounts: string[]
+  /**
+   * The ledger's first deposit, a day — read off the ledger and never off the
+   * series, which starts later while it is rebuilt. `null` with no deposit.
+   */
+  first_deposit: string | null
+  /** What the grants add to `net_contributed`, at their declared value (#1012). */
+  granted: number
 }
 
 export interface Variation {
   amount: number | null
   pct: number | null
+  /** What `pct` is a percentage **of**: the value at the start, or the net contribution on `MAX`. */
+  base: number | null
+  /** Money went in or out inside the range: the amount is « hors versements ». */
+  deposits: boolean
   start_date: string
 }
 

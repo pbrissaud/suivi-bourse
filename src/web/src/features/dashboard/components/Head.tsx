@@ -27,14 +27,13 @@ import { Link } from '@tanstack/react-router'
 
 import { EmptyState } from '@/components/EmptyState'
 import { RecomposingFigure } from '@/components/RecomposingFigure'
-import {
-  Tooltip as Hint,
-  TooltipContent as HintContent,
-  TooltipProvider as HintProvider,
-  TooltipTrigger as HintTrigger,
-} from '@/components/ui/tooltip'
 import type { PortfolioTotalsResponse } from '@/features/dashboard/lib/api'
-import { heroReading, unpricedLines, type DashboardRange } from '@/features/dashboard/lib/dashboard'
+import {
+  heroReading,
+  pricelessLines,
+  unpricedLines,
+  type DashboardRange,
+} from '@/features/dashboard/lib/dashboard'
 import type { PositionsResponse } from '@/features/shares/lib/api'
 import type { RuntimeState } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
@@ -97,6 +96,10 @@ export function DashboardHead({
   const reading = totalsRow === null ? 'valued' : heroReading(totalsRow, runtime, new Date())
   const valued = reading === 'valued'
   const unpriced = reading === 'partial' ? unpricedLines(rows) : []
+  // The lines nobody has a quote for, named once with a way to fix them: the
+  // total is computed on what has a price and counts these at their cost.
+  const priceless = pricelessLines(rows)
+  const provisional = runtime?.rebuilding === true
 
   // On an install with no cash ledger `total_value` is NULL (#708) and the
   // value is the securities' alone, said under its own name.
@@ -106,11 +109,14 @@ export function DashboardHead({
   const heroValue = totalValue ?? holdingsValue
 
   const variation = totalsRow?.variation?.[range] ?? null
-  const firstDeposit = totalsRow?.variation?.MAX?.start_date ?? null
+  // The ledger's own first deposit: the series starts later while it is rebuilt.
+  const firstDeposit = totalsRow?.first_deposit ?? totalsRow?.variation?.MAX?.start_date ?? null
   const cash = heroIsHoldings ? null : (totalsRow?.cash ?? null)
   const netIfSold = heroIsHoldings ? null : (totalsRow?.net_if_sold_today ?? null)
   const contributed = totalsRow?.net_contributed ?? null
   const gain = totalsRow?.gain_total ?? null
+  const granted = totalsRow?.granted ?? 0
+  const estimated = totalsRow?.estimated_accounts ?? []
   const xirr = totalsRow?.xirr ?? null
 
   // The two-colour bar: what was put in, and the gain on top of it.
@@ -127,32 +133,15 @@ export function DashboardHead({
     statement.push([t('dashboard.cash'), f.currency(cash, currency)])
   }
   if (valued && netIfSold !== null) {
-    const estimated = totalsRow?.estimated_accounts ?? []
+    // After tax, in the label itself: the meaning is on the page, not behind a hover.
     statement.push([
-      t('dashboard.netIfSold'),
-      <Hint key="net">
-        <HintTrigger asChild>
-          <span
-            tabIndex={0}
-            className="rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            {f.currency(netIfSold, currency)}
-          </span>
-        </HintTrigger>
-        <HintContent>
-          {estimated.length === 0
-            ? t('dashboard.netIfSold.gross')
-            : t('dashboard.netIfSold.estimated', {
-                count: estimated.length,
-                accounts: f.list(estimated),
-              })}
-        </HintContent>
-      </Hint>,
+      t(estimated.length === 0 ? 'dashboard.netIfSold.grossLabel' : 'dashboard.netIfSold'),
+      f.currency(netIfSold, currency),
     ])
   }
 
   return (
-    <HintProvider>
+    <>
       <div className="flex flex-col">
         <div className="flex flex-wrap items-end justify-between gap-x-12 gap-y-6">
           <div
@@ -182,21 +171,44 @@ export function DashboardHead({
               )}
             </p>
             {valued && variation?.amount != null ? (
-              <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
-                <span className={`fig text-prose ${signClass(variation.amount)}`}>
-                  {f.signedCurrency(variation.amount, currency)}
-                </span>
-                {variation.pct == null ? null : (
-                  <span className={`fig text-sm ${signClass(variation.pct)}`}>
-                    ({f.percent(variation.pct, 1, 1)})
+              <>
+                <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+                  <span className={`fig text-prose ${signClass(variation.amount)}`}>
+                    {f.signedCurrency(variation.amount, currency)}
                   </span>
+                  {variation.pct == null ? null : (
+                    <span className={`fig text-sm ${signClass(variation.pct)}`}>
+                      ({f.percent(variation.pct, 1, 1)})
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {t('dashboard.variation.since', {
+                      range,
+                      date: f.date(variation.start_date),
+                    })}
+                    {variation.deposits ? `, ${t('dashboard.variation.exclDeposits')}` : ''}
+                  </span>
+                </p>
+                {variation.pct == null || variation.base == null ? null : (
+                  // The base under the percentage, in a few words.
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      range === 'MAX'
+                        ? 'dashboard.variation.base.max'
+                        : 'dashboard.variation.base.range',
+                      {
+                        base: f.currency(variation.base, currency),
+                        date: f.date(variation.start_date),
+                      },
+                    )}
+                  </p>
                 )}
-                <span className="text-muted-foreground">
-                  {t('dashboard.variation.since', {
-                    range,
-                    date: f.date(variation.start_date),
-                  })}
-                </span>
+              </>
+            ) : null}
+            {provisional ? (
+              // One marker for every figure that rests on the rebuilt series.
+              <p className="max-w-prose text-sm text-muted-foreground">
+                {t('figures.provisional')}
               </p>
             ) : null}
             {reading === 'partial' ? (
@@ -206,25 +218,51 @@ export function DashboardHead({
                     ? t('dashboard.rebuilding.progress', runtime.reconstruction)
                     : t('dashboard.rebuilding.progressUnobserved')}
                 </p>
-                {unpriced.length === 0 ? null : (
+                {priceless.length > 0 ? (
+                  <PricelessSentence
+                    lines={priceless}
+                    lead={t('dashboard.rebuilding.unpricedLead')}
+                    tail={null}
+                  />
+                ) : unpriced.length === 0 ? null : (
                   <p>{t('dashboard.rebuilding.unpriced', { lines: f.list(unpriced) })}</p>
                 )}
+              </div>
+            ) : priceless.length > 0 ? (
+              <div className="max-w-prose text-md text-muted-foreground">
+                <PricelessSentence
+                  lines={priceless}
+                  lead={t('dashboard.unpriced.lead')}
+                  tail={t('dashboard.unpriced.tail', { count: priceless.length })}
+                />
               </div>
             ) : null}
           </div>
 
           {statement.length === 0 ? null : (
-            <dl
-              aria-label={t('dashboard.trajectory')}
-              className="grid grid-cols-[auto_auto] items-baseline gap-x-6 gap-y-1.5 pb-1.5"
-            >
-              {statement.map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt className="text-right text-sm text-muted-foreground">{label}</dt>
-                  <dd className="fig text-right text-md">{value}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="flex flex-col gap-1.5 pb-1.5">
+              <dl
+                aria-label={t('dashboard.trajectory')}
+                className="grid grid-cols-[auto_auto] items-baseline gap-x-6 gap-y-1.5"
+              >
+                {statement.map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-right text-sm text-muted-foreground">{label}</dt>
+                    <dd className="fig text-right text-md">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {valued && netIfSold !== null ? (
+                <p className="max-w-[32ch] self-end text-right text-sm text-muted-foreground">
+                  {estimated.length === 0
+                    ? t('dashboard.netIfSold.gross')
+                    : t('dashboard.netIfSold.estimated', {
+                        count: estimated.length,
+                        accounts: f.list(estimated),
+                      })}
+                </p>
+              ) : null}
+            </div>
           )}
         </div>
 
@@ -254,6 +292,15 @@ export function DashboardHead({
                       {t('dashboard.chart.contributed')}
                     </span>
                     <span className="fig text-prose">{f.currency(contributed, currency)}</span>
+                    {granted > 0 ? (
+                      // A grant is counted as contributed (the gain and the rate
+                      // are taken against it): said, so it is not read as a deposit.
+                      <span className="text-sm text-muted-foreground">
+                        {t('dashboard.contributed.granted', {
+                          granted: f.currency(granted, currency),
+                        })}
+                      </span>
+                    ) : null}
                   </span>
                 )}
                 <span
@@ -275,6 +322,13 @@ export function DashboardHead({
                           ({f.percent(gain.pct, 1, 1)})
                         </span>
                       )}
+                      {gain.pct == null || contributed === null ? null : (
+                        <span className="text-sm text-muted-foreground">
+                          {t('dashboard.gainTotal.base', {
+                            base: f.currency(contributed, currency),
+                          })}
+                        </span>
+                      )}
                     </>
                   )}
                 </span>
@@ -282,6 +336,8 @@ export function DashboardHead({
               {xirr === null ? null : (
                 <p className="text-muted-foreground">
                   {t('dashboard.xirr.line', { value: f.percentPoints(xirr * 100, 2) })}
+                  {/* Defined where it is shown: visible, so touch has it too. */}
+                  <span className="block text-sm">{t('dashboard.xirr.definition')}</span>
                 </p>
               )}
             </div>
@@ -294,10 +350,46 @@ export function DashboardHead({
         no ledger at all, or a reporting currency nobody has answered. */}
         {totalsRow === null ? (
           <p className="max-w-prose text-md text-muted-foreground">
-            {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
+            {currency === null
+              ? t('dashboard.awaitingCurrency')
+              : // Events exist (the empty state above is for none): the series is
+                // not written yet, which is not « record your deposits ».
+                rows.length > 0
+                ? t('dashboard.rebuilding.pending')
+                : t('dashboard.withoutLedger')}
           </p>
         ) : null}
       </div>
-    </HintProvider>
+    </>
+  )
+}
+
+/** Names the held lines nobody has a quote for, each a link to the page that fixes it. */
+function PricelessSentence({
+  lines,
+  lead,
+  tail,
+}: {
+  lines: readonly { symbol: string; name: string }[]
+  lead: string
+  tail: string | null
+}) {
+  return (
+    <p>
+      {lead}{' '}
+      {lines.map((line, index) => (
+        <span key={line.symbol}>
+          {index === 0 ? '' : ', '}
+          <Link
+            to="/shares/$symbol"
+            params={{ symbol: line.symbol }}
+            className="underline underline-offset-4"
+          >
+            {line.name}
+          </Link>
+        </span>
+      ))}
+      .{tail === null ? '' : ` ${tail}`}
+    </p>
   )
 }

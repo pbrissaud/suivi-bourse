@@ -31,7 +31,7 @@ import type {
 } from '@/features/dashboard/lib/api'
 import type { Position, PositionsResponse } from '@/features/shares/lib/api'
 import type { RuntimeState } from '@/lib/api'
-import { absenceCase } from '@/lib/absence'
+import { absenceCase, isQuoted } from '@/lib/absence'
 import { shifted, type AccountRow } from '@/features/accounts/lib/accounts'
 import type { AxisUnit } from '@/lib/format'
 
@@ -435,4 +435,27 @@ export function unpricedLines(positions: readonly Position[]): string[] {
     }
   }
   return [...names].sort((left, right) => left.localeCompare(right))
+}
+
+/** One held line no quote is behind, named for a sentence and a link. */
+export interface PricelessLine {
+  symbol: string
+  name: string
+}
+
+/**
+ * The held lines with **no quote at all** — whatever the reason (still being
+ * rebuilt, or given up on and carried at cost) — once each, by name. One
+ * sentence on the dashboard names them and links each to its own page, where
+ * the symbol is fixed.
+ */
+export function pricelessLines(positions: readonly Position[]): PricelessLine[] {
+  const lines = new Map<string, string>()
+  for (const position of positions) {
+    if (position.quantity === 0 || isQuoted(position.price)) continue
+    lines.set(position.symbol, position.name ?? position.symbol)
+  }
+  return [...lines]
+    .map(([symbol, name]) => ({ symbol, name }))
+    .sort((left, right) => left.name.localeCompare(right.name))
 }
