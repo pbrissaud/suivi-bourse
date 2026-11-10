@@ -39,6 +39,7 @@ import {
   aPriceSeries,
   anAccountsPayload,
   anEvent,
+  defaultAccounts,
   anUnaddressableEvent,
   aTypedEvent,
   ledgerEvents,
@@ -237,7 +238,7 @@ describe('the columns of the ledger', () => {
     // file; both halves went with the population they told apart (#816).
     const row = within(ledger()).getByText('Zeta Gamma').closest('tr') as HTMLElement
     const cells = within(row).getAllByRole('cell')
-    expect(cells[cells.length - 1]).toHaveTextContent('alpha')
+    expect(cells[cells.length - 1]).toHaveTextContent('Alpha')
     expect(cells[cells.length - 1]).not.toHaveTextContent('—')
   })
 
@@ -365,11 +366,11 @@ describe('the reduction, which is what pays for no pagination', () => {
 
     const accounts = await openMenu(user, 'Compte')
     // The order the ledger names them in, which is the sorted table's own.
-    expect(optionNames(accounts)).toEqual(['Tous les comptes', 'beta', 'alpha'])
+    expect(optionNames(accounts)).toEqual(['Tous les comptes', 'Beta', 'Alpha'])
 
-    await user.click(within(accounts).getByRole('option', { name: 'beta' }))
+    await user.click(within(accounts).getByRole('option', { name: 'Beta' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
-    expect(screen.getByRole('button', { name: 'Compte : beta' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Compte : Beta' })).toBeInTheDocument()
   })
 
   it('reduces to a year, shows it as the value of the Période filter, and lets it go', async () => {
@@ -641,7 +642,7 @@ describe('a reduction in force always has the way out', () => {
     const { user } = renderApp({ url: '/ledger' })
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await pick(user, 'Compte', 'beta')
+    await pick(user, 'Compte', 'Beta')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
 
     await user.click(within(rowsOf(ledger())[0]).getByRole('checkbox'))
@@ -652,7 +653,7 @@ describe('a reduction in force always has the way out', () => {
 
     // The reduction survives the re-read, so the way out has to survive it too.
     const after = await openMenu(user, 'Compte')
-    expect(within(after).getByRole('option', { name: 'beta' })).toHaveAttribute(
+    expect(within(after).getByRole('option', { name: 'Beta' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
@@ -2606,7 +2607,7 @@ describe('the ledger on a phone (#1339)', () => {
     // The ticker beside the name, outside the button (#1433).
     expect(within(item).getByText('ZZA')).toHaveClass('fig')
     expect(within(item).getByText('Dividende')).toBeInTheDocument()
-    expect(within(item).getByText('alpha')).toHaveAttribute('title', 'alpha')
+    expect(within(item).getByText('Alpha')).toHaveAttribute('title', 'Alpha')
     expect(within(item).getByText(/480/)).toHaveClass('fig')
     expect(within(item).getByText(/2026/)).toBeInTheDocument()
     // Quantity, price, fee and the label under a ticker live in the form.
@@ -2625,6 +2626,26 @@ describe('the ledger on a phone (#1339)', () => {
     expect(within(grant).queryByText('—')).not.toBeInTheDocument()
     expect(within(deposit).getByText(/\+100,00/)).toBeInTheDocument()
     expect(within(buy).getByText(/481,50/)).toBeInTheDocument()
+  })
+
+  it('says quantity × price on a trade, and a chevron says the row opens (persona pass)', async () => {
+    await renderPhone([anEvent({ id: 'c', quantity: 4, unit_price: 120, fee: 1.5 })])
+
+    const [buy] = items()
+    expect(within(buy).getByText(/4\s×\s120,00/)).toHaveClass('fig')
+    expect(buy.querySelector('svg.lucide-chevron-right')).not.toBeNull()
+  })
+
+  it('hands the focus back to the row when Escape closes the sheet', async () => {
+    const { user } = await renderPhone()
+    const open = within(items()[0]).getByRole('button', { name: 'Zeta Alpha' })
+
+    await user.click(open)
+    await screen.findByRole('dialog')
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(open).toHaveFocus()
   })
 
   it('opens the editor from the identity, and not from the checkbox', async () => {
@@ -2776,7 +2797,12 @@ describe('the effect line, which the server writes (#1461)', () => {
       ?.textContent?.replace(/\s/g, ' ')
 
   /** The dry run, answering `answer` and recording every body it was asked. */
-  function previewing(answer: { cash_after: number; amount: number; fees: number }) {
+  function previewing(answer: {
+    cash_after: number
+    amount: number
+    fees: number
+    realised?: number
+  }) {
     const asked: Record<string, unknown>[] = []
     server.use(
       http.post(ROUTES.eventsPreview, async ({ request }) => {
@@ -2790,6 +2816,7 @@ describe('the effect line, which the server writes (#1461)', () => {
           amount: Math.abs(answer.amount),
           fee: answer.fees,
           direction: answer.amount < 0 ? 'debit' : answer.amount > 0 ? 'credit' : 'none',
+          realised_gain: answer.realised ?? null,
         })
       }),
     )
@@ -2816,7 +2843,7 @@ describe('the effect line, which the server writes (#1461)', () => {
     const user = await openFresh()
     await fill(user, 'Versement', { Montant: '500' })
     await waitFor(() =>
-      expect(said()).toBe('500,00 € arrivent sur le compte alpha · liquidités 1 990,00 €'),
+      expect(said()).toBe('500,00 € arrivent sur le compte Alpha · liquidités 1 990,00 €'),
     )
   })
 
@@ -2831,7 +2858,7 @@ describe('the effect line, which the server writes (#1461)', () => {
     })
     await waitFor(() =>
       expect(said()).toBe(
-        '2 707,35 € quittent le compte alpha, dont 1,35 € de frais · liquidités 1 040,00 €',
+        '2 707,35 € quittent le compte Alpha, dont 1,35 € de frais · liquidités 1 040,00 €',
       ),
     )
   })
@@ -2840,7 +2867,9 @@ describe('the effect line, which the server writes (#1461)', () => {
     previewing({ cash_after: 1040, amount: 0, fees: 0 })
     const user = await openFresh()
     await fill(user, 'Attribution', { Titre: 'ZZA', Quantité: '2' })
-    await waitFor(() => expect(said()).toBe('liquidités 1 040,00 €'))
+    await waitFor(() =>
+      expect(said()).toBe('+2 titres de ZZA sur le compte Alpha · liquidités 1 040,00 €'),
+    )
   })
 
   it('shows what the server said and computes nothing itself', async () => {
@@ -2849,7 +2878,7 @@ describe('the effect line, which the server writes (#1461)', () => {
     const user = await openFresh()
     await fill(user, 'Versement', { Montant: '500' })
     await waitFor(() =>
-      expect(said()).toBe('1,00 € arrivent sur le compte alpha · liquidités 7,00 €'),
+      expect(said()).toBe('1,00 € arrivent sur le compte Alpha · liquidités 7,00 €'),
     )
   })
 
@@ -2897,7 +2926,7 @@ describe('the effect line, which the server writes (#1461)', () => {
     await user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha' }))
     await screen.findByLabelText('Quantité')
 
-    await waitFor(() => expect(said()).toMatch(/^2 707,35 € quittent le compte alpha/))
+    await waitFor(() => expect(said()).toMatch(/^2 707,35 € quittent le compte Alpha/))
     expect(asked[0]).toMatchObject({ id: 'row-7', quantity: 5, unit_price: 541.2, fee: 1.35 })
   })
 
@@ -2913,8 +2942,104 @@ describe('the effect line, which the server writes (#1461)', () => {
     const user = await openFresh()
     await fill(user, 'Versement', { Montant: '500' })
     await waitFor(() =>
-      expect(said()).toBe('500,00 arrivent sur le compte alpha · liquidités 1 990,00'),
+      expect(said()).toBe('500,00 arrivent sur le compte Alpha · liquidités 1 990,00'),
     )
+  })
+
+  it('says the loss a sale realises, before the save', async () => {
+    previewing({ cash_after: 1500, amount: 492.06, fees: 0, realised: -50.49 })
+    const user = await openFresh()
+    await fill(user, 'Vente', { Titre: 'ZZA', Quantité: '1', 'Prix unitaire': '492,06' })
+    await waitFor(() => expect(said()).toMatch(/moins-value de 50,49 €/))
+  })
+
+  /** The refusal the server gives the dry run, as `problem+json`. */
+  function refusing(body: Record<string, unknown>, status: number) {
+    server.use(
+      http.post(ROUTES.eventsPreview, () =>
+        HttpResponse.json(body, {
+          status,
+          headers: { 'Content-Type': 'application/problem+json' },
+        }),
+      ),
+    )
+  }
+
+  it('refuses a sale of shares the account does not hold, before « Enregistrer »', async () => {
+    refusing(
+      {
+        status: 409,
+        type: PROBLEM_TYPES.unreplayableLedger,
+        title: 'Ledger does not replay',
+        symbol: 'ZZA',
+        wanted: 100,
+        owned: 26,
+        account: 'alpha',
+      },
+      409,
+    )
+    const user = await openFresh()
+    await fill(user, 'Vente', { Titre: 'ZZA', Quantité: '100', 'Prix unitaire': '10' })
+
+    expect(await screen.findByText(/n’en porte que 26/)).toBeInTheDocument()
+  })
+
+  it('refuses a withdrawal larger than the cash, before « Enregistrer »', async () => {
+    refusing(
+      {
+        status: 422,
+        type: PROBLEM_TYPES.badRequest,
+        title: 'Invalid request',
+        key: 'amount',
+        code: 'overdraft',
+      },
+      422,
+    )
+    const user = await openFresh()
+    await fill(user, 'Retrait', { Montant: '99999' })
+
+    expect(
+      await screen.findByText(/dépasse les liquidités que le compte détient/),
+    ).toBeInTheDocument()
+  })
+
+  it('names an amount that is not a number, or not above zero, as it is typed', async () => {
+    const user = await openFresh()
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
+    const amount = await screen.findByLabelText('Montant')
+
+    await user.type(amount, 'abc')
+    expect(await screen.findByText('Ce n’est pas un nombre.')).toBeInTheDocument()
+    await user.clear(amount)
+    await user.type(amount, '-50')
+    expect(await screen.findByText(/supérieur à zéro/)).toBeInTheDocument()
+    await user.clear(amount)
+    await user.type(amount, '0')
+    expect(await screen.findByText(/supérieur à zéro/)).toBeInTheDocument()
+  })
+
+  it('warns about a future date and a date before the account opened, and still allows both', async () => {
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload(
+            defaultAccounts().map((one) =>
+              one.id === 'alpha' ? { ...one, opened_on: '2019-10-30' } : one,
+            ),
+          ),
+        ),
+      ),
+    )
+    const user = await openFresh()
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
+    await user.selectOptions(await screen.findByLabelText('Compte'), 'alpha')
+    const date = screen.getByLabelText('Date')
+
+    fireEvent.change(date, { target: { value: '2099-01-01' } })
+    expect(await screen.findByText(/pas encore passée/)).toBeInTheDocument()
+    fireEvent.change(date, { target: { value: '2019-01-01' } })
+    expect(await screen.findByText(/Le compte est ouvert depuis le/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enregistrer' })).toBeEnabled()
   })
 
   it('has no colour and is not announced', async () => {

@@ -292,7 +292,7 @@ describe('the ledger an event result lands on', () => {
     // **It names itself in its controls**: the type, the account and the word
     // typed are each a control showing its own value, never a row's address.
     expect(screen.getByRole('button', { name: 'Type : Versement' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Compte : alpha' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Compte : Alpha' })).toBeInTheDocument()
     expect(screen.getByRole('searchbox')).toHaveValue('Virement entrant depuis le compte courant')
 
     // And each one offers the way out, which restores the ledger entire.

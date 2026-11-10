@@ -190,6 +190,8 @@ interface EventFormProps {
   /** The ledger's reporting currency, `null` until the totals have answered. */
   currency: string | null
   onClose: () => void
+  /** Hands the focus back to the row the panel was opened on, when it closes. */
+  onRestoreFocus?: () => void
   /** Asks for the row being edited to be removed — the confirmation is the caller's (#1264). */
   onDelete: () => void
 }
@@ -202,6 +204,7 @@ export function EventForm({
   titles,
   currency,
   onClose,
+  onRestoreFocus,
   onDelete,
 }: EventFormProps) {
   const { t, language } = useI18n()
@@ -561,6 +564,13 @@ export function EventForm({
     // The line holds its last words while the next ones are on their way.
     placeholderData: (previous) => (settled === null ? undefined : previous),
   })
+  /** An account as the reader knows it: its libellé, the identifier only where it is edited. */
+  const nameOf = (id: string) => {
+    const known = accounts?.accounts.find((account) => account.id === id)
+    return known
+      ? (declaredLabel(known) ?? t(DEFAULT_ACCOUNT_LABEL))
+      : id || t(DEFAULT_ACCOUNT_LABEL)
+  }
   const effect =
     asking === null || previewed.data === undefined
       ? undefined
@@ -570,8 +580,50 @@ export function EventForm({
             previewed.data.direction === 'debit' ? -previewed.data.amount : previewed.data.amount,
           fees: previewed.data.fee,
           cashAfter: previewed.data.cash_after,
-          account: asking.account || t(DEFAULT_ACCOUNT_LABEL),
+          account: nameOf(asking.account ?? ''),
+          realised: previewed.data.realised_gain ?? null,
         }
+  // **A refusal the server would give is said before « Enregistrer »**: a sale
+  // of shares the account does not hold, a withdrawal larger than its cash. The
+  // line holds the last answer while a new one is on its way, so it is the
+  // error of *this* question that counts.
+  const refused =
+    asking !== null && previewed.isError && !previewed.isFetching ? previewed.error : null
+
+  // **What can be said about the figures before the server is asked.** A value
+  // that is not a number, or not above zero, is named under its field as it is
+  // typed; a date that is odd is *warned about*, never refused, because an
+  // owner may pre-record a movement and an account may be opened after the fact.
+  const unreadable = (field: FieldName, allowZero = false): MessageKey | undefined => {
+    const raw = draft[field].trim()
+    if (raw === '') return undefined
+    const parsed = parseDecimal(raw)
+    if (parsed === null) return 'data.form.number.invalid'
+    if (field === 'fee') return parsed < 0 ? 'data.form.fee.negative' : undefined
+    return parsed < 0 || (parsed === 0 && !allowZero) ? 'data.form.number.positive' : undefined
+  }
+  const live: Partial<Record<FieldName, MessageKey>> = {
+    ...(fields.quantity ? { quantity: unreadable('quantity') } : {}),
+    ...(fields.unitPrice === 'none' ? {} : { unitPrice: unreadable('unitPrice') }),
+    ...(fields.amount ? { amount: unreadable('amount') } : {}),
+    ...(fields.fee ? { fee: unreadable('fee') } : {}),
+  }
+  const typedDay = parseDay(draft.date.trim())
+  const accountOpened = accounts?.accounts.find(
+    (account) =>
+      account.id === (draft.account || (choice.kind === 'single' ? choice.account.id : '')),
+  )?.opened_on
+  const dateWarning: { key: MessageKey; values?: Record<string, string> } | null =
+    typedDay === null
+      ? null
+      : typedDay > today()
+        ? { key: 'data.form.date.future' }
+        : accountOpened && typedDay < accountOpened
+          ? {
+              key: 'data.form.date.beforeOpening',
+              values: { date: format.date(accountOpened) },
+            }
+          : null
 
   function set(field: FieldName, value: string) {
     setDraft((previous) => ({ ...previous, [field]: value }))
@@ -677,6 +729,13 @@ export function EventForm({
     >
       <SheetContent
         ref={setPanel}
+        // The panel has no trigger to give the focus back to: the page says
+        // which row it was opened on.
+        onCloseAutoFocus={(closed) => {
+          if (!onRestoreFocus) return
+          closed.preventDefault()
+          onRestoreFocus()
+        }}
         // The subtitle is a plain dated line, not a description of the control.
         aria-describedby={undefined}
         showCloseButton={false}
@@ -699,7 +758,7 @@ export function EventForm({
                   {t('data.form.edit.subtitle', {
                     type: t(TYPE_LABEL[event.event_type]),
                     date: format.date(event.date),
-                    account: accountOf(event),
+                    account: nameOf(accountOf(event)),
                   })}
                 </p>
               )}
@@ -727,7 +786,7 @@ export function EventForm({
             />
 
             <div className="grid grid-cols-2 gap-x-3 gap-y-3.5">
-              <Field name="date" label="data.form.date" error={errors.date}>
+              <Field name="date" label="data.form.date" error={errors.date} warning={dateWarning}>
                 {(id, described) => (
                   <Input
                     id={id}
@@ -897,14 +956,18 @@ export function EventForm({
               ) : null}
 
               {fields.quantity ? (
-                <Field name="quantity" label="data.form.quantity" error={errors.quantity}>
+                <Field
+                  name="quantity"
+                  label="data.form.quantity"
+                  error={errors.quantity ?? live.quantity}
+                >
                   {(id, described) => (
                     <Input
                       id={id}
                       inputMode="decimal"
                       className="fig md:text-md"
                       value={draft.quantity}
-                      aria-invalid={errors.quantity !== undefined}
+                      aria-invalid={(errors.quantity ?? live.quantity) !== undefined}
                       aria-describedby={described}
                       onChange={(changed) => set('quantity', changed.target.value)}
                     />
@@ -916,7 +979,7 @@ export function EventForm({
                 <Field
                   name="unitPrice"
                   label="data.form.unitPrice"
-                  error={errors.unitPrice}
+                  error={errors.unitPrice ?? live.unitPrice}
                   optional={fields.unitPrice === 'optional'}
                 >
                   {(id, described) => (
@@ -925,7 +988,7 @@ export function EventForm({
                         id={id}
                         unit={unit}
                         value={draft.unitPrice}
-                        invalid={errors.unitPrice !== undefined}
+                        invalid={(errors.unitPrice ?? live.unitPrice) !== undefined}
                         // The source is bound to the field rather than left
                         // floating beside it: a figure that arrived on its own
                         // has to say so to the reader who cannot see it appear.
@@ -949,13 +1012,13 @@ export function EventForm({
               )}
 
               {fields.amount ? (
-                <Field name="amount" label="data.form.amount" error={errors.amount}>
+                <Field name="amount" label="data.form.amount" error={errors.amount ?? live.amount}>
                   {(id, described) => (
                     <Money
                       id={id}
                       unit={unit}
                       value={draft.amount}
-                      invalid={errors.amount !== undefined}
+                      invalid={(errors.amount ?? live.amount) !== undefined}
                       describedBy={described}
                       onChange={(next) => set('amount', next)}
                     />
@@ -964,13 +1027,13 @@ export function EventForm({
               ) : null}
 
               {fields.fee ? (
-                <Field name="fee" label="data.form.fee" error={errors.fee}>
+                <Field name="fee" label="data.form.fee" error={errors.fee ?? live.fee}>
                   {(id, described) => (
                     <Money
                       id={id}
                       unit={unit}
                       value={draft.fee}
-                      invalid={errors.fee !== undefined}
+                      invalid={(errors.fee ?? live.fee) !== undefined}
                       describedBy={described}
                       onChange={(next) => set('fee', next)}
                     />
@@ -1002,8 +1065,22 @@ export function EventForm({
                 account's cash, as the server computed it. Nothing is said while
                 the server has not answered, and it is not announced: it moves
                 with every figure typed (#1461). */}
-            {effect === undefined ? null : (
+            {refused !== null ? (
+              <p className="text-sm text-destructive">{problemSentence(t, refused)}</p>
+            ) : effect === undefined ? null : (
               <p className="text-sm text-muted-foreground">
+                {type === 'GRANT' && asking?.quantity != null ? (
+                  <>
+                    <span className="fig text-foreground">
+                      {t('event.effect.grant', {
+                        quantity: asking.quantity,
+                        symbol: asking.symbol ?? '',
+                        account: effect.account,
+                      })}
+                    </span>
+                    {' · '}
+                  </>
+                ) : null}
                 {Math.abs(effect.amount) < 0.005 ? null : (
                   <>
                     <span className="fig text-foreground">
@@ -1022,6 +1099,15 @@ export function EventForm({
                         {t('event.effect.fees.after')}
                       </>
                     ) : null}
+                    {' · '}
+                  </>
+                )}
+                {effect.realised === null || Math.abs(effect.realised) < 0.005 ? null : (
+                  <>
+                    {t(effect.realised < 0 ? 'event.effect.loss' : 'event.effect.gain')}{' '}
+                    <span className="fig text-foreground">
+                      {format.currency(Math.abs(effect.realised), currency)}
+                    </span>
                     {' · '}
                   </>
                 )}
@@ -1120,11 +1206,14 @@ function Field({
   optional,
   full,
   below,
+  warning,
   children,
 }: {
   name: FieldName
   label: MessageKey
   error?: MessageKey
+  /** Said under the field, and never a reason to refuse it. */
+  warning?: { key: MessageKey; values?: Record<string, string> } | null
   optional?: boolean
   /** Takes the whole row of the two-column grid. */
   full?: boolean
@@ -1142,10 +1231,14 @@ function Field({
         <label htmlFor={id}>{t(label)}</label>
         {optional ? <span className="font-normal">{` · ${t('data.form.optional')}`}</span> : null}
       </div>
-      {children(id, error ? errorId : undefined)}
+      {children(id, error ? errorId : warning ? `${id}-warning` : undefined)}
       {error ? (
         <p id={errorId} className="text-sm text-destructive">
           {t(error)}
+        </p>
+      ) : warning ? (
+        <p id={`${id}-warning`} className="text-sm text-attention">
+          {t(warning.key, warning.values)}
         </p>
       ) : null}
       {below}

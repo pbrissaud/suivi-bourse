@@ -11,6 +11,7 @@ kinds, and one module cannot be both.
 """
 import csv
 import json
+import re
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -209,6 +210,16 @@ def refuse_unaddressable_id(account_id: str) -> None:
             f"'..' there name a route that does not exist")
 
 
+class InvalidAccountId(AccountSourceError):
+    """An id typed in the app that is not letters, digits, ``-``, ``_`` or ``.``."""
+
+
+#: What an account id typed in the app may hold. Files may still *name* any
+#: account (an export keeps the ids it was written with); this is the rule of
+#: the one place an id is born.
+_ID_CHARSET = re.compile(r'[\w.-]+')
+
+
 def create_account(store, account_id: str,
                    label: Optional[str] = None) -> Account:
     """Declare an account. The app is where one is born, and the only place.
@@ -221,6 +232,10 @@ def create_account(store, account_id: str,
     if not account_id:
         raise AccountSourceError("id is required")
     refuse_unaddressable_id(account_id)
+    if not _ID_CHARSET.fullmatch(account_id):
+        raise InvalidAccountId(
+            f"{account_id!r} cannot be an account id: it holds letters, digits, "
+            f"'-', '_' and '.' only")
     if account_id in account_ids(store):
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 

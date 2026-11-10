@@ -166,6 +166,9 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
             />
           </>
         ) : null}
+        <p className="border-t px-2 pt-2 pb-1 text-xs text-muted-foreground">
+          {t('data.export.notBackup')}
+        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -51,6 +51,7 @@ import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { useProposalImport } from '@/features/data/lib/proposalImport'
 import { handOver } from '@/features/data/lib/handoff'
 import { exportable } from '@/features/data/lib/imports'
+import { useAccountNames } from '@/hooks/use-account-names'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useI18n } from '@/lib/i18n'
 import {
@@ -155,6 +156,24 @@ export function Ledger({
   // The row a removal was asked for, or `null`. Held here rather than in the
   // table, because the box that asks is mounted once for all the rows.
   const [removing, setRemoving] = useState<LedgerEvent | null>(null)
+  // The row the sheet was opened on, so that closing it hands the focus back to
+  // that row and not to the page.
+  const opener = useRef<string | null>(null)
+  // Stable: the table's columns close over it, and rebuilding them remounts
+  // the header's checkbox.
+  const openSheet = useCallback((event: LedgerEvent) => {
+    opener.current = event.id ?? null
+    setEditing(event)
+  }, [])
+  const restoreFocus = () => {
+    const id = opener.current
+    if (id === null) return
+    const row = [...document.querySelectorAll<HTMLElement>('[data-row-id]')].find(
+      (candidate) => candidate.dataset.rowId === id,
+    )
+    row?.querySelector<HTMLElement>('[data-row-open]')?.focus()
+  }
+  const accountName = useAccountNames()
 
   useEffect(() => {
     if (!compose) return
@@ -273,8 +292,9 @@ export function Ledger({
     currency,
     rowSelection,
     onRowSelectionChange: setRowSelection,
-    onEdit: setEditing,
+    onEdit: openSheet,
     fresh,
+    accountName,
   }
 
   return (
@@ -288,50 +308,57 @@ export function Ledger({
       {ledgerFailure !== null ? (
         <Unreadable failure={ledgerFailure} />
       ) : !events.data ? null : all.length === 0 ? (
-        <EntryPair
-          empty
-          entries={[
-            {
-              title: t('data.empty.file.title'),
-              body: t('data.empty.file.body'),
-              // The door, here and on the control line: the import page. The
-              // format's page quietly under it.
-              action: (
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* One gesture: the chosen file goes straight to the preview. */}
-                  <input
-                    ref={chooser}
-                    type="file"
-                    accept=".csv,.xlsx"
-                    className="sr-only"
-                    tabIndex={-1}
-                    aria-label={t('import.choose')}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0]
-                      event.target.value = ''
-                      if (!file) return
-                      handOver(file)
-                      void navigate({ to: '/ledger/import', search: {} })
-                    }}
-                  />
-                  <Button type="button" onClick={() => chooser.current?.click()}>
-                    {t('data.toolbar.import')}
+        <>
+          <EntryPair
+            empty
+            entries={[
+              {
+                title: t('data.empty.file.title'),
+                body: t('data.empty.file.body'),
+                // The door, here and on the control line: the import page. The
+                // format's page quietly under it.
+                action: (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* One gesture: the chosen file goes straight to the preview. */}
+                    <input
+                      ref={chooser}
+                      type="file"
+                      accept=".csv,.xlsx"
+                      className="sr-only"
+                      tabIndex={-1}
+                      aria-label={t('import.choose')}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        event.target.value = ''
+                        if (!file) return
+                        handOver(file)
+                        void navigate({ to: '/ledger/import', search: {} })
+                      }}
+                    />
+                    <Button type="button" onClick={() => chooser.current?.click()}>
+                      {t('data.toolbar.import')}
+                    </Button>
+                    <FormatDocsButton />
+                  </div>
+                ),
+              },
+              {
+                title: t('data.empty.manual.title'),
+                body: t('data.empty.manual.body'),
+                action: (
+                  <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                    {t('data.new')}
                   </Button>
-                  <FormatDocsButton />
-                </div>
-              ),
-            },
-            {
-              title: t('data.empty.manual.title'),
-              body: t('data.empty.manual.body'),
-              action: (
-                <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-                  {t('data.new')}
-                </Button>
-              ),
-            },
-          ]}
-        />
+                ),
+              },
+            ]}
+          />
+          <p className="text-sm">
+            <Link to="/" search={{ open: 'first-run' }} className="underline underline-offset-4">
+              {t('empty.resumeSetup')}
+            </Link>
+          </p>
+        </>
       ) : (
         <div>
           {/* **The control line**: the search and the filters on the left, the
@@ -351,6 +378,7 @@ export function Ledger({
                 onChange={reduce}
                 events={all}
                 accounts={accountsNamed(all)}
+                accountName={accountName}
               />
               <SymbolsReduction filters={filters} onChange={reduce} />
             </div>
@@ -451,6 +479,7 @@ export function Ledger({
         titles={titles}
         currency={currency}
         onClose={() => setEditing(undefined)}
+        onRestoreFocus={restoreFocus}
         onDelete={() => setRemoving(editing ?? null)}
       />
 

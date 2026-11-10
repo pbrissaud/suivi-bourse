@@ -31,12 +31,20 @@ interface LedgerFacetsProps {
   events: readonly LedgerEvent[]
   /** The accounts the ledger actually names, never the declared list. */
   accounts: readonly string[]
+  /** An account by its libellé; the identifier stands in without one. */
+  accountName?: (id: string) => string
 }
 
 const ALL = ''
 const CUSTOM = 'custom'
 
-export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFacetsProps) {
+export function LedgerFacets({
+  filters,
+  onChange,
+  events,
+  accounts,
+  accountName,
+}: LedgerFacetsProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -82,7 +90,10 @@ export function LedgerFacets({ filters, onChange, events, accounts }: LedgerFace
           value={filters.account ?? ALL}
           options={[
             { value: ALL, label: t('data.filter.account.all') },
-            ...named.map((account) => ({ value: account, label: account })),
+            ...named.map((account) => ({
+              value: account,
+              label: accountName ? accountName(account) : account,
+            })),
           ]}
           onChange={(account) =>
             onChange({ ...filters, account: account === ALL ? null : account })

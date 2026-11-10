@@ -15,9 +15,9 @@
  *  - **a half-written setup** — the models are imported all or nothing, and a
  *    refused account stays on its step with the refusal under its field.
  */
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ConfigResponse } from '@/features/settings/lib/api'
 import { ROUTES } from '@/lib/api'
@@ -29,6 +29,7 @@ import {
   aTaxationCatalogue,
   aTaxationModel,
   anAccount,
+  noAccountsDeclared,
 } from '@/test/factories'
 import { renderApp, type RenderAppOptions } from '@/test/render'
 import { server } from '@/test/server'
@@ -121,6 +122,11 @@ type Reader = ReturnType<typeof renderApp>['user']
 
 async function next(user: Reader) {
   await user.click(within(screenOf()).getByRole('button', { name: 'Continuer' }))
+}
+
+/** The way past the account step without declaring one. */
+async function skip(user: Reader) {
+  await user.click(within(screenOf()).getByRole('button', { name: 'Passer cette étape' }))
 }
 
 /** Walk past the currency, which is the one owed answer. */
@@ -352,12 +358,25 @@ describe('step 3 — the first account', () => {
     expect(sent).toEqual({ id: 'pea', label: 'PEA Bourse Direct', taxation_model_id: 'pea' })
   })
 
-  it('writes nothing for a blank identifiant: the step is traversed, not answered', async () => {
+  it('requires the identifiant, as « Ajouter un compte » does, and says the charset inline', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
     await toTheAccount(user)
     const writes = writesMade()
 
+    expect(within(screenOf()).getByText(/Lettres, chiffres/)).toBeInTheDocument()
     await next(user)
+
+    expect(await within(screenOf()).findByText('Ce champ est obligatoire.')).toBeInTheDocument()
+    expect(within(screenOf()).getByText('3 sur 4')).toBeInTheDocument()
+    expect(writes).toEqual([])
+  })
+
+  it('writes nothing when the step is skipped', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await toTheAccount(user)
+    const writes = writesMade()
+
+    await skip(user)
 
     await within(screenOf()).findByRole('heading', {
       name: /D’où viennent vos premiers événements/,
@@ -389,10 +408,12 @@ describe('step 3 — the first account', () => {
     await toTheAccount(user)
     const writes = writesMade()
 
-    await user.type(within(screenOf()).getByLabelText('Identifiant'), 'a/b')
+    await user.type(within(screenOf()).getByLabelText('Identifiant'), 'PEA Mehdi!!')
     await next(user)
 
-    expect(await within(screenOf()).findByText(/ne contient pas de « \/ »/)).toBeInTheDocument()
+    expect(
+      await within(screenOf()).findByText(/ne contient que des lettres, des chiffres/),
+    ).toBeInTheDocument()
     expect(writes).toEqual([])
   })
 })
@@ -403,7 +424,7 @@ describe('step 4 — three doors', () => {
     await pastTheCurrency(user)
     await next(user)
     await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
-    await next(user)
+    await skip(user)
     await within(screenOf()).findByRole('heading', {
       name: /D’où viennent vos premiers événements/,
     })
@@ -479,11 +500,78 @@ describe('the walk can be found again', () => {
 
     await next(user)
     await within(screenOf()).findByRole('heading', { name: 'Votre premier compte.' })
-    await next(user)
+    await skip(user)
 
     await within(screenOf()).findByRole('heading', {
       name: /D’où viennent vos premiers événements/,
     })
     expect(writes).toEqual([])
+  })
+})
+
+describe('a reload resumes the walk (persona pass, bug 5)', () => {
+  /** The install the first step left behind: a currency, and nothing else. */
+  function afterTheCurrency(models: ReturnType<typeof aTaxationModel>[] = []) {
+    withRegistry()
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
+      http.get(ROUTES.events, () => HttpResponse.json([])),
+      http.get(ROUTES.taxationModels, () => HttpResponse.json(aTaxationCatalogue({ models }))),
+    )
+  }
+
+  beforeEach(() => window.localStorage.clear())
+
+  it('resumes on the tax models while none is held', async () => {
+    afterTheCurrency()
+    renderApp()
+
+    expect(
+      await screen.findByRole('heading', { name: /Comment vos gains sont-ils imposés/ }),
+    ).toBeInTheDocument()
+    expect(
+      await within(screenOf()).findByText('Plan d’épargne en actions (PEA)'),
+    ).toBeInTheDocument()
+  })
+
+  it('resumes on the account once models are held', async () => {
+    afterTheCurrency([aTaxationModel({ id: 'pea', name: 'PEA maison' })])
+    renderApp()
+
+    expect(
+      await screen.findByRole('heading', { name: 'Votre premier compte.' }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not resume once « Plus tard » was chosen, and the empty ledger offers the way back', async () => {
+    afterTheCurrency()
+    const { user } = renderApp({ url: '/?open=first-run' })
+    await screen.findByRole('heading', { name: /Comment vos gains sont-ils imposés/ })
+    await next(user)
+    await skip(user)
+    await user.click(within(screenOf()).getByRole('link', { name: /Plus tard/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    // A reload: the walk was left, so it stays left.
+    cleanup()
+    const again = renderApp({ url: '/ledger' })
+    expect(
+      await screen.findByRole('link', { name: 'Reprendre la mise en place' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await again.user.click(screen.getByRole('link', { name: 'Reprendre la mise en place' }))
+    expect(
+      await screen.findByRole('heading', { name: /Comment vos gains sont-ils imposés/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('says so when the registry lists nothing for the country', async () => {
+    afterTheCurrency()
+    server.use(http.post(ROUTES.taxationRegistry, () => HttpResponse.json({ items: [] })))
+    renderApp()
+
+    expect(await screen.findByText(/Aucun modèle n’est publié pour ce pays/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
   })
 })

@@ -77,7 +77,9 @@ export function isDefaultAccount(id: string): boolean {
  * there with a sentence the page can only render as a generic refusal.
  */
 export function isAddressableAccountId(id: string): boolean {
-  return !id.includes('/') && id !== '.' && id !== '..'
+  // The rule of the one place an id is born (the server's `_ID_CHARSET`):
+  // letters, digits, `-`, `_` and `.`. Said inline wherever the id is typed.
+  return /^[\p{L}\p{N}_.-]+$/u.test(id) && id !== '.' && id !== '..'
 }
 
 /**

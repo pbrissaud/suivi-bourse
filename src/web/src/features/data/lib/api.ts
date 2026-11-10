@@ -378,6 +378,8 @@ export interface EventEffect {
   amount: number
   fee: number
   direction: 'debit' | 'credit' | 'none'
+  /** For a sale: the gain (or, negative, the loss) it realises; `null` otherwise. */
+  realised_gain?: number | null
 }
 
 export const dataApi = {

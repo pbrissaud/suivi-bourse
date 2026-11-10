@@ -323,6 +323,8 @@ export function AccountDetail({
                   </span>
                 </p>
               )}
+              {/* TRI, defined where it is shown: a clause, readable on touch. */}
+              <p className="text-xs text-muted-foreground">{t('accounts.xirr.definition')}</p>
             </Stat>
 
             <dl aria-label={t('accounts.facts')} className="flex flex-col gap-1.5 pb-1.5">

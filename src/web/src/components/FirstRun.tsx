@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { accountsApi } from '@/features/accounts/lib/api'
+import { dataApi } from '@/features/data/lib/api'
 import { isAddressableAccountId, ruleOf } from '@/features/accounts/lib/accounts'
 import { type ConfigResponse, settingsApi } from '@/features/settings/lib/api'
 import { ApiProblem } from '@/lib/api'
@@ -66,6 +67,29 @@ const TITLES: Record<Passage, MessageKey> = {
   events: 'firstRun.events.title',
 }
 
+/**
+ * « Plus tard » is the reader's, and it is remembered by the browser: a walk
+ * that was **left** is not resumed by a reload. Everything else about where the
+ * walk stands is derived from what the install holds.
+ */
+const LEFT_KEY = 'suivi-bourse.first-run.left'
+
+function wasLeft(): boolean {
+  try {
+    return localStorage.getItem(LEFT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markLeft(): void {
+  try {
+    localStorage.setItem(LEFT_KEY, '1')
+  } catch {
+    // Private mode: the walk may be offered again, which is the safe error.
+  }
+}
+
 /** A ruled row of the lists below. */
 const ROW = 'flex min-h-13 items-center justify-between gap-4 border-b px-0.5'
 
@@ -89,7 +113,51 @@ export function FirstRun() {
     void navigate({ to: '/', search: {}, replace: true })
   }, [gesture, settings, navigate])
 
+  // **A reload resumes the walk** (persona pass, bug 5). The step is derived from
+  // state: the currency is stored but no account is declared and the ledger is
+  // empty, so the walk is unfinished — on the models while none is held, on the
+  // account after. Only « Plus tard » (`leave`) lets it go.
+  const answered = currencyFixed(settings) === true
+  const [left, setLeft] = useState(wasLeft)
+  const probing = answered && !left
+  // The probes have keys of their own: sharing the page's would make this
+  // component a second observer of a read the page says the failure of.
+  const declaredRead = useQuery({
+    queryKey: ['first-run', 'accounts'],
+    queryFn: accountsApi.accounts,
+    enabled: probing,
+  })
+  const nothingDeclared = declaredRead.data?.declared === false
+  const ledgerRead = useQuery({
+    queryKey: ['first-run', 'events'],
+    queryFn: dataApi.events,
+    enabled: probing && nothingDeclared,
+  })
+  const emptyLedger = nothingDeclared && ledgerRead.data?.length === 0
+  const heldModels = useQuery({
+    queryKey: ['first-run', 'taxation-models'],
+    queryFn: accountsApi.taxationModels,
+    enabled: probing && emptyLedger,
+  })
+  // An install in use is never offered the walk again: it stops probing.
+  const inUse =
+    declaredRead.data?.declared === true ||
+    (nothingDeclared && ledgerRead.data !== undefined && ledgerRead.data.length > 0)
+  useEffect(() => {
+    if (inUse) markLeft()
+  }, [inUse])
+  const resumeAt: Passage | null =
+    probing && emptyLedger && heldModels.data !== undefined
+      ? heldModels.data.models.length === 0
+        ? 'models'
+        : 'account'
+      : null
+
   if (stands && !walking) setWalking(true)
+  if (resumeAt !== null && !walking) {
+    setWalking(true)
+    setPassage(resumeAt)
+  }
 
   // The step's title takes the focus when the step changes.
   const title = useRef<HTMLHeadingElement>(null)
@@ -98,6 +166,8 @@ export function FirstRun() {
   }, [walking, passage])
 
   const leave = () => {
+    markLeft()
+    setLeft(true)
     setWalking(false)
     setPassage(PASSAGES[0])
   }
@@ -155,7 +225,12 @@ export function FirstRun() {
   })
   const listed = (registry.data?.items ?? []).filter((item) => item.refused === null)
   const countries = [...new Set(listed.map((item) => item.country))].sort()
-  const chosenCountry = country ?? (countries.includes('FR') ? 'FR' : (countries[0] ?? null))
+  // The country the reader's browser says, when the registry lists it.
+  const regionOfBrowser = navigator.languages
+    .map((language) => language.split('-')[1]?.toUpperCase())
+    .find((region): region is string => region !== undefined && countries.includes(region))
+  const chosenCountry =
+    country ?? regionOfBrowser ?? (countries.includes('FR') ? 'FR' : (countries[0] ?? null))
   const shown = listed.filter((item) => item.country === chosenCountry)
 
   // Step 3 — the models to choose from, once step 2 has imported some.
@@ -178,8 +253,9 @@ export function FirstRun() {
       else write.mutate('models')
     } else if (passage === 'account') {
       const id = account.id.trim()
-      // A blank identifiant writes nothing: the step is traversed, not answered.
-      if (id === '') forward()
+      // The identifiant is required here as in « Ajouter un compte »; the way
+      // past the step without an account is its own link.
+      if (id === '') setIdError('accounts.form.required')
       else if (!isAddressableAccountId(id)) setIdError('accounts.form.id.shape')
       else write.mutate('account')
     }
@@ -253,7 +329,18 @@ export function FirstRun() {
                       {t('firstRun.models.retry')}
                     </Button>
                   </div>
-                ) : registry.data === undefined ? null : (
+                ) : registry.data === undefined ? (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {t('firstRun.models.loading')}
+                  </p>
+                ) : shown.length === 0 ? (
+                  <div className="flex flex-col items-start gap-3">
+                    <p className="text-sm text-muted-foreground">{t('firstRun.models.none')}</p>
+                    <Button type="button" size="sheet" onClick={() => void registry.refetch()}>
+                      {t('firstRun.models.retry')}
+                    </Button>
+                  </div>
+                ) : (
                   <>
                     <CountryField
                       countries={countries}
@@ -304,7 +391,9 @@ export function FirstRun() {
                     value={account.id}
                     aria-invalid={idError !== null || taken}
                     aria-describedby={
-                      idError !== null || taken ? 'first-run-account-error' : undefined
+                      idError !== null || taken
+                        ? 'first-run-account-error first-run-account-hint'
+                        : 'first-run-account-hint'
                     }
                     onChange={(event) => {
                       setIdError(null)
@@ -312,6 +401,9 @@ export function FirstRun() {
                       setAccount({ ...account, id: event.target.value })
                     }}
                   />
+                  <p id="first-run-account-hint" className="text-xs text-muted-foreground">
+                    {t('accounts.form.id.hint')}
+                  </p>
                   {idError !== null || taken ? (
                     <p
                       id="first-run-account-error"
@@ -397,6 +489,11 @@ export function FirstRun() {
                   {t('firstRun.back')}
                 </Button>
               )}
+              {passage === 'account' ? (
+                <Button type="button" variant="link" className="ml-auto" onClick={forward}>
+                  {t('firstRun.account.skip')}
+                </Button>
+              ) : null}
               {passage === 'events' ? null : (
                 <Button
                   variant="primary"

@@ -136,20 +136,15 @@ def age_date(parameters: Mapping[str, Any],
     """The day the threshold is counted from — and ``age_basis`` is what says it.
 
     Under ``opening`` it is the declared date alone. Under ``first_payment`` it
-    is the declared date where there is one and the ledger's earliest payment
-    otherwise, **and that fallback is what makes the feature reachable at all**:
-    a PEA counts from ``age_basis: FIRST_PAYMENT``, and the form renders and
-    sends ``opened_on`` only under ``opening``. Read the declared date alone and
-    every such PEA projects nothing, for ever, with no repair reachable from
-    the screen.
-
-    This is not #918's bug returning. #918 is a *declared* date overwritten by a
-    derived one; here there is no declaration to overwrite, and a declared date
-    still wins wherever one exists.
+    is the ledger's earliest payment, which is what the model says (a PEA's five
+    years run from its first deposit, not from the day the account was opened),
+    and the declared date only where the ledger has no payment yet. The form
+    renders and sends ``opened_on`` only under ``opening``, so the fallback is
+    what keeps a payment-less wrapper from projecting nothing.
     """
     if parameters.get('age_basis') == taxation.OPENING:
         return opened_on
-    return opened_on or first_payment
+    return first_payment or opened_on
 
 
 def threshold_day(parameters: Mapping[str, Any],

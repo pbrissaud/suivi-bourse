@@ -261,9 +261,10 @@ advise what is owed, what is due, or when to sell.
 parts, income tax (IR) and social levies (PS), and add up to it. Quote the parts
 when the owner asks which is which; never compute a part yourself.
 
-`projected_base` is the LATENT gain — not `gain_absolu`, which also holds the
-realised gain, the dividends and the fees. Applying `projected_rates` to
-`gain_absolu` gives a number this app did not publish and does not agree with.
+`projected_base` is what the rate is applied to: the LATENT gain of the lines
+for a flat or bracketed model, and the WHOLE gain of the envelope (`gain_absolu`,
+value minus net contributions) for an aged wrapper such as a PEA, whose realised
+gains and dividends stay inside it. Quote it as published and do not recompute it.
 
 DO NOT RECOMPUTE `projected_tax` FROM THE OTHER TWO. The arithmetic behind it is
 not rate times base, and multiplying them yourself gives a wrong answer in two

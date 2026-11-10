@@ -53,12 +53,9 @@ def list_accounts():
 @bp.get('/accounts/<account_id>/history')
 def get_account_history(account_id: str):
     """One account's perf series — the TWR chart and the detail sheet's curve."""
-    accounts = _snapshot().accounts
-    if accounts is not None:
-        known = accounts.get(account_id) is not None
-    else:
-        known = any(row.id == account_id
-                    for row in accounts_module.seeded_only(_store()))
+    # The store is the declaration: the published snapshot lags a write, and an
+    # account just declared (no event yet) must answer an empty series, not 404.
+    known = account_id in accounts_module.account_ids(_store())
     if not known:
         return not_found(f"No declared account {account_id!r}")
 
@@ -117,6 +114,8 @@ def create_account():
         return conflict(str(exc))
     except accounts_module.UnknownTaxationModel as exc:
         return unprocessable_request(str(exc), key='taxation_model_id')
+    except accounts_module.InvalidAccountId as exc:
+        return unprocessable_request(str(exc), key='id')
     except accounts_module.AccountSourceError as exc:
         return bad_request(str(exc))
     except AggregationError as exc:

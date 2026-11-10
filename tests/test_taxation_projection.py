@@ -115,11 +115,13 @@ def test_a_pea_counted_from_its_first_payment_still_projects():
     assert tax == pytest.approx(1_720.0)
 
 
-def test_a_declared_date_still_wins_over_the_derived_one():
-    """#918 is not reintroduced: the fallback fills an absence, it never
-    overwrites a declaration."""
-    assert projection.age_date(PEA, date(2020, 6, 1), date(2015, 3, 1)) \
-        == date(2020, 6, 1)
+def test_a_first_payment_basis_counts_from_the_first_payment_not_the_opening():
+    """Persona pass, bug 12: the model says « counted from the first payment »,
+    and the declared opening date used to win, 2 days off on Hélène's PEA. The
+    declared date is only the fallback of a ledger with no payment."""
+    assert projection.age_date(PEA, date(2022, 1, 10), date(2022, 1, 12)) \
+        == date(2022, 1, 12)
+    assert projection.age_date(PEA, date(2022, 1, 10), None) == date(2022, 1, 10)
 
 
 def test_under_opening_the_ledger_is_not_consulted_at_all():

@@ -30,7 +30,7 @@
  * slice of the row model, so the header box ticks the rows not drawn yet too.
  * The selection itself is the caller's state — it outlives a reduction.
  */
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import {
   flexRender,
   rowSelectionFeature,
@@ -89,6 +89,8 @@ interface LedgerTableProps {
   onEdit: (event: LedgerEvent) => void
   /** The rows a merge has just written (#1119): marked, then let go of. */
   fresh?: ReadonlySet<string>
+  /** An account by the name the reader knows it by (its libellé). */
+  accountName?: (id: string) => string
 }
 
 type LedgerColumnId =
@@ -150,9 +152,15 @@ export function LedgerTable({
   onRowSelectionChange,
   onEdit,
   fresh,
+  accountName,
 }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
+  // Read at render time and kept out of the columns' dependencies: the names
+  // arrive after the rows, and rebuilding the columns would remount the header's
+  // checkbox under the reader's hand.
+  const names = useRef(accountName)
+  names.current = accountName
 
   const columns = useMemo<ColumnDef<typeof features, LedgerEvent>[]>(() => {
     // A figure the event does not have is a dash, quiet: read down a column,
@@ -252,7 +260,9 @@ export function LedgerTable({
       {
         id: 'account',
         header: () => t('data.column.account'),
-        cell: ({ row }) => <AccountId event={row.original} />,
+        cell: ({ row }) => (
+          <AccountId event={row.original} name={(id) => names.current?.(id) ?? id} />
+        ),
       },
     ]
   }, [t, f, currency, onEdit])
@@ -301,6 +311,7 @@ export function LedgerTable({
             <TableRow
               key={row.id}
               tall
+              data-row-id={row.original.id ?? undefined}
               data-state={row.getIsSelected() ? 'selected' : undefined}
               data-fresh={fresh?.has(String(row.original.id)) ? '' : undefined}
               className={cn(
@@ -362,13 +373,18 @@ export function EventFigure({ event, currency }: { event: LedgerEvent; currency:
  * `muted-foreground`, capped at 12 characters — identifiants have no length bound
  * on the server.
  */
-export function AccountId({ event }: { event: LedgerEvent }) {
+export function AccountId({
+  event,
+  name,
+}: {
+  event: LedgerEvent
+  /** The libellé the reader gave the account; the identifier stands in without one. */
+  name?: (id: string) => string
+}) {
+  const shown = name ? name(accountOf(event)) : accountOf(event)
   return (
-    <span
-      title={accountOf(event)}
-      className="inline-block max-w-[calc(12ch+1rem)] truncate align-middle"
-    >
-      {accountOf(event)}
+    <span title={shown} className="inline-block max-w-[calc(12ch+1rem)] truncate align-middle">
+      {shown}
     </span>
   )
 }
@@ -400,6 +416,7 @@ function Identity({ event, onEdit }: { event: LedgerEvent; onEdit: (event: Ledge
         <button
           type="button"
           title={title}
+          data-row-open=""
           className={cn(shape, 'underline-offset-4 group-hover:underline')}
           onClick={() => onEdit(event)}
         >

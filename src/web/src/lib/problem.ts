@@ -244,6 +244,7 @@ export function problemMessage(error: unknown): {
       }
     }
   }
+  if (overdrawn(error)) return { message: 'problem.overdraft', values: {} }
   if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.invalidFile) {
     // **The refused file of a batch is named** (#1266): one refused file refuses
     // them all, and the reader's next move is to remove that one.
@@ -317,9 +318,17 @@ export function refusedFile(error: unknown): string | null {
  * or `null` when the refusal is about no field in particular.
  */
 export function refusedKey(error: unknown): string | null {
+  // An overdraft has a sentence of its own, said where refusals without a field
+  // are, and not the generic « cette valeur est refusée » on the amount.
+  if (overdrawn(error)) return null
   return error instanceof ApiProblem && error.type === PROBLEM_TYPES.badRequest
     ? text(error, 'key')
     : null
+}
+
+/** A withdrawal larger than the account's cash, which the server refuses with a `code`. */
+export function overdrawn(error: unknown): boolean {
+  return error instanceof ApiProblem && text(error, 'code') === 'overdraft'
 }
 
 /**

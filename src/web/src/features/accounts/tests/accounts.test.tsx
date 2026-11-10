@@ -21,6 +21,7 @@ import {
   aRuntime,
   defaultAccounts,
 } from '@/test/factories'
+import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -296,5 +297,23 @@ describe('nothing declared', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Ajouter un compte' }))
     expect(await screen.findByRole('dialog', { name: 'Ajouter un compte' })).toBeVisible()
+  })
+})
+
+describe('on a phone (persona pass, bug 16)', () => {
+  it('reaches every account through a select, and nothing hides behind « Modifier le compte »', async () => {
+    setViewportWidth(390)
+    const { user } = renderAccounts()
+
+    const select = await screen.findByRole('combobox', { name: 'Vos comptes' })
+    expect(screen.queryByRole('tablist', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    const names = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '')
+    expect(names).toHaveLength(defaultAccounts().length)
+    expect(screen.getByRole('button', { name: 'Modifier le compte' })).toBeInTheDocument()
+
+    await user.selectOptions(select, within(select).getAllByRole('option')[1])
+    await settled('Beta')
   })
 })

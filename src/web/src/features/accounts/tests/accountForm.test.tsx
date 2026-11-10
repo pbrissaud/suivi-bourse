@@ -132,7 +132,7 @@ describe('adding an account', () => {
 
     const field = within(panel).getByLabelText('Identifiant')
     const sentence = await within(panel).findByText(/déjà celui d’un autre compte/)
-    expect(field).toHaveAttribute('aria-describedby', sentence.id)
+    expect(field.getAttribute('aria-describedby')).toContain(sentence.id)
     // The panel stays open, with what was typed.
     expect(field).toHaveValue('alpha')
   })

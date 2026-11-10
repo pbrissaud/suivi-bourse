@@ -207,15 +207,26 @@ export function AccountForm({
             <div className="grid grid-cols-2 gap-x-3 gap-y-3.5">
               <Field name="id" label="accounts.form.id" error={errors.id} taken={taken}>
                 {(id, described) => (
-                  <Input
-                    id={id}
-                    className="fig md:text-md"
-                    value={draft.id}
-                    readOnly={account !== null}
-                    aria-invalid={errors.id !== undefined || taken}
-                    aria-describedby={described}
-                    onChange={(changed) => set('id', changed.target.value)}
-                  />
+                  <>
+                    <Input
+                      id={id}
+                      className="fig md:text-md"
+                      value={draft.id}
+                      readOnly={account !== null}
+                      aria-invalid={errors.id !== undefined || taken}
+                      aria-describedby={
+                        [described, account === null ? `${id}-hint` : null]
+                          .filter(Boolean)
+                          .join(' ') || undefined
+                      }
+                      onChange={(changed) => set('id', changed.target.value)}
+                    />
+                    {account === null ? (
+                      <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+                        {t('accounts.form.id.hint')}
+                      </p>
+                    ) : null}
+                  </>
                 )}
               </Field>
               <Field name="label" label="accounts.form.label" optional>

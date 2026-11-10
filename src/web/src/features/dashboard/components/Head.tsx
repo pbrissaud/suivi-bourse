@@ -84,9 +84,14 @@ export function DashboardHead({
         title={t('dashboard.empty.title')}
         description={t('dashboard.empty.body')}
         action={
-          <Link to="/ledger" className="font-medium underline underline-offset-4">
-            {t('empty.toLedger')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Link to="/ledger" className="font-medium underline underline-offset-4">
+              {t('empty.toLedger')}
+            </Link>
+            <Link to="/" search={{ open: 'first-run' }} className="underline underline-offset-4">
+              {t('empty.resumeSetup')}
+            </Link>
+          </div>
         }
       />
     )

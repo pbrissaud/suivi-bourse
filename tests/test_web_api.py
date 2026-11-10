@@ -6087,6 +6087,37 @@ def test_a_pea_counted_from_its_first_payment_still_gets_a_figure(tmp_path):
     assert 'projected_rate_changes_on' not in row
 
 
+def test_a_pea_is_taxed_on_the_whole_gain_of_the_envelope_from_its_first_payment(
+        tmp_path):
+    """Persona pass, bug 12 (Hélène): the base of an aged wrapper is value minus
+    net contributions — the dividend that stayed inside counts, not only the
+    latent gain — and the clock starts at the first deposit, not at the opening
+    date the account declares."""
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount,account\n"
+        "2022-01-12,DEPOSIT,,,,,2000.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
+        "2024-03-01,DIVIDEND,AAPL,,,,100.00,pea\n"
+    )
+    client, _ = _valued_pea(tmp_path, events=events)
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
+    _carry(client, name='PEA', kind='aged_flat_realised',
+           parameters={'rate_before': 0.128, 'rate_after': 0.0,
+                       'threshold_years': 5, 'age_basis': 'first_payment',
+                       'social_rate': 0.172})
+    client.patch('/api/accounts/pea', json={'opened_on': '2022-01-10'})
+
+    row = _pea_row(client)
+
+    # Value 2 000 + 100 of dividend cash − 2 000 deposited = 600; the latent
+    # gain alone is 500.
+    assert row['projected_base'] == pytest.approx(600.0, abs=5e-3)
+    assert row['projected_base'] == pytest.approx(row['gain_absolu'], abs=5e-3)
+    assert row['projected_rate_changes_on'] == '2027-01-12'
+
+
 def test_the_positions_are_not_read_where_no_model_projects(tmp_path, mocker):
     """**The cost of the feature is paid by the readers who have it.**
 

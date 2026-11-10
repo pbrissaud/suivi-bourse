@@ -331,11 +331,10 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
     facts = dict(kind=model.kind, parameters=model.parameters,
                  opened_on=opened_on.get(row['id']),
                  first_payment=payments.get(row['id']), now=today)
-    tax = taxation_projection.projected_tax(
-        latent_gain=latent.get(row['id']), **facts)
+    base = _assiette(model.kind, row, latent.get(row['id']))
+    tax = taxation_projection.projected_tax(latent_gain=base, **facts)
     changes_on = taxation_projection.rate_changes_on(**facts)
-    split = taxation_projection.projected_split(
-        latent_gain=latent.get(row['id']), **facts)
+    split = taxation_projection.projected_split(latent_gain=base, **facts)
     # **Rounded once, here, to the cent**, and the two parts are made to add up:
     # every screen then prints the figure it was handed, and the sum of the two
     # lines, of the accounts and of the portfolio's own total all agree.
@@ -354,10 +353,26 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
         # three on a real account. Published rather than re-derived from
         # `projected_tax / rate`, which is not the base on a ladder and is a
         # division by zero on a mature wrapper.
-        'projected_base': None if tax is None else latent.get(row['id']),
+        'projected_base': None if tax is None else base,
         'projected_rates': taxation_projection.applied_rates(**facts),
         'projected_rate_changes_on': instants.iso(changes_on),
     }
+
+
+def _assiette(kind: str, row: dict, latent: Optional[float]) -> Optional[float]:
+    """What the rate is applied to.
+
+    An aged wrapper (PEA, assurance-vie) is taxed on the **whole gain of the
+    envelope** when it is emptied — value minus net contributions, so realised
+    gains and dividends that stayed inside count — where the other kinds read
+    the latent gain of their lines. An emptied wrapper holds nothing to tax, and
+    an assiette one unvalued line makes unknown stays unknown.
+    """
+    if kind != taxation.AGED_FLAT_REALISED or latent is None:
+        return latent
+    if not row.get('total_value'):
+        return 0.0
+    return row.get('gain_absolu')
 
 
 def declared_only(facts: dict) -> dict:

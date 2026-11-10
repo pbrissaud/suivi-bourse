@@ -100,7 +100,7 @@ def unprocessable(detail: str, key: Optional[str] = None):
     return problem(422, 'Invalid setting', detail, TYPE_INVALID_SETTING, key=key or None)
 
 
-def unprocessable_request(detail: str, key: Optional[str] = None):
+def unprocessable_request(detail: str, key: Optional[str] = None, **extra: Any):
     """422 — the request parsed, and what it asks for is not something the app takes.
 
     One helper for every parameter and form field (#932), under
@@ -109,7 +109,8 @@ def unprocessable_request(detail: str, key: Optional[str] = None):
     saying what *this is not one of the values* already says. The title is
     fixed; the front renders none.
     """
-    return problem(422, 'Invalid request', detail, TYPE_BAD_REQUEST, key=key or None)
+    return problem(422, 'Invalid request', detail, TYPE_BAD_REQUEST,
+                   key=key or None, **extra)
 
 
 def model_in_use(detail: str, accounts: Sequence[str]):

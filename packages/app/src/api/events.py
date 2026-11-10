@@ -90,7 +90,7 @@ def create_event():
         with runtime.config_manager.writing() as opened:
             created = entries.create(opened, draft)
     except entries.InvalidEntry as exc:
-        return unprocessable_request(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field, **exc.extra)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 
@@ -639,7 +639,7 @@ def preview_event():
     except entries.UnknownEntry as exc:
         return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
     except entries.InvalidEntry as exc:
-        return unprocessable_request(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field, **exc.extra)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
     return jsonify({key: store_module.finite(value)
@@ -668,7 +668,7 @@ def update_event(event_id: str):
     except entries.UnknownEntry as exc:
         return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
     except entries.InvalidEntry as exc:
-        return unprocessable_request(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field, **exc.extra)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 

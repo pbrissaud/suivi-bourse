@@ -54,6 +54,7 @@ import { currencyUnanswered } from '@/lib/firstRun'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function AccountsPage() {
@@ -61,6 +62,7 @@ export default function AccountsPage() {
   const f = useFormatters()
   const { account, open } = useSearch({ from: '/accounts' })
   const navigate = useNavigate()
+  const phone = useIsMobile()
   // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
   // account is *open on that account*.
   const [editing, setEditing] = useState<Account | null | undefined>(undefined)
@@ -96,7 +98,9 @@ export default function AccountsPage() {
   const history = useQuery({
     queryKey: ['account-history', opened?.id],
     queryFn: () => accountsApi.accountHistory(opened!.id),
-    enabled: opened !== null,
+    // Not while the declaration is being re-read: an account just removed is
+    // still `opened` until it lands, and its history is a 404.
+    enabled: opened !== null && !accounts.isFetching,
   })
 
   const pageFailure = oneFailure(readConditions({ queries: [accounts] }))
@@ -179,26 +183,48 @@ export default function AccountsPage() {
       ) : (
         <>
           <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b">
-            <TextTabs
-              label={t('accounts.rail.label')}
-              // pb-px/-mb-px: room for the active tab's 1 px overlap, or `overflow-x-auto` grows a vertical scrollbar.
-              className="-mb-px min-w-0 flex-1 overflow-x-auto border-b-0 pb-px"
-              value={opened.id}
-              onChange={(id) => void navigate({ to: '/accounts', search: { account: id } })}
-              tabs={rows.map((row) => ({
-                value: row.id,
-                label: (
-                  <span className="inline-flex items-baseline gap-2.5">
+            {phone ? (
+              // **A select on a phone**: every account is reachable and none
+              // hides behind the buttons beside it.
+              <select
+                aria-label={t('accounts.rail.label')}
+                className="mb-2 h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-md shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                value={opened.id}
+                onChange={(change) =>
+                  void navigate({ to: '/accounts', search: { account: change.target.value } })
+                }
+              >
+                {rows.map((row) => (
+                  <option key={row.id} value={row.id}>
                     {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
-                    <span className="fig text-sm font-normal text-muted-foreground">
-                      {accountReading(row, runtime.data, now) === 'valued'
-                        ? f.currency(accountWorth(row), currency)
-                        : ABSENT}
+                    {accountReading(row, runtime.data, now) === 'valued'
+                      ? ` · ${f.currency(accountWorth(row), currency)}`
+                      : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <TextTabs
+                label={t('accounts.rail.label')}
+                // pb-px/-mb-px: room for the active tab's 1 px overlap, or `overflow-x-auto` grows a vertical scrollbar.
+                className="-mb-px min-w-0 flex-1 overflow-x-auto border-b-0 pb-px"
+                value={opened.id}
+                onChange={(id) => void navigate({ to: '/accounts', search: { account: id } })}
+                tabs={rows.map((row) => ({
+                  value: row.id,
+                  label: (
+                    <span className="inline-flex items-baseline gap-2.5">
+                      {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                      <span className="fig text-sm font-normal text-muted-foreground">
+                        {accountReading(row, runtime.data, now) === 'valued'
+                          ? f.currency(accountWorth(row), currency)
+                          : ABSENT}
+                      </span>
                     </span>
-                  </span>
-                ),
-              }))}
-            />
+                  ),
+                }))}
+              />
+            )}
             <div className="flex items-center gap-2 pb-2">
               {/* The one population the declared accounts do not cover, and
                   the way to repair it: it leads to the seeded account's own
