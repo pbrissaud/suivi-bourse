@@ -1,0 +1,375 @@
+---
+title: Lire vos chiffres
+description: Une convention par chiffre — les règles vers lesquelles l’application renvoie depuis le chiffre lui-même
+---
+
+{/*
+  THE ANCHORS ON THIS PAGE ARE A CONTRACT WITH THE APPLICATION.
+
+  Every figure in SuiviBourse carries an information icon whose link points at
+  one of the anchors below, version included (ADR-0016, ADR-0025). The twelve
+  anchors are fixed — they are `DOCS_ANCHORS` in `src/web/src/lib/docs.ts`, and
+  the two lists are the same list:
+
+    #avg-cost  #total-gain  #latent-gain  #realized-gain  #dividends
+    #net-contributed  #deposit-fees  #total-performance  #twr  #xirr
+    #carrying-price  #absence
+
+  They are written by hand, on every heading, and NEVER left to be derived from
+  the heading text. Reword a title and a derived anchor changes with it: the
+  front sees nothing, the site still builds, and every bubble in the app lands
+  the reader at the top of this page instead of at the rule they clicked for —
+  which is the one failure mode a broken-link check cannot catch.
+
+  So: reword the headings freely, but do not rename, merge or drop an anchor
+  without changing the front in the same breath.
+  */}
+
+Cette page réunit les **conventions** sur lesquelles reposent les chiffres de
+l’application — une règle par chiffre, chacune à une adresse stable. À côté de
+chaque chiffre dans l’application se trouve une icône d’information ; elle ouvre
+un court texte et un lien qui ramène ici, vers la section qui porte la règle
+entière.
+
+Rien de ce qui suit ne décrit un écran. Ce sont les règles qui décident de ce que
+vos nombres *sont*.
+
+## Le prix de revient de ce que vous détenez {#avg-cost}
+
+Votre prix de revient est établi au **coût moyen pondéré** — le chiffre que votre
+courtier appelle le *PRU*.
+
+Une position est un stock de deux choses : une quantité, et l’argent que cette
+quantité vous a coûté. Chaque achat ajoute aux deux, et le coût unitaire est
+simplement l’argent divisé par la quantité. Une vente en retranche une tranche
+proportionnelle. Rien ne décide jamais *quels* titres sont sortis, parce que sous
+cette convention la question n’a pas de sens.
+
+**Les frais d’acquisition sont absorbés dans le prix de revient.** Un achat vous
+coûte le prix des titres plus la commission du courtier : c’est donc cela que la
+position enregistre.
+Les frais de cession sont retirés du produit au retour. Ni
+les uns ni les autres ne sont une ligne à part que vous auriez à additionner
+vous-même.
+
+**Il n’y a pas de FIFO, et aucun réglage pour en choisir un.** Le coût moyen
+pondéré est la règle fiscale française (CGI art. 150-0 D) pour les comptes
+auxquels cette application s’adresse, et porter deux conventions à la fois
+donnerait à chaque chiffre en aval — votre [plus-value latente](#latent-gain),
+votre [plus-value réalisée](#realized-gain), vos deux [rendements](#twr) — deux
+valeurs possibles, sans que rien sur la page puisse dire laquelle vous regardez. Il y a une convention, et c’est celle qu’emploie votre déclaration d’impôts.
+
+Une conséquence mérite d’être énoncée, car elle ressemble à un cas particulier
+sans en être un : une position que vous avez entièrement soldée déclare zéro
+investi **par construction** — quantité zéro, coût zéro. Il n’existe nulle part
+dans l’application de marqueur *clôturée*. « Clôturée » et « à plat pour
+l’instant » ne diffèrent que par un événement qui n’a pas encore eu lieu : rien
+ne les sépare que l’application pourrait calculer.
+
+## Votre gain total, et ses quatre termes {#total-gain}
+
+Votre gain total est la somme de quatre termes, et cette somme **est** sa
+définition — l’application additionne les quatre plutôt que de calculer le total
+séparément en espérant qu’ils s’accordent.
+
+```
+total gain  =  latent gain  +  realized gain  +  dividends received
+                            −  fees taken from your transfers
+```
+
+Chacun de ces termes est une section de cette page. Trois d’entre eux
+appartiennent à vos positions ; le quatrième n’appartient à aucune, ce qui est
+exactement pourquoi il a fallu le nommer.
+
+**Le total compte tout, y compris ce que vous ne détenez plus.** Une position que
+vous avez soldée a tout de même apporté une plus-value réalisée et des
+dividendes, et l’écarter ferait discrètement diverger le total du solde de votre
+compte. Elle reste dans la somme ; seul le *tableau* où elle vit la replie.
+
+C’est aussi pourquoi deux totaux de l’application peuvent légitimement différer. Un chiffre placé au-dessus d’un tableau de positions énonce la somme de *ces
+positions* — et le quatrième terme n’appartenant à aucune position, il ne peut
+pas y figurer. Un total à l’échelle du portefeuille porte les quatre. L’écart
+entre eux est précisément les frais prélevés sur vos versements, et il est nul
+pour quiconque a un courtier qui déplace l’argent gratuitement.
+
+**Un total pour un compte, ce sont les mêmes quatre termes, à propos de ce
+compte.** Ses positions, soldées comprises, et les frais prélevés sur *ses*
+versements — jamais ceux d’un autre compte. Les quatre termes de vos comptes
+s’additionnent donc en les quatre termes de votre portefeuille, et le total de
+chaque compte est la somme des siens.
+
+### Plus-value latente {#latent-gain}
+
+Ce que vos positions valent aujourd’hui, moins ce qu’elles vous ont coûté.
+
+Elle couvre les titres que vous détenez encore, et eux seuls : la valeur de
+marché de la quantité que vous possédez, moins le prix de revient de cette même
+quantité ([coût moyen pondéré](#avg-cost)). Elle bouge à chaque cours, dans les
+deux sens.
+
+Ce n’est pas de l’argent que vous avez. Elle ne devient de l’argent qu’à la
+vente, moment où elle cesse d’être latente et devient
+[réalisée](#realized-gain) — les deux ne comptent jamais les mêmes titres en même
+temps.
+
+Une position dont l’application n’a jamais pu récupérer le cours est
+[comptée à son prix de revient](#carrying-price), et sa plus-value latente est
+alors exactement nulle plutôt qu’une perte.
+
+### Plus-value réalisée {#realized-gain}
+
+Ce qu’une vente a rapporté au-delà du prix de revient qu’elle a consommé.
+
+Vendre consomme une tranche du prix de revient de la position, proportionnelle à
+la quantité vendue. La plus-value réalisée est le produit de la vente — net des
+frais de cession — moins cette tranche. Elle est arrêtée une fois, le jour de la
+vente, et ne bouge plus jamais.
+
+**Ce n’est pas un terme à ajouter à ce que vous détenez.** L’argent de la vente
+est déjà dans votre solde de liquidités ; recompter la plus-value par-dessus
+compterait les mêmes euros deux fois. Elle apparaît dans votre gain total comme
+une *décomposition* de ce total, jamais comme quelque chose qui s’y empile. C’est la règle qui se lit de travers la première fois — une vente réussie ne rend
+pas votre portefeuille plus gros que les liquidités qu’elle a produites — et
+c’est celle à laquelle cette application fait le plus attention.
+
+La plus-value réalisée n’est pas un chiffre que seules les positions soldées
+portent : vendez la moitié d’une position et elle commence à en porter une alors
+que vous détenez encore le reste.
+
+### Dividendes reçus {#dividends}
+
+Ce qui vous a été versé, tenu à l’écart de tout le reste.
+
+Un dividende ne baisse pas le prix de revient de votre position et ne gonfle pas
+sa plus-value latente. Il est son propre terme du total, et les liquidités qu’il
+a apportées sont dans le solde de votre compte. Le garder à part est délibéré :
+repliés dans un unique chiffre composite, le revenu et le mouvement des cours
+deviennent indiscernables, et une année de bons dividendes se lit exactement
+comme une année de redressement des cours.
+
+Ce terme n’est jamais négatif. Un dividende que vous avez reçu ne peut pas vous
+être repris par un cours.
+
+### Frais prélevés sur vos versements {#deposit-fees}
+
+L’argent que votre courtier a retiré d’un versement ou d’un retrait — le
+quatrième terme, et celui qui n’appartient à aucune position.
+
+Ce n’est pas un frais d’acquisition (ceux-là sont absorbés dans le prix de
+revient de vos titres), pas un frais de cession (absorbé dans le
+produit d’une vente), pas un dividende, et il n’est rattaché à aucun titre. Il
+n’existe aucune position qui pourrait le porter, et c’est pourquoi il lui faut
+être un terme à part entière : sans lui, votre gain total et la somme des trois
+termes de position divergent du montant de ces frais, sans que rien sur la page
+n’en dise la raison.
+
+**Il n’est montré que lorsqu’il n’est pas nul.** Si votre courtier déplace votre
+argent gratuitement, ce terme n’apparaît jamais et vous n’avez jamais à savoir
+qu’il existe.
+
+Absorber ces frais dans votre versé net était l’autre possibilité, et elle a été
+refusée : cela ferait disparaître l’argent du produit tout entier.
+Il a quitté
+votre poche, il est donc compté.
+
+## Ce que vous avez versé {#net-contributed}
+
+**Versé net : vos versements moins vos retraits, frais exclus.**
+
+C’est le seul chiffre de la page qui ne doit rien à un marché. Les cours ne le
+bougent pas d’un iota ; il change quand, et seulement quand, vous faites entrer
+ou sortir de l’argent. C’est ce qui en fait le dénominateur silencieux des deux
+rendements — le [TWR](#twr) comme le [TRI](#xirr) demandent *ce que ceci est
+devenu, étant donné ce qui est entré* — et c’est pourquoi un compte sans aucun
+versement enregistré n’a pas de TRI du tout, plutôt qu’un rendement de zéro.
+
+**Les frais en sont exclus, et c’est toute la raison pour laquelle votre gain
+total a un quatrième terme.** Un frais prélevé sur un versement quitte vos
+liquidités sans faire baisser ce que ce chiffre enregistre : l’argent disparaît
+donc d’un côté de la soustraction et pas de l’autre. L’écart doit bien se poser
+quelque part, et il se pose dans les frais prélevés sur vos
+versements — un terme à part entière plutôt qu’un ajustement
+silencieux ici.
+
+## Performance totale {#total-performance}
+
+**Performance totale : le gain entier de ce compte divisé par ce que vous y avez
+versé.**
+
+C’est ce qu’un euro laissé sur le compte depuis le début est devenu, et c’est un
+**rapport cumulé plutôt qu’un taux**. Trois choses en découlent, et chacune est
+une question à laquelle elle ne répond pas.
+
+Elle couvre la **vie entière** du compte et aucune période plus courte. C’est
+pourquoi elle ne porte aucune plage à côté d’elle : il n’y a pas de fenêtre à
+choisir, donc rien qu’un contrôle puisse dire et rien qu’une légende puisse
+énoncer. Un [TWR](#twr) sans sa période est un chiffre illisible ; celui-ci n’a
+qu’une seule période qu’il pourrait désigner.
+
+Elle n’est **pas annualisée**. Deux comptes affichant la même performance totale
+peuvent avoir mis deux ans et vingt ans pour y arriver : elle ne classe donc rien
+entre des comptes d’âges différents — c’est le travail du [TRI](#xirr), et c’est
+pour cette raison qu’il est le chiffre placé juste en dessous.
+
+Et elle ne dit rien du **moment** où l’argent est entré. Chaque euro compte
+pareil, qu’il soit arrivé avant une hausse ou après. Verser davantage abaisse le
+rapport jusqu’à ce que cet argent produise quelque chose, ce qui est exactement
+ce qui la rend lisible : c’est un gain lu par rapport à sa propre base, pas une
+mesure des avoirs pris isolément.
+
+## TWR {#twr}
+
+**TWR : comment les positions elles-mêmes ont performé, indépendamment de vos
+versements.**
+
+C’est un indice base 100 sur la période affichée : 100 au départ, et ce qu’une
+unité de monnaie laissée tranquille serait devenue à l’arrivée. Verser davantage
+— ou retirer — ne déplace l’indice en rien. C’est tout son propos : il mesure ce
+que vous détenez, pas le moment où vous vous êtes trouvé avoir des liquidités.
+
+**Il dépend de la fenêtre, et un classement peut s’y inverser.** Deux comptes
+comparés sur une semaine et sur deux ans peuvent échanger leurs places, chaque
+chiffre du parcours étant correct. Un TWR ne voyage donc jamais sans la période
+qu’il couvre, et comparer deux TWR suppose de les rebaser tous les deux à 100 au
+début de la *même* fenêtre visible — sinon vous comparez un chiffre compté depuis
+2019 à un chiffre compté depuis 2024, ce qui fait deux nombres partageant une
+unité plutôt qu’une comparaison. Pour la même raison, une comparaison ne remonte
+jamais plus loin que le plus jeune des éléments comparés.
+
+**Pendant que l’historique est reconstruit, la date de base bouge et l’indice est
+rebasé à chaque cycle.** La série commence au premier jour où tout ce que vous
+déteniez a un cours, et ce jour recule à mesure que la reconstruction avance — si
+bien que ce pourcentage, seul parmi les chiffres de la page, peut changer sans
+qu’aucun cours n’ait changé. La date de base est affichée à côté de lui aussi
+longtemps qu’elle bouge encore. Voir
+[la base du TWR](./rebuild-and-resolution.mdx#the-base-of-the-time-weighted-return-moves-while-the-rebuild-runs).
+
+**Les rendements sont calculés à partir des dates de vos événements.** Rien
+d’autre ne les date : pas d’événement, pas de date, pas de rendement.
+
+## TRI {#xirr}
+
+**TRI : ce que vos versements ont réellement rapporté.**
+
+C’est l’unique taux annuel qui réconcilie tout ce qui est entré et sorti — chaque
+versement et chaque retrait à sa propre date — avec ce que le compte vaut
+aujourd’hui. Contrairement au TWR, il compte *quand* vous avez versé : l’argent
+ajouté avant une hausse pèse plus que l’argent ajouté après.
+
+Il lui faut au moins un mouvement d’argent, entrant ou sortant, pour vouloir dire
+quelque chose. Si rien n’a jamais été versé, il n’y a pas d’échéancier à
+résoudre, et l’application laisse le chiffre [absent](#absence) plutôt que d’en
+inventer un.
+
+**Les rendements sont calculés à partir des dates de vos événements.** La phrase
+est la même que sous le TWR, délibérément : les deux taux se lisent sur les dates
+que vous avez enregistrées, et on les confond bien plus souvent ensemble que
+séparément.
+
+## Une position sans cours {#carrying-price}
+
+Une position dont l’application n’a jamais pu obtenir le cours est **valorisée à
+son propre prix de revient** — pas au prix de votre dernière transaction, et pas
+à zéro.
+
+La règle est indexée sur l’absence de cours et jamais sur un calendrier. Un
+calendrier de marché expliquerait un trou sans le combler, et l’application suit
+des cotations dont elle ne connaît pas toujours la place boursière.
+
+Valoriser au prix de revient plutôt qu’au dernier cours traité est un choix, et
+c’est celui qui permet d’énoncer la convention en une phrase : un jour d’achat
+ressort exactement neutre, et la [plus-value latente](#latent-gain) est
+identiquement nulle aussi longtemps que la règle s’applique. Un gain de zéro est
+ici une affirmation véridique ; une perte ne le serait pas.
+
+**C’est une convention, jamais un repli silencieux.** Elle ne s’applique que là
+où l’application a fini de chercher — pas de cours, *et* pas de cours à venir. Tant que l’historique est encore en reconstruction derrière un titre, rien n’est
+compté au prix de revient : le chiffre dit qu’il attend (voir
+[plus bas](#absence)). Confondre les deux transformerait « pas encore » en
+« jamais », définitivement.
+
+**« Aucun cours » signifie aucune cotation du tout.** Un titre que l’application
+a coté mais qu’elle ne peut pas convertir dans votre devise de base — parce que
+vous n’en avez pas encore choisi une, ou parce que cette paire de devises ne se
+résout pas — n’est pas dans ce cas. Il a un cours ; ce qui lui manque est un
+taux. Ces lignes affichent leur cours natif et disent qu’elles sont
+[en attente du taux](#absence), et la valeur revient d’elle-même dès que le taux
+revient.
+
+**Un cas ressemble à celui-là sans en être un** : un titre pour lequel le marché
+répond des cours sans jamais dire dans quelle devise ils sont. Il n’y a pas de
+paire dont récupérer le taux, donc rien n’est en route — un nombre sans unité
+n’est pas un cours — et l’application compte une telle ligne à son prix de
+revient, comme toute autre qu’elle ne peut pas valoriser. C’est rare, et c’est la
+seule forme où une ligne cotée chaque jour est tout de même valorisée à ce que
+vous l’avez payée.
+
+À l’écran, cette ligne se lit exactement comme la première du tableau
+ci-dessous : un tiret cadratin là où serait son cours, son prix de
+revient comme valeur, et une plus-value latente nulle. Le tiret est une
+affirmation plutôt qu’un manque — l’application a un nombre et ne peut pas dire
+de quoi il est le nombre, et l’imprimer sous le symbole de votre devise de base
+affirmerait la seule chose que personne n’a dite. Les courbes, la comparaison des
+comptes et votre gain total lisent cette même valeur : aucun écran n’est donc en
+désaccord avec un autre sur ce que vaut la ligne.
+
+Une position valorisée ainsi ne porte aucun badge propre. Le tiret cadratin là où
+serait son cours est déjà tout le signal, et après une reconstruction le cas est
+assez courant pour qu’un marqueur sur chacune de ces lignes soit du bruit sur
+toute la page plutôt qu’une information.
+
+**Là où la règle se sépare visiblement d’une valorisation de marché.** Compter au
+prix de revient valorise la position entière à un seul prix, et une position bâtie
+sur un achat *et* une attribution gratuite n’a pas coûté un seul prix. Achetez
+dix titres à 100 et recevez-en dix autres par dilution, l’un et l’autre dans les
+jours qui précèdent le premier cours dont l’application dispose pour ce titre, et
+vous détenez vingt titres qui ont coûté 1 000 — ils sont donc comptés à 50
+chacun, la moitié de ce que valaient les dix que vous avez payés. Il faut que les
+deux événements tombent dans la fenêtre sans cours, soit une poignée de jours au
+début de la vie d’une ligne ; dès la première cotation le marché répond et la
+question disparaît. Et le chiffre reste le chiffre honnête : l’application sait
+exactement ce que la position vous a coûté et ne sait pas ce qu’elle vaut.
+
+## Quand un chiffre est absent {#absence}
+
+Une seule règle couvre chaque cellule vide de l’application :
+
+> **Le tiret cadratin signifie *il n’y a rien à calculer*. Ce qui est simplement
+> manquant est nommé.**
+
+Un tiret cadratin ne sert jamais pour quelque chose que l’application aurait pu
+récupérer et n’a pas réussi à récupérer. C’est cette distinction qui rend une
+cellule vide actionnable : l’un de ces états est réparable par vous, et il le
+dit.
+
+| Ce qui se passe                                                   | Cours           | Valeur               | Plus-value latente   |
+| ----------------------------------------------------------------- | --------------- | -------------------- | -------------------- |
+| Aucun cours observé, [compté au prix de revient](#carrying-price) | —               | son prix de revient  | `0.00`               |
+| Cours connu, taux de conversion manquant                          | son cours natif | *en attente du taux* | *en attente du taux* |
+| Rien à calculer — position soldée                                 | —               | `0.00`               | —                    |
+| Demandé N fois, jamais répondu                                    | *aucun cours*   | *aucun cours*        | *aucun cours*        |
+
+Les deux derniers se ressemblent sans être pareils. Une position que vous avez
+vendue n’a pas de question à poser : sa plus-value latente n’a pas de sujet. Une
+ligne saisie sous un symbole que le marché ne connaît pas pose une question à la
+fois légitime et réparable — le plus souvent une faute de frappe — et la traiter
+comme « rien à calculer » la condamnerait au silence pour toujours.
+
+Ce dernier cas rapporte **son décompte**, jamais un verdict. L’application sait
+que N tentatives consécutives n’ont rien rendu ; elle ne sait pas que rien ne
+viendra jamais. « Demandé dix-sept fois, aucun cours » est un fait sur lequel
+vous pouvez agir. « Jamais » serait une conjecture.
+
+**Zéro n’est pas une absence.** Un chiffre qui vaut réellement zéro s’écrit
+`0.00`, dans la couleur du texte ordinaire — jamais en gris comme quelque chose
+qui manque. Sur une position soldée, les deux se côtoient, et ils ne veulent pas
+dire la même chose.
+
+## D’où viennent ces chiffres {#sources}
+
+* Vos événements sont la seule entrée : [Importer vos événements](./import-your-events.mdx).
+* Les cours, et leur conversion dans votre devise de base :
+  [Comment les cours sont collectés](./how-prices-are-collected.mdx).
+* L’historique antérieur à votre premier achat, et jusqu’où il reste précis :
+  [Reconstruction et résolution](./rebuild-and-resolution.mdx).
+* La devise de base dans laquelle chaque chiffre ci-dessus est reporté : [Réglages](./settings.mdx).
