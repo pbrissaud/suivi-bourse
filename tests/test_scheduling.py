@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from application import market_info
 from application import scheduling
 from application.scheduling import (
     decide, extract_market_context, compute_pool_size,
@@ -38,18 +39,17 @@ def _capture(name):
     beside it holds the reading and the fields it deliberately does not carry.
 
     The file keeps Yahoo's epochs; the metadata is handed back the way yfinance
-    hands it to the app, each instant a ``pandas.Timestamp`` in the venue's
-    timezone (#1400) — the shape the epoch-only fakes never saw.
+    hands it to the app, the open a ``pandas.Timestamp`` in the venue's
+    timezone (#1400) — the shape the epoch-only fakes never saw. The file is
+    read through ``market_info``, the one owner of Yahoo's keys, and only the
+    field the scheduler reads is carried over.
     """
     import pandas as pd
     data = json.loads((_CAPTURES / f"{name}.json").read_text(encoding="utf-8"))
-    tz = data["info"]["exchangeTimezoneName"]
-    meta = json.loads(json.dumps(data["history_meta"]))
-    for period in meta["currentTradingPeriod"].values():
-        for key in ("start", "end"):
-            if key in period:
-                period[key] = pd.Timestamp(period[key], unit="s", tz=tz)
-    return data["info"], meta
+    info, raw = data["info"], data["history_meta"]
+    start = pd.Timestamp(market_info.regular_period_start(raw), unit="s",
+                         tz=market_info.exchange_timezone_name_of(info))
+    return info, {"currentTradingPeriod": {"regular": {"start": start}}}
 
 
 # ``BNP.PA`` on 2026-08-12, Euronext Paris (CEST). The reading was taken at
