@@ -344,13 +344,18 @@ def overlay_closes(store, symbol: str, closes: Mapping[date, float],
             '   AND CAST(ts AS DATE) BETWEEN ? AND ?',
             [symbol, min(closes) - timedelta(days=1),
              max(closes) + timedelta(days=1)])
-        last_points: Dict[date, Tuple[datetime, float]] = {}
+        # Every row at the day's last instant: there is no key on
+        # `(symbol, ts)`, and `daily_closes` reads the highest of a tie.
+        last_points: Dict[date, Tuple[datetime, List[float]]] = {}
         for ts, native in points:
             day = instants.utc(ts).astimezone(zone).date()
             if day not in last_points or ts > last_points[day][0]:
-                last_points[day] = (ts, native)
-        targets = [[ts, closes[day]] for day, (ts, native) in last_points.items()
-                   if day in closes and native not in (0, closes[day])]
+                last_points[day] = (ts, [native])
+            elif ts == last_points[day][0]:
+                last_points[day][1].append(native)
+        targets = [[ts, closes[day]] for day, (ts, natives) in last_points.items()
+                   if day in closes and any(
+                       native not in (0, closes[day]) for native in natives)]
         if not targets:
             return 0
 
@@ -363,7 +368,8 @@ def overlay_closes(store, symbol: str, closes: Mapping[date, float],
             '                              ELSE price_converted * f.price / price_native END,'
             '       price_native = f.price'
             f'  FROM {INCOMING} f'
-            ' WHERE symbol = ? AND price_point.ts = f.ts',
+            ' WHERE symbol = ? AND price_point.ts = f.ts'
+            '   AND price_native IS NOT NULL AND price_native <> 0',
             ('ts', 'price'), targets, [symbol])
 
         newest = max(target[0] for target in targets)

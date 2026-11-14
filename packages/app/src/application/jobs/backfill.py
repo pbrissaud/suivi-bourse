@@ -510,12 +510,14 @@ class BackfillJob(base.Job):
                   if point['timestamp'] < end}
         # The venue's day finds the session's last bar: ASX and NZX trade
         # across UTC midnight. Asked once per turn, the lateral pass reads it.
-        info = self.attributes_of(symbol) if closes else {}
-        if info is None:
+        # A venue day read as a UTC one would put a close on the next
+        # session's first bar, so no timezone is a retry, like a failed fetch.
+        zone = (scheduling.exchange_tz(self.attributes_of(symbol)) if closes
+                else timezone.utc)
+        if zone is None:
             app_logger.warning(
                 f"Could not learn the timezone of {symbol}, will retry")
             return 0
-        zone = scheduling.exchange_tz(info) or timezone.utc
         try:
             with self.ctx.config_manager.writing() as opened:
                 repaired = quotes.overlay_closes(opened, symbol, closes, zone)

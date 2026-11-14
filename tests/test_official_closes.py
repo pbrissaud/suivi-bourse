@@ -24,7 +24,7 @@ from application.jobs.backfill import BackfillJob
 UTC = timezone.utc
 PARIS = ZoneInfo('Europe/Paris')
 
-TODAY = datetime.now(PARIS).date()
+TODAY = datetime.now(UTC).astimezone(PARIS).date()
 #: Two past sessions inside the hourly band, the SAN.PA days of the ticket.
 FIRST = TODAY - timedelta(days=30)
 SECOND = TODAY - timedelta(days=29)
@@ -176,6 +176,21 @@ def test_a_day_already_on_its_close_is_not_rewritten(store):
     assert quotes.overlay_closes(store, 'SAN.PA', {SECOND: 73.58}) == 0
 
 
+@pytest.mark.parametrize('order', [(73.58, 73.44), (73.44, 73.58)])
+def test_a_tie_at_the_last_instant_is_repaired_whatever_the_row_order(store,
+                                                                      order):
+    at = _at(SECOND, 15, 29)
+    store.executemany(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted,'
+        "                         fx_rate) VALUES ('SAN.PA', ?, ?, ?, 0.5)",
+        [[at, price, price * 0.5] for price in order])
+
+    assert quotes.overlay_closes(store, 'SAN.PA', {SECOND: 73.58}) == 1
+
+    assert [row['price'] for row in
+            store_reads.PortfolioReader(store).daily_closes()] == [36.79]
+
+
 def test_a_session_across_utc_midnight_closes_on_its_own_last_bar(store):
     """Sydney's 20/10 runs 23:00Z on the 19th to 05:00Z: its UTC day ends on 21/10's opening bar."""
     sydney = ZoneInfo('Australia/Sydney')
@@ -236,6 +251,17 @@ def test_the_backfill_repairs_a_symbol_once_per_process(store):
     assert interval == '1d'
     assert end == datetime.combine(now.date(), time.min, tzinfo=UTC)
     assert _stored(store, _at(SECOND, 15))[0] == 73.58
+
+
+def test_an_unknown_timezone_is_retried_on_the_next_cycle(store):
+    quotes.record_history(store, 'SAN.PA', [_point(_at(SECOND, 15), 73.44)])
+    client = _DailyCloses()
+    client.symbol_attributes = lambda symbol: {'exchangeTimezoneName': None}
+    job = _job(store, client)
+
+    assert job.repair_closes('SAN.PA', datetime.now(UTC)) == 0
+    assert 'SAN.PA' not in job.closes_repaired
+    assert _stored(store, _at(SECOND, 15))[0] == 73.44
 
 
 def test_a_failed_fetch_is_retried_on_the_next_cycle(store):

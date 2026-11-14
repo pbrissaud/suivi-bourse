@@ -165,9 +165,9 @@ def _session_closes(ticker, start: datetime,
                            auto_adjust=False)
     if daily.empty:
         return {}
-    zone = daily.index.tz
-    cutoff = min(datetime.now(zone).date(), instants.utc(end).astimezone(zone).date()
-                 if zone is not None else end.date())
+    zone = daily.index.tz or timezone.utc
+    cutoff = min(datetime.now(timezone.utc).astimezone(zone).date(),
+                 instants.utc(end).astimezone(zone).date())
     return {idx.date(): as_quoted(close)
             for idx, close in daily['Close'].items()
             if not pd.isna(close) and idx.date() < cutoff}
@@ -304,7 +304,7 @@ def symbol_attributes(symbol: str) -> Optional[dict]:
     # The venue's timezone too: the close repair finds a session's last bar by
     # the venue's own day (#1399).
     return {**market_info.quote_attributes(raw),
-            'exchangeTimezoneName': raw.get('exchangeTimezoneName')}
+            'exchangeTimezoneName': market_info.exchange_timezone_name_of(raw)}
 
 
 def search_securities(query: str) -> Optional[List[dict]]:
