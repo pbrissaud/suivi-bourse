@@ -102,7 +102,7 @@ def history_metadata_of(info: Optional[Mapping]) -> Optional[Mapping]:
 
 
 def regular_period_start(history_meta: Optional[Mapping]):
-    """``currentTradingPeriod.regular.start`` — a Unix timestamp, or ``None``."""
+    """``currentTradingPeriod.regular.start`` as Yahoo hands it — a ``pandas.Timestamp`` in practice — or ``None``."""
     if not isinstance(history_meta, dict):
         return None
     period = history_meta.get('currentTradingPeriod')

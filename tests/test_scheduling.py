@@ -36,9 +36,20 @@ def _capture(name):
     field that means something other than what its name suggests, and a
     hand-written dict says whatever its author already believed. The README
     beside it holds the reading and the fields it deliberately does not carry.
+
+    The file keeps Yahoo's epochs; the metadata is handed back the way yfinance
+    hands it to the app, each instant a ``pandas.Timestamp`` in the venue's
+    timezone (#1400) — the shape the epoch-only fakes never saw.
     """
+    import pandas as pd
     data = json.loads((_CAPTURES / f"{name}.json").read_text(encoding="utf-8"))
-    return data["info"], data["history_meta"]
+    tz = data["info"]["exchangeTimezoneName"]
+    meta = json.loads(json.dumps(data["history_meta"]))
+    for period in meta["currentTradingPeriod"].values():
+        for key in ("start", "end"):
+            if key in period:
+                period[key] = pd.Timestamp(period[key], unit="s", tz=tz)
+    return data["info"], meta
 
 
 # ``BNP.PA`` on 2026-08-12, Euronext Paris (CEST). The reading was taken at
@@ -625,6 +636,47 @@ def test_a_past_open_without_a_usable_timezone_is_unknown_and_not_a_guess():
         assert next_open is None
         _, next_delay, _ = decide(state, False, next_open, NOW, 0, BASE)
         assert next_delay == SHORT_RETRY
+
+
+def _regular_start(start):
+    return {"currentTradingPeriod": {"regular": {"start": start}}}
+
+
+def _yf_timestamp(*args, **kwargs):
+    import pandas as pd
+    return pd.Timestamp(*args, **kwargs)
+
+
+@pytest.mark.parametrize("start", [
+    pytest.param(_yf_timestamp("2026-11-13 09:00", tz="Europe/Paris"), id="yfinance-timestamp"),
+    pytest.param(datetime(2026, 11, 13, 8, 0, tzinfo=UTC), id="aware-datetime"),
+    pytest.param(datetime(2026, 11, 13, 8, 0), id="naive-datetime-is-utc"),
+    pytest.param(datetime(2026, 11, 13, 8, 0, tzinfo=UTC).timestamp(), id="epoch"),
+])
+def test_the_current_open_is_read_whatever_shape_yahoo_hands_it(start):
+    """#1400: yfinance hands a ``pandas.Timestamp``; ``fromtimestamp`` raised on it."""
+    assert scheduling._current_regular_open(_regular_start(start)) == \
+        datetime(2026, 11, 13, 8, 0, tzinfo=UTC)
+
+
+def test_an_unreadable_open_falls_back_to_the_approximation():
+    import pandas as pd
+    assert scheduling._current_regular_open(_regular_start(pd.NaT)) is None
+
+
+def test_a_closed_paris_symbol_wakes_at_its_real_open_and_not_at_eight():
+    """#1400's probe: SAN.PA, Sunday 25/10/2026, Friday's period still named.
+
+    The real open is 09:00 Paris — 08:00 UTC once winter time is in — where the
+    fallback answered 08:00 local (07:00 UTC). The period named is Friday's,
+    in summer time, so the projection also crosses the DST change.
+    """
+    info = {"exchangeTimezoneName": "Europe/Paris", "marketState": "CLOSED"}
+    meta = _regular_start(_yf_timestamp("2026-10-23 09:00", tz="Europe/Paris"))
+    now = datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
+
+    _, next_open = extract_market_context(info, meta, now)
+    assert next_open == datetime(2026, 10, 26, 8, 0, tzinfo=UTC)
 
 
 def test_no_helper_claims_to_read_the_next_open():

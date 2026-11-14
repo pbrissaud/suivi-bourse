@@ -278,14 +278,8 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
 
 
 def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
-    """The **current** trading period's regular open, or None."""
-    start = market_info.regular_period_start(history_meta)
-    if start is None:
-        return None
-    try:
-        return datetime.fromtimestamp(start, tz=timezone.utc)
-    except (OSError, ValueError, OverflowError, TypeError):
-        return None
+    """The **current** trading period's regular open in UTC, or None (#1400)."""
+    return _instant(market_info.regular_period_start(history_meta))
 
 
 def _exchange_tz(info: dict):
