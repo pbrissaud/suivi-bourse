@@ -38,6 +38,7 @@ import { accountsApi } from '@/features/accounts/lib/api'
 import { dataApi } from '@/features/data/lib/api'
 import { isAddressableAccountId, ruleOf } from '@/features/accounts/lib/accounts'
 import { type ConfigResponse, settingsApi } from '@/features/settings/lib/api'
+import { registryFailure } from '@/features/settings/lib/taxation'
 import { ApiProblem } from '@/lib/api'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
@@ -223,6 +224,7 @@ export function FirstRun() {
     enabled: walking && passage === 'models',
     retry: false,
   })
+  const failure = registry.isError ? registryFailure(t, registry.error) : null
   const listed = (registry.data?.items ?? []).filter((item) => item.refused === null)
   const countries = [...new Set(listed.map((item) => item.country))].sort()
   // The country the reader's browser says, when the registry lists it.
@@ -320,14 +322,23 @@ export function FirstRun() {
 
             {passage === 'models' ? (
               <div className="flex flex-col gap-3">
-                {registry.isError ? (
+                {failure !== null ? (
                   <div className="flex flex-col items-start gap-3">
-                    <p role="alert" className="text-sm text-destructive">
-                      {t(problemMessageKey(registry.error))}
+                    <p
+                      role={failure.unpublished ? 'status' : 'alert'}
+                      className={
+                        failure.unpublished
+                          ? 'text-sm text-muted-foreground'
+                          : 'text-sm text-destructive'
+                      }
+                    >
+                      {failure.message}
                     </p>
-                    <Button type="button" size="sheet" onClick={() => void registry.refetch()}>
-                      {t('firstRun.models.retry')}
-                    </Button>
+                    {failure.unpublished ? null : (
+                      <Button type="button" size="sheet" onClick={() => void registry.refetch()}>
+                        {t('firstRun.models.retry')}
+                      </Button>
+                    )}
                   </div>
                 ) : registry.data === undefined ? (
                   <p role="status" className="text-sm text-muted-foreground">

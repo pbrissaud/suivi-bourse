@@ -305,6 +305,30 @@ describe('step 2 — the tax models of a country', () => {
     expect(within(screenOf()).getByRole('button', { name: 'Continuer' })).toBeEnabled()
   })
 
+  it('says the docs publish no catalogue yet, without a retry that cannot help', async () => {
+    const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
+    server.use(
+      http.post(ROUTES.taxationRegistry, () =>
+        HttpResponse.json(
+          {
+            status: 502,
+            type: PROBLEM_TYPES.providerRefused,
+            title: 'Refused',
+            reason: 'unpublished',
+          },
+          { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    await next(user)
+
+    expect(
+      await within(screenOf()).findByText(/ne publie pas encore de catalogue fiscal/),
+    ).toBeVisible()
+    expect(within(screenOf()).queryByRole('button', { name: 'Réessayer' })).toBeNull()
+    expect(within(screenOf()).getByRole('button', { name: 'Continuer' })).toBeEnabled()
+  })
+
   it('leads to Réglages to write one’s own model, and leaves the walk', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
     withRegistry()

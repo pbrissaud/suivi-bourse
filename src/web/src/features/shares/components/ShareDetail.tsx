@@ -60,6 +60,9 @@ const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
 /** The events the section lists: the most recent, the rest being the ledger's. */
 const RECENT_EVENTS = 4
 
+// Quantity and price come back from sm: a phone keeps the date, the kind and the amount.
+const WIDE = 'hidden sm:table-cell'
+
 interface ShareDetailProps {
   row: ShareRow
   /** The positions of this symbol, one per account. */
@@ -301,8 +304,12 @@ function Events({
               <TableRow>
                 <TableHead>{t('shares.events.col.date')}</TableHead>
                 <TableHead>{t('shares.events.col.kind')}</TableHead>
-                <TableHead numeric>{t('shares.events.col.quantity')}</TableHead>
-                <TableHead numeric>{t('shares.events.col.price')}</TableHead>
+                <TableHead numeric className={WIDE}>
+                  {t('shares.events.col.quantity')}
+                </TableHead>
+                <TableHead numeric className={WIDE}>
+                  {t('shares.events.col.price')}
+                </TableHead>
                 <TableHead numeric>{t('shares.events.col.amount')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -316,10 +323,12 @@ function Events({
                       <span className="text-muted-foreground"> · {event.notes}</span>
                     ) : null}
                   </TableCell>
-                  <TableCell numeric>
+                  <TableCell numeric className={WIDE}>
                     {event.quantity === null ? ABSENT : f.quantity(event.quantity)}
                   </TableCell>
-                  <TableCell numeric>{f.currency(event.unit_price, currency)}</TableCell>
+                  <TableCell numeric className={WIDE}>
+                    {f.currency(event.unit_price, currency)}
+                  </TableCell>
                   <TableCell numeric>{f.signedCurrency(cashFlow(event), currency)}</TableCell>
                 </TableRow>
               ))}

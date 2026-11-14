@@ -415,7 +415,7 @@ export function Ledger({
             </div>
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <Button asChild size="sm" className="pointer-coarse:min-h-11">
+              <Button asChild variant="outline" className="pointer-coarse:h-11">
                 <Link to="/ledger/import">
                   <Upload aria-hidden />
                   {t('data.toolbar.import')}

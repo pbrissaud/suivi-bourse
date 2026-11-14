@@ -31,10 +31,15 @@ import {
 import { TextAction } from '@/features/settings/components/ListSetting'
 import { SettingsSheet } from '@/features/settings/components/SettingsSheet'
 import { settingsApi } from '@/features/settings/lib/api'
-import { countryName, modelRule, ownCountry } from '@/features/settings/lib/taxation'
+import {
+  countryName,
+  modelRule,
+  ownCountry,
+  registryFailure,
+} from '@/features/settings/lib/taxation'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { problemMessageKey, problemSentence, providerRefusal } from '@/lib/problem'
+import { problemSentence } from '@/lib/problem'
 
 type Tab = 'import' | 'write'
 
@@ -218,16 +223,7 @@ function Registry({ stored }: { stored: TaxationModel[] }) {
     groups.set(country, [...(groups.get(country) ?? []), item])
   }
 
-  const refusal = registry.isError ? providerRefusal(registry.error) : null
-  const failure = registry.isError
-    ? refusal === null
-      ? t(problemMessageKey(registry.error))
-      : refusal.reason === 'unpublished'
-        ? t('settings.taxation.import.unpublished')
-        : refusal.said === ''
-          ? t('settings.taxation.import.refused')
-          : t('settings.taxation.import.failed', { reason: refusal.said })
-    : null
+  const failure = registry.isError ? registryFailure(t, registry.error).message : null
 
   return (
     <>

@@ -3,6 +3,7 @@
  * one line, and the region the reader's browser speaks for.
  */
 import type { MessageKey, MessageValues } from '@/lib/i18n'
+import { problemMessageKey, providerRefusal } from '@/lib/problem'
 
 type Translate = (key: MessageKey, values?: MessageValues) => string
 
@@ -43,5 +44,23 @@ export function countryName(language: string, code: string): string {
     return new Intl.DisplayNames([language], { type: 'region' }).of(code.toUpperCase()) ?? code
   } catch {
     return code
+  }
+}
+
+/** Why the registry did not list, in the reader's words; `unpublished` is a 404 a retry will not change. */
+export function registryFailure(
+  t: Translate,
+  error: unknown,
+): { message: string; unpublished: boolean } {
+  const refusal = providerRefusal(error)
+  if (refusal === null) return { message: t(problemMessageKey(error)), unpublished: false }
+  if (refusal.reason === 'unpublished')
+    return { message: t('settings.taxation.import.unpublished'), unpublished: true }
+  return {
+    message:
+      refusal.said === ''
+        ? t('settings.taxation.import.refused')
+        : t('settings.taxation.import.failed', { reason: refusal.said }),
+    unpublished: false,
   }
 }

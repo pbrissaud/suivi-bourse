@@ -87,9 +87,12 @@ export function AddRow({
         className="inline-flex items-center gap-2 text-md outline-none focus-visible:rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring/50"
         {...props}
       >
-        <PlusIcon className="size-4" aria-hidden />
-        {children}
-        {hint ? <span className="text-sm text-muted-foreground">· {hint}</span> : null}
+        <PlusIcon className="size-4 shrink-0" aria-hidden />
+        {/* One run of text, so a narrow screen wraps it as a line, not as two columns. */}
+        <span className="text-left">
+          {children}
+          {hint ? <span className="text-sm text-muted-foreground"> · {hint}</span> : null}
+        </span>
       </button>
     </li>
   )
